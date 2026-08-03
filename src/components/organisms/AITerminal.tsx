@@ -2,8 +2,13 @@
 
 import { useChat } from '@ai-sdk/react'
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 export function AITerminal() {
+  const searchParams = useSearchParams()
+  const nodeName = searchParams.get('nodeName')
+  const contextLabel = nodeName ?? 'Life'
+
   const { messages, sendMessage, status } = useChat()
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -31,7 +36,7 @@ export function AITerminal() {
     <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
       {/* Header */}
       <div className="flex items-center px-4 py-2 border-b border-zinc-100 bg-zinc-50 text-xs text-zinc-500 font-mono flex-shrink-0">
-        Context: Life
+        Context: {contextLabel}
       </div>
 
       {/* Messages */}
