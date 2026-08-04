@@ -9,7 +9,6 @@ import {
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
-import { NodeCreationModal } from './NodeCreationModal'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -30,7 +29,7 @@ export function AITerminal() {
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
-  const [isCreationModalOpen, setIsCreationModalOpen] = useState(false)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
@@ -108,7 +107,7 @@ export function AITerminal() {
     }
     if (command === 'save') {
       setInput('')
-      setIsCreationModalOpen(true)
+      setSaveNotice('[/save] Not yet implemented — will open Save As picker in a future slice.')
       return
     }
 
@@ -125,11 +124,6 @@ export function AITerminal() {
 
   return (
     <>
-      <NodeCreationModal
-        isOpen={isCreationModalOpen}
-        onClose={() => setIsCreationModalOpen(false)}
-        onCreated={() => setIsCreationModalOpen(false)}
-      />
       <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
         {/* Header */}
         <div className="flex items-center px-4 py-2 border-b border-zinc-100 bg-zinc-50 text-xs text-zinc-500 font-mono flex-shrink-0">
@@ -167,6 +161,13 @@ export function AITerminal() {
             <div className="text-left">
               <span className="inline-block text-sm px-3 py-1.5 rounded bg-zinc-100 text-zinc-400">
                 …
+              </span>
+            </div>
+          )}
+          {saveNotice && (
+            <div className="text-left">
+              <span className="inline-block text-sm px-3 py-1.5 rounded bg-zinc-100 text-zinc-500 font-mono">
+                {saveNotice}
               </span>
             </div>
           )}

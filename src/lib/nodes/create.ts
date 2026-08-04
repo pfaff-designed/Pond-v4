@@ -3,37 +3,52 @@
  * Framework-agnostic — no Next.js imports.
  */
 
+import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 
-// ── Action Card types ──────────────────────────────────────────────────────
+// ── Zod schemas ────────────────────────────────────────────────────────────
 
-export interface AreaCard {
-  type: 'area'
-  name: string
-}
+const AreaCardSchema = z.object({
+  type: z.literal('area'),
+  name: z.string().min(1),
+})
 
-export interface ProjectCard {
-  type: 'project'
-  name: string
-  area_id?: string
-}
+const ProjectCardSchema = z.object({
+  type: z.literal('project'),
+  name: z.string().min(1),
+  area_id: z.string().optional(),
+})
 
-export interface RoutineCard {
-  type: 'routine'
-  name: string
-  area_id?: string
-}
+const RoutineCardSchema = z.object({
+  type: z.literal('routine'),
+  name: z.string().min(1),
+  area_id: z.string().optional(),
+})
 
-export interface ActionItemCard {
-  type: 'action'
-  name: string
-  area_id?: string
-  project_id?: string
-}
+const ActionItemCardSchema = z.object({
+  type: z.literal('action'),
+  name: z.string().min(1),
+  area_id: z.string().optional(),
+  project_id: z.string().optional(),
+})
+
+const ActionCardSchema = z.discriminatedUnion('type', [
+  AreaCardSchema,
+  ProjectCardSchema,
+  RoutineCardSchema,
+  ActionItemCardSchema,
+])
+
+// ── Action Card types (derived from schemas) ───────────────────────────────
+
+export type AreaCard = z.infer<typeof AreaCardSchema>
+export type ProjectCard = z.infer<typeof ProjectCardSchema>
+export type RoutineCard = z.infer<typeof RoutineCardSchema>
+export type ActionItemCard = z.infer<typeof ActionItemCardSchema>
 
 /** Union of all node creation proposals emitted by the AI. */
-export type ActionCard = AreaCard | ProjectCard | RoutineCard | ActionItemCard
+export type ActionCard = z.infer<typeof ActionCardSchema>
 
 export interface CreatedNode {
   id: string
@@ -50,45 +65,10 @@ export interface CreatedNode {
  *   {"type": "project", "name": "Website", "area_id": "..."}
  */
 export function parseActionCard(json: string): ActionCard | null {
-  let parsed: unknown
   try {
-    parsed = JSON.parse(json)
+    return ActionCardSchema.parse(JSON.parse(json))
   } catch {
     return null
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) return null
-
-  const obj = parsed as Record<string, unknown>
-  const type = obj['type']
-  const name = obj['name']
-
-  if (typeof name !== 'string' || !name) return null
-
-  switch (type) {
-    case 'area':
-      return { type: 'area', name }
-    case 'project':
-      return {
-        type: 'project',
-        name,
-        area_id: typeof obj['area_id'] === 'string' ? obj['area_id'] : undefined,
-      }
-    case 'routine':
-      return {
-        type: 'routine',
-        name,
-        area_id: typeof obj['area_id'] === 'string' ? obj['area_id'] : undefined,
-      }
-    case 'action':
-      return {
-        type: 'action',
-        name,
-        area_id: typeof obj['area_id'] === 'string' ? obj['area_id'] : undefined,
-        project_id: typeof obj['project_id'] === 'string' ? obj['project_id'] : undefined,
-      }
-    default:
-      return null
   }
 }
 

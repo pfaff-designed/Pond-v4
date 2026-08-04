@@ -232,11 +232,10 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
   )
 }
 
-// ── NodeCreationModal — outer gate, remounts ModalBody on each open ────────
+// ── NodeCreationModal — outer gate ────────────────────────────────────────
+// Returning null when !isOpen unmounts ModalBody, so it always mounts fresh on re-open.
 
 export function NodeCreationModal({ isOpen, onClose, onCreated }: NodeCreationModalProps) {
   if (!isOpen) return null
-
-  // key={String(isOpen)} ensures ModalBody remounts fresh each time the modal opens
-  return <ModalBody key="modal-body" onClose={onClose} onCreated={onCreated} />
+  return <ModalBody onClose={onClose} onCreated={onCreated} />
 }

@@ -247,15 +247,15 @@ describe('Sidebar — + button opens NodeCreationModal', () => {
   })
 })
 
-// ── AITerminal /save command wiring ───────────────────────────────────────
+// ── AITerminal /save command stub ─────────────────────────────────────────
 
-describe('AITerminal — /save command opens NodeCreationModal', () => {
+describe('AITerminal — /save command shows stub notice', () => {
   beforeEach(() => {
     mockMessages = []
     mockStatus = 'ready'
   })
 
-  it('opens the NodeCreationModal when /save is submitted', async () => {
+  it('shows a stub notice when /save is submitted', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
 
@@ -269,7 +269,7 @@ describe('AITerminal — /save command opens NodeCreationModal', () => {
     await user.keyboard('{Enter}')
 
     await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByText(/not yet implemented/i)).toBeInTheDocument()
     })
   })
 })
