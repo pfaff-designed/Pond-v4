@@ -1,0 +1,102 @@
+import {
+  getOrCreateConversation,
+  saveTranscript,
+  dissolveConversation,
+} from '@/lib/conversation/client'
+import type { UIMessage } from 'ai'
+
+function makeMessage(overrides: Partial<UIMessage> = {}): UIMessage {
+  return {
+    id: 'msg-1',
+    role: 'user',
+    parts: [{ type: 'text', text: 'hello' }],
+    ...overrides,
+  } as UIMessage
+}
+
+function makeChain(overrides: Record<string, unknown> = {}) {
+  const chain = {
+    select: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    is: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    insert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    single: jest.fn().mockResolvedValue({ data: { id: 'conv-1' }, error: null }),
+    ...overrides,
+  }
+  return chain
+}
+
+function makeSupabase(chain = makeChain()) {
+  return {
+    from: jest.fn().mockReturnValue(chain),
+    _chain: chain,
+  }
+}
+
+describe('getOrCreateConversation', () => {
+  it('returns existing active conversation with deserialized messages', async () => {
+    const stored = [{ id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }]
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1')
+
+    expect(result.id).toBe('conv-1')
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0].role).toBe('user')
+  })
+
+  it('creates a new conversation when none exists', async () => {
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: null, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1')
+
+    expect(result.id).toBe('conv-1')
+    expect(result.messages).toEqual([])
+    expect(chain.insert).toHaveBeenCalledWith({ user_id: 'user-1' })
+  })
+
+  it('returns empty messages when transcript is not an array', async () => {
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: null }, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1')
+    expect(result.messages).toEqual([])
+  })
+})
+
+describe('saveTranscript', () => {
+  it('calls update with the messages array', async () => {
+    const chain = makeChain()
+    const sb = makeSupabase(chain)
+    const messages = [makeMessage()]
+
+    await saveTranscript(sb as never, 'conv-1', messages)
+
+    expect(chain.update).toHaveBeenCalled()
+    expect(chain.eq).toHaveBeenCalledWith('id', 'conv-1')
+  })
+})
+
+describe('dissolveConversation', () => {
+  it('sets dissolved_at to current time', async () => {
+    const chain = makeChain()
+    const sb = makeSupabase(chain)
+    const before = Date.now()
+
+    await dissolveConversation(sb as never, 'conv-1')
+
+    const updateCall = chain.update.mock.calls[0][0]
+    const dissolvedAt = new Date(updateCall.dissolved_at).getTime()
+    expect(dissolvedAt).toBeGreaterThanOrEqual(before)
+    expect(dissolvedAt).toBeLessThanOrEqual(Date.now())
+  })
+})
