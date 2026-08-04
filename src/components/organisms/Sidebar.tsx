@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { NodeCreationModal } from './NodeCreationModal'
 
 interface Area {
   id: string
@@ -33,6 +34,7 @@ export function Sidebar() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const seededRef = useRef(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   const { data: areas = [], isLoading } = useQuery({
     queryKey: ['areas'],
@@ -77,7 +79,8 @@ export function Sidebar() {
         <button
           className="text-zinc-400 hover:text-zinc-700 text-lg leading-none"
           title="New node"
-          onClick={() => {}}
+          aria-label="New node"
+          onClick={() => setIsModalOpen(true)}
         >
           +
         </button>
@@ -104,6 +107,12 @@ export function Sidebar() {
           )
         })}
       </nav>
+
+      <NodeCreationModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onCreated={() => setIsModalOpen(false)}
+      />
     </aside>
   )
 }
