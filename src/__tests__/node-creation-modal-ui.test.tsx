@@ -101,6 +101,12 @@ jest.mock('@ai-sdk/react', () => ({
   }),
 }))
 
+// Stub fetch for SavePickerModal (returns empty extractions)
+global.fetch = jest.fn().mockResolvedValue({
+  ok: true,
+  json: async () => ({ extractions: [] }),
+} as Response)
+
 // ── Import components after mocks ─────────────────────────────────────────
 
 import { Sidebar } from '@/components/organisms/Sidebar'
@@ -489,19 +495,18 @@ describe('AITerminal — create_node tool call', () => {
   })
 })
 
-// ── AITerminal /save command stub ─────────────────────────────────────────
+// ── AITerminal /save command opens picker ────────────────────────────────
 
-describe('AITerminal — /save command shows stub notice', () => {
+describe('AITerminal — /save command opens picker', () => {
   beforeEach(() => {
     mockMessages = []
     mockStatus = 'ready'
   })
 
-  it('shows a stub notice when /save is submitted', async () => {
+  it('opens SavePickerModal when /save is submitted', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
 
-    // Wait for terminal to be ready
     await waitFor(() => {
       expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
     })
@@ -511,7 +516,7 @@ describe('AITerminal — /save command shows stub notice', () => {
     await user.keyboard('{Enter}')
 
     await waitFor(() => {
-      expect(screen.getByText(/not yet implemented/i)).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: /save as/i })).toBeInTheDocument()
     })
   })
 })
