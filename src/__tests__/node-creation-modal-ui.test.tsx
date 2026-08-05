@@ -310,6 +310,95 @@ describe('Sidebar — navigates to new node after creation', () => {
   })
 })
 
+// ── NodeCreationModal — Always approve ────────────────────────────────────
+
+describe('NodeCreationModal — Always approve', () => {
+  beforeEach(() => {
+    mockMessages = []
+    mockStatus = 'ready'
+    mockCreateNode.mockClear().mockResolvedValue({ id: 'new-node-id' })
+  })
+
+  it('renders an "Always approve [type]" checkbox on the action card', () => {
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: '```json\n{"type":"area","name":"Travel"}\n```' }],
+      },
+    ]
+    renderWithQuery(<NodeCreationModal isOpen={true} onClose={jest.fn()} onCreated={jest.fn()} />)
+    expect(screen.getByRole('checkbox', { name: /always approve area/i })).toBeInTheDocument()
+  })
+
+  it('checking the checkbox creates the node immediately', async () => {
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: '```json\n{"type":"area","name":"Travel"}\n```' }],
+      },
+    ]
+    const onCreated = jest.fn()
+    renderWithQuery(<NodeCreationModal isOpen={true} onClose={jest.fn()} onCreated={onCreated} />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /always approve area/i }))
+
+    await waitFor(() => {
+      expect(mockCreateNode).toHaveBeenCalled()
+      expect(onCreated).toHaveBeenCalledWith('new-node-id', 'area', 'Travel')
+    })
+  })
+
+  it('auto-creates a card of an approved type on the next modal open', async () => {
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: '```json\n{"type":"area","name":"Travel"}\n```' }],
+      },
+    ]
+    const onClose = jest.fn()
+    const onCreated = jest.fn()
+    const queryClient = makeQueryClient()
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <NodeCreationModal isOpen={true} onClose={onClose} onCreated={onCreated} />
+      </QueryClientProvider>
+    )
+
+    // Approve area type for the session
+    fireEvent.click(screen.getByRole('checkbox', { name: /always approve area/i }))
+    await waitFor(() => expect(mockCreateNode).toHaveBeenCalledTimes(1))
+
+    // Simulate close and reopen with a new area card
+    mockMessages = [
+      {
+        id: 'msg-2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: '```json\n{"type":"area","name":"Work"}\n```' }],
+      },
+    ]
+    mockCreateNode.mockClear()
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <NodeCreationModal isOpen={false} onClose={onClose} onCreated={onCreated} />
+      </QueryClientProvider>
+    )
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <NodeCreationModal isOpen={true} onClose={onClose} onCreated={onCreated} />
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => {
+      expect(mockCreateNode).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
 // ── AITerminal /save command stub ─────────────────────────────────────────
 
 describe('AITerminal — /save command shows stub notice', () => {
