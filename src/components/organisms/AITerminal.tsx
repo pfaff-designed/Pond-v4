@@ -2,13 +2,15 @@
 
 import { useChat } from '@ai-sdk/react'
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   getOrCreateConversation,
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
+import { NodeCreationModal } from './NodeCreationModal'
+import type { ActionCard } from '@/lib/nodes/create'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -21,11 +23,29 @@ function parseCommand(text: string): CommandResult {
 }
 
 export function AITerminal() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const nodeName = searchParams.get('nodeName')
   const contextLabel = nodeName ?? 'Life'
 
-  const { messages, sendMessage, setMessages, status } = useChat()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [modalIntent, setModalIntent] = useState<ActionCard | null>(null)
+  const pendingToolCallId = useRef<string | null>(null)
+
+  const { messages, sendMessage, setMessages, status, addToolOutput } = useChat({
+    onToolCall: ({ toolCall }) => {
+      const tc = toolCall as unknown as {
+        toolCallId: string
+        toolName: string
+        input: { type: ActionCard['type']; name: string }
+      }
+      if (tc.toolName === 'create_node') {
+        pendingToolCallId.current = tc.toolCallId
+        setModalIntent({ type: tc.input.type, name: tc.input.name } as ActionCard)
+        setIsModalOpen(true)
+      }
+    },
+  })
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
@@ -122,6 +142,21 @@ export function AITerminal() {
     }
   }
 
+  // ── Node creation from terminal ───────────────────────────────────────────
+  const handleNodeCreated = useCallback(
+    (id: string, type: ActionCard['type'], name: string) => {
+      setIsModalOpen(false)
+      setModalIntent(null)
+      if (pendingToolCallId.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(addToolOutput as any)(pendingToolCallId.current, { created: true, nodeId: id })
+        pendingToolCallId.current = null
+      }
+      router.push(`/workspace?nodeType=${type}&nodeId=${id}&nodeName=${encodeURIComponent(name)}`)
+    },
+    [addToolOutput, router]
+  )
+
   return (
     <>
       <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
@@ -194,6 +229,20 @@ export function AITerminal() {
           </button>
         </div>
       </div>
+      <NodeCreationModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          if (pendingToolCallId.current) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(addToolOutput as any)(pendingToolCallId.current, { cancelled: true })
+            pendingToolCallId.current = null
+          }
+          setIsModalOpen(false)
+          setModalIntent(null)
+        }}
+        onCreated={handleNodeCreated}
+        intent={modalIntent ?? undefined}
+      />
     </>
   )
 }
