@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
@@ -48,9 +48,10 @@ function extractActionCardFromMessages(
 interface ModalBodyProps {
   onClose: () => void
   onCreated: (nodeId: string, type: ActionCard['type'], name: string) => void
+  autoApproved: React.MutableRefObject<Set<ActionCard['type']>>
 }
 
-function ModalBody({ onClose, onCreated }: ModalBodyProps) {
+function ModalBody({ onClose, onCreated, autoApproved }: ModalBodyProps) {
   const [input, setInput] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,9 +69,13 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Derive the pending action card from the current messages
-  const pendingCard = extractActionCardFromMessages(
-    messages as Array<{ role: string; parts: Array<{ type: string; text?: string }> }>
+  // Stable reference — only recomputes when messages change
+  const pendingCard = useMemo(
+    () =>
+      extractActionCardFromMessages(
+        messages as Array<{ role: string; parts: Array<{ type: string; text?: string }> }>
+      ),
+    [messages]
   )
 
   // ── Send message ─────────────────────────────────────────────────────────
@@ -105,6 +110,16 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
       setIsCreating(false)
     }
   }, [pendingCard, isCreating, queryClient, onCreated, onClose])
+
+  // Auto-create when a card of a session-approved type appears
+  useEffect(() => {
+    if (pendingCard && !isCreating && autoApproved.current.has(pendingCard.type)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- handleCreate is an async side effect (network call), not a derived-state computation
+      void handleCreate()
+    }
+  }, [pendingCard, isCreating, handleCreate, autoApproved])
+
+  const isAutoApproved = pendingCard ? autoApproved.current.has(pendingCard.type) : false
 
   return (
     <div
@@ -169,15 +184,15 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
           <div ref={bottomRef} />
         </div>
 
-        {/* Action card — shown when AI has proposed an entity */}
-        {pendingCard && (
+        {/* Action card — hidden for auto-approved types (auto-creates silently) */}
+        {pendingCard && !isAutoApproved && (
           <div className="mx-4 mb-3 border border-zinc-200 rounded-lg p-3 bg-zinc-50">
             <div className="text-xs text-zinc-500 uppercase tracking-wide mb-1">
               Proposed {pendingCard.type}
             </div>
             <div className="text-sm font-medium text-zinc-900 mb-3">{pendingCard.name}</div>
             {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-3">
               <button
                 onClick={handleCreate}
                 disabled={isCreating}
@@ -192,6 +207,20 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
                 Cancel
               </button>
             </div>
+            <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-zinc-300"
+                aria-label={`Always approve ${pendingCard.type} this session`}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    autoApproved.current.add(pendingCard.type)
+                    handleCreate()
+                  }
+                }}
+              />
+              Always approve {pendingCard.type} this session
+            </label>
           </div>
         )}
 
@@ -233,9 +262,10 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
 }
 
 // ── NodeCreationModal — outer gate ────────────────────────────────────────
-// Returning null when !isOpen unmounts ModalBody, so it always mounts fresh on re-open.
+// useRef here (before early return) persists autoApproved across open/close cycles.
 
 export function NodeCreationModal({ isOpen, onClose, onCreated }: NodeCreationModalProps) {
+  const autoApproved = useRef(new Set<ActionCard['type']>())
   if (!isOpen) return null
-  return <ModalBody onClose={onClose} onCreated={onCreated} />
+  return <ModalBody onClose={onClose} onCreated={onCreated} autoApproved={autoApproved} />
 }
