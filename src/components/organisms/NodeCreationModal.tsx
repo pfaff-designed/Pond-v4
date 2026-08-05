@@ -13,7 +13,7 @@ import type { ActionCard } from '@/lib/nodes/create'
 interface NodeCreationModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreated: (nodeId: string) => void
+  onCreated: (nodeId: string, type: ActionCard['type'], name: string) => void
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ function extractActionCardFromMessages(
 
 interface ModalBodyProps {
   onClose: () => void
-  onCreated: (nodeId: string) => void
+  onCreated: (nodeId: string, type: ActionCard['type'], name: string) => void
 }
 
 function ModalBody({ onClose, onCreated }: ModalBodyProps) {
@@ -98,7 +98,7 @@ function ModalBody({ onClose, onCreated }: ModalBodyProps) {
       const created = await createNode(supabase, pendingCard)
       // Invalidate the areas cache so the sidebar refreshes
       await queryClient.invalidateQueries({ queryKey: ['areas'] })
-      onCreated(created.id)
+      onCreated(created.id, pendingCard.type, pendingCard.name)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create node')

@@ -19,8 +19,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
 
+const mockRouterPush = jest.fn()
+
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockRouterPush }),
   useSearchParams: () => ({ get: jest.fn().mockReturnValue(null) }),
 }))
 
@@ -190,6 +192,31 @@ describe('NodeCreationModal', () => {
     })
   })
 
+  it('calls onCreated with id, type, and name after successful create', async () => {
+    const onCreated = jest.fn()
+
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'text',
+            text: '```json\n{"type":"area","name":"Travel"}\n```',
+          },
+        ],
+      },
+    ]
+
+    renderWithQuery(<NodeCreationModal isOpen={true} onClose={jest.fn()} onCreated={onCreated} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledWith('new-node-id', 'area', 'Travel')
+    })
+  })
+
   it('invalidates the [areas] query cache after creation', async () => {
     const queryClient = makeQueryClient()
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries')
@@ -243,6 +270,42 @@ describe('Sidebar — + button opens NodeCreationModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+})
+
+// ── Sidebar — navigates to new node after creation ────────────────────────
+
+describe('Sidebar — navigates to new node after creation', () => {
+  beforeEach(() => {
+    mockRouterPush.mockClear()
+    mockCreateNode.mockResolvedValue({ id: 'new-node-id' })
+    mockMessages = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'text',
+            text: '```json\n{"type":"area","name":"Travel"}\n```',
+          },
+        ],
+      },
+    ]
+  })
+
+  it('calls router.push with the correct node URL after creation', async () => {
+    renderWithQuery(<Sidebar />)
+
+    fireEvent.click(screen.getByRole('button', { name: /new node/i }))
+    await waitFor(() => screen.getByRole('dialog'))
+
+    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+
+    await waitFor(() => {
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        '/workspace?nodeType=area&nodeId=new-node-id&nodeName=Travel'
+      )
     })
   })
 })

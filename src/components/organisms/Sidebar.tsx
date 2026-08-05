@@ -111,7 +111,12 @@ export function Sidebar() {
       <NodeCreationModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onCreated={() => setIsModalOpen(false)}
+        onCreated={(id, type, name) => {
+          setIsModalOpen(false)
+          router.push(
+            `/workspace?nodeType=${type}&nodeId=${id}&nodeName=${encodeURIComponent(name)}`
+          )
+        }}
       />
     </aside>
   )
