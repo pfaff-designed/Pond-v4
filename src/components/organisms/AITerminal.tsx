@@ -10,6 +10,7 @@ import {
   dissolveConversation,
 } from '@/lib/conversation/client'
 import { NodeCreationModal } from './NodeCreationModal'
+import { SavePickerModal } from './SavePickerModal'
 import type { ActionCard } from '@/lib/nodes/create'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
@@ -31,6 +32,7 @@ export function AITerminal() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalIntent, setModalIntent] = useState<ActionCard | null>(null)
   const pendingToolCallId = useRef<string | null>(null)
+  const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
 
   const { messages, sendMessage, setMessages, status, addToolOutput } = useChat({
     onToolCall: ({ toolCall }) => {
@@ -49,7 +51,6 @@ export function AITerminal() {
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
-  const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
@@ -127,7 +128,7 @@ export function AITerminal() {
     }
     if (command === 'save') {
       setInput('')
-      setSaveNotice('[/save] Not yet implemented — will open Save As picker in a future slice.')
+      setIsSavePickerOpen(true)
       return
     }
 
@@ -199,13 +200,6 @@ export function AITerminal() {
               </span>
             </div>
           )}
-          {saveNotice && (
-            <div className="text-left">
-              <span className="inline-block text-sm px-3 py-1.5 rounded bg-zinc-100 text-zinc-500 font-mono">
-                {saveNotice}
-              </span>
-            </div>
-          )}
           <div ref={bottomRef} />
         </div>
 
@@ -242,6 +236,11 @@ export function AITerminal() {
         }}
         onCreated={handleNodeCreated}
         intent={modalIntent ?? undefined}
+      />
+      <SavePickerModal
+        isOpen={isSavePickerOpen}
+        messages={messages}
+        onClose={() => setIsSavePickerOpen(false)}
       />
     </>
   )
