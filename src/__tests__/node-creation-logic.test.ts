@@ -104,14 +104,15 @@ describe('createNode', () => {
   it('writes to the projects table for type=project', async () => {
     const chain = makeInsertChain({ id: 'project-new' })
     const sb = makeSupabase(chain)
-    const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: 'area-abc' }
+    const uuid = '00000000-0000-0000-0000-000000000001'
+    const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: uuid }
 
     const result = await createNode(sb as never, card)
 
     expect(sb.from).toHaveBeenCalledWith('projects')
     const insertArg = chain.insert.mock.calls[0][0]
     expect(insertArg.title).toBe('Website Redesign')
-    expect(insertArg.area_id).toBe('area-abc')
+    expect(insertArg.area_id).toBe(uuid)
     expect(insertArg.user_id).toBe('user-1')
     expect(result.id).toBe('project-new')
   })
@@ -119,15 +120,41 @@ describe('createNode', () => {
   it('writes to the routines table for type=routine', async () => {
     const chain = makeInsertChain({ id: 'routine-new' })
     const sb = makeSupabase(chain)
-    const card: ActionCard = { type: 'routine', name: 'Morning Walk', area_id: 'area-health' }
+    const uuid = '00000000-0000-0000-0000-000000000002'
+    const card: ActionCard = { type: 'routine', name: 'Morning Walk', area_id: uuid }
 
     const result = await createNode(sb as never, card)
 
     expect(sb.from).toHaveBeenCalledWith('routines')
     const insertArg = chain.insert.mock.calls[0][0]
     expect(insertArg.name).toBe('Morning Walk')
-    expect(insertArg.area_id).toBe('area-health')
+    expect(insertArg.area_id).toBe(uuid)
     expect(result.id).toBe('routine-new')
+  })
+
+  it('resolves area name to UUID when area_id is not a UUID', async () => {
+    const resolvedUuid = '00000000-0000-0000-0000-000000000099'
+    const selectChain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      ilike: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { id: resolvedUuid }, error: null }),
+    }
+    const insertChain = makeInsertChain({ id: 'project-new' })
+    const sb = {
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+      from: jest
+        .fn()
+        .mockImplementation((table: string) => (table === 'areas' ? selectChain : insertChain)),
+    }
+    const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: 'Professional' }
+
+    const result = await createNode(sb as never, card)
+
+    expect(selectChain.ilike).toHaveBeenCalledWith('name', 'Professional')
+    const insertArg = insertChain.insert.mock.calls[0][0]
+    expect(insertArg.area_id).toBe(resolvedUuid)
+    expect(result.id).toBe('project-new')
   })
 
   it('writes to the actions table for type=action', async () => {

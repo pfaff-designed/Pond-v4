@@ -54,6 +54,28 @@ export interface CreatedNode {
   id: string
 }
 
+// ── UUID validation ────────────────────────────────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Resolve an area_id that may be a UUID or an area name. */
+async function resolveAreaId(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any,
+  userId: string,
+  areaIdOrName: string
+): Promise<string> {
+  if (UUID_RE.test(areaIdOrName)) return areaIdOrName
+  const { data, error } = await sb
+    .from('areas')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('name', areaIdOrName)
+    .single()
+  if (error || !data) throw new Error(`Area "${areaIdOrName}" not found`)
+  return data.id as string
+}
+
 // ── parseActionCard ────────────────────────────────────────────────────────
 
 /**
@@ -102,11 +124,12 @@ export async function createNode(
     }
 
     case 'project': {
+      const areaId = card.area_id ? await resolveAreaId(sb, user.id, card.area_id) : null
       const { data, error } = await sb
         .from('projects')
         .insert({
           user_id: user.id,
-          area_id: card.area_id,
+          area_id: areaId,
           title: card.name,
         })
         .select('id')
@@ -116,11 +139,12 @@ export async function createNode(
     }
 
     case 'routine': {
+      const areaId = card.area_id ? await resolveAreaId(sb, user.id, card.area_id) : null
       const { data, error } = await sb
         .from('routines')
         .insert({
           user_id: user.id,
-          area_id: card.area_id,
+          area_id: areaId,
           name: card.name,
         })
         .select('id')
@@ -130,12 +154,13 @@ export async function createNode(
     }
 
     case 'action': {
+      const areaId = card.area_id ? await resolveAreaId(sb, user.id, card.area_id) : null
       const { data, error } = await sb
         .from('actions')
         .insert({
           user_id: user.id,
           title: card.name,
-          area_id: card.area_id ?? null,
+          area_id: areaId,
           project_id: card.project_id ?? null,
         })
         .select('id')
