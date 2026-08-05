@@ -13,7 +13,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -77,20 +77,28 @@ jest.mock('@/lib/nodes/create', () => ({
 
 // Mock useChat from @ai-sdk/react
 const mockSendMessage = jest.fn()
+const mockAddToolOutput = jest.fn()
 let mockMessages: Array<{
   id: string
   role: string
   parts: Array<{ type: string; text: string }>
 }> = []
 let mockStatus = 'ready'
+let capturedOnToolCall:
+  | ((opts: { toolCall: { toolCallId: string; toolName: string; input: unknown } }) => void)
+  | undefined
 
 jest.mock('@ai-sdk/react', () => ({
-  useChat: jest.fn(() => ({
-    messages: mockMessages,
-    sendMessage: mockSendMessage,
-    setMessages: jest.fn(),
-    status: mockStatus,
-  })),
+  useChat: jest.fn((opts?: { onToolCall?: unknown }) => {
+    capturedOnToolCall = opts?.onToolCall as typeof capturedOnToolCall
+    return {
+      messages: mockMessages,
+      sendMessage: mockSendMessage,
+      addToolOutput: mockAddToolOutput,
+      setMessages: jest.fn(),
+      status: mockStatus,
+    }
+  }),
 }))
 
 // ── Import components after mocks ─────────────────────────────────────────
@@ -395,6 +403,88 @@ describe('NodeCreationModal — Always approve', () => {
 
     await waitFor(() => {
       expect(mockCreateNode).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
+// ── NodeCreationModal — intent prop ───────────────────────────────────────
+
+describe('NodeCreationModal — intent prop', () => {
+  beforeEach(() => {
+    mockMessages = []
+    mockStatus = 'ready'
+    mockCreateNode.mockClear().mockResolvedValue({ id: 'new-node-id' })
+  })
+
+  it('shows action card immediately when intent is provided', () => {
+    renderWithQuery(
+      <NodeCreationModal
+        isOpen={true}
+        onClose={jest.fn()}
+        onCreated={jest.fn()}
+        intent={{ type: 'area', name: 'Travel' }}
+      />
+    )
+    expect(screen.getByText(/proposed area/i)).toBeInTheDocument()
+    expect(screen.getByText(/travel/i)).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/describe what you'd like/i)).not.toBeInTheDocument()
+  })
+})
+
+// ── AITerminal — create_node tool call ────────────────────────────────────
+
+describe('AITerminal — create_node tool call', () => {
+  beforeEach(() => {
+    mockMessages = []
+    mockStatus = 'ready'
+    capturedOnToolCall = undefined
+    mockAddToolOutput.mockClear()
+    mockCreateNode.mockClear().mockResolvedValue({ id: 'new-node-id' })
+    mockRouterPush.mockClear()
+  })
+
+  it('opens NodeCreationModal with intent when create_node tool is called', async () => {
+    renderWithQuery(<AITerminal />)
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+
+    await act(async () => {
+      capturedOnToolCall?.({
+        toolCall: {
+          toolCallId: 'tc-1',
+          toolName: 'create_node',
+          input: { type: 'area', name: 'Travel' },
+        },
+      })
+    })
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText(/travel/i)).toBeInTheDocument()
+  })
+
+  it('calls addToolOutput and navigates after node creation from terminal', async () => {
+    renderWithQuery(<AITerminal />)
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+
+    await act(async () => {
+      capturedOnToolCall?.({
+        toolCall: {
+          toolCallId: 'tc-1',
+          toolName: 'create_node',
+          input: { type: 'area', name: 'Travel' },
+        },
+      })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+
+    await waitFor(() => {
+      expect(mockAddToolOutput).toHaveBeenCalledWith(
+        'tc-1',
+        expect.objectContaining({ created: true })
+      )
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        '/workspace?nodeType=area&nodeId=new-node-id&nodeName=Travel'
+      )
     })
   })
 })

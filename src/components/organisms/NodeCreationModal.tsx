@@ -14,6 +14,8 @@ interface NodeCreationModalProps {
   isOpen: boolean
   onClose: () => void
   onCreated: (nodeId: string, type: ActionCard['type'], name: string) => void
+  /** Pre-loaded intent from AI tool call — skips the chat step */
+  intent?: ActionCard
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -49,9 +51,10 @@ interface ModalBodyProps {
   onClose: () => void
   onCreated: (nodeId: string, type: ActionCard['type'], name: string) => void
   autoApproved: React.MutableRefObject<Set<ActionCard['type']>>
+  intent?: ActionCard
 }
 
-function ModalBody({ onClose, onCreated, autoApproved }: ModalBodyProps) {
+function ModalBody({ onClose, onCreated, autoApproved, intent }: ModalBodyProps) {
   const [input, setInput] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,13 +72,14 @@ function ModalBody({ onClose, onCreated, autoApproved }: ModalBodyProps) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Stable reference — only recomputes when messages change
+  // Stable reference — intent takes priority; otherwise derived from messages
   const pendingCard = useMemo(
     () =>
+      intent ??
       extractActionCardFromMessages(
         messages as Array<{ role: string; parts: Array<{ type: string; text?: string }> }>
       ),
-    [messages]
+    [intent, messages]
   )
 
   // ── Send message ─────────────────────────────────────────────────────────
@@ -141,48 +145,52 @@ function ModalBody({ onClose, onCreated, autoApproved }: ModalBodyProps) {
           </button>
         </div>
 
-        {/* Chat messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm min-h-0 max-h-64">
-          {messages.length === 0 && !isStreaming && (
-            <p className="text-zinc-400 text-xs">
-              Tell me what you&apos;d like to create — an Area, Project, Routine, or Action.
-            </p>
-          )}
-          {messages.map((message) => {
-            const text = message.parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { type: 'text'; text: string }).text)
-              .join('')
+        {/* Chat messages — hidden when intent is pre-loaded from a tool call */}
+        {!intent && (
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm min-h-0 max-h-64">
+            {messages.length === 0 && !isStreaming && (
+              <p className="text-zinc-400 text-xs">
+                Tell me what you&apos;d like to create — an Area, Project, Routine, or Action.
+              </p>
+            )}
+            {messages.map((message) => {
+              const text = message.parts
+                .filter((p) => p.type === 'text')
+                .map((p) => (p as { type: 'text'; text: string }).text)
+                .join('')
 
-            // Strip the JSON code block from display — the action card UI replaces it
-            const displayText = text.replace(/```json[\s\S]*?```/g, '').trim()
+              // Strip the JSON code block from display — the action card UI replaces it
+              const displayText = text.replace(/```json[\s\S]*?```/g, '').trim()
 
-            if (!displayText && message.role === 'assistant' && pendingCard) return null
+              if (!displayText && message.role === 'assistant' && pendingCard) return null
 
-            return (
-              <div
-                key={message.id}
-                className={message.role === 'user' ? 'text-right' : 'text-left'}
-              >
-                <span
-                  className={`inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left ${
-                    message.role === 'user' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800'
-                  }`}
+              return (
+                <div
+                  key={message.id}
+                  className={message.role === 'user' ? 'text-right' : 'text-left'}
                 >
-                  {displayText || text}
+                  <span
+                    className={`inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left ${
+                      message.role === 'user'
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-zinc-100 text-zinc-800'
+                    }`}
+                  >
+                    {displayText || text}
+                  </span>
+                </div>
+              )
+            })}
+            {isStreaming && (
+              <div className="text-left">
+                <span className="inline-block text-sm px-3 py-1.5 rounded bg-zinc-100 text-zinc-400">
+                  …
                 </span>
               </div>
-            )
-          })}
-          {isStreaming && (
-            <div className="text-left">
-              <span className="inline-block text-sm px-3 py-1.5 rounded bg-zinc-100 text-zinc-400">
-                …
-              </span>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        )}
 
         {/* Action card — hidden for auto-approved types (auto-creates silently) */}
         {pendingCard && !isAutoApproved && (
@@ -264,8 +272,15 @@ function ModalBody({ onClose, onCreated, autoApproved }: ModalBodyProps) {
 // ── NodeCreationModal — outer gate ────────────────────────────────────────
 // useRef here (before early return) persists autoApproved across open/close cycles.
 
-export function NodeCreationModal({ isOpen, onClose, onCreated }: NodeCreationModalProps) {
+export function NodeCreationModal({ isOpen, onClose, onCreated, intent }: NodeCreationModalProps) {
   const autoApproved = useRef(new Set<ActionCard['type']>())
   if (!isOpen) return null
-  return <ModalBody onClose={onClose} onCreated={onCreated} autoApproved={autoApproved} />
+  return (
+    <ModalBody
+      onClose={onClose}
+      onCreated={onCreated}
+      autoApproved={autoApproved}
+      intent={intent}
+    />
+  )
 }
