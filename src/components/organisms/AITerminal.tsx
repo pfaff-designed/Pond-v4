@@ -29,6 +29,8 @@ export function AITerminal() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const nodeName = searchParams.get('nodeName')
+  const nodeId = searchParams.get('nodeId')
+  const nodeType = searchParams.get('nodeType')
   const contextLabel = nodeName ?? 'Life'
 
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -143,9 +145,10 @@ export function AITerminal() {
       return
     }
 
-    sendMessage({ text })
+    // Send the open node so the server can auto-inject its context (Track C).
+    sendMessage({ text }, { body: { nodeId, nodeType } })
     setInput('')
-  }, [input, isStreaming, sendMessage, handleClear, handleHandoff])
+  }, [input, isStreaming, sendMessage, handleClear, handleHandoff, nodeId, nodeType])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
