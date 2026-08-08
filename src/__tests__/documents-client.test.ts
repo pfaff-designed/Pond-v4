@@ -17,6 +17,7 @@ import {
   createDocument,
   saveBlocks,
   updateTitle,
+  matchDocuments,
 } from '@/lib/documents/client'
 import type { Block } from '@/lib/documents/types'
 
@@ -240,5 +241,55 @@ describe('updateTitle', () => {
     const updated = chain.update.mock.calls[0][0]
     expect(updated.title).toBe('Renamed')
     expect(chain.eq).toHaveBeenCalledWith('id', 'doc-1')
+  })
+})
+
+// ── matchDocuments ──────────────────────────────────────────────────────────
+
+describe('matchDocuments', () => {
+  it('calls the match_documents RPC and maps rows to MatchedDocument', async () => {
+    const rpc = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'd1',
+          node_id: 'n1',
+          node_type: 'project',
+          title: 'Oak table',
+          blocks: sampleBlocks,
+          similarity: 0.73,
+        },
+      ],
+      error: null,
+    })
+    const sb = { rpc }
+    const vec = [0.1, 0.2, 0.3]
+
+    const out = await matchDocuments(sb as never, 'user-1', vec, 3)
+
+    expect(rpc).toHaveBeenCalledWith('match_documents', {
+      query_embedding: vec,
+      match_user_id: 'user-1',
+      match_count: 3,
+    })
+    expect(out).toEqual([
+      {
+        id: 'd1',
+        nodeId: 'n1',
+        nodeType: 'project',
+        title: 'Oak table',
+        blocks: sampleBlocks,
+        similarity: 0.73,
+      },
+    ])
+  })
+
+  it('returns [] when the RPC yields no rows', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: null }) }
+    expect(await matchDocuments(sb as never, 'user-1', [0.1])).toEqual([])
+  })
+
+  it('throws when the RPC errors', async () => {
+    const sb = { rpc: jest.fn().mockResolvedValue({ data: null, error: { message: 'rpc boom' } }) }
+    await expect(matchDocuments(sb as never, 'user-1', [0.1])).rejects.toThrow(/rpc boom/)
   })
 })

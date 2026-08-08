@@ -1,10 +1,11 @@
 import { anthropic } from '@ai-sdk/anthropic'
-import { streamText, convertToModelMessages, tool } from 'ai'
+import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
 import type { UIMessage } from 'ai'
 import { z } from 'zod'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
 import { buildChatContext } from '@/lib/context/assemble'
+import { retrieveDocuments, formatRetrievedDocs } from '@/lib/embeddings/retrieve'
 import type { NodeType } from '@/lib/supabase/types'
 
 const SYSTEM_PROMPT = `You are Pond, a thinking partner. Your role is steward, collector, and presenter.
@@ -12,7 +13,8 @@ You surface and organise the user's thinking — you do not replace it.
 You never initiate production of documents, plans, or action lists.
 Think together with the user until they explicitly request an artifact.
 When you hear something worth capturing, offer a short candidate and wait for confirmation.
-When the user expresses intent to create a node (area, project, routine, or action), call the create_node tool.`
+When the user expresses intent to create a node (area, project, routine, or action), call the create_node tool.
+When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -55,6 +57,10 @@ export async function POST(req: Request) {
     model: anthropic(AI_MODELS.standard),
     system,
     messages: await convertToModelMessages(messages),
+    // Allow one round-trip so the model can call fetch_context, read the result,
+    // and answer in the same turn. create_node stays client-side (no execute) and
+    // still ends the turn as before.
+    stopWhen: stepCountIs(3),
     tools: {
       create_node: tool({
         description:
@@ -63,6 +69,18 @@ export async function POST(req: Request) {
           type: z.enum(['area', 'project', 'routine', 'action']),
           name: z.string().min(1).describe('The name for the new node'),
         }),
+      }),
+      fetch_context: tool({
+        description:
+          'Search the user\'s entire workspace (all areas, projects, routines, and documents) for content semantically related to a query. Call this ONLY when the user explicitly asks to recall what they wrote before or to bring in context from elsewhere (e.g. "what have I written about X", "pull in my notes on Y"). Never call it to browse unprompted.',
+        inputSchema: z.object({
+          query: z.string().min(1).describe('What to search the workspace for'),
+        }),
+        execute: async ({ query }) => {
+          if (!user) return 'No user session; cannot retrieve workspace context.'
+          const docs = await retrieveDocuments(supabase, user.id, query, { matchCount: 5 })
+          return formatRetrievedDocs(docs)
+        },
       }),
     },
   })
