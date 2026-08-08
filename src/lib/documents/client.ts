@@ -32,6 +32,11 @@ export interface CreateDocumentInput {
   blocks?: Block[]
 }
 
+/** A document returned by semantic search, with its cosine similarity to the query. */
+export interface MatchedDocument extends PondDocument {
+  similarity: number
+}
+
 type DocumentRow = {
   id: string
   node_id: string | null
@@ -145,6 +150,38 @@ export async function saveBlocks(
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+}
+
+/**
+ * Semantic search across all of a user's documents (Track D). Delegates the
+ * cosine-similarity ranking to the match_documents pgvector RPC; the caller
+ * supplies an already-computed query embedding (see embeddings/retrieve.ts).
+ * Returns matches ordered most-similar first.
+ */
+export async function matchDocuments(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  queryEmbedding: number[],
+  matchCount = 5
+): Promise<MatchedDocument[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('match_documents', {
+    query_embedding: queryEmbedding,
+    match_user_id: userId,
+    match_count: matchCount,
+  })
+
+  if (error) throw new Error(error.message)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id as string,
+    nodeId: r.node_id ?? null,
+    nodeType: r.node_type ?? null,
+    title: r.title as string,
+    blocks: toBlocks(r.blocks),
+    similarity: r.similarity as number,
+  }))
 }
 
 /**
