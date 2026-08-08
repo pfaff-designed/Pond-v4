@@ -4,11 +4,13 @@ import { useChat } from '@ai-sdk/react'
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   getOrCreateConversation,
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
+import { performHandoff } from '@/lib/conversation/handoff'
 import { NodeCreationModal } from './NodeCreationModal'
 import { SavePickerModal } from './SavePickerModal'
 import type { ActionCard } from '@/lib/nodes/create'
@@ -33,6 +35,7 @@ export function AITerminal() {
   const [modalIntent, setModalIntent] = useState<ActionCard | null>(null)
   const pendingToolCallId = useRef<string | null>(null)
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
+  const queryClient = useQueryClient()
 
   const { messages, sendMessage, setMessages, status, addToolOutput } = useChat({
     onToolCall: ({ toolCall }) => {
@@ -96,7 +99,8 @@ export function AITerminal() {
   }, [conversationId, setMessages])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
-  // Stub: dissolves and clears. Entity extraction added in a later slice.
+  // Extract entities from the transcript (Quick model), write them all, then
+  // dissolve and start a fresh session (build-brief §9).
   const handleHandoff = useCallback(async () => {
     if (!conversationId) return
     const supabase = createClient()
@@ -104,11 +108,18 @@ export function AITerminal() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return
-    await dissolveConversation(supabase, conversationId)
-    const fresh = await getOrCreateConversation(supabase, user.id)
-    setConversationId(fresh.id)
+    const { freshConversation, written } = await performHandoff(
+      supabase,
+      conversationId,
+      user.id,
+      messages
+    )
+    if (written > 0) {
+      await queryClient.invalidateQueries({ queryKey: ['areas'] })
+    }
+    setConversationId(freshConversation.id)
     setMessages([])
-  }, [conversationId, setMessages])
+  }, [conversationId, messages, queryClient, setMessages])
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
