@@ -104,27 +104,26 @@ export function Sidebar() {
     router.push(`/workspace?${params.toString()}`)
   }
 
-  /** Run a mutation with a fresh client + user, then refresh the tree. */
-  async function withUser(
-    fn: (sb: ReturnType<typeof createClient>, userId: string) => Promise<void>
-  ) {
+  /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
+  async function withUser<T>(
+    fn: (sb: ReturnType<typeof createClient>, userId: string) => Promise<T>
+  ): Promise<T | undefined> {
     const supabase = createClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) return
-    await fn(supabase, user.id)
+    if (!user) return undefined
+    const result = await fn(supabase, user.id)
     await queryClient.invalidateQueries({ queryKey: ['pages'] })
+    return result
   }
 
   async function handleCreateTop() {
     setBusyId('__new__')
     try {
-      let created: { id: string } | null = null
-      await withUser(async (sb, uid) => {
-        const page = await createPage(sb, uid, { parentId: null, type: 'area', title: 'Untitled' })
-        created = page
-      })
+      const created = await withUser((sb, uid) =>
+        createPage(sb, uid, { parentId: null, type: 'area', title: 'Untitled' })
+      )
       if (created) navigateTo({ id: created.id, type: 'area', title: 'Untitled' })
     } finally {
       setBusyId(null)
@@ -134,15 +133,9 @@ export function Sidebar() {
   async function handleAddChild(node: PageNode) {
     setBusyId(node.id)
     try {
-      let created: { id: string } | null = null
-      await withUser(async (sb, uid) => {
-        const page = await createPage(sb, uid, {
-          parentId: node.id,
-          type: 'page',
-          title: 'Untitled',
-        })
-        created = page
-      })
+      const created = await withUser((sb, uid) =>
+        createPage(sb, uid, { parentId: node.id, type: 'page', title: 'Untitled' })
+      )
       // ensure the parent is expanded so the new child is visible
       setCollapsed((prev) => {
         const next = new Set(prev)

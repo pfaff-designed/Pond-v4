@@ -14,7 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { blocksToText } from '@/lib/context/assemble'
-import { updateEmbedding } from '@/lib/documents/client'
+import { updateEmbedding } from '@/lib/pages/client'
 import { embedText } from './openai'
 
 /**
@@ -27,18 +27,18 @@ export function documentText(title: string, blocks: Block[]): string {
 }
 
 /**
- * Embed a document's content and persist the vector. No-op returning false when
- * the document has no embeddable text (empty title + empty blocks); returns true
- * once the embedding is written.
+ * Embed a page's content and persist the vector. No-op returning false when the
+ * page has no embeddable text (empty title + empty blocks); returns true once
+ * the embedding is written.
  */
-export async function embedDocument(
+export async function embedPage(
   sb: SupabaseClient<Database>,
-  doc: { id: string; title: string; blocks: Block[] }
+  page: { id: string; title: string; blocks: Block[] }
 ): Promise<boolean> {
-  const text = documentText(doc.title, doc.blocks)
+  const text = documentText(page.title, page.blocks)
   const embedding = await embedText(text)
   if (!embedding) return false
 
-  await updateEmbedding(sb, doc.id, embedding)
+  await updateEmbedding(sb, page.id, embedding)
   return true
 }
