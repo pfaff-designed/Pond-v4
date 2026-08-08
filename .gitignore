@@ -42,3 +42,10 @@ next-env.d.ts
 
 # Claude Code local worktrees & session data
 .claude/
+
+# Playwright MCP session artifacts + local verification screenshots
+.playwright-mcp/
+/*.png
+
+# Supabase CLI local temp
+supabase/.temp/

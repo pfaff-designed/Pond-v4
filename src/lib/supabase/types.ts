@@ -3,7 +3,7 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
 
-export type NodeType = 'area' | 'routine' | 'project' | 'action'
+export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page'
 
 export interface Database {
   public: {
@@ -17,6 +17,45 @@ export interface Database {
         Row: { id: string; user_id: string; name: string; order: number; created_at: string }
         Insert: { id?: string; user_id: string; name: string; order?: number }
         Update: { name?: string; order?: number }
+      }
+      pages: {
+        Row: {
+          id: string
+          user_id: string
+          parent_id: string | null
+          type: NodeType
+          title: string
+          blocks: Json
+          embedding: number[] | null
+          status: string | null
+          props: Json
+          order: number
+          updated_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          parent_id?: string | null
+          type?: NodeType
+          title?: string
+          blocks?: Json
+          embedding?: number[] | null
+          status?: string | null
+          props?: Json
+          order?: number
+        }
+        Update: {
+          parent_id?: string | null
+          type?: NodeType
+          title?: string
+          blocks?: Json
+          embedding?: number[] | null
+          status?: string | null
+          props?: Json
+          order?: number
+          updated_at?: string
+        }
       }
       routines: {
         Row: {
