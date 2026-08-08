@@ -147,6 +147,24 @@ export async function saveBlocks(
   if (error) throw new Error(error.message)
 }
 
+/**
+ * Persist a document's embedding vector (Track D — semantic search).
+ * Written alongside content on save so retrieval matches the latest blocks.
+ */
+export async function updateEmbedding(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  embedding: number[]
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('documents')
+    .update({ embedding, updated_at: new Date().toISOString() })
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
 /** Rename a document. */
 export async function updateTitle(
   supabase: SupabaseClient<Database>,
