@@ -1,9 +1,10 @@
 import { anthropic } from '@ai-sdk/anthropic'
-import { streamText, convertToModelMessages, tool, stepCountIs } from 'ai'
+import { streamText, tool, stepCountIs } from 'ai'
 import type { UIMessage } from 'ai'
 import { z } from 'zod'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
+import { toModelMessages } from '@/lib/conversation/transcript'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import type { NodeType } from '@/lib/supabase/types'
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
     system,
-    messages: await convertToModelMessages(messages),
+    messages: await toModelMessages(messages),
     // Allow one round-trip so the model can call fetch_context, read the result,
     // and answer in the same turn. create_node stays client-side (no execute) and
     // still ends the turn as before.
