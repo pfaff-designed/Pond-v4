@@ -15,6 +15,28 @@ The decision phase is **closed** — every ticket resolved and the build unlocke
 - **Functional backlog A–D complete** and verified (118 tests, browser end-to-end): A (doc/page persistence), B (`/handoff`), C (node-context + `@mention`), D (semantic retrieval — embed-on-save + cross-space `fetch_context` tool).
 - **Data model re-based** onto the unified page tree (post-map; ticket-02 superseded).
 - **Next: front-end phase** — nav shell (ticket-07), mobile UX (ticket-08), document/page editor UX (ticket-10). All three speced; UX assumed clear (reconciled to pages).
+- **Front-end progress (2026-08-09):** Storybook (Slice 0), streaming fix (Slice 1), and the diff-card edit loop (ticket-10 / Slice 2) are merged. The map now expands into a **UI System region** (below) to build the component system and the AI's ability to compose with it.
+
+## UI System region (opened 2026-08-09)
+
+**Region destination:** a premium, atomic-design UI system (React · Tailwind · Shadcn · Bklit) that both gives Pond's own chrome its visual language and component library AND drives a flexible, data-driven renderer for modules/pages the AI can compose. Done when the visual language, the atomic component architecture, and the AI-facing composition contract are decided and specced — ready to hand to build. Bar: a daily-driver premium productivity app.
+
+**Framing decisions (locked while charting, 2026-08-09):**
+
+- **Unified registry** — app chrome and content are all composed from the same atoms + module registry. Everything is a registered module (the UI-layer rhyme of "everything is a page").
+- **Parallel tracks, architecture-first** — the architecture track (taxonomy → registry contract) and the visual track (aesthetic → tokens) advance in parallel; architecture leads. They reconcile where tokens ↔ contract lock (ticket-17).
+
+**Toolkit (method, not tickets):** Mobbin MCP (flow/screen references), 60fps MCP (motion references), impeccable (design-system + craft floor), Figma MCP, Storybook/Playwright for verify. Atomic design throughout.
+
+**Frontier tickets** (open child issues; the two with no blockers are takeable now):
+
+- [Module taxonomy](ticket-11-module-taxonomy.md) — **takeable** (architecture-track entry)
+- [Visual language & premium aesthetic direction](ticket-14-visual-language.md) — **takeable** (visual-track entry)
+- [The module registry contract](ticket-12-module-registry-contract.md) — blocked by 11
+- [Atomic layering & Shadcn/Bklit integration](ticket-13-atomic-layering.md) — blocked by 11
+- [Design token architecture](ticket-15-design-tokens.md) — blocked by 14
+- [AI module-composition contract](ticket-16-ai-composition-contract.md) — blocked by 12
+- [Lock tokens ↔ registry contract](ticket-17-token-contract-reconciliation.md) — blocked by 12, 15 (region closing gate)
 
 ## Notes
 
@@ -38,8 +60,8 @@ The decision phase is **closed** — every ticket resolved and the build unlocke
 
 ## Not yet specified
 
-- [Document component library](ticket-09-document-component-library.md) — three block types: `text` (markdown), `todo` (interactive checkboxes, document-local items), `metric` (AI-written values, read-only). User-directed selection. Stable UUID per block for diff targeting.
-- Sync behavior — offline not required (always connected); sync strategy depends on storage/backend decision
+- **UI System region fog** (within the region above; graduates as the frontier advances): motion & interaction language (waits on visual language, ticket-14), responsive module adaptation desktop↔mobile, theming / dark-mode. The former "document component library" fog (ticket-09) has graduated into the region's tickets 11–17.
+- Sync behavior — offline not required (always connected); sync strategy depends on storage/backend decision. Relevant only if a future shared/multi-user version is pursued.
 
 ## Out of scope
 
