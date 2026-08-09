@@ -39,3 +39,16 @@ The original three primitives (Conversation, Document, Project) were replaced by
 **Conversations** — ephemeral. Not persisted. They produce Actions, Projects, or Documents and dissolve.
 
 **Resources** (Time, Money, Energy) — lenses only for v4. Implemented as optional tags on Actions and Projects. No tracked quantities, no pools, no aggregation.
+
+## Superseded (2026-08-08) — unified page tree
+
+The multi-table hierarchy above shipped, then was collapsed into **one self-referential `pages` table** (`supabase/migrations/0003_unified_pages.sql`, merged `1c94a06`). The reasoning above still explains _what the entities mean_; this is how they're now _stored_.
+
+**"Everything is a page; type is just a tag."**
+
+- **One table, `pages`** — `parent_id` self-reference gives an arbitrary-depth tree with subtree cascade-delete via the FK. Top-level = `parent_id null`.
+- **`type`** is a tag (`area | project | routine | action | page`), not a table. A CHECK constraint guards it for now (AI tools / `formatNodeContext` switch on it); can loosen to free-form later.
+- **A page IS its own document.** Content `blocks` (JSONB) and the `embedding` (vector 1536) live on the row — the old `documents` table is gone. Attached docs became child pages; free-floating docs became top-level pages.
+- **`props` (JSONB)** carries type-specific extras: `due_date`, `description`, `cadence`, `scheduled_at`, `resource_tags`, etc. `status` is a nullable column.
+- RLS `own rows` policy, `ivfflat` embedding index, `match_pages` RPC (replaced `match_documents`), and `seed_default_pages` (the 5 default Areas as top-level `area` pages).
+- Existing UUIDs were **preserved** so transcript `node_id`s, open URLs, and embeddings kept working. Legacy tables left intact as a rollback valve; `0005_drop_legacy_tables.sql` removes them post-cutover.

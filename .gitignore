@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Supabase CLI local temp
 supabase/.temp/
+
+*storybook.log
+storybook-static
