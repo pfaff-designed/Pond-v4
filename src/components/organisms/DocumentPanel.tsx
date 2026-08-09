@@ -14,7 +14,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { getPage, saveBlocks, updateTitle } from '@/lib/pages/client'
+import { getPage, updateTitle } from '@/lib/pages/client'
+import { commitBlocks } from '@/lib/pages/commit'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
@@ -33,19 +34,40 @@ export function DocumentPanel() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [saved, setSaved] = useState(true)
   const loadedId = useRef<string | null>(null)
+  const serverSig = useRef<string>('') // signature of the server blocks we've reconciled
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Seed local editable state when a different page loads (don't clobber edits
-  // on background refetch of the same page).
+  // Seed local editable state when a different page loads. On a *same-page*
+  // refetch we normally leave local edits alone — but when there are no unsaved
+  // edits (`saved`) and the server blocks differ from ours, adopt them: that
+  // difference means an external write (e.g. an accepted AI diff-card proposal),
+  // since our own saves keep the ['page'] cache in sync (see scheduleSave).
+  //
+  // KNOWN LIMITATION (ticket-10, accepted this slice): if the panel has UNSAVED
+  // local edits (`!saved`) when an AI proposal is accepted, that external write is
+  // NOT adopted here and will be overwritten by the pending debounced save — the
+  // accepted edit is effectively dropped. We guard on `saved` deliberately so an
+  // external write never clobbers in-flight keystrokes. The window is narrow
+  // (type + Accept within the 600ms debounce) and the app is single-user; a proper
+  // block-level merge is deferred. Accept an AI edit with a settled ("Saved") panel.
   useEffect(() => {
     if (page && page.id !== loadedId.current) {
       loadedId.current = page.id
+      serverSig.current = JSON.stringify(page.blocks)
       setTitle(page.title)
       setBlocks(page.blocks)
       setSaved(true)
+    } else if (page && page.id === loadedId.current && saved) {
+      // Same page, no unsaved edits: adopt server blocks only when they changed
+      // vs. what we last reconciled — i.e. an external write (accepted proposal).
+      const sig = JSON.stringify(page.blocks)
+      if (sig !== serverSig.current) {
+        serverSig.current = sig
+        setBlocks(page.blocks)
+      }
     }
     if (!nodeId) loadedId.current = null
-  }, [page, nodeId])
+  }, [page, nodeId, saved])
 
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
@@ -53,19 +75,18 @@ export function DocumentPanel() {
     setSaved(false)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
-      await Promise.all([
-        updateTitle(supabase, id, nextTitle),
-        saveBlocks(supabase, id, nextBlocks),
-      ])
-      // refresh the sidebar so a rename shows immediately
-      await queryClient.invalidateQueries({ queryKey: ['pages'] })
+      // Title first, then blocks + sidebar-refresh + re-embed via the shared
+      // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
+      // the ['pages'] invalidation inside commitBlocks lands after the rename,
+      // keeping the sidebar rename immediate.
+      await updateTitle(supabase, id, nextTitle)
+      await commitBlocks(supabase, queryClient, id, nextBlocks)
+      // keep the ['page'] cache in step with what we just saved, so the
+      // same-page adopt above only fires for genuinely external writes.
+      queryClient.setQueryData(['page', id], (prev: typeof page) =>
+        prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
+      )
       setSaved(true)
-      // re-embed in the background so semantic retrieval matches the latest edit
-      void fetch('/api/pages/embed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId: id }),
-      }).catch(() => {})
     }, 600)
   }
 
@@ -74,21 +95,23 @@ export function DocumentPanel() {
     scheduleSave(value, blocks)
   }
 
-  function commitBlocks(next: Block[]) {
+  // Apply an in-editor block change: update local state and schedule the
+  // debounced persist. (Named to avoid colliding with the DB-level commitBlocks.)
+  function commitLocalEdit(next: Block[]) {
     setBlocks(next)
     scheduleSave(title, next)
   }
 
   function setBlockAt(index: number, next: Block) {
-    commitBlocks(blocks.map((b, i) => (i === index ? next : b)))
+    commitLocalEdit(blocks.map((b, i) => (i === index ? next : b)))
   }
 
   function removeBlockAt(index: number) {
-    commitBlocks(blocks.filter((_, i) => i !== index))
+    commitLocalEdit(blocks.filter((_, i) => i !== index))
   }
 
   function addTextBlock() {
-    commitBlocks([...blocks, { id: crypto.randomUUID(), type: 'text', content: '' }])
+    commitLocalEdit([...blocks, { id: crypto.randomUUID(), type: 'text', content: '' }])
   }
 
   // ── Empty / loading states ─────────────────────────────────────────────────
@@ -153,7 +176,7 @@ function BlockEditor({
   onRemove: () => void
 }) {
   return (
-    <div className="group relative">
+    <div className="group relative" id={`block-${block.id}`}>
       <button
         className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-600 text-sm"
         title="Delete block"

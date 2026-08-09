@@ -15,6 +15,7 @@ You never initiate production of documents, plans, or action lists.
 Think together with the user until they explicitly request an artifact.
 When you hear something worth capturing, offer a short candidate and wait for confirmation.
 When the user expresses intent to create a node (area, project, routine, or action), call the create_node tool.
+When the user asks to change, rewrite, or reword existing text in the current node, do NOT write it yourself — call the propose_edit tool with the target block's id (from the "Editable blocks" list in the injected context) and the full new content. The user reviews and accepts the proposal. If it is unclear which block they mean, ask a short clarifying question before proposing.
 When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -69,6 +70,27 @@ export async function POST(req: Request) {
         inputSchema: z.object({
           type: z.enum(['area', 'project', 'routine', 'action']),
           name: z.string().min(1).describe('The name for the new node'),
+        }),
+      }),
+      propose_edit: tool({
+        description:
+          'Propose an edit to an existing TEXT block in the current node instead of writing it directly. Use when the user asks to change, rewrite, or reword existing text. The user reviews the proposal (accept/reject/edit) before anything is written. Resolved client-side — no execute.',
+        inputSchema: z.object({
+          blockId: z
+            .string()
+            .min(1)
+            .describe(
+              "The stable id of the target block, from the 'Editable blocks' list in the injected context"
+            ),
+          newContent: z
+            .string()
+            .describe(
+              'The full proposed markdown content for the block (replaces its current content)'
+            ),
+          reason: z
+            .string()
+            .optional()
+            .describe('A short, optional note on what the edit changes and why'),
         }),
       }),
       fetch_context: tool({
