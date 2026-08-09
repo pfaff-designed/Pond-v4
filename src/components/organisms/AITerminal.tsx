@@ -1,21 +1,40 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getOrCreateConversation,
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
+import { getPage } from '@/lib/pages/client'
+import { applyProposedEdit } from '@/lib/pages/edits'
+import { commitBlocks } from '@/lib/pages/commit'
 import { NodeCreationModal } from './NodeCreationModal'
 import { SavePickerModal } from './SavePickerModal'
+import { DiffCard, type DiffCardStatus } from '@/components/molecules/DiffCard'
 import type { ActionCard } from '@/lib/nodes/create'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
+
+/** A propose_edit tool part as it appears in a UI message (ticket-10). */
+interface ProposeEditPart {
+  type: 'tool-propose_edit'
+  toolCallId: string
+  state: string
+  input?: { blockId?: string; newContent?: string; reason?: string }
+  output?: { decision?: 'accepted' | 'rejected' | 'edited' }
+}
+
+function isProposeEditPart(part: { type: string }): part is ProposeEditPart {
+  return part.type === 'tool-propose_edit'
+}
+
+type ProposalDecision = 'accepted' | 'rejected' | 'edited'
 
 function parseCommand(text: string): CommandResult {
   const t = text.trim()
@@ -38,6 +57,21 @@ export function AITerminal() {
   const pendingToolCallId = useRef<string | null>(null)
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()
+  const supabaseClient = useMemo(() => createClient(), [])
+
+  // A no-execute client tool's part stays `input-available` after addToolOutput,
+  // so we can't drive the card's resolved state off the SDK part. Track the
+  // user's decision locally instead (keyed by toolCallId).
+  const [proposalDecisions, setProposalDecisions] = useState<Record<string, ProposalDecision>>({})
+
+  // Current page blocks — the source of the "before" text in a diff card, and
+  // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
+  // cache with DocumentPanel.
+  const { data: currentPage } = useQuery({
+    queryKey: ['page', nodeId],
+    queryFn: () => (nodeId ? getPage(supabaseClient, nodeId) : Promise.resolve(null)),
+    enabled: !!nodeId,
+  })
 
   const { messages, sendMessage, setMessages, status, addToolOutput } = useChat({
     onToolCall: ({ toolCall }) => {
@@ -172,6 +206,70 @@ export function AITerminal() {
     [addToolOutput, router]
   )
 
+  // ── Diff-card proposal resolution (ticket-10) ─────────────────────────────
+  // Accepting writes the proposed content to the target block in the open page,
+  // then refreshes the ['page'] cache (DocumentPanel re-seeds) and re-embeds.
+  const writeAcceptedEdit = useCallback(
+    async (blockId: string, newContent: string) => {
+      if (!nodeId) return
+      const page = await getPage(supabaseClient, nodeId)
+      if (!page) return
+      const next = applyProposedEdit(page.blocks, blockId, newContent)
+      await commitBlocks(supabaseClient, queryClient, nodeId, next)
+      // This is an EXTERNAL write to the open page: invalidate ['page'] so the
+      // DocumentPanel refetches and adopts the new blocks (commitBlocks leaves the
+      // ['page'] cache alone precisely so this stays the caller's decision).
+      await queryClient.invalidateQueries({ queryKey: ['page', nodeId] })
+    },
+    [nodeId, supabaseClient, queryClient]
+  )
+
+  const resolveProposal = useCallback(
+    (part: ProposeEditPart, decision: ProposalDecision) => {
+      setProposalDecisions((prev) => ({ ...prev, [part.toolCallId]: decision }))
+      // Best-effort: also record it on the SDK transcript. (No-execute client
+      // tools don't advance to output-available, so the local map above is what
+      // actually drives the UI.)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(addToolOutput as any)(part.toolCallId, { decision })
+    },
+    [addToolOutput]
+  )
+
+  const handleAcceptProposal = useCallback(
+    async (part: ProposeEditPart) => {
+      resolveProposal(part, 'accepted')
+      const blockId = part.input?.blockId
+      if (blockId) await writeAcceptedEdit(blockId, part.input?.newContent ?? '')
+    },
+    [resolveProposal, writeAcceptedEdit]
+  )
+
+  const handleRejectProposal = useCallback(
+    (part: ProposeEditPart) => {
+      resolveProposal(part, 'rejected')
+    },
+    [resolveProposal]
+  )
+
+  // Edit (stub this slice): accept the content, then jump to the block in the
+  // document panel to keep editing there. Full inline-editable drop is deferred.
+  const handleEditProposal = useCallback(
+    async (part: ProposeEditPart) => {
+      resolveProposal(part, 'edited')
+      const blockId = part.input?.blockId
+      if (blockId) await writeAcceptedEdit(blockId, part.input?.newContent ?? '')
+      if (blockId) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`block-${blockId}`)
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el?.querySelector('textarea')?.focus()
+        })
+      }
+    },
+    [resolveProposal, writeAcceptedEdit]
+  )
+
   return (
     <>
       <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
@@ -191,19 +289,48 @@ export function AITerminal() {
               .filter((p) => p.type === 'text')
               .map((p) => (p as { type: 'text'; text: string }).text)
               .join('')
+            const proposals = (message.parts as Array<{ type: string }>).filter(isProposeEditPart)
 
             return (
-              <div
-                key={message.id}
-                className={message.role === 'user' ? 'text-right' : 'text-left'}
-              >
-                <span
-                  className={`inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left ${
-                    message.role === 'user' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800'
-                  }`}
-                >
-                  {text}
-                </span>
+              <div key={message.id} className="space-y-2">
+                {text && (
+                  <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
+                    <span
+                      className={`inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left ${
+                        message.role === 'user'
+                          ? 'bg-zinc-900 text-white'
+                          : 'bg-zinc-100 text-zinc-800'
+                      }`}
+                    >
+                      {text}
+                    </span>
+                  </div>
+                )}
+                {proposals.map((part) => {
+                  const blockId = part.input?.blockId
+                  const target = blockId
+                    ? currentPage?.blocks.find((b) => b.id === blockId)
+                    : undefined
+                  const beforeText = target && target.type === 'text' ? target.content : ''
+                  const decision = proposalDecisions[part.toolCallId]
+                  const status: DiffCardStatus = !decision
+                    ? 'pending'
+                    : decision === 'rejected'
+                      ? 'rejected'
+                      : 'accepted'
+                  return (
+                    <DiffCard
+                      key={part.toolCallId}
+                      before={beforeText}
+                      after={part.input?.newContent ?? ''}
+                      reason={part.input?.reason}
+                      status={status}
+                      onAccept={() => handleAcceptProposal(part)}
+                      onReject={() => handleRejectProposal(part)}
+                      onEdit={() => handleEditProposal(part)}
+                    />
+                  )
+                })}
               </div>
             )
           })}

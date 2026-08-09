@@ -155,4 +155,44 @@ describe('formatNodeContext', () => {
     expect(typeof out).toBe('string')
     expect(out.length).toBeGreaterThan(0)
   })
+
+  // ── block-id exposure (Slice 2: propose_edit needs stable UUIDs) ────────────
+  // The auto-injected current node must surface each editable block's id so the
+  // model can target a block in propose_edit. @mentioned nodes must NOT (they are
+  // not an editable target), so id exposure is opt-in.
+
+  it('exposes block ids for the current node when includeBlockIds is set', () => {
+    const out = formatNodeContext(
+      baseData({
+        documents: [
+          {
+            title: 'Notes',
+            blocks: [
+              { id: 'blk-abc', type: 'text', content: 'first paragraph' },
+              { id: 'blk-def', type: 'text', content: 'second paragraph' },
+            ],
+          },
+        ],
+      }),
+      { includeBlockIds: true }
+    )
+    expect(out).toContain('blk-abc')
+    expect(out).toContain('blk-def')
+    // content still present so the model knows what each id refers to
+    expect(out).toContain('first paragraph')
+    expect(out).toContain('second paragraph')
+  })
+
+  it('does NOT expose block ids by default (e.g. for @mentioned nodes)', () => {
+    const out = formatNodeContext(
+      baseData({
+        documents: [
+          { title: 'Notes', blocks: [{ id: 'blk-secret', type: 'text', content: 'body text' }] },
+        ],
+      })
+    )
+    expect(out).not.toContain('blk-secret')
+    // the human-readable content is still injected as before
+    expect(out).toContain('body text')
+  })
 })

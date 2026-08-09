@@ -97,8 +97,32 @@ const TYPE_LABEL: Record<NodeType, string> = {
   page: 'Page',
 }
 
-/** Render a node's assembled context as a compact block for the system prompt. */
-export function formatNodeContext(data: NodeContextData, opts: { label?: string } = {}): string {
+/** One-line preview of a block's content, for the id-addressed listing. */
+function blockPreview(block: Block): string {
+  switch (block.type) {
+    case 'text':
+      return block.content
+    case 'todo':
+      return block.items.map((it) => it.label).join(', ')
+    case 'metric':
+      return `${block.label}: ${block.value}${block.unit ? ` ${block.unit}` : ''}`
+    default:
+      return ''
+  }
+}
+
+/**
+ * Render a node's assembled context as a compact block for the system prompt.
+ *
+ * `includeBlockIds` surfaces each editable block's stable id so the model can
+ * target a specific block in a `propose_edit` call (Slice 2). Only the
+ * auto-injected current node opts in — @mentioned nodes are not editable
+ * targets, so they omit ids to keep the prompt clean and unambiguous.
+ */
+export function formatNodeContext(
+  data: NodeContextData,
+  opts: { label?: string; includeBlockIds?: boolean } = {}
+): string {
   const lines: string[] = []
   lines.push(`[${opts.label ?? 'Current node'}]`)
 
@@ -115,6 +139,17 @@ export function formatNodeContext(data: NodeContextData, opts: { label?: string 
   if (docText) {
     lines.push('Documents:')
     lines.push(docText)
+  }
+
+  if (opts.includeBlockIds) {
+    const blocks = data.documents.flatMap((doc) => doc.blocks)
+    if (blocks.length > 0) {
+      lines.push('Editable blocks (reference a block by its id when proposing an edit):')
+      for (const block of blocks) {
+        const preview = blockPreview(block)
+        lines.push(`  - [${block.id}] (${block.type})${preview ? ` ${preview}` : ''}`)
+      }
+    }
   }
 
   if (data.children.length > 0) {
@@ -218,7 +253,8 @@ export async function buildChatContext(
 
   if (opts.nodeId) {
     const data = await fetchNodeContext(sb, userId, opts.nodeId)
-    if (data) blocks.push(formatNodeContext(data))
+    // Current node only: expose block ids so the model can target one in propose_edit.
+    if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))
   }
 
   if (opts.latestUserText) {
