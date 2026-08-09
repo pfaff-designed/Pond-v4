@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
 import { buildChatContext } from '@/lib/context/assemble'
-import { retrieveDocuments, formatRetrievedDocs } from '@/lib/embeddings/retrieve'
+import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import type { NodeType } from '@/lib/supabase/types'
 
 const SYSTEM_PROMPT = `You are Pond, a thinking partner. Your role is steward, collector, and presenter.
@@ -78,8 +78,8 @@ export async function POST(req: Request) {
         }),
         execute: async ({ query }) => {
           if (!user) return 'No user session; cannot retrieve workspace context.'
-          const docs = await retrieveDocuments(supabase, user.id, query, { matchCount: 5 })
-          return formatRetrievedDocs(docs)
+          const pages = await retrievePages(supabase, user.id, query, { matchCount: 5 })
+          return formatRetrievedPages(pages)
         },
       }),
     },

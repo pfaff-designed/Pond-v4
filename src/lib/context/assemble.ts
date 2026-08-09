@@ -17,7 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
-import { getDocumentsForNode } from '@/lib/documents/client'
+import { getChildPages } from '@/lib/pages/client'
 import type { Block } from '@/lib/documents/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -94,6 +94,7 @@ const TYPE_LABEL: Record<NodeType, string> = {
   routine: 'Routine',
   project: 'Project',
   action: 'Action',
+  page: 'Page',
 }
 
 /** Render a node's assembled context as a compact block for the system prompt. */
@@ -131,119 +132,68 @@ export function formatNodeContext(data: NodeContextData, opts: { label?: string 
 
 type Sb = SupabaseClient<Database>
 
-/** Table + own-title column for each node type. */
-const NODE_TABLE: Record<NodeType, { table: string; titleCol: string; hasStatus: boolean }> = {
-  area: { table: 'areas', titleCol: 'name', hasStatus: false },
-  routine: { table: 'routines', titleCol: 'name', hasStatus: false },
-  project: { table: 'projects', titleCol: 'title', hasStatus: true },
-  action: { table: 'actions', titleCol: 'title', hasStatus: true },
-}
-
 /**
- * Fetch a node's own metadata, its documents, and its direct children.
- * Returns null if the node can't be found (e.g. wrong id / not owned by user).
+ * Fetch a page's own metadata, its content, and its direct child pages. Returns
+ * null if the page can't be found (e.g. wrong id / not owned by user).
+ *
+ * In the unified model a page IS its document: its own `blocks` are surfaced as
+ * the node's content, and every direct child page (of any type) is listed as a
+ * child. This collapses the former per-type table lookups into two queries.
  */
 export async function fetchNodeContext(
   sb: Sb,
   userId: string,
-  nodeId: string,
-  nodeType: NodeType
+  nodeId: string
 ): Promise<NodeContextData | null> {
-  const meta = NODE_TABLE[nodeType]
-  const select = meta.hasStatus ? `${meta.titleCol}, status` : meta.titleCol
-
   const { data: own } = await sb
-    .from(meta.table)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select(select as any)
+    .from('pages')
+    .select('type, title, status, blocks')
     .eq('id', nodeId)
     .eq('user_id', userId)
     .maybeSingle()
 
   if (!own) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ownRow = own as any
+  const row = own as any
 
-  const documents = (await getDocumentsForNode(sb, userId, nodeId, nodeType)).map((d) => ({
-    title: d.title,
-    blocks: d.blocks,
-  }))
+  const blocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  const documents = blocks.length ? [{ title: row.title as string, blocks }] : []
 
-  const children = await fetchChildren(sb, userId, nodeId, nodeType)
+  const children = await fetchChildren(sb, userId, nodeId)
 
   return {
-    type: nodeType,
-    title: ownRow[meta.titleCol] as string,
-    status: meta.hasStatus ? (ownRow.status as string | undefined) : undefined,
+    type: row.type as NodeType,
+    title: row.title as string,
+    status: (row.status as string | null) ?? undefined,
     documents,
     children,
   }
 }
 
-async function fetchChildren(
-  sb: Sb,
-  userId: string,
-  nodeId: string,
-  nodeType: NodeType
-): Promise<ChildSummary[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = sb as any
-  const children: ChildSummary[] = []
-
-  if (nodeType === 'area') {
-    const [routines, projects, actions] = await Promise.all([
-      q.from('routines').select('name').eq('user_id', userId).eq('area_id', nodeId),
-      q.from('projects').select('title, status').eq('user_id', userId).eq('area_id', nodeId),
-      q.from('actions').select('title, status').eq('user_id', userId).eq('area_id', nodeId),
-    ])
-    for (const r of routines.data ?? []) children.push({ type: 'routine', title: r.name })
-    for (const p of projects.data ?? [])
-      children.push({ type: 'project', title: p.title, status: p.status })
-    for (const a of actions.data ?? [])
-      children.push({ type: 'action', title: a.title, status: a.status })
-  } else if (nodeType === 'project') {
-    const { data } = await q
-      .from('actions')
-      .select('title, status')
-      .eq('user_id', userId)
-      .eq('project_id', nodeId)
-    for (const a of data ?? []) children.push({ type: 'action', title: a.title, status: a.status })
-  } else {
-    // routine or action → sub-actions via polymorphic parent
-    const { data } = await q
-      .from('actions')
-      .select('title, status')
-      .eq('user_id', userId)
-      .eq('parent_id', nodeId)
-      .eq('parent_type', nodeType)
-    for (const a of data ?? []) children.push({ type: 'action', title: a.title, status: a.status })
-  }
-
-  return children
+/** Direct child pages of a node — one query, any type, arbitrary depth. */
+async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<ChildSummary[]> {
+  const pages = await getChildPages(sb, userId, nodeId)
+  return pages.map((p) => ({ type: p.type, title: p.title, status: p.status ?? undefined }))
 }
 
-/** Search all node tables for a node whose name/title matches (case-insensitive). */
+/** Find a page whose title matches (case-insensitive) — single table now. */
 export async function resolveMention(
   sb: Sb,
   userId: string,
   name: string
 ): Promise<MentionRef | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = sb as any
-  const order: NodeType[] = ['area', 'project', 'routine', 'action']
+  const { data } = await sb
+    .from('pages')
+    .select('id, type')
+    .eq('user_id', userId)
+    .ilike('title', name)
+    .limit(1)
+    .maybeSingle()
 
-  for (const type of order) {
-    const meta = NODE_TABLE[type]
-    const { data } = await q
-      .from(meta.table)
-      .select(`id, ${meta.titleCol}`)
-      .eq('user_id', userId)
-      .ilike(meta.titleCol, name)
-      .limit(1)
-      .maybeSingle()
-    if (data) return { name, nodeId: data.id as string, nodeType: type }
-  }
-  return null
+  if (!data) return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = data as any
+  return { name, nodeId: row.id as string, nodeType: row.type as NodeType }
 }
 
 // ── buildChatContext (orchestration, live-verified) ──────────────────────────
@@ -266,8 +216,8 @@ export async function buildChatContext(
 ): Promise<string> {
   const blocks: string[] = []
 
-  if (opts.nodeId && opts.nodeType) {
-    const data = await fetchNodeContext(sb, userId, opts.nodeId, opts.nodeType)
+  if (opts.nodeId) {
+    const data = await fetchNodeContext(sb, userId, opts.nodeId)
     if (data) blocks.push(formatNodeContext(data))
   }
 
@@ -275,7 +225,7 @@ export async function buildChatContext(
     for (const name of parseMentions(opts.latestUserText)) {
       const ref = await resolveMention(sb, userId, name)
       if (!ref) continue
-      const data = await fetchNodeContext(sb, userId, ref.nodeId, ref.nodeType)
+      const data = await fetchNodeContext(sb, userId, ref.nodeId)
       if (data) blocks.push(formatNodeContext(data, { label: `Referenced: @${ref.name}` }))
     }
   }

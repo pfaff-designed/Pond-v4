@@ -105,8 +105,8 @@ function ModalBody({ onClose, onCreated, autoApproved, intent }: ModalBodyProps)
     try {
       const supabase = createClient()
       const created = await createNode(supabase, pendingCard)
-      // Invalidate the areas cache so the sidebar refreshes
-      await queryClient.invalidateQueries({ queryKey: ['areas'] })
+      // Invalidate the pages cache so the sidebar refreshes
+      await queryClient.invalidateQueries({ queryKey: ['pages'] })
       onCreated(created.id, pendingCard.type, pendingCard.name)
       onClose()
     } catch (err) {

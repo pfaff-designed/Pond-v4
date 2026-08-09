@@ -56,7 +56,7 @@ export function SavePickerModal({ isOpen, messages, onClose }: SavePickerModalPr
     try {
       const supabase = createClient()
       await createNode(supabase, { type: item.type, name: item.name })
-      await queryClient.invalidateQueries({ queryKey: ['areas'] })
+      await queryClient.invalidateQueries({ queryKey: ['pages'] })
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'saved' } : i)))
     } catch (err) {
       setItems((prev) =>

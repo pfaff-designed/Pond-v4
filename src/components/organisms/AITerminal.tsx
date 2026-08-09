@@ -117,7 +117,7 @@ export function AITerminal() {
       messages
     )
     if (written > 0) {
-      await queryClient.invalidateQueries({ queryKey: ['areas'] })
+      await queryClient.invalidateQueries({ queryKey: ['pages'] })
     }
     setConversationId(freshConversation.id)
     setMessages([])

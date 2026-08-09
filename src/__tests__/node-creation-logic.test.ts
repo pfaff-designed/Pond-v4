@@ -83,25 +83,29 @@ describe('parseActionCard', () => {
   })
 })
 
-// ── createNode — table routing ─────────────────────────────────────────────
+// ── createNode — unified pages routing ─────────────────────────────────────
+// Every node is now a page: the card type becomes the page's type tag, and the
+// card's parent ref (area_id / project_id) becomes parent_id. Areas are top-level.
 
 describe('createNode', () => {
-  it('writes to the areas table for type=area', async () => {
+  it('creates a top-level area page for type=area', async () => {
     const chain = makeInsertChain({ id: 'area-new' })
     const sb = makeSupabase(chain)
     const card: ActionCard = { type: 'area', name: 'Travel' }
 
     const result = await createNode(sb as never, card)
 
-    expect(sb.from).toHaveBeenCalledWith('areas')
+    expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.insert).toHaveBeenCalled()
     const insertArg = chain.insert.mock.calls[0][0]
-    expect(insertArg.name).toBe('Travel')
+    expect(insertArg.type).toBe('area')
+    expect(insertArg.title).toBe('Travel')
+    expect(insertArg.parent_id ?? null).toBeNull()
     expect(insertArg.user_id).toBe('user-1')
     expect(result.id).toBe('area-new')
   })
 
-  it('writes to the projects table for type=project', async () => {
+  it('creates a project page parented to its area (UUID ref)', async () => {
     const chain = makeInsertChain({ id: 'project-new' })
     const sb = makeSupabase(chain)
     const uuid = '00000000-0000-0000-0000-000000000001'
@@ -109,15 +113,16 @@ describe('createNode', () => {
 
     const result = await createNode(sb as never, card)
 
-    expect(sb.from).toHaveBeenCalledWith('projects')
+    expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
+    expect(insertArg.type).toBe('project')
     expect(insertArg.title).toBe('Website Redesign')
-    expect(insertArg.area_id).toBe(uuid)
+    expect(insertArg.parent_id).toBe(uuid)
     expect(insertArg.user_id).toBe('user-1')
     expect(result.id).toBe('project-new')
   })
 
-  it('writes to the routines table for type=routine', async () => {
+  it('creates a routine page parented to its area (UUID ref)', async () => {
     const chain = makeInsertChain({ id: 'routine-new' })
     const sb = makeSupabase(chain)
     const uuid = '00000000-0000-0000-0000-000000000002'
@@ -125,48 +130,53 @@ describe('createNode', () => {
 
     const result = await createNode(sb as never, card)
 
-    expect(sb.from).toHaveBeenCalledWith('routines')
+    expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
-    expect(insertArg.name).toBe('Morning Walk')
-    expect(insertArg.area_id).toBe(uuid)
+    expect(insertArg.type).toBe('routine')
+    expect(insertArg.title).toBe('Morning Walk')
+    expect(insertArg.parent_id).toBe(uuid)
     expect(result.id).toBe('routine-new')
   })
 
-  it('resolves area name to UUID when area_id is not a UUID', async () => {
+  it('resolves a parent name to a page id when the ref is not a UUID', async () => {
     const resolvedUuid = '00000000-0000-0000-0000-000000000099'
-    const selectChain = {
+    // Single chain serves both the resolve (maybeSingle) and insert (single) paths.
+    const chain = {
+      insert: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       ilike: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({ data: { id: resolvedUuid }, error: null }),
+      limit: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: { id: resolvedUuid }, error: null }),
+      single: jest.fn().mockResolvedValue({ data: { id: 'project-new' }, error: null }),
     }
-    const insertChain = makeInsertChain({ id: 'project-new' })
     const sb = {
       auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
-      from: jest
-        .fn()
-        .mockImplementation((table: string) => (table === 'areas' ? selectChain : insertChain)),
+      from: jest.fn().mockReturnValue(chain),
     }
     const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: 'Professional' }
 
     const result = await createNode(sb as never, card)
 
-    expect(selectChain.ilike).toHaveBeenCalledWith('name', 'Professional')
-    const insertArg = insertChain.insert.mock.calls[0][0]
-    expect(insertArg.area_id).toBe(resolvedUuid)
+    expect(sb.from).toHaveBeenCalledWith('pages')
+    expect(chain.ilike).toHaveBeenCalledWith('title', 'Professional')
+    const insertArg = chain.insert.mock.calls[0][0]
+    expect(insertArg.parent_id).toBe(resolvedUuid)
     expect(result.id).toBe('project-new')
   })
 
-  it('writes to the actions table for type=action', async () => {
+  it('creates a top-level action page for type=action', async () => {
     const chain = makeInsertChain({ id: 'action-new' })
     const sb = makeSupabase(chain)
     const card: ActionCard = { type: 'action', name: 'Send invoice' }
 
     const result = await createNode(sb as never, card)
 
-    expect(sb.from).toHaveBeenCalledWith('actions')
+    expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
+    expect(insertArg.type).toBe('action')
     expect(insertArg.title).toBe('Send invoice')
+    expect(insertArg.parent_id ?? null).toBeNull()
     expect(insertArg.user_id).toBe('user-1')
     expect(result.id).toBe('action-new')
   })

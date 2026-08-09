@@ -1,5 +1,5 @@
 /**
- * Unit tests for the document-embedding orchestration (Track D).
+ * Unit tests for the page-embedding orchestration (Track D).
  *
  * Pure logic (documentText) and the DB-write shape (updateEmbedding) are unit
  * tested here; the OpenAI wrapper (embedText) is mocked. The real network+DB
@@ -8,13 +8,13 @@
 
 import type { Block } from '@/lib/documents/types'
 
-// Mock the OpenAI wrapper so embedDocument can be tested without network I/O.
+// Mock the OpenAI wrapper so embedPage can be tested without network I/O.
 jest.mock('@/lib/embeddings/openai', () => ({
   embedText: jest.fn(),
 }))
 
-import { documentText, embedDocument } from '@/lib/embeddings/documents'
-import { updateEmbedding } from '@/lib/documents/client'
+import { documentText, embedPage } from '@/lib/embeddings/documents'
+import { updateEmbedding } from '@/lib/pages/client'
 import { embedText } from '@/lib/embeddings/openai'
 
 const mockEmbedText = embedText as jest.MockedFunction<typeof embedText>
@@ -24,7 +24,7 @@ const sampleBlocks: Block[] = [
   { id: 'b2', type: 'todo', items: [{ id: 'i1', label: 'Sand top', checked: false }] },
 ]
 
-// ── Chain mock (mirrors documents-client.test.ts) ────────────────────────────
+// ── Chain mock ───────────────────────────────────────────────────────────────
 
 function makeChain(overrides: Record<string, unknown> = {}) {
   return {
@@ -72,13 +72,13 @@ describe('updateEmbedding', () => {
     const sb = makeSupabase(chain)
     const vec = [0.1, 0.2, 0.3]
 
-    await updateEmbedding(sb as never, 'doc-1', vec)
+    await updateEmbedding(sb as never, 'page-1', vec)
 
-    expect(sb.from).toHaveBeenCalledWith('documents')
+    expect(sb.from).toHaveBeenCalledWith('pages')
     const updated = chain.update.mock.calls[0][0]
     expect(updated.embedding).toEqual(vec)
     expect(typeof updated.updated_at).toBe('string')
-    expect(chain.eq).toHaveBeenCalledWith('id', 'doc-1')
+    expect(chain.eq).toHaveBeenCalledWith('id', 'page-1')
   })
 
   it('throws when the update errors', async () => {
@@ -87,23 +87,23 @@ describe('updateEmbedding', () => {
     })
     const sb = makeSupabase(chain)
 
-    await expect(updateEmbedding(sb as never, 'doc-1', [0.1])).rejects.toThrow(/boom/)
+    await expect(updateEmbedding(sb as never, 'page-1', [0.1])).rejects.toThrow(/boom/)
   })
 })
 
-// ── embedDocument (orchestration) ────────────────────────────────────────────
+// ── embedPage (orchestration) ────────────────────────────────────────────────
 
-describe('embedDocument', () => {
+describe('embedPage', () => {
   beforeEach(() => mockEmbedText.mockReset())
 
-  it('embeds the document text and persists the vector', async () => {
+  it('embeds the page text and persists the vector', async () => {
     const vec = Array(1536).fill(0.01)
     mockEmbedText.mockResolvedValue(vec)
     const chain = makeChain()
     const sb = makeSupabase(chain)
 
-    const wrote = await embedDocument(sb as never, {
-      id: 'doc-1',
+    const wrote = await embedPage(sb as never, {
+      id: 'page-1',
       title: 'Oak Table',
       blocks: sampleBlocks,
     })
@@ -121,7 +121,7 @@ describe('embedDocument', () => {
     const chain = makeChain()
     const sb = makeSupabase(chain)
 
-    const wrote = await embedDocument(sb as never, { id: 'doc-1', title: '   ', blocks: [] })
+    const wrote = await embedPage(sb as never, { id: 'page-1', title: '   ', blocks: [] })
 
     expect(wrote).toBe(false)
     expect(chain.update).not.toHaveBeenCalled()

@@ -1,7 +1,6 @@
+// The workspace's main panel is rendered by <DocumentPanel /> in the app layout,
+// which reads the open page from the URL (?nodeId=). This route renders nothing
+// itself so the editor (or its empty state) owns the panel.
 export default function AppPage() {
-  return (
-    <div className="flex items-center justify-center h-32 text-sm text-zinc-400">
-      Select a node from the sidebar
-    </div>
-  )
+  return null
 }

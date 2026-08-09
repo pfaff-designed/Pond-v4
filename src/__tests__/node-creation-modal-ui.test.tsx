@@ -231,7 +231,7 @@ describe('NodeCreationModal', () => {
     })
   })
 
-  it('invalidates the [areas] query cache after creation', async () => {
+  it('invalidates the [pages] query cache after creation', async () => {
     const queryClient = makeQueryClient()
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries')
 
@@ -256,69 +256,29 @@ describe('NodeCreationModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /create/i }))
 
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['areas'] }))
+      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['pages'] }))
     })
   })
 })
 
-// ── Sidebar wiring ────────────────────────────────────────────────────────
+// ── Sidebar — new page button ─────────────────────────────────────────────
+// The sidebar "+" now creates a top-level page directly (no modal) and
+// navigates to it. Sub-pages and delete are exercised via the pages client
+// unit tests + Playwright.
 
-describe('Sidebar — + button opens NodeCreationModal', () => {
-  it('opens the NodeCreationModal when + is clicked', async () => {
-    renderWithQuery(<Sidebar />)
-
-    const plusButton = screen.getByRole('button', { name: /new node/i })
-    fireEvent.click(plusButton)
-
-    await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-    })
-  })
-
-  it('closes the modal after clicking Cancel inside it', async () => {
-    renderWithQuery(<Sidebar />)
-
-    fireEvent.click(screen.getByRole('button', { name: /new node/i }))
-    await waitFor(() => screen.getByRole('dialog'))
-
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-  })
-})
-
-// ── Sidebar — navigates to new node after creation ────────────────────────
-
-describe('Sidebar — navigates to new node after creation', () => {
+describe('Sidebar — new page button', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
-    mockCreateNode.mockResolvedValue({ id: 'new-node-id' })
-    mockMessages = [
-      {
-        id: 'msg-1',
-        role: 'assistant',
-        parts: [
-          {
-            type: 'text',
-            text: '```json\n{"type":"area","name":"Travel"}\n```',
-          },
-        ],
-      },
-    ]
   })
 
-  it('calls router.push with the correct node URL after creation', async () => {
+  it('creates a top-level page and navigates to it when + is clicked', async () => {
     renderWithQuery(<Sidebar />)
 
-    fireEvent.click(screen.getByRole('button', { name: /new node/i }))
-    await waitFor(() => screen.getByRole('dialog'))
-
-    fireEvent.click(screen.getByRole('button', { name: /create/i }))
+    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
 
     await waitFor(() => {
       expect(mockRouterPush).toHaveBeenCalledWith(
-        '/workspace?nodeType=area&nodeId=new-node-id&nodeName=Travel'
+        '/workspace?nodeType=area&nodeId=new-node-id&nodeName=Untitled'
       )
     })
   })
