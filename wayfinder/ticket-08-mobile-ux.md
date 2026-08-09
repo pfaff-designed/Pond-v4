@@ -29,7 +29,7 @@ AI always mediates on mobile. No browse path, no file tree in the drawer. "What'
 
 ### Drawer nav depth
 
-Areas only on mobile. Tapping an Area in the drawer switches context. No drill-down into Routines/Projects/Actions from the drawer — ask the AI instead. (Desktop sidebar retains full hierarchy per ticket-07.)
+Top-level pages only on mobile (the `area`-type pages — see ticket-02 "Superseded"). Tapping one in the drawer switches context. No drill-down into sub-pages from the drawer — ask the AI instead. (Desktop sidebar retains the full page tree per ticket-07.)
 
 ### AI orienting line trigger
 

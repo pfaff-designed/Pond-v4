@@ -24,7 +24,7 @@ Key factors: desktop vs. mobile consistency, AI-assisted wayfinding vs. manual n
                       [AI panel — bottom, full-width]
 ```
 
-- **Sidebar**: persistent file tree on the left. The node hierarchy (Life → Areas → Routines/Projects/Actions) renders as a collapsible tree, same spatial metaphor as VS Code. Documents attached to nodes are children in the tree. Free-floating documents appear in the tree under their own section.
+- **Sidebar**: persistent file tree on the left. The **unified page tree** (see ticket-02 "Superseded") renders as a collapsible tree, same spatial metaphor as VS Code. Since every node is a page and a page is its own document, there is no separate "documents" section — sub-pages are simply children. `type` (`area`/`project`/`routine`/`action`/`page`) is a display tag, not a structural distinction.
 - **Document panel**: center, primary content surface. This is where the current node's document lives and is edited. Equivalent to the code editor pane.
 - **AI panel**: full-width bottom panel, spanning sidebar + document columns. Equivalent to the VS Code terminal. Collapsible. Always shows the current node name as a header above the input so context is never ambiguous. The AI previews changes inline in the chat (like Cursor diffs) before they are applied to the document panel.
 
