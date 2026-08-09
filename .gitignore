@@ -42,6 +42,7 @@ next-env.d.ts
 
 # Claude Code local worktrees & session data
 .claude/
+.claude-worktrees/
 
 # Playwright MCP session artifacts + local verification screenshots
 .playwright-mcp/

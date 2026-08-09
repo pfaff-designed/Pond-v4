@@ -15,6 +15,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Nested build output + local-only worktree/session dirs (never source):
+    "**/.next/**",
+    "storybook-static/**",
+    ".claude/**",
+    ".claude-worktrees/**",
   ]),
   ...storybook.configs["flat/recommended"]
 ]);

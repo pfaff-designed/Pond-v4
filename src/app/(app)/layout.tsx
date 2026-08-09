@@ -15,7 +15,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </Suspense>
         <main className="flex-1 overflow-y-auto">
           {children}
-          <DocumentPanel />
+          <Suspense fallback={null}>
+            <DocumentPanel />
+          </Suspense>
         </main>
       </div>
 
