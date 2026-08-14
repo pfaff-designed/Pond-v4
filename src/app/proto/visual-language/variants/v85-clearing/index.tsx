@@ -1028,48 +1028,55 @@ function View() {
                     background: LINE,
                   }}
                 />
-                {DAY_ORDER.map((day) => {
-                  const items = ACTIVITY.filter((a) => a.day === day)
-                  if (items.length === 0) return null
-                  return (
-                    <div key={day}>
-                      <DayMarker day={day} />
-                      {items.map((a) =>
-                        a.proposal ? (
-                          <ProposalRow
-                            key={a.id}
-                            item={a}
-                            accepted={accepted}
-                            onAccept={() => {
-                              setAccepted(true)
-                              flash('Applied to Marathon Training')
-                            }}
-                            onLater={() => setNotifOpen(false)}
-                          />
-                        ) : (
-                          <ActivityRow
-                            key={a.id}
-                            item={a}
-                            onOpen={() => {
-                              openTreePage(
-                                a.area === 'life'
-                                  ? 'finance'
-                                  : a.area === 'work'
-                                    ? 'ds'
-                                    : a.area === 'wood'
-                                      ? 'shelf'
-                                      : a.area === 'reading'
-                                        ? 'reading-list'
-                                        : 'sleep'
-                              )
-                              setNotifOpen(false)
-                            }}
-                          />
-                        )
-                      )}
-                    </div>
-                  )
-                })}
+                {(() => {
+                  // Running step across day-markers + rows, so the spine writes
+                  // itself in top-to-bottom (matches the app's clearing-rise idiom).
+                  let step = 0
+                  return DAY_ORDER.map((day) => {
+                    const items = ACTIVITY.filter((a) => a.day === day)
+                    if (items.length === 0) return null
+                    return (
+                      <div key={day}>
+                        <DayMarker day={day} delay={step++ * 45} />
+                        {items.map((a) =>
+                          a.proposal ? (
+                            <ProposalRow
+                              key={a.id}
+                              item={a}
+                              delay={step++ * 45}
+                              accepted={accepted}
+                              onAccept={() => {
+                                setAccepted(true)
+                                flash('Applied to Marathon Training')
+                              }}
+                              onLater={() => setNotifOpen(false)}
+                            />
+                          ) : (
+                            <ActivityRow
+                              key={a.id}
+                              item={a}
+                              delay={step++ * 45}
+                              onOpen={() => {
+                                openTreePage(
+                                  a.area === 'life'
+                                    ? 'finance'
+                                    : a.area === 'work'
+                                      ? 'ds'
+                                      : a.area === 'wood'
+                                        ? 'shelf'
+                                        : a.area === 'reading'
+                                          ? 'reading-list'
+                                          : 'sleep'
+                                )
+                                setNotifOpen(false)
+                              }}
+                            />
+                          )
+                        )}
+                      </div>
+                    )
+                  })
+                })()}
               </div>
               <div style={{ ...kicker, color: FAINT, textAlign: 'center', padding: '24px 0 8px' }}>
                 You’re all caught up
@@ -1140,12 +1147,14 @@ function SpineRow({
   node,
   onClick,
   hoverable,
+  delay = 0,
   children,
 }: {
   time?: string
   node: React.ReactNode
   onClick?: () => void
   hoverable?: boolean
+  delay?: number
   children: React.ReactNode
 }) {
   const [hover, setHover] = useState(false)
@@ -1154,12 +1163,14 @@ function SpineRow({
       onClick={onClick}
       onMouseEnter={hoverable ? () => setHover(true) : undefined}
       onMouseLeave={hoverable ? () => setHover(false) : undefined}
+      className="v85-rise"
       style={{
         position: 'relative',
         display: 'flex',
         width: '100%',
         fontFamily: sans,
         cursor: onClick ? 'pointer' : 'default',
+        animationDelay: `${delay}ms`,
       }}
     >
       {/* timestamp — right-aligned so it reads into the rail */}
@@ -1208,10 +1219,17 @@ function SpineRow({
 }
 
 /** A day divider, drawn as a hollow node on the spine. */
-function DayMarker({ day }: { day: string }) {
+function DayMarker({ day, delay = 0 }: { day: string; delay?: number }) {
   return (
     <div
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: '18px 0 4px' }}
+      className="v85-rise"
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        padding: '18px 0 4px',
+        animationDelay: `${delay}ms`,
+      }}
     >
       <div style={{ width: GUTTER, flexShrink: 0 }} />
       <div
@@ -1233,14 +1251,22 @@ function DayMarker({ day }: { day: string }) {
 }
 
 /** A quiet activity node: verb tag + line; opens its area on click. */
-function ActivityRow({ item, onOpen }: { item: ActivityItem; onOpen: () => void }) {
+function ActivityRow({
+  item,
+  onOpen,
+  delay = 0,
+}: {
+  item: ActivityItem
+  onOpen: () => void
+  delay?: number
+}) {
   const node = (
     <span style={{ display: 'flex', borderRadius: 999, boxShadow: NODE_RING }}>
       <KindDot area={item.area} />
     </span>
   )
   return (
-    <SpineRow time={item.time} node={node} onClick={onOpen} hoverable>
+    <SpineRow time={item.time} node={node} onClick={onOpen} hoverable delay={delay}>
       <span style={{ ...kicker, color: FAINT }}>{VERB[item.type]}</span>
       <span
         style={{ display: 'block', fontSize: 13.5, lineHeight: 1.45, color: INK, marginTop: 4 }}
@@ -1257,11 +1283,13 @@ function ProposalRow({
   accepted,
   onAccept,
   onLater,
+  delay = 0,
 }: {
   item: ActivityItem
   accepted: boolean
   onAccept: () => void
   onLater: () => void
+  delay?: number
 }) {
   const node = (
     <span
@@ -1276,7 +1304,7 @@ function ProposalRow({
     />
   )
   return (
-    <SpineRow time={item.time} node={node}>
+    <SpineRow time={item.time} node={node} delay={delay}>
       <div style={{ ...kicker, color: ACCENT }}>{VERB[item.type]} · Marathon Training</div>
       <div
         style={{
