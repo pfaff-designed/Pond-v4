@@ -145,7 +145,7 @@ export default function Plan(_ctx: SurfaceCtx) {
                 letterSpacing: '-0.01em',
               }}
             >
-              {view === 'week' ? 'This week' : 'Today'}
+              {view === 'week' ? 'This week' : 'Today’s plan'}
             </h1>
             <Segmented<View>
               value={view}
@@ -233,7 +233,16 @@ function DayGlance({ placed }: { placed: Placed }) {
           }}
         >
           <div style={{ ...kicker, marginBottom: 6 }}>{k}</div>
-          <div style={{ fontFamily: mono, fontSize: 15, color: INK, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+          <div
+            style={{
+              fontFamily: mono,
+              fontSize: 15,
+              color: INK,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {v}
+          </div>
         </div>
       ))}
     </div>
@@ -368,9 +377,7 @@ function DayView(p: DayProps) {
 
         {p.allDone ? (
           <Card style={{ padding: '16px 16px', textAlign: 'center' }}>
-            <div style={{ fontSize: 13, color: ACCENT, fontWeight: 500 }}>
-              All scheduled&nbsp;✓
-            </div>
+            <div style={{ fontSize: 13, color: ACCENT, fontWeight: 500 }}>All scheduled&nbsp;✓</div>
             <div style={{ fontSize: 12, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>
               The day is laid down. Nothing left to place.
             </div>
@@ -456,9 +463,7 @@ function DayView(p: DayProps) {
           const itemId = p.hourItem[hour]
           const item = itemId ? byId[itemId] : undefined
           // stagger index among placed-by-plan items, for the drop animation
-          const staggerIdx = item
-            ? Object.keys(PLAN_HOURS).indexOf(item.id)
-            : 0
+          const staggerIdx = item ? Object.keys(PLAN_HOURS).indexOf(item.id) : 0
           return (
             <div
               key={hour}
