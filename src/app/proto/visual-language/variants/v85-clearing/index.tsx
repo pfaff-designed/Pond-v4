@@ -109,6 +109,17 @@ function subseq(q: string, s: string) {
   return i === q.length
 }
 
+/** Pond's canned read across the whole of it — the persona's headline ask. */
+const WHOLE_LIFE_ANSWER =
+  'Across everything: Health is on track — 38 miles and 7.1h sleep. Work has one project slipping (Design System). Life-wise, dining is $48 over budget. Your walnut shelf is ready for glue-up. Net: a calm, steady week — nudge Design System and dining, and the rest carries itself.'
+function isWholeLifeQ(q: string) {
+  return /every(thing|where)|across|whole life|overall|all my|how am i doing/i.test(q)
+}
+/** A canned Pond reply: synthesized across domains, or a quiet ack. */
+function pondReply(q: string) {
+  return isWholeLifeQ(q) ? WHOLE_LIFE_ANSWER : 'Noted — I’ll keep that in view.'
+}
+
 function View() {
   const [surface, setSurface] = useState<SurfaceId>('home')
   const [openId, setOpenId] = useState('marathon')
@@ -738,20 +749,39 @@ function View() {
                 </span>
               </div>
               {sent.map((s, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <span
-                    style={{
-                      maxWidth: '82%',
-                      padding: '10px 14px',
-                      borderRadius: 16,
-                      fontSize: 14,
-                      background: ACCENT_SOFT,
-                      border: `1px solid ${LINE}`,
-                      color: INK,
-                    }}
-                  >
-                    {s}
-                  </span>
+                <div key={i} style={{ display: 'contents' }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <span
+                      style={{
+                        maxWidth: '82%',
+                        padding: '10px 14px',
+                        borderRadius: 16,
+                        fontSize: 14,
+                        background: ACCENT_SOFT,
+                        border: `1px solid ${LINE}`,
+                        color: INK,
+                      }}
+                    >
+                      {s}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <span
+                      style={{
+                        maxWidth: '82%',
+                        padding: '10px 14px',
+                        borderRadius: 16,
+                        fontSize: 14,
+                        lineHeight: 1.55,
+                        fontFamily: serif,
+                        background: CARD,
+                        border: `1px solid ${LINE}`,
+                        color: INK,
+                      }}
+                    >
+                      {pondReply(s)}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
