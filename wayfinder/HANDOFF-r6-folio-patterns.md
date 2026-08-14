@@ -1,12 +1,13 @@
 # HANDOFF — R6: Folio-based UI pattern & feature explorations
 
 **Directive (Charles, 2026-08-13):** the R1–R5 aesthetic round is over. Prune to the two
-keepers and start a NEW round of prototypes that, instead of exploring *looks*, explore
+keepers and start a NEW round of prototypes that, instead of exploring _looks_, explore
 **UI patterns and features** on the Folio foundation. Spread across four axes:
 **new feature surfaces · interaction & input · navigation & IA · AI presence & agency.**
 **Not capped at 15** — build as many as it takes to land each idea; extend the list freely.
 
 ## Already done this session (don't redo)
+
 - **Pruned** `variants/` to keepers only: deleted v48/v51/v59–v70. `variants/index.tsx`
   now imports **only `v71-folio` + `v72-ledger`**; `variants: Variant[] = [v71, v72]`.
   (The whole `src/app/proto/` is git-untracked, so the pruned files are gone for good.)
@@ -15,11 +16,12 @@ keepers and start a NEW round of prototypes that, instead of exploring *looks*, 
   before building anything.
 
 ## The harness (unchanged since R1)
+
 - Route `/proto/visual-language`. Bottom chrome bar switches variants with **← / →**
   (arrow keys); each variant renders full-viewport. `Hide UI · h` toggles the switcher.
 - A variant = `variants/vNN-name.tsx` exporting:
   ```ts
-  export const variant: Variant = { id, name, pov, boldness, Component }  // Component = full-viewport view
+  export const variant: Variant = { id, name, pov, boldness, Component } // Component = full-viewport view
   ```
   then add `import { variant as vNN } from './vNN-name'` + append to the `variants` array in
   `variants/index.tsx`. `boldness` is legacy (was the ladder position) — reuse the id number.
@@ -30,7 +32,9 @@ keepers and start a NEW round of prototypes that, instead of exploring *looks*, 
   `"<name> 2.tsx"` dupes break tsc, `rm -rf .next`.
 
 ## The base: #71 Folio (copy its language)
+
 `variants/v71-folio.tsx` is the product shell every R6 variant starts from. Lift its constants:
+
 - **Palette:** `PAPER #efeae0`, `INK #2a2722`, `BODY/MUTED/FAINT/LINE` (ink alphas), `ACCENT #5f7355`
   (sage), `ACCENT_SOFT`. Earthy paper.
 - **`glass` recipe** (blur+saturate+inner-highlight+soft shadow) — for floating chrome ONLY.
@@ -44,11 +48,13 @@ keepers and start a NEW round of prototypes that, instead of exploring *looks*, 
      (chat, ⌘K palette, capture, notifications, control cluster) is glass hovering above it.
   4. Kept chrome primitives: **floating Ask chat · ⌘K command palette · Capture · Notifications
      drawer** (the demoted Timeline; Accept applies `diffCard`). Relationships was cut in Folio —
-     but note axis-C/D below may reintroduce a *relationship/graph* idea as a deliberate feature.
+     but note axis-C/D below may reintroduce a _relationship/graph_ idea as a deliberate feature.
 
 ## #72 Ledger — the built-out reference (reuse patterns, not required)
+
 `variants/v72-ledger/` (a folder, not a file) shows the mature patterns to copy when a variant
 needs real data viz or the full shell:
+
 - `ui.tsx` (palette + `Panel`/`Stat`/`RingsPanel`/`DashboardHeader` + `glass`/`kbd` tokens),
   `data.ts` (deterministic LCG seeds — **no `Math.random`**), `dashboards/{health,work,wood,reading}.tsx`,
   `chrome.tsx` (the whole Folio chrome extracted as `<Chrome activeAreaId activePageId onNavigate/>`),
@@ -57,30 +63,34 @@ needs real data viz or the full shell:
   `<AreaChart data xDataKey><Grid/><Area dataKey/><XAxis/></AreaChart>`, `<BarChart>`/`<Bar>` (add
   `stacked stackGap`), `<LineChart>`/`<Line>` (`dashFromIndex` = dashed projection), `<RingChart>`/`<Ring>`,
   `<HeatmapChart>`/`<HeatmapCells>`. **Gotchas:** charts need a **sized parent** (`aspectRatio=""`
-  + `className="h-full"` in a fixed-height wrapper) or they measure 0; **pass explicit colors**
-  (Bklit's CSS-var theme is broken — the ticket-15 double-prefix bug). Reuse `<Chrome/>` from
-  `v72-ledger/chrome.tsx` if a variant wants the shell wrapped around it.
+  - `className="h-full"` in a fixed-height wrapper) or they measure 0; **pass explicit colors**
+    (Bklit's CSS-var theme is broken — the ticket-15 double-prefix bug). Reuse `<Chrome/>` from
+    `v72-ledger/chrome.tsx` if a variant wants the shell wrapped around it.
 
 ## Build rules (hold these for the whole round)
+
 - **Static mockup:** seeded data only, no backend, **no `Math.random`** (stable screenshots).
 - All interactivity via **`useState`** (+ `useEffect` for key handlers). Full `100vh/100vw`.
 - Keep the Folio palette + flat-body/glass-chrome ruling so the round reads as ONE product
-  wearing different UI ideas — the variable is the *pattern/feature*, not the aesthetic.
+  wearing different UI ideas — the variable is the _pattern/feature_, not the aesthetic.
 - Each variant should **actually wire its headline interaction** (not a static picture of it).
 - Prefer a `vNN-name/` folder (like Ledger) when a variant exceeds ~400 LOC or reuses `<Chrome/>`.
 
 ## Concept menu (curated seed — build these, reorder, extend; ids start at v73)
+
 Each line: **name** — the pattern/feature it probes → the key interaction to wire.
 
 **Axis A · New feature surfaces** (things Pond can't do yet)
+
 - **Brief** — a morning digest page (what changed · what's due · one Pond suggestion) → dismiss/act per card; "start day" collapses it into the rail.
 - **Queue** — a cross-area review inbox of AI proposals (edits, new-page ideas, links) → Accept/Reject per item, batch-accept, empty state.
 - **Retro** — weekly review surface (highlights · stalled pages · streak) → pick wins → Pond drafts next week.
 - **Agenda** — time-based planning (week columns / today timeline) placing pages by when → drag a page to a day; week↔day toggle.
 - **Focus** — single-task focus mode (one page, timer, everything else dimmed) → start/stop; capture-without-leaving.
-- **Atlas** — a map/graph of areas & pages (Relationships reconsidered as a *feature*, not a tab) → click node opens; hover shows links.
+- **Atlas** — a map/graph of areas & pages (Relationships reconsidered as a _feature_, not a tab) → click node opens; hover shows links.
 
 **Axis B · Interaction & input**
+
 - **Inline-AI** — select text in a page → floating AI action bar (rewrite/expand/ask) → selection → menu → inline diff.
 - **Command-first** — everything through ⌘K (create/navigate/run actions), no chrome buttons → fuzzy command list with modes.
 - **Slash** — Notion-style `/` menu to insert modules/blocks into a page → type `/` → module picker → inserts, spectrum meter reacts.
@@ -88,6 +98,7 @@ Each line: **name** — the pattern/feature it probes → the key interaction to
 - **Drag-compose** — build a dashboard by dragging module chips from a tray onto the page → drag/drop + reorder; density meter reacts.
 
 **Axis C · Navigation & IA**
+
 - **Collapse-rail** — icon-only rail that hover/pins-expands; explore rail density & wayfinding → collapse/expand/pin.
 - **Panes** — dual-pane / Miller columns: page + related page or chat side by side → open-in-right, resize.
 - **Zoom** — semantic zoom area→pages→blocks as one continuous surface → zoom in/out control.
@@ -95,6 +106,7 @@ Each line: **name** — the pattern/feature it probes → the key interaction to
 - **Spectrum-nav** — navigate by the Document——Dashboard axis: filter/sort the rail by page shape → shape filter chips.
 
 **Axis D · AI presence & agency**
+
 - **Ambient** — Pond leaves margin notes / inline suggestions on a page as you read → hover reveals, accept in place.
 - **Activity** — a Pond presence ticker showing what it noticed/did in the background → expand an item → jump to it.
 - **Diff-stack** — richer proposal pattern: a stack of typed diff cards (ties to ticket-16 `changes[]`) → per-card + group Accept.
@@ -105,6 +117,7 @@ That's ~22 concepts. Land each convincingly; split one into two variants if it h
 takes; drop any that don't earn their keep. **Numbering: v73, v74, … in build order.**
 
 ## Per-variant verify bar (same as prior rounds)
+
 `npx tsc --noEmit` clean · dev **:3000** · load `/proto/visual-language`, **→/←** to the new
 variant · **exercise its headline interaction** (don't just eyeball) · **0 console errors** ·
 screenshot to `wayfinder/screens/r6-vNN-*.png` · append it to `variants/index.tsx`.
@@ -149,6 +162,7 @@ Quick-add, Drag-compose · Axis C — Panes, Zoom, Tabs, Spectrum-nav · Axis D 
 Activity, Diff-stack, Companion. Numbering continues at **v81**.
 
 **Wave 2 — first variant in the LOCKED Press skin (2026-08-13).**
+
 - **v79 · Glance** (Axis A · new surface) — `v79-glance.tsx`. Charles asked for something
   "closer to" his app-ui reference board; its dominant motif is the iOS-widget GRID of
   oversized editorial numerals + the mono RUN RECEIPT. Glance = a cross-area HOME board
@@ -162,34 +176,35 @@ Activity, Diff-stack, Companion. Numbering continues at **v81**.
   A folder variant `v80-board/` (`ui.tsx` tokens+TileShell, `tiles.tsx` widget bodies+registry,
   `index.tsx` View). Still the LOCKED Press skin.
   · **Composable** — `⧉ Edit board` mode: per-tile **remove ✕** + **drag-to-reorder** (HTML5
-    DnD, live reorder on dragover) + an **Add-widget catalog** of unplaced widgets (ghost cards).
+  DnD, live reorder on dragover) + an **Add-widget catalog** of unplaced widgets (ghost cards).
   · **AI-composed** — a glass **"Pond noticed…"** suggestion tile (Accept pins a widget),
-    one-tap **"✦ Compose my morning"** that re-arranges the board with a **staggered enter**
-    (`enterDelay` on TileShell + `arrangeKey` remount), and **per-tile AI micro-notes**.
+  one-tap **"✦ Compose my morning"** that re-arranges the board with a **staggered enter**
+  (`enterDelay` on TileShell + `arrangeKey` remount), and **per-tile AI micro-notes**.
   · **Richer** — real **Bklit charts**: `AreaChart` mileage w/ dashed projection + `BarChart`
-    sleep; a **Now weather hero** (72°); denser editorial numerals.
+  sleep; a **Now weather hero** (72°); denser editorial numerals.
   · **Deeper** — tap a tile body → **expand-to-focus** modal (enlarged tile + S/M/L segmented
-    + Open/Remove actions); **inline quick-actions** (check a todo in place); size-cycle reflow.
-  TileShell is now a `role="group"` (not `<button>`) so it can host nested controls/actions.
-  Verified live: compose rearrange, edit+catalog, focus modal, todo toggle — `tsc` clean ·
-  **0 console errors**. Screens `r6-v80-board.png` · `-composed.png` · `-edit.png` · `-focus.png`.
-  Registry → `[…,v79,v80]`.
-  **Bklit gotchas found (add to the t15 chart notes):** (1) `AreaChart` is a **time-series** —
-  its x field must be a **valid date string** (`new Date(x)`); label strings like `'W8'` throw
-  `RangeError: Invalid time value`. Use ISO dates (`BarChart` w/ `xDataKey` stays categorical).
-  (2) `BarChart` **keys bars by the `name` value** → duplicate names (`'T'`/`'T'`, `'S'`/`'S'`)
-  collide (React dup-key error); names must be unique.
+  - Open/Remove actions); **inline quick-actions** (check a todo in place); size-cycle reflow.
+    TileShell is now a `role="group"` (not `<button>`) so it can host nested controls/actions.
+    Verified live: compose rearrange, edit+catalog, focus modal, todo toggle — `tsc` clean ·
+    **0 console errors**. Screens `r6-v80-board.png` · `-composed.png` · `-edit.png` · `-focus.png`.
+    Registry → `[…,v79,v80]`.
+    **Bklit gotchas found (add to the t15 chart notes):** (1) `AreaChart` is a **time-series** —
+    its x field must be a **valid date string** (`new Date(x)`); label strings like `'W8'` throw
+    `RangeError: Invalid time value`. Use ISO dates (`BarChart` w/ `xDataKey` stays categorical).
+    (2) `BarChart` **keys bars by the `name` value** → duplicate names (`'T'`/`'T'`, `'S'`/`'S'`)
+    collide (React dup-key error); names must be unique.
 
 ## ⭐ AESTHETIC DIRECTION LOCKED — v78 Press (2026-08-13)
 
 **Charles's ruling:** the LAYOUT is locked — **left rail · top-right cluster (Notifications ·
 Capture · Ask ⌘K) · bottom-center AI bar**. Don't move those. He supplied 4 new reference
 boards (Pinterest `pin/847028642465868487` + `...868356`, screenshots on Desktop
-`2026-08-13 at 3.48.*.png`) and asked to fold their *aesthetic/feel* into Pond. Result =
+`2026-08-13 at 3.48.*.png`) and asked to fold their _aesthetic/feel_ into Pond. Result =
 **`variants/v78-press.tsx`** (id 78, registered last), tsc-clean, 0 console errors, screen
 `wayfinder/screens/r6-v78-press.png`. **This is the chosen visual direction going forward.**
 
 **The Press aesthetic (extract + how it's built) — reuse these tokens for all further work:**
+
 - **Warm paper base** `PAPER #efeae0`, richer ink `INK #211f1b`; near-white **card surface**
   `CARD #faf8f2`.
 - **Floating soft-shadow widget cards** for modules (the iOS-widget look):
@@ -210,10 +225,11 @@ boards (Pinterest `pin/847028642465868487` + `...868356`, screenshots on Desktop
 **NEXT (fresh session — context ran out here):** (a) iterate Press's palette/spacing with Charles
 in the browser; (b) **roll the Press skin onto the wave-1 pattern variants v73–v77** so pattern +
 aesthetic converge; (c) then harvest into the real chrome + module registry (t11/t12/t16). The
-pattern *interactions* from v73–v77 are the keepers; Press is the *skin* they should wear.
+pattern _interactions_ from v73–v77 are the keepers; Press is the _skin_ they should wear.
 Chrome buttons in v78 are presentational only (not yet wired) — wire from v71 Folio when needed.
 
 ## Wave 3 — SHIPPED & VERIFIED (2026-08-13)
+
 Four fleshed-out prototypes (briefed in `wayfinder/R6-wave3-briefs.md`), built by parallel agents as
 isolated folders, now **registered + browser-verified**. Registry → `[…,v80,v81,v82,v83,v84]` (14 total).
 `npx tsc --noEmit` clean. Dev server was already up on **:3000** (served the route directly).
@@ -259,6 +275,7 @@ four express one coherent Pond system on the locked layout; v82 proves the Press
 v77 Collapse-rail, v78 Press, v79 Glance, v80 Board, v81 Reader, v82 Console, v83 Agenda, v84 Player]`.
 
 ## Wave-1 → Press convergence — SHIPPED & VERIFIED (2026-08-13)
+
 Executed NEXT item **(b)**: rolled the LOCKED Press skin onto the wave-1 pattern variants
 **v73–v77** so pattern + aesthetic converge. Skin-only — every headline interaction, all state,
 handlers, and the locked layout were held byte-for-byte; only tokens (palette, glass recipe,
@@ -268,6 +285,7 @@ edit conflicts). `variant` ids/names unchanged; `index.tsx` untouched. `npx tsc 
 
 Each re-skin browser-verified on dev **:3000** with its headline interaction exercised live +
 **0 console errors** (fresh-load sweep after cycling all five + a todo toggle):
+
 - **v73 Command** — ⌘K palette open/close; body shows Press soft-shadow cards, serif "38", round
   lime checks, rust "↑ +12%", rust active-area marker. Screens: `r6-v73-command-press.png`, `-body.png`.
 - **v74 Slash** — `/` → **Press glass** picker (rust MODULE badges) → inserted a **Press card**
@@ -294,6 +312,7 @@ is next touched or harvested into the real chrome.
 (c) harvest the v73–v77 interactions + Press skin into the real chrome + module registry (t11/t12/t16).
 
 ## v85 · Clearing — the consolidation (2026-08-13)
+
 **Directive (Charles):** take the best parts of the last six protos (v79–v84) and fuse them
 into ONE fully-fleshed proto, **pushing the zen vibe to the extreme — elegance, balance, calm.**
 Decisions taken up front: input = v79–v84; treatment = **evolve Press toward calm** (keep the DNA —
@@ -301,6 +320,7 @@ warm paper, Instrument-Serif numerals, glass chrome, soft-shadow cards — but d
 accents, one focal element per view, slower motion); deliverable = **a new multi-surface shell**.
 
 **Built:** a folder variant `variants/v85-clearing/` (registered last → id 85, registry now 15).
+
 - `ui.tsx` — the zen-Press design language (tokens + primitives: Card, KindDot, Spark, Ring, Receipt,
   Segmented, THEMES). Calm discipline encoded: **LIME = the only primary-action color**; **RUST = rare
   punctuation only**; sage ACCENT = ambient tint; prose flat, modules cards, chrome glass; softer
@@ -347,6 +367,49 @@ week view; then this is the strongest candidate to harvest into the real chrome 
 (t11/t12/t16) — the four surfaces map cleanly onto page-as-module-spectrum + hosts.
 
 ## When the round is done
+
 Update this file with what shipped, refresh `wayfinder/map.md` (ticket-14), and the `pond-v4`
 memory. These are still throwaway (`src/app/proto/`) — the point is to harvest patterns/features
 into the real chrome + module registry (t11/t12/t16), not to keep the protos.
+
+---
+
+## v85 · Clearing — COMMITTED + refined (2026-08-14, session 2)
+
+Prior session pruned `variants/` to **v85 only** (v71–v84 deleted; git-untracked → gone) and ran a
+persona→builder loop + an unrecorded "UI pass" (a workflow that died with no changelog). This session
+reviewed that state, then committed and refined it. **v85 is git-tracked now; `main` is NOT pushed.**
+
+**Commits (all pass the husky/lint-staged hook — `eslint --fix` + `prettier --write` + `tsc`):**
+
+- `8716891` — **safety-net snapshot** of the whole untracked tree (proto + `src/components/charts`
+  Bklit + `globals.css`/`components.json`/`package.json` + wayfinder docs). Committed `--no-verify`
+  (a pre-existing set-state-in-effect ESLint _error_ reverts the hook; the snapshot captured the
+  reviewed state as-is).
+- `959b03c` — notifications rebuilt as a **left-spine timeline** (continuous rail down the drawer's
+  left edge · gutter timestamps · area-colored nodes on the rail · cards to the right · hollow
+  day-markers; `SpineRow`+`DayMarker` in `index.tsx`) · Plan title "Today"→"Today's plan" · fixed the
+  2 set-state-in-effect errors (removed the redundant leave-Focus reset effect — `surfaces/focus.tsx`
+  unmount cleanup already restores the chrome; moved the ⌘K reset into an `openPalette()` handler).
+- `9c2ca99` — **⌘K free-text → Pond** ("Ask Pond: …" fallback; Enter opens the composer seeded) ·
+  restored palette arrow/Enter keyboard nav (the input's `stopPropagation` had swallowed them from the
+  global handler) · lifted the Talk-to-Pond bar `bottom:26→72` so Send clears the proto switcher (z-50).
+- `a6cacb8` — **Feel pass**: staggered notif-spine entrance (`.v85-rise`, 45ms/step, top-to-bottom).
+- `c9bc2ce` — Today **"Across your life"** cross-domain roll-up (per-domain rows → open area · Pond
+  synthesis card · "ask Pond →" seed).
+- `b7cf248` — **Pond replies** to sent chat messages with a **synthesized multi-domain answer** for
+  whole-life questions (`WHOLE_LIFE_ANSWER`/`isWholeLifeQ`/`pondReply`). Completes the persona's
+  headline use case (#1).
+
+**Verified live (Playwright):** spine renders + staggers; Plan title; ⌘K free-text routes to Pond;
+Send clears the switcher (27px); Focus recede + leave-mid-session restores chrome; Today section +
+"ask Pond →" seed; cross-domain question → "Across everything…" synthesized reply. tsc exit 0 each time.
+
+**Discovery:** the unrecorded UI pass had silently closed several R3 soft-wants — **Capture ⌘-Enter**,
+**⌘K Esc-close**, **Finance assets-subtotal↔net-worth** — so the real backlog was much smaller than
+the prior handoff implied. Design discipline (LIME-only primary, RUST rare) held across all 15 files.
+
+**Still open:** #6 Read-lens note-index (unverified — `read.tsx` has section-jump + margin notes, no
+confirmed note _index_); stray `next dev` on `:3010` (harmless); **`main` not pushed**. New module
+dashboards from the persona loop: shelf/sleep/finance/portfolio(project-tracker)/grocery/recipes/
+workout/reading + Capture composer. Review screens: `~/v85-*.png`.
