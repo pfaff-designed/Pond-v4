@@ -239,10 +239,23 @@ function View() {
     ]
     return [...acts, ...pages, ...nav]
   }, [])
-  const results = useMemo(
-    () => (query ? commands.filter((c) => subseq(query, c.label)) : commands),
-    [query, commands]
-  )
+  const results = useMemo(() => {
+    if (!query) return commands
+    const matches = commands.filter((c) => subseq(query, c.label))
+    const q = query.trim()
+    if (!q) return matches
+    // Free text always has a way through to Pond: the last resort when nothing
+    // matches, and an explicit option even when something does.
+    const askPond: Cmd = {
+      kind: 'Do',
+      label: `Ask Pond: “${q}”`,
+      run: () => {
+        setChatOpen(true)
+        setDraft(q)
+      },
+    }
+    return [...matches, askPond]
+  }, [query, commands])
 
   // global keys
   useEffect(() => {
@@ -660,7 +673,9 @@ function View() {
         style={{
           position: 'fixed',
           left: 'calc(50% + 125px)',
-          bottom: 26,
+          // Sits clear of the proto's bottom variant-switcher bar (~57px, z-50)
+          // so the composer's Send is never covered. Harvest → reset to ~26.
+          bottom: 72,
           transform: 'translateX(-50%)',
           zIndex: 35,
           width: 'min(600px, 58vw)',
@@ -874,9 +889,24 @@ function View() {
                   setSel(0)
                 }}
                 onKeyDown={(e) => {
+                  // Handle nav here: focus lives in this input, and its
+                  // stopPropagation otherwise keeps these keys from the global
+                  // handler. Enter runs the selected result — including the
+                  // "Ask Pond" free-text fallback.
                   if (e.key === 'Escape') {
                     setPaletteOpen(false)
                     return
+                  }
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSel((s) => Math.min(s + 1, results.length - 1))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSel((s) => Math.max(s - 1, 0))
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    results[sel]?.run()
+                    setPaletteOpen(false)
                   }
                   e.stopPropagation()
                 }}
