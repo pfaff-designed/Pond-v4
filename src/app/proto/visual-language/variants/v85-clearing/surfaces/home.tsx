@@ -36,7 +36,15 @@ import { DIGEST, SUGGESTION, DOCS, AREA_TITLE, TODAY_EYEBROW } from '../data'
 import type { SurfaceCtx } from '../shell-types'
 
 /** Staggered rise-on-mount wrapper. index drives the delay. */
-function Rise({ i, children, style }: { i: number; children: React.ReactNode; style?: React.CSSProperties }) {
+function Rise({
+  i,
+  children,
+  style,
+}: {
+  i: number
+  children: React.ReactNode
+  style?: React.CSSProperties
+}) {
   return (
     <div
       style={{
@@ -97,7 +105,7 @@ export default function Home(ctx: SurfaceCtx) {
 
   // Live local state: the due list drives the focal numeral.
   const [dueIds, setDueIds] = useState<string[]>(
-    DIGEST.filter((d) => d.kind === 'due').map((d) => d.id),
+    DIGEST.filter((d) => d.kind === 'due').map((d) => d.id)
   )
   const [showSuggestion, setShowSuggestion] = useState(true)
 
@@ -124,6 +132,17 @@ export default function Home(ctx: SurfaceCtx) {
     { time: '10:00', label: 'Design-system tokens', area: 'work' },
     { time: '16:00', label: 'Walnut Shelf glue-up', area: 'wood' },
   ]
+
+  // "Across your life" — one synthesized line per domain, each opening its area.
+  // The persona's headline use case: see the whole of it in one calm read.
+  const ACROSS: { area: string; label: string; line: string; open: string }[] = [
+    { area: 'health', label: 'Health', line: 'On track · 38 mi, sleep 7.1h', open: 'sleep' },
+    { area: 'work', label: 'Work', line: '1 project at risk — Design System', open: 'ds' },
+    { area: 'life', label: 'Life', line: 'Dining $48 over budget this month', open: 'finance' },
+    { area: 'wood', label: 'Making', line: 'Walnut shelf → ready for glue-up', open: 'shelf' },
+  ]
+  const POND_READ =
+    'Steady week. Health and making are humming; keep an eye on Design System and dining.'
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: 'transparent' }}>
@@ -282,6 +301,78 @@ export default function Home(ctx: SurfaceCtx) {
           </button>
         </Rise>
 
+        {/* ── Across your life: a synthesized cross-domain read ─────────────── */}
+        <div style={{ marginTop: 50 }}>
+          <Rise i={ri++}>
+            <div
+              style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}
+            >
+              <GroupLabel>Across your life</GroupLabel>
+              <Quiet
+                label="ask Pond →"
+                color={ACCENT}
+                onClick={() => askPond('How am I doing across everything this week?')}
+              />
+            </div>
+          </Rise>
+
+          {ACROSS.map((d, idx) => (
+            <Rise key={d.area} i={ri++}>
+              <button
+                onClick={() => openPage(d.open)}
+                style={{
+                  appearance: 'none',
+                  width: '100%',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '12px 0',
+                  background: 'none',
+                  border: 'none',
+                  borderTop: idx === 0 ? undefined : `1px solid ${HAIR}`,
+                  fontFamily: sans,
+                }}
+              >
+                <KindDot area={d.area} />
+                <span style={{ ...kicker, color: MUTED, width: 58, flexShrink: 0 }}>{d.label}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: INK }}>{d.line}</span>
+                <span style={{ color: FAINT, fontSize: 15, flexShrink: 0 }}>›</span>
+              </button>
+            </Rise>
+          ))}
+
+          <Rise i={ri++}>
+            <div
+              style={{
+                marginTop: 14,
+                padding: '14px 16px',
+                borderRadius: radius.soft,
+                background: ACCENT_SOFT,
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 999,
+                  background: ACCENT,
+                  marginTop: 6,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontFamily: serif, fontSize: 14.5, lineHeight: 1.5, color: BODY }}>
+                {POND_READ}
+                <span style={{ ...kicker, color: ACCENT, marginLeft: 8 }}>— Pond</span>
+              </span>
+            </div>
+          </Rise>
+        </div>
+
         {/* ── Needs you: the due items, flat rows with quiet actions ────────── */}
         <div style={{ marginTop: 50 }}>
           <Rise i={ri++}>
@@ -385,9 +476,7 @@ export default function Home(ctx: SurfaceCtx) {
                   }}
                 >
                   <KindDot area={SUGGESTION.area} />
-                  <span style={{ ...kicker, color: MUTED }}>
-                    {AREA_TITLE[SUGGESTION.area]}
-                  </span>
+                  <span style={{ ...kicker, color: MUTED }}>{AREA_TITLE[SUGGESTION.area]}</span>
                 </div>
                 <p
                   style={{
@@ -410,9 +499,7 @@ export default function Home(ctx: SurfaceCtx) {
                 >
                   <button
                     onClick={() =>
-                      askPond(
-                        `Draft a note for ${AREA_TITLE[SUGGESTION.area]}: ${SUGGESTION.text}`,
-                      )
+                      askPond(`Draft a note for ${AREA_TITLE[SUGGESTION.area]}: ${SUGGESTION.text}`)
                     }
                     style={{
                       appearance: 'none',
@@ -444,11 +531,7 @@ export default function Home(ctx: SurfaceCtx) {
           </Rise>
           {changed.map((item, idx) => (
             <Rise key={item.id} i={ri++}>
-              <ChangedRow
-                item={item}
-                first={idx === 0}
-                onClick={() => openPage(item.page)}
-              />
+              <ChangedRow item={item} first={idx === 0} onClick={() => openPage(item.page)} />
             </Rise>
           ))}
         </div>
