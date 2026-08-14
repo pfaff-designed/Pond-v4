@@ -409,7 +409,131 @@ Send clears the switcher (27px); Focus recede + leave-mid-session restores chrom
 **⌘K Esc-close**, **Finance assets-subtotal↔net-worth** — so the real backlog was much smaller than
 the prior handoff implied. Design discipline (LIME-only primary, RUST rare) held across all 15 files.
 
-**Still open:** #6 Read-lens note-index (unverified — `read.tsx` has section-jump + margin notes, no
-confirmed note _index_); stray `next dev` on `:3010` (harmless); **`main` not pushed**. New module
+**Still open:** stray `next dev` on `:3010` (harmless); **`main` not pushed**. New module
 dashboards from the persona loop: shelf/sleep/finance/portfolio(project-tracker)/grocery/recipes/
 workout/reading + Capture composer. Review screens: `~/v85-*.png`.
+
+## #6 · Read-lens note-index — CLOSED + VERIFIED (2026-08-14, session 3)
+
+The last soft-want. `read.tsx` had section-jump (the Contents outline) + margin notes but **no
+index of the reader's own marks**. Built one into the existing left-margin `Outline` nav — no new
+chrome, no layout change, no new palette.
+
+- **What it is:** below "Contents", a **"Your marks · N"** group listing every highlight + saved
+  annotation **in document order**. Highlights carry a small `theme.mark` swatch; annotations show
+  the note text in italic with a 2px `RUST` bar (mirrors the in-text margin-note styling). Appears
+  only once ≥1 mark exists (empty → nothing, keeps the room calm).
+- **Interaction:** click a mark → `jumpToSid` scrolls that sentence to center + a **1.1s pulse**
+  (reuses the existing `theme.mark` highlight color, then fades to transparent). Derives from
+  `highlights`/`notes` state via `useMemo`; new `flashSid` state + a cleaned-up timeout ref.
+- **Verified live (Playwright, dev :3000, v85 via pip):** empty state (Contents, no "Your marks") →
+  highlight s1 → **"Your marks · 1"** → annotate s5 "Easy pace protects the week" → **"Your marks · 2"**
+  (ordered: highlight row then italic note row) → scroll to bottom (scrollTop 1022) → click the note
+  row → **scrolls s5 to center (296) + pulses `rgba(196,224,138,.48)` → transparent after ~1.1s**.
+  `npx tsc --noEmit` exit 0 · **0 console errors / 0 warnings**. No `textDecoration` shorthand added
+  (bug class stays absent). Screen: `wayfinder/screens/r6-v85-clearing-read-note-index.png`.
+- **Files touched:** only `surfaces/read.tsx` (`Outline` now takes `marks`/`onJumpSid`/`theme`).
+  **NOT committed** — folds in with the other unpushed v85 work when `main` is next pushed.
+
+## v85 · "Full of data" reshape — 5-area life system, SHIPPED + VERIFIED (2026-08-14, session 4)
+
+**Directive (Charles):** the last big prototype — take his real life-management system (a sprawling
+Notion setup: planners, calendar, projects/tasks, goals/habits, finances, food, travel, media,
+journal/notes, contacts, products/price-tracker) and render **what Pond looks like once it's full of
+data**. Not a copy — reorganize it onto Pond's spine and pour in believable seed. **Decisions (his
+answers):** areas = **Personal · Professional · Health · Finances · Creativity** with **Life = the
+shell** (not an area — the Today "across your life" read, the calendar spine, Capture); **Woodworking
+→ Creativity** (broadened to making); **Reading & Media → Personal** (Creativity stays pure making);
+scope = **full lived-in build, parallelized**.
+
+**The mapping** (his system → Pond): the planners/calendar/task-dashboard/quick-capture are the
+**shell + surfaces** (Today/Plan/Capture), NOT areas; databases become **module-page dashboards**
+under the 5 areas; lookups (Categories, Ingredients, Destinations, Genres) become relation-sources,
+not nav.
+
+**New rail spine** (`data.ts` `tree`, 5 areas; Personal carries one nested sub-area **Food** — the
+rail now renders one extra level for any child with its own `children`):
+
+- **Health** — Marathon Training (reader) · Sleep · Workout Routine
+- **Professional** — Q3 Planning · Design System · Projects · **Tasks** (new)
+- **Finances** — **Budget** (the existing `finance.tsx`, which already covers income/expenses/
+  categories/accounts/net-worth/recent)
+- **Creativity** — Walnut Shelf · **Wishlist** (new: products + price tracker)
+- **Personal** — _Food ›_ Recipes · **Meal Plan** (new) · Groceries · then **My Trips** (new) ·
+  **Contacts** (new) · **Library** (new: books + movies + watchlist) · **Journal** (new)
+
+**How it was built (parallel):** an Explore agent mapped the v85 architecture; then **7 dashboards
+built by 7 parallel general-purpose agents** (each a self-contained `pages/*.tsx` mirroring
+`finance.tsx` — local `Spark`/`Ring`/`Card`/`Receipt` primitives, NOT Bklit; one focal Instrument-
+Serif numeral; LIME once; RUST rare; deterministic seed; `Rise` stagger): `tasks` (461) · `trips`
+(400) · `library` (468) · `meal-plan` (420) · `contacts` (338) · `wishlist` (380) · `journal` (310).
+Concurrently I authored the **foundation** (the shared contract, by hand for coherence):
+
+- `data.ts` — full rewrite: new 5-area `tree` (+ Food sub-area), `MODULE_PAGES`/`isModulePage`,
+  `AREA_TITLE`, `DOCS` (title/crumb per leaf), **recursive** `PAGES`/`firstPageOf`, reseeded `DIGEST`
+  (4 due → focal "4"), `SUGGESTION`, `TRAY`/`WEEK_PLACED`, `ACTIVITY` (now carries a `page` click
+  target, spans all 5 areas). READER (marathon long-form) + note-index kept intact.
+- `index.tsx` — added 7 module imports + registry entries (dropped `reading-list`); **rail now
+  renders nested sub-areas** (`isOpenLeaf`/`leafBtnStyle` helpers; a child with `children` → quiet
+  sub-label + indented leaves); `WHOLE_LIFE_ANSWER` rewritten across 5 areas; notif routing →
+  `a.page ?? firstPageOf(a.area)`.
+- `ui.tsx` — `AREA_ACCENT` rekeyed to health/professional/finances/creativity/personal(+food),
+  distinct muted tones.
+- `surfaces/home.tsx` — "Across your life" now **5 rows** (Health/Work/Money/Making/Life), UP_NEXT +
+  POND_READ updated. `surfaces/focus.tsx` — history area ids fixed to new spine.
+
+**Verified — proof, not claims.** `npx tsc --noEmit` **exit 0** project-wide. Dev **:3000**, fresh
+clean-room reload → **0 console errors / 0 warnings** (the `all:true` history is the usual pollution —
+`:3002`, `v48-prism`, `SKY`, stale hot-reload parse states — none live). Rail renders all 5 areas +
+the nested **Food** group. Mounted all 12 dashboards (7 new + 5 reused) — every one `:ok`. Exercised
+live: **Tasks check → focal 13→12**. Screens: `wayfinder/screens/r6-v85-loaded-{today,tasks,trips,
+library,budget,mealplan}.png` — Today shows focal "4 things need you today" + 5-area cross-life read;
+Trips "23 days until Lisbon" + prep checklist (one rust "expires soon"); Library "23 books" + 23/30
+Ring; Meal Plan 7-day grid w/ "+ plan a dinner" empties.
+
+**Files touched (all UNCOMMITTED — fold in with prior v85 work on next push):** `data.ts`, `index.tsx`,
+`ui.tsx`, `surfaces/home.tsx`, `surfaces/focus.tsx` (edits) + `pages/{tasks,trips,library,meal-plan,
+contacts,wishlist,journal}.tsx` (new). `pages/reading-list.tsx` is now orphaned (import removed) —
+harmless, left on disk. **Open:** `main` not pushed; could iterate palette/spacing live; the
+remaining leaves are all real dashboards now (no dead read-doc leaves — every non-marathon leaf is a
+module). This is the strongest "full of data" cut to harvest into the real chrome + registry
+(t11/t12/t16).
+
+## v85 · Minimal-rail + area-as-page pass — SHIPPED + VERIFIED (2026-08-14, session 5)
+
+**Directive (Charles — "coming to an end of iterations"):** six focused changes. (1) Drop **Read /
+Plan / Focus** from the rail (not needed today). (2) Rail = **minimal, collapsible area folders**.
+(3) Each **area is itself a page** you open to see everything within at a glance. (4) A larger
+**"Life"** overview page above the areas. (5) Top-right **Notifications/Capture/Ask → icon-only**
+(the word "Ask" collided with the chat's Ask). (6) Remove the bottom-left **Week receipt**.
+
+**Built (files: `data.ts`, `index.tsx`, new `pages/area-overview.tsx` — all UNCOMMITTED):**
+
+- **Area = a page.** New shared, data-driven `pages/area-overview.tsx` (one component for all 5 areas,
+  keyed by `ctx.openId`). Config `AREA_OVERVIEW` in `data.ts`: per-area `{kicker, focal, focalCaption,
+note, cards[]}`. Renders one focal Instrument-Serif numeral + a quiet Pond read + a **card per child
+  page** (each `ctx.openPage(childId)`); a sage "ask Pond about {area} →" link (no LIME/RUST here —
+  navigation, not a primary action). Registered: the 5 **area ids** (`health/professional/finances/
+creativity/personal`) added to `MODULE_PAGES` + `MODULE_SURFACES` → all map to `AreaOverview`.
+- **Minimal collapsible rail** (`index.tsx`): the 4-lens switch replaced by a single **Life** button
+  (`goLens('home')` — Today surface is the everything-overview). Areas are **collapsible folders**:
+  `openAreas` Set state; each row = a **caret** (`toggleArea`, stopPropagation, rotates ▶→▾) + the
+  **area name** (`openArea` = expand its folder **and** open its overview page). All collapsed by
+  default (minimal). Nested Personal › Food group preserved (indents bumped). **Week receipt deleted.**
+- **Icon-only cluster** (`index.tsx`): new `iconBtn` style; Notifications `◔` (+ rust dot, now
+  absolutely positioned), Capture `＋`, command `⌘K` — words dropped, `title`/`aria-label` added. The
+  "Ask" word is gone so it no longer clashes with the bottom chat's Ask.
+- **Palette trimmed:** nav = just **Life** + the 5 **Areas** (`openArea`); dropped the Read/Plan/Focus
+  "Go" entries and the Start-focus / Plan-day acts. `LENSES` const removed (unused); `Receipt` import
+  removed. Read/Plan/Focus **surface files kept on disk** (just out of nav).
+
+**Verified live (Playwright, dev :3000, fresh reload):** rail shows `Life` + 5 collapsed area folders,
+no receipt; cluster = `◔ ＋ ⌘K` (aria-labelled). Click **Health** → overview renders (focal **38**,
+3 child cards) **and** the folder auto-expands (Marathon/Sleep/Workout appear). Child card **Sleep →
+opens the Sleep dashboard**. **Caret collapses children without navigating** (main unchanged). `npx
+tsc --noEmit` **exit 0** · **0 console errors**. Screen: `wayfinder/screens/r6-v85-area-overview-health.png`.
+
+**Open:** `main` still not pushed (this pass + all prior v85 work uncommitted). Charles signalled the
+iteration round is near done — next is likely commit + harvest into the real chrome/registry
+(t11/t12/t16). Note: the Today/Life surface still has an "Enter focus · Marathon" affordance (focus
+surface deprecated from nav but file kept) — left as-is (not in the 6 asks); trim if it bothers.

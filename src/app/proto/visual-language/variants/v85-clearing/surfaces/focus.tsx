@@ -77,9 +77,9 @@ interface PastSession {
 }
 const HISTORY: PastSession[] = [
   { id: 'marathon', title: 'Marathon Training', area: 'health', mins: 50, kept: 4, total: 4 },
-  { id: 'q3', title: 'Q3 Planning', area: 'work', mins: 25, kept: 3, total: 4 },
-  { id: 'design', title: 'Design System', area: 'work', mins: 15, kept: 2, total: 4 },
-  { id: 'walnut', title: 'Walnut Shelf', area: 'wood', mins: 5, kept: 4, total: 4 },
+  { id: 'q3', title: 'Q3 Planning', area: 'professional', mins: 25, kept: 3, total: 4 },
+  { id: 'design', title: 'Design System', area: 'professional', mins: 15, kept: 2, total: 4 },
+  { id: 'walnut', title: 'Walnut Shelf', area: 'creativity', mins: 5, kept: 4, total: 4 },
 ]
 const TODAY_MINS = HISTORY.reduce((sum, s) => sum + s.mins, 0)
 
@@ -88,7 +88,7 @@ export default function Focus(ctx: SurfaceCtx) {
 
   // ── session config (idle setup) ────────────────────────────────────────────
   const hasOpen = PAGES.some((p) => p.id === openId)
-  const [pageId, setPageId] = useState<string>(hasOpen ? openId : PAGES[0]?.id ?? 'marathon')
+  const [pageId, setPageId] = useState<string>(hasOpen ? openId : (PAGES[0]?.id ?? 'marathon'))
   const [duration, setDuration] = useState<number>(DURATIONS[1] ?? 50)
   const page = PAGES.find((p) => p.id === pageId) ?? PAGES[0]
   const targetSec = duration * 60
@@ -130,7 +130,10 @@ export default function Focus(ctx: SurfaceCtx) {
     })
     setElapsed(0)
   }
-  finishRef.current = finish
+  // keep the ref current without touching it during render.
+  useEffect(() => {
+    finishRef.current = finish
+  })
 
   // count-up interval — seed-safe (no Date.now), cleaned up on phase change.
   useEffect(() => {
@@ -144,7 +147,6 @@ export default function Focus(ctx: SurfaceCtx) {
     if (phase === 'running' && elapsed >= targetSec && targetSec > 0) {
       finishRef.current()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elapsed, phase, targetSec])
 
   // leaving mid-session restores the chrome.
@@ -223,7 +225,10 @@ export default function Focus(ctx: SurfaceCtx) {
         >
           {running ? (
             <>
-              <span className="clr-dot" style={{ width: 7, height: 7, borderRadius: 999, background: RUST }} />
+              <span
+                className="clr-dot"
+                style={{ width: 7, height: 7, borderRadius: 999, background: RUST }}
+              />
               <span style={{ ...kicker, color: RUST }}>ON AIR · FOCUSING</span>
             </>
           ) : (
@@ -244,7 +249,10 @@ export default function Focus(ctx: SurfaceCtx) {
           }}
         >
           {running ? (
-            <>Focusing on <span style={{ fontStyle: 'italic', color: INK }}>{page?.title}</span>. Everything else can wait.</>
+            <>
+              Focusing on <span style={{ fontStyle: 'italic', color: INK }}>{page?.title}</span>.
+              Everything else can wait.
+            </>
           ) : (
             <>Ready when you are. Nothing else will reach you here.</>
           )}
@@ -265,8 +273,19 @@ export default function Focus(ctx: SurfaceCtx) {
               pointerEvents: 'none',
             }}
           />
-          <svg width={DIAL} height={DIAL} style={{ transform: 'rotate(-90deg)', display: 'block', position: 'relative' }}>
-            <circle cx={DIAL / 2} cy={DIAL / 2} r={r} fill="none" stroke={LINE} strokeWidth={STROKE} />
+          <svg
+            width={DIAL}
+            height={DIAL}
+            style={{ transform: 'rotate(-90deg)', display: 'block', position: 'relative' }}
+          >
+            <circle
+              cx={DIAL / 2}
+              cy={DIAL / 2}
+              r={r}
+              fill="none"
+              stroke={LINE}
+              strokeWidth={STROKE}
+            />
             <circle
               cx={DIAL / 2}
               cy={DIAL / 2}
@@ -306,7 +325,14 @@ export default function Focus(ctx: SurfaceCtx) {
             >
               {running ? fmt(elapsed) : fmt(targetSec)}
             </span>
-            <span style={{ fontFamily: mono, fontSize: 12, letterSpacing: '0.08em', color: running ? RUST : MUTED }}>
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 12,
+                letterSpacing: '0.08em',
+                color: running ? RUST : MUTED,
+              }}
+            >
               −{fmt(remaining)} · {duration} MIN
             </span>
           </div>
@@ -357,7 +383,15 @@ export default function Focus(ctx: SurfaceCtx) {
             Begin focus
           </button>
         )}
-        <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.14em', color: FAINT, marginTop: 14 }}>
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 10.5,
+            letterSpacing: '0.14em',
+            color: FAINT,
+            marginTop: 14,
+          }}
+        >
           {running ? 'SPACE TO END' : 'SPACE TO BEGIN'}
         </div>
 
@@ -379,7 +413,9 @@ export default function Focus(ctx: SurfaceCtx) {
             }}
           >
             <KindDot area={page?.area} />
-            <span>{page?.title} · {areaTitle}</span>
+            <span>
+              {page?.title} · {areaTitle}
+            </span>
             <button
               onClick={finish}
               style={{
@@ -398,161 +434,189 @@ export default function Focus(ctx: SurfaceCtx) {
             </button>
           </div>
         ) : (
-        /* ── SETUP — pickers + protocols (idle only) ─────────────────────── */
-        <div
-          className="clr-rise"
-          style={{
-            width: '100%',
-            marginTop: 46,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 26,
-            transition: `opacity 700ms ${EASE}`,
-          }}
-        >
-          {/* page picker */}
-          <SetupGroup label="Focusing on">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              {PAGES.map((p) => (
-                <Pill
-                  key={p.id}
-                  on={p.id === pageId}
-                  onClick={() => setPageId(p.id)}
-                  label={p.title}
-                  sub={(AREA_TITLE[p.area] || p.area).toUpperCase()}
+          /* ── SETUP — pickers + protocols (idle only) ─────────────────────── */
+          <div
+            className="clr-rise"
+            style={{
+              width: '100%',
+              marginTop: 46,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 26,
+              transition: `opacity 700ms ${EASE}`,
+            }}
+          >
+            {/* page picker */}
+            <SetupGroup label="Focusing on">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                {PAGES.map((p) => (
+                  <Pill
+                    key={p.id}
+                    on={p.id === pageId}
+                    onClick={() => setPageId(p.id)}
+                    label={p.title}
+                    sub={(AREA_TITLE[p.area] || p.area).toUpperCase()}
+                  />
+                ))}
+              </div>
+            </SetupGroup>
+
+            {/* duration picker */}
+            <SetupGroup label="Block length">
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                {DURATIONS.map((d) => (
+                  <Pill
+                    key={d}
+                    on={d === duration}
+                    onClick={() => setDuration(d)}
+                    label={`${d}`}
+                    sub="MIN"
+                  />
+                ))}
+              </div>
+            </SetupGroup>
+
+            {/* ambient · dnd */}
+            <SetupGroup label="The room">
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                <SoftToggle
+                  on={ambient}
+                  onClick={() => setAmbient((v) => !v)}
+                  label="Ambient"
+                  sub={ambient ? 'Brown noise' : 'Silent'}
                 />
-              ))}
-            </div>
-          </SetupGroup>
+                <SoftToggle
+                  on={dnd}
+                  onClick={() => setDnd((v) => !v)}
+                  label="Do not disturb"
+                  sub={dnd ? 'Muted' : 'Alerts on'}
+                />
+              </div>
+            </SetupGroup>
 
-          {/* duration picker */}
-          <SetupGroup label="Block length">
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-              {DURATIONS.map((d) => (
-                <Pill key={d} on={d === duration} onClick={() => setDuration(d)} label={`${d}`} sub="MIN" />
-              ))}
-            </div>
-          </SetupGroup>
-
-          {/* ambient · dnd */}
-          <SetupGroup label="The room">
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <SoftToggle on={ambient} onClick={() => setAmbient((v) => !v)} label="Ambient" sub={ambient ? 'Brown noise' : 'Silent'} />
-              <SoftToggle on={dnd} onClick={() => setDnd((v) => !v)} label="Do not disturb" sub={dnd ? 'Muted' : 'Alerts on'} />
-            </div>
-          </SetupGroup>
-
-          {/* protocols checklist */}
-          <SetupGroup label={`Protocols · ${kept}/${protocols.length} kept`}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 320, margin: '0 auto' }}>
-              {protocols.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setProtocols((ps) => ps.map((x) => (x.id === p.id ? { ...x, done: !x.done } : x)))}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '9px 4px',
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    fontFamily: sans,
-                    fontSize: 14,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 999,
-                      flexShrink: 0,
-                      display: 'grid',
-                      placeItems: 'center',
-                      fontSize: 11,
-                      color: DONE_INK,
-                      background: p.done ? DONE : 'transparent',
-                      border: p.done ? 'none' : `1.5px solid ${FAINT}`,
-                      transition: `background 200ms ${EASE}`,
-                    }}
-                  >
-                    {p.done ? '✓' : ''}
-                  </span>
-                  <span
-                    style={{
-                      color: p.done ? MUTED : INK,
-                      textDecorationLine: p.done ? 'line-through' : 'none',
-                      textDecorationColor: FAINT,
-                    }}
-                  >
-                    {p.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </SetupGroup>
-
-          {/* recent sessions — quiet history, hairline-separated */}
-          <SetupGroup label="Recent sessions">
-            <div style={{ maxWidth: 340, margin: '0 auto' }}>
+            {/* protocols checklist */}
+            <SetupGroup label={`Protocols · ${kept}/${protocols.length} kept`}>
               <div
                 style={{
-                  fontFamily: mono,
-                  fontSize: 11,
-                  letterSpacing: '0.04em',
-                  color: MUTED,
-                  textAlign: 'center',
-                  marginBottom: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  maxWidth: 320,
+                  margin: '0 auto',
                 }}
               >
-                {TODAY_MINS} min focused today · {HISTORY.length} sessions
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {HISTORY.map((s, i) => (
-                  <div
-                    key={s.id}
+                {protocols.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() =>
+                      setProtocols((ps) =>
+                        ps.map((x) => (x.id === p.id ? { ...x, done: !x.done } : x))
+                      )
+                    }
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 11,
-                      padding: '10px 2px',
-                      borderTop: i === 0 ? 'none' : `1px solid ${HAIR}`,
+                      gap: 12,
+                      padding: '9px 4px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: sans,
+                      fontSize: 14,
                     }}
                   >
-                    <KindDot area={s.area} />
                     <span
                       style={{
-                        flex: 1,
-                        minWidth: 0,
-                        textAlign: 'left',
-                        fontFamily: sans,
-                        fontSize: 13.5,
-                        color: BODY,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {s.title}
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: mono,
-                        fontSize: 11,
-                        letterSpacing: '0.04em',
-                        color: MUTED,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 999,
                         flexShrink: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: 11,
+                        color: DONE_INK,
+                        background: p.done ? DONE : 'transparent',
+                        border: p.done ? 'none' : `1.5px solid ${FAINT}`,
+                        transition: `background 200ms ${EASE}`,
                       }}
                     >
-                      {s.mins}m · {s.kept}/{s.total}
+                      {p.done ? '✓' : ''}
                     </span>
-                  </div>
+                    <span
+                      style={{
+                        color: p.done ? MUTED : INK,
+                        textDecorationLine: p.done ? 'line-through' : 'none',
+                        textDecorationColor: FAINT,
+                      }}
+                    >
+                      {p.label}
+                    </span>
+                  </button>
                 ))}
               </div>
-            </div>
-          </SetupGroup>
-        </div>
+            </SetupGroup>
+
+            {/* recent sessions — quiet history, hairline-separated */}
+            <SetupGroup label="Recent sessions">
+              <div style={{ maxWidth: 340, margin: '0 auto' }}>
+                <div
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    color: MUTED,
+                    textAlign: 'center',
+                    marginBottom: 12,
+                  }}
+                >
+                  {TODAY_MINS} min focused today · {HISTORY.length} sessions
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {HISTORY.map((s, i) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 11,
+                        padding: '10px 2px',
+                        borderTop: i === 0 ? 'none' : `1px solid ${HAIR}`,
+                      }}
+                    >
+                      <KindDot area={s.area} />
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          textAlign: 'left',
+                          fontFamily: sans,
+                          fontSize: 13.5,
+                          color: BODY,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {s.title}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: mono,
+                          fontSize: 11,
+                          letterSpacing: '0.04em',
+                          color: MUTED,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {s.mins}m · {s.kept}/{s.total}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </SetupGroup>
+          </div>
         )}
       </div>
 
@@ -576,7 +640,13 @@ export default function Focus(ctx: SurfaceCtx) {
           <div
             className="clr-rise"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(500px, 92vw)', ...glass, borderRadius: 28, padding: 34, textAlign: 'left' }}
+            style={{
+              width: 'min(500px, 92vw)',
+              ...glass,
+              borderRadius: 28,
+              padding: 34,
+              textAlign: 'left',
+            }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <span style={{ width: 8, height: 8, borderRadius: 999, background: LIME }} />
@@ -584,17 +654,36 @@ export default function Focus(ctx: SurfaceCtx) {
               <button
                 onClick={() => setSummary(null)}
                 aria-label="Close summary"
-                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: MUTED, fontSize: 18 }}
+                style={{
+                  marginLeft: 'auto',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: MUTED,
+                  fontSize: 18,
+                }}
               >
                 ×
               </button>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-              <span style={{ fontFamily: display, fontSize: 82, lineHeight: 0.82, letterSpacing: '-0.02em', color: INK }}>
+              <span
+                style={{
+                  fontFamily: display,
+                  fontSize: 82,
+                  lineHeight: 0.82,
+                  letterSpacing: '-0.02em',
+                  color: INK,
+                }}
+              >
                 {summary.mins}
               </span>
-              <span style={{ fontFamily: mono, fontSize: 13, letterSpacing: '0.1em', color: MUTED }}>MIN FOCUSED</span>
+              <span
+                style={{ fontFamily: mono, fontSize: 13, letterSpacing: '0.1em', color: MUTED }}
+              >
+                MIN FOCUSED
+              </span>
             </div>
 
             <div style={{ display: 'flex', gap: 26, marginTop: 22, flexWrap: 'wrap' }}>
@@ -688,7 +777,17 @@ function SetupGroup({ label, children }: { label: string; children: React.ReactN
 }
 
 /** A quiet segmented pill — page / duration selection. */
-function Pill({ on, onClick, label, sub }: { on: boolean; onClick: () => void; label: string; sub: string }) {
+function Pill({
+  on,
+  onClick,
+  label,
+  sub,
+}: {
+  on: boolean
+  onClick: () => void
+  label: string
+  sub: string
+}) {
   return (
     <button
       onClick={onClick}
@@ -706,14 +805,35 @@ function Pill({ on, onClick, label, sub }: { on: boolean; onClick: () => void; l
         transition: `all 200ms ${EASE}`,
       }}
     >
-      <span style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? INK : BODY }}>{label}</span>
-      <span style={{ fontFamily: mono, fontSize: 9, letterSpacing: '0.14em', color: on ? ACCENT : MUTED }}>{sub}</span>
+      <span style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? INK : BODY }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 9,
+          letterSpacing: '0.14em',
+          color: on ? ACCENT : MUTED,
+        }}
+      >
+        {sub}
+      </span>
     </button>
   )
 }
 
 /** Sage ambient toggle — a quiet switch with a mono state line. */
-function SoftToggle({ on, onClick, label, sub }: { on: boolean; onClick: () => void; label: string; sub: string }) {
+function SoftToggle({
+  on,
+  onClick,
+  label,
+  sub,
+}: {
+  on: boolean
+  onClick: () => void
+  label: string
+  sub: string
+}) {
   return (
     <button
       onClick={onClick}
@@ -734,12 +854,44 @@ function SoftToggle({ on, onClick, label, sub }: { on: boolean; onClick: () => v
       }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span style={{ width: 30, height: 17, borderRadius: 999, background: on ? ACCENT : FAINT, position: 'relative', flexShrink: 0, transition: `background 200ms ${EASE}` }}>
-          <span style={{ position: 'absolute', top: 2, left: on ? 15 : 2, width: 13, height: 13, borderRadius: 999, background: CARD, transition: `left 200ms ${EASE}` }} />
+        <span
+          style={{
+            width: 30,
+            height: 17,
+            borderRadius: 999,
+            background: on ? ACCENT : FAINT,
+            position: 'relative',
+            flexShrink: 0,
+            transition: `background 200ms ${EASE}`,
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: 2,
+              left: on ? 15 : 2,
+              width: 13,
+              height: 13,
+              borderRadius: 999,
+              background: CARD,
+              transition: `left 200ms ${EASE}`,
+            }}
+          />
         </span>
-        <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: INK }}>{label}</span>
+        <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, color: INK }}>
+          {label}
+        </span>
       </span>
-      <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.08em', color: on ? ACCENT : MUTED }}>{sub.toUpperCase()}</span>
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 10,
+          letterSpacing: '0.08em',
+          color: on ? ACCENT : MUTED,
+        }}
+      >
+        {sub.toUpperCase()}
+      </span>
     </button>
   )
 }

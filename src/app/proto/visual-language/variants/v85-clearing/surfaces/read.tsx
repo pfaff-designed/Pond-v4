@@ -69,6 +69,9 @@ export default function Read({ askPond }: SurfaceCtx) {
   const [annotating, setAnnotating] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [copied, setCopied] = useState(false)
+  // a sentence briefly pulses when jumped to from the note-index
+  const [flashSid, setFlashSid] = useState<string | null>(null)
+  const flashTimer = useRef<number | null>(null)
 
   // ── reading progress + active section ───────────────────────────────────
   const [progress, setProgress] = useState(0)
@@ -187,12 +190,39 @@ export default function Read({ askPond }: SurfaceCtx) {
     el?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
   }
 
+  // ── note-index: jump to a specific marked sentence + pulse it ────────────
+  const jumpToSid = useCallback((sid: string) => {
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-sid="${sid}"]`)
+    el?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+    setFlashSid(sid)
+    if (flashTimer.current) window.clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setFlashSid(null), 1100)
+  }, [])
+  useEffect(
+    () => () => {
+      if (flashTimer.current) window.clearTimeout(flashTimer.current)
+    },
+    []
+  )
+
   // ── ambient notes grouped by their anchor sid ────────────────────────────
   const notesBySid = useMemo(() => {
     const m: Record<string, typeof AMBIENT_NOTES> = {}
     for (const n of AMBIENT_NOTES) (m[n.sid] ??= []).push(n)
     return m
   }, [])
+
+  // ── the reader's own marks, in document order (highlights + annotations) ──
+  const marks = useMemo(() => {
+    const out: { sid: string; text: string; kind: 'highlight' | 'note' }[] = []
+    for (const section of READER.sections) {
+      for (const s of section.sentences) {
+        if (highlights.has(s.sid)) out.push({ sid: s.sid, text: s.text, kind: 'highlight' })
+        if (notes[s.sid]) out.push({ sid: s.sid, text: notes[s.sid], kind: 'note' })
+      }
+    }
+    return out
+  }, [highlights, notes])
 
   const areaLabel = READER.crumb.join(' · ')
 
@@ -266,8 +296,9 @@ export default function Read({ askPond }: SurfaceCtx) {
           sections={READER.sections}
           activeHid={activeHid}
           onJump={jumpTo}
-          faint={theme.faint}
-          ink={theme.ink}
+          marks={marks}
+          onJumpSid={jumpToSid}
+          theme={theme}
         />
 
         {/* header */}
@@ -301,7 +332,14 @@ export default function Read({ askPond }: SurfaceCtx) {
           >
             {READER.standfirst}
           </p>
-          <div style={{ fontFamily: mono, fontSize: 11.5, letterSpacing: '0.04em', color: theme.faint }}>
+          <div
+            style={{
+              fontFamily: mono,
+              fontSize: 11.5,
+              letterSpacing: '0.04em',
+              color: theme.faint,
+            }}
+          >
             {areaLabel} · {READER.minutes} min read
           </div>
           <div style={{ height: 1, background: theme.line, marginTop: 28, transition: trans }} />
@@ -309,7 +347,11 @@ export default function Read({ askPond }: SurfaceCtx) {
 
         {/* prose — flat serif, sentences are the DOM truth */}
         {READER.sections.map((section) => (
-          <section key={section.hid} data-hid={section.hid} style={{ scrollMarginTop: 24, marginBottom: 8, position: 'relative' }}>
+          <section
+            key={section.hid}
+            data-hid={section.hid}
+            style={{ scrollMarginTop: 24, marginBottom: 8, position: 'relative' }}
+          >
             <h2
               style={{
                 fontFamily: bodyFamily,
@@ -339,7 +381,9 @@ export default function Read({ askPond }: SurfaceCtx) {
                 return (
                   <span
                     key={s.sid}
-                    ref={(el) => { sentRefs.current[s.sid] = el }}
+                    ref={(el) => {
+                      sentRefs.current[s.sid] = el
+                    }}
                     data-sid={s.sid}
                     onClick={(e) => onSentence(e, s.sid, s.text)}
                     style={{
@@ -348,7 +392,7 @@ export default function Read({ askPond }: SurfaceCtx) {
                       padding: '0.5px 1px',
                       boxDecorationBreak: 'clone',
                       WebkitBoxDecorationBreak: 'clone',
-                      background: on ? theme.mark : 'transparent',
+                      background: on || flashSid === s.sid ? theme.mark : 'transparent',
                       // a subtle pencil marker under any annotated sentence — the
                       // note itself lives in the gutter and never covers words
                       borderBottom: hasNote ? `1px solid ${theme.faint}` : undefined,
@@ -370,7 +414,12 @@ export default function Read({ askPond }: SurfaceCtx) {
               const items: React.ReactNode[] = []
               if (notes[s.sid] && annotating !== s.sid) {
                 items.push(
-                  <MarginNote key={`m-${s.sid}`} text={notes[s.sid]} theme={theme} onEdit={() => openAnnotate(s.sid)} />,
+                  <MarginNote
+                    key={`m-${s.sid}`}
+                    text={notes[s.sid]}
+                    theme={theme}
+                    onEdit={() => openAnnotate(s.sid)}
+                  />
                 )
               }
               for (const n of anchored) {
@@ -389,7 +438,7 @@ export default function Read({ askPond }: SurfaceCtx) {
                       })
                     }
                     onDismiss={() => setDismissed((prev) => new Set(prev).add(n.id))}
-                  />,
+                  />
                 )
               }
               if (annotating === s.sid) {
@@ -421,10 +470,15 @@ export default function Read({ askPond }: SurfaceCtx) {
                       }}
                     />
                     <span style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                      <MiniBtn label="Save" onClick={() => saveAnnotate(s.sid)} theme={theme} accent />
+                      <MiniBtn
+                        label="Save"
+                        onClick={() => saveAnnotate(s.sid)}
+                        theme={theme}
+                        accent
+                      />
                       <MiniBtn label="Cancel" onClick={() => setAnnotating(null)} theme={theme} />
                     </span>
-                  </span>,
+                  </span>
                 )
               }
               if (items.length === 0) return null
@@ -516,9 +570,7 @@ function ActionBar({
         position: 'absolute',
         left: bar.x,
         top: bar.y,
-        transform: `translate(-50%, calc(-100% - 12px)) translateY(${
-          reduced || shown ? 0 : 6
-        }px)`,
+        transform: `translate(-50%, calc(-100% - 12px)) translateY(${reduced || shown ? 0 : 6}px)`,
         opacity: reduced || shown ? 1 : 0,
         zIndex: 60,
         display: 'flex',
@@ -581,20 +633,23 @@ function BarBtn({
   )
 }
 
-/* ── heading outline (left margin, floats on wide viewports) ─────────────── */
+/* ── heading outline + note-index (left margin, floats on wide viewports) ── */
 function Outline({
   sections,
   activeHid,
   onJump,
-  faint,
-  ink,
+  marks,
+  onJumpSid,
+  theme,
 }: {
   sections: typeof READER.sections
   activeHid: string
   onJump: (hid: string) => void
-  faint: string
-  ink: string
+  marks: { sid: string; text: string; kind: 'highlight' | 'note' }[]
+  onJumpSid: (sid: string) => void
+  theme: ReaderTheme
 }) {
+  const { faint, ink } = theme
   return (
     <nav
       aria-label="Outline"
@@ -633,6 +688,61 @@ function Outline({
           </button>
         )
       })}
+
+      {/* note-index — the reader's own marks, appears only once there are any */}
+      {marks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>
+          <div style={{ ...kicker, color: faint, marginBottom: 1 }}>
+            Your marks · {marks.length}
+          </div>
+          {marks.map((m, i) => (
+            <button
+              key={`${m.sid}-${m.kind}-${i}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onJumpSid(m.sid)
+              }}
+              title={m.text}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                border: 'none',
+                background: 'transparent',
+                textAlign: 'left',
+                cursor: 'pointer',
+                padding: 0,
+                width: '100%',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  flex: '0 0 auto',
+                  width: m.kind === 'highlight' ? 10 : 3,
+                  height: 12,
+                  borderRadius: m.kind === 'highlight' ? 2 : 0,
+                  background: m.kind === 'highlight' ? theme.mark : RUST,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: sans,
+                  fontSize: 12.5,
+                  lineHeight: 1.4,
+                  color: faint,
+                  fontStyle: m.kind === 'note' ? 'italic' : 'normal',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {m.text}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </nav>
   )
 }
@@ -653,7 +763,13 @@ function RelatedReading({
 }) {
   return (
     <div style={{ marginTop: 72 }}>
-      <div style={{ height: 1, background: theme.line, transition: reduced ? 'none' : `background .3s ${EASE}` }} />
+      <div
+        style={{
+          height: 1,
+          background: theme.line,
+          transition: reduced ? 'none' : `background .3s ${EASE}`,
+        }}
+      />
       <div style={{ ...kicker, color: theme.faint, margin: '28px 0 6px' }}>Keep reading</div>
       <div>
         {RELATED.map((r) => (

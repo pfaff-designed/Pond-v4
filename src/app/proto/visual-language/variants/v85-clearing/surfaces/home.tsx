@@ -129,20 +129,31 @@ export default function Home(ctx: SurfaceCtx) {
   // "Up next" mini-agenda — flat rows, faint mono times.
   const UP_NEXT: { time: string; label: string; area: string }[] = [
     { time: '07:00', label: '16-mile long run', area: 'health' },
-    { time: '10:00', label: 'Design-system tokens', area: 'work' },
-    { time: '16:00', label: 'Walnut Shelf glue-up', area: 'wood' },
+    { time: '10:00', label: 'Design-system tokens', area: 'professional' },
+    { time: '16:00', label: 'Walnut Shelf glue-up', area: 'creativity' },
   ]
 
-  // "Across your life" — one synthesized line per domain, each opening its area.
+  // "Across your life" — one synthesized line per area, each opening it.
   // The persona's headline use case: see the whole of it in one calm read.
   const ACROSS: { area: string; label: string; line: string; open: string }[] = [
     { area: 'health', label: 'Health', line: 'On track · 38 mi, sleep 7.1h', open: 'sleep' },
-    { area: 'work', label: 'Work', line: '1 project at risk — Design System', open: 'ds' },
-    { area: 'life', label: 'Life', line: 'Dining $48 over budget this month', open: 'finance' },
-    { area: 'wood', label: 'Making', line: 'Walnut shelf → ready for glue-up', open: 'shelf' },
+    { area: 'professional', label: 'Work', line: '1 project at risk — Design System', open: 'ds' },
+    {
+      area: 'finances',
+      label: 'Money',
+      line: 'Dining $48 over budget this month',
+      open: 'finance',
+    },
+    {
+      area: 'creativity',
+      label: 'Making',
+      line: 'Walnut shelf → ready for glue-up',
+      open: 'shelf',
+    },
+    { area: 'personal', label: 'Life', line: 'Lisbon booked · 23rd book this year', open: 'trips' },
   ]
   const POND_READ =
-    'Steady week. Health and making are humming; keep an eye on Design System and dining.'
+    'A steady week. Health and making are humming; keep an eye on Design System and the dining budget — Lisbon is handled.'
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', background: 'transparent' }}>

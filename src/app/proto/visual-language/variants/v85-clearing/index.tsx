@@ -19,7 +19,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Variant } from '../../types'
 import type { SurfaceCtx, SurfaceId } from './shell-types'
-import { tree, diffCard, PAGES, DOCS, AREA_TITLE, isModulePage, ACTIVITY } from './data'
+import {
+  tree,
+  diffCard,
+  PAGES,
+  DOCS,
+  AREA_TITLE,
+  isModulePage,
+  firstPageOf,
+  ACTIVITY,
+} from './data'
 import type { ActivityItem, ActivityType } from './data'
 import {
   sans,
@@ -45,13 +54,11 @@ import {
   kbd,
   radius,
   KindDot,
-  Receipt,
 } from './ui'
 import Home from './surfaces/home'
 import Read from './surfaces/read'
 import Plan from './surfaces/plan'
 import Focus from './surfaces/focus'
-import ReadingList from './pages/reading-list'
 import Grocery from './pages/grocery'
 import Recipes from './pages/recipes'
 import Finance from './pages/finance'
@@ -59,32 +66,48 @@ import Workout from './pages/workout'
 import ProjectTracker from './pages/project-tracker'
 import Shelf from './pages/shelf'
 import Sleep from './pages/sleep'
+import Tasks from './pages/tasks'
+import Trips from './pages/trips'
+import Library from './pages/library'
+import MealPlan from './pages/meal-plan'
+import Contacts from './pages/contacts'
+import Wishlist from './pages/wishlist'
+import Journal from './pages/journal'
+import AreaOverview from './pages/area-overview'
 
 /** Module-pages: an id → its dedicated rich surface. */
 const MODULE_SURFACES: Record<string, React.ComponentType<SurfaceCtx>> = {
-  'reading-list': ReadingList,
-  grocery: Grocery,
-  recipes: Recipes,
-  finance: Finance,
-  workout: Workout,
-  projects: ProjectTracker,
-  // Areas leaves that now open their own dashboard instead of the shared essay:
-  shelf: Shelf,
+  // Area overview pages — each area id renders the shared at-a-glance overview:
+  health: AreaOverview,
+  professional: AreaOverview,
+  finances: AreaOverview,
+  creativity: AreaOverview,
+  personal: AreaOverview,
+  // Health
   sleep: Sleep,
-  // Work projects reuse the project-tracker, keyed by the openId set below:
+  workout: Workout,
+  // Professional — q3/ds/projects reuse the project-tracker, keyed by openId:
   q3: ProjectTracker,
   ds: ProjectTracker,
+  projects: ProjectTracker,
+  tasks: Tasks,
+  // Finances
+  finance: Finance,
+  // Creativity
+  shelf: Shelf,
+  wishlist: Wishlist,
+  // Personal
+  recipes: Recipes,
+  meals: MealPlan,
+  grocery: Grocery,
+  trips: Trips,
+  contacts: Contacts,
+  library: Library,
+  journal: Journal,
   // Portfolio-only projects (reached by drilling into the Project Tracker roll-up):
   mn: ProjectTracker,
   site: ProjectTracker,
 }
-
-const LENSES: { id: SurfaceId; label: string; glyph: string }[] = [
-  { id: 'home', label: 'Today', glyph: '◒' },
-  { id: 'read', label: 'Read', glyph: '¶' },
-  { id: 'plan', label: 'Plan', glyph: '▦' },
-  { id: 'focus', label: 'Focus', glyph: '◉' },
-]
 
 interface Cmd {
   kind: 'Go' | 'Open' | 'Do'
@@ -111,7 +134,7 @@ function subseq(q: string, s: string) {
 
 /** Pond's canned read across the whole of it — the persona's headline ask. */
 const WHOLE_LIFE_ANSWER =
-  'Across everything: Health is on track — 38 miles and 7.1h sleep. Work has one project slipping (Design System). Life-wise, dining is $48 over budget. Your walnut shelf is ready for glue-up. Net: a calm, steady week — nudge Design System and dining, and the rest carries itself.'
+  'Across everything: Health is on track — 38 miles this week and 7.1h sleep. Professionally, one project is slipping (Design System). Money is calm but dining is $48 over budget. Creatively, the walnut shelf is ready for glue-up. And personally, Lisbon is booked and you’re on your 23rd book of the year. Net: a steady week — nudge Design System and dining, and the rest carries itself.'
 function isWholeLifeQ(q: string) {
   return /every(thing|where)|across|whole life|overall|all my|how am i doing/i.test(q)
 }
@@ -125,6 +148,8 @@ function View() {
   const [openId, setOpenId] = useState('marathon')
   const [moduleId, setModuleId] = useState<string | null>(null)
   const [sessionActive, setSessionActive] = useState(false)
+  // which area folders are expanded in the minimal rail (all collapsed by default)
+  const [openAreas, setOpenAreas] = useState<Set<string>>(() => new Set())
 
   const [chatOpen, setChatOpen] = useState(false)
   const [draft, setDraft] = useState('')
@@ -234,21 +259,52 @@ function View() {
       setModuleId(null)
     }
   }
+  /** Toggle an area folder open/closed in the rail. */
+  const toggleArea = (id: string) =>
+    setOpenAreas((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  /** Open an area's overview page, and expand its folder so its pages show. */
+  const openArea = (id: string) => {
+    setOpenAreas((s) => new Set(s).add(id))
+    openTreePage(id)
+  }
+  /** Whether a rail leaf is the active one (a module dashboard, or the read doc). */
+  const isOpenLeaf = (id: string) =>
+    moduleId ? id === moduleId : id === openId && surface === 'read'
+  const leafBtnStyle = (on: boolean, indent: number): React.CSSProperties => ({
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    marginLeft: indent,
+    padding: '5px 10px',
+    borderRadius: 9,
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 12.5,
+    color: on ? INK : MUTED,
+    fontWeight: on ? 600 : 400,
+    background: on ? ACCENT_SOFT : 'transparent',
+  })
 
   // command palette results
   const commands = useMemo<Cmd[]>(() => {
-    const nav: Cmd[] = LENSES.map((l) => ({ kind: 'Go', label: l.label, run: () => goLens(l.id) }))
+    const nav: Cmd[] = [{ kind: 'Go', label: 'Life', sub: 'Overview', run: () => goLens('home') }]
+    const areas: Cmd[] = tree.map((a) => ({
+      kind: 'Go',
+      label: a.title,
+      sub: 'Area',
+      run: () => openArea(a.id),
+    }))
     const pages: Cmd[] = PAGES.map((p) => ({
       kind: 'Open',
       label: p.title,
       sub: AREA_TITLE[p.area],
       run: () => openTreePage(p.id),
     }))
-    const acts: Cmd[] = [
-      { kind: 'Do', label: 'Start a focus session', run: () => goLens('focus') },
-      { kind: 'Do', label: 'Plan my day', run: () => goLens('plan') },
-    ]
-    return [...acts, ...pages, ...nav]
+    return [...nav, ...areas, ...pages]
   }, [])
   const results = useMemo(() => {
     if (!query) return commands
@@ -367,15 +423,14 @@ function View() {
             <span style={{ ...kicker, color: MUTED }}>clearing</span>
           </div>
 
-          {/* lens switch */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 18 }}>
-            {LENSES.map((l) => {
-              const on = l.id === surface && !moduleId
+          {/* Life — the top overview page (everything, across your life) */}
+          <div style={{ marginBottom: 16 }}>
+            {(() => {
+              const on = surface === 'home' && !moduleId
               return (
                 <button
-                  key={l.id}
                   className="v85-nav"
-                  onClick={() => goLens(l.id)}
+                  onClick={() => goLens('home')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -389,8 +444,8 @@ function View() {
                     background: on ? ACCENT_SOFT : 'transparent',
                     color: on ? INK : MUTED,
                     fontFamily: sans,
-                    fontSize: 13.5,
-                    fontWeight: on ? 600 : 500,
+                    fontSize: 14,
+                    fontWeight: on ? 700 : 600,
                   }}
                 >
                   <span
@@ -401,75 +456,118 @@ function View() {
                       fontSize: 13,
                     }}
                   >
-                    {l.glyph}
+                    ◒
                   </span>
-                  {l.label}
-                  {l.id === 'read' && on && (
-                    <span style={{ ...kicker, marginLeft: 'auto', color: FAINT }}>
-                      {doc.title.slice(0, 10)}
-                    </span>
-                  )}
+                  Life
+                  <span style={{ ...kicker, marginLeft: 'auto', color: FAINT }}>all</span>
                 </button>
               )
-            })}
+            })()}
           </div>
 
-          {/* areas → pages */}
+          {/* areas → collapsible folders; each area header opens its overview page */}
           <div style={{ ...kicker, padding: '0 10px 8px' }}>Areas</div>
-          {tree.map((a) => (
-            <div key={a.id} style={{ marginBottom: 6 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 10px',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: INK,
-                }}
-              >
-                <KindDot area={a.id} /> {a.title}
-              </div>
-              {(a.children ?? []).map((c) => {
-                const on = moduleId ? c.id === moduleId : c.id === openId && surface === 'read'
-                return (
+          {tree.map((a) => {
+            const expanded = openAreas.has(a.id)
+            const activeArea = moduleId === a.id
+            return (
+              <div key={a.id} style={{ marginBottom: 2 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderRadius: radius.chip,
+                    background: activeArea ? ACCENT_SOFT : 'transparent',
+                  }}
+                >
+                  {/* caret — toggles the folder without navigating */}
                   <button
-                    key={c.id}
-                    className="v85-nav"
-                    onClick={() => openTreePage(c.id)}
+                    aria-label={expanded ? `Collapse ${a.title}` : `Expand ${a.title}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleArea(a.id)
+                    }}
                     style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      marginLeft: 15,
-                      padding: '5px 10px',
-                      borderRadius: 9,
+                      flexShrink: 0,
+                      width: 22,
+                      height: 30,
+                      display: 'grid',
+                      placeItems: 'center',
                       border: 'none',
+                      background: 'transparent',
                       cursor: 'pointer',
-                      fontSize: 12.5,
-                      color: on ? INK : MUTED,
-                      fontWeight: on ? 600 : 400,
-                      background: on ? ACCENT_SOFT : 'transparent',
+                      color: FAINT,
+                      fontSize: 9,
+                      transition: `transform 180ms ${EASE}`,
+                      transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
                     }}
                   >
-                    {c.title}
+                    ▶
                   </button>
-                )
-              })}
-            </div>
-          ))}
-
-          <div style={{ marginTop: 20, padding: '0 4px' }}>
-            <Receipt
-              title="Week receipt"
-              rows={[
-                ['MILEAGE', '38 MI'],
-                ['STREAK', '12 WK', RUST],
-                ['SLEEP', '7.1 H'],
-              ]}
-            />
-          </div>
+                  {/* area name — opens the area overview page (and expands the folder) */}
+                  <button
+                    className="v85-nav"
+                    onClick={() => openArea(a.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: 'left',
+                      padding: '6px 10px 6px 2px',
+                      borderRadius: radius.chip,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: activeArea ? INK : BODY,
+                    }}
+                  >
+                    <KindDot area={a.id} /> {a.title}
+                  </button>
+                </div>
+                {expanded &&
+                  (a.children ?? []).map((c) =>
+                    c.children?.length ? (
+                      // a nested sub-area (e.g. Personal › Food): quiet label + leaves
+                      <div key={c.id} style={{ marginTop: 2, marginBottom: 2 }}>
+                        <div
+                          style={{
+                            ...kicker,
+                            color: FAINT,
+                            padding: '5px 10px 2px',
+                            marginLeft: 30,
+                          }}
+                        >
+                          {c.title}
+                        </div>
+                        {c.children.map((leaf) => (
+                          <button
+                            key={leaf.id}
+                            className="v85-nav"
+                            onClick={() => openTreePage(leaf.id)}
+                            style={leafBtnStyle(isOpenLeaf(leaf.id), 42)}
+                          >
+                            {leaf.title}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <button
+                        key={c.id}
+                        className="v85-nav"
+                        onClick={() => openTreePage(c.id)}
+                        style={leafBtnStyle(isOpenLeaf(c.id), 30)}
+                      >
+                        {c.title}
+                      </button>
+                    )
+                  )}
+              </div>
+            )
+          })}
         </aside>
 
         {/* the active surface renders in main */}
@@ -491,28 +589,38 @@ function View() {
         }}
       >
         <button
-          onClick={() => {
-            setNotifOpen(true)
-          }}
-          style={clusterBtn}
+          onClick={() => setNotifOpen(true)}
+          title="Notifications"
+          aria-label="Notifications"
+          style={iconBtn}
         >
-          ◔ Notifications
+          ◔
           {!accepted && (
             <span
-              style={{ width: 6, height: 6, borderRadius: 999, background: RUST, marginLeft: 2 }}
+              style={{
+                position: 'absolute',
+                top: 7,
+                right: 8,
+                width: 6,
+                height: 6,
+                borderRadius: 999,
+                background: RUST,
+              }}
             />
           )}
         </button>
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setCaptureOpen((v) => !v)}
+            title="Capture"
+            aria-label="Capture"
             style={{
-              ...clusterBtn,
-              background: captureOpen ? ACCENT_SOFT : (clusterBtn.background as string),
-              color: captureOpen ? INK : clusterBtn.color,
+              ...iconBtn,
+              background: captureOpen ? ACCENT_SOFT : (iconBtn.background as string),
+              color: captureOpen ? INK : iconBtn.color,
             }}
           >
-            ＋ Capture
+            ＋
           </button>
           {captureOpen && (
             <div
@@ -654,8 +762,13 @@ function View() {
             </div>
           )}
         </div>
-        <button onClick={openPalette} style={clusterBtn}>
-          Ask <span style={kbd}>⌘K</span>
+        <button
+          onClick={openPalette}
+          title="Search & commands (⌘K)"
+          aria-label="Search and commands"
+          style={iconBtn}
+        >
+          <span style={kbd}>⌘K</span>
         </button>
       </div>
 
@@ -1087,17 +1200,7 @@ function View() {
                               item={a}
                               delay={step++ * 45}
                               onOpen={() => {
-                                openTreePage(
-                                  a.area === 'life'
-                                    ? 'finance'
-                                    : a.area === 'work'
-                                      ? 'ds'
-                                      : a.area === 'wood'
-                                        ? 'shelf'
-                                        : a.area === 'reading'
-                                          ? 'reading-list'
-                                          : 'sleep'
-                                )
+                                openTreePage(a.page ?? firstPageOf(a.area))
                                 setNotifOpen(false)
                               }}
                             />
@@ -1155,6 +1258,16 @@ const clusterBtn: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   color: INK,
+}
+
+/** Icon-only variant of the cluster button (no label). */
+const iconBtn: React.CSSProperties = {
+  ...clusterBtn,
+  position: 'relative',
+  padding: '9px 12px',
+  gap: 4,
+  fontSize: 15,
+  lineHeight: 1,
 }
 
 /* ── Notifications timeline — a left-spine rail the nodes hang from ─────────── */

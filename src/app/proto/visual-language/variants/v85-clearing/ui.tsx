@@ -79,11 +79,12 @@ export const kbd = {
 
 // ── area accent (one dot color per area; muted)
 export const AREA_ACCENT: Record<string, string> = {
-  health: ACCENT,
-  work: '#6b7a86', // muted slate
-  life: '#8a6b74', // muted mauve
-  wood: '#9a6b43', // muted clay
-  reading: '#8a7a4a', // muted gold
+  health: ACCENT, // sage
+  professional: '#6b7a86', // muted slate
+  finances: '#8a7a4a', // muted gold
+  creativity: '#9a6b43', // muted clay
+  personal: '#8a6b74', // muted mauve
+  food: '#7d8a5f', // muted olive (Personal › Food)
 }
 
 // ── reader themes (paper / sepia / night) — warm, never harsh
@@ -96,7 +97,14 @@ export interface ReaderTheme {
   line: string
 }
 export const THEMES: Record<'paper' | 'sepia' | 'night', ReaderTheme> = {
-  paper: { bg: PAPER, ink: INK, body: BODY, mark: 'rgba(196,224,138,0.5)', faint: FAINT, line: LINE },
+  paper: {
+    bg: PAPER,
+    ink: INK,
+    body: BODY,
+    mark: 'rgba(196,224,138,0.5)',
+    faint: FAINT,
+    line: LINE,
+  },
   sepia: {
     bg: '#f0e2c8',
     ink: '#2a2016',
@@ -176,13 +184,20 @@ export function Spark({
   const pts = data
     .map(
       (v, i) =>
-        `${((i / (data.length - 1)) * w).toFixed(1)},${(h - ((v - min) / (max - min || 1)) * (h - 6) - 3).toFixed(1)}`,
+        `${((i / (data.length - 1)) * w).toFixed(1)},${(h - ((v - min) / (max - min || 1)) * (h - 6) - 3).toFixed(1)}`
     )
     .join(' ')
   const last = pts.split(' ').pop()!.split(',')
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx={last[0]} cy={last[1]} r={2.5} fill={color} />
     </svg>
   )
@@ -241,7 +256,15 @@ export function Ring({
           }}
         >
           {label && (
-            <span style={{ fontFamily: display, fontSize: size * 0.28, color: INK, lineHeight: 1, letterSpacing: '-0.01em' }}>
+            <span
+              style={{
+                fontFamily: display,
+                fontSize: size * 0.28,
+                color: INK,
+                lineHeight: 1,
+                letterSpacing: '-0.01em',
+              }}
+            >
               {label}
             </span>
           )}
@@ -300,7 +323,15 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void
 }) {
   return (
-    <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: radius.pill, background: ACCENT_WASH }}>
+    <div
+      style={{
+        display: 'inline-flex',
+        gap: 2,
+        padding: 3,
+        borderRadius: radius.pill,
+        background: ACCENT_WASH,
+      }}
+    >
       {options.map((o) => {
         const on = o.value === value
         return (
