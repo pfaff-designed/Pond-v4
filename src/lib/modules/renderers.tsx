@@ -10,6 +10,7 @@ import type { ComponentType } from 'react'
 import type { ModuleRenderer, ModuleViewProps } from './types'
 
 import { TextView } from './text/view'
+import { TextDiffer } from './text/differ'
 import { TodoView } from './todo/view'
 import { MetricView } from './metric/view'
 import { MetricRingView } from './metric-ring/view'
@@ -21,7 +22,7 @@ import { PageView } from './page/view'
  * `registry.ts`).
  */
 export const moduleRenderers = {
-  text: { view: TextView },
+  text: { view: TextView, differ: TextDiffer },
   todo: { view: TodoView },
   metric: { view: MetricView },
   'metric-ring': { view: MetricRingView },
