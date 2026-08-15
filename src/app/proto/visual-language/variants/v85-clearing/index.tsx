@@ -28,8 +28,9 @@ import {
   isModulePage,
   firstPageOf,
   ACTIVITY,
+  COMPOSE,
 } from './data'
-import type { ActivityItem, ActivityType } from './data'
+import type { ActivityItem, ActivityType, ComposeId } from './data'
 import {
   sans,
   serif,
@@ -74,6 +75,7 @@ import Contacts from './pages/contacts'
 import Wishlist from './pages/wishlist'
 import Journal from './pages/journal'
 import AreaOverview from './pages/area-overview'
+import Compose from './surfaces/compose'
 
 /** Module-pages: an id → its dedicated rich surface. */
 const MODULE_SURFACES: Record<string, React.ComponentType<SurfaceCtx>> = {
@@ -116,13 +118,6 @@ interface Cmd {
   run: () => void
 }
 
-type CaptureKind = 'note' | 'task' | 'expense'
-const CAPTURE_KINDS: { value: CaptureKind; label: string }[] = [
-  { value: 'note', label: 'Note' },
-  { value: 'task', label: 'Task' },
-  { value: 'expense', label: 'Expense' },
-]
-
 /** subsequence fuzzy filter — the calm salvage from Console. */
 function subseq(q: string, s: string) {
   q = q.toLowerCase()
@@ -141,6 +136,12 @@ function isWholeLifeQ(q: string) {
 /** A canned Pond reply: synthesized across domains, or a quiet ack. */
 function pondReply(q: string) {
   return isWholeLifeQ(q) ? WHOLE_LIFE_ANSWER : 'Noted — I’ll keep that in view.'
+}
+/** Does this ask want a COMPOSED view rather than a one-line answer? */
+function isComposeQ(q: string) {
+  return /shaping up|this week|across everything|one view|pull (it |them )?together|how('?s| is) my (week|life)/i.test(
+    q
+  )
 }
 
 function View() {
@@ -165,15 +166,16 @@ function View() {
   const [accepted, setAccepted] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
-  // capture composer
-  const [captureOpen, setCaptureOpen] = useState(false)
-  const [captureText, setCaptureText] = useState('')
-  const [captureKind, setCaptureKind] = useState<CaptureKind>('note')
-  const [captureArea, setCaptureArea] = useState<string>('')
-  const captureInput = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    if (captureOpen) setTimeout(() => captureInput.current?.focus(), 10)
-  }, [captureOpen])
+  // AI composition (t16 feel-proto): a scripted compose streams into <main>;
+  // landing a composition can pin its result into the rail.
+  const [compose, setCompose] = useState<{
+    id: ComposeId
+    seed?: string
+    settled?: boolean
+  } | null>(null)
+  const [pinned, setPinned] = useState<
+    { id: string; title: string; area: string; cid: ComposeId }[]
+  >([])
 
   const doc = DOCS[openId] ?? DOCS.marathon
 
@@ -227,6 +229,12 @@ function View() {
   function send() {
     const t = draft.trim()
     if (!t) return
+    // A broad "how's it all going" ask composes a view instead of a one-liner.
+    if (isComposeQ(t)) {
+      setDraft('')
+      startCompose('week', t)
+      return
+    }
     setSent((s) => [...s, t])
     setDraft('')
   }
@@ -234,16 +242,22 @@ function View() {
     setToast(msg)
     window.setTimeout(() => setToast(null), 2200)
   }
-  function confirmCapture() {
-    const t = captureText.trim()
-    if (!t) return
-    const kind = CAPTURE_KINDS.find((k) => k.value === captureKind)?.label ?? 'Note'
-    const where = captureArea ? ` → ${AREA_TITLE[captureArea]}` : ''
-    setCaptureOpen(false)
-    setCaptureText('')
-    setCaptureArea('')
-    setCaptureKind('note')
-    flash(`Captured ${kind}${where} ✓`)
+  /** Open the compose surface for a scenario, closing any transient chrome. */
+  function startCompose(id: ComposeId, seed?: string, settled?: boolean) {
+    setChatOpen(false)
+    setPaletteOpen(false)
+    setNotifOpen(false)
+    setCompose({ id, seed, settled })
+  }
+  /** Accept a composition: pin its result (if any) to the rail + confirm. */
+  function landCompose() {
+    if (!compose) return
+    const script = COMPOSE[compose.id]
+    if (script.pin && !pinned.some((p) => p.id === script.pin!.id)) {
+      setPinned((p) => [...p, { ...script.pin!, cid: compose.id }])
+    }
+    flash(script.landToast)
+    setCompose(null)
   }
   function goLens(id: SurfaceId) {
     setSurface(id)
@@ -312,7 +326,24 @@ function View() {
     const q = query.trim()
     if (!q) return matches
     // Free text always has a way through to Pond: the last resort when nothing
-    // matches, and an explicit option even when something does.
+    // matches, and an explicit option even when something does. A "track/start"
+    // phrasing routes to composition (Pond builds a new page) instead of chat.
+    const wantsPage = /^(track|start tracking|new page|add a page|create)\b/i.test(q)
+    if (wantsPage) {
+      const composeCmd: Cmd = {
+        kind: 'Do',
+        label: `Compose a page for “${q}”`,
+        run: () => startCompose('newtopic', q),
+      }
+      return [...matches, composeCmd]
+    }
+    // Quick capture folded into the palette (no separate ＋): a raw thought Pond
+    // routes and composes the edit for — sits alongside the Ask-Pond fallback.
+    const capture: Cmd = {
+      kind: 'Do',
+      label: `Capture: “${q}”`,
+      run: () => startCompose('capture', q),
+    }
     const askPond: Cmd = {
       kind: 'Do',
       label: `Ask Pond: “${q}”`,
@@ -321,7 +352,7 @@ function View() {
         setDraft(q)
       },
     }
-    return [...matches, askPond]
+    return [...matches, capture, askPond]
   }, [query, commands])
 
   // global keys
@@ -336,7 +367,7 @@ function View() {
       if (e.key === 'Escape') {
         setPaletteOpen(false)
         setNotifOpen(false)
-        setCaptureOpen(false)
+        setCompose(null)
         if (!paletteOpen) setChatOpen(false)
       }
       if (paletteOpen) {
@@ -359,11 +390,17 @@ function View() {
     return () => window.removeEventListener('keydown', onKey)
   }, [paletteOpen, results, sel])
 
-  const chromeStyle = (hideWhenFocus: boolean): React.CSSProperties => ({
-    opacity: sessionActive && hideWhenFocus ? 0 : sessionActive ? 0.4 : 1,
-    pointerEvents: sessionActive && hideWhenFocus ? 'none' : 'auto',
-    transition: `opacity 700ms ${EASE}`,
-  })
+  // While composing, the floating chrome (cluster · bar · cushion) recedes so the
+  // composition owns the view — the same "context collapse" as a focus session.
+  const composeActive = !!compose
+  const chromeStyle = (hideWhenFocus: boolean): React.CSSProperties => {
+    const hide = hideWhenFocus && (sessionActive || composeActive)
+    return {
+      opacity: hide ? 0 : sessionActive ? 0.4 : 1,
+      pointerEvents: hide ? 'none' : 'auto',
+      transition: `opacity 700ms ${EASE}`,
+    }
+  }
 
   const Surface = { home: Home, read: Read, plan: Plan, focus: Focus }[surface]
   const ActiveModule = moduleId ? MODULE_SURFACES[moduleId] : null
@@ -464,6 +501,37 @@ function View() {
               )
             })()}
           </div>
+
+          {/* pinned compositions — the views Pond assembled and you kept */}
+          {pinned.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ ...kicker, padding: '0 10px 8px' }}>Pinned</div>
+              {pinned.map((p) => (
+                <button
+                  key={p.id}
+                  className="v85-nav"
+                  onClick={() => startCompose(p.cid, undefined, true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '6px 10px',
+                    borderRadius: radius.chip,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    color: BODY,
+                    fontFamily: sans,
+                    fontSize: 12.5,
+                  }}
+                >
+                  <KindDot area={p.area} /> {p.title}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* areas → collapsible folders; each area header opens its overview page */}
           <div style={{ ...kicker, padding: '0 10px 8px' }}>Areas</div>
@@ -570,9 +638,21 @@ function View() {
           })}
         </aside>
 
-        {/* the active surface renders in main */}
+        {/* the active surface renders in main — a composition preempts it */}
         <main style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-          {ActiveModule ? <ActiveModule {...ctx} /> : <Surface {...ctx} />}
+          {compose ? (
+            <Compose
+              script={COMPOSE[compose.id]}
+              seed={compose.seed}
+              settled={compose.settled}
+              onLand={landCompose}
+              onClose={() => setCompose(null)}
+            />
+          ) : ActiveModule ? (
+            <ActiveModule {...ctx} />
+          ) : (
+            <Surface {...ctx} />
+          )}
         </main>
       </div>
 
@@ -609,159 +689,6 @@ function View() {
             />
           )}
         </button>
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => setCaptureOpen((v) => !v)}
-            title="Capture"
-            aria-label="Capture"
-            style={{
-              ...iconBtn,
-              background: captureOpen ? ACCENT_SOFT : (iconBtn.background as string),
-              color: captureOpen ? INK : iconBtn.color,
-            }}
-          >
-            ＋
-          </button>
-          {captureOpen && (
-            <div
-              className="v85-rise"
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 10px)',
-                right: 0,
-                width: 320,
-                ...glass,
-                borderRadius: 20,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '13px 16px',
-                  borderBottom: `1px solid ${LINE}`,
-                }}
-              >
-                <span style={{ width: 8, height: 8, borderRadius: 999, background: LIME }} />
-                <span style={{ ...kicker, color: ACCENT }}>Capture</span>
-                <button
-                  onClick={() => setCaptureOpen(false)}
-                  style={{
-                    marginLeft: 'auto',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: MUTED,
-                    fontSize: 16,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div
-                style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}
-              >
-                <textarea
-                  ref={captureInput}
-                  className="v85-in"
-                  value={captureText}
-                  onChange={(e) => setCaptureText(e.target.value)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation()
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault()
-                      confirmCapture()
-                    }
-                  }}
-                  placeholder="Capture a thought, task, or expense…"
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    resize: 'none',
-                    border: `1px solid ${LINE}`,
-                    borderRadius: 12,
-                    background: CARD,
-                    padding: '10px 12px',
-                    fontFamily: sans,
-                    fontSize: 14,
-                    lineHeight: 1.5,
-                    color: INK,
-                  }}
-                />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {CAPTURE_KINDS.map((k) => {
-                    const on = k.value === captureKind
-                    return (
-                      <button
-                        key={k.value}
-                        onClick={() => setCaptureKind(k.value)}
-                        style={{
-                          flex: 1,
-                          padding: '7px 0',
-                          borderRadius: 999,
-                          border: `1px solid ${on ? ACCENT : LINE}`,
-                          cursor: 'pointer',
-                          background: on ? ACCENT_SOFT : 'transparent',
-                          color: on ? INK : MUTED,
-                          fontFamily: sans,
-                          fontSize: 12.5,
-                          fontWeight: on ? 600 : 500,
-                        }}
-                      >
-                        {k.label}
-                      </button>
-                    )
-                  })}
-                </div>
-                <select
-                  value={captureArea}
-                  onChange={(e) => setCaptureArea(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  style={{
-                    width: '100%',
-                    border: `1px solid ${LINE}`,
-                    borderRadius: 10,
-                    background: CARD,
-                    padding: '8px 10px',
-                    fontFamily: sans,
-                    fontSize: 13,
-                    color: captureArea ? INK : MUTED,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="">No area</option>
-                  {Object.entries(AREA_TITLE).map(([id, title]) => (
-                    <option key={id} value={id}>
-                      {title}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={confirmCapture}
-                  disabled={!captureText.trim()}
-                  style={{
-                    width: '100%',
-                    padding: '10px 0',
-                    borderRadius: 999,
-                    border: 'none',
-                    cursor: captureText.trim() ? 'pointer' : 'default',
-                    background: LIME,
-                    color: LIME_INK,
-                    fontWeight: 700,
-                    fontSize: 13,
-                    opacity: captureText.trim() ? 1 : 0.5,
-                  }}
-                >
-                  Capture
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
         <button
           onClick={openPalette}
           title="Search & commands (⌘K)"
@@ -1053,7 +980,7 @@ function View() {
                   }
                   e.stopPropagation()
                 }}
-                placeholder="Go to a page, or ask Pond to do something…"
+                placeholder="Go to a page, capture a thought, or ask Pond…"
                 style={{
                   flex: 1,
                   border: 'none',

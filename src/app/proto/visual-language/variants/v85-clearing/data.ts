@@ -827,3 +827,198 @@ export const PROTOCOLS: Protocol[] = [
   { id: 'pr3', label: 'One tab, one page', done: false },
   { id: 'pr4', label: 'Phone in the other room', done: false },
 ]
+
+/* ── AI COMPOSITION (t16 feel-proto) ──────────────────────────────────────────
+ * The one thing v85 doesn't yet dramatize: Pond ASSEMBLING a view that didn't
+ * exist — picking modules, filling them, streaming them in, and landing them.
+ * A composition is an ordered list of BEATS the compose surface plays back on a
+ * timer (deterministic; no Date.now / no Math.random). Three scenarios share the
+ * one engine, reached from the three real entry points (Ask · Capture · ⌘K).
+ *
+ * Beat kinds:
+ *  • read      — a narration line in Pond's build-trace ("Reading Health…").
+ *  • module    — a module card that materializes (skeleton → filled). `render`
+ *                selects a ui.tsx primitive; `why` is the one-line rationale.
+ *  • uncertain — a module Pond ISN'T sure about: a question + two choices, so we
+ *                can feel how doubt lands mid-compose. Non-blocking.
+ */
+export type ComposeId = 'week' | 'capture' | 'newtopic'
+export type ModuleRender = 'ring' | 'spark' | 'stat' | 'diff' | 'list'
+
+export interface ReadBeat {
+  kind: 'read'
+  ms?: number
+  text: string
+}
+export interface ModuleBeat {
+  kind: 'module'
+  ms?: number
+  area: string
+  title: string
+  why: string
+  render: ModuleRender
+  /** ring: [pct,label,sub] · spark: number[] · stat: [big,unit,note] · diff:[before,after] · list:string[] */
+  ring?: { pct: number; label: string; sub: string }
+  spark?: { data: number[]; big: string; note: string }
+  stat?: { big: string; unit?: string; note: string; off?: boolean }
+  diff?: { before: string; after: string }
+  list?: string[]
+}
+export interface UncertainBeat {
+  kind: 'uncertain'
+  ms?: number
+  area: string
+  title: string
+  question: string
+  options: [string, string]
+}
+export type ComposeBeat = ReadBeat | ModuleBeat | UncertainBeat
+
+export interface ComposeScript {
+  /** kicker over the composed view. */
+  eyebrow: string
+  /** the focal Instrument-Serif title of the composed page. */
+  title: string
+  /** the prompt that triggered it, echoed back (seed overrides at runtime). */
+  ask: string
+  /** the landing CTA verb — what "accept" means for this composition. */
+  landCta: string
+  /** toast shown after landing. */
+  landToast: string
+  /** if the landing pins something to the rail, the leaf it adds. */
+  pin?: { id: string; title: string; area: string }
+  beats: ComposeBeat[]
+}
+
+export const COMPOSE: Record<ComposeId, ComposeScript> = {
+  // ── Ask → a cross-life view streams into being ──────────────────────────────
+  week: {
+    eyebrow: 'Composing · across your life',
+    title: 'This week, in one view',
+    ask: 'How’s my week shaping up across everything?',
+    landCta: 'Pin to rail',
+    landToast: 'Pinned “This week” to your rail',
+    pin: { id: 'week', title: 'This week', area: 'personal' },
+    beats: [
+      { kind: 'read', text: 'Reading Health, Professional, Finances and Personal…' },
+      {
+        kind: 'module',
+        area: 'health',
+        title: 'Marathon Training',
+        why: 'your biggest active goal this week',
+        render: 'ring',
+        ring: { pct: 0.76, label: '38', sub: 'miles · +12%' },
+      },
+      { kind: 'read', text: 'Pulling the one deadline that’s at risk…' },
+      {
+        kind: 'module',
+        area: 'professional',
+        title: 'Design System',
+        why: 'the only project slipping — worth your Tuesday',
+        render: 'stat',
+        stat: { big: 'At risk', note: 'Storybook coverage slipped · Q3 still on track', off: true },
+      },
+      {
+        kind: 'module',
+        area: 'finances',
+        title: 'Dining',
+        why: 'the single number that’s off-track',
+        render: 'stat',
+        stat: { big: '$48', unit: 'over', note: 'rest of the budget is calm', off: true },
+      },
+      { kind: 'read', text: 'You asked me to keep travel in view…' },
+      {
+        kind: 'module',
+        area: 'personal',
+        title: 'Lisbon',
+        why: 'booked Sep 6–14 — three weeks out',
+        render: 'list',
+        list: ['Flights booked ✓', 'Apartment — not yet', 'Day-trip to Sintra?'],
+      },
+      {
+        kind: 'uncertain',
+        area: 'creativity',
+        title: 'Walnut Shelf',
+        question:
+          'The shelf’s idle this week — not sure it belongs in a “this week” read. Include it?',
+        options: ['Include', 'Leave out'],
+      },
+    ],
+  },
+
+  // ── Capture → Pond routes a raw thought and edits the right page live ────────
+  capture: {
+    eyebrow: 'Composing · from your capture',
+    title: 'Filed to Marathon Training',
+    ask: 'knee’s been sore, moved the long run to Sunday',
+    landCta: 'Apply the change',
+    landToast: 'Applied to Marathon Training',
+    beats: [
+      { kind: 'read', text: 'This reads like Health → Marathon Training.' },
+      {
+        kind: 'module',
+        area: 'health',
+        title: 'Long run',
+        why: 'you moved it — I’ll reschedule and rebalance the week',
+        render: 'diff',
+        diff: {
+          before: 'Sat · 18 mi long run',
+          after: 'Sun · 18 mi long run · Sat now rest',
+        },
+      },
+      { kind: 'read', text: 'Noting the reason, so next week’s plan accounts for it…' },
+      {
+        kind: 'uncertain',
+        area: 'health',
+        title: 'Knee soreness',
+        question: 'Want me to log the sore knee as a symptom to watch across your runs?',
+        options: ['Log it', 'Not now'],
+      },
+    ],
+  },
+
+  // ── New topic → Pond composes a brand-new dashboard from primitives ──────────
+  newtopic: {
+    eyebrow: 'Composing · a new page',
+    title: 'Half Marathon',
+    ask: 'start tracking my half-marathon',
+    landCta: 'Create page',
+    landToast: 'Created “Half Marathon” in Health',
+    pin: { id: 'half', title: 'Half Marathon', area: 'health' },
+    beats: [
+      { kind: 'read', text: 'New page — I’ll model it on your Marathon Training.' },
+      {
+        kind: 'module',
+        area: 'health',
+        title: 'Race day',
+        why: 'a countdown is the spine of a training page',
+        render: 'ring',
+        ring: { pct: 0.28, label: '9', sub: 'weeks out' },
+      },
+      { kind: 'read', text: 'Seeding a weekly mileage track…' },
+      {
+        kind: 'module',
+        area: 'health',
+        title: 'Weekly mileage',
+        why: 'starts flat — it fills as you log runs',
+        render: 'spark',
+        spark: { data: [0, 6, 8, 7, 11, 12, 14, 16], big: '16', note: 'mi · last week' },
+      },
+      {
+        kind: 'module',
+        area: 'health',
+        title: 'Plan',
+        why: 'a starter block you can reshape',
+        render: 'list',
+        list: ['Base — 3 wks', 'Build — 4 wks', 'Taper — 2 wks'],
+      },
+      {
+        kind: 'uncertain',
+        area: 'health',
+        title: 'Where it lives',
+        question: 'Put this under Health, or give it its own area?',
+        options: ['Under Health', 'New area'],
+      },
+    ],
+  },
+}
