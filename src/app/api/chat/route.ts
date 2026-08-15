@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { toModelMessages } from '@/lib/conversation/transcript'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
+import { moduleCatalog, proposeChangesSchema } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
 
 const SYSTEM_PROMPT = `You are Pond, a thinking partner. Your role is steward, collector, and presenter.
@@ -16,6 +17,9 @@ Think together with the user until they explicitly request an artifact.
 When you hear something worth capturing, offer a short candidate and wait for confirmation.
 When the user expresses intent to create a node (area, project, routine, or action), call the create_node tool.
 When the user asks to change, rewrite, or reword existing text in the current node, do NOT write it yourself — call the propose_edit tool with the target block's id (from the "Editable blocks" list in the injected context) and the full new content. The user reviews and accepts the proposal. If it is unclear which block they mean, ask a short clarifying question before proposing.
+When the user explicitly asks you to build, add, or compose content in the current node — new blocks, a checklist, a metric, or several at once — call the propose_changes tool with a batch of operations. Only propose on an explicit request; never emit blocks unprompted. Do NOT invent block ids: omit the id when creating (the client assigns one on accept), and reference existing blocks by the ids in the injected context when editing or removing. The available block types are:
+${moduleCatalog}
+The user reviews every proposed change and accepts or rejects it before anything is written.
 When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -92,6 +96,12 @@ export async function POST(req: Request) {
             .optional()
             .describe('A short, optional note on what the edit changes and why'),
         }),
+      }),
+      propose_changes: tool({
+        description:
+          'Propose a batch of composition changes to the current node — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Use when the user explicitly asks to build or compose content. The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). ' +
+          'experimental_repairToolCall retry is a Phase-5 follow-up (needs live-model verification).',
+        inputSchema: proposeChangesSchema,
       }),
       fetch_context: tool({
         description:
