@@ -1,0 +1,47 @@
+'use client'
+
+/**
+ * Client renderer registry (t12) — the client half of the two-map contract, joined
+ * to `moduleDescriptors` by the `type` string. Only client React imports this;
+ * server code reads `registry.ts` (descriptors) and never poisons its bundle with
+ * these view components.
+ */
+import type { ComponentType } from 'react'
+import type { ModuleRenderer, ModuleViewProps } from './types'
+
+import { TextView } from './text/view'
+import { TodoView } from './todo/view'
+import { MetricView } from './metric/view'
+import { MetricRingView } from './metric-ring/view'
+import { PageView } from './page/view'
+
+/**
+ * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
+ * no runtime registration. Adding a module = one folder + one line here (and one in
+ * `registry.ts`).
+ */
+export const moduleRenderers = {
+  text: { view: TextView },
+  todo: { view: TodoView },
+  metric: { view: MetricView },
+  'metric-ring': { view: MetricRingView },
+  page: { view: PageView },
+}
+// Correctness is enforced at each view's definition (every view is typed as a
+// ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be
+// applied here because `onChange` is contravariant across the distinct data types.
+
+export type RendererType = keyof typeof moduleRenderers
+
+/**
+ * The single dispatcher every host and container renders through. Looks the module
+ * up by `type` and renders its `view`; an unregistered type renders nothing rather
+ * than throwing (a stale persisted block must never hard-fail a page load — t12 §2:
+ * no read-side validation).
+ */
+export function ModuleView({ type, ...props }: ModuleViewProps<unknown> & { type: string }) {
+  const renderer = (moduleRenderers as Record<string, ModuleRenderer<unknown>>)[type]
+  if (!renderer) return null
+  const View = renderer.view as ComponentType<ModuleViewProps<unknown>>
+  return <View {...props} />
+}
