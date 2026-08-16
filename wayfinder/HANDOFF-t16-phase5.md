@@ -30,7 +30,46 @@ vitest) is in `HANDOFF-t16-phase4.md` — unchanged.
 | `TextDiffer` + `differ` facet                   | `src/lib/modules/text/differ.tsx`, `renderers.tsx` | Typed body for `text`; other types fall back to read-only `ModuleView` inside the card.                                         |
 | `commitBlocks`                                  | `src/lib/pages/commit.ts`                          | The shared persist tail (saveBlocks + invalidate `['pages']` + re-embed). **Do not add a new write handler.**                   |
 
-## Next: Phase 5 — wire AITerminal (branch 6 + 7 accept-time gate)
+## Phase 5 — DONE (session 9, 2026-08-15). Reworked to atomic decomposition.
+
+Built + verified green + live-verified, **not yet committed at time of writing**
+(commit is the next step). Rather than cram the wiring into `AITerminal` (the
+handoff's original instruction below), it was decomposed bottom-up per the repo's
+atomic-design + Storybook workflow:
+
+- **Layer 0 — pure helper** `src/lib/modules/preview.ts`: `previewForChange(change,
+blocks) → { op, before, after }`. Isolates the placeholder-id gotcha (step 2) out
+  of the organism; jest-tested (`src/__tests__/change-preview.test.ts`, 7 cases incl.
+  type-morph + nested todo ids + non-mutation). `PREVIEW_ID = '__preview__'`.
+- **Layer 1 — atom** `src/components/atoms/ProposalActions.tsx`: the Accept/Edit/Reject
+  row + resolved status line, extracted from `ModuleDiffCard`. `onEdit` optional,
+  relabellable (`Accept all`/`Reject all`), `divider` toggle. + stories.
+- **Layer 2 — molecules**: `ModuleDiffCard` refactored to consume the atom (existing
+  stories = regression proof); **new** `src/components/molecules/ProposalGroup.tsx` —
+  card stack + group bar, partial accept first-class, bar hidden for a single change /
+  once all resolved. + stories.
+- **Layer 3 — organism** `AITerminal.tsx`: `ProposeChangesPart` type+guard,
+  `changeDecisions` keyed `` `${toolCallId}:${index}` `` (step 4), builds previews via
+  the helper, `writeAcceptedChanges` → `applyProposedChanges` → `commitBlocks` →
+  invalidate `['page', nodeId]`, `changeSkipped` surfaces the `skipped > 0` notice.
+
+**Verify:** tsc + eslint clean; jest 22/22; storybook-vitest 17/17. **Live-verified**
+against the running app (Browser Test page): a 2-change create batch rendered as a
+`ProposalGroup`, Accept-all wrote both blocks with real minted UUIDs + "Saved", and a
+single-change Reject wrote nothing (no group bar for a single change). Test blocks
+cleaned up.
+
+**Two code-review findings, both deferred to Phase 6 (they ARE Phase 6's job):**
+(1) legacy `DiffCard.tsx` still inlines the footer that `ProposalActions` now owns —
+duplication resolves when `DiffCard` is deleted. (2) the composition path drops the
+`reason` line the `propose_edit` path shows — `changeSchema` has no `reason` field, so
+adding parity is a server-contract change (its own small task). Sharp edge: partial
+accept re-fetches fresh blocks each time, so an edit/remove whose target a prior accept
+already consumed counts as `skipped` and can fire a spurious "couldn't apply" notice.
+
+---
+
+### Original plan (superseded above — kept for reference): wire AITerminal (branch 6 + 7)
 
 Model on the **existing `propose_edit` handling in `AITerminal.tsx`** (the
 `ProposeEditPart` interface, `proposals.map(...)` render, `proposalDecisions` local
@@ -63,10 +102,18 @@ state, `writeAcceptedEdit`) — Phase 5 is the `propose_changes` twin of all of 
    tool stays `input-available`, so drive the card `status` off local state exactly like
    `proposalDecisions` does today).
 
-## Phase 6 / cleanup (after Phase 5 is live)
+## Phase 6 / cleanup (after Phase 5 is live) — now the priority; review findings land here
 
 - Collapse `propose_edit` into `propose_changes`; delete the old tool, its `AITerminal`
-  handling, and the now-unused `DiffCard` + `applyProposedEdit`.
+  handling (the `ProposeEditPart`/`proposalDecisions`/`writeAcceptedEdit`/`handleEditProposal`
+  stack), and the now-unused `DiffCard` + `applyProposedEdit`. **This kills both standing
+  review findings at once:** the `DiffCard` footer duplication (fold onto `ProposalActions`
+  by deletion) and the parallel decision-map/write-handler stacks in `AITerminal`.
+- **Restore the `reason` line on the composition path.** `propose_edit` shows a per-proposal
+  `reason`; `propose_changes` currently can't (no field in `changeSchema`). Add an optional
+  `reason` to each `changeSchema` variant, thread it through `ChangePreview` →
+  `ProposalGroup` → `ModuleDiffCard` (which already accepts `reason?`). Server-contract
+  change — model-facing, so re-verify the model actually populates it.
 - Wire `experimental_repairToolCall` (ai@7 supports it) — verify against a live model; it's
   a self-correction enhancement on top of the strict `inputSchema` gate already in place.
 - Full verify (tsc / jest / storybook / eslint).

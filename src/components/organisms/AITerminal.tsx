@@ -12,11 +12,15 @@ import {
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
 import { getPage } from '@/lib/pages/client'
-import { applyProposedEdit } from '@/lib/pages/edits'
+import { applyProposedEdit, applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
 import { NodeCreationModal } from './NodeCreationModal'
 import { SavePickerModal } from './SavePickerModal'
 import { DiffCard, type DiffCardStatus } from '@/components/molecules/DiffCard'
+import { ProposalGroup } from '@/components/molecules/ProposalGroup'
+import type { ProposalStatus } from '@/components/atoms/ProposalActions'
+import { previewForChange } from '@/lib/modules/preview'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { ActionCard } from '@/lib/nodes/create'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
@@ -32,6 +36,18 @@ interface ProposeEditPart {
 
 function isProposeEditPart(part: { type: string }): part is ProposeEditPart {
   return part.type === 'tool-propose_edit'
+}
+
+/** A propose_changes tool part — the generalized composition batch (t16 Phase 5). */
+interface ProposeChangesPart {
+  type: 'tool-propose_changes'
+  toolCallId: string
+  state: string
+  input?: { changes?: ModuleChange[] }
+}
+
+function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
+  return part.type === 'tool-propose_changes'
 }
 
 type ProposalDecision = 'accepted' | 'rejected' | 'edited'
@@ -63,6 +79,13 @@ export function AITerminal() {
   // so we can't drive the card's resolved state off the SDK part. Track the
   // user's decision locally instead (keyed by toolCallId).
   const [proposalDecisions, setProposalDecisions] = useState<Record<string, ProposalDecision>>({})
+
+  // propose_changes decisions, keyed `${toolCallId}:${changeIndex}` so each card in a
+  // batch resolves independently (partial accept). Same no-execute caveat as above —
+  // this local map, not the SDK part, drives each card's status. `changeSkipped`
+  // records how many accepted changes failed the accept-time re-validation gate.
+  const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
@@ -270,6 +293,67 @@ export function AITerminal() {
     [resolveProposal, writeAcceptedEdit]
   )
 
+  // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
+  // The generalized Accept path: mint ids for the accepted batch, apply it, and
+  // re-seed the open page. This is also the accept-time re-validation gate —
+  // applyProposedChanges skips anything that fails blockSchema, so the returned
+  // `skipped` count surfaces a "couldn't apply" notice rather than a corrupt write.
+  const writeAcceptedChanges = useCallback(
+    async (changes: ModuleChange[]): Promise<number> => {
+      if (!nodeId || changes.length === 0) return 0
+      const page = await getPage(supabaseClient, nodeId)
+      if (!page) return 0
+      const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID())
+      await commitBlocks(supabaseClient, queryClient, nodeId, result.blocks)
+      // External write to the open page — same pattern as writeAcceptedEdit.
+      await queryClient.invalidateQueries({ queryKey: ['page', nodeId] })
+      return result.skipped
+    },
+    [nodeId, supabaseClient, queryClient]
+  )
+
+  const decideChanges = useCallback(
+    (toolCallId: string, indices: number[], decision: ProposalStatus) => {
+      setChangeDecisions((prev) => {
+        const next = { ...prev }
+        for (const i of indices) next[`${toolCallId}:${i}`] = decision
+        return next
+      })
+    },
+    []
+  )
+
+  const acceptChanges = useCallback(
+    async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
+      if (indices.length === 0) return
+      decideChanges(toolCallId, indices, 'accepted')
+      const skipped = await writeAcceptedChanges(indices.map((i) => allChanges[i]))
+      if (skipped > 0) {
+        setChangeSkipped((prev) => ({ ...prev, [toolCallId]: (prev[toolCallId] ?? 0) + skipped }))
+      }
+    },
+    [decideChanges, writeAcceptedChanges]
+  )
+
+  // Edit: accept the change, then jump to its block in the document panel to keep
+  // editing there (full inline-editable drop deferred, as with propose_edit). A
+  // `create` has no id until it lands, so there's nothing to scroll to yet.
+  const editChange = useCallback(
+    async (toolCallId: string, allChanges: ModuleChange[], index: number) => {
+      await acceptChanges(toolCallId, allChanges, [index])
+      const change = allChanges[index]
+      const blockId = change.op === 'create' ? undefined : change.blockId
+      if (blockId) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`block-${blockId}`)
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el?.querySelector('textarea')?.focus()
+        })
+      }
+    },
+    [acceptChanges]
+  )
+
   return (
     <>
       <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
@@ -290,6 +374,9 @@ export function AITerminal() {
               .map((p) => (p as { type: 'text'; text: string }).text)
               .join('')
             const proposals = (message.parts as Array<{ type: string }>).filter(isProposeEditPart)
+            const changeBatches = (message.parts as Array<{ type: string }>).filter(
+              isProposeChangesPart
+            )
 
             return (
               <div key={message.id} className="space-y-2">
@@ -329,6 +416,38 @@ export function AITerminal() {
                       onReject={() => handleRejectProposal(part)}
                       onEdit={() => handleEditProposal(part)}
                     />
+                  )
+                })}
+                {changeBatches.map((part) => {
+                  const rawChanges = part.input?.changes ?? []
+                  const previews = rawChanges.map((c) =>
+                    previewForChange(c, currentPage?.blocks ?? [])
+                  )
+                  const statuses = rawChanges.map(
+                    (_, i) => changeDecisions[`${part.toolCallId}:${i}`] ?? 'pending'
+                  )
+                  const pending = rawChanges
+                    .map((_, i) => i)
+                    .filter((i) => statuses[i] === 'pending')
+                  const skipped = changeSkipped[part.toolCallId] ?? 0
+                  return (
+                    <div key={part.toolCallId} className="space-y-1.5">
+                      <ProposalGroup
+                        changes={previews}
+                        statuses={statuses}
+                        onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
+                        onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
+                        onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
+                        onAcceptAll={() => acceptChanges(part.toolCallId, rawChanges, pending)}
+                        onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
+                      />
+                      {skipped > 0 && (
+                        <p className="text-xs text-amber-600">
+                          {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
+                          {skipped > 1 ? 'were' : 'was'} skipped.
+                        </p>
+                      )}
+                    </div>
                   )
                 })}
               </div>

@@ -21,11 +21,11 @@
  */
 
 import type { ComponentType } from 'react'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
+import { ProposalActions } from '@/components/atoms/ProposalActions'
 import type { DiffCardStatus } from './DiffCard'
 
 export type ChangeOp = 'create' | 'edit' | 'remove'
@@ -138,27 +138,7 @@ export function ModuleDiffCard({
 
       {reason && <p className="px-3 pb-2 text-xs text-zinc-500">{reason}</p>}
 
-      {/* Actions / resolved status */}
-      {resolved ? (
-        <div
-          className="border-t border-zinc-100 px-3 py-1.5 text-xs text-zinc-500"
-          aria-live="polite"
-        >
-          {status === 'accepted' ? 'Accepted' : 'Rejected'}
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5 border-t border-zinc-100 px-3 py-2">
-          <Button size="xs" variant="default" onClick={onAccept}>
-            Accept
-          </Button>
-          <Button size="xs" variant="outline" onClick={onEdit}>
-            Edit
-          </Button>
-          <Button size="xs" variant="ghost" onClick={onReject}>
-            Reject
-          </Button>
-        </div>
-      )}
+      <ProposalActions status={status} onAccept={onAccept} onReject={onReject} onEdit={onEdit} />
     </div>
   )
 }
