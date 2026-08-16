@@ -2,8 +2,7 @@
 
 /**
  * A single AI-proposed composition change, rendered as a typed diff card (t16
- * branch 6). The generalized successor to {@link DiffCard}: where DiffCard handled
- * one text-only `propose_edit`, this renders any module change by `op` —
+ * branch 6). Renders any module change by `op` —
  *   - `create` → new-content preview (no "before"),
  *   - `edit`   → before/after (a type-morph shows the old type's view struck, the
  *                new type's view as the proposal),
@@ -25,8 +24,7 @@ import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
-import { ProposalActions } from '@/components/atoms/ProposalActions'
-import type { DiffCardStatus } from './DiffCard'
+import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 
 export type ChangeOp = 'create' | 'edit' | 'remove'
 
@@ -45,7 +43,7 @@ interface ModuleDiffCardProps {
   /** Optional one-line note from the model on what changed and why. */
   reason?: string
   /** pending → actions shown; accepted/rejected → resolved status line. */
-  status?: DiffCardStatus
+  status?: ProposalStatus
   onAccept: () => void
   onReject: () => void
   onEdit: () => void

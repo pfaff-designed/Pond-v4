@@ -73,6 +73,7 @@ export function ProposalGroup({
           op={change.op}
           before={change.before}
           after={change.after}
+          reason={change.reason}
           status={statuses[i] ?? 'pending'}
           onAccept={() => onAccept(i)}
           onReject={() => onReject(i)}

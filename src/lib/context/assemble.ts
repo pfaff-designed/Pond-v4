@@ -115,7 +115,7 @@ function blockPreview(block: Block): string {
  * Render a node's assembled context as a compact block for the system prompt.
  *
  * `includeBlockIds` surfaces each editable block's stable id so the model can
- * target a specific block in a `propose_edit` call (Slice 2). Only the
+ * target a specific block in a `propose_changes` edit/remove (Slice 2). Only the
  * auto-injected current node opts in — @mentioned nodes are not editable
  * targets, so they omit ids to keep the prompt clean and unambiguous.
  */
@@ -253,7 +253,7 @@ export async function buildChatContext(
 
   if (opts.nodeId) {
     const data = await fetchNodeContext(sb, userId, opts.nodeId)
-    // Current node only: expose block ids so the model can target one in propose_edit.
+    // Current node only: expose block ids so the model can target one in propose_changes.
     if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))
   }
 

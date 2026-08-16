@@ -12,11 +12,10 @@ import {
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
 import { getPage } from '@/lib/pages/client'
-import { applyProposedEdit, applyProposedChanges } from '@/lib/pages/edits'
+import { applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
 import { NodeCreationModal } from './NodeCreationModal'
 import { SavePickerModal } from './SavePickerModal'
-import { DiffCard, type DiffCardStatus } from '@/components/molecules/DiffCard'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import { previewForChange } from '@/lib/modules/preview'
@@ -24,19 +23,6 @@ import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { ActionCard } from '@/lib/nodes/create'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
-
-/** A propose_edit tool part as it appears in a UI message (ticket-10). */
-interface ProposeEditPart {
-  type: 'tool-propose_edit'
-  toolCallId: string
-  state: string
-  input?: { blockId?: string; newContent?: string; reason?: string }
-  output?: { decision?: 'accepted' | 'rejected' | 'edited' }
-}
-
-function isProposeEditPart(part: { type: string }): part is ProposeEditPart {
-  return part.type === 'tool-propose_edit'
-}
 
 /** A propose_changes tool part — the generalized composition batch (t16 Phase 5). */
 interface ProposeChangesPart {
@@ -49,8 +35,6 @@ interface ProposeChangesPart {
 function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
   return part.type === 'tool-propose_changes'
 }
-
-type ProposalDecision = 'accepted' | 'rejected' | 'edited'
 
 function parseCommand(text: string): CommandResult {
   const t = text.trim()
@@ -76,10 +60,9 @@ export function AITerminal() {
   const supabaseClient = useMemo(() => createClient(), [])
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
-  // so we can't drive the card's resolved state off the SDK part. Track the
-  // user's decision locally instead (keyed by toolCallId).
-  const [proposalDecisions, setProposalDecisions] = useState<Record<string, ProposalDecision>>({})
-
+  // so we can't drive the card's resolved state off the SDK part — the local maps
+  // below track the user's decision instead.
+  //
   // propose_changes decisions, keyed `${toolCallId}:${changeIndex}` so each card in a
   // batch resolves independently (partial accept). Same no-execute caveat as above —
   // this local map, not the SDK part, drives each card's status. `changeSkipped`
@@ -229,70 +212,6 @@ export function AITerminal() {
     [addToolOutput, router]
   )
 
-  // ── Diff-card proposal resolution (ticket-10) ─────────────────────────────
-  // Accepting writes the proposed content to the target block in the open page,
-  // then refreshes the ['page'] cache (DocumentPanel re-seeds) and re-embeds.
-  const writeAcceptedEdit = useCallback(
-    async (blockId: string, newContent: string) => {
-      if (!nodeId) return
-      const page = await getPage(supabaseClient, nodeId)
-      if (!page) return
-      const next = applyProposedEdit(page.blocks, blockId, newContent)
-      await commitBlocks(supabaseClient, queryClient, nodeId, next)
-      // This is an EXTERNAL write to the open page: invalidate ['page'] so the
-      // DocumentPanel refetches and adopts the new blocks (commitBlocks leaves the
-      // ['page'] cache alone precisely so this stays the caller's decision).
-      await queryClient.invalidateQueries({ queryKey: ['page', nodeId] })
-    },
-    [nodeId, supabaseClient, queryClient]
-  )
-
-  const resolveProposal = useCallback(
-    (part: ProposeEditPart, decision: ProposalDecision) => {
-      setProposalDecisions((prev) => ({ ...prev, [part.toolCallId]: decision }))
-      // Best-effort: also record it on the SDK transcript. (No-execute client
-      // tools don't advance to output-available, so the local map above is what
-      // actually drives the UI.)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(addToolOutput as any)(part.toolCallId, { decision })
-    },
-    [addToolOutput]
-  )
-
-  const handleAcceptProposal = useCallback(
-    async (part: ProposeEditPart) => {
-      resolveProposal(part, 'accepted')
-      const blockId = part.input?.blockId
-      if (blockId) await writeAcceptedEdit(blockId, part.input?.newContent ?? '')
-    },
-    [resolveProposal, writeAcceptedEdit]
-  )
-
-  const handleRejectProposal = useCallback(
-    (part: ProposeEditPart) => {
-      resolveProposal(part, 'rejected')
-    },
-    [resolveProposal]
-  )
-
-  // Edit (stub this slice): accept the content, then jump to the block in the
-  // document panel to keep editing there. Full inline-editable drop is deferred.
-  const handleEditProposal = useCallback(
-    async (part: ProposeEditPart) => {
-      resolveProposal(part, 'edited')
-      const blockId = part.input?.blockId
-      if (blockId) await writeAcceptedEdit(blockId, part.input?.newContent ?? '')
-      if (blockId) {
-        requestAnimationFrame(() => {
-          const el = document.getElementById(`block-${blockId}`)
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          el?.querySelector('textarea')?.focus()
-        })
-      }
-    },
-    [resolveProposal, writeAcceptedEdit]
-  )
-
   // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
   // The generalized Accept path: mint ids for the accepted batch, apply it, and
   // re-seed the open page. This is also the accept-time re-validation gate —
@@ -305,7 +224,9 @@ export function AITerminal() {
       if (!page) return 0
       const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID())
       await commitBlocks(supabaseClient, queryClient, nodeId, result.blocks)
-      // External write to the open page — same pattern as writeAcceptedEdit.
+      // External write to the open page — invalidate ['page'] so the DocumentPanel
+      // refetches and adopts the new blocks (commitBlocks leaves that cache alone
+      // precisely so this stays the caller's decision).
       await queryClient.invalidateQueries({ queryKey: ['page', nodeId] })
       return result.skipped
     },
@@ -336,8 +257,8 @@ export function AITerminal() {
   )
 
   // Edit: accept the change, then jump to its block in the document panel to keep
-  // editing there (full inline-editable drop deferred, as with propose_edit). A
-  // `create` has no id until it lands, so there's nothing to scroll to yet.
+  // editing there (full inline-editable drop deferred). A `create` has no id until
+  // it lands, so there's nothing to scroll to yet.
   const editChange = useCallback(
     async (toolCallId: string, allChanges: ModuleChange[], index: number) => {
       await acceptChanges(toolCallId, allChanges, [index])
@@ -373,7 +294,6 @@ export function AITerminal() {
               .filter((p) => p.type === 'text')
               .map((p) => (p as { type: 'text'; text: string }).text)
               .join('')
-            const proposals = (message.parts as Array<{ type: string }>).filter(isProposeEditPart)
             const changeBatches = (message.parts as Array<{ type: string }>).filter(
               isProposeChangesPart
             )
@@ -393,31 +313,6 @@ export function AITerminal() {
                     </span>
                   </div>
                 )}
-                {proposals.map((part) => {
-                  const blockId = part.input?.blockId
-                  const target = blockId
-                    ? currentPage?.blocks.find((b) => b.id === blockId)
-                    : undefined
-                  const beforeText = target && target.type === 'text' ? target.content : ''
-                  const decision = proposalDecisions[part.toolCallId]
-                  const status: DiffCardStatus = !decision
-                    ? 'pending'
-                    : decision === 'rejected'
-                      ? 'rejected'
-                      : 'accepted'
-                  return (
-                    <DiffCard
-                      key={part.toolCallId}
-                      before={beforeText}
-                      after={part.input?.newContent ?? ''}
-                      reason={part.input?.reason}
-                      status={status}
-                      onAccept={() => handleAcceptProposal(part)}
-                      onReject={() => handleRejectProposal(part)}
-                      onEdit={() => handleEditProposal(part)}
-                    />
-                  )
-                })}
                 {changeBatches.map((part) => {
                   const rawChanges = part.input?.changes ?? []
                   const previews = rawChanges.map((c) =>

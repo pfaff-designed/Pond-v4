@@ -156,10 +156,10 @@ describe('formatNodeContext', () => {
     expect(out.length).toBeGreaterThan(0)
   })
 
-  // ── block-id exposure (Slice 2: propose_edit needs stable UUIDs) ────────────
+  // ── block-id exposure (Slice 2: propose_changes needs stable UUIDs) ─────────
   // The auto-injected current node must surface each editable block's id so the
-  // model can target a block in propose_edit. @mentioned nodes must NOT (they are
-  // not an editable target), so id exposure is opt-in.
+  // model can target a block in a propose_changes edit/remove. @mentioned nodes
+  // must NOT (they are not an editable target), so id exposure is opt-in.
 
   it('exposes block ids for the current node when includeBlockIds is set', () => {
     const out = formatNodeContext(

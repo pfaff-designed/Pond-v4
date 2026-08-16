@@ -26,6 +26,8 @@ export interface ChangePreview {
   before: Block | null
   /** Proposed block with a placeholder id (create / edit); null for a remove. */
   after: Block | null
+  /** Optional one-line note from the model on what changed and why. */
+  reason?: string
 }
 
 /**
@@ -50,15 +52,17 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
       op: 'remove',
       before: blocks.find((b) => b.id === change.blockId) ?? null,
       after: null,
+      reason: change.reason,
     }
   }
   if (change.op === 'create') {
-    return { op: 'create', before: null, after: toPreviewBlock(change.data) }
+    return { op: 'create', before: null, after: toPreviewBlock(change.data), reason: change.reason }
   }
   // edit — the block keeps its identity; the proposed data may type-morph.
   return {
     op: 'edit',
     before: blocks.find((b) => b.id === change.blockId) ?? null,
     after: toPreviewBlock(change.data),
+    reason: change.reason,
   }
 }

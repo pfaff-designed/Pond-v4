@@ -55,8 +55,14 @@ export type ModuleData = z.infer<typeof moduleDataSchema>
  * blocks by `blockId` (from the injected context) and never invents one; `after`
  * anchors placement, and `changes[]` array order sequences the batch (branch 3).
  * `edit` may type-morph (swap `type` + `data` on the same id, preserving identity
- * and position).
+ * and position). Every variant may carry an optional `reason` — a short note the
+ * diff card shows the user on what this change does and why.
  */
+const reason = z
+  .string()
+  .optional()
+  .describe('A short, optional note on what this change does and why (shown to the user)')
+
 export const changeSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('create'),
@@ -65,6 +71,7 @@ export const changeSchema = z.discriminatedUnion('op', [
       .string()
       .optional()
       .describe('Existing blockId to insert after; omit to append to the end'),
+    reason,
   }),
   z.object({
     op: z.literal('edit'),
@@ -74,10 +81,12 @@ export const changeSchema = z.discriminatedUnion('op', [
       .string()
       .optional()
       .describe('Move the block to just after this blockId; omit to keep its position'),
+    reason,
   }),
   z.object({
     op: z.literal('remove'),
     blockId: z.string().describe('Existing block id, from the injected context'),
+    reason,
   }),
 ])
 export type ModuleChange = z.infer<typeof changeSchema>
