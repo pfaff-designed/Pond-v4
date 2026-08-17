@@ -48,7 +48,14 @@ type Scenario = {
   expectType?: string
   /** For create_page cases: assert `parentTitle` contains this (case-insensitive). */
   expectParent?: string
+  /** For create_page cases: assert at least one proposed block of this type (M3). */
+  expectBlockType?: string
+  /** For create_page cases: assert NO text block smuggles a markdown table (M3). */
+  expectNoMdTableInText?: boolean
 }
+
+/** Markdown-table tell: a pipe row followed by a |---|---| separator row. */
+const MD_TABLE_RE = /\|[^\n]*\|[^\n]*\n[^\n]*\|[\s:|-]+\|/
 
 // The 8 original proto cases (two of them — the ambiguous index case and the
 // create-project collision — carry the routing verdicts the proto observed), plus
@@ -159,6 +166,15 @@ const SCENARIOS: Scenario[] = [
     ctx: 'Current page "Camping Trip". Blocks: [text id=b1 "Packing thoughts"].',
     text: 'add a packing checklist',
   },
+  {
+    name: 'NEW M3 inventory page → create_page WITH a table block',
+    expect: 'create_page',
+    expectBlockType: 'table',
+    expectNoMdTableInText: true,
+    ctx: 'The user is on their Home view. No current page.',
+    text: 'make an inventory page for my workshop tools',
+    note: 'M3: inventories must scaffold a real table block, never a markdown table faked inside a text block.',
+  },
 ]
 
 type Result = {
@@ -192,10 +208,22 @@ async function runOne(s: Scenario): Promise<Result> {
   } else {
     pass = actual === s.expect
     // For create_page cases, also assert the shape the milestone requires.
-    const input = (call?.input ?? {}) as { type?: string; parentTitle?: string }
+    const input = (call?.input ?? {}) as {
+      type?: string
+      parentTitle?: string
+      blocks?: Array<{ type?: string; content?: string }>
+    }
     if (pass && s.expectType) pass = input.type === s.expectType
     if (pass && s.expectParent) {
       pass = (input.parentTitle ?? '').toLowerCase().includes(s.expectParent.toLowerCase())
+    }
+    if (pass && s.expectBlockType) {
+      pass = (input.blocks ?? []).some((b) => b.type === s.expectBlockType)
+    }
+    if (pass && s.expectNoMdTableInText) {
+      pass = !(input.blocks ?? []).some(
+        (b) => b.type === 'text' && MD_TABLE_RE.test(b.content ?? '')
+      )
     }
   }
   return { scenario: s, actual, pass, detail }

@@ -23,6 +23,7 @@ import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
 import { metricSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
+import { tableSchema, tableRowSchema } from './table/schema'
 
 /**
  * Per-content-module *data* the AI emits: the persisted block schema with every id
@@ -40,12 +41,16 @@ const todoData = todoSchema
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
 const metricData = metricSchema.omit({ id: true })
 const metricRingData = metricRingSchema.omit({ id: true })
+const tableData = tableSchema
+  .omit({ id: true })
+  .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
   todoData,
   metricData,
   metricRingData,
+  tableData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 

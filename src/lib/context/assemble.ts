@@ -106,6 +106,14 @@ function blockPreview(block: Block): string {
       return block.items.map((it) => it.label).join(', ')
     case 'metric':
       return `${block.label}: ${block.value}${block.unit ? ` ${block.unit}` : ''}`
+    case 'metric-ring':
+      return `${block.label}${block.sub ? ` (${block.sub})` : ''}: ${Math.round(block.pct * 100)}%`
+    case 'table':
+      // Full rows, not a summary: an edit re-emits the whole block, so the model
+      // must see every cell it is expected to preserve.
+      return `${block.title ? `${block.title} — ` : ''}columns: ${block.columns.join(' | ')}; rows: ${block.rows
+        .map((r) => r.cells.join(' | '))
+        .join(' ; ')}`
     default:
       return ''
   }

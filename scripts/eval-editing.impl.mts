@@ -116,6 +116,36 @@ const AMBIG_CTX: NodeContextData = {
   children: [],
 }
 
+// M3 fixture: an inventory page whose collection lives in a real `table` block.
+// "Add <item> to the inventory" must be an EDIT on the table id appending a row —
+// rows are nested (like todo items), so row-level adds are whole-table edits.
+
+const WORKSHOP_BLOCKS: Block[] = [
+  {
+    id: 'blk-shop-intro-01',
+    type: 'text',
+    content: '# Workshop Tools\nEverything in the garage shop, and where it lives.',
+  },
+  {
+    id: 'blk-tools-table-02',
+    type: 'table',
+    title: 'Tool inventory',
+    columns: ['Tool', 'Category', 'Qty', 'Location'],
+    rows: [
+      { id: 'row-drill', cells: ['Cordless drill', 'Power tools', '1', 'Bench shelf'] },
+      { id: 'row-saw', cells: ['Circular saw', 'Power tools', '1', 'Cabinet'] },
+      { id: 'row-tape', cells: ['Tape measure', 'Measuring', '2', 'Pegboard'] },
+    ],
+  },
+]
+
+const WORKSHOP_CTX: NodeContextData = {
+  type: 'page',
+  title: 'Workshop Tools',
+  documents: [{ title: 'Workshop Tools', blocks: WORKSHOP_BLOCKS }],
+  children: [],
+}
+
 // ── Assertion helpers ────────────────────────────────────────────────────────
 
 type Batch = { changes: ModuleChange[] }
@@ -380,6 +410,31 @@ const SCENARIOS: Scenario[] = [
       const labels = ('items' in ch.data ? ch.data.items : []).map((i) => i.label.toLowerCase())
       if (labels.some((l) => /marinara|sauce/.test(l))) return fail('marinara still present')
       if (!labels.includes('ground beef')) return fail('collateral: an unrelated item was dropped')
+    },
+  },
+
+  // 13 — M3: append a row to an existing table block. Correct = a single edit on
+  //      the table id with all 3 existing rows preserved plus the new one; NOT a
+  //      new table, NOT a text block, no collateral ops.
+  {
+    name: 'M3 append row: add an item to the tool inventory table',
+    ctxData: WORKSHOP_CTX,
+    text: 'add my new orbital sander to the tool inventory — power tools, one of them, kept in the cabinet',
+    expectTool: 'propose_changes',
+    allowedTouch: ['blk-tools-table-02'],
+    check: ({ changes, fail }) => {
+      if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
+      const ch = changes[0]
+      if (ch.op !== 'edit' || ch.blockId !== 'blk-tools-table-02')
+        return fail(`expected edit on the table, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.data.type !== 'table') return fail(`must stay table, got ${ch.data.type}`)
+      const rows = 'rows' in ch.data ? ch.data.rows : []
+      if (rows.length !== 4) return fail(`expected 4 rows (3 preserved + 1 appended), got ${rows.length}`)
+      const joined = rows.map((r) => r.cells.join(' ').toLowerCase())
+      if (!joined.some((c) => c.includes('sander'))) return fail('new sander row missing')
+      for (const tool of ['drill', 'saw', 'tape']) {
+        if (!joined.some((c) => c.includes(tool))) return fail(`collateral: existing ${tool} row dropped`)
+      }
     },
   },
 ]

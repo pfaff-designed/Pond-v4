@@ -14,6 +14,7 @@ import { TextDiffer } from './text/differ'
 import { TodoView } from './todo/view'
 import { MetricView } from './metric/view'
 import { MetricRingView } from './metric-ring/view'
+import { TableView } from './table/view'
 import { PageView } from './page/view'
 
 /**
@@ -26,6 +27,7 @@ export const moduleRenderers = {
   todo: { view: TodoView },
   metric: { view: MetricView },
   'metric-ring': { view: MetricRingView },
+  table: { view: TableView },
   page: { view: PageView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a

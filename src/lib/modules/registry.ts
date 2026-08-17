@@ -12,6 +12,7 @@ import { textDescriptor } from './text/schema'
 import { todoDescriptor } from './todo/schema'
 import { metricDescriptor } from './metric/schema'
 import { metricRingDescriptor } from './metric-ring/schema'
+import { tableDescriptor } from './table/schema'
 import { pageDescriptor } from './page/schema'
 
 export const moduleDescriptors = {
@@ -19,6 +20,7 @@ export const moduleDescriptors = {
   todo: todoDescriptor,
   metric: metricDescriptor,
   'metric-ring': metricRingDescriptor,
+  table: tableDescriptor,
   page: pageDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 

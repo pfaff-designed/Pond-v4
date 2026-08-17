@@ -32,8 +32,9 @@ export interface ChangePreview {
 
 /**
  * Stamp id-less module `data` into a display Block. Mirrors `hydrateBlock`'s
- * id-stamping (block-level + nested todo item ids) but skips validation — this
- * block is shown, never written, so a placeholder id is all it needs.
+ * id-stamping (block-level + nested todo item / table row ids) but skips
+ * validation — this block is shown, never written, so a placeholder id is all it
+ * needs.
  */
 function toPreviewBlock(data: ModuleData): Block {
   const withId = { ...data, id: PREVIEW_ID }
@@ -41,6 +42,12 @@ function toPreviewBlock(data: ModuleData): Block {
     return {
       ...withId,
       items: withId.items.map((item, i) => ({ ...item, id: `${PREVIEW_ID}-${i}` })),
+    } as Block
+  }
+  if (withId.type === 'table') {
+    return {
+      ...withId,
+      rows: withId.rows.map((row, i) => ({ ...row, id: `${PREVIEW_ID}-${i}` })),
     } as Block
   }
   return withId as Block

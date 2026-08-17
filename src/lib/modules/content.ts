@@ -17,12 +17,14 @@ import { textSchema } from './text/schema'
 import { todoSchema } from './todo/schema'
 import { metricSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
+import { tableSchema } from './table/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
   todoSchema,
   metricSchema,
   metricRingSchema,
+  tableSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

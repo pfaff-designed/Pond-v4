@@ -4,10 +4,10 @@
  * (pages/edits.applyProposedChanges) and the create_page accept path
  * (pages/create-page.createPageFromProposal).
  *
- * The AI never mints ids (t16 branch 2): every id — block-level AND nested (today
- * `todo` items are the only nested-id case, a small documented special case rather
- * than a per-module hydrate facet — ship flat, refactor when it hurts, t12 §5) — is
- * stamped here from the injected `mintId`. The result is re-validated against
+ * The AI never mints ids (t16 branch 2): every id — block-level AND nested (`todo`
+ * items and `table` rows are the nested-id cases, small documented special cases
+ * rather than a per-module hydrate facet — ship flat, refactor when it hurts,
+ * t12 §5) — is stamped here from the injected `mintId`. The result is re-validated against
  * `blockSchema`; anything malformed returns `null` so the caller skips it rather
  * than writing corrupt JSONB (branch 7 accept-time gate).
  *
@@ -22,6 +22,9 @@ export function hydrateBlock(data: unknown, id: string, mintId: () => string): B
   const withIds: Record<string, unknown> = { ...d, id }
   if (d.type === 'todo' && Array.isArray(d.items)) {
     withIds.items = d.items.map((it) => ({ ...(it as object), id: mintId() }))
+  }
+  if (d.type === 'table' && Array.isArray(d.rows)) {
+    withIds.rows = d.rows.map((r) => ({ ...(r as object), id: mintId() }))
   }
   const parsed = blockSchema.safeParse(withIds)
   return parsed.success ? parsed.data : null
