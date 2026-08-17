@@ -87,11 +87,12 @@ const SCENARIOS: Scenario[] = [
     note: 'proto stalled here with a clarifying question. Must now produce create_page.',
   },
   {
-    name: 'AMBIGUOUS "add a recipe" while on an index page',
-    // Genuinely ambiguous (edit the index vs make a new page). Either create_page or
-    // propose_changes is defensible; a clarifying no-tool turn is also acceptable.
-    // Accept any of the three so this case tracks the proto without over-constraining.
-    expect: 'AMBIGUOUS' as unknown as Expect,
+    name: '"add a recipe" while on an index page → propose_changes',
+    // Once ambiguous (edit the index vs make a new page); M1-era runs resolved it to
+    // propose_changes 10/10. "add a recipe" on an index page = append it to the list
+    // in place (an edit of the current page), which is what the model does. Tightened
+    // from any-of-3 to the observed resolution to pin the behaviour (M2 task 2).
+    expect: 'propose_changes',
     ctx: 'Current page "Recipes" (a text index of recipe links). Blocks: [text id=b1 "# My Recipes\\n- Chicken Parm\\n- Carbonara"].',
     text: 'add a recipe for lasagna',
   },

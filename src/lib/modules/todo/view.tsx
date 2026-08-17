@@ -24,6 +24,11 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
             type="checkbox"
             checked={item.checked}
             disabled={!editable}
+            // Read-only rows have a `checked` prop but no `onChange`; mark them
+            // `readOnly` so React does not warn about a controlled field without a
+            // handler (the warning `disabled` happens to suppress, made explicit and
+            // intent-driven so it holds even if `disabled` is ever removed).
+            readOnly={!editable}
             onChange={editable ? (e) => patchItem(j, { checked: e.target.checked }) : undefined}
           />
           {editable ? (
