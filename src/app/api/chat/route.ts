@@ -1,25 +1,15 @@
 import { anthropic } from '@ai-sdk/anthropic'
-import { streamText, tool, stepCountIs, generateObject, jsonSchema, NoSuchToolError } from 'ai'
+import { streamText, tool, stepCountIs } from 'ai'
 import type { UIMessage } from 'ai'
-import { z } from 'zod'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
 import { toModelMessages } from '@/lib/conversation/transcript'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
-import { moduleCatalog, proposeChangesSchema } from '@/lib/modules/ai-composition'
+import { buildSystemPrompt } from './prompt'
+import { createNodeTool, proposeChangesTool, fetchContextTool } from './tools'
+import { makeRepairToolCall } from '@/lib/ai/repair'
 import type { NodeType } from '@/lib/supabase/types'
-
-const SYSTEM_PROMPT = `You are Pond, a thinking partner. Your role is steward, collector, and presenter.
-You surface and organise the user's thinking — you do not replace it.
-You never initiate production of documents, plans, or action lists.
-Think together with the user until they explicitly request an artifact.
-When you hear something worth capturing, offer a short candidate and wait for confirmation.
-When the user expresses intent to create a node (area, project, routine, or action), call the create_node tool.
-When the user asks to change, rewrite, reword, build, add, or compose content in the current node — rewrite an existing block, add new blocks, a checklist, a metric, or several at once — call the propose_changes tool with a batch of operations. To reword existing text, emit an 'edit' change targeting that block's id with the full new content; do NOT write it yourself. Only propose on an explicit request; never emit blocks unprompted. Do NOT invent block ids: omit the id when creating (the client assigns one on accept), and reference existing blocks by the ids in the injected context when editing or removing. If it is unclear which block the user means, ask a short clarifying question before proposing. The available block types are:
-${moduleCatalog}
-The user reviews every proposed change and accepts or rejects it before anything is written.
-When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -42,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
-  let system = SYSTEM_PROMPT
+  let system = buildSystemPrompt()
   const supabase = await createClient()
   const {
     data: { user },
@@ -54,7 +44,7 @@ export async function POST(req: Request) {
       latestUserText: latestUserText(messages),
     })
     if (context) {
-      system = `${SYSTEM_PROMPT}\n\nUse the following context about the user's workspace when relevant. Do not repeat it back verbatim unless asked.\n\n${context}`
+      system = buildSystemPrompt(context)
     }
   }
 
@@ -71,42 +61,13 @@ export async function POST(req: Request) {
     // slightly-off propose_changes batch against the closed discriminated union —
     // re-ask it to produce valid arguments rather than dropping the turn. The strict
     // schema is still the gate; this only widens the model's second chance to hit it.
-    repairToolCall: async ({ toolCall, inputSchema, error }) => {
-      // An unknown tool name can't be repaired by fixing arguments — give up.
-      if (NoSuchToolError.isInstance(error)) return null
-      const schema = await inputSchema({ toolName: toolCall.toolName })
-      const { object: repaired } = await generateObject({
-        model: anthropic(AI_MODELS.standard),
-        schema: jsonSchema(schema),
-        prompt: [
-          `The tool "${toolCall.toolName}" was called with arguments that failed validation:`,
-          JSON.stringify(toolCall.input),
-          `Validation error: ${error.message}`,
-          'Return corrected arguments that satisfy the tool schema exactly. Do not invent block ids: omit ids when creating and reference only existing block ids when editing or removing.',
-        ].join('\n'),
-      })
-      return { ...toolCall, input: JSON.stringify(repaired) }
-    },
+    // Logic lives in @/lib/ai/repair so it can be exercised directly (eval-repair.mts).
+    repairToolCall: makeRepairToolCall(),
     tools: {
-      create_node: tool({
-        description:
-          'Open the node creation dialog when the user wants to create an area, project, routine, or action. Call this whenever creation intent is detected.',
-        inputSchema: z.object({
-          type: z.enum(['area', 'project', 'routine', 'action']),
-          name: z.string().min(1).describe('The name for the new node'),
-        }),
-      }),
-      propose_changes: tool({
-        description:
-          'Propose a batch of composition changes to the current node — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Use when the user explicitly asks to build or compose content. The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
-        inputSchema: proposeChangesSchema,
-      }),
+      create_node: tool(createNodeTool),
+      propose_changes: tool(proposeChangesTool),
       fetch_context: tool({
-        description:
-          'Search the user\'s entire workspace (all areas, projects, routines, and documents) for content semantically related to a query. Call this ONLY when the user explicitly asks to recall what they wrote before or to bring in context from elsewhere (e.g. "what have I written about X", "pull in my notes on Y"). Never call it to browse unprompted.',
-        inputSchema: z.object({
-          query: z.string().min(1).describe('What to search the workspace for'),
-        }),
+        ...fetchContextTool,
         execute: async ({ query }) => {
           if (!user) return 'No user session; cannot retrieve workspace context.'
           const pages = await retrievePages(supabase, user.id, query, { matchCount: 5 })
