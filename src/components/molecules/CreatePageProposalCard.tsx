@@ -72,6 +72,13 @@ function withPreviewIds(blocks: ModuleData[]): Array<ModuleData & { id: string }
         items: b.items.map((it, j) => ({ ...it, id: `preview-${i}-${j}` })),
       }
     }
+    if (b.type === 'table') {
+      return {
+        ...b,
+        id: `preview-${i}`,
+        rows: (b.rows ?? []).map((r, j) => ({ ...r, id: `preview-${i}-${j}` })),
+      }
+    }
     return { ...b, id: `preview-${i}` }
   })
 }

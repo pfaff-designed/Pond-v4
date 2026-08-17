@@ -88,6 +88,38 @@ describe('blocksToText', () => {
     expect(text).toContain('pcs')
   })
 
+  it('renders a metric-ring block with label, sub and percentage', () => {
+    const blocks: Block[] = [
+      { id: 'b1', type: 'metric-ring', label: 'Overall Progress', sub: 'Phase 1 of 5', pct: 0.2 },
+    ]
+    const text = blocksToText(blocks)
+    expect(text).toContain('Overall Progress')
+    expect(text).toContain('Phase 1 of 5')
+    expect(text).toContain('20')
+  })
+
+  it('renders a table block with every row and cell, not a summary', () => {
+    const blocks: Block[] = [
+      {
+        id: 'b1',
+        type: 'table',
+        title: 'Power Tools',
+        columns: ['Tool', 'Location'],
+        rows: [
+          { id: 'r1', cells: ['Table Saw', 'Centre of shop'] },
+          { id: 'r2', cells: ['Bandsaw', 'Left wall'] },
+        ],
+      },
+    ]
+    const text = blocksToText(blocks)
+    expect(text).toContain('Power Tools')
+    expect(text).toContain('Tool')
+    expect(text).toContain('Table Saw')
+    expect(text).toContain('Centre of shop')
+    expect(text).toContain('Bandsaw')
+    expect(text).toContain('Left wall')
+  })
+
   it('returns an empty string for no blocks', () => {
     expect(blocksToText([])).toBe('')
   })

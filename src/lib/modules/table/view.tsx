@@ -13,27 +13,32 @@ import type { TableBlock, TableRow } from './schema'
  * sort/filter chrome — this is a content block, not a spreadsheet engine.
  */
 export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlock>) {
+  // Callers can hand this partially-parsed data (streamed tool input) — tolerate
+  // missing columns/rows rather than crash the whole tree.
+  const columns = data.columns ?? []
+  const rows = data.rows ?? []
+
   function patchRow(rowIndex: number, patch: Partial<TableRow>) {
     onChange?.({
       ...data,
-      rows: data.rows.map((r, i) => (i === rowIndex ? { ...r, ...patch } : r)),
+      rows: rows.map((r, i) => (i === rowIndex ? { ...r, ...patch } : r)),
     })
   }
 
   function patchCell(rowIndex: number, cellIndex: number, value: string) {
-    const row = data.rows[rowIndex]
+    const row = rows[rowIndex]
     patchRow(rowIndex, { cells: row.cells.map((c, i) => (i === cellIndex ? value : c)) })
   }
 
   function addRow() {
     onChange?.({
       ...data,
-      rows: [...data.rows, { id: crypto.randomUUID(), cells: data.columns.map(() => '') }],
+      rows: [...rows, { id: crypto.randomUUID(), cells: columns.map(() => '') }],
     })
   }
 
   function removeRow(rowIndex: number) {
-    onChange?.({ ...data, rows: data.rows.filter((_, i) => i !== rowIndex) })
+    onChange?.({ ...data, rows: rows.filter((_, i) => i !== rowIndex) })
   }
 
   return (
@@ -42,7 +47,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
-            {data.columns.map((col, i) => (
+            {columns.map((col, i) => (
               <th
                 key={i}
                 className="border-b border-zinc-200 py-1 pr-3 text-xs font-medium text-zinc-500"
@@ -54,22 +59,22 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
           </tr>
         </thead>
         <tbody>
-          {data.rows.length === 0 && !editable && (
+          {rows.length === 0 && !editable && (
             <tr>
-              <td colSpan={data.columns.length} className="py-2 text-zinc-400">
+              <td colSpan={columns.length} className="py-2 text-zinc-400">
                 No entries yet
               </td>
             </tr>
           )}
-          {data.rows.map((row, ri) => (
+          {rows.map((row, ri) => (
             <tr key={row.id} className="border-b border-zinc-100 last:border-b-0">
-              {data.columns.map((_, ci) => (
+              {columns.map((_, ci) => (
                 <td key={ci} className={ci === 0 ? 'py-1 pr-3 font-medium' : 'py-1 pr-3'}>
                   {editable ? (
                     <input
                       className="w-full bg-transparent outline-none"
                       value={row.cells[ci] ?? ''}
-                      aria-label={`${data.columns[ci]}, row ${ri + 1}`}
+                      aria-label={`${columns[ci]}, row ${ri + 1}`}
                       onChange={(e) => patchCell(ri, ci, e.target.value)}
                     />
                   ) : (

@@ -395,6 +395,10 @@ export function AITerminal() {
                   </div>
                 )}
                 {changeBatches.map((part) => {
+                  // While the tool input is still streaming, `part.input` is partially
+                  // parsed JSON — block payloads can be missing required fields, and the
+                  // module views render them unvalidated. Wait for the complete input.
+                  if (part.state === 'input-streaming') return null
                   const rawChanges = part.input?.changes ?? []
                   const previews = rawChanges.map((c) =>
                     previewForChange(c, currentPage?.blocks ?? [])
@@ -427,6 +431,9 @@ export function AITerminal() {
                   )
                 })}
                 {createPageParts.map((part) => {
+                  // Same streaming caveat as above: a partially-parsed `blocks` array
+                  // crashes the block previews (e.g. TableView on undefined rows).
+                  if (part.state === 'input-streaming') return null
                   const input = part.input
                   if (!input?.title || !input.type) return null
                   const status = createDecisions[part.toolCallId] ?? 'pending'

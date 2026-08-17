@@ -79,6 +79,14 @@ export function blocksToText(blocks: Block[]): string {
             .join('\n')
         case 'metric':
           return `${block.label}: ${block.value}${block.unit ? ` ${block.unit}` : ''}`
+        case 'metric-ring':
+          return `${block.label}${block.sub ? ` (${block.sub})` : ''}: ${Math.round(block.pct * 100)}%`
+        case 'table':
+          // Full rows, same as blockPreview: a dropped block is invisible to the
+          // model and gets silently lost on the next wholesale edit.
+          return `${block.title ? `${block.title} — ` : ''}columns: ${block.columns.join(' | ')}; rows: ${block.rows
+            .map((r) => r.cells.join(' | '))
+            .join(' ; ')}`
         default:
           return ''
       }
