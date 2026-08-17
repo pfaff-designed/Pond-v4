@@ -33,4 +33,11 @@ export const tableDescriptor: ModuleDescriptor<TableBlock> = {
   schema: tableSchema,
   description:
     'A structured table of rows and columns (plain text cells). Use for inventories, collections, and any list of items with several attributes each (name, quantity, location, …). Never write a markdown table inside a text block — use this instead.',
+  // Full rows, not a summary: an edit re-emits the whole block, so the model must
+  // see every cell it is expected to preserve.
+  serialize: (data) =>
+    `${data.title ? `${data.title} — ` : ''}columns: ${data.columns.join(' | ')}; rows: ${data.rows
+      .map((r) => r.cells.join(' | '))
+      .join(' ; ')}`,
+  nestedIdPaths: ['rows'],
 }

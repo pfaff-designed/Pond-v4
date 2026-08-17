@@ -16,6 +16,8 @@
  */
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange, ModuleData } from './ai-composition'
+import { moduleDescriptors } from './registry'
+import type { ModuleDescriptor } from './types'
 
 /** Display-only id on a proposed block. Replaced by a real minted id on accept. */
 export const PREVIEW_ID = '__preview__'
@@ -32,25 +34,21 @@ export interface ChangePreview {
 
 /**
  * Stamp id-less module `data` into a display Block. Mirrors `hydrateBlock`'s
- * id-stamping (block-level + nested todo item / table row ids) but skips
- * validation — this block is shown, never written, so a placeholder id is all it
- * needs.
+ * id-minting — both walk the module's declared `nestedIdPaths` — but skips
+ * validation and stamps deterministic `${base}-${index}` ids: this block is
+ * shown, never written, so stable React keys are all it needs. Shared by the
+ * diff card (here) and the create-page proposal card.
  */
-function toPreviewBlock(data: ModuleData): Block {
-  const withId = { ...data, id: PREVIEW_ID }
-  if (withId.type === 'todo') {
-    return {
-      ...withId,
-      items: withId.items.map((item, i) => ({ ...item, id: `${PREVIEW_ID}-${i}` })),
-    } as Block
+export function stampDisplayIds(data: ModuleData, base: string): Block {
+  const descriptor = (moduleDescriptors as Record<string, ModuleDescriptor<unknown>>)[data.type]
+  const withIds: Record<string, unknown> = { ...data, id: base }
+  for (const path of descriptor?.nestedIdPaths ?? []) {
+    const collection = (data as Record<string, unknown>)[path]
+    if (Array.isArray(collection)) {
+      withIds[path] = collection.map((el, i) => ({ ...(el as object), id: `${base}-${i}` }))
+    }
   }
-  if (withId.type === 'table') {
-    return {
-      ...withId,
-      rows: withId.rows.map((row, i) => ({ ...row, id: `${PREVIEW_ID}-${i}` })),
-    } as Block
-  }
-  return withId as Block
+  return withIds as unknown as Block
 }
 
 export function previewForChange(change: ModuleChange, blocks: Block[]): ChangePreview {
@@ -63,13 +61,18 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
     }
   }
   if (change.op === 'create') {
-    return { op: 'create', before: null, after: toPreviewBlock(change.data), reason: change.reason }
+    return {
+      op: 'create',
+      before: null,
+      after: stampDisplayIds(change.data, PREVIEW_ID),
+      reason: change.reason,
+    }
   }
   // edit — the block keeps its identity; the proposed data may type-morph.
   return {
     op: 'edit',
     before: blocks.find((b) => b.id === change.blockId) ?? null,
-    after: toPreviewBlock(change.data),
+    after: stampDisplayIds(change.data, PREVIEW_ID),
     reason: change.reason,
   }
 }

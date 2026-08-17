@@ -23,4 +23,7 @@ export const pageDescriptor: ModuleDescriptor<PageModule> = {
   schema: pageModuleSchema,
   description:
     'A container that holds an ordered list of content blocks. Everything is a page; a page renders its blocks in order. The AI composes onto a page — it does not mint pages as content.',
+  // A page never appears inside a `blocks[]` (the content union excludes it), so
+  // only its own title is serialized; child blocks serialize via their own modules.
+  serialize: (data) => data.title ?? '',
 }

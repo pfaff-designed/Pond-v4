@@ -18,6 +18,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
+import { moduleDescriptors } from '@/lib/modules/registry'
+import type { ModuleDescriptor } from '@/lib/modules/types'
 import type { Block } from '@/lib/documents/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -66,31 +68,20 @@ export function parseMentions(text: string): string[] {
 
 // ── blocksToText (pure) ──────────────────────────────────────────────────────
 
+/**
+ * Look up a block's descriptor. Undefined only for a stale persisted type that is
+ * no longer registered (t12 §2: tolerate, never hard-fail on read) — for every
+ * registered module the required `serialize` facet makes omission a compile error,
+ * not a silent fallthrough.
+ */
+function descriptorFor(block: Block): ModuleDescriptor<unknown> | undefined {
+  return (moduleDescriptors as Record<string, ModuleDescriptor<unknown>>)[block.type]
+}
+
 /** Flatten a document's blocks into plain text for the prompt. */
 export function blocksToText(blocks: Block[]): string {
   return blocks
-    .map((block) => {
-      switch (block.type) {
-        case 'text':
-          return block.content
-        case 'todo':
-          return block.items
-            .map((item) => `- [${item.checked ? 'x' : ' '}] ${item.label}`)
-            .join('\n')
-        case 'metric':
-          return `${block.label}: ${block.value}${block.unit ? ` ${block.unit}` : ''}`
-        case 'metric-ring':
-          return `${block.label}${block.sub ? ` (${block.sub})` : ''}: ${Math.round(block.pct * 100)}%`
-        case 'table':
-          // Full rows, same as blockPreview: a dropped block is invisible to the
-          // model and gets silently lost on the next wholesale edit.
-          return `${block.title ? `${block.title} — ` : ''}columns: ${block.columns.join(' | ')}; rows: ${block.rows
-            .map((r) => r.cells.join(' | '))
-            .join(' ; ')}`
-        default:
-          return ''
-      }
-    })
+    .map((block) => descriptorFor(block)?.serialize(block) ?? '')
     .filter((line) => line.length > 0)
     .join('\n')
 }
@@ -107,24 +98,9 @@ const TYPE_LABEL: Record<NodeType, string> = {
 
 /** One-line preview of a block's content, for the id-addressed listing. */
 function blockPreview(block: Block): string {
-  switch (block.type) {
-    case 'text':
-      return block.content
-    case 'todo':
-      return block.items.map((it) => it.label).join(', ')
-    case 'metric':
-      return `${block.label}: ${block.value}${block.unit ? ` ${block.unit}` : ''}`
-    case 'metric-ring':
-      return `${block.label}${block.sub ? ` (${block.sub})` : ''}: ${Math.round(block.pct * 100)}%`
-    case 'table':
-      // Full rows, not a summary: an edit re-emits the whole block, so the model
-      // must see every cell it is expected to preserve.
-      return `${block.title ? `${block.title} — ` : ''}columns: ${block.columns.join(' | ')}; rows: ${block.rows
-        .map((r) => r.cells.join(' | '))
-        .join(' ; ')}`
-    default:
-      return ''
-  }
+  const descriptor = descriptorFor(block)
+  if (!descriptor) return ''
+  return (descriptor.preview ?? descriptor.serialize)(block)
 }
 
 /**

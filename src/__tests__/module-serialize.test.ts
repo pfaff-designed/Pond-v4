@@ -1,0 +1,120 @@
+/**
+ * The serialize facet on ModuleDescriptor (arch-refinement Candidate 1).
+ *
+ * "What is a block of type X as text" lives ON the module, not in hand-kept
+ * switches in context/assemble.ts. `serialize` is required (full-fidelity body —
+ * prompt injection + embeddings; a block the model can't read is silently
+ * destroyed on the next wholesale edit). `preview` is optional (one-line listing
+ * for the id-addressed context; falls back to serialize).
+ *
+ * Expected strings are the shipped blocksToText/blockPreview outputs — the
+ * behavior existing prompt/eval surfaces already depend on.
+ */
+
+import { moduleDescriptors } from '@/lib/modules/registry'
+import type { ModuleDescriptor } from '@/lib/modules/types'
+import type { Block } from '@/lib/documents/types'
+
+// One known-good sample per content type. The completeness loop below fails if a
+// registered type has no sample here — add one when you add a module.
+const samples: Record<string, Block> = {
+  text: { id: 'b1', type: 'text', content: 'Hello world' },
+  todo: {
+    id: 'b1',
+    type: 'todo',
+    items: [
+      { id: 't1', label: 'Buy wood', checked: false },
+      { id: 't2', label: 'Sand it', checked: true },
+    ],
+  },
+  metric: { id: 'b1', type: 'metric', label: 'Boards cut', value: 12, unit: 'pcs' },
+  'metric-ring': {
+    id: 'b1',
+    type: 'metric-ring',
+    label: 'Overall Progress',
+    sub: 'Phase 1 of 5',
+    pct: 0.2,
+  },
+  table: {
+    id: 'b1',
+    type: 'table',
+    title: 'Power Tools',
+    columns: ['Tool', 'Location'],
+    rows: [
+      { id: 'r1', cells: ['Table Saw', 'Centre of shop'] },
+      { id: 'r2', cells: ['Bandsaw', 'Left wall'] },
+    ],
+  },
+}
+
+function serialize(block: Block): string {
+  const d = moduleDescriptors[block.type] as ModuleDescriptor<unknown>
+  return d.serialize(block)
+}
+
+function preview(block: Block): string {
+  const d = moduleDescriptors[block.type] as ModuleDescriptor<unknown>
+  return (d.preview ?? d.serialize)(block)
+}
+
+describe('descriptor.serialize (full-fidelity body)', () => {
+  it('text: the markdown content', () => {
+    expect(serialize(samples.text)).toBe('Hello world')
+  })
+
+  it('todo: a checkbox line per item', () => {
+    expect(serialize(samples.todo)).toBe('- [ ] Buy wood\n- [x] Sand it')
+  })
+
+  it('metric: label, value, unit', () => {
+    expect(serialize(samples.metric)).toBe('Boards cut: 12 pcs')
+  })
+
+  it('metric-ring: label, sub, percentage', () => {
+    expect(serialize(samples['metric-ring'])).toBe('Overall Progress (Phase 1 of 5): 20%')
+  })
+
+  it('table: every column and every cell, not a summary', () => {
+    expect(serialize(samples.table)).toBe(
+      'Power Tools — columns: Tool | Location; rows: Table Saw | Centre of shop ; Bandsaw | Left wall'
+    )
+  })
+})
+
+describe('descriptor.preview (one-line listing)', () => {
+  it('todo overrides preview: labels only, comma-joined', () => {
+    expect(preview(samples.todo)).toBe('Buy wood, Sand it')
+  })
+
+  it('every other content type falls back to serialize', () => {
+    for (const type of ['text', 'metric', 'metric-ring', 'table'] as const) {
+      expect(preview(samples[type])).toBe(serialize(samples[type]))
+    }
+  })
+})
+
+describe('registry completeness', () => {
+  const contentDescriptors = Object.values(moduleDescriptors).filter((d) => d.type !== 'page')
+
+  it('every registered content type has a sample here', () => {
+    for (const d of contentDescriptors) {
+      expect(samples[d.type]).toBeDefined()
+    }
+  })
+
+  it('every registered content type serializes its sample to non-empty text', () => {
+    for (const d of contentDescriptors) {
+      expect(serialize(samples[d.type]).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('the page container serializes to its title', () => {
+    const out = moduleDescriptors.page.serialize({
+      id: 'p1',
+      type: 'page',
+      title: 'Workshop',
+      blocks: [],
+    })
+    expect(out).toBe('Workshop')
+  })
+})

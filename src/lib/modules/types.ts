@@ -28,6 +28,24 @@ export interface ModuleDescriptor<T = unknown> {
   schema: ZodType<T>
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
   description: string
+  /**
+   * Full-fidelity text rendering of a block — the prompt body and the embedding
+   * source. REQUIRED: a block the model cannot read here is silently destroyed on
+   * the next wholesale `edit` (the model re-emits what it can see). Must render
+   * every piece of user content, not a summary.
+   */
+  // Method syntax (not arrow-property): keeps `T` bivariant so the heterogeneous
+  // `moduleDescriptors` map still satisfies `Record<string, ModuleDescriptor>`.
+  serialize(data: T): string
+  /** One-line listing for the id-addressed editable-blocks context. Defaults to `serialize`. */
+  preview?(data: T): string
+  /**
+   * Top-level fields holding id-bearing collections (e.g. `['items']`, `['rows']`).
+   * The one declared fact behind every id walk: write-time minting (`hydrate.ts`)
+   * and display-time stamping (`preview.ts`) both traverse these paths. Omit when
+   * the module has none.
+   */
+  nestedIdPaths?: readonly string[]
 }
 
 /**

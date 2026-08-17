@@ -26,6 +26,7 @@
 import { useId, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { ModuleView } from '@/lib/modules/renderers'
+import { stampDisplayIds } from '@/lib/modules/preview'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
@@ -62,25 +63,10 @@ interface CreatePageProposalCardProps {
 }
 
 /** Give each proposed block a stable preview id so ModuleView (and React keys) are
- *  happy; these are throwaway — the real ids are minted on accept. */
-function withPreviewIds(blocks: ModuleData[]): Array<ModuleData & { id: string }> {
-  return blocks.map((b, i) => {
-    if (b.type === 'todo') {
-      return {
-        ...b,
-        id: `preview-${i}`,
-        items: b.items.map((it, j) => ({ ...it, id: `preview-${i}-${j}` })),
-      }
-    }
-    if (b.type === 'table') {
-      return {
-        ...b,
-        id: `preview-${i}`,
-        rows: (b.rows ?? []).map((r, j) => ({ ...r, id: `preview-${i}-${j}` })),
-      }
-    }
-    return { ...b, id: `preview-${i}` }
-  })
+ *  happy; these are throwaway — the real ids are minted on accept. Nested ids
+ *  (todo items, table rows, …) are stamped by the shared registry-driven walk. */
+function withPreviewIds(blocks: ModuleData[]) {
+  return blocks.map((b, i) => stampDisplayIds(b, `preview-${i}`))
 }
 
 export function CreatePageProposalCard({

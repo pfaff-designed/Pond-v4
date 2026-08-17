@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
+import { ModuleView } from '@/lib/modules/renderers'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
@@ -164,8 +165,15 @@ export function DocumentPanel() {
   )
 }
 
-// ── Per-block editors ──────────────────────────────────────────────────────────
+// ── Per-block editor ───────────────────────────────────────────────────────────
 
+/**
+ * One block row: delete chrome + the module's own view, editable. Rendering goes
+ * through the ModuleView registry — the panel has no per-type branches, so every
+ * registered module (and any future one) is editable here with zero edits. Views
+ * that fold editing in (text/todo/table) emit full-state onChange into the
+ * debounced save; display-only views (metric, metric-ring) ignore `editable`.
+ */
 function BlockEditor({
   block,
   onChange,
@@ -185,54 +193,12 @@ function BlockEditor({
       >
         ×
       </button>
-      {block.type === 'text' && (
-        <textarea
-          className="w-full resize-none outline-none text-sm text-zinc-800 bg-transparent leading-relaxed"
-          value={block.content}
-          rows={Math.max(1, block.content.split('\n').length)}
-          placeholder="Write something…"
-          onChange={(e) => onChange({ ...block, content: e.target.value })}
-        />
-      )}
-      {block.type === 'todo' && (
-        <ul className="space-y-1">
-          {block.items.map((item, j) => (
-            <li key={item.id} className="flex items-center gap-2 text-sm text-zinc-800">
-              <input
-                type="checkbox"
-                checked={item.checked}
-                onChange={(e) =>
-                  onChange({
-                    ...block,
-                    items: block.items.map((it, k) =>
-                      k === j ? { ...it, checked: e.target.checked } : it
-                    ),
-                  })
-                }
-              />
-              <input
-                className="flex-1 outline-none bg-transparent"
-                value={item.label}
-                onChange={(e) =>
-                  onChange({
-                    ...block,
-                    items: block.items.map((it, k) =>
-                      k === j ? { ...it, label: e.target.value } : it
-                    ),
-                  })
-                }
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-      {block.type === 'metric' && (
-        <div className="text-sm text-zinc-800">
-          <span className="text-zinc-500">{block.label}:</span> {block.value}
-          {block.unit ? ` ${block.unit}` : ''}
-          {block.trend ? ` (${block.trend})` : ''}
-        </div>
-      )}
+      <ModuleView
+        type={block.type}
+        data={block}
+        editable
+        onChange={(next) => onChange(next as Block)}
+      />
     </div>
   )
 }

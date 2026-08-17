@@ -18,4 +18,5 @@ export const metricDescriptor: ModuleDescriptor<MetricBlock> = {
   schema: metricSchema,
   description:
     'A single labelled figure (with optional unit and up/down/flat trend). Use to surface one key number — a total, a balance, a count.',
+  serialize: (data) => `${data.label}: ${data.value}${data.unit ? ` ${data.unit}` : ''}`,
 }

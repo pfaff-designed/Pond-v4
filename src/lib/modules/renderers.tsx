@@ -19,8 +19,10 @@ import { PageView } from './page/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
- * no runtime registration. Adding a module = one folder + one line here (and one in
- * `registry.ts`).
+ * no runtime registration. Adding a module = one folder (schema with the required
+ * descriptor facets + view) + one line here, one in `registry.ts`, and its schema in
+ * the `content.ts` / `ai-composition.ts` unions — the exhaustiveness fences in
+ * `__tests__/module-exhaustiveness.test.ts` fail tsc if any of those are missed.
  */
 export const moduleRenderers = {
   text: { view: TextView, differ: TextDiffer },

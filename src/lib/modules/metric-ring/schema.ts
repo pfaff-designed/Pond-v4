@@ -30,4 +30,6 @@ export const metricRingDescriptor: ModuleDescriptor<MetricRingBlock> = {
   schema: metricRingSchema,
   description:
     'A progress ring around a focal number. Use for a single metric that has a target or completion percentage — miles run toward a goal, budget used, a streak.',
+  serialize: (data) =>
+    `${data.label}${data.sub ? ` (${data.sub})` : ''}: ${Math.round(data.pct * 100)}%`,
 }

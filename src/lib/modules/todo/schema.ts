@@ -22,4 +22,8 @@ export const todoDescriptor: ModuleDescriptor<TodoBlock> = {
   schema: todoSchema,
   description:
     'A checklist of items, each toggleable done/undone. Use for tasks, steps, packing lists, or any set of things to track completion on.',
+  serialize: (data) =>
+    data.items.map((item) => `- [${item.checked ? 'x' : ' '}] ${item.label}`).join('\n'),
+  preview: (data) => data.items.map((item) => item.label).join(', '),
+  nestedIdPaths: ['items'],
 }

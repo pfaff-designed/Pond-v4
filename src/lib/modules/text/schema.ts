@@ -15,4 +15,5 @@ export const textDescriptor: ModuleDescriptor<TextBlock> = {
   schema: textSchema,
   description:
     'A prose block written in markdown. Use for notes, explanations, headings, and any freeform writing.',
+  serialize: (data) => data.content,
 }
