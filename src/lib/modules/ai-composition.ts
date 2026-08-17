@@ -34,6 +34,9 @@ import { tableSchema, tableRowSchema } from './table/schema'
  *
  * The `page` container module is intentionally excluded — composition stays a flat
  * ordered content list until `section` lands (t18, branch 3).
+ *
+ * Each omit-chain must strip the ids at the descriptor's `nestedIdPaths` — jest
+ * fence in `module-nested-ids.test.ts` (strip∘hydrate round-trip per type).
  */
 const textData = textSchema.omit({ id: true })
 const todoData = todoSchema

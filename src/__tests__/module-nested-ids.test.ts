@@ -13,7 +13,8 @@
 
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { stampDisplayIds } from '@/lib/modules/preview'
-import { moduleDescriptors } from '@/lib/modules/registry'
+import { moduleDescriptors, descriptorFor } from '@/lib/modules/registry'
+import { moduleDataSchema } from '@/lib/modules/ai-composition'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 
 // One AI-emitted (id-less) sample per content type. The completeness check fails
@@ -76,6 +77,29 @@ describe('hydrateBlock mints every nested id the schema demands', () => {
     const table = hydrateBlock(samples.table, 'blk-2', () => `mint-${n++}`)
     const nested = [...objectArrays(todo!), ...objectArrays(table!)].flat().map((el) => el.id)
     expect(new Set(nested).size).toBe(nested.length)
+  })
+})
+
+describe('moduleDataSchema strips every id nestedIdPaths declares (ai-composition fence)', () => {
+  // The strip site in ai-composition.ts hand-encodes each omit-chain; this pins it
+  // to the descriptor's declared fact. Parse failure = the type is missing from the
+  // union; a surviving id = its omit-chain doesn't cover a declared path.
+  it.each(contentTypes)('%s round-trips: strip(hydrate(sample)) === sample', (type) => {
+    let n = 0
+    const hydrated = hydrateBlock(samples[type], 'blk-1', () => `mint-${n++}`)
+    const parsed = moduleDataSchema.safeParse(hydrated)
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+    const data = parsed.data as Record<string, unknown>
+    expect('id' in data).toBe(false)
+    for (const path of descriptorFor(type)?.nestedIdPaths ?? []) {
+      const collection = data[path] as Record<string, unknown>[]
+      expect(collection.length).toBeGreaterThan(0)
+      for (const el of collection) {
+        expect('id' in el).toBe(false)
+      }
+    }
+    expect(parsed.data).toEqual(samples[type])
   })
 })
 

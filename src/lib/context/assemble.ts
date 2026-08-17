@@ -18,8 +18,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
-import { moduleDescriptors } from '@/lib/modules/registry'
-import type { ModuleDescriptor } from '@/lib/modules/types'
+import { descriptorFor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -68,20 +67,10 @@ export function parseMentions(text: string): string[] {
 
 // ── blocksToText (pure) ──────────────────────────────────────────────────────
 
-/**
- * Look up a block's descriptor. Undefined only for a stale persisted type that is
- * no longer registered (t12 §2: tolerate, never hard-fail on read) — for every
- * registered module the required `serialize` facet makes omission a compile error,
- * not a silent fallthrough.
- */
-function descriptorFor(block: Block): ModuleDescriptor<unknown> | undefined {
-  return (moduleDescriptors as Record<string, ModuleDescriptor<unknown>>)[block.type]
-}
-
 /** Flatten a document's blocks into plain text for the prompt. */
 export function blocksToText(blocks: Block[]): string {
   return blocks
-    .map((block) => descriptorFor(block)?.serialize(block) ?? '')
+    .map((block) => descriptorFor(block.type)?.serialize(block) ?? '')
     .filter((line) => line.length > 0)
     .join('\n')
 }
@@ -98,7 +87,7 @@ const TYPE_LABEL: Record<NodeType, string> = {
 
 /** One-line preview of a block's content, for the id-addressed listing. */
 function blockPreview(block: Block): string {
-  const descriptor = descriptorFor(block)
+  const descriptor = descriptorFor(block.type)
   if (!descriptor) return ''
   return (descriptor.preview ?? descriptor.serialize)(block)
 }

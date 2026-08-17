@@ -26,6 +26,16 @@ export const moduleDescriptors = {
 
 export type DescriptorType = keyof typeof moduleDescriptors
 
+/**
+ * Look up a descriptor by persisted `type` string. Undefined only for a stale
+ * persisted type that is no longer registered (t12 §2: tolerate, never hard-fail
+ * on read) — for every registered module the required facets make omission a
+ * compile error, not a silent fallthrough.
+ */
+export function descriptorFor(type: string): ModuleDescriptor | undefined {
+  return (moduleDescriptors as Record<string, ModuleDescriptor>)[type]
+}
+
 // Re-export the content union so consumers have one server-safe entry point.
 export { blockSchema } from './content'
 export type { Block, BlockType } from './content'

@@ -16,8 +16,7 @@
  */
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange, ModuleData } from './ai-composition'
-import { moduleDescriptors } from './registry'
-import type { ModuleDescriptor } from './types'
+import { descriptorFor } from './registry'
 
 /** Display-only id on a proposed block. Replaced by a real minted id on accept. */
 export const PREVIEW_ID = '__preview__'
@@ -40,7 +39,7 @@ export interface ChangePreview {
  * diff card (here) and the create-page proposal card.
  */
 export function stampDisplayIds(data: ModuleData, base: string): Block {
-  const descriptor = (moduleDescriptors as Record<string, ModuleDescriptor<unknown>>)[data.type]
+  const descriptor = descriptorFor(data.type)
   const withIds: Record<string, unknown> = { ...data, id: base }
   for (const path of descriptor?.nestedIdPaths ?? []) {
     const collection = (data as Record<string, unknown>)[path]

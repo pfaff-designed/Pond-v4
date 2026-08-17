@@ -168,7 +168,7 @@ export function DocumentPanel() {
 // ── Per-block editor ───────────────────────────────────────────────────────────
 
 /**
- * One block row: delete chrome + the module's own view, editable. Rendering goes
+ * One block row: delete affordance + the module's own view, editable. Rendering goes
  * through the ModuleView registry — the panel has no per-type branches, so every
  * registered module (and any future one) is editable here with zero edits. Views
  * that fold editing in (text/todo/table) emit full-state onChange into the

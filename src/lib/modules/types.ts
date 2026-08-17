@@ -23,7 +23,13 @@ import type { ZodType } from 'zod'
  * it) plus a one-line natural-language `description` so the model knows when to
  * reach for this type.
  */
-export interface ModuleDescriptor<T = unknown> {
+// `Path` is computed in a parameter default, not inline on the property: a
+// conditional on `T` inside the structure makes T's variance unmeasurable and
+// breaks the registry `satisfies` (ZodType fails the structural fallback).
+export interface ModuleDescriptor<
+  T = unknown,
+  Path extends string = T extends object ? keyof T & string : string,
+> {
   type: string
   schema: ZodType<T>
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
@@ -45,7 +51,9 @@ export interface ModuleDescriptor<T = unknown> {
    * and display-time stamping (`preview.ts`) both traverse these paths. Omit when
    * the module has none.
    */
-  nestedIdPaths?: readonly string[]
+  // Keyed to T so a typo'd path is a compile error on a concrete descriptor;
+  // plain strings for generic walkers (T = unknown).
+  nestedIdPaths?: readonly Path[]
 }
 
 /**
