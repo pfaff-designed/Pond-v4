@@ -1,25 +1,6 @@
 import type { Block } from '@/lib/documents/types'
-import { blockSchema } from '@/lib/modules/content'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
-
-/**
- * Hydrate AI-emitted module data (id-less, t16 branch 2) into a persistable Block:
- * stamp the block `id`, then mint ids for any nested collection the module owns.
- * Today `todo` items are the only nested-id case — a small, documented special
- * case rather than a per-module hydrate facet (ship flat, refactor when it hurts,
- * t12 §5). The result is validated against `blockSchema`; anything malformed
- * returns `null` so the caller skips it rather than writing corrupt JSONB (branch 7
- * accept-time gate).
- */
-function hydrateBlock(data: unknown, id: string, mintId: () => string): Block | null {
-  const d = data as Record<string, unknown>
-  const withIds: Record<string, unknown> = { ...d, id }
-  if (d.type === 'todo' && Array.isArray(d.items)) {
-    withIds.items = d.items.map((it) => ({ ...(it as object), id: mintId() }))
-  }
-  const parsed = blockSchema.safeParse(withIds)
-  return parsed.success ? parsed.data : null
-}
+import { hydrateBlock } from '@/lib/modules/hydrate'
 
 export interface ApplyChangesResult {
   blocks: Block[]

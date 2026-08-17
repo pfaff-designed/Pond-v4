@@ -11,16 +11,21 @@ import {
   dissolveConversation,
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
-import { getPage } from '@/lib/pages/client'
+import { getPage, listPages } from '@/lib/pages/client'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
-import { NodeCreationModal } from './NodeCreationModal'
+import { createPageFromProposal } from '@/lib/pages/create-page'
 import { SavePickerModal } from './SavePickerModal'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
+import {
+  CreatePageProposalCard,
+  TOP_LEVEL_VALUE,
+  type ParentOption,
+} from '@/components/molecules/CreatePageProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import { previewForChange } from '@/lib/modules/preview'
-import type { ModuleChange } from '@/lib/modules/ai-composition'
-import type { ActionCard } from '@/lib/nodes/create'
+import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
+import type { NodeType } from '@/lib/supabase/types'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -34,6 +39,26 @@ interface ProposeChangesPart {
 
 function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
   return part.type === 'tool-propose_changes'
+}
+
+/** A create_page tool part — a proposed brand-new page + scaffold (M1). Client-
+ *  resolved (no execute); the card below drives accept/reject + placement. */
+interface CreatePagePart {
+  type: 'tool-create_page'
+  toolCallId: string
+  state: string
+  input?: {
+    type?: NodeType
+    kind?: string
+    title?: string
+    parentTitle?: string | null
+    blocks?: ModuleData[]
+    reason?: string
+  }
+}
+
+function isCreatePagePart(part: { type: string }): part is CreatePagePart {
+  return part.type === 'tool-create_page'
 }
 
 function parseCommand(text: string): CommandResult {
@@ -52,9 +77,6 @@ export function AITerminal() {
   const nodeType = searchParams.get('nodeType')
   const contextLabel = nodeName ?? 'Life'
 
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [modalIntent, setModalIntent] = useState<ActionCard | null>(null)
-  const pendingToolCallId = useRef<string | null>(null)
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()
   const supabaseClient = useMemo(() => createClient(), [])
@@ -70,6 +92,14 @@ export function AITerminal() {
   const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
   const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
 
+  // create_page decisions + the user-chosen destination, keyed by toolCallId. Same
+  // no-execute caveat as propose_changes: the local maps (not the SDK part) drive
+  // each card's resolved state and picked parent. `undefined` in the parent map means
+  // "not yet touched" — the card falls back to the AI-proposed parent (pre-resolved
+  // against the pages list) until the user overrides it.
+  const [createDecisions, setCreateDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [createParent, setCreateParent] = useState<Record<string, string>>({})
+
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
   // cache with DocumentPanel.
@@ -79,20 +109,41 @@ export function AITerminal() {
     enabled: !!nodeId,
   })
 
-  const { messages, sendMessage, setMessages, status, addToolOutput } = useChat({
-    onToolCall: ({ toolCall }) => {
-      const tc = toolCall as unknown as {
-        toolCallId: string
-        toolName: string
-        input: { type: ActionCard['type']; name: string }
-      }
-      if (tc.toolName === 'create_node') {
-        pendingToolCallId.current = tc.toolCallId
-        setModalIntent({ type: tc.input.type, name: tc.input.name } as ActionCard)
-        setIsModalOpen(true)
-      }
+  // The user's pages, used to populate the create_page destination picker and to
+  // pre-resolve an AI-proposed parent title to an id. Keyed separately from the
+  // sidebar's ['pages'] cache (different shape), but invalidated by the same key so a
+  // new page refreshes both.
+  const { data: allPages = [] } = useQuery({
+    queryKey: ['pages', 'list'],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabaseClient.auth.getUser()
+      return user ? listPages(supabaseClient, user.id) : []
     },
   })
+  const parentOptions: ParentOption[] = useMemo(
+    () => allPages.map((p) => ({ id: p.id, title: p.title })),
+    [allPages]
+  )
+  // Resolve an AI-proposed parent title (or id) to a selectable option id.
+  const resolveProposedParent = useCallback(
+    (parentTitle?: string | null): string => {
+      const ref = parentTitle?.trim()
+      if (!ref) return TOP_LEVEL_VALUE
+      const match = allPages.find(
+        (p) => p.id === ref || p.title.toLowerCase() === ref.toLowerCase()
+      )
+      return match ? match.id : TOP_LEVEL_VALUE
+    },
+    [allPages]
+  )
+
+  // The chat AI's creation gesture is now create_page (client-resolved, rendered as
+  // a proposal card below) — there is no create_node tool in this path, so useChat
+  // needs no onToolCall handler. The NodeCreationModal stays in the codebase for the
+  // sidebar's manual "New node" affordance, not this terminal.
+  const { messages, sendMessage, setMessages, status } = useChat()
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
@@ -197,21 +248,6 @@ export function AITerminal() {
     }
   }
 
-  // ── Node creation from terminal ───────────────────────────────────────────
-  const handleNodeCreated = useCallback(
-    (id: string, type: ActionCard['type'], name: string) => {
-      setIsModalOpen(false)
-      setModalIntent(null)
-      if (pendingToolCallId.current) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(addToolOutput as any)(pendingToolCallId.current, { created: true, nodeId: id })
-        pendingToolCallId.current = null
-      }
-      router.push(`/workspace?nodeType=${type}&nodeId=${id}&nodeName=${encodeURIComponent(name)}`)
-    },
-    [addToolOutput, router]
-  )
-
   // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
   // The generalized Accept path: mint ids for the accepted batch, apply it, and
   // re-seed the open page. This is also the accept-time re-validation gate —
@@ -275,6 +311,48 @@ export function AITerminal() {
     [acceptChanges]
   )
 
+  // ── create_page resolution (M1) ───────────────────────────────────────────
+  // Accept: mint block ids, resolve the user-chosen parent, write via createPage,
+  // then navigate to the new page (matching the create_node dialog's post-create
+  // nav). The user's selected destination wins over the AI's proposed placement.
+  const acceptCreatePage = useCallback(
+    async (toolCallId: string, part: CreatePagePart['input'], selectedParentId: string) => {
+      if (!part?.title || !part.type) return
+      setCreateDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        // A selected option id is a real page id (UUID); TOP_LEVEL_VALUE = no parent.
+        // createPageFromProposal resolves either a UUID or a title, so passing the id
+        // through parentTitle is safe.
+        const parentRef = selectedParentId === TOP_LEVEL_VALUE ? null : selectedParentId
+        const created = await createPageFromProposal(
+          supabaseClient,
+          {
+            type: part.type,
+            kind: part.kind,
+            title: part.title,
+            parentRef,
+            blocks: part.blocks ?? [],
+          },
+          () => crypto.randomUUID()
+        )
+        await queryClient.invalidateQueries({ queryKey: ['pages'] })
+        await queryClient.invalidateQueries({ queryKey: ['pages', 'list'] })
+        router.push(
+          `/workspace?nodeType=${part.type}&nodeId=${created.id}&nodeName=${encodeURIComponent(part.title)}`
+        )
+      } catch (err) {
+        // Surface the failure by reverting the card to pending so the user can retry.
+        console.error('create_page failed', err)
+        setCreateDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, router]
+  )
+
   return (
     <>
       <div className="flex flex-col border-t border-zinc-200 bg-white" style={{ height: '18rem' }}>
@@ -296,6 +374,9 @@ export function AITerminal() {
               .join('')
             const changeBatches = (message.parts as Array<{ type: string }>).filter(
               isProposeChangesPart
+            )
+            const createPageParts = (message.parts as Array<{ type: string }>).filter(
+              isCreatePagePart
             )
 
             return (
@@ -345,6 +426,33 @@ export function AITerminal() {
                     </div>
                   )
                 })}
+                {createPageParts.map((part) => {
+                  const input = part.input
+                  if (!input?.title || !input.type) return null
+                  const status = createDecisions[part.toolCallId] ?? 'pending'
+                  const selectedParentId =
+                    createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
+                  return (
+                    <CreatePageProposalCard
+                      key={part.toolCallId}
+                      title={input.title}
+                      type={input.type}
+                      kind={input.kind}
+                      blocks={input.blocks ?? []}
+                      reason={input.reason}
+                      status={status}
+                      selectedParentId={selectedParentId}
+                      parentOptions={parentOptions}
+                      onParentChange={(id) =>
+                        setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      }
+                      onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
+                      onReject={() =>
+                        setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      }
+                    />
+                  )
+                })}
               </div>
             )
           })}
@@ -378,20 +486,6 @@ export function AITerminal() {
           </button>
         </div>
       </div>
-      <NodeCreationModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          if (pendingToolCallId.current) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ;(addToolOutput as any)(pendingToolCallId.current, { cancelled: true })
-            pendingToolCallId.current = null
-          }
-          setIsModalOpen(false)
-          setModalIntent(null)
-        }}
-        onCreated={handleNodeCreated}
-        intent={modalIntent ?? undefined}
-      />
       <SavePickerModal
         isOpen={isSavePickerOpen}
         messages={messages}

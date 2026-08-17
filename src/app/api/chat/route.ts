@@ -7,7 +7,7 @@ import { toModelMessages } from '@/lib/conversation/transcript'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt } from './prompt'
-import { createNodeTool, proposeChangesTool, fetchContextTool } from './tools'
+import { createPageTool, proposeChangesTool, fetchContextTool } from './tools'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import type { NodeType } from '@/lib/supabase/types'
 
@@ -24,12 +24,40 @@ function latestUserText(messages: UIMessage[]): string {
   return ''
 }
 
-export async function POST(req: Request) {
-  const { messages, nodeId, nodeType } = (await req.json()) as {
-    messages: UIMessage[]
-    nodeId?: string
-    nodeType?: NodeType
+/** Minimal body-shape guard: the chat route requires a `messages` array. A
+ *  malformed body (bad JSON, missing/non-array `messages`) returns 400 instead of
+ *  letting `streamText` throw a 500 deeper in the request. */
+const NODE_TYPES: readonly NodeType[] = ['area', 'routine', 'project', 'action', 'page']
+
+export function parseChatBody(
+  body: unknown
+): { messages: UIMessage[]; nodeId?: string; nodeType?: NodeType } | null {
+  if (typeof body !== 'object' || body === null) return null
+  const b = body as Record<string, unknown>
+  if (!Array.isArray(b.messages)) return null
+  const nodeType =
+    typeof b.nodeType === 'string' && (NODE_TYPES as string[]).includes(b.nodeType)
+      ? (b.nodeType as NodeType)
+      : undefined
+  return {
+    messages: b.messages as UIMessage[],
+    nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
+    nodeType,
   }
+}
+
+export async function POST(req: Request) {
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const parsed = parseChatBody(rawBody)
+  if (!parsed) {
+    return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
+  }
+  const { messages, nodeId, nodeType } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   let system = buildSystemPrompt()
@@ -53,7 +81,7 @@ export async function POST(req: Request) {
     system,
     messages: await toModelMessages(messages),
     // Allow one round-trip so the model can call fetch_context, read the result,
-    // and answer in the same turn. create_node stays client-side (no execute) and
+    // and answer in the same turn. create_page stays client-side (no execute) and
     // still ends the turn as before.
     stopWhen: stepCountIs(3),
     // Self-correction on top of the strict inputSchema gate (t16 branch 7): if the
@@ -64,7 +92,7 @@ export async function POST(req: Request) {
     // Logic lives in @/lib/ai/repair so it can be exercised directly (eval-repair.mts).
     repairToolCall: makeRepairToolCall(),
     tools: {
-      create_node: tool(createNodeTool),
+      create_page: tool(createPageTool),
       propose_changes: tool(proposeChangesTool),
       fetch_context: tool({
         ...fetchContextTool,

@@ -106,6 +106,26 @@ export async function getChildPages(
   return rows.map(mapRow)
 }
 
+/**
+ * All of a user's pages as a flat list, ordered by `order`. The sidebar builds its
+ * tree from this shape in memory; the AI create_page proposal card uses it to
+ * populate the destination (parent) picker and to pre-resolve an AI-proposed parent
+ * title to an id. Reads the same columns as the other list reads.
+ */
+export async function listPages(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<PondPage[]> {
+  const { data } = await supabase
+    .from('pages')
+    .select(PAGE_COLUMNS)
+    .eq('user_id', userId)
+    .order('order', { ascending: true })
+
+  const rows = (data ?? []) as PageRow[]
+  return rows.map(mapRow)
+}
+
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /** Create a page under a parent (or top-level when parentId is null/omitted). */

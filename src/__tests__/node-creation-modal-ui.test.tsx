@@ -13,7 +13,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -397,61 +397,57 @@ describe('NodeCreationModal — intent prop', () => {
   })
 })
 
-// ── AITerminal — create_node tool call ────────────────────────────────────
+// ── AITerminal — create_page contract (M1) ────────────────────────────────
+// The chat AI no longer emits create_node: the terminal wires NO onToolCall
+// handler and instead renders a create_page proposal card for a tool-create_page
+// message part. The NodeCreationModal stays for the sidebar's manual affordance,
+// not this terminal.
 
-describe('AITerminal — create_node tool call', () => {
+describe('AITerminal — create_page contract', () => {
   beforeEach(() => {
     mockMessages = []
     mockStatus = 'ready'
     capturedOnToolCall = undefined
     mockAddToolOutput.mockClear()
-    mockCreateNode.mockClear().mockResolvedValue({ id: 'new-node-id' })
     mockRouterPush.mockClear()
   })
 
-  it('opens NodeCreationModal with intent when create_node tool is called', async () => {
+  it('registers no onToolCall handler (create_node is gone from the chat path)', async () => {
     renderWithQuery(<AITerminal />)
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
-
-    await act(async () => {
-      capturedOnToolCall?.({
-        toolCall: {
-          toolCallId: 'tc-1',
-          toolName: 'create_node',
-          input: { type: 'area', name: 'Travel' },
-        },
-      })
-    })
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText(/travel/i)).toBeInTheDocument()
+    expect(capturedOnToolCall).toBeUndefined()
+    // No create_node dialog is ever opened from the terminal.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('calls addToolOutput and navigates after node creation from terminal', async () => {
+  it('renders a create_page proposal card for a tool-create_page message part', async () => {
+    mockMessages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-create_page',
+            toolCallId: 'tc-1',
+            state: 'input-available',
+            input: {
+              type: 'page',
+              kind: 'recipe',
+              title: 'Lasagna',
+              parentTitle: null,
+              blocks: [{ type: 'text', content: '# Lasagna' }],
+            },
+          } as unknown as { type: string; text: string },
+        ],
+      },
+    ]
     renderWithQuery(<AITerminal />)
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
 
-    await act(async () => {
-      capturedOnToolCall?.({
-        toolCall: {
-          toolCallId: 'tc-1',
-          toolName: 'create_node',
-          input: { type: 'area', name: 'Travel' },
-        },
-      })
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: /create/i }))
-
-    await waitFor(() => {
-      expect(mockAddToolOutput).toHaveBeenCalledWith(
-        'tc-1',
-        expect.objectContaining({ created: true })
-      )
-      expect(mockRouterPush).toHaveBeenCalledWith(
-        '/workspace?nodeType=area&nodeId=new-node-id&nodeName=Travel'
-      )
-    })
+    expect(screen.getByText('Lasagna')).toBeInTheDocument()
+    expect(screen.getByText(/new page · recipe/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create page/i })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /destination/i })).toBeInTheDocument()
   })
 })
 

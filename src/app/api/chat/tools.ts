@@ -9,14 +9,54 @@
  * influence routing — description and inputSchema.
  */
 import { z } from 'zod'
-import { proposeChangesSchema } from '@/lib/modules/ai-composition'
+import { proposeChangesSchema, moduleDataSchema } from '@/lib/modules/ai-composition'
 
-export const createNodeTool = {
+/**
+ * create_page (M1) — the single merged create gesture for the chat AI. It mints a
+ * BRAND-NEW page (separate from the one the user is on) and scaffolds its initial
+ * content in one step. Both structural types (project/area/routine/action) AND
+ * content pages go through it and get real scaffolded content.
+ *
+ * Client-resolved (no execute): the tool call renders a proposal card, the user
+ * reviews + optionally corrects placement, and only on accept does the client mint
+ * block ids and write. `blocks` reuses the registry-derived, id-stripped
+ * `moduleDataSchema` so this tool cannot drift from the block registry and cannot
+ * carry an id the model invented. Placement is proposed by title (`parentTitle`);
+ * the client resolves it and lets the user change it.
+ */
+export const createPageTool = {
   description:
-    'Open the node creation dialog when the user wants to create an area, project, routine, or action. Call this whenever creation intent is detected.',
+    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether structural (a project, an area) or content (a recipe, a document). This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics.',
   inputSchema: z.object({
-    type: z.enum(['area', 'project', 'routine', 'action']),
-    name: z.string().min(1).describe('The name for the new node'),
+    type: z
+      .enum(['area', 'routine', 'project', 'action', 'page'])
+      .describe(
+        'The page type tag. Use a structural type for a project/area/routine/action; use "page" for any content page (recipe, document, inventory, dashboard, note).'
+      ),
+    kind: z
+      .string()
+      .optional()
+      .describe(
+        'The page-kind for a content page (e.g. recipe, document, inventory, dashboard, note). Omit for a structural type.'
+      ),
+    title: z.string().min(1).describe('A clear title for the new page.'),
+    parentTitle: z
+      .string()
+      .optional()
+      .describe(
+        'The title of the page/area this new page should live under, if the user named one (e.g. "in my Personal area"). Omit for a top-level page.'
+      ),
+    blocks: z
+      .array(moduleDataSchema)
+      .describe(
+        'The scaffolded initial content, composed only from the available block types. Give the page real, useful content — not an empty shell.'
+      ),
+    reason: z
+      .string()
+      .optional()
+      .describe(
+        'A short, optional note on what this page is for (shown to the user on the proposal card).'
+      ),
   }),
 } as const
 

@@ -16,6 +16,7 @@
 import {
   getPage,
   getChildPages,
+  listPages,
   createPage,
   saveBlocks,
   updateTitle,
@@ -147,6 +148,33 @@ describe('getChildPages', () => {
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: [], error: null }) })
     const sb = makeSupabase(chain)
     expect(await getChildPages(sb as never, 'user-1', 'p1')).toEqual([])
+  })
+})
+
+// ── listPages ─────────────────────────────────────────────────────────────────
+
+describe('listPages', () => {
+  it("returns the user's pages as a flat list ordered by order", async () => {
+    const rows = [
+      pageRow({ id: 'a1', parent_id: null, type: 'area', title: 'Personal' }),
+      pageRow({ id: 'c1', parent_id: 'a1', type: 'page', title: 'Reading goals' }),
+    ]
+    const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: rows, error: null }) })
+    const sb = makeSupabase(chain)
+
+    const result = await listPages(sb as never, 'user-1')
+
+    expect(sb.from).toHaveBeenCalledWith('pages')
+    expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(result).toHaveLength(2)
+    expect(result[0]).toMatchObject({ id: 'a1', title: 'Personal', parentId: null })
+    expect(result[1]).toMatchObject({ id: 'c1', title: 'Reading goals', parentId: 'a1' })
+  })
+
+  it('returns [] when the user has no pages', async () => {
+    const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: [], error: null }) })
+    const sb = makeSupabase(chain)
+    expect(await listPages(sb as never, 'user-1')).toEqual([])
   })
 })
 

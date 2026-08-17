@@ -60,7 +60,7 @@ export interface CreatedNode {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Resolve a parent reference that may be a UUID or a page title, to a page id. */
-async function resolveParentId(
+export async function resolveParentId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   userId: string,

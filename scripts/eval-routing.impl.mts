@@ -6,10 +6,8 @@
  * input schemas from the app source (src/app/api/chat/{prompt,tools}.ts), so a
  * prompt or schema change is tested here without duplication.
  *
- * The `create_page` tool does not exist in the real route yet (it lands in M1); until
- * then this eval appends a SIMULATED create_page tool (per proto-routing.mts, but its
- * blocks reuse the real moduleDataSchema). Every simulated bit is marked
- * `// TEMP until M1`.
+ * As of M1 the real `create_page` tool + its production routing guidance live in the
+ * app source, so this eval imports both — no simulated tool, no eval-only prompt line.
  *
  * Each case has a deterministic assertion — which tool the model must call, or that
  * it must call NO tool. The steward persona is under test as much as the create fix:
@@ -21,44 +19,20 @@
  */
 import { anthropic } from '@ai-sdk/anthropic'
 import { generateText, tool, stepCountIs } from 'ai'
-import { z } from 'zod'
 import { AI_MODELS } from '../src/lib/ai/models.ts'
 import { buildSystemPrompt } from '../src/app/api/chat/prompt.ts'
 import {
-  createNodeTool,
+  createPageTool,
   proposeChangesTool,
   fetchContextTool,
 } from '../src/app/api/chat/tools.ts'
-import { moduleDataSchema } from '../src/lib/modules/ai-composition.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
-// ── TEMP until M1: replace with real create_page import ──────────────────────
-// Simulated create_page tool, following scripts/proto-routing.mts. The blocks
-// array reuses the REAL moduleDataSchema (registry-derived, id-stripped block
-// union) so this eval cannot drift from the registry; only the tool wrapper
-// (type enum, title, description) is simulated. Delete this block and import the
-// real create_page tool from src/app/api/chat/tools.ts once M1 lands it there.
-const createPageTool = {
-  description:
-    'Create a NEW page (separate from the current one) and scaffold its initial blocks in one step — a recipe, document, dashboard, inventory/collection, or any new page with content. Use when the user wants a brand-new page, not to edit the page they are on.',
-  inputSchema: z.object({
-    type: z.enum(['area', 'routine', 'project', 'action', 'page']),
-    title: z.string(),
-    blocks: z.array(moduleDataSchema),
-  }),
-} as const
-// TEMP until M1: this prompt line tells the model create_page exists. Remove when
-// the real tool + its own prompt wording land in prompt.ts.
-const CREATE_PAGE_PROMPT_LINE =
-  '\n- When the user explicitly asks for a BRAND-NEW page with content (a recipe, document, dashboard, inventory/collection) that is SEPARATE from the page they are currently on, call the create_page tool. This is distinct from editing the current page (propose_changes) and from creating a bare structural node (create_node).'
-// ─────────────────────────────────────────────────────────────────────────────
-
 const tools = {
-  create_node: tool(createNodeTool),
+  create_page: tool(createPageTool),
   propose_changes: tool(proposeChangesTool),
   fetch_context: tool(fetchContextTool),
-  create_page: tool(createPageTool), // TEMP until M1
 }
 
 /** Expected outcome: a specific tool name, or null = the model must call NO tool. */
@@ -70,6 +44,10 @@ type Scenario = {
   ctx: string
   text: string
   note?: string
+  /** For create_page cases: assert the emitted `type` field (e.g. 'project'). */
+  expectType?: string
+  /** For create_page cases: assert `parentTitle` contains this (case-insensitive). */
+  expectParent?: string
 }
 
 // The 8 original proto cases (two of them — the ambiguous index case and the
@@ -118,10 +96,12 @@ const SCENARIOS: Scenario[] = [
     text: 'add a recipe for lasagna',
   },
   {
-    name: 'COLLISION "create a project" → create_node (bare shell)',
-    expect: 'create_node',
+    name: 'MERGED "create a project" → create_page (type=project)',
+    expect: 'create_page',
+    expectType: 'project',
     ctx: 'The user is on their Home view. No current page.',
     text: 'create a new project called Website Redesign',
+    note: 'M1: one merged create tool — structural creation now goes through create_page and gets scaffolded content too.',
   },
   {
     name: 'recall from workspace',
@@ -157,11 +137,20 @@ const SCENARIOS: Scenario[] = [
     text: "Ugh, today was exhausting. I just need to complain for a second.",
   },
   {
-    name: 'ADV explicit "make this a project" → create_node',
-    expect: 'create_node',
+    name: 'ADV explicit "make this a project" → create_page (type=project)',
+    expect: 'create_page',
+    expectType: 'project',
     ctx: 'Current page "Kitchen Renovation" (a loose note). Blocks: [text id=b1 "ideas for the reno"].',
     text: 'turn this into a project called Kitchen Renovation',
-    note: 'structural creation → create_node, not create_page.',
+    note: 'M1: structural creation → create_page with type=project (merged create tool).',
+  },
+  {
+    name: 'NEW placement "make a page for X in my Personal area" → parentTitle≈Personal',
+    expect: 'create_page',
+    expectParent: 'personal',
+    ctx: 'The user is on their Home view. No current page. Their areas include Personal, Health, and Finances.',
+    text: 'make a page for my 2026 reading goals in my Personal area',
+    note: 'M1: the model should propose parentTitle matching the named area.',
   },
   {
     name: 'ADV explicit "add a checklist" → propose_changes',
@@ -181,7 +170,7 @@ type Result = {
 async function runOne(s: Scenario): Promise<Result> {
   const result = await generateText({
     model: anthropic(MODEL),
-    system: `${buildSystemPrompt()}${CREATE_PAGE_PROMPT_LINE}\n\nUse the following context about the user's workspace when relevant.\n\n${s.ctx}`,
+    system: `${buildSystemPrompt()}\n\nUse the following context about the user's workspace when relevant.\n\n${s.ctx}`,
     prompt: s.text,
     tools,
     toolChoice: 'auto',
@@ -201,6 +190,12 @@ async function runOne(s: Scenario): Promise<Result> {
     pass = actual === '(no tool)'
   } else {
     pass = actual === s.expect
+    // For create_page cases, also assert the shape the milestone requires.
+    const input = (call?.input ?? {}) as { type?: string; parentTitle?: string }
+    if (pass && s.expectType) pass = input.type === s.expectType
+    if (pass && s.expectParent) {
+      pass = (input.parentTitle ?? '').toLowerCase().includes(s.expectParent.toLowerCase())
+    }
   }
   return { scenario: s, actual, pass, detail }
 }
