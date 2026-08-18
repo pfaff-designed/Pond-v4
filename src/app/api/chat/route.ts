@@ -4,6 +4,11 @@ import type { UIMessage } from 'ai'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
 import { toModelMessages } from '@/lib/conversation/transcript'
+import {
+  applyResolutions,
+  parseResolutions,
+  type ConversationResolutions,
+} from '@/lib/conversation/resolutions'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt } from './prompt'
@@ -29,9 +34,12 @@ function latestUserText(messages: UIMessage[]): string {
  *  letting `streamText` throw a 500 deeper in the request. */
 const NODE_TYPES: readonly NodeType[] = ['area', 'routine', 'project', 'action', 'page']
 
-export function parseChatBody(
-  body: unknown
-): { messages: UIMessage[]; nodeId?: string; nodeType?: NodeType } | null {
+export function parseChatBody(body: unknown): {
+  messages: UIMessage[]
+  nodeId?: string
+  nodeType?: NodeType
+  resolutions: ConversationResolutions
+} | null {
   if (typeof body !== 'object' || body === null) return null
   const b = body as Record<string, unknown>
   if (!Array.isArray(b.messages)) return null
@@ -43,6 +51,7 @@ export function parseChatBody(
     messages: b.messages as UIMessage[],
     nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
     nodeType,
+    resolutions: parseResolutions(b.resolutions),
   }
 }
 
@@ -57,7 +66,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType } = parsed
+  const { messages, nodeId, nodeType, resolutions } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   let system = buildSystemPrompt()
@@ -79,7 +88,10 @@ export async function POST(req: Request) {
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
     system,
-    messages: await toModelMessages(messages),
+    // Resolved proposal cards are stamped with their user decision as a synthetic
+    // tool result (ticket-19) so the model sees what was actioned and stops
+    // re-proposing; unresolved calls are still dropped by toModelMessages.
+    messages: await toModelMessages(applyResolutions(messages, resolutions)),
     // Allow one round-trip so the model can call fetch_context, read the result,
     // and answer in the same turn. create_page stays client-side (no execute) and
     // still ends the turn as before.

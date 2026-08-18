@@ -55,7 +55,13 @@ jest.mock('@/lib/ai/transports', () => ({
 }))
 
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest.fn().mockResolvedValue({ id: 'conv-1', messages: [] }),
+  getOrCreateConversation: jest
+    .fn()
+    .mockResolvedValue({
+      id: 'conv-1',
+      messages: [],
+      resolutions: { changes: {}, creates: {}, skipped: {} },
+    }),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))

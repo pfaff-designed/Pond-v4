@@ -11,6 +11,7 @@ import {
   dissolveConversation,
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
+import type { ConversationResolutions, ProposalDecision } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
@@ -100,6 +101,30 @@ export function AITerminal() {
   const [createDecisions, setCreateDecisions] = useState<Record<string, ProposalStatus>>({})
   const [createParent, setCreateParent] = useState<Record<string, string>>({})
 
+  // The persistable projection of the decision maps (ticket-19): saved with the
+  // transcript so cards stay resolved across reloads, and sent with each chat
+  // request so the model sees which proposals were actioned. 'pending' is never
+  // stored, only settled decisions.
+  const resolutions: ConversationResolutions = useMemo(() => {
+    const settled = (map: Record<string, ProposalStatus>) =>
+      Object.fromEntries(Object.entries(map).filter(([, v]) => v !== 'pending')) as Record<
+        string,
+        ProposalDecision
+      >
+    return {
+      changes: settled(changeDecisions),
+      creates: settled(createDecisions),
+      skipped: changeSkipped,
+    }
+  }, [changeDecisions, createDecisions, changeSkipped])
+
+  const resetResolutions = useCallback(() => {
+    setChangeDecisions({})
+    setChangeSkipped({})
+    setCreateDecisions({})
+    setCreateParent({})
+  }, [])
+
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
   // cache with DocumentPanel.
@@ -160,17 +185,24 @@ export function AITerminal() {
       if (conversation.messages.length > 0) {
         setMessages(conversation.messages)
       }
+      // Restore card decisions so historical proposal cards render resolved
+      // (inert) instead of re-arming with live buttons (ticket-19).
+      setChangeDecisions(conversation.resolutions.changes)
+      setChangeSkipped(conversation.resolutions.skipped)
+      setCreateDecisions(conversation.resolutions.creates)
       setIsReady(true)
     })
   }, [setMessages])
 
   // ── Save transcript after each completed exchange ─────────────────────────
+  // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
+  // persists immediately, not only after the next exchange.
   useEffect(() => {
     if (status === 'ready' && conversationId && messages.length > 0) {
       const supabase = createClient()
-      saveTranscript(supabase, conversationId, messages).catch(console.error)
+      saveTranscript(supabase, conversationId, messages, resolutions).catch(console.error)
     }
-  }, [status, conversationId, messages])
+  }, [status, conversationId, messages, resolutions])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -189,7 +221,9 @@ export function AITerminal() {
     const fresh = await getOrCreateConversation(supabase, user.id)
     setConversationId(fresh.id)
     setMessages([])
-  }, [conversationId, setMessages])
+    // Stale decisions must not leak into the fresh conversation's transcript.
+    resetResolutions()
+  }, [conversationId, setMessages, resetResolutions])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
   // Extract entities from the transcript (Quick model), write them all, then
@@ -212,7 +246,8 @@ export function AITerminal() {
     }
     setConversationId(freshConversation.id)
     setMessages([])
-  }, [conversationId, messages, queryClient, setMessages])
+    resetResolutions()
+  }, [conversationId, messages, queryClient, setMessages, resetResolutions])
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -236,10 +271,11 @@ export function AITerminal() {
       return
     }
 
-    // Send the open node so the server can auto-inject its context (Track C).
-    sendMessage({ text }, { body: { nodeId, nodeType } })
+    // Send the open node so the server can auto-inject its context (Track C),
+    // plus the card resolutions so replay carries the user's decisions (t19).
+    sendMessage({ text }, { body: { nodeId, nodeType, resolutions } })
     setInput('')
-  }, [input, isStreaming, sendMessage, handleClear, handleHandoff, nodeId, nodeType])
+  }, [input, isStreaming, sendMessage, handleClear, handleHandoff, nodeId, nodeType, resolutions])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {

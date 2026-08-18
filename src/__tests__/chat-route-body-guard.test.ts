@@ -37,6 +37,7 @@ describe('parseChatBody', () => {
       messages: [],
       nodeId: undefined,
       nodeType: undefined,
+      resolutions: { changes: {}, creates: {}, skipped: {} },
     })
   })
 
@@ -44,6 +45,17 @@ describe('parseChatBody', () => {
     const out = parseChatBody({ messages: [], nodeId: 'n1', nodeType: 'project' })
     expect(out?.nodeId).toBe('n1')
     expect(out?.nodeType).toBe('project')
+  })
+
+  it('carries card resolutions and degrades malformed ones to empty (ticket-19)', () => {
+    const valid = parseChatBody({
+      messages: [],
+      resolutions: { changes: { 'pc1:0': 'accepted' }, creates: {}, skipped: {} },
+    })
+    expect(valid?.resolutions.changes).toEqual({ 'pc1:0': 'accepted' })
+
+    const garbage = parseChatBody({ messages: [], resolutions: 'nope' })
+    expect(garbage?.resolutions).toEqual({ changes: {}, creates: {}, skipped: {} })
   })
 
   it('rejects a non-object body', () => {

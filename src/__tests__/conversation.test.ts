@@ -3,6 +3,7 @@ import {
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
+import { emptyResolutions } from '@/lib/conversation/resolutions'
 import type { UIMessage } from 'ai'
 
 function makeMessage(overrides: Partial<UIMessage> = {}): UIMessage {
@@ -38,7 +39,7 @@ function makeSupabase(chain = makeChain()) {
 }
 
 describe('getOrCreateConversation', () => {
-  it('returns existing active conversation with deserialized messages', async () => {
+  it('returns existing active conversation with deserialized messages (legacy array row)', async () => {
     const stored = [{ id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }]
     const chain = makeChain()
     chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
@@ -49,6 +50,23 @@ describe('getOrCreateConversation', () => {
     expect(result.id).toBe('conv-1')
     expect(result.messages).toHaveLength(1)
     expect(result.messages[0].role).toBe('user')
+    expect(result.resolutions).toEqual(emptyResolutions())
+  })
+
+  it('restores messages AND resolutions from an envelope row (ticket-19)', async () => {
+    const stored = {
+      messages: [{ id: 'msg-1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+      resolutions: { changes: { 'pc1:0': 'accepted' }, creates: { cp1: 'rejected' }, skipped: {} },
+    }
+    const chain = makeChain()
+    chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
+    const sb = makeSupabase(chain)
+
+    const result = await getOrCreateConversation(sb as never, 'user-1')
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.resolutions.changes).toEqual({ 'pc1:0': 'accepted' })
+    expect(result.resolutions.creates).toEqual({ cp1: 'rejected' })
   })
 
   it('creates a new conversation when none exists', async () => {
@@ -74,15 +92,28 @@ describe('getOrCreateConversation', () => {
 })
 
 describe('saveTranscript', () => {
-  it('calls update with the messages array', async () => {
+  it('writes the { messages, resolutions } envelope', async () => {
+    const chain = makeChain()
+    const sb = makeSupabase(chain)
+    const messages = [makeMessage()]
+    const resolutions = { ...emptyResolutions(), creates: { cp1: 'accepted' as const } }
+
+    await saveTranscript(sb as never, 'conv-1', messages, resolutions)
+
+    expect(chain.update).toHaveBeenCalledWith({ transcript: { messages, resolutions } })
+    expect(chain.eq).toHaveBeenCalledWith('id', 'conv-1')
+  })
+
+  it('defaults resolutions to empty when omitted', async () => {
     const chain = makeChain()
     const sb = makeSupabase(chain)
     const messages = [makeMessage()]
 
     await saveTranscript(sb as never, 'conv-1', messages)
 
-    expect(chain.update).toHaveBeenCalled()
-    expect(chain.eq).toHaveBeenCalledWith('id', 'conv-1')
+    expect(chain.update).toHaveBeenCalledWith({
+      transcript: { messages, resolutions: emptyResolutions() },
+    })
   })
 })
 

@@ -1,7 +1,7 @@
 ---
 id: 19
 label: verify:finding
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
@@ -38,6 +38,23 @@ Persist proposal resolution (accepted / dismissed, when, by which action) with
 the chat history, and render resolved cards inert (badge, no buttons). Consider
 staleness guards on accept as a second layer: a wholesale edit whose `before`
 no longer matches the current block should at minimum re-confirm.
+
+## Resolution (2026-08-17)
+
+Shipped. `src/lib/conversation/resolutions.ts` is the one record: the terminal's
+decision maps persist inside the `conversations.transcript` JSONB as a
+`{ messages, resolutions }` envelope (legacy bare-array rows still deserialize;
+no migration), are re-seeded on load so historical cards render inert, and are
+sent with each chat request so `applyResolutions` can stamp each resolved
+proposal with a synthetic tool RESULT before replay — the model now reads what
+was actioned instead of the calls being dropped by `ignoreIncompleteToolCalls`
+(the root of the duplicate re-propose symptom). Verified live: Dismiss/Reject →
+reload → cards stay resolved; model correctly answered which proposals were
+actioned; 0 console errors. Decisions from before this fix were never recorded,
+so pre-fix history cards still re-arm once — resolve them once and they stick.
+
+Deferred second layer: staleness re-confirm on accepting an `edit` whose
+`before` no longer matches the current block.
 
 ## Origin
 
