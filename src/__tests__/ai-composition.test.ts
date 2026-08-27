@@ -41,6 +41,27 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
       false
     )
   })
+
+  it('accepts a metric bound to an existing block (ticket-23 source binding)', () => {
+    const r = moduleDataSchema.safeParse({
+      type: 'metric',
+      label: 'Books finished',
+      value: 0,
+      source: { blockId: 'existing-todo', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects a metric binding with an unknown kind', () => {
+    expect(
+      moduleDataSchema.safeParse({
+        type: 'metric',
+        label: 'x',
+        value: 0,
+        source: { blockId: 'b', kind: 'sum-of-cells' },
+      }).success
+    ).toBe(false)
+  })
 })
 
 describe('proposeChangesSchema (the tool input)', () => {
@@ -99,5 +120,14 @@ describe('moduleCatalog (prompt teaching)', () => {
 
   it('omits the page container', () => {
     expect(moduleCatalog.split('\n').some((l) => l.startsWith('- page:'))).toBe(false)
+  })
+
+  it('teaches the metric binding + its existing-blocks-only boundary (ticket-23)', () => {
+    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))
+    expect(metricLine).toBeDefined()
+    expect(metricLine).toContain('source')
+    expect(metricLine).toContain('checklist-checked')
+    // The same-batch boundary is spelled out so the model doesn't bind to unminted ids.
+    expect(metricLine).toMatch(/already exists|follow-up turn/i)
   })
 })

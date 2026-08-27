@@ -17,8 +17,23 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
+import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
 import type { Block } from '@/lib/documents/types'
+
+/**
+ * Scroll to a block row and briefly highlight it (ticket-23) — a bound metric's `→`
+ * jumps to its source. The row DOM ids are minted by BlockEditor (`block-<id>`), so
+ * this host owns the scroll. Guards against SSR / a missing node.
+ */
+function scrollToBlock(blockId: string) {
+  if (typeof document === 'undefined') return
+  const el = document.getElementById(`block-${blockId}`)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('ring-2', 'ring-press-faint', 'rounded-sm')
+  window.setTimeout(() => el.classList.remove('ring-2', 'ring-press-faint', 'rounded-sm'), 1200)
+}
 
 export function DocumentPanel() {
   const searchParams = useSearchParams()
@@ -150,16 +165,21 @@ export function DocumentPanel() {
           </span>
         </div>
 
-        <div className="space-y-3">
-          {blocks.map((block, i) => (
-            <BlockEditor
-              key={block.id}
-              block={block}
-              onChange={(next) => setBlockAt(i, next)}
-              onRemove={() => removeBlockAt(i)}
-            />
-          ))}
-        </div>
+        {/* Provide sibling-block state so bound metrics derive live and their `→`
+            can scroll to source (ticket-23). Keyed off the live `blocks` state, so a
+            checklist toggle re-derives every metric in the same render. */}
+        <SiblingBlocksProvider value={{ blocks, scrollToBlock }}>
+          <div className="space-y-3">
+            {blocks.map((block, i) => (
+              <BlockEditor
+                key={block.id}
+                block={block}
+                onChange={(next) => setBlockAt(i, next)}
+                onRemove={() => removeBlockAt(i)}
+              />
+            ))}
+          </div>
+        </SiblingBlocksProvider>
 
         <button
           className="mt-4 text-sm text-muted-foreground hover:text-foreground"

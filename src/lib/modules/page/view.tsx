@@ -4,6 +4,15 @@ import type { ModuleViewProps } from '../types'
 import type { Block } from '../content'
 import type { PageModule } from './schema'
 import { ModuleView } from '../renderers'
+import { SiblingBlocksProvider } from '../sibling-context'
+
+/** Scroll a child block into view by its registry-minted DOM id (ticket-23). */
+function scrollToChildBlock(blockId: string) {
+  if (typeof document === 'undefined') return
+  document
+    .getElementById(`block-${blockId}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
 
 /**
  * Page container view — the recursive-composition seam (t12 §6). It renders each
@@ -21,17 +30,22 @@ export function PageView({ data, editable, onChange }: ModuleViewProps<PageModul
   }
 
   return (
-    <div className="space-y-4">
-      {data.title && <h1 className="text-xl font-semibold text-zinc-900">{data.title}</h1>}
-      {data.blocks.map((block, i) => (
-        <ModuleView
-          key={block.id}
-          type={block.type}
-          data={block}
-          editable={editable}
-          onChange={(next) => replaceBlockAt(i, next as Block)}
-        />
-      ))}
-    </div>
+    // Sibling state so a bound metric derives from its checklist/table (ticket-23);
+    // re-derives whenever `data.blocks` changes (e.g. a child checkbox toggles).
+    <SiblingBlocksProvider value={{ blocks: data.blocks, scrollToBlock: scrollToChildBlock }}>
+      <div className="space-y-4">
+        {data.title && <h1 className="text-xl font-semibold text-zinc-900">{data.title}</h1>}
+        {data.blocks.map((block, i) => (
+          <div key={block.id} id={`block-${block.id}`}>
+            <ModuleView
+              type={block.type}
+              data={block}
+              editable={editable}
+              onChange={(next) => replaceBlockAt(i, next as Block)}
+            />
+          </div>
+        ))}
+      </div>
+    </SiblingBlocksProvider>
   )
 }
