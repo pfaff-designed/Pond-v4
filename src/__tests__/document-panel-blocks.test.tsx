@@ -12,6 +12,7 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
@@ -60,7 +61,10 @@ function renderWith(page: Record<string, unknown>, rows: Record<string, unknown>
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <DocumentPanel />
+      {/* ticket-27: block-delete undo reads the shared DeletionUndoProvider */}
+      <DeletionUndoProvider>
+        <DocumentPanel />
+      </DeletionUndoProvider>
     </QueryClientProvider>
   )
 }

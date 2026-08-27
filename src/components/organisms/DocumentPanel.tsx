@@ -27,13 +27,29 @@ import {
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { childCards } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
+import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+
+/** A short, human label for a block in the undo toast ("Deleted text block"). */
+function blockLabel(block: Block): string {
+  return `Deleted ${block.type} block`
+}
 
 export function DocumentPanel() {
   const searchParams = useSearchParams()
   const nodeId = searchParams.get('nodeId')
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
+  const { stageDeletion, flushScope } = useDeletionUndo()
+
+  // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
+  // Flush pending block toasts when leaving a page — a surviving toast's Undo
+  // would otherwise re-insert the old page's block into the newly-opened page.
+  useEffect(() => {
+    return () => {
+      flushScope('block')
+    }
+  }, [nodeId, flushScope])
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', nodeId],
@@ -143,7 +159,29 @@ export function DocumentPanel() {
   }
 
   function removeBlockAt(index: number) {
+    // Optimistically drop the block (this schedules the debounced save, so the
+    // removal persists) and offer an undo toast that re-inserts it at its
+    // original index. The write isn't held back — instead undo re-adds the block
+    // and re-saves; the grace window is the user's chance to catch a misclick.
+    const removed = viewBlocks[index]
+    if (!removed) return
     commitLocalEdit(viewBlocks.filter((_, i) => i !== index))
+    stageDeletion({
+      message: blockLabel(removed),
+      // The removal already persists via the debounced save — nothing to defer.
+      // Flushed via scope 'block' on page change so the toast can't outlive its page.
+      scope: 'block',
+      commit: () => {},
+      undo: () => {
+        setBlocks((current) => {
+          // Re-insert at the original index (clamped, in case the array shifted).
+          const at = Math.min(index, current.length)
+          const next = [...current.slice(0, at), removed, ...current.slice(at)]
+          scheduleSave(viewTitle, next)
+          return next
+        })
+      },
+    })
   }
 
   function addTextBlock() {
@@ -249,7 +287,7 @@ function BlockEditor({
   return (
     <div className="group relative" id={blockDomId(block.id)}>
       <button
-        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm"
+        className="absolute -left-5 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
         title="Delete block"
         aria-label="Delete block"
         onClick={onRemove}

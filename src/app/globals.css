@@ -223,6 +223,17 @@
   }
 }
 
+/* Undo-toast grace-window countdown (ticket-27): the bar drains left→right as
+   the deferred-commit window closes. Purely decorative — the host owns the timer. */
+@keyframes undo-toast-countdown {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
 @layer components {
   /* Staggered rise-on-mount — the Clearing motion idiom (delay set inline). */
   .press-rise {

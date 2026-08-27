@@ -20,6 +20,15 @@ import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import { pageAccent } from '@/lib/pages/accent'
+import {
+  countDescendants,
+  subtreeIds,
+  needsConfirm,
+  blastRadiusLabel,
+} from '@/lib/deletion/blast-radius'
+import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
+import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 
 // ── Tree types + helpers ─────────────────────────────────────────────────────
 
@@ -57,16 +66,6 @@ export function buildTree(rows: PageRow[]): RailNode[] {
   }
   sortRec(roots)
   return roots
-}
-
-function countDescendants(node: RailNode): number {
-  return node.children.reduce((sum, c) => sum + 1 + countDescendants(c), 0)
-}
-
-function subtreeIds(node: RailNode): Set<string> {
-  const ids = new Set<string>([node.id])
-  for (const c of node.children) for (const id of subtreeIds(c)) ids.add(id)
-  return ids
 }
 
 /** A muted rounded-square dot — the calm way to color-code an area. */
@@ -155,9 +154,12 @@ function RailRow({
           <span className="truncate">{node.title || 'Untitled'}</span>
         </button>
 
-        {/* hover CRUD — revealed on hover so the resting rail stays calm */}
+        {/* hover CRUD — revealed on hover so the resting rail stays calm; also
+            revealed when the row (or a control) has keyboard focus so it's
+            reachable without a pointer (focus-within on the group + focus-visible
+            on the control itself). */}
         <button
-          className="opacity-0 group-hover:opacity-100 text-press-faint hover:text-foreground text-sm leading-none px-0.5 disabled:opacity-30"
+          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-foreground focus-visible:text-foreground text-sm leading-none px-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30"
           title="Add sub-page"
           aria-label={`Add sub-page to ${node.title || 'Untitled'}`}
           disabled={isBusy}
@@ -166,7 +168,7 @@ function RailRow({
           +
         </button>
         <button
-          className="opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm leading-none px-0.5 disabled:opacity-30"
+          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm leading-none px-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30"
           title="Delete page"
           aria-label={`Delete ${node.title || 'Untitled'}`}
           disabled={isBusy}
@@ -284,6 +286,9 @@ export function Rail() {
   // Area folders start collapsed (the proto's resting state) and open per session.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busyId, setBusyId] = useState<string | null>(null)
+  // The subtree-delete confirm (blast-radius modal); null when closed.
+  const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
+  const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
     queryKey: ['pages'],
@@ -292,6 +297,13 @@ export function Rail() {
 
   const tree = useMemo(() => buildTree(pages), [pages])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // Deferred commits fire up to ~6s after staging — read the selection fresh at
+  // commit time via this ref, not the render-time closure value.
+  const selectedNodeIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId
+  }, [selectedNodeId])
 
   // Seed default pages on first login — fires once when the tree is empty after load
   useEffect(() => {
@@ -350,21 +362,71 @@ export function Rail() {
     }
   }
 
-  async function handleDelete(node: RailNode) {
-    const count = countDescendants(node)
-    const suffix = count > 0 ? ` and ${count} item${count === 1 ? '' : 's'} inside it` : ''
-    if (!window.confirm(`Delete "${node.title || 'Untitled'}"${suffix}? This cannot be undone.`))
-      return
+  /** Put a single optimistically-removed row back (surgical) and reconcile. */
+  function restoreDeletedRow(row: PageRow | undefined) {
+    if (row) {
+      queryClient.setQueryData<PageRow[]>(['pages'], (rows) =>
+        rows ? restoreRow(rows, row) : rows
+      )
+    }
+    queryClient.invalidateQueries({ queryKey: ['pages'] })
+  }
 
-    setBusyId(node.id)
+  /**
+   * The real hard-delete + open-page bookkeeping, shared by both delete paths.
+   * Runs up to ~6s after staging (deferred commit), so the selection is read
+   * fresh from the ref. On failure the removed row is restored and the failure
+   * surfaced — never a silently ghosted cache.
+   */
+  async function commitDelete(node: RailNode, removedRow?: PageRow) {
     try {
       await withUser(async (sb) => {
         await deletePage(sb, node.id)
       })
       // if the open page was in the deleted subtree, clear the workspace
-      if (selectedNodeId && subtreeIds(node).has(selectedNodeId)) {
+      const selected = selectedNodeIdRef.current
+      if (selected && subtreeIds(node).has(selected)) {
         router.push('/workspace')
       }
+    } catch {
+      restoreDeletedRow(removedRow)
+      notify(`Couldn't delete "${node.title || 'Untitled'}"`)
+    }
+  }
+
+  function handleDelete(node: RailNode) {
+    // A subtree delete is irreversible and heavy — gate it behind the styled
+    // blast-radius confirm. A leaf goes straight to an optimistic-remove + undo
+    // toast (deferred commit), no modal.
+    if (needsConfirm(countDescendants(node))) {
+      setConfirmTarget(node)
+      return
+    }
+
+    // Leaf: surgically drop this one row from the tree cache so it vanishes at
+    // once, open an undo toast, and defer the destructive write. Undo re-inserts
+    // ONLY this row (never a whole snapshot — a snapshot would resurrect other
+    // concurrently-deleted rows) and reconciles with the server, whose row still
+    // exists during the grace window (see the caveat in deferred-commit.ts).
+    const removedRow = pages.find((r) => r.id === node.id)
+    queryClient.setQueryData<PageRow[]>(['pages'], (rows) => removeRow(rows ?? [], node.id))
+    if (selectedNodeId === node.id) router.push('/workspace')
+
+    stageDeletion({
+      message: `Deleted "${node.title || 'Untitled'}"`,
+      scope: 'rail',
+      commit: () => commitDelete(node, removedRow),
+      undo: () => restoreDeletedRow(removedRow),
+    })
+  }
+
+  async function handleConfirmDelete() {
+    const node = confirmTarget
+    setConfirmTarget(null)
+    if (!node) return
+    setBusyId(node.id)
+    try {
+      await commitDelete(node)
     } finally {
       setBusyId(null)
     }
@@ -387,20 +449,33 @@ export function Rail() {
     navigateTo(node)
   }
 
+  const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
+
   return (
-    <RailView
-      tree={tree}
-      selectedId={selectedNodeId}
-      expanded={expanded}
-      busyId={busyId}
-      isLoading={isLoading}
-      isEmpty={!isLoading && pages.length === 0}
-      lifeActive={!selectedNodeId}
-      onLife={() => router.push('/workspace')}
-      onSelect={handleSelect}
-      onToggle={handleToggle}
-      onAddChild={handleAddChild}
-      onDelete={handleDelete}
-    />
+    <>
+      <RailView
+        tree={tree}
+        selectedId={selectedNodeId}
+        expanded={expanded}
+        busyId={busyId}
+        isLoading={isLoading}
+        isEmpty={!isLoading && pages.length === 0}
+        lifeActive={!selectedNodeId}
+        onLife={() => router.push('/workspace')}
+        onSelect={handleSelect}
+        onToggle={handleToggle}
+        onAddChild={handleAddChild}
+        onDelete={handleDelete}
+      />
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmTarget(null)
+        }}
+        title={`Delete "${confirmTarget?.title || 'Untitled'}"?`}
+        blastRadius={blastRadiusLabel(confirmCount)}
+        onConfirm={handleConfirmDelete}
+      />
+    </>
   )
 }
