@@ -17,7 +17,9 @@ import {
   parseMentions,
   blocksToText,
   formatNodeContext,
+  formatWorkspaceOutline,
   type NodeContextData,
+  type PageSummary,
 } from '@/lib/context/assemble'
 import type { Block } from '@/lib/documents/types'
 
@@ -226,5 +228,46 @@ describe('formatNodeContext', () => {
     expect(out).not.toContain('blk-secret')
     // the human-readable content is still injected as before
     expect(out).toContain('body text')
+  })
+})
+
+// ── formatWorkspaceOutline ───────────────────────────────────────────────────
+// The outline exists so create_page can infer a parent (parentTitle) even from
+// the Home view: titles only, top-level pages + their direct children.
+
+describe('formatWorkspaceOutline', () => {
+  const pages: PageSummary[] = [
+    { id: 'a1', parentId: null, type: 'area', title: 'Creativity' },
+    { id: 'a2', parentId: null, type: 'area', title: 'Health' },
+    { id: 'w1', parentId: 'a1', type: 'area', title: 'Woodworking' },
+    { id: 'p1', parentId: 'w1', type: 'project', title: 'Bench build' },
+    { id: 'n1', parentId: null, type: 'page', title: 'Scratch note' },
+  ]
+
+  it('lists top-level pages with their type labels', () => {
+    const out = formatWorkspaceOutline(pages)
+    expect(out).toContain('Area: Creativity')
+    expect(out).toContain('Area: Health')
+    expect(out).toContain('Page: Scratch note')
+  })
+
+  it('nests direct children under their top-level parent', () => {
+    const out = formatWorkspaceOutline(pages)
+    expect(out).toContain('  - Area: Woodworking')
+  })
+
+  it('stops at two levels — grandchildren are not listed', () => {
+    const out = formatWorkspaceOutline(pages)
+    expect(out).not.toContain('Bench build')
+  })
+
+  it('never includes page ids (titles only, kept lean)', () => {
+    const out = formatWorkspaceOutline(pages)
+    expect(out).not.toContain('a1')
+    expect(out).not.toContain('w1')
+  })
+
+  it('returns an empty string for an empty workspace', () => {
+    expect(formatWorkspaceOutline([])).toBe('')
   })
 })

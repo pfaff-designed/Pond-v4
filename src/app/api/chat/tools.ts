@@ -44,7 +44,7 @@ export const createPageTool = {
       .string()
       .optional()
       .describe(
-        'The title of the page/area this new page should live under, if the user named one (e.g. "in my Personal area"). Omit for a top-level page.'
+        'The title of the page/area this new page should live under. Use the title the user named (e.g. "in my Personal area"); when they name none, infer the most fitting parent from the current node and the workspace outline in context. Omit ONLY when the user asks for a top-level page or no existing page plausibly fits.'
       ),
     blocks: z
       .array(moduleDataSchema)

@@ -7,6 +7,8 @@
  *      injected into the prompt automatically on every message.
  *   2. @mention — cross-space context, pulled on demand when the user references
  *      another node by name. (The AI never fetches cross-space context itself.)
+ *   3. Workspace outline — a titles-only, two-level page tree injected on every
+ *      message so create_page can infer a sensible parent (never page bodies).
  *
  * The pure logic (parseMentions / blocksToText / formatNodeContext) is unit
  * tested; the DB-fetch layer (fetchNodeContext / resolveMention) is verified
@@ -41,6 +43,14 @@ export interface MentionRef {
   name: string
   nodeId: string
   nodeType: NodeType
+}
+
+/** Titles-only page row for the workspace outline (no blocks — kept lean). */
+export interface PageSummary {
+  id: string
+  parentId: string | null
+  type: NodeType
+  title: string
 }
 
 // ── parseMentions (pure) ─────────────────────────────────────────────────────
@@ -144,6 +154,31 @@ export function formatNodeContext(
   return lines.join('\n')
 }
 
+// ── formatWorkspaceOutline (pure) ────────────────────────────────────────────
+
+/**
+ * Render a titles-only outline of the workspace — top-level pages and their
+ * direct children — so the model can infer a sensible parent for a new page
+ * (create_page's `parentTitle`) instead of defaulting to top-level. Two levels
+ * covers areas and sub-areas, the realistic parents; deeper pages remain
+ * reachable when the user names them explicitly. Returns '' for an empty
+ * workspace.
+ */
+export function formatWorkspaceOutline(pages: PageSummary[]): string {
+  const topLevel = pages.filter((p) => p.parentId === null)
+  if (topLevel.length === 0) return ''
+
+  const lines: string[] = []
+  lines.push('[Workspace outline] (existing pages a new page could live under)')
+  for (const page of topLevel) {
+    lines.push(`- ${TYPE_LABEL[page.type]}: ${page.title}`)
+    for (const child of pages.filter((p) => p.parentId === page.id)) {
+      lines.push(`  - ${TYPE_LABEL[child.type]}: ${child.title}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 // ── DB fetch layer (live-verified) ───────────────────────────────────────────
 
 type Sb = SupabaseClient<Database>
@@ -192,6 +227,24 @@ async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<Ch
   return pages.map((p) => ({ type: p.type, title: p.title, status: p.status ?? undefined }))
 }
 
+/** All of a user's pages as lean title rows for the workspace outline — one
+ *  query, no blocks/embeddings (listPages would drag every page body along). */
+export async function fetchPageSummaries(sb: Sb, userId: string): Promise<PageSummary[]> {
+  const { data } = await sb
+    .from('pages')
+    .select('id, parent_id, type, title')
+    .eq('user_id', userId)
+    .order('order', { ascending: true })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id as string,
+    parentId: (r.parent_id as string | null) ?? null,
+    type: r.type as NodeType,
+    title: r.title as string,
+  }))
+}
+
 /** Find a page whose title matches (case-insensitive) — single table now. */
 export async function resolveMention(
   sb: Sb,
@@ -222,8 +275,9 @@ export interface BuildChatContextOptions {
 
 /**
  * Assemble the full context string to prepend to the system prompt for a chat
- * turn: the current node (auto-injected) plus any @mentioned nodes. Returns ''
- * when there is nothing to inject.
+ * turn: the current node (auto-injected), any @mentioned nodes, and a
+ * titles-only workspace outline (so create_page can infer a parent even from
+ * the Home view). Returns '' when there is nothing to inject.
  */
 export async function buildChatContext(
   sb: Sb,
@@ -246,6 +300,9 @@ export async function buildChatContext(
       if (data) blocks.push(formatNodeContext(data, { label: `Referenced: @${ref.name}` }))
     }
   }
+
+  const outline = formatWorkspaceOutline(await fetchPageSummaries(sb, userId))
+  if (outline) blocks.push(outline)
 
   return blocks.join('\n\n')
 }

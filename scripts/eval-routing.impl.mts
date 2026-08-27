@@ -48,6 +48,8 @@ type Scenario = {
   expectType?: string
   /** For create_page cases: assert `parentTitle` contains this (case-insensitive). */
   expectParent?: string
+  /** For create_page cases: assert `parentTitle` is ABSENT (explicit top-level). */
+  expectNoParent?: boolean
   /** For create_page cases: assert at least one proposed block of this type (M3). */
   expectBlockType?: string
   /** For create_page cases: assert NO text block smuggles a markdown table (M3). */
@@ -167,6 +169,30 @@ const SCENARIOS: Scenario[] = [
     text: 'add a packing checklist',
   },
   {
+    name: 'NEW inference: new page while ON an area → parentTitle≈current area',
+    expect: 'create_page',
+    expectParent: 'woodworking',
+    ctx: '[Current node]\nArea: Woodworking\nDocuments:\n  - "Woodworking": Shop notes and bench build log.',
+    text: 'create an inventory page for my workshop tools',
+    note: 'lesser-finding 1: no destination named — the model must infer the current area, not default to top-level.',
+  },
+  {
+    name: 'NEW inference: on Home, outline names the area → parentTitle inferred',
+    expect: 'create_page',
+    expectParent: 'woodworking',
+    ctx: 'The user is on their Home view. No current page.\n\n[Workspace outline] (existing pages a new page could live under)\n- Area: Personal\n- Area: Health\n- Area: Creativity\n  - Area: Woodworking',
+    text: 'make an inventory page for my woodworking tools',
+    note: 'lesser-finding 1: from Home the outline is the only placement signal; the model must use it.',
+  },
+  {
+    name: 'NEW guard: explicit top-level request → NO parentTitle',
+    expect: 'create_page',
+    expectNoParent: true,
+    ctx: 'The user is on their Home view. No current page.\n\n[Workspace outline] (existing pages a new page could live under)\n- Area: Personal\n- Area: Health\n- Area: Creativity',
+    text: 'make a top-level page called Scratchpad',
+    note: 'inference must not override an explicit top-level request.',
+  },
+  {
     name: 'NEW M3 inventory page → create_page WITH a table block',
     expect: 'create_page',
     expectBlockType: 'table',
@@ -217,6 +243,7 @@ async function runOne(s: Scenario): Promise<Result> {
     if (pass && s.expectParent) {
       pass = (input.parentTitle ?? '').toLowerCase().includes(s.expectParent.toLowerCase())
     }
+    if (pass && s.expectNoParent) pass = !input.parentTitle
     if (pass && s.expectBlockType) {
       pass = (input.blocks ?? []).some((b) => b.type === s.expectBlockType)
     }
