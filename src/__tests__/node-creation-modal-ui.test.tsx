@@ -2,7 +2,7 @@
  * UI tests for NodeCreationModal and its wiring points.
  *
  * Tests:
- * 1. Modal opens when the + button is clicked in Sidebar
+ * 1. Modal opens when the + button is clicked in the rail
  * 2. Modal closes on Cancel
  * 3. Modal closes after successful Create
  * 4. /save command in AITerminal opens the modal
@@ -55,13 +55,11 @@ jest.mock('@/lib/ai/transports', () => ({
 }))
 
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest
-    .fn()
-    .mockResolvedValue({
-      id: 'conv-1',
-      messages: [],
-      resolutions: { changes: {}, creates: {}, skipped: {} },
-    }),
+  getOrCreateConversation: jest.fn().mockResolvedValue({
+    id: 'conv-1',
+    messages: [],
+    resolutions: { changes: {}, creates: {}, skipped: {} },
+  }),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
@@ -115,7 +113,7 @@ global.fetch = jest.fn().mockResolvedValue({
 
 // ── Import components after mocks ─────────────────────────────────────────
 
-import { Sidebar } from '@/components/organisms/Sidebar'
+import { Rail } from '@/components/organisms/Rail'
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { NodeCreationModal } from '@/components/organisms/NodeCreationModal'
 
@@ -267,18 +265,18 @@ describe('NodeCreationModal', () => {
   })
 })
 
-// ── Sidebar — new page button ─────────────────────────────────────────────
+// ── Rail — new page button ────────────────────────────────────────────────
 // The sidebar "+" now creates a top-level page directly (no modal) and
 // navigates to it. Sub-pages and delete are exercised via the pages client
 // unit tests + Playwright.
 
-describe('Sidebar — new page button', () => {
+describe('Rail — new page button', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
   })
 
   it('creates a top-level page and navigates to it when + is clicked', async () => {
-    renderWithQuery(<Sidebar />)
+    renderWithQuery(<Rail />)
 
     fireEvent.click(screen.getByRole('button', { name: /new page/i }))
 
