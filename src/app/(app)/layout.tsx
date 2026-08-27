@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Rail } from '@/components/organisms/Rail'
+import { TopBar } from '@/components/organisms/TopBar'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
 
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <DocumentPanel />
           </Suspense>
         </main>
+        <TopBar />
       </div>
 
       {/* Bottom: full-width AI terminal */}

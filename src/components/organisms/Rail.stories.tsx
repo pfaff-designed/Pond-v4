@@ -51,7 +51,6 @@ const meta = {
     isEmpty: false,
     lifeActive: true,
     onLife: fn(),
-    onCreateTop: fn(),
     onSelect: fn(),
     onToggle: fn(),
     onAddChild: fn(),
@@ -97,9 +96,6 @@ export const Interactions: Story = {
 
     await userEvent.click(canvas.getByRole('button', { name: /^Life/ }))
     await expect(args.onLife).toHaveBeenCalled()
-
-    await userEvent.click(canvas.getByRole('button', { name: 'New page' }))
-    await expect(args.onCreateTop).toHaveBeenCalled()
   },
 }
 

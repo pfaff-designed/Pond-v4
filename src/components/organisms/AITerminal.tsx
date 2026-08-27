@@ -13,6 +13,7 @@ import {
 import { performHandoff } from '@/lib/conversation/handoff'
 import type { ConversationResolutions, ProposalDecision } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
 import { toParentOptions } from '@/lib/pages/parent-options'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
@@ -173,7 +174,17 @@ export function AITerminal() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
+
+  // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
+  useEffect(() => {
+    function onFocusRequest() {
+      inputRef.current?.focus()
+    }
+    window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+    return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+  }, [])
 
   // ── Load or create active conversation on mount ───────────────────────────
   useEffect(() => {
@@ -512,6 +523,7 @@ export function AITerminal() {
         {/* Input */}
         <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair flex-shrink-0">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

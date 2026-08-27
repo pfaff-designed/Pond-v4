@@ -2,7 +2,7 @@
  * UI tests for NodeCreationModal and its wiring points.
  *
  * Tests:
- * 1. Modal opens when the + button is clicked in the rail
+ * 1. Modal opens when the + button is clicked
  * 2. Modal closes on Cancel
  * 3. Modal closes after successful Create
  * 4. /save command in AITerminal opens the modal
@@ -113,7 +113,7 @@ global.fetch = jest.fn().mockResolvedValue({
 
 // ── Import components after mocks ─────────────────────────────────────────
 
-import { Rail } from '@/components/organisms/Rail'
+import { TopBar } from '@/components/organisms/TopBar'
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { NodeCreationModal } from '@/components/organisms/NodeCreationModal'
 
@@ -265,18 +265,18 @@ describe('NodeCreationModal', () => {
   })
 })
 
-// ── Rail — new page button ────────────────────────────────────────────────
-// The sidebar "+" now creates a top-level page directly (no modal) and
-// navigates to it. Sub-pages and delete are exercised via the pages client
-// unit tests + Playwright.
+// ── TopBar — new page button ──────────────────────────────────────────────
+// The top bar "＋" creates a top-level page directly (no modal) and navigates
+// to it. Sub-pages and delete are exercised via the pages client unit tests +
+// Playwright.
 
-describe('Rail — new page button', () => {
+describe('TopBar — new page button', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
   })
 
   it('creates a top-level page and navigates to it when + is clicked', async () => {
-    renderWithQuery(<Rail />)
+    renderWithQuery(<TopBar />)
 
     fireEvent.click(screen.getByRole('button', { name: /new page/i }))
 

@@ -242,7 +242,6 @@ export interface RailViewProps extends RowCallbacks {
   isEmpty: boolean
   lifeActive: boolean
   onLife: () => void
-  onCreateTop: () => void
 }
 
 export function RailView({
@@ -254,7 +253,6 @@ export function RailView({
   isEmpty,
   lifeActive,
   onLife,
-  onCreateTop,
   onSelect,
   onToggle,
   onAddChild,
@@ -265,15 +263,6 @@ export function RailView({
     <aside className="w-[250px] flex-shrink-0 h-full overflow-y-auto px-4 pt-6 pb-8 font-sans">
       <div className="flex items-baseline gap-2.5 px-2 pb-5">
         <span className="font-display text-[25px] text-foreground">Pond</span>
-        <button
-          className="ml-auto text-press-faint hover:text-foreground text-lg leading-none disabled:opacity-40"
-          title="New page"
-          aria-label="New page"
-          disabled={busyId !== null}
-          onClick={onCreateTop}
-        >
-          +
-        </button>
       </div>
 
       {/* Life — the top overview page (everything, across your life) */}
@@ -382,18 +371,6 @@ export function Rail() {
     return result
   }
 
-  async function handleCreateTop() {
-    setBusyId('__new__')
-    try {
-      const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: null, type: 'area', title: 'Untitled' })
-      )
-      if (created) navigateTo({ id: created.id, type: 'area', title: 'Untitled' })
-    } finally {
-      setBusyId(null)
-    }
-  }
-
   async function handleAddChild(node: RailNode) {
     setBusyId(node.id)
     try {
@@ -455,7 +432,6 @@ export function Rail() {
       isEmpty={!isLoading && pages.length === 0}
       lifeActive={!selectedNodeId}
       onLife={() => router.push('/workspace')}
-      onCreateTop={handleCreateTop}
       onSelect={handleSelect}
       onToggle={handleToggle}
       onAddChild={handleAddChild}
