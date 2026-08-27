@@ -22,10 +22,12 @@ import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import {
   AreaOverviewPanel,
   LifeOverviewPanel,
+  useNavigateCrumb,
   useOpenCard,
 } from '@/components/organisms/OverviewSurface'
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
-import { childCards } from '@/lib/pages/overview'
+import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
@@ -64,7 +66,11 @@ export function DocumentPanel() {
   // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
   const openCard = useOpenCard()
+  const navigateCrumb = useNavigateCrumb(rows)
   const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
+  // The ancestor trail for the editor header — the title input stays the tail,
+  // so the breadcrumb shows only the path down to (not including) this node.
+  const crumbs = useMemo(() => (nodeId ? ancestorPath(rows, nodeId) : []), [rows, nodeId])
 
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -217,7 +223,10 @@ export function DocumentPanel() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto px-8 py-8">
-        <div className="flex items-center justify-between gap-3 mb-4">
+        {/* Breadcrumb shows the ancestor path (ticket-25); the title input below
+            is the editable tail, so the crumb never duplicates the current name. */}
+        <Breadcrumb crumbs={crumbs} onNavigate={navigateCrumb} />
+        <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
             className="flex-1 text-2xl font-semibold text-foreground outline-none bg-transparent placeholder:text-press-faint"
             value={viewTitle}
