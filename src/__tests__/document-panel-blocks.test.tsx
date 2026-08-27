@@ -61,8 +61,13 @@ beforeEach(() => {
 })
 
 describe('DocumentPanel block rendering (via the module registry)', () => {
-  it('still renders a text block as an editable textarea', async () => {
+  it('renders a text block click-to-edit: reading view first, textarea on click', async () => {
     renderPanel()
+    // ticket-20: a non-empty text block renders its (mocked) markdown reading view,
+    // not a raw textarea. Clicking the edit trigger drops into the source with content intact.
+    const trigger = await screen.findByRole('button', { name: 'Edit text block' })
+    expect(screen.queryByDisplayValue('Notes on the workbench build')).not.toBeInTheDocument()
+    fireEvent.click(trigger)
     expect(await screen.findByDisplayValue('Notes on the workbench build')).toBeInTheDocument()
   })
 

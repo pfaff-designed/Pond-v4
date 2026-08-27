@@ -1,7 +1,7 @@
 ---
 id: 20
 label: ux-audit:finding
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
@@ -43,3 +43,80 @@ components outside atoms/molecules/organisms).
 ## Origin
 
 Hands-on UX audit, 2026-08-27 (this session; screenshots `~/ux-01…07-*.png`).
+
+## Resolution (2026-08-27)
+
+Shipped the rendered reading layer. No more literal `##`, `**bold**`, `---`, or pipe
+tables anywhere a human reads.
+
+### What shipped
+
+- **`Markdown` atom** (`src/components/atoms/Markdown.tsx`) — the single
+  rendered-reading primitive. `react-markdown` + `remark-gfm`, styled per-element via
+  the `components` map (Tailwind on the mapped tags), in two variants:
+  - `reading` — Press serif prose (Fraunces body at ~17px/1.65, Instrument-Serif
+    display headings, `press-body`/`press-line` tokens) so page reading matches the
+    overview-surface quality bar.
+  - `terminal` — compact treatment sized for the chat-transcript bubble.
+    Story + story tests cover both variants, GFM tables, and the XSS-inertness of raw
+    HTML in the source.
+- **Text module rendered read mode + click-to-edit** (`src/lib/modules/text/view.tsx`)
+  — read-only always typesets markdown; editable renders the reading view by default
+  and drops into the source textarea on click (extends the ticket-10 loop), caret at
+  end, content intact. Blur or Escape returns to the rendered view. An empty block
+  starts in edit mode so a freshly-added "+ Add text" block is immediately typeable.
+  Story + story tests added (`view.stories.tsx`).
+- **Terminal transcript** (`src/components/organisms/AITerminal.tsx`) — assistant
+  messages render through `Markdown variant="terminal"`; streaming-safe (the growing
+  `text` string re-parses each render). User messages stay verbatim (`whitespace-pre-wrap`),
+  never markdown-interpreted.
+
+### Decisions
+
+- **One markdown solution = `react-markdown` + `remark-gfm`.** react-markdown v10 never
+  emits raw HTML (no `rehype-raw` wired), so output is XSS-safe by construction —
+  arbitrary HTML in the source renders as inert text. `remark-gfm` adds the exact
+  artifacts seen live (pipe tables, `---`, strikethrough, task lists).
+- **AI-edit focus path** now clicks the block's `[data-text-edit-trigger]` to open the
+  source before focusing, since the textarea only exists once in edit mode.
+- **Jest ↔ ESM.** `react-markdown`/`remark-gfm` are pure ESM and `next/jest` doesn't
+  transpile `node_modules` (and fully overrides `transformIgnorePatterns`). Rather than
+  fight that, both are stubbed for jsdom via `moduleNameMapper` →
+  `src/__mocks__/react-markdown.tsx` (emits raw source). Typeset rendering is verified
+  by the **Storybook story tests** (native ESM in the vitest browser env), the mandated
+  component-test surface per the front-end workflow rule.
+
+### Deferred / notes
+
+- **Text `differ` left as a source diff** (`text/differ.tsx`): a change-review card
+  intentionally shows the literal before/after text you're approving, not typeset
+  output. Out of scope for "reading"; not regressed.
+- **Pre-existing lint failures** in `src/components/charts/` (the Bklit library) are
+  unchanged and unrelated — identical on untouched `main`. All files touched here lint
+  clean.
+- One adjacent story test (`CreatePageProposalCard.stories.tsx`) was updated: its text
+  block preview now renders `# Lasagna` as a real `<h1>`, so the exact-text lookup was
+  disambiguated. The component itself was not touched.
+
+### Review fixes (same day)
+
+Code review found five follow-ups, all shipped:
+
+- **Plain line breaks preserved** — `remark-breaks` added to the `reading` variant
+  only, so user-typed notes with single newlines keep their lines (the old
+  `whitespace-pre-wrap` behavior) instead of collapsing into one paragraph. Terminal
+  keeps standard markdown rules (the AI authors real double-newline paragraphs).
+- **Links navigate** — the click-to-edit wrapper is now a `div role="button"`
+  (an `<a>` inside a real `<button>` is invalid HTML) with Enter/Space keyboard
+  support; clicks landing on a link navigate (`target="_blank" rel="noopener
+noreferrer"`) while everything else enters edit.
+- **Empty block re-entry** — after blurring an empty textarea, read mode shows a
+  `min-h` placeholder ("Write something…", `press-faint`) instead of a zero-height
+  dead zone.
+- **Perf** — the `Markdown` atom is `React.memo`ized: string children compare by
+  value, so settled transcript messages skip re-parsing during streaming.
+- **Style dedupe** — shared `strong`/`em` map across variants; the Press
+  reading-prose classes pinned once as `READING_PROSE_CLASS` (used by `p`/`ul`/`ol`
+  and the source textarea, so read↔edit doesn't shift the type).
+
+Caret-at-end behavior stays accepted-deferred per review.
