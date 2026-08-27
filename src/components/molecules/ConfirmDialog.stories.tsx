@@ -1,25 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { useState } from 'react'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog'
 
-// The dialog is controlled; a tiny host keeps it open so the story renders the
-// popup and the play fn can assert on its content / drive the actions.
-function Harness(props: Partial<ConfirmDialogProps>) {
+// The dialog is controlled; this host ACTUALLY controls `open` — args are spread
+// first and the harness's state overrides them, so Cancel/Esc visibly close the
+// dialog in the story.
+function Harness(props: ConfirmDialogProps) {
   const [open, setOpen] = useState(true)
-  return (
-    <ConfirmDialog
-      open={open}
-      onOpenChange={setOpen}
-      title='Delete "Health"?'
-      blastRadius="Deletes 3 pages inside."
-      onConfirm={props.onConfirm ?? fn()}
-      {...props}
-      // keep the harness in charge of open so Cancel/Esc visibly close it
-      // (onOpenChange from props would otherwise clobber this)
-    />
-  )
+  return <ConfirmDialog {...props} open={open} onOpenChange={setOpen} />
 }
 
 const meta = {
@@ -62,11 +52,12 @@ export const OneChild: Story = {
   },
 }
 
-/** Cancel closes without confirming. */
+/** Cancel visibly closes the dialog without confirming. */
 export const CancelCloses: Story = {
   play: async ({ args }) => {
     const body = within(document.body)
     await userEvent.click(body.getByRole('button', { name: 'Cancel' }))
     await expect(args.onConfirm).not.toHaveBeenCalled()
+    await waitFor(() => expect(body.queryByRole('alertdialog')).not.toBeInTheDocument())
   },
 }

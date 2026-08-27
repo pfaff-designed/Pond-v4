@@ -8,8 +8,10 @@ const meta = {
   component: UndoToast,
   parameters: { layout: 'fullscreen' },
   decorators: [
+    // `relative` because the viewport is absolutely positioned within its
+    // nearest positioned ancestor (the app's content row; here, this frame).
     (Story) => (
-      <div className="h-screen bg-press-paper">
+      <div className="relative h-screen bg-press-paper">
         <UndoToastViewport>
           <Story />
         </UndoToastViewport>
@@ -51,4 +53,14 @@ export const Dismiss: Story = {
 /** A block deletion reads differently but works the same. */
 export const BlockDeleted: Story = {
   args: { message: 'Deleted text block' },
+}
+
+/** Without onUndo the toast is a plain notice (e.g. a failed delete) — no Undo button. */
+export const Notice: Story = {
+  args: { message: 'Couldn’t delete "Scratchpad"', onUndo: undefined },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+  },
 }

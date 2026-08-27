@@ -56,12 +56,20 @@ migration, no `deleted_at` trash** — that stays DEFERRED (see caveat below).
    `"Deletes N pages inside."` (singular at 1). Deleting Health no longer reads
    like deleting an empty page. Leaf pages skip the modal entirely.
 
-2. **Undo toast on leaf + block delete (deferred commit).** A leaf-page or
-   editor-block deletion removes the item optimistically at once, opens an
-   `UndoToast` (molecule) with a draining grace-window bar (~6s), and _defers the
-   destructive write_. **Undo** cancels the pending write and restores the item
-   exactly (rail: refetch, since the DB row still exists during the window; block:
-   re-insert at its original index). **Dismiss** or window-elapse commits.
+2. **Undo toast on leaf + block delete.** Both open an `UndoToast` (molecule)
+   with a draining grace-window bar (~6s) — but their mechanics differ, stated
+   honestly:
+   - **Leaf page (rail): true deferred commit.** The row is surgically dropped
+     from the tree cache at once and the destructive `deletePage` write is _held
+     back_ until the window elapses or the toast is dismissed. **Undo** cancels
+     the pending write and re-inserts _only that row_ (then reconciles by
+     refetch — the DB row still exists during the window).
+   - **Editor block: NOT deferred — undo-by-reinsert.** The block removal
+     persists _immediately_ via the editor's normal debounced save; nothing is
+     held back. **Undo** re-inserts the block at its original index and re-saves.
+     The grace window here is purely the undo affordance's lifetime, and no
+     crash-window claim applies to blocks (a crash after the save simply leaves
+     the block deleted, as any other committed edit would be).
 
 3. **Rail × / + become hover-reveal + keyboard/touch reachable.** The row CRUD
    affordances rest at `opacity-0` and reveal on `group-hover`,
@@ -78,18 +86,21 @@ migration, no `deleted_at` trash** — that stays DEFERRED (see caveat below).
 - **Undo mechanics — client-side deferred commit.** Core is a pure,
   timer-injectable `scheduleDeferredCommit` (`src/lib/deletion/deferred-commit.ts`):
   it holds the write behind a grace window; `undo()` cancels, `flush()` commits
-  early, both idempotent and undo-wins-over-flush. A React host hook
-  `useDeletionUndo` owns the toast queue and wires each toast's Undo/Dismiss to a
-  controller. Rail leaf-delete and DocumentPanel block-delete both drive it.
-- **⚠️ CRASH-WINDOW CAVEAT (honest — no durability claimed).** This is _client-side
-  deferral_, NOT durable soft-delete. During the ~6s window the item is gone from
-  the UI but the DB row still exists; the destructive write only lands when the
-  window closes. If the tab closes/crashes mid-window the delete simply never
-  happens — the row survives and reappears on reload (safe: nothing lost, but the
-  reverse of "guaranteed committed"). On unmount/route-change the hook _flushes_
-  pending deletes so a settled user action isn't silently resurrected. A durable
-  `deleted_at` trash with restore would remove this window — **DEFERRED** to a
-  later pass (needs the schema migration explicitly out of scope here).
+  early, both idempotent and undo-wins-over-flush. A single React
+  `DeletionUndoProvider` (workspace layout) owns the toast queue + viewport and
+  exposes `stageDeletion` / `notify` / `flushScope` via the `useDeletionUndo`
+  context hook. Rail leaf-delete and DocumentPanel block-delete both drive it.
+- **⚠️ CRASH-WINDOW CAVEAT (honest — no durability claimed; applies to RAIL
+  leaf-page deletes only).** The rail path is _client-side deferral_, NOT durable
+  soft-delete. During the ~6s window the row is gone from the UI but still exists
+  in the DB; the destructive write only lands when the window closes. If the tab
+  closes/crashes mid-window the delete simply never happens — the row survives
+  and reappears on reload (safe: nothing lost, but the reverse of "guaranteed
+  committed"). On provider unmount pending deletes are _flushed_ so a settled
+  user action isn't silently resurrected. Block deletes make no such claim —
+  they persist immediately (see What shipped #2). A durable `deleted_at` trash
+  with restore would remove the window — **DEFERRED** to a later pass (needs the
+  schema migration explicitly out of scope here).
 - **Count computation.** Blast radius = `countDescendants` (children →
   grandchildren → …, node itself excluded) over the in-memory rail tree, matching
   the DB `on delete cascade` FK. `needsConfirm(count) = count > 0` is the single
@@ -99,6 +110,34 @@ migration, no `deleted_at` trash** — that stays DEFERRED (see caveat below).
   stories + story tests (the confirm story asserts the blast-radius copy; the
   toast story exercises Undo and Dismiss). Reused the existing base-ui dep +
   `buttonVariants` rather than adding a dialog/toast library.
+
+### Review fixes (same day)
+
+Code review surfaced five correctness defects, all fixed:
+
+- **Surgical undo restore.** Undoing deletion A used to restore a whole
+  pre-delete cache snapshot — resurrecting any concurrently-deleted row B. Now
+  undo re-inserts _only_ the deleted row (`row-cache.ts`), duplicate-safe, then
+  reconciles by refetch.
+- **Undo can no longer race the commit timer.** `performUndo` (in
+  deferred-commit.ts) runs the restore _only_ if the undo actually beat the
+  window; a click landing after the commit fired is a no-op instead of racing
+  the in-flight `deletePage`.
+- **Block toasts can't leak across pages.** `DocumentPanel` is layout-level and
+  never unmounts on `?nodeId` change, so pending block toasts are flushed via
+  `flushScope('block')` whenever the open page changes — Undo can never insert
+  page A's block into page B.
+- **Commit failure handling.** If the deferred `deletePage` rejects, the removed
+  row is restored to the cache, the tree re-fetched, and a notice toast
+  ("Couldn't delete …") shown. The commit also re-reads the _current_ selection
+  (ref) instead of a value captured up to 6s earlier.
+- **One shared toast viewport.** A single `DeletionUndoProvider` in the
+  workspace layout owns the toast queue and renders one viewport, absolutely
+  positioned bottom-right of the content row — clear of the AI terminal at any
+  drawer height, and concurrent rail/editor toasts stack instead of overlapping.
+
+Wiring-level jest coverage was added for the two races (second-delete clobber,
+undo-after-commit) plus provider lifecycle and `flushScope`.
 
 ### Deferred / not in this pass
 
@@ -110,10 +149,12 @@ migration, no `deleted_at` trash** — that stays DEFERRED (see caveat below).
 ### Validation
 
 - `npm run typecheck` — clean.
-- `npm test` (jest) — 330 passed (incl. new `deletion-blast-radius` +
-  `deferred-commit` suites covering the count logic and undo/flush/window state).
-- `npm run test-storybook` — 17 files / 65 tests passed (incl. new ConfirmDialog
-  - UndoToast stories).
+- `npm test` (jest) — 341 passed (incl. `deletion-blast-radius`,
+  `deferred-commit`, and the wiring-level `deletion-undo-wiring` suites covering
+  count logic, undo/flush/window state, both review races, and provider
+  lifecycle/flushScope).
+- `npm run test-storybook` — 17 files / 66 tests passed (incl. ConfirmDialog +
+  UndoToast stories; CancelCloses asserts the dialog visibly closes).
 - `npm run build` — succeeds.
 - Lint: touched files clean; the ~80 pre-existing problems (charts + proto) are
   identical to main and untouched here.

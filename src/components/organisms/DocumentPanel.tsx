@@ -25,8 +25,7 @@ import type { Block } from '@/lib/documents/types'
 
 /** A short, human label for a block in the undo toast ("Deleted text block"). */
 function blockLabel(block: Block): string {
-  const type = (block as { type?: string }).type ?? 'block'
-  return `Deleted ${type} block`
+  return `Deleted ${block.type} block`
 }
 
 export function DocumentPanel() {
@@ -34,7 +33,16 @@ export function DocumentPanel() {
   const nodeId = searchParams.get('nodeId')
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
-  const { stageDeletion, toastStack } = useDeletionUndo()
+  const { stageDeletion, flushScope } = useDeletionUndo()
+
+  // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
+  // Flush pending block toasts when leaving a page — a surviving toast's Undo
+  // would otherwise re-insert the old page's block into the newly-opened page.
+  useEffect(() => {
+    return () => {
+      flushScope('block')
+    }
+  }, [nodeId, flushScope])
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', nodeId],
@@ -132,6 +140,9 @@ export function DocumentPanel() {
     })
     stageDeletion({
       message: blockLabel(removed),
+      // The removal already persists via the debounced save — nothing to defer.
+      // Flushed via scope 'block' on page change so the toast can't outlive its page.
+      scope: 'block',
       commit: () => {},
       undo: () => {
         setBlocks((current) => {
@@ -206,7 +217,6 @@ export function DocumentPanel() {
           + Add text
         </button>
       </div>
-      {toastStack}
     </div>
   )
 }

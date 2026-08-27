@@ -9,13 +9,15 @@
  * Purely presentational: the deferred-commit timing, the queue, and the actual
  * write live in the host (see useDeletionUndo). This molecule renders one toast
  * and raises Undo / Dismiss as callbacks. A thin progress bar telegraphs the
- * closing grace window when a duration is supplied.
+ * closing grace window when a duration is supplied. Omitting `onUndo` renders a
+ * plain notice (e.g. "Couldn't delete …") with only the dismiss affordance.
  */
 
 export interface UndoToastProps {
   /** The removed thing, e.g. `Deleted "Scratchpad"` or `Deleted text block`. */
   message: string
-  onUndo: () => void
+  /** Omit for a plain (non-undoable) notice — the Undo button is hidden. */
+  onUndo?: () => void
   onDismiss: () => void
   /**
    * Grace window in ms — drives the countdown progress bar. Omit for a static
@@ -32,13 +34,15 @@ export function UndoToast({ message, onUndo, onDismiss, durationMs }: UndoToastP
       className="pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-xl border border-press-line bg-press-ink px-4 py-2.5 text-sm text-press-paper shadow-2xl"
     >
       <span className="truncate">{message}</span>
-      <button
-        type="button"
-        onClick={onUndo}
-        className="ml-1 flex-shrink-0 rounded-md px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
-      >
-        Undo
-      </button>
+      {onUndo && (
+        <button
+          type="button"
+          onClick={onUndo}
+          className="ml-1 flex-shrink-0 rounded-md px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
+        >
+          Undo
+        </button>
+      )}
       <button
         type="button"
         onClick={onDismiss}
@@ -62,13 +66,15 @@ export function UndoToast({ message, onUndo, onDismiss, durationMs }: UndoToastP
 }
 
 /**
- * A fixed-position stack for the active toasts (bottom-center). The host renders
- * its toast queue as children. Kept separate so the toast itself stays layout-free
- * and easy to place in Storybook.
+ * The stack for active toasts — bottom-right of its nearest `relative` ancestor.
+ * There must be exactly ONE viewport (the DeletionUndoProvider renders it inside
+ * the workspace's content row), positioned by that container rather than the
+ * window so it stays clear of the full-width AI terminal below, whatever the
+ * drawer's height. Kept separate so the toast itself stays layout-free.
  */
 export function UndoToastViewport({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-none absolute bottom-4 right-4 z-40 flex flex-col items-end gap-2">
       {children}
     </div>
   )

@@ -44,6 +44,23 @@ export interface DeferredCommit {
 }
 
 /**
+ * Attempt an undo and run `restore` ONLY if the undo actually won — i.e. the
+ * write hadn't already committed. Guards the race where the grace window fires
+ * in the same beat as the user's Undo click: `controller.undo()` no-ops once
+ * settled, and without this guard the restore would still run, racing the
+ * in-flight destructive write. Returns whether the undo (and restore) happened.
+ */
+export function performUndo(
+  controller: DeferredCommit,
+  restore: () => void | Promise<void>
+): boolean {
+  controller.undo()
+  if (!controller.isUndone) return false
+  void restore()
+  return true
+}
+
+/**
  * Stage a deletion behind a grace window. The window starts immediately; the
  * caller is expected to have already removed the item from the UI optimistically.
  */

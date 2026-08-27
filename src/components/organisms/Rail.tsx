@@ -26,6 +26,7 @@ import {
   needsConfirm,
   blastRadiusLabel,
 } from '@/lib/deletion/blast-radius'
+import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 
@@ -287,7 +288,7 @@ export function Rail() {
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
-  const { stageDeletion, toastStack } = useDeletionUndo()
+  const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
     queryKey: ['pages'],
@@ -296,6 +297,13 @@ export function Rail() {
 
   const tree = useMemo(() => buildTree(pages), [pages])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // Deferred commits fire up to ~6s after staging — read the selection fresh at
+  // commit time via this ref, not the render-time closure value.
+  const selectedNodeIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId
+  }, [selectedNodeId])
 
   // Seed default pages on first login — fires once when the tree is empty after load
   useEffect(() => {
@@ -354,14 +362,35 @@ export function Rail() {
     }
   }
 
-  /** The real hard-delete + open-page bookkeeping, shared by both delete paths. */
-  async function commitDelete(node: RailNode) {
-    await withUser(async (sb) => {
-      await deletePage(sb, node.id)
-    })
-    // if the open page was in the deleted subtree, clear the workspace
-    if (selectedNodeId && subtreeIds(node).has(selectedNodeId)) {
-      router.push('/workspace')
+  /** Put a single optimistically-removed row back (surgical) and reconcile. */
+  function restoreDeletedRow(row: PageRow | undefined) {
+    if (row) {
+      queryClient.setQueryData<PageRow[]>(['pages'], (rows) =>
+        rows ? restoreRow(rows, row) : rows
+      )
+    }
+    queryClient.invalidateQueries({ queryKey: ['pages'] })
+  }
+
+  /**
+   * The real hard-delete + open-page bookkeeping, shared by both delete paths.
+   * Runs up to ~6s after staging (deferred commit), so the selection is read
+   * fresh from the ref. On failure the removed row is restored and the failure
+   * surfaced — never a silently ghosted cache.
+   */
+  async function commitDelete(node: RailNode, removedRow?: PageRow) {
+    try {
+      await withUser(async (sb) => {
+        await deletePage(sb, node.id)
+      })
+      // if the open page was in the deleted subtree, clear the workspace
+      const selected = selectedNodeIdRef.current
+      if (selected && subtreeIds(node).has(selected)) {
+        router.push('/workspace')
+      }
+    } catch {
+      restoreDeletedRow(removedRow)
+      notify(`Couldn't delete "${node.title || 'Untitled'}"`)
     }
   }
 
@@ -374,24 +403,20 @@ export function Rail() {
       return
     }
 
-    // Leaf: optimistically drop the row from the tree cache so it vanishes at
-    // once, open an undo toast, and defer the destructive write. Undo restores by
-    // refetching — the DB row still exists during the grace window (see the
-    // crash-window caveat in deferred-commit.ts).
-    const prevPages = queryClient.getQueryData<PageRow[]>(['pages'])
-    queryClient.setQueryData<PageRow[]>(['pages'], (rows) =>
-      (rows ?? []).filter((r) => r.id !== node.id)
-    )
+    // Leaf: surgically drop this one row from the tree cache so it vanishes at
+    // once, open an undo toast, and defer the destructive write. Undo re-inserts
+    // ONLY this row (never a whole snapshot — a snapshot would resurrect other
+    // concurrently-deleted rows) and reconciles with the server, whose row still
+    // exists during the grace window (see the caveat in deferred-commit.ts).
+    const removedRow = pages.find((r) => r.id === node.id)
+    queryClient.setQueryData<PageRow[]>(['pages'], (rows) => removeRow(rows ?? [], node.id))
     if (selectedNodeId === node.id) router.push('/workspace')
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
-      commit: () => commitDelete(node),
-      undo: () => {
-        // Put the optimistic row back immediately, then reconcile with the server.
-        if (prevPages) queryClient.setQueryData<PageRow[]>(['pages'], prevPages)
-        queryClient.invalidateQueries({ queryKey: ['pages'] })
-      },
+      scope: 'rail',
+      commit: () => commitDelete(node, removedRow),
+      undo: () => restoreDeletedRow(removedRow),
     })
   }
 
@@ -451,7 +476,6 @@ export function Rail() {
         blastRadius={blastRadiusLabel(confirmCount)}
         onConfirm={handleConfirmDelete}
       />
-      {toastStack}
     </>
   )
 }

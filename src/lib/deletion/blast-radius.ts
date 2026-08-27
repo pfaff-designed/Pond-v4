@@ -9,14 +9,8 @@
  * descendant count in it. Framework-agnostic, no React — jest covers them.
  */
 
-/** The minimal tree shape these helpers need: an id and typed children. */
-export interface TreeNode<T extends TreeNode<T> = never> {
-  id: string
-  children: Array<T extends never ? TreeNodeLike : T>
-}
-
-// A self-referential node shape used when a concrete node type isn't supplied.
-interface TreeNodeLike {
+/** The minimal self-referential tree shape these helpers need. */
+export interface TreeNodeLike {
   id: string
   children: TreeNodeLike[]
 }
