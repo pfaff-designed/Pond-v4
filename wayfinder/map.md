@@ -39,6 +39,23 @@ The decision phase is **closed** — every ticket resolved and the build unlocke
 - ~~[The module registry contract](ticket-12-module-registry-contract.md)~~ — ✅ resolved (see Decisions so far)
 - ~~[AI module-composition contract](ticket-16-ai-composition-contract.md)~~ — ✅ resolved (see Decisions so far)
 
+## UX hardening region (opened 2026-08-27)
+
+**Region destination:** close the gap between the shipped shell/AI arc and the daily-driver premium bar. Sourced from a hands-on UX audit of the live app (this date; screenshots `~/ux-01…07-*.png`): the AI loop works — creation, parent inference, proposal→accept — but the *reading*, *orientation*, and *trust* layers undercut it. Done when a first-run user can create, read, navigate, and delete without hitting a raw-markdown wall, a hidden page, or an unrecoverable action.
+
+**Build rule for every ticket in this region:** atomic design per [ticket-13](ticket-13-atomic-layering.md) — components land in `atoms/`/`molecules/`/`organisms/` with a Storybook story + story test; no stray components outside the hierarchy. Housekeeping while in there: `src/components/shimmering-text.tsx` sits outside the hierarchy, and `AITerminal`, `DocumentPanel`, `SavePickerModal` have no stories.
+
+**Frontier tickets** (all takeable; 20+21 pair, 22+26 share the type-switch seam, 23 grill-first):
+
+- [Rendered reading layer for text blocks](ticket-20-rendered-reading-layer.md) — raw markdown shown as plain text; #1 quality gap
+- [AI authoring discipline: structure over markdown](ticket-21-ai-authoring-discipline.md) — tables/headings as modules, no title-echo
+- [Page-with-children hides its own content](ticket-22-page-with-children-content-unreachable.md) — data-invisibility path
+- [Connected data: bind metric ↔ checklist ↔ table](ticket-23-connected-data.md) — the "live data" promise; **/grill-me before build**
+- [Terminal drawer ergonomics](ticket-24-terminal-drawer-ergonomics.md) — clipped proposals, stale transcript, ⌘K
+- [Wayfinding: breadcrumb, rail path, honest counts](ticket-25-wayfinding.md)
+- [＋ New page dead end](ticket-26-new-page-dead-end.md)
+- [Deletion safety: trash, undo, blast radius](ticket-27-deletion-safety.md)
+
 ## Notes
 
 - Domain: personal productivity app, solo user (Charles), desktop + mobile target
