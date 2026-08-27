@@ -18,6 +18,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
+import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { pageAccent } from '@/lib/pages/accent'
 
 // ── Tree types + helpers ─────────────────────────────────────────────────────
 
@@ -28,31 +30,6 @@ export interface RailNode {
   title: string
   order: number
   children: RailNode[]
-}
-
-interface PageRow {
-  id: string
-  parent_id: string | null
-  type: string
-  title: string
-  order: number
-}
-
-async function fetchPages(): Promise<PageRow[]> {
-  const supabase = createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return []
-
-  const { data, error } = await supabase
-    .from('pages')
-    .select('id, parent_id, type, title, "order"')
-    .eq('user_id', user.id)
-    .order('order')
-
-  if (error) throw error
-  return (data ?? []) as PageRow[]
 }
 
 /** Build a nested tree from the flat page list, sorted by order then title. */
@@ -90,18 +67,6 @@ function subtreeIds(node: RailNode): Set<string> {
   const ids = new Set<string>([node.id])
   for (const c of node.children) for (const id of subtreeIds(c)) ids.add(id)
   return ids
-}
-
-// ── Area accents ─────────────────────────────────────────────────────────────
-
-/** The Press muted accent set (sage · slate · gold · clay · mauve · olive). */
-const RAIL_ACCENTS = ['#5f7355', '#6b7a86', '#8a7a4a', '#9a6b43', '#8a6b74', '#7d8a5f']
-
-/** Deterministic muted accent for a page — stable across renders and sessions. */
-export function railAccent(id: string): string {
-  let h = 0
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return RAIL_ACCENTS[h % RAIL_ACCENTS.length]
 }
 
 /** A muted rounded-square dot — the calm way to color-code an area. */
@@ -297,7 +262,7 @@ export function RailView({
             key={node.id}
             node={node}
             depth={0}
-            accent={railAccent(node.id)}
+            accent={pageAccent(node.id)}
             selectedId={selectedId}
             expanded={expanded}
             busyId={busyId}

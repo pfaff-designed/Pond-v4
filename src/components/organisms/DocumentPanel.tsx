@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
+import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
@@ -129,6 +130,11 @@ export function DocumentPanel() {
         Loading…
       </div>
     )
+  }
+
+  // ── Type switch: an area IS its overview; everything else gets the editor ──
+  if (page.type === 'area') {
+    return <AreaOverviewPanel areaId={page.id} title={page.title} />
   }
 
   // ── Editor ──────────────────────────────────────────────────────────────────

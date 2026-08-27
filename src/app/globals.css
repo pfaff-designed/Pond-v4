@@ -212,7 +212,28 @@
   --chart-scale-pattern-color: oklch(0.145 0 0);
 }
 
+@keyframes press-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @layer components {
+  /* Staggered rise-on-mount — the Clearing motion idiom (delay set inline). */
+  .press-rise {
+    animation: press-rise 560ms var(--ease-press) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .press-rise {
+      animation: none;
+    }
+  }
+
   /* Liquid glass — floating Press chrome ONLY (top bar cluster, palettes). */
   .press-glass {
     background: linear-gradient(
