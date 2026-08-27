@@ -21,6 +21,13 @@ import type { UIMessage } from 'ai'
 
 export type ProposalDecision = 'accepted' | 'rejected'
 
+/** The page a propose_changes batch was made against, recorded when the part
+ *  streams in — so Accept commits there, not to wherever the user is now. */
+export interface ProposalTarget {
+  nodeId: string
+  nodeName: string
+}
+
 export interface ConversationResolutions {
   /** propose_changes decisions, keyed `${toolCallId}:${changeIndex}` (partial accept). */
   changes: Record<string, ProposalDecision>
@@ -28,10 +35,12 @@ export interface ConversationResolutions {
   creates: Record<string, ProposalDecision>
   /** Accepted changes skipped by the accept-time re-validation gate, by toolCallId. */
   skipped: Record<string, number>
+  /** Proposal-time target page per propose_changes batch, by toolCallId. */
+  targets: Record<string, ProposalTarget>
 }
 
 export function emptyResolutions(): ConversationResolutions {
-  return { changes: {}, creates: {}, skipped: {} }
+  return { changes: {}, creates: {}, skipped: {}, targets: {} }
 }
 
 /** Tolerant parse of a persisted/sent resolutions value — never throws, drops
@@ -49,11 +58,30 @@ export function parseResolutions(value: unknown): ConversationResolutions {
   }
   const isDecision = (x: unknown): x is ProposalDecision => x === 'accepted' || x === 'rejected'
   const isCount = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+  const isTarget = (x: unknown): x is ProposalTarget =>
+    typeof x === 'object' &&
+    x !== null &&
+    typeof (x as ProposalTarget).nodeId === 'string' &&
+    typeof (x as ProposalTarget).nodeName === 'string'
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
     skipped: pick('skipped', isCount),
+    targets: pick('targets', isTarget),
   }
+}
+
+/**
+ * The page an Accept should commit to: the target stamped at proposal time,
+ * else (legacy unstamped card) the currently-open node, else null — meaning
+ * there is nowhere safe to write and every change must count as skipped.
+ */
+export function resolveAcceptTarget(
+  resolutions: ConversationResolutions,
+  toolCallId: string,
+  openNodeId: string | null
+): string | null {
+  return resolutions.targets[toolCallId]?.nodeId ?? openNodeId
 }
 
 type ToolPartLike = {
@@ -98,11 +126,18 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
     )
     if (!decisions.some((d) => d !== 'pending')) return part
     const skipped = resolutions.skipped[part.toolCallId] ?? 0
+    // An accepted-but-skipped change never reached its page. The note must say
+    // so explicitly, or the model reads the acceptance stamp as success and
+    // claims the dropped change landed (blank-slate findings BUG 2).
+    const note =
+      skipped > 0
+        ? `User decision per change, in order. Do not re-propose accepted or rejected changes. IMPORTANT: ${skipped} accepted change${skipped > 1 ? 's' : ''} could NOT be written and ${skipped > 1 ? 'were' : 'was'} NOT applied — do not claim ${skipped > 1 ? 'they' : 'it'} happened. Offer to re-propose when the user has the right page open.`
+        : 'User decision per change, in order. Do not re-propose accepted or rejected changes.'
     return {
       ...part,
       state: 'output-available',
       output: {
-        note: 'User decision per change, in order. Do not re-propose accepted or rejected changes.',
+        note,
         decisions,
         ...(skipped > 0 ? { skippedOnApply: skipped } : {}),
       },

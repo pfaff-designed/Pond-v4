@@ -29,7 +29,11 @@ jest.mock('@/lib/embeddings/retrieve', () => ({
 }))
 jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 
+import { streamText } from 'ai'
 import { POST, parseChatBody } from '@/app/api/chat/route'
+import { NO_OPEN_PAGE_STEERING } from '@/app/api/chat/prompt'
+
+const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>
 
 describe('parseChatBody', () => {
   it('accepts a body with a messages array', () => {
@@ -37,7 +41,7 @@ describe('parseChatBody', () => {
       messages: [],
       nodeId: undefined,
       nodeType: undefined,
-      resolutions: { changes: {}, creates: {}, skipped: {} },
+      resolutions: { changes: {}, creates: {}, skipped: {}, targets: {} },
     })
   })
 
@@ -55,7 +59,7 @@ describe('parseChatBody', () => {
     expect(valid?.resolutions.changes).toEqual({ 'pc1:0': 'accepted' })
 
     const garbage = parseChatBody({ messages: [], resolutions: 'nope' })
-    expect(garbage?.resolutions).toEqual({ changes: {}, creates: {}, skipped: {} })
+    expect(garbage?.resolutions).toEqual({ changes: {}, creates: {}, skipped: {}, targets: {} })
   })
 
   it('rejects a non-object body', () => {
@@ -87,5 +91,40 @@ describe('POST /api/chat body guard', () => {
     })
     const res = await POST(req)
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /api/chat toolset gating (build-brief propose-changes-target)', () => {
+  function post(body: Record<string, unknown>) {
+    return POST(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    )
+  }
+
+  function lastStreamTextArgs() {
+    const call = mockedStreamText.mock.calls.at(-1)
+    expect(call).toBeDefined()
+    return call![0] as unknown as { system: string; tools: Record<string, unknown> }
+  }
+
+  beforeEach(() => mockedStreamText.mockClear())
+
+  it('offers propose_changes when a node is open', async () => {
+    await post({ messages: [], nodeId: 'n1', nodeType: 'project' })
+    const { system, tools } = lastStreamTextArgs()
+    expect(Object.keys(tools)).toContain('propose_changes')
+    expect(system).not.toContain(NO_OPEN_PAGE_STEERING.trim())
+  })
+
+  it('withholds propose_changes and steers when no node is open', async () => {
+    await post({ messages: [] })
+    const { system, tools } = lastStreamTextArgs()
+    expect(Object.keys(tools)).not.toContain('propose_changes')
+    expect(Object.keys(tools)).toEqual(expect.arrayContaining(['create_page', 'fetch_context']))
+    expect(system).toContain(NO_OPEN_PAGE_STEERING.trim())
   })
 })

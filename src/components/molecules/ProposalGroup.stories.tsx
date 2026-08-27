@@ -92,6 +92,16 @@ export const SingleChange: Story = {
   },
 }
 
+/** The stamped proposal target renders above the cards, so an accept is
+ *  auditable before it lands on that page. */
+export const TargetLabel: Story = {
+  args: { targetName: 'Garage → Woodworking Shop Renovation' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('→ Garage → Woodworking Shop Renovation')).toBeInTheDocument()
+  },
+}
+
 /** All resolved: group bar gone, per-card status lines remain as an audit trail. */
 export const AllResolved: Story = {
   args: { statuses: ['accepted', 'rejected', 'accepted'] },

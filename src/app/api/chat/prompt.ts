@@ -36,6 +36,14 @@ The user reviews every proposed change and accepts or rejects it before anything
 - When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
 
 /**
+ * Steering appended when no node is open. The route withholds propose_changes in
+ * that case (there is no valid target page for an edit — build-brief
+ * propose-changes-target, decision 2), and this line makes the model say so
+ * instead of faking the edit through create_page.
+ */
+export const NO_OPEN_PAGE_STEERING = `\n\nNo page is open right now, so proposing changes to existing content is unavailable this turn. If the user asks to change, rewrite, or add to content that already lives on one of their pages, tell them to open that page and ask again. Do NOT route such a request to create_page — creating a new page is not editing an existing one — and never claim an edit was made.`
+
+/**
  * Assemble the final system prompt for a turn: base prompt plus, when present,
  * the assembled workspace context (current node + @mentions). Identical to the
  * inline logic route.ts used before extraction, so the eval can reproduce it.

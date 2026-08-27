@@ -11,12 +11,15 @@ import {
   dissolveConversation,
 } from '@/lib/conversation/client'
 import { performHandoff } from '@/lib/conversation/handoff'
-import type { ConversationResolutions, ProposalDecision } from '@/lib/conversation/resolutions'
+import type {
+  ConversationResolutions,
+  ProposalDecision,
+  ProposalTarget,
+} from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
 import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
 import { toParentOptions } from '@/lib/pages/parent-options'
-import { applyProposedChanges } from '@/lib/pages/edits'
-import { commitBlocks } from '@/lib/pages/commit'
+import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { SavePickerModal } from './SavePickerModal'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
@@ -94,6 +97,9 @@ export function AITerminal() {
   // records how many accepted changes failed the accept-time re-validation gate.
   const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
   const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
+  // Proposal-time target page per batch (BUG 1/2 fix): recorded the moment the
+  // part streams in, so Accept commits there even after the user navigates away.
+  const [changeTargets, setChangeTargets] = useState<Record<string, ProposalTarget>>({})
 
   // create_page decisions + the user-chosen destination, keyed by toolCallId. Same
   // no-execute caveat as propose_changes: the local maps (not the SDK part) drive
@@ -117,12 +123,14 @@ export function AITerminal() {
       changes: settled(changeDecisions),
       creates: settled(createDecisions),
       skipped: changeSkipped,
+      targets: changeTargets,
     }
-  }, [changeDecisions, createDecisions, changeSkipped])
+  }, [changeDecisions, createDecisions, changeSkipped, changeTargets])
 
   const resetResolutions = useCallback(() => {
     setChangeDecisions({})
     setChangeSkipped({})
+    setChangeTargets({})
     setCreateDecisions({})
     setCreateParent({})
   }, [])
@@ -200,6 +208,7 @@ export function AITerminal() {
       // (inert) instead of re-arming with live buttons (ticket-19).
       setChangeDecisions(conversation.resolutions.changes)
       setChangeSkipped(conversation.resolutions.skipped)
+      setChangeTargets(conversation.resolutions.targets)
       setCreateDecisions(conversation.resolutions.creates)
       setIsReady(true)
     })
@@ -214,6 +223,34 @@ export function AITerminal() {
       saveTranscript(supabase, conversationId, messages, resolutions).catch(console.error)
     }
   }, [status, conversationId, messages, resolutions])
+
+  // ── Stamp proposal targets on stream ──────────────────────────────────────
+  // The moment a propose_changes part finishes streaming, record which page it
+  // was proposed against. Accept later commits to this stamped id regardless of
+  // where the user has navigated (BUG 1/2). Persistence rides the transcript-save
+  // effect above via the `resolutions` projection. No node open → no stamp; that
+  // can't happen once the route stops offering the tool without a nodeId, but
+  // guard anyway (an unstamped card falls back to legacy open-node behavior).
+  useEffect(() => {
+    // Require the name too: a stamp with an empty name would render the current
+    // context label on a card that commits elsewhere — worse than no stamp.
+    if (!nodeId || !nodeName) return
+    const unstamped = messages
+      .flatMap((m) => m.parts as Array<{ type: string }>)
+      .filter(isProposeChangesPart)
+      .filter((p) => p.state === 'input-available' && !changeTargets[p.toolCallId])
+    if (unstamped.length === 0) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- records the arrival of streamed tool parts (an external-system event), not a derived-state computation; guarded to fire once per toolCallId
+    setChangeTargets((prev) => {
+      const next = { ...prev }
+      for (const part of unstamped) {
+        if (!next[part.toolCallId]) {
+          next[part.toolCallId] = { nodeId, nodeName }
+        }
+      }
+      return next
+    })
+  }, [messages, nodeId, nodeName, changeTargets])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -297,25 +334,10 @@ export function AITerminal() {
 
   // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
   // The generalized Accept path: mint ids for the accepted batch, apply it, and
-  // re-seed the open page. This is also the accept-time re-validation gate —
+  // commit to the batch's stamped target page (writeAcceptedChanges in
+  // lib/pages/accept.ts). This is also the accept-time re-validation gate —
   // applyProposedChanges skips anything that fails blockSchema, so the returned
   // `skipped` count surfaces a "couldn't apply" notice rather than a corrupt write.
-  const writeAcceptedChanges = useCallback(
-    async (changes: ModuleChange[]): Promise<number> => {
-      if (!nodeId || changes.length === 0) return 0
-      const page = await getPage(supabaseClient, nodeId)
-      if (!page) return 0
-      const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID())
-      await commitBlocks(supabaseClient, queryClient, nodeId, result.blocks)
-      // External write to the open page — invalidate ['page'] so the DocumentPanel
-      // refetches and adopts the new blocks (commitBlocks leaves that cache alone
-      // precisely so this stays the caller's decision).
-      await queryClient.invalidateQueries({ queryKey: ['page', nodeId] })
-      return result.skipped
-    },
-    [nodeId, supabaseClient, queryClient]
-  )
-
   const decideChanges = useCallback(
     (toolCallId: string, indices: number[], decision: ProposalStatus) => {
       setChangeDecisions((prev) => {
@@ -331,12 +353,19 @@ export function AITerminal() {
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
       if (indices.length === 0) return
       decideChanges(toolCallId, indices, 'accepted')
-      const skipped = await writeAcceptedChanges(indices.map((i) => allChanges[i]))
+      const skipped = await writeAcceptedChanges({
+        supabase: supabaseClient,
+        queryClient,
+        resolutions,
+        toolCallId,
+        openNodeId: nodeId,
+        changes: indices.map((i) => allChanges[i]),
+      })
       if (skipped > 0) {
         setChangeSkipped((prev) => ({ ...prev, [toolCallId]: (prev[toolCallId] ?? 0) + skipped }))
       }
     },
-    [decideChanges, writeAcceptedChanges]
+    [decideChanges, supabaseClient, queryClient, resolutions, nodeId]
   )
 
   // Edit: accept the change, then jump to its block in the document panel to keep
@@ -462,6 +491,7 @@ export function AITerminal() {
                       <ProposalGroup
                         changes={previews}
                         statuses={statuses}
+                        targetName={changeTargets[part.toolCallId]?.nodeName || contextLabel}
                         onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
                         onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
                         onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}

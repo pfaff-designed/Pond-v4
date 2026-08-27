@@ -20,6 +20,7 @@ import {
   applyResolutions,
   parseResolutions,
   emptyResolutions,
+  resolveAcceptTarget,
   type ConversationResolutions,
 } from '@/lib/conversation/resolutions'
 import { toModelMessages } from '@/lib/conversation/transcript'
@@ -97,6 +98,28 @@ describe('applyResolutions', () => {
     })
   })
 
+  it('a skipped batch reads as NOT applied, not as success (BUG 2)', () => {
+    const out = applyResolutions(proposalTranscript(), {
+      ...emptyResolutions(),
+      changes: { 'pc1:0': 'accepted', 'pc1:1': 'accepted' },
+      skipped: { pc1: 2 },
+    })
+    const output = findPart(out, 'pc1').output as { note: string; skippedOnApply: number }
+    expect(output.skippedOnApply).toBe(2)
+    expect(output.note).toMatch(/NOT applied/)
+    expect(output.note).toMatch(/do not (claim|tell)/i)
+    expect(output.note).toMatch(/re-propose/i)
+  })
+
+  it('a fully-applied batch keeps the plain decision note', () => {
+    const out = applyResolutions(proposalTranscript(), {
+      ...emptyResolutions(),
+      changes: { 'pc1:0': 'accepted' },
+    })
+    const output = findPart(out, 'pc1').output as { note: string }
+    expect(output.note).not.toMatch(/NOT applied/)
+  })
+
   it('does not mutate the input messages', () => {
     const messages = proposalTranscript()
     applyResolutions(messages, { ...emptyResolutions(), creates: { cp1: 'accepted' } })
@@ -143,6 +166,7 @@ describe('parseResolutions', () => {
       changes: { 'pc1:0': 'accepted' },
       creates: { cp1: 'rejected' },
       skipped: { pc1: 2 },
+      targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
     }
     expect(parseResolutions(value)).toEqual(value)
   })
@@ -158,11 +182,46 @@ describe('parseResolutions', () => {
       changes: { a: 'accepted', b: 'maybe', c: 7 },
       creates: 'nope',
       skipped: { x: 1, y: 'lots', z: NaN },
+      targets: {
+        good: { nodeId: 'n1', nodeName: 'Garage' },
+        noName: { nodeId: 'n2' },
+        noId: { nodeName: 'Shed' },
+        junk: 'nope',
+      },
     })
     expect(parsed).toEqual({
       changes: { a: 'accepted' },
       creates: {},
       skipped: { x: 1 },
+      targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
     })
+  })
+
+  it('legacy value with no targets parses to an empty targets map', () => {
+    const parsed = parseResolutions({ changes: {}, creates: {}, skipped: {} })
+    expect(parsed.targets).toEqual({})
+  })
+})
+
+describe('resolveAcceptTarget', () => {
+  const withTarget: ConversationResolutions = {
+    ...emptyResolutions(),
+    targets: { pc1: { nodeId: 'stamped-id', nodeName: 'Garage' } },
+  }
+
+  it('returns the stamped target id when one is recorded', () => {
+    expect(resolveAcceptTarget(withTarget, 'pc1', 'open-id')).toBe('stamped-id')
+  })
+
+  it('stamped target wins even when a different node is open', () => {
+    expect(resolveAcceptTarget(withTarget, 'pc1', 'somewhere-else')).toBe('stamped-id')
+  })
+
+  it('falls back to the open node when unstamped (legacy cards)', () => {
+    expect(resolveAcceptTarget(emptyResolutions(), 'pc1', 'open-id')).toBe('open-id')
+  })
+
+  it('returns null when unstamped and no node is open', () => {
+    expect(resolveAcceptTarget(emptyResolutions(), 'pc1', null)).toBeNull()
   })
 })

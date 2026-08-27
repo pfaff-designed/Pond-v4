@@ -11,7 +11,7 @@ import {
 } from '@/lib/conversation/resolutions'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
-import { buildSystemPrompt } from './prompt'
+import { buildSystemPrompt, NO_OPEN_PAGE_STEERING } from './prompt'
 import { createPageTool, proposeChangesTool, fetchContextTool } from './tools'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import type { NodeType } from '@/lib/supabase/types'
@@ -84,6 +84,11 @@ export async function POST(req: Request) {
       system = buildSystemPrompt(context)
     }
   }
+  // No open node → propose_changes is withheld below; steer the model to say
+  // "open that page and ask again" instead of faking the edit via create_page.
+  if (!nodeId) {
+    system += NO_OPEN_PAGE_STEERING
+  }
 
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
@@ -105,7 +110,9 @@ export async function POST(req: Request) {
     repairToolCall: makeRepairToolCall(),
     tools: {
       create_page: tool(createPageTool),
-      propose_changes: tool(proposeChangesTool),
+      // propose_changes edits the CURRENT page — with no node open there is no
+      // valid target, so the tool is withheld entirely (build-brief decision 2).
+      ...(nodeId ? { propose_changes: tool(proposeChangesTool) } : {}),
       fetch_context: tool({
         ...fetchContextTool,
         execute: async ({ query }) => {

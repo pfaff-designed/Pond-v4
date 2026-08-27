@@ -24,6 +24,9 @@ interface ProposalGroupProps {
   changes: ChangePreview[]
   /** Decision per change, index-aligned with `changes`. */
   statuses: ProposalStatus[]
+  /** Name of the page this batch writes to on accept (the stamped proposal
+   *  target), so an accept is auditable before it lands. */
+  targetName?: string
   onAccept: (index: number) => void
   onReject: (index: number) => void
   onEdit: (index: number) => void
@@ -35,6 +38,7 @@ interface ProposalGroupProps {
 export function ProposalGroup({
   changes,
   statuses,
+  targetName,
   onAccept,
   onReject,
   onEdit,
@@ -52,6 +56,7 @@ export function ProposalGroup({
       aria-label={`${changes.length} proposed changes`}
       className={cn('space-y-2', className)}
     >
+      {targetName && <div className="text-xs font-medium text-zinc-500">→ {targetName}</div>}
       {showGroupBar && (
         <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5">
           <span className="text-xs font-medium text-zinc-500">
