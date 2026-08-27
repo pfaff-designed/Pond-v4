@@ -20,6 +20,7 @@ import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import { pageAccent } from '@/lib/pages/accent'
+import { ancestorPath } from '@/lib/pages/overview'
 import {
   countDescendants,
   subtreeIds,
@@ -297,6 +298,36 @@ export function Rail() {
 
   const tree = useMemo(() => buildTree(pages), [pages])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // ── Rail follows you (ticket-25) ────────────────────────────────────────────
+  // When the selection changes — via a rail click, an overview card, the
+  // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
+  // the path to the current node so it's revealed and its ancestors highlight.
+  // We reveal a given selection exactly once (tracked by ref) so a manual
+  // re-collapse afterward isn't fought: collapsing a folder changes neither the
+  // selection nor the rows, so this effect stays quiet until you navigate again.
+  // A page created via chat lands in the URL before ['pages'] refetches, so the
+  // effect also depends on `pages` and reveals once the new node's ancestors
+  // become resolvable.
+  const revealedForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedNodeId) {
+      revealedForRef.current = null
+      return
+    }
+    if (selectedNodeId === revealedForRef.current) return
+    // Wait until the node itself is present so its ancestor chain is resolvable.
+    if (!pages.some((r) => r.id === selectedNodeId)) return
+    const ancestors = ancestorPath(pages, selectedNodeId).map((c) => c.id)
+    revealedForRef.current = selectedNodeId
+    if (ancestors.length === 0) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reveals the path in response to an external navigation (URL ?nodeId, incl. chat/＋ creation), guarded to fire once per selection; not a derived-state computation
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const id of ancestors) next.add(id)
+      return next
+    })
+  }, [selectedNodeId, pages])
 
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
   // commit time via this ref, not the render-time closure value.

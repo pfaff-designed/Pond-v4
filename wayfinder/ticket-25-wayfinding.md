@@ -1,7 +1,7 @@
 ---
 id: 25
 label: ux-audit:finding
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
@@ -42,3 +42,49 @@ workflow).
 ## Origin
 
 Hands-on UX audit, 2026-08-27 (`~/ux-01-life-overview.png`, `~/ux-02-leaf-page.png`).
+
+## Resolution (2026-08-27)
+
+Built on ticket-22/24/27 without regressing them. Three parts:
+
+**1. Breadcrumb (new molecule).** `src/components/molecules/Breadcrumb.tsx`
+(+ story + story test) — `Life › Health › Workout Routines`, every ancestor a
+click target, `Life` navigates home. Path derived from the parent_id chain via
+a new pure `ancestorPath(rows, nodeId)` in `lib/pages/overview.ts` (returns the
+chain root→parent, cycle-guarded). Integrated two ways:
+
+- **Overview surfaces** (Life root + area): breadcrumb replaces the bare
+  kicker label; the current node is the non-clickable tail. Life reads just
+  "Life". `OverviewSurface` gained optional `crumbs`/`onNavigateCrumb`/`current`
+  props (plain-kicker fallback keeps the existing story green). New shared
+  `useNavigateCrumb(rows)` hook resolves a crumb id → the same URL params a
+  rail click emits.
+- **Editor header** (`DocumentPanel`): breadcrumb shows only the ANCESTOR path
+  above the title; the editable title input stays the tail, so no duplication.
+
+**2. Rail follows you.** `Rail` gained a selection-reactive reveal effect: when
+`?nodeId` changes — via rail click, overview card, breadcrumb, OR a page created
+through chat / ＋ — it auto-expands every folder on the path to the current node
+(ancestors via `ancestorPath`) and the node highlights. Guarded by a
+`revealedForRef` so a selection is revealed **once**; a later manual re-collapse
+isn't fought (collapsing changes neither selection nor rows). Depends on `pages`
+too, so a chat-created node (URL lands before the `['pages']` refetch) is
+revealed as soon as its ancestors resolve. Scoped strictly to expand/highlight —
+no touch to creation (ticket-26) or deletion (ticket-27) logic.
+
+**3. One honest counting rule.** LOCKED: a **content page** = any node whose
+`type !== 'area'`. Areas are the shell (the rail renders `type='area'` as a
+folder); they organise content but aren't counted as "a page across your life".
+Every headline number excludes areas; subtree walks still descend through nested
+areas to count _their_ content. Where direct children and deeper descendants
+differ, the phrase is explicit: `"2 pages · 1 nested"` (direct · nested-below);
+when flat, `"N pages inside"`. Applied coherently to the Life focal, the area
+overview focal, and every card stat/sub via rewritten `contentDescendants` /
+`directContentChildren` derivations and a shared `insideLabel(direct, total)`.
+Fixes both reported lies (Life counting the 5 areas; a card saying "2 pages
+inside" while showing 1). Jest-covered in `overview-model.test.ts` (counting
+rule, nested phrasing, singular captions, `ancestorPath`).
+
+**Validation:** `npm run typecheck` clean; `npm test` 369 passed (35 suites);
+`npm run test-storybook` 80 passed (20 files, incl. 4 new Breadcrumb stories);
+eslint clean on all touched files.
