@@ -118,14 +118,16 @@ export function DocumentPanel() {
   // ── Empty / loading states ─────────────────────────────────────────────────
   if (!nodeId) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-zinc-400">
+      <div className="h-full flex items-center justify-center text-sm text-press-faint">
         Select a page to view or edit it
       </div>
     )
   }
   if (isLoading || !page) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-zinc-400">Loading…</div>
+      <div className="h-full flex items-center justify-center text-sm text-press-faint">
+        Loading…
+      </div>
     )
   }
 
@@ -135,13 +137,13 @@ export function DocumentPanel() {
       <div className="max-w-2xl mx-auto px-8 py-8">
         <div className="flex items-center justify-between gap-3 mb-4">
           <input
-            className="flex-1 text-2xl font-semibold text-zinc-900 outline-none bg-transparent placeholder:text-zinc-300"
+            className="flex-1 text-2xl font-semibold text-foreground outline-none bg-transparent placeholder:text-press-faint"
             value={title}
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
           />
-          <span className="text-xs text-zinc-400 flex-shrink-0" aria-live="polite">
+          <span className="text-xs text-muted-foreground flex-shrink-0" aria-live="polite">
             {saved ? 'Saved' : 'Saving…'}
           </span>
         </div>
@@ -157,7 +159,10 @@ export function DocumentPanel() {
           ))}
         </div>
 
-        <button className="mt-4 text-sm text-zinc-400 hover:text-zinc-700" onClick={addTextBlock}>
+        <button
+          className="mt-4 text-sm text-muted-foreground hover:text-foreground"
+          onClick={addTextBlock}
+        >
           + Add text
         </button>
       </div>
@@ -186,7 +191,7 @@ function BlockEditor({
   return (
     <div className="group relative" id={`block-${block.id}`}>
       <button
-        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-zinc-300 hover:text-red-600 text-sm"
+        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm"
         title="Delete block"
         aria-label="Delete block"
         onClick={onRemove}

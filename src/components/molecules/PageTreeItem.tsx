@@ -48,13 +48,13 @@ export function PageTreeItem({
     <div>
       <div
         className={`group flex items-center gap-1 pr-2 rounded transition-colors ${
-          isSelected ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-700 hover:bg-zinc-100'
+          isSelected ? 'bg-accent text-foreground' : 'text-press-body hover:bg-press-accent-wash'
         }`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
       >
         {/* expand / collapse chevron (only when there are children) */}
         <button
-          className={`w-4 flex-shrink-0 text-xs text-zinc-400 hover:text-zinc-700 ${
+          className={`w-4 flex-shrink-0 text-xs text-press-faint hover:text-foreground ${
             hasChildren ? '' : 'invisible'
           }`}
           aria-label={isExpanded ? 'Collapse' : 'Expand'}
@@ -74,7 +74,7 @@ export function PageTreeItem({
 
         {/* hover actions */}
         <button
-          className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-700 text-sm leading-none px-0.5 disabled:opacity-30"
+          className="opacity-0 group-hover:opacity-100 text-press-faint hover:text-foreground text-sm leading-none px-0.5 disabled:opacity-30"
           title="Add sub-page"
           aria-label={`Add sub-page to ${node.title || 'Untitled'}`}
           disabled={isBusy}
@@ -83,7 +83,7 @@ export function PageTreeItem({
           +
         </button>
         <button
-          className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-600 text-sm leading-none px-0.5 disabled:opacity-30"
+          className="opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm leading-none px-0.5 disabled:opacity-30"
           title="Delete page"
           aria-label={`Delete ${node.title || 'Untitled'}`}
           disabled={isBusy}

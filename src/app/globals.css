@@ -7,9 +7,29 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Press type set (loaded in the root layout); fallbacks cover contexts that
+     don't render the root layout, e.g. Storybook. */
+  --font-sans: var(--font-press-sans, Inter, ui-sans-serif, system-ui, sans-serif);
+  --font-serif: var(--font-press-serif, Fraunces, Georgia, serif);
+  --font-mono: var(--font-press-mono, 'JetBrains Mono', ui-monospace, monospace);
+  --font-display: var(--font-press-display, 'Instrument Serif', Georgia, serif);
   --font-heading: var(--font-sans);
+  /* Press chrome tokens — bg-press-paper, text-press-ink, border-press-line, … */
+  --color-press-paper: var(--press-paper);
+  --color-press-ink: var(--press-ink);
+  --color-press-body: var(--press-body);
+  --color-press-muted: var(--press-muted);
+  --color-press-faint: var(--press-faint);
+  --color-press-line: var(--press-line);
+  --color-press-hair: var(--press-hair);
+  --color-press-card: var(--press-card);
+  --color-press-accent: var(--press-accent);
+  --color-press-accent-soft: var(--press-accent-soft);
+  --color-press-accent-wash: var(--press-accent-wash);
+  --color-press-lime: var(--press-lime);
+  --color-press-lime-ink: var(--press-lime-ink);
+  --color-press-rust: var(--press-rust);
+  --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -70,38 +90,55 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* ── Press palette (R6, locked) — the source values every token maps from ── */
+  --press-paper: #efeae0; /* warm paper base */
+  --press-ink: #211f1b; /* richest ink */
+  --press-body: rgba(33, 31, 27, 0.8);
+  --press-muted: rgba(33, 31, 27, 0.52);
+  --press-faint: rgba(33, 31, 27, 0.3);
+  --press-line: rgba(33, 31, 27, 0.09);
+  --press-hair: rgba(33, 31, 27, 0.055); /* even fainter — the calm divider */
+  --press-card: #faf8f2; /* near-white module surface */
+  --press-accent: #5f7355; /* sage — ambient tint */
+  --press-accent-soft: rgba(95, 115, 85, 0.12);
+  --press-accent-wash: rgba(95, 115, 85, 0.06);
+  --press-lime: #c4e08a; /* the single primary-action color */
+  --press-lime-ink: #2c3a17;
+  --press-rust: #c2632f; /* rare punctuation only */
+
+  /* ── shadcn semantic tokens, mapped onto Press ── */
+  --background: var(--press-paper);
+  --foreground: var(--press-ink);
+  --card: var(--press-card);
+  --card-foreground: var(--press-ink);
+  --popover: var(--press-card);
+  --popover-foreground: var(--press-ink);
+  --primary: var(--press-lime);
+  --primary-foreground: var(--press-lime-ink);
+  --secondary: var(--press-accent-wash);
+  --secondary-foreground: var(--press-ink);
+  --muted: var(--press-accent-wash);
+  --muted-foreground: var(--press-muted);
+  --accent: var(--press-accent-soft);
+  --accent-foreground: var(--press-ink);
+  --destructive: var(--press-rust);
+  --border: var(--press-line);
+  --input: var(--press-line);
+  --ring: var(--press-accent);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--press-paper);
+  --sidebar-foreground: var(--press-ink);
+  --sidebar-primary: var(--press-accent);
+  --sidebar-primary-foreground: var(--press-card);
+  --sidebar-accent: var(--press-accent-soft);
+  --sidebar-accent-foreground: var(--press-ink);
+  --sidebar-border: var(--press-line);
+  --sidebar-ring: var(--press-accent);
   --chart-background: oklch(1 0 0);
   --chart-foreground: oklch(0.145 0.004 285);
   --chart-foreground-muted: oklch(0.55 0.014 260);

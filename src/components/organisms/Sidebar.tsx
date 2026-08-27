@@ -178,11 +178,11 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 border-r border-zinc-200 flex flex-col h-full bg-zinc-50">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
-        <span className="text-sm font-semibold text-zinc-800">Pond</span>
+    <aside className="w-64 flex-shrink-0 border-r border-border flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span className="text-sm font-semibold text-foreground">Pond</span>
         <button
-          className="text-zinc-400 hover:text-zinc-700 text-lg leading-none disabled:opacity-40"
+          className="text-muted-foreground hover:text-foreground text-lg leading-none disabled:opacity-40"
           title="New page"
           aria-label="New page"
           disabled={busyId !== null}
@@ -192,9 +192,9 @@ export function Sidebar() {
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
-        {isLoading && <p className="px-4 text-xs text-zinc-400">Loading…</p>}
+        {isLoading && <p className="px-4 text-xs text-press-faint">Loading…</p>}
         {!isLoading && pages.length === 0 && (
-          <p className="px-4 text-xs text-zinc-400">Setting up your workspace…</p>
+          <p className="px-4 text-xs text-press-faint">Setting up your workspace…</p>
         )}
         {tree.map((node) => (
           <PageTreeItem
