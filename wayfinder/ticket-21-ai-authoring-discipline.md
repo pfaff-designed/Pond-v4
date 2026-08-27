@@ -63,8 +63,11 @@ the new `src/lib/modules/authoring-lint.ts`:
   Deliberately specific: prose that merely contains a `|` (or several) with no
   separator rule is never flagged.
 - `isTitleEchoHeading(content, title)` — flags a first-line `#`/`##`… heading whose
-  normalized text (emoji + markdown marks stripped, case/whitespace-folded) equals
-  the page title.
+  normalized text (emoji — including U+FE0F/U+200D sequence joiners — and markdown
+  marks stripped, case/whitespace-folded) equals the page title. Also flags a block
+  that is NOTHING but a bold/emphasis-wrapped title echo (`**Fall Reading List**`,
+  the likeliest dodge once the `#` form is rejected); whole-block match only, so
+  prose that merely starts bold is never flagged.
 
 These are wired as **Zod refinements on the real tool schemas** (t16 branch 7), not
 a bespoke check: the pipe-table refinement lives on the `text` variant of

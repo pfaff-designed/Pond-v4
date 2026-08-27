@@ -101,6 +101,30 @@ describe('isTitleEchoHeading — positive (should flag)', () => {
     const md = '# Workshop Tools\nEverything in the garage shop.'
     expect(isTitleEchoHeading(md, 'Workshop Tools')).toBe(true)
   })
+
+  it('an emoji with a variation selector (U+FE0F) echoing the title', () => {
+    // "✏️" = U+270F U+FE0F — the selector is NOT Extended_Pictographic and must
+    // be stripped too, or the comparison silently fails (found live).
+    expect(isTitleEchoHeading('## ✏️ Fall Reading List', 'Fall Reading List')).toBe(true)
+  })
+
+  it('a ZWJ emoji sequence (U+200D) echoing the title', () => {
+    // "🏋️‍♂️" = 🏋 + FE0F + ZWJ + ♂ + FE0F — joiners must be stripped (found live).
+    expect(isTitleEchoHeading('## 🏋️‍♂️ Workout Log', 'Workout Log')).toBe(true)
+  })
+
+  it('a bold-only first block echoing the title (no `#`)', () => {
+    // The likeliest dodge once the heading form is rejected.
+    expect(isTitleEchoHeading('**Fall Reading List**', 'Fall Reading List')).toBe(true)
+  })
+
+  it('an italic-only first block echoing the title', () => {
+    expect(isTitleEchoHeading('_Fall Reading List_', 'Fall Reading List')).toBe(true)
+  })
+
+  it('a bold echo with an emoji inside the emphasis', () => {
+    expect(isTitleEchoHeading('**📚 Fall Reading List**', 'Fall Reading List')).toBe(true)
+  })
 })
 
 describe('isTitleEchoHeading — negative (must NOT flag)', () => {
@@ -122,6 +146,22 @@ describe('isTitleEchoHeading — negative (must NOT flag)', () => {
 
   it('an empty title never matches', () => {
     expect(isTitleEchoHeading('## Anything', '')).toBe(false)
+  })
+
+  it('prose that merely STARTS with a bold echo of the title', () => {
+    expect(
+      isTitleEchoHeading('**Fall Reading List** is my plan for autumn.', 'Fall Reading List')
+    ).toBe(false)
+  })
+
+  it('a bold echo line followed by real content is not a whole-block echo', () => {
+    expect(
+      isTitleEchoHeading('**Fall Reading List**\nA running list of books.', 'Fall Reading List')
+    ).toBe(false)
+  })
+
+  it('a bold-only block whose text differs from the title', () => {
+    expect(isTitleEchoHeading('**To read first**', 'Fall Reading List')).toBe(false)
   })
 })
 

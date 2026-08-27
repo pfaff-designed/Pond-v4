@@ -83,33 +83,53 @@ export function isMarkdownPipeTable(content: string): boolean {
   return hasHeader && hasBody
 }
 
-/** Strip a single leading emoji / symbol run and surrounding whitespace, then
- *  lowercase — so "## 📚 Fall Reading List" and "Fall Reading List" compare equal. */
+/**
+ * Normalize for title comparison: strip markdown marks (#, *, _, `) and emoji
+ * ANYWHERE in the string, collapse whitespace, and lowercase — so
+ * "## 📚 Fall Reading List" and "Fall Reading List" compare equal. Emoji stripping
+ * must include the invisible sequence characters (U+FE0F variation selector,
+ * U+200D ZWJ) that Extended_Pictographic does NOT cover — "✏️" and "🏋️‍♂️" carry
+ * them, and a survivor would defeat the echo comparison.
+ */
 function normalizeHeadingText(s: string): string {
   return s
     .replace(/[#*_`]/g, '') // markdown emphasis/heading marks
-    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '') // emoji
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D]/gu, '') // emoji + joiners
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase()
 }
 
 /**
- * Is `content` a markdown heading whose text echoes `title`?
+ * Is `content` a heading-shaped block whose text echoes `title`?
  *
  * The observed anti-pattern: an AI-created page's FIRST block is a text block
  * `## 📚 Fall Reading List` sitting directly under the page title "Fall Reading
- * List". A heading is a line beginning with `#`; a leading emoji is ignored. We only
- * flag when the heading's normalized text EQUALS the normalized title (title echo),
- * never a heading that merely mentions the title inside a longer line.
+ * List". Two heading shapes are recognized:
+ *   1. A markdown heading — a first line beginning with `#` (emoji ignored).
+ *   2. A bold/emphasis-only echo — the WHOLE block is nothing but an
+ *      emphasis-wrapped title (`**Fall Reading List**`), the model's likeliest
+ *      dodge once the `#` form is rejected. Whole-block match only: prose that
+ *      merely STARTS bold, or a bold line followed by real content, is never
+ *      flagged.
+ * In both shapes we only flag when the normalized text EQUALS the normalized
+ * title (title echo), never a line that merely mentions the title.
  */
 export function isTitleEchoHeading(content: string, title: string): boolean {
-  const firstLine = content.split('\n')[0] ?? ''
-  const trimmed = firstLine.trim()
-  if (!trimmed.startsWith('#')) return false
-  // Strip the leading `#` run to get the heading text.
-  const headingBody = trimmed.replace(/^#+\s*/, '')
   const t = normalizeHeadingText(title)
   if (t.length === 0) return false
-  return normalizeHeadingText(headingBody) === t
+
+  const firstLine = (content.split('\n')[0] ?? '').trim()
+  if (firstLine.startsWith('#')) {
+    // Strip the leading `#` run to get the heading text.
+    return normalizeHeadingText(firstLine.replace(/^#+\s*/, '')) === t
+  }
+
+  // Bold/emphasis-only echo: the ENTIRE block (not just its first line) must be a
+  // single emphasis-wrapped run — `*…*`, `**…**`, `_…_`, etc. — whose text is the
+  // title. The `$` anchor plus non-dotall `.` guarantee whole-block, single-line.
+  const emphasisOnly = /^([*_]{1,3})(.+)\1$/.exec(content.trim())
+  if (emphasisOnly) return normalizeHeadingText(emphasisOnly[2]) === t
+
+  return false
 }

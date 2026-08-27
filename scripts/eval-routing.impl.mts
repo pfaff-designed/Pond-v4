@@ -26,7 +26,9 @@ import {
   proposeChangesTool,
   fetchContextTool,
 } from '../src/app/api/chat/tools.ts'
-import { isTitleEchoHeading } from '../src/lib/modules/authoring-lint.ts'
+// The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
+// re-implemented, so the eval's tells and the gate can't drift.
+import { isMarkdownPipeTable, isTitleEchoHeading } from '../src/lib/modules/authoring-lint.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
@@ -59,9 +61,6 @@ type Scenario = {
    *  page title (ticket-21 — AI authoring discipline). */
   expectNoTitleEcho?: boolean
 }
-
-/** Markdown-table tell: a pipe row followed by a |---|---| separator row. */
-const MD_TABLE_RE = /\|[^\n]*\|[^\n]*\n[^\n]*\|[\s:|-]+\|/
 
 // The 8 original proto cases (two of them — the ambiguous index case and the
 // create-project collision — carry the routing verdicts the proto observed), plus
@@ -283,7 +282,7 @@ async function runOne(s: Scenario): Promise<Result> {
     }
     if (pass && s.expectNoMdTableInText) {
       pass = !(input.blocks ?? []).some(
-        (b) => b.type === 'text' && MD_TABLE_RE.test(b.content ?? '')
+        (b) => b.type === 'text' && isMarkdownPipeTable(b.content ?? '')
       )
     }
     if (pass && s.expectNoTitleEcho) {
