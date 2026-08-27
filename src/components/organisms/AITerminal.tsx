@@ -13,6 +13,7 @@ import {
 import { performHandoff } from '@/lib/conversation/handoff'
 import type { ConversationResolutions, ProposalDecision } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { toParentOptions } from '@/lib/pages/parent-options'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { commitBlocks } from '@/lib/pages/commit'
 import { createPageFromProposal } from '@/lib/pages/create-page'
@@ -147,10 +148,9 @@ export function AITerminal() {
       return user ? listPages(supabaseClient, user.id) : []
     },
   })
-  const parentOptions: ParentOption[] = useMemo(
-    () => allPages.map((p) => ({ id: p.id, title: p.title })),
-    [allPages]
-  )
+  // Duplicate titles are disambiguated with their ancestor path (and type as a
+  // tie-break) so "Woodworking" ×2 are tellable apart in the picker.
+  const parentOptions: ParentOption[] = useMemo(() => toParentOptions(allPages), [allPages])
   // Resolve an AI-proposed parent title (or id) to a selectable option id.
   const resolveProposedParent = useCallback(
     (parentTitle?: string | null): string => {
