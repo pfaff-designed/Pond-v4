@@ -20,13 +20,21 @@ import { ModuleView } from '@/lib/modules/renderers'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
+import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+
+/** A short, human label for a block in the undo toast ("Deleted text block"). */
+function blockLabel(block: Block): string {
+  const type = (block as { type?: string }).type ?? 'block'
+  return `Deleted ${type} block`
+}
 
 export function DocumentPanel() {
   const searchParams = useSearchParams()
   const nodeId = searchParams.get('nodeId')
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
+  const { stageDeletion, toastStack } = useDeletionUndo()
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', nodeId],
@@ -111,7 +119,30 @@ export function DocumentPanel() {
   }
 
   function removeBlockAt(index: number) {
-    commitLocalEdit(blocks.filter((_, i) => i !== index))
+    // Optimistically drop the block (this schedules the debounced save, so the
+    // removal persists) and offer an undo toast that re-inserts it at its
+    // original index. The write isn't held back — instead undo re-adds the block
+    // and re-saves; the grace window is the user's chance to catch a misclick.
+    const removed = blocks[index]
+    if (!removed) return
+    setBlocks((current) => {
+      const next = current.filter((_, i) => i !== index)
+      scheduleSave(title, next)
+      return next
+    })
+    stageDeletion({
+      message: blockLabel(removed),
+      commit: () => {},
+      undo: () => {
+        setBlocks((current) => {
+          // Re-insert at the original index (clamped, in case the array shifted).
+          const at = Math.min(index, current.length)
+          const next = [...current.slice(0, at), removed, ...current.slice(at)]
+          scheduleSave(title, next)
+          return next
+        })
+      },
+    })
   }
 
   function addTextBlock() {
@@ -175,6 +206,7 @@ export function DocumentPanel() {
           + Add text
         </button>
       </div>
+      {toastStack}
     </div>
   )
 }
@@ -200,7 +232,7 @@ function BlockEditor({
   return (
     <div className="group relative" id={blockDomId(block.id)}>
       <button
-        className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm"
+        className="absolute -left-5 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
         title="Delete block"
         aria-label="Delete block"
         onClick={onRemove}
