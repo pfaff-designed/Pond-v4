@@ -22,6 +22,12 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { SavePickerModal } from './SavePickerModal'
+import {
+  TerminalDrawer,
+  TERMINAL_DEFAULT_HEIGHT,
+  TERMINAL_MAX_HEIGHT,
+  clampTerminalHeight,
+} from '@/components/molecules/TerminalDrawer'
 import { Markdown } from '@/components/atoms/Markdown'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import {
@@ -35,6 +41,13 @@ import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
+
+// Remembered drawer ergonomics (ticket-24).
+const TERMINAL_HEIGHT_KEY = 'pond:terminal-height'
+const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
+// When a proposal card arrives the drawer auto-grows to at least this so the
+// user can review create-page/diff cards without inner scrolling.
+const PROPOSAL_MIN_HEIGHT = 460
 
 /** A propose_changes tool part — the generalized composition batch (t16 Phase 5). */
 interface ProposeChangesPart {
@@ -186,14 +199,73 @@ export function AITerminal() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
+  // ── Drawer ergonomics (ticket-24) ─────────────────────────────────────────
+  // Height + collapse are user-controlled and remembered across sessions. The
+  // drawer is a flex sibling of the main panel, so shrinking/collapsing it hands
+  // the space back to the content above — it never overlays what's being read.
+  const [drawerHeight, setDrawerHeight] = useState(TERMINAL_DEFAULT_HEIGHT)
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  // Restore persisted height/collapse on mount (client-only; avoids SSR hydration skew).
+  useEffect(() => {
+    try {
+      const h = window.localStorage.getItem(TERMINAL_HEIGHT_KEY)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
+      if (h) setDrawerHeight(clampTerminalHeight(Number(h)))
+      setIsCollapsed(window.localStorage.getItem(TERMINAL_COLLAPSED_KEY) === '1')
+    } catch {
+      /* localStorage unavailable — fall back to defaults */
+    }
+  }, [])
+  const commitHeight = useCallback((h: number) => {
+    setDrawerHeight(h)
+    try {
+      window.localStorage.setItem(TERMINAL_HEIGHT_KEY, String(h))
+    } catch {
+      /* ignore persistence failures */
+    }
+  }, [])
+  const toggleCollapsed = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(TERMINAL_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return next
+    })
+  }, [])
+
   // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
+  // Robustness (ticket-24): a *collapsed* input is unmounted, so a synchronous
+  // focus() finds nothing. We uncollapse and set a pending-focus flag; the effect
+  // below focuses once the textarea is mounted. When already open, focus is
+  // immediate. This closes every candidate cause of the "⌘K didn't focus" report.
+  const pendingFocus = useRef(false)
+  const focusInputSoon = useCallback(() => {
+    // Try now (open case), and mark pending so the mount effect covers the
+    // collapsed→open case where the textarea isn't in the DOM yet.
+    pendingFocus.current = true
+    inputRef.current?.focus()
+    if (document.activeElement === inputRef.current) pendingFocus.current = false
+  }, [])
   useEffect(() => {
     function onFocusRequest() {
-      inputRef.current?.focus()
+      setIsCollapsed((prev) => {
+        if (prev) {
+          try {
+            window.localStorage.setItem(TERMINAL_COLLAPSED_KEY, '0')
+          } catch {
+            /* ignore */
+          }
+        }
+        return false
+      })
+      focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
-  }, [])
+  }, [focusInputSoon])
 
   // ── Load or create active conversation on mount ───────────────────────────
   useEffect(() => {
@@ -257,6 +329,53 @@ export function AITerminal() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Auto-grow for proposal review (ticket-24) ─────────────────────────────
+  // A create-page/diff card is the moment of decision — it deserves room. When
+  // an *unresolved* proposal is on screen, expand the drawer (and uncollapse it)
+  // to PROPOSAL_MIN_HEIGHT if it's currently shorter, so the preview + picker +
+  // buttons are visible without inner scroll. We never shrink a user who's set a
+  // taller height. Once every proposal is resolved, the drawer returns to the
+  // user's remembered height on its own (this override is not persisted).
+  const hasUnresolvedProposal = useMemo(() => {
+    const parts = messages.flatMap((m) => m.parts as Array<{ type: string; toolCallId?: string }>)
+    const openChange = parts.filter(isProposeChangesPart).some((p) => {
+      if (p.state === 'input-streaming') return false
+      const n = p.input?.changes?.length ?? 0
+      // Pending if any change in the batch is still undecided.
+      return Array.from({ length: n }).some(
+        (_, i) => (changeDecisions[`${p.toolCallId}:${i}`] ?? 'pending') === 'pending'
+      )
+    })
+    const openCreate = parts
+      .filter(isCreatePagePart)
+      .some(
+        (p) =>
+          p.state !== 'input-streaming' &&
+          (createDecisions[p.toolCallId] ?? 'pending') === 'pending'
+      )
+    return openChange || openCreate
+  }, [messages, changeDecisions, createDecisions])
+
+  // The effective height feeding the drawer: auto-grown while a proposal is open,
+  // otherwise the user's remembered height.
+  const effectiveHeight = hasUnresolvedProposal
+    ? Math.min(TERMINAL_MAX_HEIGHT, Math.max(drawerHeight, PROPOSAL_MIN_HEIGHT))
+    : drawerHeight
+
+  // Force the drawer open while a proposal needs review — a hidden decision is
+  // worse than a big drawer. Derived (not an effect): the user's stored collapse
+  // preference is untouched, so it re-applies once the proposal resolves.
+  const effectiveCollapsed = isCollapsed && !hasUnresolvedProposal
+
+  // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the drawer
+  // finished uncollapsing). Runs after the commit that mounts the textarea.
+  useEffect(() => {
+    if (!effectiveCollapsed && pendingFocus.current) {
+      inputRef.current?.focus()
+      pendingFocus.current = false
+    }
+  }, [effectiveCollapsed, isReady])
 
   // ── Handle /clear ─────────────────────────────────────────────────────────
   const handleClear = useCallback(async () => {
@@ -435,152 +554,154 @@ export function AITerminal() {
     [supabaseClient, queryClient, router]
   )
 
-  return (
-    <>
-      <div className="flex flex-col border-t border-border bg-card" style={{ height: '18rem' }}>
-        {/* Header */}
-        <div className="flex items-center px-4 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-muted-foreground font-mono flex-shrink-0">
-          Context: {contextLabel}
-        </div>
+  const messagesBody = (
+    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm">
+      {!isReady && <p className="text-press-faint text-xs">Loading…</p>}
+      {isReady && messages.length === 0 && (
+        <p className="text-press-faint text-xs">Start a conversation…</p>
+      )}
+      {messages.map((message) => {
+        const text = message.parts
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { type: 'text'; text: string }).text)
+          .join('')
+        const changeBatches = (message.parts as Array<{ type: string }>).filter(
+          isProposeChangesPart
+        )
+        const createPageParts = (message.parts as Array<{ type: string }>).filter(isCreatePagePart)
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm">
-          {!isReady && <p className="text-press-faint text-xs">Loading…</p>}
-          {isReady && messages.length === 0 && (
-            <p className="text-press-faint text-xs">Start a conversation…</p>
-          )}
-          {messages.map((message) => {
-            const text = message.parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { type: 'text'; text: string }).text)
-              .join('')
-            const changeBatches = (message.parts as Array<{ type: string }>).filter(
-              isProposeChangesPart
-            )
-            const createPageParts = (message.parts as Array<{ type: string }>).filter(
-              isCreatePagePart
-            )
-
-            return (
-              <div key={message.id} className="space-y-2">
-                {text && (
-                  <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
-                    {message.role === 'user' ? (
-                      // User text is verbatim — never interpret their keystrokes as markdown.
-                      <span className="inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left bg-press-ink text-press-paper">
-                        {text}
-                      </span>
-                    ) : (
-                      // Assistant answers author in markdown everywhere; render it typeset
-                      // (ticket-20). Streaming-safe: `text` grows token-by-token and
-                      // react-markdown re-parses each partial string on every render.
-                      <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
-                        <Markdown variant="terminal">{text}</Markdown>
-                      </div>
-                    )}
+        return (
+          <div key={message.id} className="space-y-2">
+            {text && (
+              <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
+                {message.role === 'user' ? (
+                  // User text is verbatim — never interpret their keystrokes as markdown.
+                  <span className="inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left bg-press-ink text-press-paper">
+                    {text}
+                  </span>
+                ) : (
+                  // Assistant answers author in markdown everywhere; render it typeset
+                  // (ticket-20). Streaming-safe: `text` grows token-by-token and
+                  // react-markdown re-parses each partial string on every render.
+                  <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
+                    <Markdown variant="terminal">{text}</Markdown>
                   </div>
                 )}
-                {changeBatches.map((part) => {
-                  // While the tool input is still streaming, `part.input` is partially
-                  // parsed JSON — block payloads can be missing required fields, and the
-                  // module views render them unvalidated. Wait for the complete input.
-                  if (part.state === 'input-streaming') return null
-                  const rawChanges = part.input?.changes ?? []
-                  const previews = rawChanges.map((c) =>
-                    previewForChange(c, currentPage?.blocks ?? [])
-                  )
-                  const statuses = rawChanges.map(
-                    (_, i) => changeDecisions[`${part.toolCallId}:${i}`] ?? 'pending'
-                  )
-                  const pending = rawChanges
-                    .map((_, i) => i)
-                    .filter((i) => statuses[i] === 'pending')
-                  const skipped = changeSkipped[part.toolCallId] ?? 0
-                  return (
-                    <div key={part.toolCallId} className="space-y-1.5">
-                      <ProposalGroup
-                        changes={previews}
-                        statuses={statuses}
-                        targetName={changeTargets[part.toolCallId]?.nodeName || contextLabel}
-                        onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
-                        onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
-                        onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
-                        onAcceptAll={() => acceptChanges(part.toolCallId, rawChanges, pending)}
-                        onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
-                      />
-                      {skipped > 0 && (
-                        <p className="text-xs text-amber-600">
-                          {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
-                          {skipped > 1 ? 'were' : 'was'} skipped.
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
-                {createPageParts.map((part) => {
-                  // Same streaming caveat as above: a partially-parsed `blocks` array
-                  // crashes the block previews (e.g. TableView on undefined rows).
-                  if (part.state === 'input-streaming') return null
-                  const input = part.input
-                  if (!input?.title || !input.type) return null
-                  const status = createDecisions[part.toolCallId] ?? 'pending'
-                  const selectedParentId =
-                    createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
-                  return (
-                    <CreatePageProposalCard
-                      key={part.toolCallId}
-                      title={input.title}
-                      type={input.type}
-                      kind={input.kind}
-                      blocks={input.blocks ?? []}
-                      reason={input.reason}
-                      status={status}
-                      selectedParentId={selectedParentId}
-                      parentOptions={parentOptions}
-                      onParentChange={(id) =>
-                        setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
-                      }
-                      onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
-                      onReject={() =>
-                        setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
-                      }
-                    />
-                  )
-                })}
               </div>
-            )
-          })}
-          {isStreaming && (
-            <div className="text-left">
-              <span className="inline-block text-sm px-3 py-1.5 rounded bg-press-accent-soft text-press-faint">
-                …
-              </span>
-            </div>
-          )}
-          <div ref={bottomRef} />
+            )}
+            {changeBatches.map((part) => {
+              // While the tool input is still streaming, `part.input` is partially
+              // parsed JSON — block payloads can be missing required fields, and the
+              // module views render them unvalidated. Wait for the complete input.
+              if (part.state === 'input-streaming') return null
+              const rawChanges = part.input?.changes ?? []
+              const previews = rawChanges.map((c) => previewForChange(c, currentPage?.blocks ?? []))
+              const statuses = rawChanges.map(
+                (_, i) => changeDecisions[`${part.toolCallId}:${i}`] ?? 'pending'
+              )
+              const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
+              const skipped = changeSkipped[part.toolCallId] ?? 0
+              return (
+                <div key={part.toolCallId} className="space-y-1.5">
+                  <ProposalGroup
+                    changes={previews}
+                    statuses={statuses}
+                    targetName={changeTargets[part.toolCallId]?.nodeName || contextLabel}
+                    onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
+                    onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
+                    onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
+                    onAcceptAll={() => acceptChanges(part.toolCallId, rawChanges, pending)}
+                    onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
+                  />
+                  {skipped > 0 && (
+                    <p className="text-xs text-amber-600">
+                      {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
+                      {skipped > 1 ? 'were' : 'was'} skipped.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+            {createPageParts.map((part) => {
+              // Same streaming caveat as above: a partially-parsed `blocks` array
+              // crashes the block previews (e.g. TableView on undefined rows).
+              if (part.state === 'input-streaming') return null
+              const input = part.input
+              if (!input?.title || !input.type) return null
+              const status = createDecisions[part.toolCallId] ?? 'pending'
+              const selectedParentId =
+                createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
+              return (
+                <CreatePageProposalCard
+                  key={part.toolCallId}
+                  title={input.title}
+                  type={input.type}
+                  kind={input.kind}
+                  blocks={input.blocks ?? []}
+                  reason={input.reason}
+                  status={status}
+                  selectedParentId={selectedParentId}
+                  parentOptions={parentOptions}
+                  onParentChange={(id) =>
+                    setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
+                  }
+                  onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
+                  onReject={() =>
+                    setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                  }
+                />
+              )
+            })}
+          </div>
+        )
+      })}
+      {isStreaming && (
+        <div className="text-left">
+          <span className="inline-block text-sm px-3 py-1.5 rounded bg-press-accent-soft text-press-faint">
+            …
+          </span>
         </div>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  )
 
-        {/* Input */}
-        <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair flex-shrink-0">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Talk to Pond… (/clear · /handoff · /save)"
-            rows={2}
-            className="flex-1 resize-none border border-border rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono bg-transparent placeholder:text-press-faint"
-            disabled={isStreaming || !isReady}
-          />
-          <button
-            onClick={handleSend}
-            disabled={isStreaming || !input.trim() || !isReady}
-            className="px-3 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-full hover:opacity-90 disabled:opacity-40 self-end"
-          >
-            Send
-          </button>
-        </div>
-      </div>
+  const inputFooter = (
+    <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair flex-shrink-0">
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Talk to Pond… (/clear · /handoff · /save)"
+        rows={2}
+        className="flex-1 resize-none border border-border rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono bg-transparent placeholder:text-press-faint"
+        disabled={isStreaming || !isReady}
+      />
+      <button
+        onClick={handleSend}
+        disabled={isStreaming || !input.trim() || !isReady}
+        className="px-3 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-full hover:opacity-90 disabled:opacity-40 self-end"
+      >
+        Send
+      </button>
+    </div>
+  )
+
+  return (
+    <>
+      <TerminalDrawer
+        contextLabel={contextLabel}
+        height={effectiveHeight}
+        collapsed={effectiveCollapsed}
+        onToggleCollapsed={toggleCollapsed}
+        onHeightChange={commitHeight}
+        onClear={handleClear}
+        canClear={messages.length > 0}
+        footer={inputFooter}
+      >
+        {messagesBody}
+      </TerminalDrawer>
       <SavePickerModal
         isOpen={isSavePickerOpen}
         messages={messages}
