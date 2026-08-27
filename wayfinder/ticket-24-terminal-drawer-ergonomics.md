@@ -83,3 +83,26 @@ Files: `src/components/molecules/TerminalDrawer.tsx` (+ `.stories.tsx`),
 Validation: `typecheck` clean, `jest` 315/315, `test-storybook` 66/66, touched
 files lint clean. Live-verified on the worktree dev server (collapse frees space
 to `main`; resize + persistence across reload; ⌘K uncollapse+focus).
+
+### Code-review fixes (same day)
+
+- Drag hardened: pointer capture on the handle + pointerId matching +
+  `pointercancel` handling — an interrupted drag can no longer leave the page
+  stuck in `ns-resize`/no-select or resume on a stray move; commits the last
+  height the user saw.
+- Drag vs auto-grow: **drag wins.** Resizing while the 460px floor pins the
+  drawer records an override for that proposal set — the drag is live from the
+  visible height (no dead zone, no silently-persisted unseen heights); a new
+  proposal re-arms the floor.
+- Auto-grow is **session-scoped**: proposals re-seeded from a prior session's
+  transcript (whose pending state is never persisted, ticket-19) no longer pin
+  the drawer on every mount — only proposals arriving this session count
+  (`initialMessageIds` recorded at conversation load; derivation extracted to
+  `lib/conversation/proposals.ts`, jest-covered incl. the mount case).
+- pendingFocus leak closed: a ⌘K attempt on a mounted-but-disabled input
+  consumes the request instead of stealing focus later.
+- `CreatePageProposalCard` preview is height-bounded (200px, internal scroll)
+  so title + preview + Save-to + actions always fit in the grown drawer.
+- Height persists on gesture end only; localStorage access deduped into
+  `readStored`/`writeStored`; KeyboardResize story asserts the rendered height;
+  clamp/derivation moved to jest (`terminal-drawer-ergonomics.test.ts`).
