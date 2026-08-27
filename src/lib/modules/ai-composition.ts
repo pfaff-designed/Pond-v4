@@ -24,6 +24,7 @@ import { todoSchema, todoItemSchema } from './todo/schema'
 import { metricSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
+import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
  * Per-content-module *data* the AI emits: the persisted block schema with every id
@@ -38,7 +39,19 @@ import { tableSchema, tableRowSchema } from './table/schema'
  * Each omit-chain must strip the ids at the descriptor's `nestedIdPaths` — jest
  * fence in `module-nested-ids.test.ts` (strip∘hydrate round-trip per type).
  */
-const textData = textSchema.omit({ id: true })
+/**
+ * Text data with the ticket-21 emit-time lint attached: reject a body that is
+ * clearly a markdown pipe table. Failing this refinement fails the tool-input gate,
+ * which triggers `repairToolCall` — re-asking the model to re-emit as a `table`
+ * module (the corrective message names the fix). Prose that merely contains a `|`
+ * is not flagged (the heuristic requires a full GFM table shape). This is an
+ * authoring-discipline nudge, NOT a persistence constraint: the persisted
+ * `textSchema` stays unchanged, so nothing already saved becomes invalid.
+ */
+const textData = textSchema.omit({ id: true }).refine((d) => !isMarkdownPipeTable(d.content), {
+  message: PIPE_TABLE_IN_TEXT_MESSAGE,
+  path: ['content'],
+})
 const todoData = todoSchema
   .omit({ id: true })
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
