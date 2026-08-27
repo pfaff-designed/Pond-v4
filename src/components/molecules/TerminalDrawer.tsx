@@ -34,8 +34,10 @@ export interface TerminalDrawerProps {
   height: number
   collapsed: boolean
   onToggleCollapsed: () => void
-  /** Commits a new expanded body height (already the raw candidate; clamped here). */
+  /** Live height updates during a resize gesture (clamped before delivery). */
   onHeightChange: (height: number) => void
+  /** Fired once when a resize gesture ends — persist here, not per move. */
+  onHeightCommit?: (height: number) => void
   /** Wired to the existing /clear behavior — a visible affordance, not just placeholder text. */
   onClear: () => void
   /** The transcript / proposal region. */
@@ -52,47 +54,52 @@ export function TerminalDrawer({
   collapsed,
   onToggleCollapsed,
   onHeightChange,
+  onHeightCommit,
   onClear,
   children,
   footer,
   canClear = true,
 }: TerminalDrawerProps) {
-  // Drag-to-resize. We track the pointer on the window so the drag survives the
-  // cursor leaving the thin handle, and read the *committed* height at grab time
-  // from a ref so rapid moves don't chase stale state.
-  const dragState = useRef<{ startY: number; startHeight: number } | null>(null)
+  // Drag-to-resize via pointer capture on the handle: captured move/up/cancel
+  // events are routed to the handle even when the cursor leaves the thin strip,
+  // and pointerId matching keeps a second pointer (multi-touch) from jittering
+  // an in-flight drag. `lastHeight` is what a cancel/up commits — pointercancel
+  // events can carry garbage coordinates, so we never recompute from them.
+  const dragState = useRef<{
+    pointerId: number
+    startY: number
+    startHeight: number
+    lastHeight: number
+  } | null>(null)
 
-  const onPointerMove = useCallback(
-    (e: PointerEvent) => {
-      const st = dragState.current
-      if (!st) return
-      // Drag up (negative deltaY) grows the drawer.
-      const next = clampTerminalHeight(st.startHeight + (st.startY - e.clientY))
-      onHeightChange(next)
-    },
-    [onHeightChange]
-  )
-
-  const onPointerUp = useCallback(() => {
-    dragState.current = null
+  const releaseBodyStyles = () => {
     document.body.style.removeProperty('user-select')
     document.body.style.removeProperty('cursor')
-  }, [])
+  }
 
-  useEffect(() => {
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', onPointerUp)
-    }
-  }, [onPointerMove, onPointerUp])
+  // If the drawer unmounts mid-drag, don't leave the page stuck in ns-resize/no-select.
+  useEffect(
+    () => () => {
+      if (dragState.current) releaseBodyStyles()
+    },
+    []
+  )
 
   const startDrag = useCallback(
     (e: React.PointerEvent) => {
-      if (collapsed) return
+      if (collapsed || dragState.current) return
       e.preventDefault()
-      dragState.current = { startY: e.clientY, startHeight: height }
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        /* capture can fail for already-released pointers; the drag still works while over the handle */
+      }
+      dragState.current = {
+        pointerId: e.pointerId,
+        startY: e.clientY,
+        startHeight: height,
+        lastHeight: height,
+      }
       // Kill text selection + show the resize cursor for the whole drag.
       document.body.style.userSelect = 'none'
       document.body.style.cursor = 'ns-resize'
@@ -100,19 +107,45 @@ export function TerminalDrawer({
     [collapsed, height]
   )
 
-  // Keyboard resize on the handle for accessibility (↑/↓ nudge by 24px).
+  const onHandlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const st = dragState.current
+      if (!st || e.pointerId !== st.pointerId) return
+      // Drag up (negative deltaY) grows the drawer.
+      const next = clampTerminalHeight(st.startHeight + (st.startY - e.clientY))
+      st.lastHeight = next
+      onHeightChange(next)
+    },
+    [onHeightChange]
+  )
+
+  // Shared end for pointerup AND pointercancel (touch-scroll takeover, OS
+  // interrupt): clear the drag, release body styles, commit the last height the
+  // user actually saw.
+  const endDrag = useCallback(
+    (e: React.PointerEvent) => {
+      const st = dragState.current
+      if (!st || e.pointerId !== st.pointerId) return
+      dragState.current = null
+      releaseBodyStyles()
+      onHeightCommit?.(st.lastHeight)
+    },
+    [onHeightCommit]
+  )
+
+  // Keyboard resize on the handle for accessibility (↑/↓ nudge by 24px). Each
+  // press is a complete gesture, so it commits immediately.
   const onHandleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (collapsed) return
-      if (e.key === 'ArrowUp') {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault()
-        onHeightChange(clampTerminalHeight(height + 24))
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        onHeightChange(clampTerminalHeight(height - 24))
+        const next = clampTerminalHeight(height + (e.key === 'ArrowUp' ? 24 : -24))
+        onHeightChange(next)
+        onHeightCommit?.(next)
       }
     },
-    [collapsed, height, onHeightChange]
+    [collapsed, height, onHeightChange, onHeightCommit]
   )
 
   return (
@@ -129,6 +162,9 @@ export function TerminalDrawer({
           aria-label="Resize terminal"
           tabIndex={0}
           onPointerDown={startDrag}
+          onPointerMove={onHandlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           onKeyDown={onHandleKeyDown}
           className="group h-1.5 -mt-1 cursor-ns-resize flex items-center justify-center outline-none touch-none"
           data-testid="terminal-resize-handle"

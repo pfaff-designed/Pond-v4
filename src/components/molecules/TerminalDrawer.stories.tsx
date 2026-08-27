@@ -4,9 +4,8 @@ import { useState } from 'react'
 
 import {
   TerminalDrawer,
+  TERMINAL_COLLAPSED_HEIGHT,
   TERMINAL_DEFAULT_HEIGHT,
-  TERMINAL_MAX_HEIGHT,
-  clampTerminalHeight,
 } from './TerminalDrawer'
 
 const sampleFooter = (
@@ -38,6 +37,7 @@ const meta = {
     collapsed: false,
     onToggleCollapsed: fn(),
     onHeightChange: fn(),
+    onHeightCommit: fn(),
     onClear: fn(),
     canClear: true,
     children: sampleBody,
@@ -104,26 +104,40 @@ export const ClearDisabledWhenEmpty: Story = {
   },
 }
 
-/** Keyboard resize: ArrowUp on the handle grows the drawer via onHeightChange. */
+/** Keyboard resize: ↑/↓ on the handle actually change the rendered drawer height
+ *  (stateful render so the controlled height round-trips), and each nudge commits. */
 export const KeyboardResize: Story = {
   render: (args) => {
     const [height, setHeight] = useState(args.height)
-    return <TerminalDrawer {...args} height={height} onHeightChange={setHeight} />
+    return (
+      <TerminalDrawer
+        {...args}
+        height={height}
+        onHeightChange={(h) => {
+          setHeight(h)
+          args.onHeightChange(h)
+        }}
+      />
+    )
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
+    const section = canvasElement.querySelector('section')!
     const handle = canvas.getByRole('separator', { name: 'Resize terminal' })
+    await expect(section.style.height).toBe(
+      `${TERMINAL_DEFAULT_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px`
+    )
     handle.focus()
     await userEvent.keyboard('{ArrowUp}')
-    // Grew by 24px from the default.
-    await expect(handle).toHaveFocus()
-  },
-}
-
-/** clampTerminalHeight keeps a candidate height inside the min/max envelope. */
-export const ClampBounds: Story = {
-  play: async () => {
-    await expect(clampTerminalHeight(10)).toBeGreaterThanOrEqual(160)
-    await expect(clampTerminalHeight(99999)).toBe(TERMINAL_MAX_HEIGHT)
+    // Grew by 24px from the default — asserted on the rendered element, not just the callback.
+    await expect(section.style.height).toBe(
+      `${TERMINAL_DEFAULT_HEIGHT + 24 + TERMINAL_COLLAPSED_HEIGHT}px`
+    )
+    await expect(args.onHeightChange).toHaveBeenCalledWith(TERMINAL_DEFAULT_HEIGHT + 24)
+    await expect(args.onHeightCommit).toHaveBeenCalledWith(TERMINAL_DEFAULT_HEIGHT + 24)
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(section.style.height).toBe(
+      `${TERMINAL_DEFAULT_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px`
+    )
   },
 }

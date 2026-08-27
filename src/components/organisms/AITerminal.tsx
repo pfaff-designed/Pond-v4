@@ -36,6 +36,11 @@ import {
   type ParentOption,
 } from '@/components/molecules/CreatePageProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
+import {
+  changeStatus,
+  unresolvedProposalIds,
+  type ProposalMessageLike,
+} from '@/lib/conversation/proposals'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
@@ -48,6 +53,24 @@ const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
 // When a proposal card arrives the drawer auto-grows to at least this so the
 // user can review create-page/diff cards without inner scrolling.
 const PROPOSAL_MIN_HEIGHT = 460
+
+// Tiny persisted-state helpers: localStorage can throw (privacy modes, quota),
+// and the drawer must degrade to defaults rather than crash.
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    /* ignore persistence failures */
+  }
+}
 
 /** A propose_changes tool part — the generalized composition batch (t16 Phase 5). */
 interface ProposeChangesPart {
@@ -205,33 +228,24 @@ export function AITerminal() {
   // the space back to the content above — it never overlays what's being read.
   const [drawerHeight, setDrawerHeight] = useState(TERMINAL_DEFAULT_HEIGHT)
   const [isCollapsed, setIsCollapsed] = useState(false)
-  // Restore persisted height/collapse on mount (client-only; avoids SSR hydration skew).
+  // The user resized *while* the auto-grow floor was pinning the drawer: their
+  // drag wins over the floor for that proposal set (see effectiveHeight below).
+  const [growOverrideKey, setGrowOverrideKey] = useState<string | null>(null)
+  // Restore persisted height/collapse on mount. Client-only by design: reading
+  // localStorage during SSR/hydration would mismatch the server markup, so we
+  // accept one frame at the default height instead of Next's inline-script
+  // pattern — the drawer sits below the fold of attention and the flash is a
+  // height tween, not a content pop.
   useEffect(() => {
-    try {
-      const h = window.localStorage.getItem(TERMINAL_HEIGHT_KEY)
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
-      if (h) setDrawerHeight(clampTerminalHeight(Number(h)))
-      setIsCollapsed(window.localStorage.getItem(TERMINAL_COLLAPSED_KEY) === '1')
-    } catch {
-      /* localStorage unavailable — fall back to defaults */
-    }
-  }, [])
-  const commitHeight = useCallback((h: number) => {
-    setDrawerHeight(h)
-    try {
-      window.localStorage.setItem(TERMINAL_HEIGHT_KEY, String(h))
-    } catch {
-      /* ignore persistence failures */
-    }
+    const h = readStored(TERMINAL_HEIGHT_KEY)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
+    if (h) setDrawerHeight(clampTerminalHeight(Number(h)))
+    setIsCollapsed(readStored(TERMINAL_COLLAPSED_KEY) === '1')
   }, [])
   const toggleCollapsed = useCallback(() => {
     setIsCollapsed((prev) => {
       const next = !prev
-      try {
-        window.localStorage.setItem(TERMINAL_COLLAPSED_KEY, next ? '1' : '0')
-      } catch {
-        /* ignore */
-      }
+      writeStored(TERMINAL_COLLAPSED_KEY, next ? '1' : '0')
       return next
     })
   }, [])
@@ -243,22 +257,22 @@ export function AITerminal() {
   // immediate. This closes every candidate cause of the "⌘K didn't focus" report.
   const pendingFocus = useRef(false)
   const focusInputSoon = useCallback(() => {
-    // Try now (open case), and mark pending so the mount effect covers the
-    // collapsed→open case where the textarea isn't in the DOM yet.
+    const el = inputRef.current
+    if (el) {
+      // Input is mounted: attempt focus and consume the request either way — a
+      // disabled input (mid-stream) silently drops it rather than leaving a
+      // stale flag that would steal focus on some later collapse/ready change.
+      el.focus()
+      pendingFocus.current = false
+      return
+    }
+    // Collapsed (input unmounted): fulfil after the uncollapse re-render.
     pendingFocus.current = true
-    inputRef.current?.focus()
-    if (document.activeElement === inputRef.current) pendingFocus.current = false
   }, [])
   useEffect(() => {
     function onFocusRequest() {
       setIsCollapsed((prev) => {
-        if (prev) {
-          try {
-            window.localStorage.setItem(TERMINAL_COLLAPSED_KEY, '0')
-          } catch {
-            /* ignore */
-          }
-        }
+        if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
         return false
       })
       focusInputSoon()
@@ -268,6 +282,12 @@ export function AITerminal() {
   }, [focusInputSoon])
 
   // ── Load or create active conversation on mount ───────────────────────────
+  // `initialMessageIds` records what was re-seeded from the saved transcript:
+  // pending decisions are never persisted (ticket-19), so a prior session's
+  // still-pending cards would otherwise read as "unresolved" forever and pin
+  // the drawer's auto-grow open on every mount. Auto-grow is scoped to
+  // proposals that arrive during THIS session.
+  const [initialMessageIds, setInitialMessageIds] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -275,6 +295,7 @@ export function AITerminal() {
       const conversation = await getOrCreateConversation(supabase, user.id)
       setConversationId(conversation.id)
       if (conversation.messages.length > 0) {
+        setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
         setMessages(conversation.messages)
       }
       // Restore card decisions so historical proposal cards render resolved
@@ -332,36 +353,52 @@ export function AITerminal() {
 
   // ── Auto-grow for proposal review (ticket-24) ─────────────────────────────
   // A create-page/diff card is the moment of decision — it deserves room. When
-  // an *unresolved* proposal is on screen, expand the drawer (and uncollapse it)
-  // to PROPOSAL_MIN_HEIGHT if it's currently shorter, so the preview + picker +
-  // buttons are visible without inner scroll. We never shrink a user who's set a
-  // taller height. Once every proposal is resolved, the drawer returns to the
-  // user's remembered height on its own (this override is not persisted).
-  const hasUnresolvedProposal = useMemo(() => {
-    const parts = messages.flatMap((m) => m.parts as Array<{ type: string; toolCallId?: string }>)
-    const openChange = parts.filter(isProposeChangesPart).some((p) => {
-      if (p.state === 'input-streaming') return false
-      const n = p.input?.changes?.length ?? 0
-      // Pending if any change in the batch is still undecided.
-      return Array.from({ length: n }).some(
-        (_, i) => (changeDecisions[`${p.toolCallId}:${i}`] ?? 'pending') === 'pending'
-      )
-    })
-    const openCreate = parts
-      .filter(isCreatePagePart)
-      .some(
-        (p) =>
-          p.state !== 'input-streaming' &&
-          (createDecisions[p.toolCallId] ?? 'pending') === 'pending'
-      )
-    return openChange || openCreate
-  }, [messages, changeDecisions, createDecisions])
+  // an unresolved proposal *from this session* is on screen (mount-seeded
+  // pending cards are excluded — see initialMessageIds), expand the drawer (and
+  // uncollapse it) to PROPOSAL_MIN_HEIGHT if it's currently shorter, so the
+  // preview + picker + buttons are visible without inner scroll. We never
+  // shrink a user who's set a taller height, and once every proposal is
+  // resolved the drawer returns to the remembered height (never persisted).
+  const unresolvedIds = useMemo(
+    () =>
+      unresolvedProposalIds(
+        messages as ProposalMessageLike[],
+        changeDecisions,
+        createDecisions,
+        initialMessageIds
+      ),
+    [messages, changeDecisions, createDecisions, initialMessageIds]
+  )
+  const hasUnresolvedProposal = unresolvedIds.length > 0
 
-  // The effective height feeding the drawer: auto-grown while a proposal is open,
-  // otherwise the user's remembered height.
-  const effectiveHeight = hasUnresolvedProposal
-    ? Math.min(TERMINAL_MAX_HEIGHT, Math.max(drawerHeight, PROPOSAL_MIN_HEIGHT))
-    : drawerHeight
+  // Drag wins over the floor (ticket-24 review): resizing while the floor pins
+  // the drawer records an override for exactly this proposal set, so the drag is
+  // live from the visible height instead of dead until it crosses 460. A new
+  // proposal (different key) re-arms the floor; resolution falls back to the
+  // remembered height on its own.
+  const unresolvedKey = unresolvedIds.join(',')
+  const growOverridden = hasUnresolvedProposal && growOverrideKey === unresolvedKey
+
+  const handleHeightChange = useCallback(
+    (h: number) => {
+      setDrawerHeight(h)
+      if (hasUnresolvedProposal) setGrowOverrideKey(unresolvedKey)
+    },
+    [hasUnresolvedProposal, unresolvedKey]
+  )
+  // Persist only at gesture end (pointerup / a keyboard nudge), never per move.
+  // Every committed height was on screen at commit time — drag-wins means the
+  // pinned state can't absorb moves invisibly — so no unseen height is stored.
+  const handleHeightCommit = useCallback((h: number) => {
+    writeStored(TERMINAL_HEIGHT_KEY, String(h))
+  }, [])
+
+  // The effective height feeding the drawer: auto-grown while a proposal is open
+  // (unless the user's drag overrode it), otherwise the remembered height.
+  const effectiveHeight =
+    hasUnresolvedProposal && !growOverridden
+      ? Math.min(TERMINAL_MAX_HEIGHT, Math.max(drawerHeight, PROPOSAL_MIN_HEIGHT))
+      : drawerHeight
 
   // Force the drawer open while a proposal needs review — a hidden decision is
   // worse than a big drawer. Derived (not an effect): the user's stored collapse
@@ -596,8 +633,8 @@ export function AITerminal() {
               if (part.state === 'input-streaming') return null
               const rawChanges = part.input?.changes ?? []
               const previews = rawChanges.map((c) => previewForChange(c, currentPage?.blocks ?? []))
-              const statuses = rawChanges.map(
-                (_, i) => changeDecisions[`${part.toolCallId}:${i}`] ?? 'pending'
+              const statuses = rawChanges.map((_, i) =>
+                changeStatus(changeDecisions, part.toolCallId, i)
               )
               const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
               const skipped = changeSkipped[part.toolCallId] ?? 0
@@ -695,7 +732,8 @@ export function AITerminal() {
         height={effectiveHeight}
         collapsed={effectiveCollapsed}
         onToggleCollapsed={toggleCollapsed}
-        onHeightChange={commitHeight}
+        onHeightChange={handleHeightChange}
+        onHeightCommit={handleHeightCommit}
         onClear={handleClear}
         canClear={messages.length > 0}
         footer={inputFooter}
