@@ -22,6 +22,7 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { SavePickerModal } from './SavePickerModal'
+import { Markdown } from '@/components/atoms/Markdown'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import {
   CreatePageProposalCard,
@@ -380,7 +381,12 @@ export function AITerminal() {
         requestAnimationFrame(() => {
           const el = document.getElementById(`block-${blockId}`)
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          el?.querySelector('textarea')?.focus()
+          // Text blocks are now click-to-edit (ticket-20): the source textarea only
+          // exists once the block is in edit mode, so trigger that first. Interactive
+          // blocks (todo/table) keep their inline inputs and fall through to focus.
+          const editTrigger = el?.querySelector<HTMLElement>('[data-text-edit-trigger]')
+          if (editTrigger) editTrigger.click()
+          else el?.querySelector('textarea')?.focus()
         })
       }
     },
@@ -459,15 +465,19 @@ export function AITerminal() {
               <div key={message.id} className="space-y-2">
                 {text && (
                   <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
-                    <span
-                      className={`inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left ${
-                        message.role === 'user'
-                          ? 'bg-press-ink text-press-paper'
-                          : 'bg-press-accent-soft text-foreground'
-                      }`}
-                    >
-                      {text}
-                    </span>
+                    {message.role === 'user' ? (
+                      // User text is verbatim — never interpret their keystrokes as markdown.
+                      <span className="inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left bg-press-ink text-press-paper">
+                        {text}
+                      </span>
+                    ) : (
+                      // Assistant answers author in markdown everywhere; render it typeset
+                      // (ticket-20). Streaming-safe: `text` grows token-by-token and
+                      // react-markdown re-parses each partial string on every render.
+                      <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
+                        <Markdown variant="terminal">{text}</Markdown>
+                      </div>
+                    )}
                   </div>
                 )}
                 {changeBatches.map((part) => {

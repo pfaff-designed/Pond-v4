@@ -44,7 +44,10 @@ type Story = StoryObj<typeof meta>
 export const Pending: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Lasagna')).toBeInTheDocument()
+    // "Lasagna" appears twice now (ticket-20): the plain card-title div, and the
+    // scaffolded text block's `# Lasagna`, which renders as a real <h1> in the preview.
+    await expect(canvas.getAllByText('Lasagna')).toHaveLength(2)
+    await expect(canvas.getByRole('heading', { level: 1, name: 'Lasagna' })).toBeInTheDocument()
     await expect(canvas.getByText('New page · recipe')).toBeInTheDocument()
     // Scaffolded block content is previewed read-only.
     await expect(canvas.getByText('Brown the beef')).toBeInTheDocument()
