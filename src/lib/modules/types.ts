@@ -39,12 +39,21 @@ export interface ModuleDescriptor<
    * source. REQUIRED: a block the model cannot read here is silently destroyed on
    * the next wholesale `edit` (the model re-emits what it can see). Must render
    * every piece of user content, not a summary.
+   *
+   * `siblings` (ticket-23) is the block's page-mates, passed by callers that have
+   * them (context assembly does) so a module whose DISPLAY derives from sibling
+   * state (a bound metric) serializes the same number the UI shows — the AI and
+   * the user must never see different values. Typed `readonly unknown[]` rather
+   * than `Block[]` to keep this file out of the types↔content import cycle
+   * (content.ts imports every schema, which imports this); a module that cares
+   * narrows the type itself. A caller without the page in hand may omit it — a
+   * deriving module must then say so in its output, never guess a number.
    */
   // Method syntax (not arrow-property): keeps `T` bivariant so the heterogeneous
   // `moduleDescriptors` map still satisfies `Record<string, ModuleDescriptor>`.
-  serialize(data: T): string
+  serialize(data: T, siblings?: readonly unknown[]): string
   /** One-line listing for the id-addressed editable-blocks context. Defaults to `serialize`. */
-  preview?(data: T): string
+  preview?(data: T, siblings?: readonly unknown[]): string
   /**
    * Top-level fields holding id-bearing collections (e.g. `['items']`, `['rows']`).
    * The one declared fact behind every id walk: write-time minting (`hydrate.ts`)

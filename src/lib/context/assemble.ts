@@ -79,10 +79,14 @@ export function parseMentions(text: string): string[] {
 
 /** Flatten a document's blocks into plain text for the prompt. */
 export function blocksToText(blocks: Block[]): string {
-  return blocks
-    .map((block) => descriptorFor(block.type)?.serialize(block) ?? '')
-    .filter((line) => line.length > 0)
-    .join('\n')
+  return (
+    blocks
+      // Pass the block's page-mates so a sibling-deriving module (bound metric,
+      // ticket-23) serializes the same number the UI shows.
+      .map((block) => descriptorFor(block.type)?.serialize(block, blocks) ?? '')
+      .filter((line) => line.length > 0)
+      .join('\n')
+  )
 }
 
 // ── formatNodeContext (pure) ─────────────────────────────────────────────────
@@ -96,10 +100,10 @@ const TYPE_LABEL: Record<NodeType, string> = {
 }
 
 /** One-line preview of a block's content, for the id-addressed listing. */
-function blockPreview(block: Block): string {
+function blockPreview(block: Block, siblings: Block[]): string {
   const descriptor = descriptorFor(block.type)
   if (!descriptor) return ''
-  return (descriptor.preview ?? descriptor.serialize)(block)
+  return (descriptor.preview ?? descriptor.serialize)(block, siblings)
 }
 
 /**
@@ -133,12 +137,15 @@ export function formatNodeContext(
   }
 
   if (opts.includeBlockIds) {
-    const blocks = data.documents.flatMap((doc) => doc.blocks)
-    if (blocks.length > 0) {
+    // Per-document loops (same output order as the old flatMap) so each block's
+    // preview receives its own page-mates as siblings (bound metrics, ticket-23).
+    if (data.documents.some((doc) => doc.blocks.length > 0)) {
       lines.push('Editable blocks (reference a block by its id when proposing an edit):')
-      for (const block of blocks) {
-        const preview = blockPreview(block)
-        lines.push(`  - [${block.id}] (${block.type})${preview ? ` ${preview}` : ''}`)
+      for (const doc of data.documents) {
+        for (const block of doc.blocks) {
+          const preview = blockPreview(block, doc.blocks)
+          lines.push(`  - [${block.id}] (${block.type})${preview ? ` ${preview}` : ''}`)
+        }
       }
     }
   }

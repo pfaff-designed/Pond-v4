@@ -17,6 +17,8 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
+import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
+import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
 import type { Block } from '@/lib/documents/types'
 
@@ -150,16 +152,21 @@ export function DocumentPanel() {
           </span>
         </div>
 
-        <div className="space-y-3">
-          {blocks.map((block, i) => (
-            <BlockEditor
-              key={block.id}
-              block={block}
-              onChange={(next) => setBlockAt(i, next)}
-              onRemove={() => removeBlockAt(i)}
-            />
-          ))}
-        </div>
+        {/* Provide sibling-block state so bound metrics derive live and their `→`
+            can scroll to source (ticket-23). Keyed off the live `blocks` state, so a
+            checklist toggle re-derives every metric in the same render. */}
+        <SiblingBlocksProvider value={{ blocks, scrollToBlock }}>
+          <div className="space-y-3">
+            {blocks.map((block, i) => (
+              <BlockEditor
+                key={block.id}
+                block={block}
+                onChange={(next) => setBlockAt(i, next)}
+                onRemove={() => removeBlockAt(i)}
+              />
+            ))}
+          </div>
+        </SiblingBlocksProvider>
 
         <button
           className="mt-4 text-sm text-muted-foreground hover:text-foreground"
@@ -191,7 +198,7 @@ function BlockEditor({
   onRemove: () => void
 }) {
   return (
-    <div className="group relative" id={`block-${block.id}`}>
+    <div className="group relative" id={blockDomId(block.id)}>
       <button
         className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm"
         title="Delete block"
