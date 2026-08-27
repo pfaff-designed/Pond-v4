@@ -10,9 +10,11 @@
  * follow-up with its own grill.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { updateTitle } from '@/lib/pages/client'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import {
@@ -42,9 +44,66 @@ function Rise({
   )
 }
 
+/**
+ * The kicker micro-label above the numeral. Static text when read-only; an
+ * inline click-to-rename field when `onRename` is supplied (ticket-26). Kept
+ * uppercase-mono so a renamed area reads the same resting as a static one, and
+ * the caption ("Health") stays legible while typing lowercase — the CSS
+ * uppercases the display. Enter commits + blurs; Escape reverts; blur commits.
+ */
+function EditableKicker({
+  value,
+  onRename,
+}: {
+  value: string
+  onRename?: (title: string) => void
+}) {
+  const kickerClass = 'font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint'
+  const [draft, setDraft] = useState(value)
+
+  if (!onRename) {
+    return <span className={kickerClass}>{value}</span>
+  }
+
+  function commit() {
+    const next = draft.trim()
+    // Only persist a genuine change; an empty title is refused (revert to value).
+    if (next && next !== value) onRename!(next)
+    else setDraft(value)
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        } else if (e.key === 'Escape') {
+          setDraft(value)
+          e.currentTarget.blur()
+        }
+      }}
+      aria-label="Rename page"
+      className={`${kickerClass} bg-transparent outline-none rounded-sm px-1 -mx-1 min-w-[6ch] hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-body transition-colors`}
+    />
+  )
+}
+
 export interface OverviewSurfaceProps {
   /** Micro-label above the numeral, e.g. the page title or "Life". */
   kicker: string
+  /**
+   * When set, the kicker becomes an inline click-to-rename field (ticket-26):
+   * a page must be renamable from every surface it renders as, and an area's
+   * overview is one such surface. Called with the committed new title on blur or
+   * Enter; a no-op change is ignored by the caller. Omit for non-renamable
+   * surfaces (the Life root), which keep a static label.
+   */
+  onRenameKicker?: (title: string) => void
   /** Muted accent for the kicker dot (an area's hue); omit for Life. */
   accent?: string
   model: OverviewModel
@@ -63,6 +122,7 @@ export interface OverviewSurfaceProps {
 
 export function OverviewSurface({
   kicker,
+  onRenameKicker,
   accent,
   model,
   closing,
@@ -84,9 +144,8 @@ export function OverviewSurface({
                 style={{ background: accent }}
               />
             )}
-            <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint">
-              {kicker}
-            </span>
+            {/* keyed on value so an external rename (rail/AI) re-seeds the draft */}
+            <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
           </div>
           <div className="flex items-center gap-4">
             {onAddContent && (
@@ -173,6 +232,7 @@ export function AreaOverviewPanel({
   onAddContent?: () => void
 }) {
   const openCard = useOpenCard()
+  const queryClient = useQueryClient()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
@@ -181,10 +241,21 @@ export function AreaOverviewPanel({
     return pageAccent(rootAncestorId(areaId, parentById))
   }, [rows, areaId])
 
+  // Rename from the overview surface (ticket-26): same updateTitle path the
+  // editor uses, then invalidate ['pages'] so the rail label updates and
+  // ['page'] so the editor title stays in step if it opens this page next.
+  async function handleRename(next: string) {
+    const supabase = createClient()
+    await updateTitle(supabase, areaId, next)
+    await queryClient.invalidateQueries({ queryKey: ['pages'] })
+    await queryClient.invalidateQueries({ queryKey: ['page', areaId] })
+  }
+
   const name = title || 'Untitled'
   return (
     <OverviewSurface
       kicker={name}
+      onRenameKicker={handleRename}
       accent={accent}
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}

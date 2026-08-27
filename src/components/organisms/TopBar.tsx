@@ -3,7 +3,10 @@
 /**
  * The top-right glass cluster — v85 Clearing chrome, icon-only.
  *
- *   ＋   the existing new-page flow (create an untitled top-level area, open it)
+ *   ＋   opens the New page creation flow (ticket-26): a name-first dialog that
+ *        defaults the destination to the page in view, then lands in the editor.
+ *        (Was a dead end — it instant-created an untitled top-level `area` and
+ *        dumped you on an empty overview with no editor and no name prompt.)
  *   ⌘K  focuses the terminal input (the proto's free-text→Pond), also bound
  *        as a global ⌘K/Ctrl-K hotkey
  *
@@ -11,11 +14,9 @@
  * exists yet, and a dead icon is worse than none.
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
-import { createTopLevelPage } from '@/lib/pages/create-top'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 
 const iconBtn =
@@ -56,27 +57,11 @@ export function TopBarView({
 }
 
 export function TopBar() {
-  const router = useRouter()
-  const queryClient = useQueryClient()
-  const supabase = useMemo(() => createClient(), [])
-  const [busy, setBusy] = useState(false)
-
-  async function handleCreate() {
-    setBusy(true)
-    try {
-      const created = await createTopLevelPage(supabase, queryClient)
-      if (created) {
-        const params = new URLSearchParams({
-          nodeType: created.type,
-          nodeId: created.id,
-          nodeName: created.title,
-        })
-        router.push(`/workspace?${params.toString()}`)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
+  const searchParams = useSearchParams()
+  // The page in view — the new page nests under it by default (null = Life root
+  // → top level). Read fresh each render so ＋ always reflects the current page.
+  const currentNodeId = searchParams.get('nodeId')
+  const [createOpen, setCreateOpen] = useState(false)
 
   // Global ⌘K/Ctrl-K → focus the terminal input. Registered in the *capture*
   // phase on the document so it fires before any focused editor/input can
@@ -94,5 +79,18 @@ export function TopBar() {
     return () => document.removeEventListener('keydown', onKey, { capture: true })
   }, [])
 
-  return <TopBarView onCreate={handleCreate} onCommandK={requestTerminalFocus} busy={busy} />
+  return (
+    <>
+      <TopBarView
+        onCreate={() => setCreateOpen(true)}
+        onCommandK={requestTerminalFocus}
+        busy={false}
+      />
+      <CreatePageModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultParentId={currentNodeId}
+      />
+    </>
+  )
 }

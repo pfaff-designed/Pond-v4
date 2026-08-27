@@ -133,6 +133,23 @@ export const WithAddContent: Story = {
   },
 }
 
+/**
+ * A renamable area overview (ticket-26): the kicker is an inline click-to-rename
+ * field. Typing + Enter commits via onRenameKicker; a page must be renamable from
+ * every surface it renders as.
+ */
+export const EditableTitle: Story = {
+  args: { onRenameKicker: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const field = canvas.getByRole('textbox', { name: /rename page/i })
+    await expect(field).toHaveValue('Health')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Fitness{Enter}')
+    await expect(args.onRenameKicker).toHaveBeenCalledWith('Fitness')
+  },
+}
+
 /** An empty area: zero focal, no card grid, still calm. */
 export const Empty: Story = {
   args: {

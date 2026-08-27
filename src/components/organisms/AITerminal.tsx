@@ -212,8 +212,8 @@ export function AITerminal() {
 
   // The chat AI's creation gesture is now create_page (client-resolved, rendered as
   // a proposal card below) — there is no create_node tool in this path, so useChat
-  // needs no onToolCall handler. The NodeCreationModal stays in the codebase for the
-  // sidebar's manual "New node" affordance, not this terminal.
+  // needs no onToolCall handler. The manual creation gesture is the top bar's ＋
+  // (CreatePageModal, ticket-26), not this terminal.
   const { messages, sendMessage, setMessages, status } = useChat()
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)

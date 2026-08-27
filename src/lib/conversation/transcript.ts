@@ -4,9 +4,9 @@ import type { ModelMessage, UIMessage } from 'ai'
 /**
  * Convert a persisted UI transcript into model messages for replay.
  *
- * A transcript can carry a *dangling* client-tool call — e.g. a `create_node`
+ * A transcript can carry a *dangling* client-tool call — e.g. a client-tool
  * invocation left in the `input-available` state because the user aborted the
- * NodeCreationModal without ever producing a tool result. Replaying that
+ * flow without ever producing a tool result. Replaying that
  * transcript as-is makes the model prompt throw `AI_MissingToolResultsError`
  * (an assistant tool-call with no matching tool-result), so the next assistant
  * reply never streams.

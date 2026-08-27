@@ -8,8 +8,3 @@ import { DefaultChatTransport } from 'ai'
 export function createMainTransport() {
   return new DefaultChatTransport({ api: '/api/chat' })
 }
-
-/** Transport for the NodeCreationModal mini-chat — connects to /api/node-chat */
-export function createNodeChatTransport() {
-  return new DefaultChatTransport({ api: '/api/node-chat' })
-}
