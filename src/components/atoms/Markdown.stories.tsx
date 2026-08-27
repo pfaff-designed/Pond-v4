@@ -55,6 +55,26 @@ export const Reading: Story = {
   },
 }
 
+/**
+ * Reading preserves plain line breaks (remark-breaks): user-typed notes with single
+ * newlines — the old whitespace-pre-wrap behavior — must not collapse into one
+ * run-on paragraph.
+ */
+export const ReadingPlainLineBreaks: Story = {
+  args: { children: 'Buy sandpaper\nSharpen chisels\nGlue the frame', variant: 'reading' },
+  play: async ({ canvasElement }) => {
+    // Single newlines become hard breaks — two <br>s between the three lines.
+    await expect(canvasElement.querySelectorAll('br')).toHaveLength(2)
+    await expect(canvasElement.textContent).toContain('Buy sandpaper')
+    await expect(canvasElement.textContent).toContain('Glue the frame')
+    // Each line renders at its own vertical offset (really separate lines).
+    const paragraph = canvasElement.querySelector('p')
+    await expect(paragraph).not.toBeNull()
+    const lineHeight = parseFloat(getComputedStyle(paragraph!).lineHeight)
+    await expect(paragraph!.getBoundingClientRect().height).toBeGreaterThan(lineHeight * 2)
+  },
+}
+
 /** Terminal variant: same source, compact chat-bubble treatment. */
 export const Terminal: Story = {
   args: { children: '**Biceps** and **triceps**:\n\n- curls\n- extensions', variant: 'terminal' },

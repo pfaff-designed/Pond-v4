@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Markdown } from '@/components/atoms/Markdown'
+import { Markdown, READING_PROSE_CLASS } from '@/components/atoms/Markdown'
 import type { ModuleViewProps } from '../types'
 import type { TextBlock } from './schema'
 
@@ -38,7 +38,7 @@ export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock
     return (
       <textarea
         ref={textareaRef}
-        className="w-full resize-none bg-transparent font-serif text-[1.0625rem] leading-[1.65] text-press-body outline-none"
+        className={`w-full resize-none bg-transparent outline-none ${READING_PROSE_CLASS}`}
         value={data.content}
         rows={Math.max(1, data.content.split('\n').length)}
         placeholder="Write something…"
@@ -54,19 +54,37 @@ export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock
     )
   }
 
-  // Rendered reading view, click-to-edit. A button wrapper keeps it keyboard- and
-  // programmatically-focusable (the accepted-AI-edit path clicks this to open the
-  // source — see AITerminal.editChange). `text-left w-full` so the prose keeps its
-  // natural flow inside the button.
+  // Rendered reading view, click-to-edit. A div with role="button" (not a real
+  // <button>: rendered markdown contains <a> links, and interactive content inside
+  // a button is invalid HTML) — keyboard- and programmatically-focusable, so the
+  // accepted-AI-edit path can .click() it (see AITerminal.editChange). Clicks that
+  // land on a link navigate (new tab, per the atom's anchor mapping) instead of
+  // entering edit. An empty block keeps a visible placeholder + min-height so mouse
+  // users can re-enter after blurring out of a blank textarea.
+  const isEmpty = data.content.trim() === ''
+  const isLink = (target: EventTarget) => target instanceof Element && target.closest('a') !== null
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       data-text-edit-trigger
-      className="block w-full cursor-text text-left"
-      onClick={() => setEditing(true)}
+      className="block w-full min-h-7 cursor-text text-left"
       aria-label="Edit text block"
+      onClick={(e) => {
+        if (!isLink(e.target)) setEditing(true)
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !isLink(e.target)) {
+          e.preventDefault()
+          setEditing(true)
+        }
+      }}
     >
-      <Markdown variant="reading">{data.content}</Markdown>
-    </button>
+      {isEmpty ? (
+        <span className={`${READING_PROSE_CLASS} text-press-faint`}>Write something…</span>
+      ) : (
+        <Markdown variant="reading">{data.content}</Markdown>
+      )}
+    </div>
   )
 }

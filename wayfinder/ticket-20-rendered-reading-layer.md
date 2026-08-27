@@ -97,3 +97,26 @@ tables anywhere a human reads.
 - One adjacent story test (`CreatePageProposalCard.stories.tsx`) was updated: its text
   block preview now renders `# Lasagna` as a real `<h1>`, so the exact-text lookup was
   disambiguated. The component itself was not touched.
+
+### Review fixes (same day)
+
+Code review found five follow-ups, all shipped:
+
+- **Plain line breaks preserved** — `remark-breaks` added to the `reading` variant
+  only, so user-typed notes with single newlines keep their lines (the old
+  `whitespace-pre-wrap` behavior) instead of collapsing into one paragraph. Terminal
+  keeps standard markdown rules (the AI authors real double-newline paragraphs).
+- **Links navigate** — the click-to-edit wrapper is now a `div role="button"`
+  (an `<a>` inside a real `<button>` is invalid HTML) with Enter/Space keyboard
+  support; clicks landing on a link navigate (`target="_blank" rel="noopener
+noreferrer"`) while everything else enters edit.
+- **Empty block re-entry** — after blurring an empty textarea, read mode shows a
+  `min-h` placeholder ("Write something…", `press-faint`) instead of a zero-height
+  dead zone.
+- **Perf** — the `Markdown` atom is `React.memo`ized: string children compare by
+  value, so settled transcript messages skip re-parsing during streaming.
+- **Style dedupe** — shared `strong`/`em` map across variants; the Press
+  reading-prose classes pinned once as `READING_PROSE_CLASS` (used by `p`/`ul`/`ol`
+  and the source textarea, so read↔edit doesn't shift the type).
+
+Caret-at-end behavior stays accepted-deferred per review.
