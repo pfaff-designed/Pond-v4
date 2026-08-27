@@ -117,6 +117,22 @@ export const Life: Story = {
   },
 }
 
+/**
+ * A pure container that can gain its own content: the quiet "+ Add content"
+ * affordance sits beside "ask Pond". Clicking it flips the node to the composite
+ * editor+children surface (ticket-22).
+ */
+export const WithAddContent: Story = {
+  args: { onAddContent: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const add = canvas.getByRole('button', { name: '+ Add content' })
+    await expect(add).toBeInTheDocument()
+    await userEvent.click(add)
+    await expect(args.onAddContent).toHaveBeenCalled()
+  },
+}
+
 /** An empty area: zero focal, no card grid, still calm. */
 export const Empty: Story = {
   args: {

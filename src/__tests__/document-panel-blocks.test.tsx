@@ -16,9 +16,17 @@ import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useRouter: () => ({ push: jest.fn() }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+
+// The composite surface (ticket-22) reads the flat page tree to derive this
+// node's children; per-test rows drive the children grid (empty = no grid).
+const mockFetchPages = jest.fn()
+jest.mock('@/lib/pages/tree', () => ({
+  fetchPages: (...args: unknown[]) => mockFetchPages(...args),
+}))
 
 const mockGetPage = jest.fn()
 const mockUpdateTitle = jest.fn().mockResolvedValue(undefined)
@@ -46,14 +54,19 @@ const blocks: Block[] = [
   },
 ]
 
-function renderPanel() {
-  mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
+function renderWith(page: Record<string, unknown>, rows: Record<string, unknown>[] = []) {
+  mockGetPage.mockResolvedValue(page)
+  mockFetchPages.mockResolvedValue(rows)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DocumentPanel />
     </QueryClientProvider>
   )
+}
+
+function renderPanel() {
+  return renderWith({ id: 'page-1', title: 'Workshop', blocks })
 }
 
 beforeEach(() => {
@@ -90,5 +103,79 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
     expect(table && table.type === 'table' && table.rows[0].cells[0]).toBe('Mitre Saw')
     // The edit is wholesale block state — the untouched rows must survive.
     expect(table && table.type === 'table' && table.rows[1].cells).toEqual(['Bandsaw', 'Left wall'])
+  })
+})
+
+// ── The ticket-22 type-switch: blocks AND children on one surface ─────────────
+
+const NOW = new Date().toISOString()
+const nodeRow = (over: Record<string, unknown>) => ({
+  id: 'page-1',
+  parent_id: null,
+  type: 'page',
+  title: 'Workout Routines',
+  order: 0,
+  updated_at: NOW,
+  ...over,
+})
+const childRow = nodeRow({
+  id: 'child-1',
+  parent_id: 'page-1',
+  title: '3-Day Full-Body Dumbbell Routine',
+})
+const quote: Block[] = [{ id: 'b-quote', type: 'text', content: 'Consistency beats intensity' }]
+
+describe('DocumentPanel type-switch (ticket-22): blocks and children both render', () => {
+  it('an area WITH blocks renders the editor (its content) plus the children grid', async () => {
+    renderWith({ id: 'page-1', type: 'area', title: 'Workout Routines', blocks: quote }, [
+      nodeRow({ type: 'area' }),
+      childRow,
+    ])
+    // Its own content is reachable: title editor + the block's reading view.
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
+    expect(await screen.findByRole('button', { name: 'Edit text block' })).toBeInTheDocument()
+    // And its children still show, below, as the shared grid.
+    expect(await screen.findByText('Everything within')).toBeInTheDocument()
+    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
+    // No pure-overview affordance — this is the composite surface.
+    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
+  })
+
+  it('a page WITH children renders the editor plus the children grid', async () => {
+    renderWith({ id: 'page-1', type: 'page', title: 'Workout Routines', blocks: quote }, [
+      nodeRow({}),
+      childRow,
+    ])
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
+    expect(await screen.findByText('Everything within')).toBeInTheDocument()
+    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
+  })
+
+  it('a pure area (no blocks) keeps the overview, with a "+ Add content" affordance', async () => {
+    renderWith({ id: 'page-1', type: 'area', title: 'Health', blocks: [] }, [
+      nodeRow({ type: 'area', title: 'Health' }),
+      childRow,
+    ])
+    expect(await screen.findByRole('button', { name: '+ Add content' })).toBeInTheDocument()
+    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
+    // No editor chrome on the pure overview.
+    expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
+  })
+
+  it('"+ Add content" promotes a pure area to the editor and persists the new block', async () => {
+    renderWith({ id: 'page-1', type: 'area', title: 'Health', blocks: [] }, [
+      nodeRow({ type: 'area', title: 'Health' }),
+      childRow,
+    ])
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add content' }))
+
+    // The node flips to the composite editor…
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
+    expect(await screen.findByText('Everything within')).toBeInTheDocument()
+    // …and the added block rides the same debounced save as any edit.
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
+    const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]
+    expect(savedBlocks).toHaveLength(1)
+    expect(savedBlocks[0].type).toBe('text')
   })
 })

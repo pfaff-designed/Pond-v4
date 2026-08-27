@@ -14,7 +14,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
-import { OverviewCard } from '@/components/molecules/OverviewCard'
+import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import {
   areaOverview,
   lifeOverview,
@@ -53,6 +53,12 @@ export interface OverviewSurfaceProps {
   onOpenCard: (card: OverviewCardModel) => void
   /** The quiet "ask Pond →" affordance — focuses the terminal. */
   onAskPond?: () => void
+  /**
+   * The quiet "+ Add content" affordance. Present when this node could hold its
+   * own blocks but has none yet (a pure area/container). Adding a block flips the
+   * node to the composite editor+children surface (ticket-22).
+   */
+  onAddContent?: () => void
 }
 
 export function OverviewSurface({
@@ -62,6 +68,7 @@ export function OverviewSurface({
   closing,
   onOpenCard,
   onAskPond,
+  onAddContent,
 }: OverviewSurfaceProps) {
   let ri = 0
   return (
@@ -81,14 +88,24 @@ export function OverviewSurface({
               {kicker}
             </span>
           </div>
-          {onAskPond && (
-            <button
-              onClick={onAskPond}
-              className="text-[12.5px] font-medium text-press-accent hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
-            >
-              ask Pond →
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            {onAddContent && (
+              <button
+                onClick={onAddContent}
+                className="text-[12.5px] font-medium text-press-muted hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
+              >
+                + Add content
+              </button>
+            )}
+            {onAskPond && (
+              <button
+                onClick={onAskPond}
+                className="text-[12.5px] font-medium text-press-accent hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
+              >
+                ask Pond →
+              </button>
+            )}
+          </div>
         </Rise>
 
         {/* ── Focal numeral + caption ─────────────────────────────────────── */}
@@ -100,23 +117,14 @@ export function OverviewSurface({
         {model.cards.length > 0 && (
           <div className="mt-11">
             <Rise i={ri++}>
-              <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint mb-3.5">
-                Everything within
-              </div>
+              <ChildrenGridLabel />
             </Rise>
-            <div className="grid grid-cols-2 gap-3.5">
-              {model.cards.map((card) => (
-                <Rise key={card.id} i={ri++}>
-                  <OverviewCard
-                    title={card.title}
-                    stat={card.stat}
-                    sub={card.sub}
-                    accent={card.accent}
-                    onOpen={() => onOpenCard(card)}
-                  />
-                </Rise>
-              ))}
-            </div>
+            <ChildrenGrid
+              cards={model.cards}
+              onOpenCard={onOpenCard}
+              label={false}
+              cell={(_card, node) => <Rise i={ri++}>{node}</Rise>}
+            />
           </div>
         )}
 
@@ -131,8 +139,9 @@ export function OverviewSurface({
   )
 }
 
-/** Card → workspace navigation shared by both overview containers. */
-function useOpenCard() {
+/** Card → workspace navigation shared by the overview containers and the
+ * composite content+children surface (ticket-22). */
+export function useOpenCard() {
   const router = useRouter()
   return function openCard(card: OverviewCardModel) {
     const params = new URLSearchParams({
@@ -149,10 +158,20 @@ function useOpenCard() {
 /**
  * The overview for one area page, derived from the same ['pages'] rows the
  * rail reads. Cards navigate the workspace; "ask Pond" focuses the terminal.
- * The area's own blocks are deliberately ignored for now (composite view is a
- * named follow-up).
+ * Rendered only for an area with NO blocks of its own — an area with blocks gets
+ * the composite editor+children surface in DocumentPanel instead (ticket-22);
+ * the "+ Add content" affordance is the bridge from this surface to that one.
  */
-export function AreaOverviewPanel({ areaId, title }: { areaId: string; title: string }) {
+export function AreaOverviewPanel({
+  areaId,
+  title,
+  onAddContent,
+}: {
+  areaId: string
+  title: string
+  /** When set, the surface offers a "+ Add content" affordance (ticket-22). */
+  onAddContent?: () => void
+}) {
   const openCard = useOpenCard()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
 
@@ -171,6 +190,7 @@ export function AreaOverviewPanel({ areaId, title }: { areaId: string; title: st
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
       onOpenCard={openCard}
       onAskPond={requestTerminalFocus}
+      onAddContent={onAddContent}
     />
   )
 }
