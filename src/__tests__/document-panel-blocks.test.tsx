@@ -16,9 +16,14 @@ import type { Block } from '@/lib/documents/types'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
+  useRouter: () => ({ push: jest.fn() }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+
+// The composite surface (ticket-22) reads the flat page tree to derive this
+// node's children; with no children the grid collapses and the editor is intact.
+jest.mock('@/lib/pages/tree', () => ({ fetchPages: jest.fn().mockResolvedValue([]) }))
 
 const mockGetPage = jest.fn()
 const mockUpdateTitle = jest.fn().mockResolvedValue(undefined)

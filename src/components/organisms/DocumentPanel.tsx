@@ -19,7 +19,14 @@ import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
-import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
+import {
+  AreaOverviewPanel,
+  LifeOverviewPanel,
+  useOpenCard,
+} from '@/components/organisms/OverviewSurface'
+import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
+import { areaOverview } from '@/lib/pages/overview'
+import { fetchPages } from '@/lib/pages/tree'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
@@ -33,6 +40,16 @@ export function DocumentPanel() {
     queryFn: () => (nodeId ? getPage(supabase, nodeId) : Promise.resolve(null)),
     enabled: !!nodeId,
   })
+
+  // The flat page tree — the same cache the rail and overview surfaces read — so
+  // this node's own children can be shown alongside its blocks (ticket-22).
+  const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const openCard = useOpenCard()
+  const childModel = useMemo(
+    () => (nodeId ? areaOverview(rows, nodeId, new Date()) : null),
+    [rows, nodeId]
+  )
+  const hasChildren = (childModel?.cards.length ?? 0) > 0
 
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -130,12 +147,20 @@ export function DocumentPanel() {
     )
   }
 
-  // ── Type switch: an area IS its overview; everything else gets the editor ──
-  if (page.type === 'area') {
-    return <AreaOverviewPanel areaId={page.id} title={page.title} />
+  // ── Type switch (ticket-22) ───────────────────────────────────────────────
+  // "Everything is a page": a node may hold BOTH its own blocks AND children.
+  //   • A pure area/container (no blocks) keeps the calm Press overview — its
+  //     focal treatment earns its place. A "+ Add content" affordance lets it
+  //     gain blocks, which flips it to the composite below.
+  //   • Any node WITH blocks (or a non-area with children) shows its content in
+  //     the full editor, with the "Everything within" children grid *below* it —
+  //     so an accepted edit is immediately visible, and no page can ever hide
+  //     its own content behind a folder view.
+  if (page.type === 'area' && blocks.length === 0) {
+    return <AreaOverviewPanel areaId={page.id} title={page.title} onAddContent={addTextBlock} />
   }
 
-  // ── Editor ──────────────────────────────────────────────────────────────────
+  // ── Editor (+ children grid when the node has sub-pages) ──────────────────────
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto px-8 py-8">
@@ -174,6 +199,15 @@ export function DocumentPanel() {
         >
           + Add text
         </button>
+
+        {/* Content above, children below — the page's own blocks stay primary; its
+            sub-pages read as a quiet index beneath them (ticket-22). Collapses to
+            nothing when the node has no children. */}
+        {hasChildren && childModel && (
+          <div className="mt-12 border-t border-press-hair pt-6">
+            <ChildrenGrid cards={childModel.cards} onOpenCard={openCard} />
+          </div>
+        )}
       </div>
     </div>
   )
