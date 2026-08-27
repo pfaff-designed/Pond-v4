@@ -15,7 +15,12 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { OverviewCard } from '@/components/molecules/OverviewCard'
-import { areaOverview, type OverviewCardModel, type OverviewModel } from '@/lib/pages/overview'
+import {
+  areaOverview,
+  lifeOverview,
+  type OverviewCardModel,
+  type OverviewModel,
+} from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
@@ -126,6 +131,19 @@ export function OverviewSurface({
   )
 }
 
+/** Card → workspace navigation shared by both overview containers. */
+function useOpenCard() {
+  const router = useRouter()
+  return function openCard(card: OverviewCardModel) {
+    const params = new URLSearchParams({
+      nodeType: card.type,
+      nodeId: card.id,
+      nodeName: card.title,
+    })
+    router.push(`/workspace?${params.toString()}`)
+  }
+}
+
 // ── Area container ───────────────────────────────────────────────────────────
 
 /**
@@ -135,7 +153,7 @@ export function OverviewSurface({
  * named follow-up).
  */
 export function AreaOverviewPanel({ areaId, title }: { areaId: string; title: string }) {
-  const router = useRouter()
+  const openCard = useOpenCard()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
@@ -144,15 +162,6 @@ export function AreaOverviewPanel({ areaId, title }: { areaId: string; title: st
     return pageAccent(rootAncestorId(areaId, parentById))
   }, [rows, areaId])
 
-  function openCard(card: OverviewCardModel) {
-    const params = new URLSearchParams({
-      nodeType: card.type,
-      nodeId: card.id,
-      nodeName: card.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
-  }
-
   const name = title || 'Untitled'
   return (
     <OverviewSurface
@@ -160,6 +169,38 @@ export function AreaOverviewPanel({ areaId, title }: { areaId: string; title: st
       accent={accent}
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
+      onOpenCard={openCard}
+      onAskPond={requestTerminalFocus}
+    />
+  )
+}
+
+// ── Life container ───────────────────────────────────────────────────────────
+
+/**
+ * The Life/home overview at the workspace root — replaces the old "Select a
+ * page" empty state. Structural only: real counts and recency per top-level
+ * page; the "Across your life" AI synthesis is a deferred follow-up.
+ */
+export function LifeOverviewPanel() {
+  const openCard = useOpenCard()
+  const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+
+  const model = useMemo(() => lifeOverview(rows, new Date()), [rows])
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center text-sm text-press-faint">
+        Loading…
+      </div>
+    )
+  }
+
+  return (
+    <OverviewSurface
+      kicker="Life · everything"
+      model={model}
+      closing="That’s the whole of it. Open an area, or ask."
       onOpenCard={openCard}
       onAskPond={requestTerminalFocus}
     />

@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
-import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
+import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
@@ -116,13 +116,9 @@ export function DocumentPanel() {
     commitLocalEdit([...blocks, { id: crypto.randomUUID(), type: 'text', content: '' }])
   }
 
-  // ── Empty / loading states ─────────────────────────────────────────────────
+  // ── Root: the Life overview owns the panel (no more empty state) ──────────
   if (!nodeId) {
-    return (
-      <div className="h-full flex items-center justify-center text-sm text-press-faint">
-        Select a page to view or edit it
-      </div>
-    )
+    return <LifeOverviewPanel />
   }
   if (isLoading || !page) {
     return (

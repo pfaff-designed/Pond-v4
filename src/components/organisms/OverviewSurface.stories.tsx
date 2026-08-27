@@ -72,6 +72,51 @@ export const Area: Story = {
   },
 }
 
+/** The Life root: no accent dot, a card per top-level page. */
+export const Life: Story = {
+  args: {
+    kicker: 'Life · everything',
+    accent: undefined,
+    model: {
+      focal: '23',
+      focalCaption: 'pages across your life.',
+      cards: [
+        {
+          id: 'health',
+          type: 'area',
+          title: 'Health',
+          stat: '7',
+          sub: '7 pages inside · updated today',
+          accent: '#5f7355',
+        },
+        {
+          id: 'personal',
+          type: 'area',
+          title: 'Personal',
+          stat: '12',
+          sub: '12 pages inside · updated yesterday',
+          accent: '#8a6b74',
+        },
+        {
+          id: 'creativity',
+          type: 'area',
+          title: 'Creativity',
+          stat: '3',
+          sub: '3 pages inside · updated 4d ago',
+          accent: '#9a6b43',
+        },
+      ],
+    },
+    closing: 'That’s the whole of it. Open an area, or ask.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('23')).toBeInTheDocument()
+    await expect(canvas.getByText('pages across your life.')).toBeInTheDocument()
+    await expect(canvas.getByText('Health')).toBeInTheDocument()
+  },
+}
+
 /** An empty area: zero focal, no card grid, still calm. */
 export const Empty: Story = {
   args: {
