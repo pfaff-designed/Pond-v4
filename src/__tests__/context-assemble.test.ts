@@ -122,6 +122,29 @@ describe('blocksToText', () => {
     expect(text).toContain('Left wall')
   })
 
+  it('a bound metric renders its DERIVED value, matching the UI (ticket-23)', () => {
+    const blocks: Block[] = [
+      {
+        id: 'todo-1',
+        type: 'todo',
+        items: [
+          { id: 't1', label: 'Dune', checked: true },
+          { id: 't2', label: 'Hyperion', checked: false },
+        ],
+      },
+      {
+        id: 'm1',
+        type: 'metric',
+        label: 'Books finished',
+        value: 99,
+        source: { blockId: 'todo-1', kind: 'checklist-checked' },
+      },
+    ]
+    const text = blocksToText(blocks)
+    expect(text).toContain('Books finished: 1') // derived, not the manual 99
+    expect(text).not.toContain('99')
+  })
+
   it('returns an empty string for no blocks', () => {
     expect(blocksToText([])).toBe('')
   })

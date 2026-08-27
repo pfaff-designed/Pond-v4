@@ -104,6 +104,24 @@ id: true })`; `source` carries no minted id, so it flows through with zero edits
   there. The metric descriptor's NL `description` was extended so the model knows
   it can bind a metric to a checklist/table — tested in `ai-composition.test.ts`.
 
+- **Serialize derives too** (code-review fix). The `serialize`/`preview` facets
+  gained an optional `siblings?: readonly unknown[]` second parameter (typed
+  loosely in `types.ts` to stay out of the types↔content import cycle; a module
+  that cares narrows it). Context assembly (`blocksToText`, `blockPreview`)
+  passes each block's page-mates, so a bound metric's prompt/embedding text
+  carries the SAME derived number the UI shows — the AI and the user can never
+  see different values. A caller without the page in hand omits `siblings` and
+  the metric then states the binding + manual fallback ("derived live from block
+  X (manual fallback: N)") rather than guessing a number. Stale-with-siblings
+  serializes the manual value explicitly flagged as "bound source missing".
+
+- **One block-DOM convention** (code-review fix). `src/lib/modules/block-dom.ts`
+  is the single place the `block-<id>` element-id convention is minted
+  (`blockDomId`) and the one shared `scrollToBlock(blockId, { highlight })`
+  helper — used by both hosts (DocumentPanel, PageView), so scroll+highlight
+  behavior is identical everywhere. (AITerminal still inlines the string; that
+  file is owned by another ticket — fold it in when it's next open.)
+
 ### Same-batch vs existing-blocks boundary (decision)
 
 **Bindings apply to EXISTING blocks only.** The AI mints no ids; the client mints
@@ -119,9 +137,11 @@ to the create/anchor/id-minting machinery.
 
 ### Validation
 
-`npm run typecheck` clean. `npm test` → 30 suites / 277 tests pass (added
+`npm run typecheck` clean. `npm test` → 30 suites / 282 tests pass (added
 `metric-derive.test.ts` — checked/total/table-rows counts, live recompute, and
-both stale fallbacks; plus binding assertions in `ai-composition.test.ts`).
+both stale fallbacks; binding assertions in `ai-composition.test.ts`; bound-metric
+serialize coverage in `module-serialize.test.ts` + a `blocksToText` integration
+check in `context-assemble.test.ts`).
 Metric Storybook story tests pass (Unbound, BoundLive with a live checkbox toggle,
 StaleSource). `npm run lint` has 80 pre-existing problems, all in
 `src/components/charts/` (Bklit lib) and `src/app/proto/` — identical count on

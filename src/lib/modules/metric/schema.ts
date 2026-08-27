@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import type { ModuleDescriptor } from '../types'
+// Type-only: erased at compile, so no runtime cycle with content.ts (which
+// imports this schema). derive.ts itself imports only types — safe at runtime.
+import type { Block } from '../content'
+import { deriveMetricValue } from './derive'
 
 /**
  * Optional live binding (ticket-23). Points a metric at a sibling block in the same
@@ -48,5 +52,19 @@ export const metricDescriptor: ModuleDescriptor<MetricBlock> = {
     'Prefer a bound metric over a hand-entered count when the same fact already lives in a checklist or table on the page, so the number stays live. ' +
     'You can only bind to a block that ALREADY exists (from the injected context) — not one you create in the same batch, whose id is minted later. ' +
     'To bind a metric to a checklist/table you are also creating: create that block first, then in a follow-up turn (once it exists) add the bound metric.',
-  serialize: (data) => `${data.label}: ${data.value}${data.unit ? ` ${data.unit}` : ''}`,
+  // A bound metric must serialize the SAME number the UI derives — the AI's page
+  // context and the embeddings must never disagree with what the user sees. With
+  // `siblings` in hand we derive exactly as the view does (stale → manual value,
+  // flagged); without them we state the binding + fallback instead of guessing.
+  serialize: (data, siblings) => {
+    const unit = data.unit ? ` ${data.unit}` : ''
+    if (!data.source) return `${data.label}: ${data.value}${unit}`
+    if (siblings === undefined) {
+      return `${data.label}: derived live from block ${data.source.blockId} (manual fallback: ${data.value}${unit})`
+    }
+    const derived = deriveMetricValue(data, siblings as readonly Block[])
+    return derived.state === 'derived'
+      ? `${data.label}: ${derived.value}${unit} (live, derived from block ${derived.sourceId})`
+      : `${data.label}: ${data.value}${unit} (bound source ${data.source.blockId} missing; manual value shown)`
+  },
 }

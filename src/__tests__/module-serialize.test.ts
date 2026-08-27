@@ -93,6 +93,51 @@ describe('descriptor.preview (one-line listing)', () => {
   })
 })
 
+describe('bound metric serialize (ticket-23 — AI sees what the UI shows)', () => {
+  const checklist: Block = {
+    id: 'todo-1',
+    type: 'todo',
+    items: [
+      { id: 'i1', label: 'Dune', checked: true },
+      { id: 'i2', label: 'Hyperion', checked: true },
+      { id: 'i3', label: 'Neuromancer', checked: false },
+    ],
+  }
+  const bound: Extract<Block, { type: 'metric' }> = {
+    id: 'm1',
+    type: 'metric',
+    label: 'Books finished',
+    value: 99,
+    source: { blockId: 'todo-1', kind: 'checklist-checked' },
+  }
+  const metricSerialize = moduleDescriptors.metric.serialize
+
+  it('with siblings: emits the DERIVED value (matches the view), never the manual one', () => {
+    const out = metricSerialize(bound, [checklist, bound])
+    expect(out).toContain('Books finished: 2')
+    expect(out).not.toContain('99')
+    expect(out).toContain('todo-1') // the binding is visible to the model
+  })
+
+  it('with siblings but a missing source: manual value, flagged — not silently wrong', () => {
+    const out = metricSerialize(bound, [bound])
+    expect(out).toContain('99')
+    expect(out).toMatch(/missing/)
+  })
+
+  it('without siblings: states the binding + fallback instead of guessing a number', () => {
+    const out = metricSerialize(bound)
+    expect(out).toContain('derived live from block todo-1')
+    expect(out).toContain('manual fallback: 99')
+    expect(out).not.toMatch(/^Books finished: 99$/)
+  })
+
+  it('unbound metric output is unchanged with or without siblings', () => {
+    const unbound = samples.metric as Extract<Block, { type: 'metric' }>
+    expect(metricSerialize(unbound, [unbound])).toBe('Boards cut: 12 pcs')
+  })
+})
+
 describe('registry completeness', () => {
   const contentDescriptors = Object.values(moduleDescriptors).filter((d) => d.type !== 'page')
 

@@ -50,7 +50,9 @@ export function MetricView({ data }: ModuleViewProps<MetricBlock>) {
       {derived.state === 'stale' && (
         <span
           className="text-[11px] text-zinc-400 italic"
-          title="The linked block no longer exists"
+          // Covers both stale shapes: the source block was deleted, OR it still
+          // exists but type-morphed into something the binding can't count.
+          title="Source block missing or no longer countable"
         >
           source missing
         </span>

@@ -18,22 +18,9 @@ import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
+import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { AreaOverviewPanel, LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
 import type { Block } from '@/lib/documents/types'
-
-/**
- * Scroll to a block row and briefly highlight it (ticket-23) — a bound metric's `→`
- * jumps to its source. The row DOM ids are minted by BlockEditor (`block-<id>`), so
- * this host owns the scroll. Guards against SSR / a missing node.
- */
-function scrollToBlock(blockId: string) {
-  if (typeof document === 'undefined') return
-  const el = document.getElementById(`block-${blockId}`)
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.classList.add('ring-2', 'ring-press-faint', 'rounded-sm')
-  window.setTimeout(() => el.classList.remove('ring-2', 'ring-press-faint', 'rounded-sm'), 1200)
-}
 
 export function DocumentPanel() {
   const searchParams = useSearchParams()
@@ -211,7 +198,7 @@ function BlockEditor({
   onRemove: () => void
 }) {
   return (
-    <div className="group relative" id={`block-${block.id}`}>
+    <div className="group relative" id={blockDomId(block.id)}>
       <button
         className="absolute -left-5 top-1 opacity-0 group-hover:opacity-100 text-press-faint hover:text-destructive text-sm"
         title="Delete block"
