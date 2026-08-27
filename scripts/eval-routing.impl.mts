@@ -26,6 +26,9 @@ import {
   proposeChangesTool,
   fetchContextTool,
 } from '../src/app/api/chat/tools.ts'
+// The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
+// re-implemented, so the eval's tells and the gate can't drift.
+import { isMarkdownPipeTable, isTitleEchoHeading } from '../src/lib/modules/authoring-lint.ts'
 
 const MODEL = AI_MODELS.standard // the app default (claude-sonnet-4-6)
 
@@ -54,10 +57,10 @@ type Scenario = {
   expectBlockType?: string
   /** For create_page cases: assert NO text block smuggles a markdown table (M3). */
   expectNoMdTableInText?: boolean
+  /** For create_page cases: assert the FIRST block is not a heading echoing the
+   *  page title (ticket-21 — AI authoring discipline). */
+  expectNoTitleEcho?: boolean
 }
-
-/** Markdown-table tell: a pipe row followed by a |---|---| separator row. */
-const MD_TABLE_RE = /\|[^\n]*\|[^\n]*\n[^\n]*\|[\s:|-]+\|/
 
 // The 8 original proto cases (two of them — the ambiguous index case and the
 // create-project collision — carry the routing verdicts the proto observed), plus
@@ -201,6 +204,35 @@ const SCENARIOS: Scenario[] = [
     text: 'make an inventory page for my workshop tools',
     note: 'M3: inventories must scaffold a real table block, never a markdown table faked inside a text block.',
   },
+
+  // ── ticket-21: AI authoring discipline (structure over markdown) ──
+  {
+    name: 'T21 reading list → real table, no md table, no title echo',
+    expect: 'create_page',
+    expectBlockType: 'table',
+    expectNoMdTableInText: true,
+    expectNoTitleEcho: true,
+    ctx: 'The user is on their Home view. No current page.',
+    text: 'make me a fall reading list page — a table of books with title, author, and status',
+    note: 'ticket-21: tabular data → table module; the first block must not echo the "Fall Reading List" title as a heading.',
+  },
+  {
+    name: 'T21 comparison content → table module, not a pipe table in text',
+    expect: 'create_page',
+    expectBlockType: 'table',
+    expectNoMdTableInText: true,
+    ctx: 'The user is on their Home view. No current page.',
+    text: 'create a page comparing three standing desks — name, height range, and price for each',
+    note: 'ticket-21: a comparison is tabular; it must land as a table module, never markdown pipes inside a text block.',
+  },
+  {
+    name: 'T21 simple note page → no title-echo heading as first block',
+    expect: 'create_page',
+    expectNoTitleEcho: true,
+    ctx: 'The user is on their Home view. No current page.',
+    text: 'make me a page called Japan Trip Ideas for jotting down places to visit',
+    note: 'ticket-21: even a plain note page must not open with a "## Japan Trip Ideas" heading echoing its own title.',
+  },
 ]
 
 type Result = {
@@ -236,6 +268,7 @@ async function runOne(s: Scenario): Promise<Result> {
     // For create_page cases, also assert the shape the milestone requires.
     const input = (call?.input ?? {}) as {
       type?: string
+      title?: string
       parentTitle?: string
       blocks?: Array<{ type?: string; content?: string }>
     }
@@ -249,7 +282,15 @@ async function runOne(s: Scenario): Promise<Result> {
     }
     if (pass && s.expectNoMdTableInText) {
       pass = !(input.blocks ?? []).some(
-        (b) => b.type === 'text' && MD_TABLE_RE.test(b.content ?? '')
+        (b) => b.type === 'text' && isMarkdownPipeTable(b.content ?? '')
+      )
+    }
+    if (pass && s.expectNoTitleEcho) {
+      // The first block must not be a heading echoing the page title (ticket-21).
+      const first = (input.blocks ?? [])[0]
+      pass = !(
+        first?.type === 'text' &&
+        isTitleEchoHeading(first.content ?? '', input.title ?? '')
       )
     }
   }

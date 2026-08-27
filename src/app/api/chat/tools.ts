@@ -10,24 +10,18 @@
  */
 import { z } from 'zod'
 import { proposeChangesSchema, moduleDataSchema } from '@/lib/modules/ai-composition'
+import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 
 /**
- * create_page (M1) — the single merged create gesture for the chat AI. It mints a
- * BRAND-NEW page (separate from the one the user is on) and scaffolds its initial
- * content in one step. Both structural types (project/area/routine/action) AND
- * content pages go through it and get real scaffolded content.
- *
- * Client-resolved (no execute): the tool call renders a proposal card, the user
- * reviews + optionally corrects placement, and only on accept does the client mint
- * block ids and write. `blocks` reuses the registry-derived, id-stripped
- * `moduleDataSchema` so this tool cannot drift from the block registry and cannot
- * carry an id the model invented. Placement is proposed by title (`parentTitle`);
- * the client resolves it and lets the user change it.
+ * create_page input schema, with the ticket-21 title-echo lint attached at the
+ * whole-object level (it needs both `title` and the first block). Rejecting a
+ * first-block heading that repeats the page title triggers `repairToolCall`, which
+ * re-asks the model to drop that heading — the corrective message names the fix.
+ * Scoped to create_page: this is the "AI-created page opens with `## <title>`"
+ * anti-pattern from the audit; propose_changes carries no page title to compare.
  */
-export const createPageTool = {
-  description:
-    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether structural (a project, an area) or content (a recipe, a document). This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics.',
-  inputSchema: z.object({
+const createPageInput = z
+  .object({
     type: z
       .enum(['area', 'routine', 'project', 'action', 'page'])
       .describe(
@@ -49,7 +43,7 @@ export const createPageTool = {
     blocks: z
       .array(moduleDataSchema)
       .describe(
-        'The scaffolded initial content, composed only from the available block types. Give the page real, useful content — not an empty shell.'
+        'The scaffolded initial content, composed only from the available block types. Give the page real, useful content — not an empty shell. Do NOT make the first block a heading that repeats the page title; the title is already shown.'
       ),
     reason: z
       .string()
@@ -57,7 +51,35 @@ export const createPageTool = {
       .describe(
         'A short, optional note on what this page is for (shown to the user on the proposal card).'
       ),
-  }),
+  })
+  .superRefine((input, ctx) => {
+    const first = input.blocks[0]
+    if (first?.type === 'text' && isTitleEchoHeading(first.content, input.title)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: TITLE_ECHO_MESSAGE,
+        path: ['blocks', 0, 'content'],
+      })
+    }
+  })
+
+/**
+ * create_page (M1) — the single merged create gesture for the chat AI. It mints a
+ * BRAND-NEW page (separate from the one the user is on) and scaffolds its initial
+ * content in one step. Both structural types (project/area/routine/action) AND
+ * content pages go through it and get real scaffolded content.
+ *
+ * Client-resolved (no execute): the tool call renders a proposal card, the user
+ * reviews + optionally corrects placement, and only on accept does the client mint
+ * block ids and write. `blocks` reuses the registry-derived, id-stripped
+ * `moduleDataSchema` so this tool cannot drift from the block registry and cannot
+ * carry an id the model invented. Placement is proposed by title (`parentTitle`);
+ * the client resolves it and lets the user change it.
+ */
+export const createPageTool = {
+  description:
+    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether structural (a project, an area) or content (a recipe, a document). This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics. Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block.',
+  inputSchema: createPageInput,
 } as const
 
 export const proposeChangesTool = {
