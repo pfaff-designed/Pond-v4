@@ -14,7 +14,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
-import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
+import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import {
   areaOverview,
   lifeOverview,
@@ -117,19 +117,13 @@ export function OverviewSurface({
         {model.cards.length > 0 && (
           <div className="mt-11">
             <Rise i={ri++}>
-              <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint mb-3.5">
-                Everything within
-              </div>
+              <ChildrenGridLabel />
             </Rise>
             <ChildrenGrid
               cards={model.cards}
               onOpenCard={onOpenCard}
               label={false}
-              cell={(card, node) => (
-                <Rise key={card.id} i={ri++}>
-                  {node}
-                </Rise>
-              )}
+              cell={(_card, node) => <Rise i={ri++}>{node}</Rise>}
             />
           </div>
         )}
@@ -164,8 +158,9 @@ export function useOpenCard() {
 /**
  * The overview for one area page, derived from the same ['pages'] rows the
  * rail reads. Cards navigate the workspace; "ask Pond" focuses the terminal.
- * The area's own blocks are deliberately ignored for now (composite view is a
- * named follow-up).
+ * Rendered only for an area with NO blocks of its own — an area with blocks gets
+ * the composite editor+children surface in DocumentPanel instead (ticket-22);
+ * the "+ Add content" affordance is the bridge from this surface to that one.
  */
 export function AreaOverviewPanel({
   areaId,

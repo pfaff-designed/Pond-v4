@@ -91,9 +91,25 @@ adding the first block promotes the node to the composite editor+grid surface.
   applies the decision tree above, and renders the shared `ChildrenGrid` beneath the
   editor.
 
+### Review follow-up (same day)
+
+Code review flagged that the type-switch read effect-seeded LOCAL state, so the
+first painted frame could show the wrong surface (overview flash on an area with
+blocks; the previous node's blocks deciding the branch on node change). Fixed:
+render derives `viewBlocks`/`viewTitle` from the loaded row until the seeding
+effect has run for THIS page (tracked via `seededId` state), so the correct
+surface and content paint on the very first frame. Also from review: jest
+coverage for the decision tree itself (area-with-blocks → editor+grid,
+page-with-children → editor+grid, pure area → overview, "+ Add content"
+promotion persists through the debounced save); the "Everything within" label
+deduped into an exported `ChildrenGridLabel`; `ChildrenGrid` keys each cell
+internally (keyed Fragment) so `cell` wrappers can't drop keys; cards derivation
+narrowed to a shared `childCards()` helper in `lib/pages/overview`; stale
+AreaOverviewPanel docstring corrected.
+
 ### Validation
 
-`npm run typecheck` clean · `npm test` 315 passed · `npm run test-storybook` 63
+`npm run typecheck` clean · `npm test` 319 passed · `npm run test-storybook` 63
 passed · `npx eslint` clean on every touched file · live browser-verified against
 the exact reproduction (Workout Routines shows content + children; pure Health area
 unchanged + gains "+ Add content").

@@ -77,10 +77,18 @@ function toCard(rows: PageRow[], row: PageRow, parentById: Map<string, string | 
   }
 }
 
+/**
+ * Cards for a node's direct children — the "Everything within" grid model.
+ * Shared by the area overview and the composite editor surface (ticket-22), so
+ * both read the same derivation.
+ */
+export function childCards(rows: PageRow[], parentId: string, now: Date): OverviewCardModel[] {
+  const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
+  return childrenOf(rows, parentId).map((c) => toCard(rows, c, parentById, now))
+}
+
 /** The overview for one area page: focal = pages within, card per direct child. */
 export function areaOverview(rows: PageRow[], areaId: string, now: Date): OverviewModel {
-  const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
-  const children = childrenOf(rows, areaId)
   const within = subtreeSize(rows, areaId) - 1
 
   return {
@@ -91,7 +99,7 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
         : within === 1
           ? 'page within, at a glance.'
           : 'pages within, at a glance.',
-    cards: children.map((c) => toCard(rows, c, parentById, now)),
+    cards: childCards(rows, areaId, now),
   }
 }
 

@@ -11,13 +11,34 @@
  * nothing on a childless page.
  */
 
+import { Fragment } from 'react'
 import { OverviewCard } from '@/components/molecules/OverviewCard'
 import type { OverviewCardModel } from '@/lib/pages/overview'
+
+/**
+ * The grid's mono section label — one component so the label can't drift between
+ * ChildrenGrid's inline rendering and OverviewSurface's rise-animated copy.
+ */
+export function ChildrenGridLabel({
+  children = 'Everything within',
+}: {
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint mb-3.5">
+      {children}
+    </div>
+  )
+}
 
 export interface ChildrenGridProps {
   cards: OverviewCardModel[]
   onOpenCard: (card: OverviewCardModel) => void
-  /** Wrapper for each cell — lets the surface apply its staggered rise-on-mount. */
+  /**
+   * Wrapper for each cell — lets the surface apply its staggered rise-on-mount.
+   * Each cell is keyed internally (a keyed Fragment per card), so wrappers do NOT
+   * need to supply their own key.
+   */
   cell?: (card: OverviewCardModel, node: React.ReactNode) => React.ReactNode
   /**
    * The mono section label. A string renders the standard label; `false` omits it
@@ -35,25 +56,22 @@ export function ChildrenGrid({
   if (cards.length === 0) return null
   return (
     <div>
-      {label !== false && (
-        <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint mb-3.5">
-          {label}
-        </div>
-      )}
+      {label !== false && <ChildrenGridLabel>{label}</ChildrenGridLabel>}
       <div className="grid grid-cols-2 gap-3.5">
-        {cards.map((card) =>
-          cell(
-            card,
-            <OverviewCard
-              key={card.id}
-              title={card.title}
-              stat={card.stat}
-              sub={card.sub}
-              accent={card.accent}
-              onOpen={() => onOpenCard(card)}
-            />
-          )
-        )}
+        {cards.map((card) => (
+          <Fragment key={card.id}>
+            {cell(
+              card,
+              <OverviewCard
+                title={card.title}
+                stat={card.stat}
+                sub={card.sub}
+                accent={card.accent}
+                onOpen={() => onOpenCard(card)}
+              />
+            )}
+          </Fragment>
+        ))}
       </div>
     </div>
   )
