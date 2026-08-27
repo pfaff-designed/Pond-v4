@@ -113,9 +113,12 @@ export function CreatePageProposalCard({
         {reason && <p className="mt-0.5 text-xs text-zinc-500">{reason}</p>}
       </div>
 
-      {/* Scaffolded block preview */}
+      {/* Scaffolded block preview. Height-bounded with internal scroll (ticket-24):
+          a big scaffold (full tables, long lists) must not push the Save-to picker
+          and Create/Dismiss out of the auto-grown drawer — title + preview + picker
+          + actions always fit together; only the preview itself scrolls. */}
       {previewBlocks.length > 0 && (
-        <div className="mx-3 mt-2 space-y-2 rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-sm">
+        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-sm">
           {previewBlocks.map((b) => (
             <ModuleView key={b.id} type={b.type} data={b} />
           ))}

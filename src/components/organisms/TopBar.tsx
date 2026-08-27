@@ -78,16 +78,20 @@ export function TopBar() {
     }
   }
 
-  // Global ⌘K/Ctrl-K → focus the terminal input.
+  // Global ⌘K/Ctrl-K → focus the terminal input. Registered in the *capture*
+  // phase on the document so it fires before any focused editor/input can
+  // swallow the event (the observed "⌘K didn't fire" in ticket-24), and before
+  // a browser default binding on ⌘K can claim it.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
+        e.stopPropagation()
         requestTerminalFocus()
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, { capture: true })
+    return () => document.removeEventListener('keydown', onKey, { capture: true })
   }, [])
 
   return <TopBarView onCreate={handleCreate} onCommandK={requestTerminalFocus} busy={busy} />
