@@ -29,6 +29,10 @@ export interface ChangePreview {
   after: Block | null
   /** Optional one-line note from the model on what changed and why. */
   reason?: string
+  /** Ticket-30: true when the model INFERRED this change as a side-effect the
+   *  user did not explicitly request — the card labels it distinctly and
+   *  "Accept all" leaves it pending for its own click. */
+  inferred?: boolean
 }
 
 /**
@@ -57,6 +61,7 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
       before: blocks.find((b) => b.id === change.blockId) ?? null,
       after: null,
       reason: change.reason,
+      inferred: change.inferred,
     }
   }
   if (change.op === 'create') {
@@ -65,6 +70,7 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
       before: null,
       after: stampDisplayIds(change.data, PREVIEW_ID),
       reason: change.reason,
+      inferred: change.inferred,
     }
   }
   // edit — the block keeps its identity; the proposed data may type-morph.
@@ -73,5 +79,6 @@ export function previewForChange(change: ModuleChange, blocks: Block[]): ChangeP
     before: blocks.find((b) => b.id === change.blockId) ?? null,
     after: stampDisplayIds(change.data, PREVIEW_ID),
     reason: change.reason,
+    inferred: change.inferred,
   }
 }

@@ -173,6 +173,77 @@ describe('writeAcceptedChanges', () => {
     expect(skipped).toBe(1)
   })
 
+  it('a missing-target stamp skips a CREATE op — never appends to the open page (ticket-30 review)', async () => {
+    // The batch named a target page that does not exist (deleted / hallucinated
+    // id) and was stamped `missing`. Edits/removes would fail the block-id gate
+    // anyway, but a CREATE has no gate — without the missing stamp it would
+    // silently append to whatever page is open.
+    const skipped = await writeAcceptedChanges({
+      supabase,
+      queryClient,
+      resolutions: {
+        ...emptyResolutions(),
+        targets: { pc1: { nodeId: 'gone-id', nodeName: '', missing: true } },
+      },
+      toolCallId: 'pc1',
+      openNodeId: 'open-id', // a page IS open — it must not receive the write
+      changes, // a create op
+    })
+    expect(skipped).toBe(changes.length)
+    expect(mockedGetPage).not.toHaveBeenCalled()
+    expect(mockedCommitBlocks).not.toHaveBeenCalled()
+  })
+
+  it('same-batch bindKey refs (t31) resolve inside a CROSS-PAGE proposal', async () => {
+    // A keyed checklist + a metric ref'ing it, in a batch stamped for a page
+    // that is NOT open: the binding must resolve to the checklist's minted id
+    // and the pair must land on the TARGET page.
+    mockedGetPage.mockResolvedValue({
+      id: 'ceramics-id',
+      blocks: [],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const boundBatch: ModuleChange[] = [
+      {
+        op: 'create',
+        bindKey: 'steps',
+        data: { type: 'todo', items: [{ label: 'Wedge clay', checked: false }] },
+      },
+      {
+        op: 'create',
+        data: {
+          type: 'metric',
+          label: 'Steps done',
+          value: 0,
+          source: { ref: 'steps', kind: 'checklist-checked' },
+        },
+      },
+    ] as ModuleChange[]
+
+    const skipped = await writeAcceptedChanges({
+      supabase,
+      queryClient,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id',
+      changes: boundBatch,
+      batch: boundBatch,
+      refIds: {},
+    })
+
+    expect(skipped).toBe(0)
+    expect(mockedCommitBlocks).toHaveBeenCalledTimes(1)
+    const committed = mockedCommitBlocks.mock.calls[0]
+    expect(committed[2]).toBe('ceramics-id')
+    const blocks = committed[3] as Array<Record<string, unknown>>
+    expect(blocks).toHaveLength(2)
+    const todo = blocks.find((b) => b.type === 'todo')!
+    const metric = blocks.find((b) => b.type === 'metric')!
+    // The metric's persisted source is the resolved { blockId } form, bound to
+    // the checklist's minted id — no unresolved ref reaches storage.
+    expect((metric.source as { blockId: string }).blockId).toBe(todo.id)
+  })
+
   it('an empty accepted batch is a no-op', async () => {
     const skipped = await writeAcceptedChanges({
       supabase,

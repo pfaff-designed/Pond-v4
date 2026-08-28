@@ -116,13 +116,53 @@ export const CrossPageOpenAction: Story = {
 }
 
 /** Inferred split (ticket-30): a change the model inferred as a side-effect is
- *  badged "Inferred" so the user decides it separately from the requested ones. */
+ *  badged "Inferred" so the user decides it separately from the requested ones,
+ *  and the group accept relabels to say it only takes the requested changes. */
 export const InferredMarker: Story = {
-  args: { inferredFlags: [false, true, false] },
-  play: async ({ canvasElement }) => {
+  args: {
+    changes: [changes[0], { ...changes[1], inferred: true }, changes[2]],
+  },
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     // Exactly one card carries the badge.
     await expect(canvas.getByText('Inferred')).toBeInTheDocument()
+    // The group accept is scoped to requested changes — the copy says so — and
+    // the inferred card keeps its own per-card Accept (all 3 still present).
+    const acceptRequested = canvas.getByRole('button', { name: 'Accept requested' })
+    await expect(canvas.queryByRole('button', { name: 'Accept all' })).not.toBeInTheDocument()
+    await expect(canvas.getAllByRole('button', { name: 'Accept' })).toHaveLength(3)
+    await userEvent.click(acceptRequested)
+    await expect(args.onAcceptAll).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** Only inferred changes left pending: no group accept at all — each inferred
+ *  card is its own decision (ticket-30 review must-fix 3). */
+export const OnlyInferredPending: Story = {
+  args: {
+    changes: [changes[0], { ...changes[1], inferred: true }, { ...changes[2], inferred: true }],
+    statuses: ['accepted', 'pending', 'pending'],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.queryByRole('button', { name: /Accept (all|requested)/ })
+    ).not.toBeInTheDocument()
+    // The inferred cards remain individually actionable.
+    await expect(canvas.getAllByRole('button', { name: 'Accept' })).toHaveLength(2)
+  },
+}
+
+/** Ticket-30 review must-fix 1: a batch whose target page no longer exists shows
+ *  a notice instead of the target label; there is no "open page" to offer. */
+export const TargetMissing: Story = {
+  args: { targetName: '', targetMissing: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText('Target page not found — this proposal can’t be applied.')
+    ).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'open page' })).not.toBeInTheDocument()
   },
 }
 
