@@ -212,24 +212,31 @@ describe('lifeOverview', () => {
 describe('phraseFocalCaption — the human voice matrix (ticket-33)', () => {
   // The focal numeral stays the TOTAL; this engine speaks the breakdown like a
   // person. The table below IS the spec for the copy — one row per phrasing.
+  // Life rows use `dominant` (direct is —); area rows use `direct` (dominant
+  // is —) — matching the FocalPhrasing union.
   it.each`
     label                              | scope     | total | direct | dominant                            | expected
     ${'empty life'}                    | ${'life'} | ${0}  | ${0}   | ${null}                             | ${'Nothing here yet.'}
     ${'empty area'}                    | ${'area'} | ${0}  | ${0}   | ${null}                             | ${'Nothing here yet.'}
-    ${'one page, top of life'}         | ${'life'} | ${1}  | ${1}   | ${null}                             | ${'1 page, right at the top.'}
+    ${'one page, top of life'}         | ${'life'} | ${1}  | ${0}   | ${null}                             | ${'1 page, right at the top.'}
     ${'one page, tucked in an area'}   | ${'life'} | ${1}  | ${0}   | ${{ name: 'Creativity', count: 1 }} | ${'1 page, tucked in Creativity.'}
-    ${'many, one area dominates'}      | ${'life'} | ${4}  | ${1}   | ${{ name: 'Health', count: 3 }}     | ${'4 pages across your life, 3 of them in Health.'}
-    ${'many, even spread (no leader)'} | ${'life'} | ${6}  | ${2}   | ${null}                             | ${'6 pages across your life.'}
+    ${'many, one area dominates'}      | ${'life'} | ${4}  | ${0}   | ${{ name: 'Health', count: 3 }}     | ${'4 pages across your life, 3 of them in Health.'}
+    ${'many, all in one area'}         | ${'life'} | ${4}  | ${0}   | ${{ name: 'Health', count: 4 }}     | ${'4 pages across your life, all in Health.'}
+    ${'many, even spread (no leader)'} | ${'life'} | ${6}  | ${0}   | ${null}                             | ${'6 pages across your life.'}
     ${'one page in an area'}           | ${'area'} | ${1}  | ${1}   | ${null}                             | ${'1 page within.'}
     ${'flat area, all direct'}         | ${'area'} | ${3}  | ${3}   | ${null}                             | ${'3 pages within.'}
     ${'area with a page tucked deep'}  | ${'area'} | ${2}  | ${1}   | ${null}                             | ${'2 pages within, 1 tucked deeper.'}
     ${'area, several tucked deeper'}   | ${'area'} | ${5}  | ${2}   | ${null}                             | ${'5 pages within, 3 tucked deeper.'}
   `('$label → "$expected"', ({ scope, total, direct, dominant, expected }) => {
-    expect(phraseFocalCaption({ scope, total, direct, dominant })).toBe(expected)
+    const input =
+      scope === 'life'
+        ? { scope: 'life' as const, total, dominant }
+        : { scope: 'area' as const, total, direct }
+    expect(phraseFocalCaption(input)).toBe(expected)
   })
 
   it('a lone page with no area at all stays plain ("right at the top")', () => {
-    expect(phraseFocalCaption({ scope: 'life', total: 1, direct: 1, dominant: null })).toBe(
+    expect(phraseFocalCaption({ scope: 'life', total: 1, dominant: null })).toBe(
       '1 page, right at the top.'
     )
   })
@@ -278,6 +285,18 @@ describe('lifeOverview — dominant-area resolution feeds the caption', () => {
     const model = lifeOverview(rows, NOW)
     expect(model.focal).toBe('4')
     expect(model.focalCaption).toBe('4 pages across your life, 3 of them in Health.')
+  })
+
+  it('reads "all in <Area>" when every page lives in the one area', () => {
+    const rows = [
+      row('health', null, 'area', 'Health', 0),
+      row('sleep', 'health', 'page', 'Sleep', 0),
+      row('walk', 'health', 'page', 'Walking', 1),
+      row('personal', null, 'area', 'Personal', 1),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('2')
+    expect(model.focalCaption).toBe('2 pages across your life, all in Health.')
   })
 })
 

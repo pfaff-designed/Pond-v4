@@ -49,14 +49,18 @@ didn't move, only the words beside them did. The old math-y captions
 
 **The phrasing matrix** (engine inputs → sentence):
 
+`FocalPhrasing` is a discriminated union: life rows carry `dominant`, area rows
+carry `direct` — each scope's input is exactly what its sentences need.
+
 | scope | total | direct | dominant                 | caption                                          |
 | ----- | ----- | ------ | ------------------------ | ------------------------------------------------ |
-| life  | 0     | 0      | —                        | `Nothing here yet.`                              |
+| life  | 0     | —      | —                        | `Nothing here yet.`                              |
 | area  | 0     | 0      | —                        | `Nothing here yet.`                              |
-| life  | 1     | 1      | none (top-level)         | `1 page, right at the top.`                      |
-| life  | 1     | 0      | Creativity               | `1 page, tucked in Creativity.`                  |
-| life  | 4     | 1      | Health (3)               | `4 pages across your life, 3 of them in Health.` |
-| life  | 6     | 2      | none (even spread / tie) | `6 pages across your life.`                      |
+| life  | 1     | —      | none (top-level)         | `1 page, right at the top.`                      |
+| life  | 1     | —      | Creativity               | `1 page, tucked in Creativity.`                  |
+| life  | 4     | —      | Health (3)               | `4 pages across your life, 3 of them in Health.` |
+| life  | 4     | —      | Health (4)               | `4 pages across your life, all in Health.`       |
+| life  | 6     | —      | none (even spread / tie) | `6 pages across your life.`                      |
 | area  | 1     | 1      | —                        | `1 page within.`                                 |
 | area  | 3     | 3      | —                        | `3 pages within.`                                |
 | area  | 2     | 1      | —                        | `2 pages within, 1 tucked deeper.`               |
