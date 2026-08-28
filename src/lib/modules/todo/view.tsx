@@ -2,6 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { TodoBlock } from './schema'
+import { MarkdownInline } from '@/components/atoms/Markdown'
 
 /**
  * Todo view. An interactive module: editing is folded into the view (checkbox +
@@ -32,15 +33,20 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
             onChange={editable ? (e) => patchItem(j, { checked: e.target.checked }) : undefined}
           />
           {editable ? (
+            // Editing: raw string input — markdown characters must be editable as-is.
             <input
               className="flex-1 bg-transparent outline-none"
               value={item.label}
               onChange={(e) => patchItem(j, { label: e.target.value })}
             />
           ) : (
-            <span className={item.checked ? 'flex-1 text-zinc-400 line-through' : 'flex-1'}>
+            // Read-only: inline markdown rendering (Fix-4 / F8) — bold/italic/code/links
+            // without block elements, so "**item**" shows as bold text, not raw asterisks.
+            <MarkdownInline
+              className={item.checked ? 'flex-1 text-zinc-400 line-through' : 'flex-1'}
+            >
               {item.label}
-            </span>
+            </MarkdownInline>
           )}
         </li>
       ))}

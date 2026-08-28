@@ -23,6 +23,7 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
+import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import {
   TerminalDrawer,
@@ -38,6 +39,7 @@ import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
 import {
   stageTextForParts,
+  hasActiveTool,
   THINKING_STAGE_TEXT,
   type StagePart,
 } from '@/lib/conversation/stage-text'
@@ -150,6 +152,11 @@ export function AITerminal() {
   // records how many accepted changes failed the accept-time re-validation gate.
   const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
   const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
+  // Fix-1 (F1a): the per-skip human reasons for each batch, shown on the card as
+  // "couldn't place — <reason>". Session-scoped (not persisted in the resolutions
+  // envelope): after reload the count survives via `changeSkipped` and the card
+  // degrades to the generic notice.
+  const [changeSkipReasons, setChangeSkipReasons] = useState<Record<string, string[]>>({})
   // Proposal-time target page per batch (BUG 1/2 fix): recorded the moment the
   // part streams in, so Accept commits there even after the user navigates away.
   const [changeTargets, setChangeTargets] = useState<Record<string, ProposalTarget>>({})
@@ -189,6 +196,7 @@ export function AITerminal() {
   const resetResolutions = useCallback(() => {
     setChangeDecisions({})
     setChangeSkipped({})
+    setChangeSkipReasons({})
     setChangeTargets({})
     setCreateDecisions({})
     setCreateParent({})
@@ -315,6 +323,10 @@ export function AITerminal() {
       // disabled input (mid-stream) silently drops it rather than leaving a
       // stale flag that would steal focus on some later collapse/ready change.
       el.focus()
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      // Brief visual emphasis so the user knows focus arrived.
+      el.classList.add('ring-1', 'ring-press-accent')
+      setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
       pendingFocus.current = false
       return
     }
@@ -477,7 +489,13 @@ export function AITerminal() {
   // finished uncollapsing). Runs after the commit that mounts the textarea.
   useEffect(() => {
     if (!effectiveCollapsed && pendingFocus.current) {
-      inputRef.current?.focus()
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        el.classList.add('ring-1', 'ring-press-accent')
+        setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
+      }
       pendingFocus.current = false
     }
   }, [effectiveCollapsed, isReady])
@@ -578,7 +596,7 @@ export function AITerminal() {
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
       if (indices.length === 0) return
       decideChanges(toolCallId, indices, 'accepted')
-      const skipped = await writeAcceptedChanges({
+      const result = await writeAcceptedChanges({
         supabase: supabaseClient,
         queryClient,
         resolutions,
@@ -590,11 +608,59 @@ export function AITerminal() {
         batch: allChanges,
         refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
-      if (skipped > 0) {
-        setChangeSkipped((prev) => ({ ...prev, [toolCallId]: (prev[toolCallId] ?? 0) + skipped }))
+      if (result.skipped > 0) {
+        setChangeSkipped((prev) => ({
+          ...prev,
+          [toolCallId]: (prev[toolCallId] ?? 0) + result.skipped,
+        }))
+        setChangeSkipReasons((prev) => ({
+          ...prev,
+          [toolCallId]: [...(prev[toolCallId] ?? []), ...result.skippedReasons],
+        }))
+      }
+      // Fix-1 (F12): a toast receipt for every accept — honest about applied AND
+      // skipped counts, with an Open action to the page the batch landed on. The
+      // stamped target name is the human label; contextLabel is the same-page
+      // fallback an unstamped legacy card writes to. Fired via the notify bridge:
+      // the terminal mounts outside the DeletionUndoProvider (see notify-bridge).
+      const targetName = changeTargets[toolCallId]?.nodeName || contextLabel
+      const blockNoun = (n: number) => `${n} block${n === 1 ? '' : 's'}`
+      if (result.applied > 0) {
+        const suffix =
+          result.skipped > 0 ? ` — ${blockNoun(result.skipped)} couldn’t be placed` : ' ✓'
+        const openTarget = result.targetId
+        requestNotify({
+          message: `Added ${blockNoun(result.applied)} to ${targetName}${suffix}`,
+          action: openTarget
+            ? () =>
+                router.push(
+                  workspaceHref({
+                    id: openTarget,
+                    type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
+                    title: targetName,
+                  })
+                )
+            : undefined,
+          actionLabel: 'Open',
+        })
+      } else if (result.skipped > 0) {
+        // Nothing landed at all — say so plainly, never a silent "success".
+        requestNotify({
+          message: `Nothing added to ${targetName} — ${blockNoun(result.skipped)} couldn’t be placed`,
+        })
       }
     },
-    [decideChanges, supabaseClient, queryClient, resolutions, nodeId]
+    [
+      decideChanges,
+      supabaseClient,
+      queryClient,
+      resolutions,
+      nodeId,
+      changeTargets,
+      contextLabel,
+      router,
+      allPages,
+    ]
   )
 
   // Edit: accept the change, then jump to its block in the document panel to keep
@@ -695,12 +761,14 @@ export function AITerminal() {
     if (!last || last.role !== 'assistant') return null
     return stageTextForParts(last.parts as StagePart[], { resolvePageName })
   }, [isStreaming, messages, resolvePageName])
-  // The resting stage line yields the moment the reply starts arriving — from then on
-  // the letterpress card is itself the feedback, so no whispered line under it.
-  const lastAssistantHasText = useMemo(() => {
+  // Fix-5 (F10): the stage line now also shows while a tool is still running even
+  // after reply text has begun streaming. We track whether the latest assistant message
+  // has any ACTIVE tool part — if so, the stage line stays visible alongside the
+  // growing text so the user knows a long tool call is still in progress.
+  const lastAssistantHasActiveTool = useMemo(() => {
     const last = messages[messages.length - 1]
     if (!last || last.role !== 'assistant') return false
-    return last.parts.some((p) => p.type === 'text' && (p as { text: string }).text.length > 0)
+    return hasActiveTool(last.parts as StagePart[])
   }, [messages])
 
   // The transcript shares the document's own column — the drawer spans the full
@@ -749,14 +817,11 @@ export function AITerminal() {
             <div key={message.id} className="space-y-3">
               {text &&
                 (message.role === 'user' ? (
-                  // The user's line is a quiet aside — right-anchored, indented, verbatim
-                  // (never interpret their keystrokes as markdown), calm ink on a faint
-                  // sage wash. NOT a chat bubble competing with the authored reply.
-                  <div className="flex justify-end">
-                    <p className="max-w-[85%] whitespace-pre-wrap rounded-md border-r-2 border-press-accent/40 bg-press-accent-wash px-3.5 py-2 text-right font-serif text-[0.95rem] leading-[1.55] text-press-body">
-                      {text}
-                    </p>
-                  </div>
+                  // The user's line is a quiet aside — left-aligned on the shared reading edge,
+                  // with a faint sage left border. NOT a chat bubble competing with the authored reply.
+                  <p className="whitespace-pre-wrap border-l-2 border-press-accent/40 bg-press-accent-wash pl-3.5 pr-2 py-2 font-serif text-[0.95rem] leading-[1.55] text-press-body">
+                    {text}
+                  </p>
                 ) : (
                   // The AI reply is set as full typeset prose in the document's own
                   // measure — letter-style correspondence, not a card in a console. A
@@ -810,7 +875,6 @@ export function AITerminal() {
                 // Accept-all sweeps REQUESTED changes only (review must-fix 3): an
                 // inferred side-effect stays pending for its own click.
                 const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
-                const skipped = changeSkipped[part.toolCallId] ?? 0
                 return (
                   <div key={part.toolCallId} className="press-arrive space-y-1.5">
                     <ProposalGroup
@@ -819,6 +883,8 @@ export function AITerminal() {
                       targetName={target?.nodeName || contextLabel}
                       targetMissing={targetMissing}
                       onOpenTarget={crossPage ? () => openTargetPage(crossPage) : undefined}
+                      skippedCount={changeSkipped[part.toolCallId] ?? 0}
+                      skippedReasons={changeSkipReasons[part.toolCallId] ?? []}
                       onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
                       onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
                       onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
@@ -827,12 +893,6 @@ export function AITerminal() {
                       }
                       onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
                     />
-                    {skipped > 0 && (
-                      <p className="font-serif text-xs italic text-press-rust">
-                        {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
-                        {skipped > 1 ? 'were' : 'was'} skipped.
-                      </p>
-                    )}
                   </div>
                 )
               })}
@@ -870,16 +930,23 @@ export function AITerminal() {
             </div>
           )
         })}
-        {/* While streaming with no visible answer yet, show a derived stage line
-            ("drafting your page…") in place of the old bare ellipsis (ticket-32);
-            once text is arriving the reply itself is the feedback, so this yields. */}
-        {isStreaming && !lastAssistantHasText && (
+        {/* Stage line (ticket-32 + Fix-5/F10): shown while streaming whenever a tool
+            is still running — even after reply text has started arriving. A long tool
+            call (read_page, web_search) alongside growing text would otherwise look
+            stalled; the stage line stays until the tool part settles. Falls back to
+            THINKING_STAGE_TEXT while the model is working but no narratable tool is
+            active yet. */}
+        {isStreaming && lastAssistantHasActiveTool && (
           <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
         )}
         <div ref={bottomRef} />
       </div>
     </div>
   )
+
+  // Auto-grow the textarea with content (cap 6 lines) so the user can review
+  // multi-line input without scrolling inside the field.
+  const inputRows = Math.min(6, Math.max(2, (input.match(/\n/g)?.length ?? 0) + 1))
 
   // The input stays quietly monospace by design (ticket-32): it is the console
   // *threshold* — the one seam where the user's typed intent crosses into the serif
@@ -897,7 +964,7 @@ export function AITerminal() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Talk to Pond… (/clear · /handoff · /save)"
-          rows={2}
+          rows={inputRows}
           className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
           disabled={isStreaming || !isReady}
         />

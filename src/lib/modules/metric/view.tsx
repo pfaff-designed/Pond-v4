@@ -10,7 +10,10 @@ import { deriveMetricValue } from './derive'
 const TREND_GLYPH: Record<NonNullable<MetricBlock['trend']>, string> = {
   up: '↑',
   down: '↓',
-  flat: '→',
+  // Fix-6 (F15): '→' collided with the "go to source" link when both were
+  // visible at once, making plain-metric rows show a double arrow. Use '—'
+  // for flat so the source link's '→' is unambiguously a navigation control.
+  flat: '—',
 }
 
 /**

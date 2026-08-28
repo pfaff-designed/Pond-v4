@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe('writeAcceptedChanges', () => {
   it('commits to the stamped target, not the open node', async () => {
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'stamped-id'),
@@ -56,7 +56,11 @@ describe('writeAcceptedChanges', () => {
       openNodeId: 'somewhere-else',
       changes,
     })
-    expect(skipped).toBe(0)
+    expect(result.skipped).toBe(0)
+    // Fix-1 (F1a+F12): the honest receipt shape — applied count and target id.
+    expect(result.applied).toBe(changes.length)
+    expect(result.targetId).toBe('stamped-id')
+    expect(result.skippedReasons).toEqual([])
     expect(mockedGetPage).toHaveBeenCalledWith(supabase, 'stamped-id')
     expect(mockedCommitBlocks).toHaveBeenCalledWith(
       supabase,
@@ -83,7 +87,7 @@ describe('writeAcceptedChanges', () => {
   })
 
   it('no stamp and no open node → every change skipped, nothing written', async () => {
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: emptyResolutions(),
@@ -91,14 +95,18 @@ describe('writeAcceptedChanges', () => {
       openNodeId: null,
       changes,
     })
-    expect(skipped).toBe(changes.length)
+    expect(result.skipped).toBe(changes.length)
+    // Fix-1 (F1a): every skip carries a human reason for the card notice.
+    expect(result.applied).toBe(0)
+    expect(result.targetId).toBeNull()
+    expect(result.skippedReasons).toEqual(['no target page to write to'])
     expect(mockedGetPage).not.toHaveBeenCalled()
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
   })
 
   it('deleted target page → every change skipped, nothing written', async () => {
     mockedGetPage.mockResolvedValue(null)
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'gone-id'),
@@ -106,7 +114,8 @@ describe('writeAcceptedChanges', () => {
       openNodeId: 'open-id',
       changes,
     })
-    expect(skipped).toBe(changes.length)
+    expect(result.skipped).toBe(changes.length)
+    expect(result.skippedReasons).toEqual(['the target page no longer exists'])
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
   })
 
@@ -132,7 +141,7 @@ describe('writeAcceptedChanges', () => {
       { op: 'edit', blockId: 'blk-target', data: { type: 'text', content: 'new plan' } },
     ] as ModuleChange[]
 
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'ceramics-id'),
@@ -143,7 +152,7 @@ describe('writeAcceptedChanges', () => {
 
     // The edit's block id exists on the target, so nothing is skipped, and the write
     // lands on the target page's block array (with the edit applied).
-    expect(skipped).toBe(0)
+    expect(result.skipped).toBe(0)
     expect(mockedGetPage).toHaveBeenCalledWith(supabase, 'ceramics-id')
     expect(mockedCommitBlocks).toHaveBeenCalledWith(supabase, queryClient, 'ceramics-id', [
       expect.objectContaining({ id: 'blk-target', type: 'text', content: 'new plan' }),
@@ -160,7 +169,7 @@ describe('writeAcceptedChanges', () => {
       blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
     } as unknown as Awaited<ReturnType<typeof getPage>>)
 
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'ceramics-id'),
@@ -170,7 +179,34 @@ describe('writeAcceptedChanges', () => {
         { op: 'edit', blockId: 'blk-open', data: { type: 'text', content: 'x' } },
       ] as ModuleChange[],
     })
-    expect(skipped).toBe(1)
+    expect(result.skipped).toBe(1)
+    expect(result.skippedReasons).toEqual(['the block to edit no longer exists on the page'])
+  })
+
+  it('a create that fails validation is skipped WITH a reason, others still land (Fix-1)', async () => {
+    // One good create + one whose data fails blockSchema at hydrate time. The
+    // good one applies; the bad one reports "failed validation" so the card and
+    // the receipt can both be honest about what did NOT land.
+    const mixed: ModuleChange[] = [
+      { op: 'create', data: { type: 'text', content: 'good' } },
+      { op: 'create', data: { type: 'todo', items: 'not-an-array' } },
+    ] as unknown as ModuleChange[]
+    const result = await writeAcceptedChanges({
+      supabase,
+      queryClient,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes: mixed,
+    })
+    expect(result.applied).toBe(1)
+    expect(result.skipped).toBe(1)
+    expect(result.skippedReasons).toEqual(['the proposed todo failed validation'])
+    expect(result.targetId).toBe('stamped-id')
+    // The good block still committed.
+    const blocks = mockedCommitBlocks.mock.calls[0][3] as Array<Record<string, unknown>>
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({ type: 'text', content: 'good' })
   })
 
   it('a missing-target stamp skips a CREATE op — never appends to the open page (ticket-30 review)', async () => {
@@ -178,7 +214,7 @@ describe('writeAcceptedChanges', () => {
     // id) and was stamped `missing`. Edits/removes would fail the block-id gate
     // anyway, but a CREATE has no gate — without the missing stamp it would
     // silently append to whatever page is open.
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: {
@@ -189,7 +225,7 @@ describe('writeAcceptedChanges', () => {
       openNodeId: 'open-id', // a page IS open — it must not receive the write
       changes, // a create op
     })
-    expect(skipped).toBe(changes.length)
+    expect(result.skipped).toBe(changes.length)
     expect(mockedGetPage).not.toHaveBeenCalled()
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
   })
@@ -220,7 +256,7 @@ describe('writeAcceptedChanges', () => {
       },
     ] as ModuleChange[]
 
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'ceramics-id'),
@@ -231,7 +267,7 @@ describe('writeAcceptedChanges', () => {
       refIds: {},
     })
 
-    expect(skipped).toBe(0)
+    expect(result.skipped).toBe(0)
     expect(mockedCommitBlocks).toHaveBeenCalledTimes(1)
     const committed = mockedCommitBlocks.mock.calls[0]
     expect(committed[2]).toBe('ceramics-id')
@@ -245,7 +281,7 @@ describe('writeAcceptedChanges', () => {
   })
 
   it('an empty accepted batch is a no-op', async () => {
-    const skipped = await writeAcceptedChanges({
+    const result = await writeAcceptedChanges({
       supabase,
       queryClient,
       resolutions: stamped('pc1', 'stamped-id'),
@@ -253,7 +289,7 @@ describe('writeAcceptedChanges', () => {
       openNodeId: null,
       changes: [],
     })
-    expect(skipped).toBe(0)
+    expect(result.skipped).toBe(0)
     expect(mockedGetPage).not.toHaveBeenCalled()
   })
 })

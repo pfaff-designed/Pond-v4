@@ -3,6 +3,7 @@
 import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
 import { sumColumn as sumTableColumn, formatTotal } from './sum'
+import { MarkdownInline } from '@/components/atoms/Markdown'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view
@@ -79,6 +80,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
               {columns.map((_, ci) => (
                 <td key={ci} className={ci === 0 ? 'py-1 pr-3 font-medium' : 'py-1 pr-3'}>
                   {editable ? (
+                    // Editing: raw string — markdown characters must remain editable as-is.
                     <input
                       className="w-full bg-transparent outline-none"
                       value={row.cells[ci] ?? ''}
@@ -86,7 +88,9 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                       onChange={(e) => patchCell(ri, ci, e.target.value)}
                     />
                   ) : (
-                    <span>{row.cells[ci] ?? ''}</span>
+                    // Read-only: inline markdown rendering (Fix-4 / F8) — bold/italic/code/links
+                    // without block elements. A `**Project A**` cell shows bold, not raw asterisks.
+                    <MarkdownInline>{row.cells[ci] ?? ''}</MarkdownInline>
                   )}
                 </td>
               ))}

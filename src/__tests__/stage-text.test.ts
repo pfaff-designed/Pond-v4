@@ -10,6 +10,7 @@
 import {
   stageTextForPart,
   stageTextForParts,
+  hasActiveTool,
   THINKING_STAGE_TEXT,
   type StagePart,
 } from '@/lib/conversation/stage-text'
@@ -97,5 +98,28 @@ describe('stageTextForParts', () => {
     expect(stageTextForParts(parts, { resolvePageName: () => 'Studio Plan' })).toBe(
       'reading Studio Plan…'
     )
+  })
+})
+
+describe('hasActiveTool (Fix-5 / F10 gate widening)', () => {
+  it('true when any tool part has a state (is active)', () => {
+    expect(hasActiveTool([active('tool-web_search')])).toBe(true)
+  })
+
+  it('true even when mixed with text parts — the tool is still running', () => {
+    const parts: StagePart[] = [
+      { type: 'text', state: undefined },
+      active('tool-read_page', { input: { pageId: 'p1' } }),
+    ]
+    expect(hasActiveTool(parts)).toBe(true)
+  })
+
+  it('false when only text/no-state parts are present', () => {
+    expect(hasActiveTool([{ type: 'text', state: undefined }])).toBe(false)
+    expect(hasActiveTool([])).toBe(false)
+  })
+
+  it('false when the tool part has no state (not yet begun)', () => {
+    expect(hasActiveTool([{ type: 'tool-web_search' }])).toBe(false)
   })
 })

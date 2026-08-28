@@ -36,6 +36,13 @@ interface ProposalGroupProps {
   /** When the target is a page OTHER than the open one (ticket-30), a secondary
    *  action to navigate there. Omitted for a same-page proposal. */
   onOpenTarget?: () => void
+  /** Fix-1 (F1a): how many accepted changes could NOT be placed (failed the
+   *  accept-time re-validation gate or lost their target). Renders an honest
+   *  notice under the cards — an accept that lands nothing must say so. */
+  skippedCount?: number
+  /** One short human reason per skipped change ("couldn't place — <reason>").
+   *  May be shorter than `skippedCount` (reasons are session-scoped). */
+  skippedReasons?: string[]
   onAccept: (index: number) => void
   onReject: (index: number) => void
   onEdit: (index: number) => void
@@ -52,6 +59,8 @@ export function ProposalGroup({
   targetName,
   targetMissing,
   onOpenTarget,
+  skippedCount = 0,
+  skippedReasons = [],
   onAccept,
   onReject,
   onEdit,
@@ -130,6 +139,21 @@ export function ProposalGroup({
           onEdit={() => onEdit(i)}
         />
       ))}
+
+      {/* Fix-1 (F1a): honest skip notice. An accepted change that failed the
+          accept-time gate is called out with its reason — never a silent no-op. */}
+      {skippedCount > 0 && (
+        <div role="note" className="space-y-0.5 font-serif text-xs italic text-press-rust">
+          {skippedReasons.length > 0 ? (
+            skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
+          ) : (
+            <p>
+              {skippedCount} change{skippedCount > 1 ? 's' : ''} couldn’t be placed and{' '}
+              {skippedCount > 1 ? 'were' : 'was'} skipped.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
