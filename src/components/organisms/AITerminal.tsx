@@ -31,6 +31,7 @@ import {
 } from '@/components/molecules/TerminalDrawer'
 import { Markdown } from '@/components/atoms/Markdown'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
+import { SourceList, type Source } from '@/components/molecules/SourceList'
 import {
   CreatePageProposalCard,
   TOP_LEVEL_VALUE,
@@ -605,6 +606,22 @@ export function AITerminal() {
           isProposeChangesPart
         )
         const createPageParts = (message.parts as Array<{ type: string }>).filter(isCreatePagePart)
+        // Web-search citations (ticket-29): the route streams `source-url` parts for
+        // each cited result; collect them so the answer carries a Sources row.
+        const sources: Source[] = (
+          message.parts as Array<{
+            type: string
+            sourceId?: string
+            url?: string
+            title?: string
+          }>
+        )
+          .filter((p) => p.type === 'source-url' && typeof p.url === 'string')
+          .map((p, i) => ({
+            sourceId: p.sourceId ?? `${message.id}-src-${i}`,
+            url: p.url!,
+            title: p.title,
+          }))
 
         return (
           <div key={message.id} className="space-y-2">
@@ -621,8 +638,18 @@ export function AITerminal() {
                   // react-markdown re-parses each partial string on every render.
                   <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
                     <Markdown variant="terminal">{text}</Markdown>
+                    {sources.length > 0 && <SourceList sources={sources} />}
                   </div>
                 )}
+              </div>
+            )}
+            {/* Sources can arrive on an assistant message with no text bubble
+                (rare, but the citation should still show). */}
+            {message.role !== 'user' && !text && sources.length > 0 && (
+              <div className="text-left">
+                <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
+                  <SourceList sources={sources} />
+                </div>
               </div>
             )}
             {changeBatches.map((part) => {

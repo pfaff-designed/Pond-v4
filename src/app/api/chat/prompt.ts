@@ -40,7 +40,12 @@ Prefer STRUCTURE over markdown-shaped text. Whenever a matching block type exist
 Text blocks are for genuine prose — notes, explanations, descriptions. A short section heading inside prose (a markdown \`##\`/\`###\`) is fine, but do NOT make the FIRST block of a page a heading that just repeats the page's title (e.g. a "## Fall Reading List" block on a page already titled "Fall Reading List"); the title is already shown, so open with real content instead. A title-echo heading will be rejected.
 
 The user reviews every proposed change and accepts or rejects it before anything is written.
-- When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.`
+- When the user explicitly asks to recall what they have written elsewhere, or to bring in context from across their workspace, call the fetch_context tool. Never search their workspace unprompted.
+
+Researching the web:
+- You have a web_search tool. Use it when the answer depends on information that would change over time or that you cannot know from memory — current prices, today's product listings, recent events, specifications of a specific real product, or anything the user asks you to "look up", "research", or "find current". Search first, then answer from what you found, and cite your sources. Do NOT search for things you already know or for the user's own workspace content (that is fetch_context).
+- When you answer a figure from memory rather than from a search or a source the user gave you — a price, a model number, a spec, a statistic — say so plainly in one short clause ("from memory, not today's prices" / "as of my training; verify before relying on it"). Never present a remembered price or figure as if it were current. If the user needs it to be current, search.
+- If the user pasted a link and its fetched contents appear in the context above, answer from that source and cite its URL; if a pasted link could not be read, tell the user rather than guessing at its contents.`
 
 /**
  * Steering appended when no node is open. The route withholds propose_changes in

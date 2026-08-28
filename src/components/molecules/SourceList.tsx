@@ -1,0 +1,61 @@
+/**
+ * SourceList (ticket-29) — the citation row shown under an assistant answer that
+ * used web search. Each source is a title (or the host, when the provider gives no
+ * title) linking out to its URL. The AI terminal collects the `source-url` message
+ * parts the Anthropic web_search tool streams (via the route's `sendSources`) and
+ * hands them here.
+ *
+ * Purely presentational and layout-light: it sits inside the transcript bubble as a
+ * small "Sources" affordance, deliberately quiet so it doesn't compete with the
+ * answer. Aesthetics are Press tokens only (ticket-32 owns the terminal look);
+ * nothing bespoke here.
+ */
+
+export interface Source {
+  /** Stable id for the source (React key). */
+  sourceId: string
+  url: string
+  /** Provider-supplied title; falls back to the host when absent. */
+  title?: string
+}
+
+/** Human label for a source: its title, else the bare host. */
+function sourceLabel(source: Source): string {
+  if (source.title && source.title.trim()) return source.title.trim()
+  try {
+    return new URL(source.url).hostname.replace(/^www\./, '')
+  } catch {
+    return source.url
+  }
+}
+
+export interface SourceListProps {
+  sources: Source[]
+}
+
+export function SourceList({ sources }: SourceListProps) {
+  if (sources.length === 0) return null
+  return (
+    <div className="mt-2 border-t border-press-hair pt-1.5 text-xs text-press-faint">
+      <span className="mr-1 uppercase tracking-wide">Sources</span>
+      <ol className="mt-1 space-y-0.5">
+        {sources.map((source, i) => (
+          <li key={source.sourceId} className="flex gap-1.5">
+            <span aria-hidden className="tabular-nums text-press-faint">
+              {i + 1}.
+            </span>
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-press-accent underline-offset-2 hover:underline"
+              title={source.url}
+            >
+              {sourceLabel(source)}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}

@@ -13,7 +13,9 @@ import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt, NO_OPEN_PAGE_STEERING } from './prompt'
 import { createPageTool, proposeChangesTool, fetchContextTool } from './tools'
+import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
+import { fetchLinkContext } from '@/lib/context/paste-link'
 import type { NodeType } from '@/lib/supabase/types'
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -69,20 +71,31 @@ export async function POST(req: Request) {
   const { messages, nodeId, nodeType, resolutions } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
+  const userText = latestUserText(messages)
   let system = buildSystemPrompt()
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
+
+  // Paste-a-link (ticket-29): any http(s) URL in the latest user message is fetched
+  // server-side (sanitized, size-capped, no redirects into private ranges) and
+  // injected as source material the model can cite. Independent of the DB context
+  // and cheap to run first, so a signed-out user still benefits.
+  const contextBlocks: string[] = []
+  const linkContext = await fetchLinkContext(userText)
+  if (linkContext) contextBlocks.push(linkContext)
+
   if (user) {
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
       nodeType,
-      latestUserText: latestUserText(messages),
+      latestUserText: userText,
     })
-    if (context) {
-      system = buildSystemPrompt(context)
-    }
+    if (context) contextBlocks.push(context)
+  }
+  if (contextBlocks.length > 0) {
+    system = buildSystemPrompt(contextBlocks.join('\n\n'))
   }
   // No open node → propose_changes is withheld below; steer the model to say
   // "open that page and ask again" instead of faking the edit via create_page.
@@ -97,10 +110,12 @@ export async function POST(req: Request) {
     // tool result (ticket-19) so the model sees what was actioned and stops
     // re-proposing; unresolved calls are still dropped by toModelMessages.
     messages: await toModelMessages(applyResolutions(messages, resolutions)),
-    // Allow one round-trip so the model can call fetch_context, read the result,
-    // and answer in the same turn. create_page stays client-side (no execute) and
-    // still ends the turn as before.
-    stopWhen: stepCountIs(3),
+    // Allow several round-trips: the model can call fetch_context or run one or more
+    // web searches (ticket-29), read the results, and answer in the same turn.
+    // create_page stays client-side (no execute) and still ends the turn as before.
+    // The web_search tool caps its own uses per turn (WEB_SEARCH_MAX_USES); this
+    // outer bound covers the read-then-answer round-trips around those searches.
+    stopWhen: stepCountIs(8),
     // Self-correction on top of the strict inputSchema gate (t16 branch 7): if the
     // model emits a tool call whose arguments fail schema validation — most likely a
     // slightly-off propose_changes batch against the closed discriminated union —
@@ -121,8 +136,13 @@ export async function POST(req: Request) {
           return formatRetrievedPages(pages)
         },
       }),
+      // Provider-executed web search (ticket-29): Anthropic runs the search and
+      // returns cited results; the SDK surfaces them as `source-url` message parts.
+      web_search: webSearchTool,
     },
   })
 
-  return result.toUIMessageStreamResponse()
+  // sendSources streams the web_search citations (source-url parts) to the client so
+  // the terminal can render them as a SourceList under the sourced answer (ticket-29).
+  return result.toUIMessageStreamResponse({ sendSources: true })
 }

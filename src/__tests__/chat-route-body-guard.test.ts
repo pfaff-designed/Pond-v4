@@ -10,7 +10,11 @@
 
 // The route pulls in server-only + AI-SDK modules at import time; stub them so the
 // test can import the handler without a live server/session.
-jest.mock('@ai-sdk/anthropic', () => ({ anthropic: () => ({}) }))
+jest.mock('@ai-sdk/anthropic', () => {
+  const anthropic = () => ({})
+  anthropic.tools = { webSearch_20260209: () => ({}) }
+  return { anthropic }
+})
 jest.mock('ai', () => ({
   streamText: jest.fn(() => ({ toUIMessageStreamResponse: () => new Response('ok') })),
   tool: (t: unknown) => t,
