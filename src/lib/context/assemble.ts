@@ -164,16 +164,18 @@ export function formatNodeContext(
 // ── formatWorkspaceOutline (pure) ────────────────────────────────────────────
 
 /**
- * Render an outline of the workspace — top-level pages and their direct
- * children — with each page's id, so the model can:
+ * Render the FULL workspace outline — every page at every depth, with its id —
+ * so the model can:
  *   - infer a sensible parent for a new page (create_page's `parentTitle`), and
- *   - name a page other than the open one to READ (`read_page`) or EDIT
- *     (`propose_changes` `targetPageId`) — cross-page targeting, ticket-30.
+ *   - name ANY page to READ (`read_page`) or EDIT (`propose_changes`
+ *     `targetPageId`) — cross-page targeting, ticket-30.
  *
  * Ids are surfaced as `[id]` before each title so cross-page targeting resolves
- * by id, never by fuzzy title. Two levels covers areas and sub-areas, the
- * realistic parents; deeper pages remain reachable when the user names them
- * explicitly. Returns '' for an empty workspace.
+ * by id, never by fuzzy title. All depths are listed (ticket-30 review): the
+ * old two-level cut left pages at depth 3+ readable but unreachable for a
+ * cross-page edit — exactly the read/write asymmetry this ticket kills. Titles
+ * only (never page bodies), so depth costs one line per page. Returns '' for
+ * an empty workspace.
  */
 export function formatWorkspaceOutline(pages: PageSummary[]): string {
   const topLevel = pages.filter((p) => p.parentId === null)
@@ -183,12 +185,13 @@ export function formatWorkspaceOutline(pages: PageSummary[]): string {
   lines.push(
     '[Workspace outline] (existing pages — the [id] targets a page for read_page or a cross-page edit; a page a new page could live under)'
   )
-  for (const page of topLevel) {
-    lines.push(`- [${page.id}] ${TYPE_LABEL[page.type]}: ${page.title}`)
+  const emit = (page: PageSummary, depth: number) => {
+    lines.push(`${'  '.repeat(depth)}- [${page.id}] ${TYPE_LABEL[page.type]}: ${page.title}`)
     for (const child of pages.filter((p) => p.parentId === page.id)) {
-      lines.push(`  - [${child.id}] ${TYPE_LABEL[child.type]}: ${child.title}`)
+      emit(child, depth + 1)
     }
   }
+  for (const page of topLevel) emit(page, 0)
   return lines.join('\n')
 }
 
