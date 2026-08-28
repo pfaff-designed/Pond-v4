@@ -12,6 +12,10 @@ import { z } from 'zod'
 import { proposeChangesSchema, moduleDataSchema } from '@/lib/modules/ai-composition'
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 
+// The web_search tool (ticket-29) lives in ./web-search so this routing-schema
+// module — imported by lint tests and the eval in a jsdom environment — stays free
+// of the heavy `@ai-sdk/anthropic` import (which needs Web streams globals).
+
 /**
  * create_page input schema, with the ticket-21 title-echo lint attached at the
  * whole-object level (it needs both `title` and the first block). Rejecting a
