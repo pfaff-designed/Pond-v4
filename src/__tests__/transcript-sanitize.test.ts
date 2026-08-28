@@ -9,8 +9,8 @@
  * Slice 1 — streaming-bug fix.
  *
  * A persisted transcript can carry a *dangling* client-tool call: a
- * `create_node` invocation left in the `input-available` state because the user
- * aborted the NodeCreationModal without ever producing a tool result. Replaying
+ * client-tool invocation left in the `input-available` state because the user
+ * aborted the flow without ever producing a tool result. Replaying
  * that transcript into the model makes the prompt throw
  * `AI_MissingToolResultsError` (an assistant tool-call with no matching
  * tool-result) and the assistant reply never streams.

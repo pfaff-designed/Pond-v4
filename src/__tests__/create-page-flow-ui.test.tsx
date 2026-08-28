@@ -214,6 +214,24 @@ describe('TopBar — ＋ opens the New page modal', () => {
       )
     })
   })
+
+  it("writes 'Untitled' (never an empty title) when created without a name", async () => {
+    renderWithQuery(<TopBar />)
+
+    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+    // Submit with the title field untouched.
+    fireEvent.click(screen.getByRole('button', { name: /create page/i }))
+
+    await waitFor(() => {
+      expect(mockCreatePage).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ title: 'Untitled' })
+      )
+    })
+  })
 })
 
 // ── AITerminal — create_page contract (M1) ────────────────────────────────

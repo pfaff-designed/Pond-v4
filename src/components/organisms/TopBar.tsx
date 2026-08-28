@@ -25,11 +25,9 @@ const iconBtn =
 export function TopBarView({
   onCreate,
   onCommandK,
-  busy,
 }: {
   onCreate: () => void
   onCommandK: () => void
-  busy: boolean
 }) {
   return (
     <div className="fixed top-[22px] right-[26px] z-40 flex gap-2.5 font-sans">
@@ -37,7 +35,6 @@ export function TopBarView({
         className={`${iconBtn} text-[15px]`}
         title="New page"
         aria-label="New page"
-        disabled={busy}
         onClick={onCreate}
       >
         ＋
@@ -81,11 +78,7 @@ export function TopBar() {
 
   return (
     <>
-      <TopBarView
-        onCreate={() => setCreateOpen(true)}
-        onCommandK={requestTerminalFocus}
-        busy={false}
-      />
+      <TopBarView onCreate={() => setCreateOpen(true)} onCommandK={requestTerminalFocus} />
       <CreatePageModal
         open={createOpen}
         onOpenChange={setCreateOpen}

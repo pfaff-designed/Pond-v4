@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { workspaceHref } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
 import {
   countDescendants,
@@ -326,12 +327,7 @@ export function Rail() {
   }, [isLoading, pages.length, queryClient])
 
   function navigateTo(node: { id: string; type: string; title: string }) {
-    const params = new URLSearchParams({
-      nodeType: node.type,
-      nodeId: node.id,
-      nodeName: node.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
+    router.push(workspaceHref(node))
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */

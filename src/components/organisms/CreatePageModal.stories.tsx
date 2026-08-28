@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { CreatePageModalView, TOP_LEVEL_VALUE } from './CreatePageModal'
 
@@ -46,7 +46,11 @@ export const Default: Story = {
     const body = within(document.body)
     await expect(body.getByRole('dialog')).toBeInTheDocument()
 
+    // Name-first: the title field holds focus the moment the dialog opens
+    // (base-ui initialFocus) — the caret is already where you type.
     const titleInput = body.getByRole('textbox', { name: /page title/i })
+    await waitFor(() => expect(titleInput).toHaveFocus())
+
     await userEvent.type(titleInput, 'Marathon Plan')
     await expect(args.onTitleChange).toHaveBeenCalled()
 

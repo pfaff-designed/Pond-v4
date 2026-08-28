@@ -15,7 +15,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ── Module mocks ──────────────────────────────────────────────────────────
@@ -49,18 +49,15 @@ jest.mock('@/lib/supabase/client', () => ({
 }))
 
 jest.mock('@/lib/ai/transports', () => ({
-  createNodeChatTransport: () => ({ api: '/api/node-chat' }),
   createMainTransport: () => ({ api: '/api/chat' }),
 }))
 
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest
-    .fn()
-    .mockResolvedValue({
-      id: 'conv-1',
-      messages: [],
-      resolutions: { changes: {}, creates: {}, skipped: {} },
-    }),
+  getOrCreateConversation: jest.fn().mockResolvedValue({
+    id: 'conv-1',
+    messages: [],
+    resolutions: { changes: {}, creates: {}, skipped: {} },
+  }),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))

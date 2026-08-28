@@ -20,14 +20,16 @@
  * Storybook; <CreatePageModal> wires Supabase + React Query + navigation.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@base-ui/react/dialog'
+import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog-chrome'
 import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
 import { fetchPages } from '@/lib/pages/tree'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
+import { workspaceHref } from '@/lib/pages/nav'
 import type { NodeType } from '@/lib/supabase/types'
 import { Button, buttonVariants } from '@/components/ui/button'
 
@@ -69,25 +71,18 @@ export function CreatePageModalView({
   error,
   onCreate,
 }: CreatePageModalViewProps) {
+  // Name-first: the caret lands in the title field the moment the dialog opens
+  // (base-ui's initialFocus, no focus timing of our own).
   const inputRef = useRef<HTMLInputElement>(null)
-
-  // Focus + select the title on open (name-first: the caret is where you type).
-  useEffect(() => {
-    if (open) {
-      // next tick — the popup mounts through the portal
-      const t = setTimeout(() => {
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      }, 0)
-      return () => clearTimeout(t)
-    }
-  }, [open])
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-press-ink/25 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <Dialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-press-line bg-press-paper p-6 shadow-2xl outline-none transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
+        <Dialog.Backdrop className={dialogBackdropClass} />
+        <Dialog.Popup
+          initialFocus={inputRef}
+          className={`${dialogPopupClass} w-[min(26rem,calc(100vw-2rem))]`}
+        >
           <Dialog.Title className="text-base font-semibold text-foreground">New page</Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-press-muted">
             Give it a name and choose where it lives.
@@ -206,19 +201,16 @@ export function CreatePageModal({
       const created = await createPage(supabase, user.id, {
         parentId,
         type: 'page',
-        title: title.trim(),
+        // Never write an empty title — 'Untitled' in the DB, matching what the
+        // rail/editor display anyway (the fallback shouldn't mask an empty row).
+        title: title.trim() || 'Untitled',
       })
       await queryClient.invalidateQueries({ queryKey: ['pages'] })
       onOpenChange(false)
 
-      // Land in the editor. Empty `page` → DocumentPanel renders the editor
-      // (ticket-22), with the title pre-filled (or the "Untitled" placeholder).
-      const params = new URLSearchParams({
-        nodeType: created.type,
-        nodeId: created.id,
-        nodeName: created.title,
-      })
-      router.push(`/workspace?${params.toString()}`)
+      // Land in the editor. A blocks-less `page` → DocumentPanel renders the
+      // editor (ticket-22), with the title pre-filled.
+      router.push(workspaceHref(created))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create page')
       setBusy(false)

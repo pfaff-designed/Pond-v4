@@ -23,32 +23,27 @@ jest.mock('@/lib/supabase/client', () => ({
 }))
 
 jest.mock('@/lib/ai/transports', () => ({
-  createNodeChatTransport: () => ({ api: '/api/node-chat' }),
   createMainTransport: () => ({ api: '/api/chat' }),
 }))
 
 jest.mock('@/lib/conversation/client', () => ({
-  getOrCreateConversation: jest
-    .fn()
-    .mockResolvedValue({
-      id: 'conv-1',
-      messages: [],
-      resolutions: { changes: {}, creates: {}, skipped: {} },
-    }),
+  getOrCreateConversation: jest.fn().mockResolvedValue({
+    id: 'conv-1',
+    messages: [],
+    resolutions: { changes: {}, creates: {}, skipped: {} },
+  }),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
 
-const mockPerformHandoff = jest
-  .fn()
-  .mockResolvedValue({
-    freshConversation: {
-      id: 'fresh-conv',
-      messages: [],
-      resolutions: { changes: {}, creates: {}, skipped: {} },
-    },
-    written: 2,
-  })
+const mockPerformHandoff = jest.fn().mockResolvedValue({
+  freshConversation: {
+    id: 'fresh-conv',
+    messages: [],
+    resolutions: { changes: {}, creates: {}, skipped: {} },
+  },
+  written: 2,
+})
 jest.mock('@/lib/conversation/handoff', () => ({
   performHandoff: (...args: unknown[]) => mockPerformHandoff(...args),
 }))

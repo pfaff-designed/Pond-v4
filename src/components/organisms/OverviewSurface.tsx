@@ -10,7 +10,7 @@
  * follow-up with its own grill.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
@@ -24,6 +24,7 @@ import {
   type OverviewModel,
 } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
+import { workspaceHref } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 
@@ -60,15 +61,27 @@ function EditableKicker({
 }) {
   const kickerClass = 'font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint'
   const [draft, setDraft] = useState(value)
+  // Escape blurs to end the edit, and blur normally commits — but an Escape
+  // blur must NOT commit (the whole point is to revert). The blur event fires
+  // synchronously inside the keydown handler, before React re-renders, so the
+  // blur-commit would otherwise read the STALE edited draft from its closure
+  // and perform the rename Escape meant to cancel. This ref flags that one
+  // blur as a revert.
+  const reverting = useRef(false)
 
   if (!onRename) {
     return <span className={kickerClass}>{value}</span>
   }
+  const rename = onRename
 
   function commit() {
+    if (reverting.current) {
+      reverting.current = false
+      return
+    }
     const next = draft.trim()
     // Only persist a genuine change; an empty title is refused (revert to value).
-    if (next && next !== value) onRename!(next)
+    if (next && next !== value) rename(next)
     else setDraft(value)
   }
 
@@ -83,6 +96,7 @@ function EditableKicker({
           e.preventDefault()
           e.currentTarget.blur()
         } else if (e.key === 'Escape') {
+          reverting.current = true
           setDraft(value)
           e.currentTarget.blur()
         }
@@ -203,12 +217,7 @@ export function OverviewSurface({
 export function useOpenCard() {
   const router = useRouter()
   return function openCard(card: OverviewCardModel) {
-    const params = new URLSearchParams({
-      nodeType: card.type,
-      nodeId: card.id,
-      nodeName: card.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
+    router.push(workspaceHref(card))
   }
 }
 

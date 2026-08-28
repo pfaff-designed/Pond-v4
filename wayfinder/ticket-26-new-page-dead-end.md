@@ -96,3 +96,27 @@ real data (dev server on a scratch port): ＋ opened the dialog with the title
 auto-focused and destination defaulted; created a `page` nested under the chosen
 parent and landed in the editor with "+ Add text"; the area-overview inline
 rename propagated to the rail; 0 console errors. Test mutations reverted.
+
+**Review fixes (2026-08-28):**
+
+- Escape in the kicker rename now truly reverts (the Escape-triggered blur fired
+  its commit synchronously with the stale edited draft — a `reverting` ref flags
+  that blur; regression story test added: type, Escape, assert no rename).
+- Scrubbed dangling `createNodeChatTransport`/node-chat mocks and the
+  NodeCreationModal comment from `save-picker-modal.test.tsx`,
+  `handoff-terminal.test.tsx`, `transcript-sanitize.test.ts`.
+- Modal title focus is now base-ui's `initialFocus` on the Popup (no hand-rolled
+  setTimeout) and is asserted by a story test.
+- Empty-title create writes `'Untitled'` to the DB (jest-covered) instead of
+  `''` — display fallbacks no longer mask an empty row.
+- Dropped `TopBarView`'s dead `busy` prop (modal owns in-flight state).
+- Dialog backdrop/popup chrome extracted to `atoms/dialog-chrome.ts` (class
+  consts), shared by ConfirmDialog + CreatePageModal.
+- Workspace URL building consolidated into `lib/pages/nav.ts` `workspaceHref()`,
+  used by Rail, overview cards, the modal, and the AI create_page accept path.
+  ⚠️ Merge note: ticket-25 lands its own nav helper for the same URL —
+  reconcile the two modules to one when the branches meet.
+- **Documented divergence:** the kicker rename _refuses_ an empty title
+  (reverts) while the editor's title input allows clearing to empty (placeholder
+  shows "Untitled", DB stores `''`). Left as-is: a rename gesture abandoning to
+  empty reads as a mistake; in-editor clearing is a transient editing state.
