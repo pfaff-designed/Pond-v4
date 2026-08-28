@@ -88,15 +88,17 @@ export const BoundLive: Story = {
   render: () => <LiveBound />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Derived from one checked item, not the manual 0.
+    // Derived from one checked item, not the manual 0. Asserted via the value's
+    // accessible label — NumberFlow animates by splitting digits across nodes, so a
+    // plain getByText('1') would be brittle; the aria-label is the stable string.
     await expect(canvas.getByText('Books finished')).toBeInTheDocument()
-    await expect(canvas.getByText('1')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Books finished: 1')).toBeInTheDocument()
     // The `→` link is present when bound.
     await expect(canvas.getByLabelText('Go to source block')).toBeInTheDocument()
-    // Check a second box → derived value climbs to 2, live.
+    // Check a second box → derived value counts up to 2, live (NumberFlow animates).
     const boxes = canvas.getAllByRole('checkbox')
     await userEvent.click(boxes[1])
-    await expect(canvas.getByText('2')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Books finished: 2')).toBeInTheDocument()
   },
 }
 

@@ -1,5 +1,7 @@
 'use client'
 
+import NumberFlow from '@number-flow/react'
+import { useEffect, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { MetricBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -9,6 +11,29 @@ const TREND_GLYPH: Record<NonNullable<MetricBlock['trend']>, string> = {
   up: '↑',
   down: '↓',
   flat: '→',
+}
+
+/**
+ * NumberFlow is a custom element; before its module registers, rendering it emits a
+ * bare empty element (no digits) — so we render a plain number until it's defined,
+ * then swap in the animating one. Mirrors chart-stat-flow's guard. Once ready, a
+ * change to a bound metric's derived value counts up smoothly (ticket-31).
+ */
+function useNumberFlowReady(): boolean {
+  const [ready, setReady] = useState(
+    () => typeof customElements !== 'undefined' && Boolean(customElements.get('number-flow-react'))
+  )
+  useEffect(() => {
+    if (ready || typeof customElements === 'undefined') return
+    let cancelled = false
+    customElements.whenDefined('number-flow-react').then(() => {
+      if (!cancelled) setReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [ready])
+  return ready
 }
 
 /**
@@ -25,13 +50,27 @@ const TREND_GLYPH: Record<NonNullable<MetricBlock['trend']>, string> = {
 export function MetricView({ data }: ModuleViewProps<MetricBlock>) {
   const { blocks, scrollToBlock } = useSiblingBlocks()
   const derived = deriveMetricValue(data, blocks)
+  const numberFlowReady = useNumberFlowReady()
+  // Only a live (bound + derived) metric animates: its number changes as siblings
+  // change. An unbound/stale metric shows a static figure — nothing to count up to.
+  const animate = derived.state === 'derived' && numberFlowReady
+  const unit = data.unit ? ` ${data.unit}` : ''
 
   return (
     <div className="flex items-baseline gap-2 text-sm text-zinc-800">
       <span className="text-zinc-500">{data.label}</span>
-      <span className="font-medium">
-        {derived.value}
-        {data.unit ? ` ${data.unit}` : ''}
+      {/* aria-label carries the plain value so assistive tech (and story tests) read
+          one stable string even while NumberFlow visually animates split digits. */}
+      <span
+        className="font-medium tabular-nums"
+        role="status"
+        aria-label={`${data.label}: ${derived.value}${unit}`}
+      >
+        {animate ? (
+          <NumberFlow value={derived.value} suffix={unit} willChange isolate />
+        ) : (
+          `${derived.value}${unit}`
+        )}
       </span>
       {data.trend && <span className="text-zinc-400">{TREND_GLYPH[data.trend]}</span>}
 

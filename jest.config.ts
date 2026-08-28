@@ -16,6 +16,9 @@ const config: Config = {
     // by the Storybook story tests, not jest — see src/__mocks__/react-markdown.tsx.
     '^react-markdown$': '<rootDir>/src/__mocks__/react-markdown.tsx',
     '^remark-(gfm|breaks)$': '<rootDir>/src/__mocks__/remark-plugin.ts',
+    // @number-flow/react is a pure-ESM custom-element wrapper; stub it in jsdom.
+    // The count-up animation is covered by the metric Storybook story test, not jest.
+    '^@number-flow/react$': '<rootDir>/src/__mocks__/number-flow.tsx',
   },
 }
 
