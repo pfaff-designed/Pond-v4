@@ -47,8 +47,8 @@ export function ProposalActions({
       <div
         aria-live="polite"
         className={cn(
-          'text-xs text-zinc-500',
-          divider && 'border-t border-zinc-100 px-3 py-1.5',
+          'font-serif text-xs italic text-press-muted',
+          divider && 'border-t border-press-hair px-3 py-1.5',
           className
         )}
       >
@@ -61,7 +61,7 @@ export function ProposalActions({
     <div
       className={cn(
         'flex items-center gap-1.5',
-        divider && 'border-t border-zinc-100 px-3 py-2',
+        divider && 'border-t border-press-hair px-3 py-2',
         className
       )}
     >

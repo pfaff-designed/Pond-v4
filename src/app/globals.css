@@ -245,6 +245,32 @@
     }
   }
 
+  /* Conversation-surface arrival (ticket-32): a calmer, shorter breath than the
+     full-page press-rise, tuned for a single message/card entering the transcript —
+     one authored moment, not a scatter. Same ease + reduced-motion contract. */
+  .press-arrive {
+    animation: press-rise 460ms var(--ease-press) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .press-arrive {
+      animation: none;
+    }
+  }
+
+  /* Letterpress authored card (ticket-32): the AI reply and every proposal object in
+     the terminal share this "impressed ink" treatment so the transcript reads as one
+     coherent object — a warm near-paper surface, a sage-inked left margin like a
+     ruled correspondence, and a soft debossed shadow rather than a floating card. */
+  .press-letter {
+    background:
+      linear-gradient(to right, var(--press-accent-wash), transparent 40%), var(--press-card);
+    border: 1px solid var(--press-line);
+    border-left: 2px solid var(--press-accent);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.55) inset,
+      0 1px 2px rgba(33, 31, 27, 0.05);
+  }
+
   /* Liquid glass — floating Press chrome ONLY (top bar cluster, palettes). */
   .press-glass {
     background: linear-gradient(

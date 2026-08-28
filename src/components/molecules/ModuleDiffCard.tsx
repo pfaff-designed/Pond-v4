@@ -70,7 +70,7 @@ function ChangeBody({ op, before, after }: Pick<ModuleDiffCardProps, 'op' | 'bef
     if (!before) return null
     return (
       <div className="space-y-1.5">
-        <span className="block text-xs italic text-zinc-400">Will be removed</span>
+        <span className="block font-serif text-xs italic text-press-faint">Will be removed</span>
         <Faded block={before} />
       </div>
     )
@@ -95,7 +95,7 @@ function ChangeBody({ op, before, after }: Pick<ModuleDiffCardProps, 'op' | 'bef
       {op === 'edit' && before ? (
         <Faded block={before} />
       ) : (
-        <span className="block text-xs italic text-zinc-400">New {after.type}</span>
+        <span className="block font-serif text-xs italic text-press-faint">New {after.type}</span>
       )}
       <ModuleView type={after.type} data={after} />
     </div>
@@ -122,18 +122,18 @@ export function ModuleDiffCard({
       role="group"
       aria-label={`Proposed ${OP_LABEL[op]}`}
       className={cn(
-        'rounded-lg border border-zinc-200 bg-white text-left shadow-sm',
+        'press-letter overflow-hidden rounded-lg text-left',
         resolved && 'opacity-70',
         className
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+      {/* Header — a letterpress kicker in the correspondence serif */}
+      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
+        <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-muted">
           Proposed {OP_LABEL[op]} · {type}
         </span>
         {inferred && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+          <span className="rounded-full bg-press-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-press-accent">
             Inferred
           </span>
         )}
@@ -144,7 +144,7 @@ export function ModuleDiffCard({
         <ChangeBody op={op} before={before} after={after} />
       </div>
 
-      {reason && <p className="px-3 pb-2 text-xs text-zinc-500">{reason}</p>}
+      {reason && <p className="px-3 pb-2 font-serif text-xs italic text-press-muted">{reason}</p>}
 
       <ProposalActions status={status} onAccept={onAccept} onReject={onReject} onEdit={onEdit} />
     </div>

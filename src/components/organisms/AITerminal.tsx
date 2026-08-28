@@ -31,8 +31,10 @@ import {
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
 import { Markdown } from '@/components/atoms/Markdown'
+import { StageText } from '@/components/atoms/StageText'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
+import { stageTextForParts, type StagePart } from '@/lib/conversation/stage-text'
 import {
   CreatePageProposalCard,
   TOP_LEVEL_VALUE,
@@ -666,11 +668,39 @@ export function AITerminal() {
     [supabaseClient, queryClient, router]
   )
 
+  // ── Streaming stage text (ticket-32) ──────────────────────────────────────
+  // A 25–30s generation used to show a bare "…". Derive a human stage line from the
+  // tool-call parts already in the latest assistant message ("reading Ceramics
+  // Studio Plan…", "drafting your page…") — see lib/conversation/stage-text. Page
+  // ids in a read_page part resolve to titles against the loaded pages list. Only
+  // the LATEST assistant message's parts feed the line (an earlier turn's tools are
+  // done), and only while streaming with no visible answer yet does the terminal
+  // render it (below).
+  const resolvePageName = useCallback(
+    (id: string) => allPages.find((p) => p.id === id)?.title,
+    [allPages]
+  )
+  const stageLine = useMemo(() => {
+    if (!isStreaming) return null
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return null
+    return stageTextForParts(last.parts as StagePart[], { resolvePageName })
+  }, [isStreaming, messages, resolvePageName])
+  // The resting stage line yields the moment the reply starts arriving — from then on
+  // the letterpress card is itself the feedback, so no whispered line under it.
+  const lastAssistantHasText = useMemo(() => {
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return false
+    return last.parts.some((p) => p.type === 'text' && (p as { text: string }).text.length > 0)
+  }, [messages])
+
   const messagesBody = (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm">
-      {!isReady && <p className="text-press-faint text-xs">Loading…</p>}
+    <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+      {!isReady && <p className="font-serif text-sm italic text-press-faint">Loading…</p>}
       {isReady && messages.length === 0 && (
-        <p className="text-press-faint text-xs">Start a conversation…</p>
+        <p className="font-serif text-sm italic text-press-faint">
+          Talk with Pond — think out loud, ask, or compose.
+        </p>
       )}
       {messages.map((message) => {
         const text = message.parts
@@ -699,32 +729,32 @@ export function AITerminal() {
           }))
 
         return (
-          <div key={message.id} className="space-y-2">
-            {text && (
-              <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
-                {message.role === 'user' ? (
-                  // User text is verbatim — never interpret their keystrokes as markdown.
-                  <span className="inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left bg-press-ink text-press-paper">
+          <div key={message.id} className="space-y-3">
+            {text &&
+              (message.role === 'user' ? (
+                // The user's line is a quiet aside — right-anchored, indented, verbatim
+                // (never interpret their keystrokes as markdown), calm ink on a faint
+                // sage wash. NOT a chat bubble competing with the authored reply.
+                <div className="flex justify-end">
+                  <p className="max-w-[85%] whitespace-pre-wrap rounded-md border-r-2 border-press-accent/40 bg-press-accent-wash px-3.5 py-2 text-right font-serif text-[0.95rem] leading-[1.55] text-press-body">
                     {text}
-                  </span>
-                ) : (
-                  // Assistant answers author in markdown everywhere; render it typeset
-                  // (ticket-20). Streaming-safe: `text` grows token-by-token and
-                  // react-markdown re-parses each partial string on every render.
-                  <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
-                    <Markdown variant="terminal">{text}</Markdown>
-                    {sources.length > 0 && <SourceList sources={sources} />}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Sources can arrive on an assistant message with no text bubble
-                (rare, but the citation should still show). */}
-            {message.role !== 'user' && !text && sources.length > 0 && (
-              <div className="text-left">
-                <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
-                  <SourceList sources={sources} />
+                  </p>
                 </div>
+              ) : (
+                // The AI reply is the authored letter: an impressed letterpress card,
+                // sage-inked left margin, full-measure Press serif prose. Arrives with
+                // one calm breath (press-arrive). Streaming-safe: `text` grows
+                // token-by-token and react-markdown re-parses each partial (ticket-20).
+                <div className="press-letter press-arrive rounded-lg px-4 py-3">
+                  <Markdown variant="terminal">{text}</Markdown>
+                  {sources.length > 0 && <SourceList sources={sources} />}
+                </div>
+              ))}
+            {/* Sources can arrive on an assistant message with no text (rare, but the
+                citation should still show) — still the authored-card language. */}
+            {message.role !== 'user' && !text && sources.length > 0 && (
+              <div className="press-letter press-arrive rounded-lg px-4 py-3">
+                <SourceList sources={sources} />
               </div>
             )}
             {changeBatches.map((part) => {
@@ -753,7 +783,7 @@ export function AITerminal() {
               const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
               const skipped = changeSkipped[part.toolCallId] ?? 0
               return (
-                <div key={part.toolCallId} className="space-y-1.5">
+                <div key={part.toolCallId} className="press-arrive space-y-1.5">
                   <ProposalGroup
                     changes={previews}
                     statuses={statuses}
@@ -767,7 +797,7 @@ export function AITerminal() {
                     onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
                   />
                   {skipped > 0 && (
-                    <p className="text-xs text-amber-600">
+                    <p className="font-serif text-xs italic text-press-rust">
                       {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
                       {skipped > 1 ? 'were' : 'was'} skipped.
                     </p>
@@ -787,6 +817,7 @@ export function AITerminal() {
               return (
                 <CreatePageProposalCard
                   key={part.toolCallId}
+                  className="press-arrive"
                   title={input.title}
                   type={input.type}
                   kind={input.kind}
@@ -808,19 +839,22 @@ export function AITerminal() {
           </div>
         )
       })}
-      {isStreaming && (
-        <div className="text-left">
-          <span className="inline-block text-sm px-3 py-1.5 rounded bg-press-accent-soft text-press-faint">
-            …
-          </span>
-        </div>
-      )}
+      {/* While streaming with no visible answer yet, show a derived stage line
+          ("drafting your page…") in place of the old bare ellipsis (ticket-32); once
+          text is arriving the reply card itself is the feedback, so this yields. */}
+      {isStreaming && !lastAssistantHasText && <StageText label={stageLine ?? 'thinking…'} />}
       <div ref={bottomRef} />
     </div>
   )
 
+  // The input stays quietly monospace by design (ticket-32): it is the console
+  // *threshold* — the one seam where the user's typed intent crosses into the serif
+  // correspondence. Mono keeps commands (/clear · /handoff · /save) legible as
+  // commands and marks "you are typing" distinct from "Pond is speaking". Restyled to
+  // the Press language (paper field, sage focus ring) so it reads intentional, not
+  // like a leftover dev console.
   const inputFooter = (
-    <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair flex-shrink-0">
+    <div className="flex items-end gap-2.5 px-5 py-3 border-t border-press-hair flex-shrink-0">
       <textarea
         ref={inputRef}
         value={input}
@@ -828,13 +862,13 @@ export function AITerminal() {
         onKeyDown={handleKeyDown}
         placeholder="Talk to Pond… (/clear · /handoff · /save)"
         rows={2}
-        className="flex-1 resize-none border border-border rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono bg-transparent placeholder:text-press-faint"
+        className="flex-1 resize-none rounded-md border border-press-line bg-press-card px-3 py-2 text-sm outline-none transition-colors focus:border-press-accent focus:ring-1 focus:ring-press-accent font-mono text-press-body placeholder:text-press-faint disabled:opacity-60"
         disabled={isStreaming || !isReady}
       />
       <button
         onClick={handleSend}
         disabled={isStreaming || !input.trim() || !isReady}
-        className="px-3 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-full hover:opacity-90 disabled:opacity-40 self-end"
+        className="self-end rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         Send
       </button>

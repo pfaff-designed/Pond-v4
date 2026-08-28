@@ -95,22 +95,22 @@ export function CreatePageProposalCard({
       role="group"
       aria-label={`Proposed new page: ${title}`}
       className={cn(
-        'rounded-lg border border-zinc-200 bg-white text-left shadow-sm',
+        'press-letter overflow-hidden rounded-lg text-left',
         resolved && 'opacity-70',
         className
       )}
     >
       {/* Header — "New page" kicker + type/kind tag */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
+        <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-muted">
           New page · {label}
         </span>
       </div>
 
-      {/* Title + optional note */}
+      {/* Title + optional note — the title set in the display serif, like a page head */}
       <div className="px-3 pt-2.5">
-        <div className="text-sm font-semibold text-zinc-900">{title}</div>
-        {reason && <p className="mt-0.5 text-xs text-zinc-500">{reason}</p>}
+        <div className="font-display text-lg leading-tight text-foreground">{title}</div>
+        {reason && <p className="mt-0.5 font-serif text-xs italic text-press-muted">{reason}</p>}
       </div>
 
       {/* Scaffolded block preview. Height-bounded with internal scroll (ticket-24):
@@ -118,7 +118,7 @@ export function CreatePageProposalCard({
           and Create/Dismiss out of the auto-grown drawer — title + preview + picker
           + actions always fit together; only the preview itself scrolls. */}
       {previewBlocks.length > 0 && (
-        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-sm">
+        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-md border border-press-hair bg-press-accent-wash px-3 py-2 text-sm">
           {previewBlocks.map((b) => (
             <ModuleView key={b.id} type={b.type} data={b} />
           ))}
@@ -127,7 +127,7 @@ export function CreatePageProposalCard({
 
       {/* Destination picker — the user can correct the inferred placement */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
-        <label htmlFor={parentSelectId} className="text-xs text-zinc-500">
+        <label htmlFor={parentSelectId} className="text-xs text-press-muted">
           Save to
         </label>
         <select
@@ -136,7 +136,7 @@ export function CreatePageProposalCard({
           value={selectedParentId}
           disabled={resolved}
           onChange={(e) => onParentChange(e.target.value)}
-          className="flex-1 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 outline-none focus:ring-1 focus:ring-zinc-400 disabled:opacity-60"
+          className="flex-1 rounded-md border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
         >
           <option value={TOP_LEVEL_VALUE}>Top level</option>
           {parentOptions.map((p) => (
@@ -152,7 +152,7 @@ export function CreatePageProposalCard({
       {resolved ? (
         <div
           aria-live="polite"
-          className="mt-2.5 border-t border-zinc-100 px-3 py-1.5 text-xs text-zinc-500"
+          className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
         >
           {status === 'accepted' ? 'Page created' : 'Dismissed'}
         </div>

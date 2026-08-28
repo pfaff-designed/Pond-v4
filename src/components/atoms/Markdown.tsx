@@ -36,6 +36,15 @@ export type MarkdownVariant = 'reading' | 'terminal'
  */
 export const READING_PROSE_CLASS = 'font-serif text-[1.0625rem] leading-[1.65] text-press-body'
 
+/**
+ * The same Press serif reading treatment, scaled down for the terminal drawer
+ * (ticket-32). The AI reply is now an authored letter in the correspondence, not a
+ * mono console line, so it shares `reading`'s serif/measure/leading — just a step
+ * smaller so it sits inside the drawer. Kept as a derived constant so the two
+ * variants can never drift into different type worlds.
+ */
+export const TERMINAL_PROSE_CLASS = 'font-serif text-[0.95rem] leading-[1.6] text-press-body'
+
 /** Elements identical across variants (inline emphasis carries no size of its own). */
 const SHARED_COMPONENTS: Components = {
   strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
@@ -120,55 +129,79 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       <td className="border-b border-press-hair py-1.5 pr-4 text-press-body">{children}</td>
     ),
   },
-  // ── Terminal answer: compact, sits inside the chat bubble ──────────────────
+  // ── Terminal answer: the Press serif reading treatment, scaled for the drawer ─
+  // (ticket-32) — the AI reply is an authored letter, not a mono console line. Shares
+  // the reading variant's serif/leading and its page-block table/list language, one
+  // step down in size. Structured content (tables/lists) renders in the same visual
+  // language as saved page blocks so a reply and a saved page feel like one system.
   terminal: {
     ...SHARED_COMPONENTS,
     h1: ({ children }) => (
-      <h1 className="text-base font-semibold text-foreground mt-2 mb-1 first:mt-0">{children}</h1>
+      <h1 className="font-display text-xl leading-[1.15] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
+        {children}
+      </h1>
     ),
     h2: ({ children }) => (
-      <h2 className="text-sm font-semibold text-foreground mt-2 mb-1 first:mt-0">{children}</h2>
+      <h2 className="font-display text-lg leading-[1.2] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
+        {children}
+      </h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-sm font-semibold text-foreground mt-2 mb-1 first:mt-0">{children}</h3>
+      <h3 className="font-serif text-base font-medium leading-snug text-foreground mt-2.5 mb-1 first:mt-0">
+        {children}
+      </h3>
     ),
-    p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>,
-    ul: ({ children }) => <ul className="my-1.5 list-disc pl-4 space-y-0.5">{children}</ul>,
-    ol: ({ children }) => <ol className="my-1.5 list-decimal pl-4 space-y-0.5">{children}</ol>,
-    li: ({ children }) => <li>{children}</li>,
+    p: ({ children }) => (
+      <p className={`${TERMINAL_PROSE_CLASS} my-2 first:mt-0 last:mb-0`}>{children}</p>
+    ),
+    ul: ({ children }) => (
+      <ul className={`${TERMINAL_PROSE_CLASS} my-2 list-disc pl-5 space-y-1`}>{children}</ul>
+    ),
+    ol: ({ children }) => (
+      <ol className={`${TERMINAL_PROSE_CLASS} my-2 list-decimal pl-5 space-y-1`}>{children}</ol>
+    ),
+    li: ({ children }) => <li className="pl-1">{children}</li>,
     a: ({ children, href }) => (
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="underline decoration-press-line underline-offset-2 hover:decoration-current"
+        className="text-press-accent underline decoration-press-line underline-offset-2 hover:decoration-press-accent"
       >
         {children}
       </a>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="italic text-press-muted border-l-2 border-press-line pl-3 my-1.5">
+      <blockquote className="font-serif italic text-press-muted border-l-2 border-press-line pl-3 my-2">
         {children}
       </blockquote>
     ),
     code: ({ children }) => (
-      <code className="text-[0.85em] bg-press-paper/60 rounded px-1 py-0.5">{children}</code>
+      <code className="font-mono text-[0.8em] bg-press-accent-wash text-foreground rounded px-1 py-0.5">
+        {children}
+      </code>
     ),
     pre: ({ children }) => (
-      <pre className="text-xs bg-press-paper/60 rounded p-2 my-1.5 overflow-x-auto">{children}</pre>
+      <pre className="font-mono text-xs bg-press-accent-wash text-foreground rounded-md p-2.5 my-2 overflow-x-auto">
+        {children}
+      </pre>
     ),
-    hr: () => <hr className="border-0 border-t border-press-line my-2" />,
+    hr: () => <hr className="border-0 border-t border-press-line my-3" />,
     table: ({ children }) => (
-      <div className="my-1.5 overflow-x-auto">
-        <table className="w-full border-collapse text-left text-xs">{children}</table>
+      <div className="my-2 overflow-x-auto">
+        <table className="w-full border-collapse text-left font-serif text-[0.875rem]">
+          {children}
+        </table>
       </div>
     ),
     th: ({ children }) => (
-      <th className="border-b border-press-line py-1 pr-3 font-medium text-press-muted">
+      <th className="border-b border-press-line py-1.5 pr-3 text-xs font-medium text-press-muted">
         {children}
       </th>
     ),
-    td: ({ children }) => <td className="border-b border-press-hair py-1 pr-3">{children}</td>,
+    td: ({ children }) => (
+      <td className="border-b border-press-hair py-1.5 pr-3 text-press-body">{children}</td>
+    ),
   },
 }
 
