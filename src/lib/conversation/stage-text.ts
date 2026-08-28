@@ -49,6 +49,17 @@ export interface StageTextOptions {
 }
 
 /**
+ * True when any tool part in the list is still pending (state includes `input-`
+ * or `output-`), even if text has already started streaming alongside it. The
+ * terminal uses this for Fix-5 (F10): widen the stage-indicator gate from
+ * "no text yet" to "any tool still active", so the user sees a stage line
+ * the entire time a tool is running, not only before the first token.
+ */
+export function hasActiveTool(parts: readonly StagePart[]): boolean {
+  return parts.some(isActiveTool)
+}
+
+/**
  * The human stage line for a single tool part, or null if it isn't a tool part we
  * narrate. Exported so the mapping can be exercised one part at a time.
  */
