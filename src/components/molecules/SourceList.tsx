@@ -33,7 +33,18 @@ export interface SourceListProps {
   sources: Source[]
 }
 
-export function SourceList({ sources }: SourceListProps) {
+/** First occurrence per URL wins — the provider can cite one page several times. */
+function dedupeByUrl(sources: Source[]): Source[] {
+  const seen = new Set<string>()
+  return sources.filter((s) => {
+    if (seen.has(s.url)) return false
+    seen.add(s.url)
+    return true
+  })
+}
+
+export function SourceList({ sources: rawSources }: SourceListProps) {
+  const sources = dedupeByUrl(rawSources)
   if (sources.length === 0) return null
   return (
     <div className="mt-2 border-t border-press-hair pt-1.5 text-xs text-press-faint">

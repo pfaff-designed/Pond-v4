@@ -62,6 +62,25 @@ export const SingleSource: Story = {
   },
 }
 
+/** Duplicate URLs collapse to one row — the provider can cite a page repeatedly. */
+export const Deduped: Story = {
+  args: {
+    sources: [
+      { sourceId: 'a1', url: 'https://example.com/wheels', title: 'Wheels Guide' },
+      { sourceId: 'a2', url: 'https://example.com/wheels', title: 'Wheels Guide (again)' },
+      { sourceId: 'a3', url: 'https://other.example.com/kilns', title: 'Kilns' },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getAllByRole('link')).toHaveLength(2)
+    await expect(canvas.getByRole('link', { name: 'Wheels Guide' })).toBeInTheDocument()
+    await expect(
+      canvas.queryByRole('link', { name: 'Wheels Guide (again)' })
+    ).not.toBeInTheDocument()
+  },
+}
+
 /** No sources → nothing rendered (guarded by the caller too). */
 export const Empty: Story = {
   args: { sources: [] },

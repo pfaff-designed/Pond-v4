@@ -60,10 +60,37 @@ must carry a one-line "from memory, not today's prices" caveat, and the model is
 to search when the answer depends on current information.
 
 **Paste-a-link** — `src/lib/context/paste-link.ts`: http(s) URLs in the user's
-message are fetched server-side, HTML→text, ~50KB cap, timeout, `redirect: 'manual'`,
-private/loopback/link-local/metadata hosts refused before the fetch. Fetched text is
-injected as cited source material; unreadable links are noted so the model doesn't
-guess. Extraction + sanitization are pure (fetch injected) and jest-tested.
+message are fetched server-side, HTML→text, timeout, `redirect: 'manual'`. Fetched
+text is injected as cited source material; unreadable links are noted so the model
+doesn't guess. Extraction + sanitization are pure (fetch injected) and jest-tested.
+Hardened in the security-review round:
+
+- **SSRF guard is parse-to-bytes.** IP-literal hosts are parsed to raw bytes and
+  range-checked (no string prefix matching): IPv4 loopback/private/link-local/
+  reserved/CGNAT, IPv6 `::`/`::1`/`fe80::/10`/`fc00::/7`, plus the embedded-IPv4
+  forms the review proved bypassed the old string ladder — IPv4-mapped
+  `[::ffff:127.0.0.1]` and hex `[::ffff:7f00:1]`, bracketed `[::]`, and NAT64
+  `64:ff9b::/96` (both recurse into the embedded IPv4). Unparseable IPv6 literals
+  are refused (fail closed). Every named bypass is pinned by a jest case.
+- **Download capped during read, not after.** A declared Content-Length above
+  ~1MB is rejected without reading; otherwise the body is streamed with a 50KB
+  byte budget and the stream is CANCELLED at the cap — never buffered unbounded
+  into route memory. Char truncation of the extracted text happens after.
+  Jest covers the oversized-stream and Content-Length-reject paths.
+- **Auth-gated.** Pre-auth reachability finding: in production the proxy
+  (src/proxy.ts) redirects unauthenticated requests away from /api/chat, but the
+  DEV_AUTOLOGIN dev bypass let cookie-less calls reach the route with a null
+  user (our own verify curls did exactly that). Link fetching now runs only for
+  an authenticated user — anonymous callers trigger no server-side fetches.
+- **DNS-rebinding residual, stated plainly: a public hostname that resolves to a
+  private IP bypasses this guard.** The check is hostname-level only; no DNS
+  resolution or connection pinning is done. Accepted for the single-user threat
+  model (the only requester is the workspace owner attacking their own server).
+- **Single-turn injection.** Pasted-link contents ride the system prompt for the
+  turn they were pasted in only — they are not persisted into the transcript.
+  Both the injected block and the system prompt now say so explicitly, steering
+  the model to ask for a re-paste (or search) instead of claiming it still has
+  the page on a later turn.
 
 **Discovery → create_page arc unchanged** — search is an input; create_page /
 propose_changes are untouched and t21's authoring lint is intact.
@@ -77,7 +104,15 @@ propose_changes are untouched and t21's authoring lint is intact.
   prices (VEVOR $215.99, Shimpo VL-Lite $975, Brent Model B $2,350) with **0** web
   searches, proving the injected-context path. Evidence: `~/t29-verify-pastelink-sse.txt`.
 - Citation UI: `SourceList` rendered in Storybook (`~/t29-verify-sourcelist-story.png`).
+  Sources are now de-duplicated by URL before render (the provider can cite one
+  page several times — the verify run streamed 16 parts for one answer).
 - create_page arc: search runs and feeds the same turn; tool unchanged.
+- Transcript round-trip: pinned by jest (`transcript-source-parts.test.ts`) —
+  a saved transcript carrying `source-url` parts + a provider-executed
+  `web_search` tool part survives JSON save→restore and converts through
+  `toModelMessages` without throwing, and `source-url` never leaks into model
+  content. Cost controls: per-turn caps only (`maxUses` 5, 3 links/message) —
+  fine for single-user; a per-day budget is future work if Pond goes multi-user.
 
 Note: interactive UI create+accept+delete could not be driven to completion because
 three other dev servers (parallel sessions) sharing one Supabase auth cookie +

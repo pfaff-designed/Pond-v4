@@ -80,13 +80,15 @@ export async function POST(req: Request) {
 
   // Paste-a-link (ticket-29): any http(s) URL in the latest user message is fetched
   // server-side (sanitized, size-capped, no redirects into private ranges) and
-  // injected as source material the model can cite. Independent of the DB context
-  // and cheap to run first, so a signed-out user still benefits.
+  // injected as source material the model can cite. Gated on an authenticated
+  // user: in production the proxy already redirects unauthenticated requests, but
+  // the dev auto-login bypass (DEV_AUTOLOGIN) lets cookie-less calls through, and
+  // an SSRF-adjacent fetch surface must never run for anonymous callers.
   const contextBlocks: string[] = []
-  const linkContext = await fetchLinkContext(userText)
-  if (linkContext) contextBlocks.push(linkContext)
-
   if (user) {
+    const linkContext = await fetchLinkContext(userText)
+    if (linkContext) contextBlocks.push(linkContext)
+
     const context = await buildChatContext(supabase, user.id, {
       nodeId,
       nodeType,
