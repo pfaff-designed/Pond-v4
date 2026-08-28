@@ -9,7 +9,7 @@
  * influence routing — description and inputSchema.
  */
 import { z } from 'zod'
-import { proposeChangesSchema, moduleDataSchema } from '@/lib/modules/ai-composition'
+import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 
 // The web_search tool (ticket-29) lives in ./web-search so this routing-schema
@@ -45,9 +45,10 @@ const createPageInput = z
         'The title of the page/area this new page should live under. Use the title the user named (e.g. "in my Personal area"); when they name none, infer the most fitting parent from the current node and the workspace outline in context. Omit ONLY when the user asks for a top-level page or no existing page plausibly fits.'
       ),
     blocks: z
-      .array(moduleDataSchema)
+      .array(createPageBlockSchema)
       .describe(
-        'The scaffolded initial content, composed only from the available block types. Give the page real, useful content — not an empty shell. Do NOT make the first block a heading that repeats the page title; the title is already shown.'
+        'The scaffolded initial content, composed only from the available block types. Give the page real, useful content — not an empty shell. Do NOT make the first block a heading that repeats the page title; the title is already shown. ' +
+          'To scaffold a LIVE metric over a checklist/table in this same list, put `bindKey: "<key>"` on that checklist/table entry and `source: { ref: "<key>", kind }` on the metric (ids are minted on accept — never invent blockIds here).'
       ),
     reason: z
       .string()

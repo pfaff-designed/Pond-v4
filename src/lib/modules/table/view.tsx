@@ -2,6 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
+import { sumColumn as sumTableColumn, formatTotal } from './sum'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view
@@ -17,6 +18,13 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   // missing columns/rows rather than crash the whole tree.
   const columns = data.columns ?? []
   const rows = data.rows ?? []
+
+  // Sum footer (ticket-31). Only when `sumColumn` points at a real column AND at
+  // least one cell parsed to a number — an all-junk column shows no footer rather
+  // than a misleading "0". Recomputed every render so an inline cell edit re-totals
+  // live (the whole block re-renders through onChange).
+  const footer = computeFooter(data.sumColumn, columns, rows)
+  const sumIndex = footer?.index
 
   function patchRow(rowIndex: number, patch: Partial<TableRow>) {
     onChange?.({
@@ -97,6 +105,33 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
             </tr>
           ))}
         </tbody>
+        {footer && (
+          <tfoot>
+            <tr className="border-t-2 border-zinc-300">
+              {columns.map((_, ci) => {
+                if (ci === 0) {
+                  return (
+                    <td
+                      key={ci}
+                      className="py-1.5 pr-3 text-[11px] font-medium tracking-[0.08em] text-zinc-400 uppercase"
+                    >
+                      Total
+                    </td>
+                  )
+                }
+                if (ci === sumIndex) {
+                  return (
+                    <td key={ci} className="py-1.5 pr-3 font-semibold text-zinc-900 tabular-nums">
+                      {footer.display}
+                    </td>
+                  )
+                }
+                return <td key={ci} className="py-1.5 pr-3" aria-hidden />
+              })}
+              {editable && <td className="w-6" aria-hidden />}
+            </tr>
+          </tfoot>
+        )}
       </table>
       {editable && (
         <button
@@ -109,4 +144,21 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
       )}
     </div>
   )
+}
+
+/**
+ * Resolve the sum footer, or null when there is nothing honest to show: no
+ * `sumColumn`, an out-of-range index, or a column where no cell parsed to a number
+ * (an all-junk column must not show a misleading "0"). Formatting — including the
+ * currency/% affordance carried from the cells — lives in `sum.ts` with the parser.
+ */
+function computeFooter(
+  sumColumn: number | undefined,
+  columns: readonly string[],
+  rows: readonly TableRow[]
+): { index: number; display: string } | null {
+  if (sumColumn === undefined || sumColumn >= columns.length) return null
+  const { total, counted } = sumTableColumn(rows, sumColumn)
+  if (counted === 0) return null
+  return { index: sumColumn, display: formatTotal(total, rows, sumColumn) }
 }
