@@ -89,7 +89,7 @@ export const createPageTool = {
 
 export const proposeChangesTool = {
   description:
-    'Propose a batch of composition changes to the current node — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Use when the user explicitly asks to build or compose content. The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
+    'Propose a batch of composition changes to an EXISTING page — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Edits the page the user has open by default; to edit ANOTHER page they named, first read_page that page and set `targetPageId` to its id (from the [Workspace outline]). Use when the user explicitly asks to build or compose content (never to create a brand-new page — that is create_page). The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
   inputSchema: proposeChangesSchema,
 } as const
 
