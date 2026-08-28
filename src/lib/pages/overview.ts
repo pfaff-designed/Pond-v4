@@ -18,6 +18,15 @@
  * Where direct children and deeper descendants differ, the caption says so
  * explicitly ("2 pages · 1 nested") rather than collapsing to one ambiguous
  * total. When they're equal (a flat child list) it reads "N pages inside".
+ *
+ * ── Human voice on the focal caption (ticket-33) ─────────────────────────────
+ * The counting RULE above is unchanged. What changed is the VOICE of the *focal*
+ * caption. The focal numeral is the TOTAL content pages (the intuitive big
+ * number); the caption carries the breakdown in a person's words, not math:
+ * "Nothing here yet." · "1 page, tucked in Creativity." · "4 pages across your
+ * life, 3 of them in Health." · (area) "2 pages within, 1 tucked deeper." The
+ * little `phraseFocalCaption` engine below owns that phrasing so the copy lives
+ * in one testable place (see the jest phrasing matrix in overview-model.test).
  */
 
 import type { PageRow } from '@/lib/pages/tree'
@@ -139,27 +148,103 @@ export function childCards(rows: PageRow[], parentId: string, now: Date): Overvi
   return childrenOf(rows, parentId).map((c) => toCard(rows, c, parentById, now))
 }
 
+// ── The focal-caption phrasing engine (ticket-33) ────────────────────────────
+
 /**
- * The focal caption for a "content inside" numeral — matches the honest count.
- * The same direct·nested split the cards use (ticket-25): when some content
- * lives deeper than the direct children, the caption spells the split out
- * ("1 page · 1 nested within.") so the focal is never bigger than the cards
- * below can explain. `suffix` places the count ("within" for an area, "across
- * your life" for Life); `singular`/`plural` are the flat-case captions.
+ * Where the single content page of a one-page workspace/area lives, for the
+ * "1 page, tucked in Creativity." line. `null` when the page sits at the top of
+ * the scope (no area to tuck it into) — then the caption stays plain.
  */
-function focalCaption(
-  direct: number,
-  total: number,
-  suffix: string,
-  singular: string,
-  plural: string,
-  empty: string
-): string {
-  if (total === 0) return empty
-  if (direct !== total) {
-    return `${direct} ${pagesWord(direct)} · ${total - direct} nested ${suffix}.`
+export interface DominantArea {
+  /** The area holding the concentration, e.g. "Health". */
+  name: string
+  /** How many content pages live inside it. */
+  count: number
+}
+
+/**
+ * The human breakdown behind a focal numeral. `scope` picks the vocabulary:
+ * Life reads "across your life", an area reads "within". Everything else is the
+ * count shape — the engine never sees rows, only the resolved numbers/names, so
+ * the whole phrasing matrix is a pure table test.
+ */
+export interface FocalPhrasing {
+  scope: 'life' | 'area'
+  /** Total content pages — matches the focal numeral. */
+  total: number
+  /** Content pages that sit directly at this scope's top (not nested deeper). */
+  direct: number
+  /**
+   * For Life: the single top-level area a lone page is tucked into (total===1),
+   * OR the area a plurality of pages concentrate in (total>1). `null` = an even
+   * spread / top-level page → the plain total reads. Areas don't use this.
+   */
+  dominant?: DominantArea | null
+}
+
+/**
+ * Turn a resolved breakdown into a calm, human sentence. This is the whole of
+ * the voice change (ticket-33): the focal stays the total; this caption speaks
+ * the shape of it like a person would. Kept exhaustive and boring on purpose so
+ * the phrasing matrix is a jest table.
+ */
+export function phraseFocalCaption(p: FocalPhrasing): string {
+  const { scope, total, direct } = p
+  const nested = total - direct
+  const dominant = p.dominant ?? null
+
+  // ── Empty ──────────────────────────────────────────────────────────────────
+  if (total === 0) return 'Nothing here yet.'
+
+  if (scope === 'life') {
+    // ── One page across the whole workspace ───────────────────────────────────
+    if (total === 1) {
+      // Tucked inside an area, or sitting right at the top.
+      return dominant ? `1 page, tucked in ${dominant.name}.` : '1 page, right at the top.'
+    }
+    // ── Many pages: name the concentration when one area clearly holds it ──────
+    if (dominant) {
+      return `${total} pages across your life, ${dominant.count} of them in ${dominant.name}.`
+    }
+    // Even spread (no dominant area) → the plain total.
+    return `${total} pages across your life.`
   }
-  return total === 1 ? singular : plural
+
+  // ── Area scope ───────────────────────────────────────────────────────────────
+  if (total === 1) return '1 page within.'
+  if (nested > 0) {
+    // Some content lives deeper than the direct children.
+    return `${total} ${pagesWord(total)} within, ${nested} tucked deeper.`
+  }
+  // All flat, directly inside.
+  return `${total} pages within.`
+}
+
+/**
+ * The dominant top-level area for the Life caption: the single area whose
+ * subtree holds the strict maximum content, when that's a real concentration
+ * (>= 2 pages, and not a tie). A lone page (total === 1) reports the area that
+ * holds it regardless of count so it can read "tucked in Creativity." Returns
+ * `null` for an even spread, a top-level page, or a workspace with no areas —
+ * the caller then keeps the plain total.
+ */
+function dominantAreaForLife(rows: PageRow[], total: number): DominantArea | null {
+  const topAreas = childrenOf(rows, null).filter((r) => !isContent(r))
+  const counts = topAreas.map((a) => ({
+    name: a.title || 'Untitled',
+    count: contentDescendants(rows, a.id),
+  }))
+  if (counts.length === 0) return null
+
+  const max = Math.max(...counts.map((c) => c.count))
+  if (max === 0) return null
+  const leaders = counts.filter((c) => c.count === max)
+  if (leaders.length !== 1) return null // a tie is an even spread
+
+  // The lone-page case: name the area even for a single page ("tucked in …").
+  if (total === 1) return leaders[0]
+  // Otherwise only call it dominant when it's a real concentration.
+  return max >= 2 ? leaders[0] : null
 }
 
 /** The overview for one area page: focal = content pages within, card per direct child. */
@@ -169,42 +254,29 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
 
   return {
     focal: String(within),
-    focalCaption: focalCaption(
-      direct,
-      within,
-      'within',
-      'page within, at a glance.',
-      'pages within, at a glance.',
-      'nothing inside yet — add a page, or ask Pond.'
-    ),
+    focalCaption: phraseFocalCaption({ scope: 'area', total: within, direct }),
     cards: childCards(rows, areaId, now),
   }
 }
 
 /**
  * The Life overview: focal = every content page across the workspace, card per
- * top-level page. `direct` is the top-level content pages: each is its own card
- * whose stat counts only what's INSIDE it (0 for a leaf), so the nested split
- * is what reconciles the focal with the cards — every content page is either
- * top-level (the "N pages" part) or inside exactly one top-level card (the
- * "M nested" part, which equals the sum of the card stats).
+ * top-level page. The focal is the intuitive TOTAL; the caption speaks the
+ * shape of it — where a lone page is tucked, or which area a plurality lives in
+ * (ticket-33). `direct` = top-level content pages (each its own card whose stat
+ * counts only what's INSIDE it), preserved so the reconciliation still holds:
+ * every content page is either top-level or inside exactly one top-level card.
  */
 export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
   const roots = childrenOf(rows, null)
   const direct = roots.filter(isContent).length
   const total = totalContentPages(rows)
+  const dominant = dominantAreaForLife(rows, total)
 
   return {
     focal: String(total),
-    focalCaption: focalCaption(
-      direct,
-      total,
-      'across your life',
-      'page across your life.',
-      'pages across your life.',
-      'nothing here yet — create a page, or ask Pond.'
-    ),
+    focalCaption: phraseFocalCaption({ scope: 'life', total, direct, dominant }),
     cards: roots.map((r) => toCard(rows, r, parentById, now)),
   }
 }
