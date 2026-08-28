@@ -117,3 +117,17 @@ Code review found no blockers but two spec partials + cleanups, all addressed:
   `CurrentIsNotClickable` story asserts `not.toHaveBeenCalled()`; misnamed
   "nested split" test replaced with a real nested-sub-area case (sub-area not
   counted, its content is).
+
+### Focal-semantics note (superseded by ticket-33, 2026-08-28)
+
+The counting RULE above is unchanged and still authoritative. What moved is the
+VOICE of the _focal caption_: ticket-33 (audit finding 10) found the math-y
+`"0 pages · 1 nested across your life."` humanly confusing beside a big "1". The
+focal semantics are now **total-with-breakdown-caption** — the focal numeral is
+the intuitive TOTAL content pages (unchanged number), and its caption speaks the
+breakdown like a person ("1 page, tucked in Creativity." / "4 pages across your
+life, 3 of them in Health." / area "2 pages within, 1 tucked deeper."). The
+`direct`/`nested` split still backs the reconciliation (total = top-level content
+pages + Σ card stats); the CARD sub-labels keep the explicit "N pages · M nested"
+phrasing. See `ticket-33-human-voice-counts.md` and `phraseFocalCaption()` in
+`lib/pages/overview.ts`.
