@@ -1,6 +1,7 @@
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
+import { resolveSourceRef } from '@/lib/modules/same-batch-refs'
 
 export interface ApplyChangesResult {
   blocks: Block[]
@@ -21,6 +22,13 @@ export interface ApplyChangesResult {
  * re-validated before it lands — a malformed change is skipped, never written
  * (branch 7). `edit` preserves the block's identity and, by default, its position;
  * it may type-morph and may reorder when it carries `after`.
+ *
+ * Same-batch bindings (ticket-31): a `create` op may carry a batch-local `key`, and a
+ * metric in the same batch may bind to it via `source: { ref: <key>, kind }`. Create
+ * ids are minted in a FIRST pass so a metric can reference a checklist that appears
+ * LATER in the array; then every `source.ref` is resolved to the minted `blockId`
+ * (unknown ref → the binding is dropped, metric falls back to manual). What persists
+ * is always the ordinary `{ blockId, kind }` form.
  */
 export function applyProposedChanges(
   blocks: Block[],
@@ -33,6 +41,19 @@ export function applyProposedChanges(
   // Same-anchor creates must land in array order, so track how many we've already
   // placed after each anchor and offset the next insert past them (branch 3).
   const placedAfter = new Map<string, number>()
+
+  // First pass: pre-mint one id per create op and build the batch-local key→id map,
+  // so a metric can bind (via `source.ref`) to a create that appears later in the
+  // array (ticket-31). Ids are consumed in the same order below, so deterministic
+  // mintId counters in tests stay predictable.
+  const createIds = new Map<ModuleChange, string>()
+  const refs = new Map<string, string>()
+  for (const change of changes) {
+    if (change.op !== 'create') continue
+    const id = mintId()
+    createIds.set(change, id)
+    if (change.key) refs.set(change.key, id)
+  }
 
   const insertAfter = (arr: Block[], block: Block, after?: string): Block[] => {
     if (!after) return [...arr, block]
@@ -56,7 +77,8 @@ export function applyProposedChanges(
     }
 
     if (change.op === 'create') {
-      const block = hydrateBlock(change.data, mintId(), mintId)
+      const resolved = resolveSourceRef(change.data, refs)
+      const block = hydrateBlock(resolved, createIds.get(change)!, mintId)
       if (!block) {
         skipped++
         continue
@@ -71,7 +93,8 @@ export function applyProposedChanges(
       skipped++
       continue
     }
-    const block = hydrateBlock(change.data, change.blockId, mintId)
+    // An edit may also introduce a bound metric that refs a same-batch create.
+    const block = hydrateBlock(resolveSourceRef(change.data, refs), change.blockId, mintId)
     if (!block) {
       skipped++
       continue

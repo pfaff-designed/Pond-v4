@@ -62,6 +62,41 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
       }).success
     ).toBe(false)
   })
+
+  it('accepts a metric bound by a same-batch ref (ticket-31)', () => {
+    const r = moduleDataSchema.safeParse({
+      type: 'metric',
+      label: 'Done',
+      value: 0,
+      source: { ref: 'chores', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('a source with both blockId and ref resolves to the blockId form (ref dropped)', () => {
+    // The union's blockId branch matches first and strips the extra `ref` key, so the
+    // safe, existing-block binding wins — no ambiguous both-keys source survives.
+    const r = moduleDataSchema.safeParse({
+      type: 'metric',
+      label: 'x',
+      value: 0,
+      source: { blockId: 'b', ref: 'r', kind: 'table-rows' },
+    })
+    expect(r.success).toBe(true)
+    if (r.success && r.data.type === 'metric') {
+      expect(r.data.source).toEqual({ blockId: 'b', kind: 'table-rows' })
+    }
+  })
+
+  it('accepts a table with an opt-in sum footer (ticket-31)', () => {
+    const r = moduleDataSchema.safeParse({
+      type: 'table',
+      columns: ['Item', 'Cost'],
+      rows: [{ cells: ['Wood', '$120'] }],
+      sumColumn: 1,
+    })
+    expect(r.success).toBe(true)
+  })
 })
 
 describe('proposeChangesSchema (the tool input)', () => {
@@ -75,6 +110,28 @@ describe('proposeChangesSchema (the tool input)', () => {
   it('accepts an anchored create', () => {
     const r = proposeChangesSchema.safeParse({
       changes: [{ op: 'create', after: 'blk-1', data: { type: 'text', content: 'x' } }],
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts a keyed create (batch-local key for same-batch binding, ticket-31)', () => {
+    const r = proposeChangesSchema.safeParse({
+      changes: [
+        {
+          op: 'create',
+          key: 'chores',
+          data: { type: 'todo', items: [{ label: 'a', checked: false }] },
+        },
+        {
+          op: 'create',
+          data: {
+            type: 'metric',
+            label: 'Done',
+            value: 0,
+            source: { ref: 'chores', kind: 'checklist-checked' },
+          },
+        },
+      ],
     })
     expect(r.success).toBe(true)
   })
@@ -122,12 +179,16 @@ describe('moduleCatalog (prompt teaching)', () => {
     expect(moduleCatalog.split('\n').some((l) => l.startsWith('- page:'))).toBe(false)
   })
 
-  it('teaches the metric binding + its existing-blocks-only boundary (ticket-23)', () => {
+  it('teaches the metric binding, incl. same-batch ref binding (ticket-23 + ticket-31)', () => {
     const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))
     expect(metricLine).toBeDefined()
     expect(metricLine).toContain('source')
     expect(metricLine).toContain('checklist-checked')
-    // The same-batch boundary is spelled out so the model doesn't bind to unminted ids.
-    expect(metricLine).toMatch(/already exists|follow-up turn/i)
+    // Still teaches binding to an EXISTING block…
+    expect(metricLine).toMatch(/EXISTING/i)
+    // …and now the same-batch ref path that ticket-31 opened (the key↔ref pairing).
+    expect(metricLine).toContain('ref')
+    expect(metricLine).toContain('key')
+    expect(metricLine).toMatch(/same batch/i)
   })
 })

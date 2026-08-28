@@ -23,6 +23,7 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
+import { resolveSourceRef } from '@/lib/modules/same-batch-refs'
 import { createPage } from '@/lib/pages/client'
 import { resolveParentId } from '@/lib/nodes/create'
 
@@ -36,11 +37,19 @@ import { resolveParentId } from '@/lib/nodes/create'
 export function hydrateProposalBlocks(data: ModuleData[], mintId: () => string): Block[] {
   const out: Block[] = []
   for (const item of data) {
-    const block = hydrateBlock(item, mintId(), mintId)
+    // create_page has no batch-local `key` mechanism (its blocks carry no keys), so
+    // the ref map is empty: a metric that still names a `source.ref` here has no
+    // resolvable target and the binding is dropped cleanly (falls back to manual)
+    // rather than persisting an unresolved ref. Same-batch bindings are a
+    // propose_changes affordance; the model is steered to plain `blockId` bindings
+    // (or none) inside create_page.
+    const block = hydrateBlock(resolveSourceRef(item, EMPTY_REFS), mintId(), mintId)
     if (block) out.push(block)
   }
   return out
 }
+
+const EMPTY_REFS: ReadonlyMap<string, string> = new Map()
 
 /** A create_page proposal after the user has (optionally) corrected its placement. */
 export interface CreatePageProposal {

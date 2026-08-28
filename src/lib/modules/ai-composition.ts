@@ -92,6 +92,14 @@ export const changeSchema = z.discriminatedUnion('op', [
       .string()
       .optional()
       .describe('Existing blockId to insert after; omit to append to the end'),
+    key: z
+      .string()
+      .optional()
+      .describe(
+        'A batch-local key naming THIS new block so a metric in the SAME batch can bind to it before its id exists ' +
+          '(the metric sets `source: { ref: <this key>, kind }`). The client resolves ref→minted-id on accept. ' +
+          'Only needed when another change references this block; ignored otherwise.'
+      ),
     reason,
   }),
   z.object({
