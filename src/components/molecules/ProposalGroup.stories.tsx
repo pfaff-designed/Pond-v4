@@ -102,6 +102,30 @@ export const TargetLabel: Story = {
   },
 }
 
+/** Cross-page (ticket-30): the batch targets a page other than the open one, so an
+ *  "open page" secondary action sits next to the target label. */
+export const CrossPageOpenAction: Story = {
+  args: { targetName: 'Ceramics Studio Plan', onOpenTarget: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('→ Ceramics Studio Plan')).toBeInTheDocument()
+    const open = canvas.getByRole('button', { name: 'open page' })
+    await userEvent.click(open)
+    await expect(args.onOpenTarget).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** Inferred split (ticket-30): a change the model inferred as a side-effect is
+ *  badged "Inferred" so the user decides it separately from the requested ones. */
+export const InferredMarker: Story = {
+  args: { inferredFlags: [false, true, false] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Exactly one card carries the badge.
+    await expect(canvas.getByText('Inferred')).toBeInTheDocument()
+  },
+}
+
 /** All resolved: group bar gone, per-card status lines remain as an audit trail. */
 export const AllResolved: Story = {
   args: { statuses: ['accepted', 'rejected', 'accepted'] },

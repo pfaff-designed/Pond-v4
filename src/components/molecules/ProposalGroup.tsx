@@ -24,9 +24,16 @@ interface ProposalGroupProps {
   changes: ChangePreview[]
   /** Decision per change, index-aligned with `changes`. */
   statuses: ProposalStatus[]
+  /** Per-change "inferred" flag (ticket-30) — true marks a change the model
+   *  inferred as a side-effect rather than one the user explicitly requested,
+   *  so the card labels it distinctly. Index-aligned with `changes`. */
+  inferredFlags?: boolean[]
   /** Name of the page this batch writes to on accept (the stamped proposal
    *  target), so an accept is auditable before it lands. */
   targetName?: string
+  /** When the target is a page OTHER than the open one (ticket-30), a secondary
+   *  action to navigate there. Omitted for a same-page proposal. */
+  onOpenTarget?: () => void
   onAccept: (index: number) => void
   onReject: (index: number) => void
   onEdit: (index: number) => void
@@ -38,7 +45,9 @@ interface ProposalGroupProps {
 export function ProposalGroup({
   changes,
   statuses,
+  inferredFlags,
   targetName,
+  onOpenTarget,
   onAccept,
   onReject,
   onEdit,
@@ -56,7 +65,20 @@ export function ProposalGroup({
       aria-label={`${changes.length} proposed changes`}
       className={cn('space-y-2', className)}
     >
-      {targetName && <div className="text-xs font-medium text-zinc-500">→ {targetName}</div>}
+      {targetName && (
+        <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+          <span>→ {targetName}</span>
+          {onOpenTarget && (
+            <button
+              type="button"
+              onClick={onOpenTarget}
+              className="underline underline-offset-2 hover:text-zinc-700"
+            >
+              open page
+            </button>
+          )}
+        </div>
+      )}
       {showGroupBar && (
         <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5">
           <span className="text-xs font-medium text-zinc-500">
@@ -79,6 +101,7 @@ export function ProposalGroup({
           before={change.before}
           after={change.after}
           reason={change.reason}
+          inferred={inferredFlags?.[i] ?? false}
           status={statuses[i] ?? 'pending'}
           onAccept={() => onAccept(i)}
           onReject={() => onReject(i)}

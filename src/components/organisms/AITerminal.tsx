@@ -4,7 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import {
   getOrCreateConversation,
   saveTranscript,
@@ -45,6 +45,7 @@ import {
 } from '@/lib/conversation/proposals'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
+import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
@@ -74,12 +75,13 @@ function writeStored(key: string, value: string) {
   }
 }
 
-/** A propose_changes tool part — the generalized composition batch (t16 Phase 5). */
+/** A propose_changes tool part — the generalized composition batch (t16 Phase 5).
+ *  `targetPageId` (ticket-30) names a page OTHER than the open one to edit. */
 interface ProposeChangesPart {
   type: 'tool-propose_changes'
   toolCallId: string
   state: string
-  input?: { changes?: ModuleChange[] }
+  input?: { targetPageId?: string; changes?: ModuleChange[] }
 }
 
 function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
@@ -202,6 +204,32 @@ export function AITerminal() {
       return user ? listPages(supabaseClient, user.id) : []
     },
   })
+  // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
+  // diff against THAT page's blocks, not the open page's. Fetch each distinct
+  // stamped target id that isn't the open page, on the shared ['page', id] cache
+  // (so accept's invalidation refreshes it too). Read-only; the write path still
+  // reads the target fresh from the DB at accept time.
+  const crossPageTargetIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const t of Object.values(changeTargets ?? {})) {
+      if (t.nodeId && t.nodeId !== nodeId) ids.add(t.nodeId)
+    }
+    return [...ids]
+  }, [changeTargets, nodeId])
+  const crossPageQueries = useQueries({
+    queries: crossPageTargetIds.map((id) => ({
+      queryKey: ['page', id],
+      queryFn: () => getPage(supabaseClient, id),
+    })),
+  })
+  const blocksForTarget = useMemo(() => {
+    const map = new Map<string, Block[] | undefined>()
+    crossPageTargetIds.forEach((id, i) => {
+      map.set(id, crossPageQueries[i]?.data?.blocks)
+    })
+    return map
+  }, [crossPageTargetIds, crossPageQueries])
+
   // Duplicate titles are disambiguated with their ancestor path (and type as a
   // tie-break) so "Woodworking" ×2 are tellable apart in the picker.
   const parentOptions: ParentOption[] = useMemo(() => toParentOptions(allPages), [allPages])
@@ -308,10 +336,10 @@ export function AITerminal() {
       }
       // Restore card decisions so historical proposal cards render resolved
       // (inert) instead of re-arming with live buttons (ticket-19).
-      setChangeDecisions(conversation.resolutions.changes)
-      setChangeSkipped(conversation.resolutions.skipped)
-      setChangeTargets(conversation.resolutions.targets)
-      setCreateDecisions(conversation.resolutions.creates)
+      setChangeDecisions(conversation.resolutions.changes ?? {})
+      setChangeSkipped(conversation.resolutions.skipped ?? {})
+      setChangeTargets(conversation.resolutions.targets ?? {})
+      setCreateDecisions(conversation.resolutions.creates ?? {})
       setIsReady(true)
     })
   }, [setMessages])
@@ -330,29 +358,43 @@ export function AITerminal() {
   // The moment a propose_changes part finishes streaming, record which page it
   // was proposed against. Accept later commits to this stamped id regardless of
   // where the user has navigated (BUG 1/2). Persistence rides the transcript-save
-  // effect above via the `resolutions` projection. No node open → no stamp; that
-  // can't happen once the route stops offering the tool without a nodeId, but
-  // guard anyway (an unstamped card falls back to legacy open-node behavior).
+  // effect above via the `resolutions` projection.
+  //
+  // Target resolution (ticket-30): a batch may name ANOTHER page via
+  // `input.targetPageId`. That id is resolved against the user's pages BY ID ONLY
+  // (never fuzzy title) — an id not in the workspace is ignored and the stamp
+  // falls back to the open page. With no open page and no valid cross-page target
+  // there is nothing safe to write, so the card stays unstamped and accept skips.
   useEffect(() => {
-    // Require the name too: a stamp with an empty name would render the current
-    // context label on a card that commits elsewhere — worse than no stamp.
-    if (!nodeId || !nodeName) return
     const unstamped = messages
       .flatMap((m) => m.parts as Array<{ type: string }>)
       .filter(isProposeChangesPart)
       .filter((p) => p.state === 'input-available' && !changeTargets[p.toolCallId])
     if (unstamped.length === 0) return
+    const stamps: Record<string, ProposalTarget> = {}
+    for (const part of unstamped) {
+      const targetId = part.input?.targetPageId
+      // Cross-page target: resolve the model-named id against the pages list by id.
+      const crossPage = targetId ? allPages.find((p) => p.id === targetId) : undefined
+      if (crossPage) {
+        stamps[part.toolCallId] = { nodeId: crossPage.id, nodeName: crossPage.title }
+      } else if (nodeId && nodeName) {
+        // Default: the open page (require its name too — an empty name would render
+        // the wrong label on a card that commits here).
+        stamps[part.toolCallId] = { nodeId, nodeName }
+      }
+      // else: no valid target → leave unstamped; accept will skip (nowhere safe).
+    }
+    if (Object.keys(stamps).length === 0) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- records the arrival of streamed tool parts (an external-system event), not a derived-state computation; guarded to fire once per toolCallId
     setChangeTargets((prev) => {
       const next = { ...prev }
-      for (const part of unstamped) {
-        if (!next[part.toolCallId]) {
-          next[part.toolCallId] = { nodeId, nodeName }
-        }
+      for (const [id, target] of Object.entries(stamps)) {
+        if (!next[id]) next[id] = target
       }
       return next
     })
-  }, [messages, nodeId, nodeName, changeTargets])
+  }, [messages, nodeId, nodeName, changeTargets, allPages])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -668,18 +710,44 @@ export function AITerminal() {
               // module views render them unvalidated. Wait for the complete input.
               if (part.state === 'input-streaming') return null
               const rawChanges = part.input?.changes ?? []
-              const previews = rawChanges.map((c) => previewForChange(c, currentPage?.blocks ?? []))
+              // Cross-page edit: diff against the TARGET page's blocks. The stamped
+              // target id (ticket-30) points the "before" side at the right page;
+              // fall back to the open page's blocks for a same-page proposal.
+              const target = changeTargets[part.toolCallId]
+              const targetBlocks =
+                target && target.nodeId !== nodeId
+                  ? (blocksForTarget.get(target.nodeId) ?? [])
+                  : (currentPage?.blocks ?? [])
+              const previews = rawChanges.map((c) => previewForChange(c, targetBlocks))
               const statuses = rawChanges.map((_, i) =>
                 changeStatus(changeDecisions, part.toolCallId, i)
               )
+              const inferredFlags = rawChanges.map((c) => c.inferred === true)
               const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
               const skipped = changeSkipped[part.toolCallId] ?? 0
+              // Offer "open page" when the batch targets a page other than the open one.
+              const crossPageTarget = target && target.nodeId !== nodeId ? target : null
               return (
                 <div key={part.toolCallId} className="space-y-1.5">
                   <ProposalGroup
                     changes={previews}
                     statuses={statuses}
-                    targetName={changeTargets[part.toolCallId]?.nodeName || contextLabel}
+                    inferredFlags={inferredFlags}
+                    targetName={target?.nodeName || contextLabel}
+                    onOpenTarget={
+                      crossPageTarget
+                        ? () =>
+                            router.push(
+                              workspaceHref({
+                                id: crossPageTarget.nodeId,
+                                type:
+                                  allPages.find((p) => p.id === crossPageTarget.nodeId)?.type ??
+                                  'page',
+                                title: crossPageTarget.nodeName,
+                              })
+                            )
+                        : undefined
+                    }
                     onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
                     onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
                     onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
