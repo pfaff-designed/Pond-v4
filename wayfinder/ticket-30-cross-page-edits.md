@@ -74,17 +74,29 @@ BY ID from the outline only, never fuzzy title (the ticket guard).
   `readPageTool` + route execute).
 - **(c) Accept commits to the stamped target when target ≠ open.** c191051's rails
   already committed to the stamped target; ticket-30 makes the STAMP itself
-  cross-page: `AITerminal` resolves `input.targetPageId` against the pages list BY
-  ID and stamps `{ nodeId, nodeName }` from that (open node is the fallback; an id
-  not in the workspace is ignored → falls back, never fuzzy-matches). Block-id refs
-  resolve against the TARGET page's blocks (accept reads the target fresh), sibling
-  bindings and `['page', targetId]` invalidation ride the existing accept path.
-  Jest pins: cross-page edit resolves target-page block ids (applied + committed to
-  target + target cache invalidated), and a ref absent on the target is skipped
-  (never a wrong-page write). Cross-page diff PREVIEWS fetch the target's blocks
-  (`useQueries` on `['page', id]`) so the "before" side shows the right page.
+  cross-page: `resolveStampTarget` (pure, in resolutions.ts) resolves
+  `input.targetPageId` against the pages list BY ID and stamps `{ nodeId,
+nodeName }` from that; a batch with no `targetPageId` stamps the open page as
+  before. Review hardening (must-fix 1): the stamp is write-once and persisted,
+  so it never guesses — while the `['pages']` list is still in-flight stamping
+  is DEFERRED (re-runs when it resolves), and an id absent from the loaded list
+  stamps `missing: true` instead of falling back to the open page (a fallback
+  would have appended the batch's create ops to whatever page was open).
+  `resolveAcceptTarget` returns null for a missing stamp → every change skips,
+  nothing is written. Block-id refs resolve against the TARGET page's blocks
+  (accept reads the target fresh), sibling bindings and `['page', targetId]`
+  invalidation ride the existing accept path. Jest pins: cross-page edit
+  resolves target-page block ids (applied + committed to target + target cache
+  invalidated); a ref absent on the target is skipped; a missing-target create
+  op is skipped, never applied to the open page; stamping defers while pages
+  load; and a t31 bindKey→metric binding inside a cross-page batch binds to the
+  minted id on the stamped target. Cross-page diff PREVIEWS fetch the target's
+  blocks (`useQueries` on `['page', id]`) so the "before" side shows the right
+  page.
 - **(d) Card.** The `→ Page Name` label stays; when the target ≠ open page a small
-  "open page" secondary action navigates there.
+  "open page" secondary action navigates there. A missing target renders
+  "Target page not found — this proposal can't be applied." in the label's place
+  (no open-page action — there is no page).
 
 ### Split inferred changes
 
@@ -92,7 +104,21 @@ BY ID from the outline only, never fuzzy title (the ticket guard).
 annotation only — never persisted; t16 shape preserved, create/edit/remove unions
 intact). The prompt instructs the model to emit a requested change and any inferred
 side-effect as SEPARATE changes, marking the inferred one. `ModuleDiffCard` renders
-a distinct "Inferred" badge (structure only — ticket-32 reskins next).
+a distinct "Inferred" badge (structure only — ticket-32 reskins next). Review
+hardening (must-fix 3): the group accept acts on pending REQUESTED changes only —
+its copy relabels to "Accept requested" when inferred changes are in the batch,
+a batch whose only pending changes are inferred offers no group accept at all,
+and each inferred card resolves via its own footer (stories: `InferredMarker`,
+`OnlyInferredPending`). Reject-all still sweeps everything pending (bulk-refusing
+scope-creep is the safe direction). The flag rides `ChangePreview.inferred`
+(folded in per review — no third parallel array).
+
+### Depth parity (review must-fix 2)
+
+`formatWorkspaceOutline` now recurses ALL depths (each entry `[id]`-prefixed,
+titles only), and `formatRetrievedPages` carries each match's `[id]` — a page
+surfaced by search or nested at depth 3+ is exactly as editable as it is
+readable. Jest pins depth-3/4 outline entries and retrieved-page ids.
 
 ### Verify (live Playwright, own server :3030)
 
@@ -106,18 +132,23 @@ Screenshots: `~/t30-verify-{1-proposal-crosspage,2-applied-on-target,3-page-rest
 
 ### Validation
 
-`tsc --noEmit` clean · `jest` 42 suites / 506 tests pass · `test-storybook` 103
-pass (incl. new ProposalGroup `CrossPageOpenAction` + `InferredMarker` stories) ·
-lint: every touched file clean, repo-wide 79 problems all pre-existing in
-`src/components/charts/` + `src/app/proto/` (at/below the ~80 baseline).
+After review fixes: `tsc --noEmit` clean · `jest` 42 suites / 516 tests pass ·
+`test-storybook` 105 pass (ProposalGroup `CrossPageOpenAction`, `InferredMarker`,
+`OnlyInferredPending`, `TargetMissing` stories) · lint: every touched file clean,
+repo-wide problems all pre-existing in `src/components/charts/` +
+`src/app/proto/` (at/below the ~80 baseline).
 
 ### Deferred / risky
 
 - **`targetPageId` adherence is prompt-driven**, not structurally enforced. The
   emphatic clause held across verify, but a future model change could regress it.
-  If it bites, the deterministic upgrade is to resolve the target from the block
-  ids the batch references (which page owns them) — still id-based, no fuzzy title —
-  but that needs the target's blocks loaded, so it was left as prompt-only for now.
+  Since the review fixes, non-adherence is SAFE (an omitted id stamps the open
+  page as an ordinary same-page edit whose block refs then skip; a bad id stamps
+  missing and skips) — the failure mode is a skipped edit, never a wrong-page
+  write. If it bites, the deterministic upgrade is to resolve the target from the
+  block ids the batch references (which page owns them) — still id-based, no
+  fuzzy title — but that needs the target's blocks loaded, so it was left as
+  prompt-only for now.
 - Cross-page preview fetches each stamped target's blocks (`useQueries`); a large
   cross-page batch to many distinct pages means one page-fetch each. Fine at
   personal scale.
