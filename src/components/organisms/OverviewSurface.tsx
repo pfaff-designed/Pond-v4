@@ -15,13 +15,17 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
+import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import {
   areaOverview,
   lifeOverview,
+  ancestorPath,
+  type Crumb,
   type OverviewCardModel,
   type OverviewModel,
 } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 
@@ -47,6 +51,17 @@ export interface OverviewSurfaceProps {
   kicker: string
   /** Muted accent for the kicker dot (an area's hue); omit for Life. */
   accent?: string
+  /**
+   * The breadcrumb trail (ticket-25). When `onNavigateCrumb` is set the header
+   * renders a clickable Breadcrumb (Life › … › current) in place of the bare
+   * kicker label: `crumbs` are the ancestors, `kicker` doubles as the current
+   * node's title tail (for Life, pass an empty `crumbs` — the trail reads just
+   * "Life"). Omit `onNavigateCrumb` to keep the plain kicker (Storybook).
+   */
+  crumbs?: Crumb[]
+  onNavigateCrumb?: (crumb: Crumb | null) => void
+  /** The current node's title in the trail; when omitted, `kicker` is used. */
+  current?: string
   model: OverviewModel
   /** The closing serif line, e.g. "That's Health at a glance…". */
   closing: string
@@ -64,6 +79,9 @@ export interface OverviewSurfaceProps {
 export function OverviewSurface({
   kicker,
   accent,
+  crumbs,
+  onNavigateCrumb,
+  current,
   model,
   closing,
   onOpenCard,
@@ -71,12 +89,13 @@ export function OverviewSurface({
   onAddContent,
 }: OverviewSurfaceProps) {
   let ri = 0
+  const showBreadcrumb = !!onNavigateCrumb
   return (
     <div className="h-full overflow-y-auto font-sans">
       <div className="max-w-[720px] mx-auto px-8 pt-8 pb-24">
-        {/* ── Header: kicker + "ask Pond" ─────────────────────────────────── */}
+        {/* ── Header: breadcrumb / kicker + "ask Pond" ────────────────────── */}
         <Rise i={ri++} className="flex items-baseline justify-between gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {accent && (
               <span
                 aria-hidden
@@ -84,9 +103,13 @@ export function OverviewSurface({
                 style={{ background: accent }}
               />
             )}
-            <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint">
-              {kicker}
-            </span>
+            {showBreadcrumb ? (
+              <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} current={current} />
+            ) : (
+              <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint">
+                {kicker}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4">
             {onAddContent && (
@@ -144,12 +167,20 @@ export function OverviewSurface({
 export function useOpenCard() {
   const router = useRouter()
   return function openCard(card: OverviewCardModel) {
-    const params = new URLSearchParams({
-      nodeType: card.type,
-      nodeId: card.id,
-      nodeName: card.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
+    router.push(workspaceUrl(card))
+  }
+}
+
+/**
+ * Breadcrumb → workspace navigation (ticket-25). A `null` crumb goes to the
+ * Life root; a crumb carries its own type/title, so the URL gets the same
+ * params a rail click would (via the shared workspaceUrl). Shared by the
+ * overview and editor headers so the trail always lands on the real surface.
+ */
+export function useNavigateCrumb() {
+  const router = useRouter()
+  return function navigate(crumb: Crumb | null) {
+    router.push(workspaceUrl(crumb))
   }
 }
 
@@ -174,18 +205,23 @@ export function AreaOverviewPanel({
 }) {
   const openCard = useOpenCard()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
   const accent = useMemo(() => {
     const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
     return pageAccent(rootAncestorId(areaId, parentById))
   }, [rows, areaId])
+  const crumbs = useMemo(() => ancestorPath(rows, areaId), [rows, areaId])
 
   const name = title || 'Untitled'
   return (
     <OverviewSurface
       kicker={name}
       accent={accent}
+      crumbs={crumbs}
+      onNavigateCrumb={navigateCrumb}
+      current={name}
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
       onOpenCard={openCard}
@@ -205,6 +241,7 @@ export function AreaOverviewPanel({
 export function LifeOverviewPanel() {
   const openCard = useOpenCard()
   const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => lifeOverview(rows, new Date()), [rows])
 
@@ -219,6 +256,8 @@ export function LifeOverviewPanel() {
   return (
     <OverviewSurface
       kicker="Life · everything"
+      crumbs={[]}
+      onNavigateCrumb={navigateCrumb}
       model={model}
       closing="That’s the whole of it. Open an area, or ask."
       onOpenCard={openCard}

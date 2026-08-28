@@ -2,9 +2,21 @@
  * The pure overview model behind the area/Life overview surfaces (shell
  * harvest slice 4/5): focal numerals, card stats, and recency captions derived
  * from the flat ['pages'] rows.
+ *
+ * Counting rule (ticket-25): a *content page* is any node whose type !== 'area'.
+ * Areas are the shell (rail folders); every headline count excludes them. Where
+ * direct children and deeper descendants differ, the caption says so explicitly
+ * ("2 pages · 1 nested").
  */
 
-import { areaOverview, lifeOverview, timeAgo } from '@/lib/pages/overview'
+import {
+  areaOverview,
+  lifeOverview,
+  childCards,
+  ancestorPath,
+  insideLabel,
+  timeAgo,
+} from '@/lib/pages/overview'
 import type { PageRow } from '@/lib/pages/tree'
 
 const NOW = new Date('2026-08-26T12:00:00Z')
@@ -44,18 +56,51 @@ describe('timeAgo', () => {
   })
 })
 
+describe('insideLabel — the honest nesting phrase', () => {
+  it('reads flat when all content is a direct child', () => {
+    expect(insideLabel(3, 3)).toBe('3 pages inside')
+    expect(insideLabel(1, 1)).toBe('1 page inside')
+    expect(insideLabel(0, 0)).toBe('0 pages inside')
+  })
+
+  it('splits direct vs nested when they differ', () => {
+    // 1 direct child, 1 more nested below it → "1 page · 1 nested"
+    expect(insideLabel(1, 2)).toBe('1 page · 1 nested')
+    expect(insideLabel(2, 5)).toBe('2 pages · 3 nested')
+  })
+})
+
 describe('areaOverview', () => {
-  it('counts the whole subtree in the focal numeral, cards per direct child', () => {
+  it('counts only content pages in the focal numeral (areas excluded), cards per direct child', () => {
     const model = areaOverview(ROWS, 'health', NOW)
-    expect(model.focal).toBe('3') // sleep + marathon + week-1
-    expect(model.focalCaption).toBe('pages within, at a glance.')
+    expect(model.focal).toBe('3') // sleep + marathon + week-1 (all non-areas)
+    // 2 direct (sleep, marathon) ≠ 3 total → the focal caption spells the split
+    // out, so the focal "3" is never bigger than the two cards can explain.
+    expect(model.focalCaption).toBe('2 pages · 1 nested within.')
     expect(model.cards.map((c) => c.title)).toEqual(['Sleep', 'Marathon Training'])
   })
 
-  it('card stats count the child subtree; recency bubbles up from descendants', () => {
+  it('a flat area (all content direct) keeps the calm at-a-glance caption', () => {
+    const flat = [
+      row('area', null, 'area', 'Area'),
+      row('a', 'area', 'page', 'A'),
+      row('b', 'area', 'page', 'B'),
+    ]
+    const model = areaOverview(flat, 'area', NOW)
+    expect(model.focal).toBe('2')
+    expect(model.focalCaption).toBe('pages within, at a glance.')
+  })
+
+  it('a single flat page reads the singular at-a-glance caption', () => {
+    const one = [row('area', null, 'area', 'Area'), row('a', 'area', 'page', 'A')]
+    expect(areaOverview(one, 'area', NOW).focalCaption).toBe('page within, at a glance.')
+  })
+
+  it('card stats count content descendants; nested phrasing when direct != total', () => {
     const model = areaOverview(ROWS, 'health', NOW)
     const marathon = model.cards[1]
     expect(marathon.stat).toBe('1') // week-1
+    // marathon has 1 direct content child (week-1), all of it direct → flat phrasing.
     // week-1 (2d ago) is fresher than marathon itself (6d ago)
     expect(marathon.sub).toBe('1 page inside · updated 2d ago')
   })
@@ -71,14 +116,61 @@ describe('areaOverview', () => {
     const model = areaOverview(ROWS, 'health', NOW)
     expect(new Set(model.cards.map((c) => c.accent)).size).toBe(1)
   })
+
+  it('a nested sub-area is never counted, but its content is', () => {
+    // personal (area) ─ food (area) ─ recipes · personal ─ trips
+    const rows = [
+      row('personal', null, 'area', 'Personal'),
+      row('food', 'personal', 'area', 'Food', 0),
+      row('recipes', 'food', 'page', 'Recipes'),
+      row('trips', 'personal', 'page', 'Trips', 1),
+    ]
+    const model = areaOverview(rows, 'personal', NOW)
+    // recipes + trips; the food area itself is not a content page
+    expect(model.focal).toBe('2')
+    // 1 direct content child (trips — food is an area) · 1 nested (recipes)
+    expect(model.focalCaption).toBe('1 page · 1 nested within.')
+    // the food card counts recipes as its 1 direct content page
+    const food = childCards(rows, 'personal', NOW).find((c) => c.id === 'food')!
+    expect(food.stat).toBe('1')
+    expect(food.sub.startsWith('1 page inside')).toBe(true)
+  })
 })
 
 describe('lifeOverview', () => {
-  it('focal counts every page; a card per top-level page (areas and leaves)', () => {
+  it('focal counts every CONTENT page (the two areas are excluded)', () => {
     const model = lifeOverview(ROWS, NOW)
-    expect(model.focal).toBe('6')
-    expect(model.focalCaption).toBe('pages across your life.')
+    // 6 rows − 2 areas (health, personal) = 4 content pages
+    expect(model.focal).toBe('4')
+    // 1 top-level content page (scratch) ≠ 4 total → explicit split: the "1
+    // page" is the top-level leaf (its own card shows stat 0 — nothing inside
+    // it), the "3 nested" live inside the top-level cards.
+    expect(model.focalCaption).toBe('1 page · 3 nested across your life.')
     expect(model.cards.map((c) => c.title)).toEqual(['Health', 'Personal', 'Scratchpad'])
+  })
+
+  it('the caption split reconciles the focal with the cards: nested = sum of card stats', () => {
+    // A top-level content page counts 1 in the focal but its card stat counts
+    // only what's INSIDE it (0 for a leaf) — the "N pages · M nested" split is
+    // what makes this honest: N = top-level pages, M = Σ card stats.
+    const model = lifeOverview(ROWS, NOW)
+    const cardSum = model.cards.reduce((sum, c) => sum + Number(c.stat), 0)
+    expect(cardSum).toBe(3) // health 3 + personal 0 + scratch 0
+    expect(Number(model.focal)).toBe(1 + cardSum) // 1 top-level page + 3 nested
+  })
+
+  it('the Health card counts its content only: 2 direct · 1 nested', () => {
+    const model = lifeOverview(ROWS, NOW)
+    const health = model.cards.find((c) => c.title === 'Health')!
+    expect(health.stat).toBe('3') // sleep + marathon + week-1
+    expect(health.sub.startsWith('2 pages · 1 nested')).toBe(true)
+  })
+
+  it('the empty Personal area card reads 0 pages inside', () => {
+    const model = lifeOverview(ROWS, NOW)
+    const personal = model.cards.find((c) => c.title === 'Personal')!
+    expect(personal.stat).toBe('0')
+    expect(personal.sub.startsWith('0 pages inside')).toBe(true)
   })
 
   it('an empty workspace gets the quiet empty caption', () => {
@@ -86,5 +178,35 @@ describe('lifeOverview', () => {
     expect(model.focal).toBe('0')
     expect(model.focalCaption).toBe('nothing here yet — create a page, or ask Pond.')
     expect(model.cards).toEqual([])
+  })
+
+  it('a single content page reads the singular caption', () => {
+    const one = [row('note', null, 'page', 'A note', 0)]
+    const model = lifeOverview(one, NOW)
+    expect(model.focal).toBe('1')
+    expect(model.focalCaption).toBe('page across your life.')
+  })
+})
+
+describe('ancestorPath — the breadcrumb trail', () => {
+  it('returns the chain from root down to (not including) the node', () => {
+    const trail = ancestorPath(ROWS, 'week-1')
+    expect(trail.map((c) => c.title)).toEqual(['Health', 'Marathon Training'])
+    expect(trail.map((c) => c.id)).toEqual(['health', 'marathon'])
+  })
+
+  it('is empty for a top-level node (no ancestors)', () => {
+    expect(ancestorPath(ROWS, 'health')).toEqual([])
+    expect(ancestorPath(ROWS, 'scratch')).toEqual([])
+  })
+
+  it('is empty for an unknown id', () => {
+    expect(ancestorPath(ROWS, 'nope')).toEqual([])
+  })
+
+  it('is cycle-guarded against malformed parent links', () => {
+    const cyclic: PageRow[] = [row('a', 'b', 'page', 'A'), row('b', 'a', 'page', 'B')]
+    // must terminate — the exact trail is unimportant, only that it doesn't hang
+    expect(() => ancestorPath(cyclic, 'a')).not.toThrow()
   })
 })
