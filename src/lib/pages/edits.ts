@@ -8,6 +8,12 @@ export interface ApplyChangesResult {
   applied: number
   /** Changes dropped as no-ops: missing target, or data that failed re-validation. */
   skipped: number
+  /**
+   * Fix-1 (F1a): one short human reason per skipped change, in encounter order —
+   * "couldn't place" copy for the proposal card, so an accept that lands nothing
+   * says WHY instead of silently succeeding.
+   */
+  skippedReasons: string[]
 }
 
 /** Same-batch binding context (ticket-31) for partial/per-change accepts. */
@@ -62,6 +68,11 @@ export function applyProposedChanges(
   let next = [...blocks]
   let applied = 0
   let skipped = 0
+  const skippedReasons: string[] = []
+  const skip = (reason: string) => {
+    skipped++
+    skippedReasons.push(reason)
+  }
   // Same-anchor creates must land in array order, so track how many we've already
   // placed after each anchor and offset the next insert past them (branch 3).
   const placedAfter = new Map<string, number>()
@@ -88,7 +99,7 @@ export function applyProposedChanges(
   for (const change of changes) {
     if (change.op === 'remove') {
       if (!next.some((b) => b.id === change.blockId)) {
-        skipped++
+        skip('the block to remove no longer exists on the page')
         continue
       }
       next = next.filter((b) => b.id !== change.blockId)
@@ -104,7 +115,7 @@ export function applyProposedChanges(
       const id = (change.bindKey ? refs.get(change.bindKey) : undefined) ?? mintId()
       const block = hydrateBlock(resolved, id, mintId)
       if (!block) {
-        skipped++
+        skip(`the proposed ${change.data?.type ?? 'block'} failed validation`)
         continue
       }
       next = insertAfter(next, block, change.after)
@@ -114,13 +125,13 @@ export function applyProposedChanges(
 
     // edit — preserve identity (reuse blockId); optionally type-morph and reorder.
     if (!next.some((b) => b.id === change.blockId)) {
-      skipped++
+      skip('the block to edit no longer exists on the page')
       continue
     }
     // An edit may also introduce a bound metric that refs a same-batch create.
     const block = hydrateBlock(resolveSourceRef(change.data, refs), change.blockId, mintId)
     if (!block) {
-      skipped++
+      skip(`the edited ${change.data?.type ?? 'block'} failed validation`)
       continue
     }
     if (change.after) {
@@ -135,5 +146,5 @@ export function applyProposedChanges(
     applied++
   }
 
-  return { blocks: next, applied, skipped }
+  return { blocks: next, applied, skipped, skippedReasons }
 }

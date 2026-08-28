@@ -23,6 +23,7 @@ import {
   GRACE_WINDOW_MS,
 } from '@/lib/deletion/deferred-commit'
 import { DeletionUndoProvider, useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { NotifyBridge, requestNotify } from '@/lib/deletion/notify-bridge'
 
 // ── 1. Surgical restore: two overlapping deletes ────────────────────────────
 
@@ -184,5 +185,48 @@ describe('DeletionUndoProvider wiring', () => {
     fireEvent.click(screen.getByText('stage'))
     expect(screen.getByText('Deleted "X"')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  })
+})
+
+// ── 4. Notify bridge — accept receipts from outside the provider (Fix-1) ────
+
+describe('NotifyBridge (accept receipts, Fix-1/F12)', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
+  function renderBridge() {
+    return render(
+      <DeletionUndoProvider>
+        <NotifyBridge />
+      </DeletionUndoProvider>
+    )
+  }
+
+  it('requestNotify from outside the provider surfaces a toast in the viewport', () => {
+    renderBridge()
+    act(() => requestNotify({ message: 'Added 2 blocks to Garage ✓' }))
+    expect(screen.getByText('Added 2 blocks to Garage ✓')).toBeInTheDocument()
+    // Plain receipt — no Undo, no action button beyond dismiss.
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open' })).not.toBeInTheDocument()
+  })
+
+  it('a receipt with an action renders the labeled button and fires it', () => {
+    renderBridge()
+    const open = jest.fn()
+    act(() =>
+      requestNotify({ message: 'Added 1 block to Garage ✓', action: open, actionLabel: 'Open' })
+    )
+    const button = screen.getByRole('button', { name: 'Open' })
+    fireEvent.click(button)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('receipt toasts auto-expire with the grace window', () => {
+    renderBridge()
+    act(() => requestNotify({ message: 'Added 1 block to Garage ✓' }))
+    expect(screen.getByText('Added 1 block to Garage ✓')).toBeInTheDocument()
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS))
+    expect(screen.queryByText('Added 1 block to Garage ✓')).not.toBeInTheDocument()
   })
 })

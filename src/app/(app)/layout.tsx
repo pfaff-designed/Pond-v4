@@ -4,6 +4,7 @@ import { TopBar } from '@/components/organisms/TopBar'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { NotifyBridge } from '@/lib/deletion/notify-bridge'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -23,6 +24,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Suspense>
           </main>
           <TopBar />
+          {/* Relays receipt toasts fired from the terminal (outside this
+              provider) into the viewport above (Fix-1 / F12). */}
+          <NotifyBridge />
         </DeletionUndoProvider>
       </div>
 

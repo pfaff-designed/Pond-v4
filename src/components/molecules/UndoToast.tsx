@@ -24,9 +24,24 @@ export interface UndoToastProps {
    * bar (the host still owns the actual timer; this is purely the visual).
    */
   durationMs?: number
+  /**
+   * Fix-1 (F1a+F12): an optional secondary action alongside the dismiss control —
+   * e.g. "Open" after an accept write to navigate to the target page. Rendered as
+   * a labeled button so accept receipts can offer navigation without abusing "Undo".
+   */
+  onAction?: () => void
+  /** Button label for the secondary action (default "Open"). */
+  actionLabel?: string
 }
 
-export function UndoToast({ message, onUndo, onDismiss, durationMs }: UndoToastProps) {
+export function UndoToast({
+  message,
+  onUndo,
+  onDismiss,
+  durationMs,
+  onAction,
+  actionLabel = 'Open',
+}: UndoToastProps) {
   return (
     <div
       role="status"
@@ -41,6 +56,15 @@ export function UndoToast({ message, onUndo, onDismiss, durationMs }: UndoToastP
           className="ml-1 flex-shrink-0 rounded-md px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
         >
           Undo
+        </button>
+      )}
+      {onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="flex-shrink-0 rounded-md px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
+        >
+          {actionLabel}
         </button>
       )}
       <button

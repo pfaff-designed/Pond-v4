@@ -176,3 +176,37 @@ export const AllResolved: Story = {
     await expect(canvas.getByText('Rejected')).toBeInTheDocument()
   },
 }
+
+/** Fix-1 (F1a): an accept that skipped changes says so ON the card, with the
+ *  per-skip reason — "couldn't place — <reason>" — never a silent no-op. */
+export const SkippedWithReasons: Story = {
+  args: {
+    statuses: ['accepted', 'accepted', 'accepted'],
+    skippedCount: 2,
+    skippedReasons: [
+      'the proposed timeline failed validation',
+      'the block to edit no longer exists on the page',
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText('couldn’t place — the proposed timeline failed validation')
+    ).toBeInTheDocument()
+    await expect(
+      canvas.getByText('couldn’t place — the block to edit no longer exists on the page')
+    ).toBeInTheDocument()
+  },
+}
+
+/** Fix-1 fallback: a skip count without reasons (post-reload) still shows the
+ *  honest generic notice. */
+export const SkippedGenericNotice: Story = {
+  args: { statuses: ['accepted', 'accepted', 'accepted'], skippedCount: 1 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText('1 change couldn’t be placed and was skipped.')
+    ).toBeInTheDocument()
+  },
+}

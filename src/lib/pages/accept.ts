@@ -19,6 +19,17 @@ import { applyProposedChanges } from './edits'
 import { getPage } from './client'
 import { commitBlocks } from './commit'
 
+/** The outcome of an accept write (Fix-1 / F1a+F12): honest applied/skipped
+ *  counts, per-skip reasons for the card, and the target id for the receipt. */
+export interface AcceptWriteResult {
+  applied: number
+  skipped: number
+  /** One short human reason per skipped change ("couldn't place" copy). */
+  skippedReasons: string[]
+  /** The page id the batch committed to, or null when nothing was written. */
+  targetId: string | null
+}
+
 export async function writeAcceptedChanges(opts: {
   supabase: SupabaseClient<Database>
   queryClient: QueryClient
@@ -33,15 +44,29 @@ export async function writeAcceptedChanges(opts: {
   /** Caller-owned bindKey→minted-id memory for this proposal, shared across
    *  per-change accept clicks so split accepts still bind (mutated). */
   refIds?: Record<string, string>
-}): Promise<number> {
+}): Promise<AcceptWriteResult> {
   const { supabase, queryClient, resolutions, toolCallId, openNodeId, changes } = opts
-  if (changes.length === 0) return 0
+  if (changes.length === 0) return { applied: 0, skipped: 0, skippedReasons: [], targetId: null }
 
   const target = resolveAcceptTarget(resolutions, toolCallId, openNodeId)
-  if (!target) return changes.length
+  if (!target) {
+    return {
+      applied: 0,
+      skipped: changes.length,
+      skippedReasons: changes.map(() => 'no target page to write to'),
+      targetId: null,
+    }
+  }
 
   const page = await getPage(supabase, target)
-  if (!page) return changes.length
+  if (!page) {
+    return {
+      applied: 0,
+      skipped: changes.length,
+      skippedReasons: changes.map(() => 'the target page no longer exists'),
+      targetId: null,
+    }
+  }
 
   const batch = opts.batch ?? changes
   // A bindKey whose create the user already REJECTED must not be a binding target:
@@ -70,5 +95,10 @@ export async function writeAcceptedChanges(opts: {
   // blocks (commitBlocks leaves that cache alone precisely so this stays the
   // caller's decision).
   await queryClient.invalidateQueries({ queryKey: ['page', target] })
-  return result.skipped
+  return {
+    applied: result.applied,
+    skipped: result.skipped,
+    skippedReasons: result.skippedReasons,
+    targetId: target,
+  }
 }

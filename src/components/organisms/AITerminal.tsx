@@ -23,6 +23,7 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
+import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import {
   TerminalDrawer,
@@ -151,6 +152,11 @@ export function AITerminal() {
   // records how many accepted changes failed the accept-time re-validation gate.
   const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
   const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
+  // Fix-1 (F1a): the per-skip human reasons for each batch, shown on the card as
+  // "couldn't place — <reason>". Session-scoped (not persisted in the resolutions
+  // envelope): after reload the count survives via `changeSkipped` and the card
+  // degrades to the generic notice.
+  const [changeSkipReasons, setChangeSkipReasons] = useState<Record<string, string[]>>({})
   // Proposal-time target page per batch (BUG 1/2 fix): recorded the moment the
   // part streams in, so Accept commits there even after the user navigates away.
   const [changeTargets, setChangeTargets] = useState<Record<string, ProposalTarget>>({})
@@ -190,6 +196,7 @@ export function AITerminal() {
   const resetResolutions = useCallback(() => {
     setChangeDecisions({})
     setChangeSkipped({})
+    setChangeSkipReasons({})
     setChangeTargets({})
     setCreateDecisions({})
     setCreateParent({})
@@ -589,7 +596,7 @@ export function AITerminal() {
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
       if (indices.length === 0) return
       decideChanges(toolCallId, indices, 'accepted')
-      const skipped = await writeAcceptedChanges({
+      const result = await writeAcceptedChanges({
         supabase: supabaseClient,
         queryClient,
         resolutions,
@@ -601,11 +608,59 @@ export function AITerminal() {
         batch: allChanges,
         refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
-      if (skipped > 0) {
-        setChangeSkipped((prev) => ({ ...prev, [toolCallId]: (prev[toolCallId] ?? 0) + skipped }))
+      if (result.skipped > 0) {
+        setChangeSkipped((prev) => ({
+          ...prev,
+          [toolCallId]: (prev[toolCallId] ?? 0) + result.skipped,
+        }))
+        setChangeSkipReasons((prev) => ({
+          ...prev,
+          [toolCallId]: [...(prev[toolCallId] ?? []), ...result.skippedReasons],
+        }))
+      }
+      // Fix-1 (F12): a toast receipt for every accept — honest about applied AND
+      // skipped counts, with an Open action to the page the batch landed on. The
+      // stamped target name is the human label; contextLabel is the same-page
+      // fallback an unstamped legacy card writes to. Fired via the notify bridge:
+      // the terminal mounts outside the DeletionUndoProvider (see notify-bridge).
+      const targetName = changeTargets[toolCallId]?.nodeName || contextLabel
+      const blockNoun = (n: number) => `${n} block${n === 1 ? '' : 's'}`
+      if (result.applied > 0) {
+        const suffix =
+          result.skipped > 0 ? ` — ${blockNoun(result.skipped)} couldn’t be placed` : ' ✓'
+        const openTarget = result.targetId
+        requestNotify({
+          message: `Added ${blockNoun(result.applied)} to ${targetName}${suffix}`,
+          action: openTarget
+            ? () =>
+                router.push(
+                  workspaceHref({
+                    id: openTarget,
+                    type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
+                    title: targetName,
+                  })
+                )
+            : undefined,
+          actionLabel: 'Open',
+        })
+      } else if (result.skipped > 0) {
+        // Nothing landed at all — say so plainly, never a silent "success".
+        requestNotify({
+          message: `Nothing added to ${targetName} — ${blockNoun(result.skipped)} couldn’t be placed`,
+        })
       }
     },
-    [decideChanges, supabaseClient, queryClient, resolutions, nodeId]
+    [
+      decideChanges,
+      supabaseClient,
+      queryClient,
+      resolutions,
+      nodeId,
+      changeTargets,
+      contextLabel,
+      router,
+      allPages,
+    ]
   )
 
   // Edit: accept the change, then jump to its block in the document panel to keep
@@ -820,7 +875,6 @@ export function AITerminal() {
                 // Accept-all sweeps REQUESTED changes only (review must-fix 3): an
                 // inferred side-effect stays pending for its own click.
                 const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
-                const skipped = changeSkipped[part.toolCallId] ?? 0
                 return (
                   <div key={part.toolCallId} className="press-arrive space-y-1.5">
                     <ProposalGroup
@@ -829,6 +883,8 @@ export function AITerminal() {
                       targetName={target?.nodeName || contextLabel}
                       targetMissing={targetMissing}
                       onOpenTarget={crossPage ? () => openTargetPage(crossPage) : undefined}
+                      skippedCount={changeSkipped[part.toolCallId] ?? 0}
+                      skippedReasons={changeSkipReasons[part.toolCallId] ?? []}
                       onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
                       onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
                       onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
@@ -837,12 +893,6 @@ export function AITerminal() {
                       }
                       onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
                     />
-                    {skipped > 0 && (
-                      <p className="font-serif text-xs italic text-press-rust">
-                        {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
-                        {skipped > 1 ? 'were' : 'was'} skipped.
-                      </p>
-                    )}
                   </div>
                 )
               })}

@@ -41,6 +41,10 @@ export interface StageDeletionInput {
   commit: () => void | Promise<void>
   /** Restore the optimistically-removed item — run on Undo. Omit for a notice. */
   undo?: () => void | Promise<void>
+  /** Optional secondary action shown alongside dismiss (e.g. navigate to the page). */
+  action?: () => void
+  /** Button label for the secondary action (default: "Open"). */
+  actionLabel?: string
   /** Group tag for {@link DeletionUndoContextValue.flushScope}. */
   scope?: string
 }
@@ -50,13 +54,21 @@ interface ActiveToast {
   message: string
   controller: DeferredCommit
   restore?: () => void | Promise<void>
+  /** Optional secondary action (e.g. "Open" navigation for accept receipts). */
+  action?: () => void
+  actionLabel?: string
   scope?: string
 }
 
 interface DeletionUndoContextValue {
   stageDeletion: (input: StageDeletionInput) => void
-  /** Show a plain auto-expiring notice toast (no Undo). */
-  notify: (message: string) => void
+  /**
+   * Show a plain auto-expiring notice toast. When `action` is provided, a
+   * secondary button appears alongside the dismiss control — useful for
+   * receipts that offer navigation (e.g. "Open" after an accept write).
+   * The `actionLabel` controls the button copy (defaults to "Open").
+   */
+  notify: (message: string, action?: () => void, actionLabel?: string) => void
   /** Commit-and-clear every pending toast staged with this scope. */
   flushScope: (scope: string) => void
 }
@@ -94,15 +106,23 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
 
       setToasts((prev) => [
         ...prev,
-        { id, message: input.message, controller, restore: input.undo, scope: input.scope },
+        {
+          id,
+          message: input.message,
+          controller,
+          restore: input.undo,
+          scope: input.scope,
+          action: input.action,
+          actionLabel: input.actionLabel,
+        },
       ])
     },
     [remove]
   )
 
   const notify = useCallback(
-    (message: string) => {
-      stageDeletion({ message, commit: () => {} })
+    (message: string, action?: () => void, actionLabel?: string) => {
+      stageDeletion({ message, commit: () => {}, action, actionLabel })
     },
     [stageDeletion]
   )
@@ -167,6 +187,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
             message={toast.message}
             durationMs={GRACE_WINDOW_MS}
             onUndo={toast.restore ? () => handleUndo(toast.id) : undefined}
+            onAction={toast.action}
+            actionLabel={toast.actionLabel}
             onDismiss={() => handleDismiss(toast.id)}
           />
         ))}
