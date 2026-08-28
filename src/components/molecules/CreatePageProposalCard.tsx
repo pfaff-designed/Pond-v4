@@ -27,6 +27,7 @@ import { useId, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { ModuleView } from '@/lib/modules/renderers'
 import { stampDisplayIds } from '@/lib/modules/preview'
+import { pressKickerClass } from '@/components/atoms/press-kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
@@ -102,9 +103,7 @@ export function CreatePageProposalCard({
     >
       {/* Header — "New page" kicker + type/kind tag */}
       <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-muted">
-          New page · {label}
-        </span>
+        <span className={pressKickerClass}>New page · {label}</span>
       </div>
 
       {/* Title + optional note — the title set in the display serif, like a page head */}

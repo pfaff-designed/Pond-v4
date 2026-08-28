@@ -37,6 +37,10 @@ function isActiveTool(part: StagePart): boolean {
   return part.type.startsWith('tool-') && typeof part.state === 'string'
 }
 
+/** The resting line while the model works with no narratable tool in flight — the
+ *  copy lives here with the rest of the stage vocabulary, not inline in the UI. */
+export const THINKING_STAGE_TEXT = 'thinking…'
+
 export interface StageTextOptions {
   /** Resolve a page id to its human title (read_page), so the stage reads
    *  "reading Ceramics Studio Plan…" rather than a raw id. Returns undefined when the

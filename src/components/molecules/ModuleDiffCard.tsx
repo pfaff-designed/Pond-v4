@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
+import { pressKickerClass } from '@/components/atoms/press-kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 
 export type ChangeOp = 'create' | 'edit' | 'remove'
@@ -129,7 +130,7 @@ export function ModuleDiffCard({
     >
       {/* Header — a letterpress kicker in the correspondence serif */}
       <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-muted">
+        <span className={pressKickerClass}>
           Proposed {OP_LABEL[op]} · {type}
         </span>
         {inferred && (

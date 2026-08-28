@@ -106,6 +106,39 @@ assertion was weakened; the only copy change (`"Start a conversation…"` →
 `"Talk with Pond — think out loud, ask, or compose."`) is in the organism, not any
 tested story (the TerminalDrawer story uses its own sample body).
 
+### Review pass (same day)
+
+The aesthetic review judged the letterpress reply **card** timid (a border-radius box
+with a colored edge, edge-to-edge at ~180-char lines) and the transcript geometry
+still console-shaped. The critic's boldest move was taken:
+
+- **The card is gone.** An AI reply is now full typeset prose in the document's own
+  column — literally: `max-w-2xl mx-auto px-8` plus a `pl-[252px]` rail offset, so the
+  transcript column's left edge is pixel-identical (verified: both at x=607) to the
+  page column above. Each reply is headed by a small-caps **Pond** kicker running into
+  a press-hair rule — letter-style attribution, not chrome. User asides keep their
+  praised right-rule/sage-wash treatment inside the same measure; proposal cards,
+  SourceList and StageText live in the same column; `.press-arrive` kept.
+  (`.press-letter` now dresses only the proposal objects, where a bounded card is the
+  right shape for a decision.)
+- **The threshold restyled.** No stock widgets: hairline rule above, a bare paper
+  field whose baseline inks sage on focus, mono input (decision stands), and a
+  small-caps sage **Send** in the kicker voice — set in the same centered column.
+- **Create-page floor.** `PROPOSAL_MIN_HEIGHT` 460 → 500 for the roomier letterpress
+  chrome; live-verified a real create_page card fits the floor whole (card 377px in a
+  426px viewport — header, display title, preview, Save-to, actions, no inner scroll).
+- **Polish.** `TERMINAL_PROSE_CLASS`/`READING_PROSE_CLASS` now genuinely derive from
+  one `PROSE_BASE_CLASS`; the kicker recipe is a single `pressKickerClass` const
+  (atoms/press-kicker.ts, dialog-chrome pattern) used by cards, Sources, the Pond
+  attribution and Send; the `thinking…` fallback moved into stage-text.ts as
+  `THINKING_STAGE_TEXT` (jest-pinned).
+
+Re-verified live (`~/t32-verify-11…14-*.png`): the one-object shot (document + reply
+in one aligned column), create-page card at the floor, stage text in the new
+geometry, and reduced-motion (emulated: `press-rise` → `animation: none`). No test
+artifacts left: Glaze Test Log proposal dismissed (never created), Ceramics Studio
+Plan byte-identical. tsc clean · jest 529 · story tests 108 · lint clean.
+
 ### Deferred / risky
 
 - Stage copy is intentionally coarse — one line for the whole active tool, last-tool-
@@ -114,3 +147,7 @@ tested story (the TerminalDrawer story uses its own sample body).
 - `.press-letter`/`.press-arrive` live in `globals.css` as chrome-only component
   classes (the terminal is a host, not a module) — consistent with the Press token law
   but worth a glance if a token audit sweeps bespoke chrome.
+- The transcript's `pl-[252px]` column offset is coupled to Rail's fixed `w-[252px]`
+  (commented on both reads). If the rail ever becomes collapsible/responsive
+  (mobile UX, ticket-08), the offset should move to a shared shell metric (CSS var)
+  at that time.

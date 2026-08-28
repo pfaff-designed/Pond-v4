@@ -7,7 +7,12 @@
  * data mapping.
  */
 
-import { stageTextForPart, stageTextForParts, type StagePart } from '@/lib/conversation/stage-text'
+import {
+  stageTextForPart,
+  stageTextForParts,
+  THINKING_STAGE_TEXT,
+  type StagePart,
+} from '@/lib/conversation/stage-text'
 
 const active = (type: string, extra: Partial<StagePart> = {}): StagePart => ({
   type,
@@ -63,6 +68,12 @@ describe('stageTextForPart', () => {
 
   it('returns null for an unrecognised tool part', () => {
     expect(stageTextForPart(active('tool-some_future_tool'))).toBeNull()
+  })
+})
+
+describe('THINKING_STAGE_TEXT', () => {
+  it('is the quiet resting line the terminal falls back to', () => {
+    expect(THINKING_STAGE_TEXT).toBe('thinking…')
   })
 })
 

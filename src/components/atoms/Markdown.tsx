@@ -29,21 +29,23 @@ import remarkGfm from 'remark-gfm'
 
 export type MarkdownVariant = 'reading' | 'terminal'
 
+/** The shared Press serif voice both prose treatments are built from — one base,
+ *  two scales, so the two variants cannot drift into different type worlds. */
+const PROSE_BASE_CLASS = 'font-serif text-press-body'
+
 /**
  * The Press reading-prose text treatment, shared by every flow element of the
  * `reading` variant — and by the text module's source textarea, so flipping between
  * read and edit doesn't shift the type.
  */
-export const READING_PROSE_CLASS = 'font-serif text-[1.0625rem] leading-[1.65] text-press-body'
+export const READING_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[1.0625rem] leading-[1.65]`
 
 /**
- * The same Press serif reading treatment, scaled down for the terminal drawer
- * (ticket-32). The AI reply is now an authored letter in the correspondence, not a
- * mono console line, so it shares `reading`'s serif/measure/leading — just a step
- * smaller so it sits inside the drawer. Kept as a derived constant so the two
- * variants can never drift into different type worlds.
+ * The same Press serif voice, scaled down one step for the terminal drawer
+ * (ticket-32): the AI reply is typeset correspondence, not a mono console line.
+ * Derived from {@link PROSE_BASE_CLASS} alongside READING_PROSE_CLASS.
  */
-export const TERMINAL_PROSE_CLASS = 'font-serif text-[0.95rem] leading-[1.6] text-press-body'
+export const TERMINAL_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[0.95rem] leading-[1.6]`
 
 /** Elements identical across variants (inline emphasis carries no size of its own). */
 const SHARED_COMPONENTS: Components = {
