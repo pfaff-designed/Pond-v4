@@ -230,3 +230,68 @@ export const Markdown = memo(function Markdown({
     </div>
   )
 })
+
+/**
+ * Inline-only markdown renderer (Fix-4 / F8) — renders bold, italic, inline
+ * code, and links without any block elements (no `<p>`, `<h1>`, lists, etc.).
+ *
+ * Use for surfaces where content is a single line or short fragment: todo item
+ * labels, table cell display text. Block-level constructs (headings, paragraphs,
+ * fences) degrade gracefully — the block wrapper is stripped and the text content
+ * survives, so a stray `##` heading in a cell shows as plain text rather than a
+ * `<h1>` breaking layout.
+ *
+ * Not memoized by default (the caller usually does that in a list render); wrap
+ * with React.memo at the call site if needed.
+ */
+const INLINE_COMPONENTS: Components = {
+  // Strip block wrappers — render their children inline so headings, blockquotes,
+  // and paragraph wrappers don't introduce block-level DOM nodes.
+  p: ({ children }) => <>{children}</>,
+  h1: ({ children }) => <>{children}</>,
+  h2: ({ children }) => <>{children}</>,
+  h3: ({ children }) => <>{children}</>,
+  h4: ({ children }) => <>{children}</>,
+  h5: ({ children }) => <>{children}</>,
+  h6: ({ children }) => <>{children}</>,
+  blockquote: ({ children }) => <>{children}</>,
+  ul: ({ children }) => <>{children}</>,
+  ol: ({ children }) => <>{children}</>,
+  li: ({ children }) => <>{children}</>,
+  hr: () => null,
+  pre: ({ children }) => <>{children}</>,
+  // Keep inline emphasis as styled spans.
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  code: ({ children }) => (
+    <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded px-1 py-0.5">
+      {children}
+    </code>
+  ),
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-press-accent underline decoration-press-line underline-offset-2 hover:decoration-press-accent"
+    >
+      {children}
+    </a>
+  ),
+}
+
+export function MarkdownInline({
+  children,
+  className = '',
+}: {
+  children: string
+  className?: string
+}) {
+  return (
+    <span className={className}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={INLINE_COMPONENTS}>
+        {children}
+      </ReactMarkdown>
+    </span>
+  )
+}

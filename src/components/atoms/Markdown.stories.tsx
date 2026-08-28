@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, within } from 'storybook/test'
 
-import { Markdown } from './Markdown'
+import { Markdown, MarkdownInline } from './Markdown'
 
 /**
  * The rendered-reading primitive (ticket-20). Verifies that markdown source is
@@ -94,5 +94,39 @@ export const HtmlIsInert: Story = {
     // The <b> tag renders as literal text, not a bold element.
     await expect(canvas.queryByRole('img')).not.toBeInTheDocument()
     await expect(canvasElement.textContent).toContain('<b>not bold</b>')
+  },
+}
+
+/**
+ * MarkdownInline (Fix-4 / F8) — renders bold/italic/code/links without any block
+ * elements. Used for todo item labels and table cell display text so markdown source
+ * doesn't leak as raw characters into interactive modules.
+ */
+export const InlineBoldItalicCode: StoryObj = {
+  render: () => (
+    <MarkdownInline>{'**bold** and *italic* with `code` and plain text'}</MarkdownInline>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Bold and italic rendered as real elements, not raw asterisks.
+    await expect(canvas.getByText('bold').tagName).toBe('STRONG')
+    await expect(canvas.getByText('italic').tagName).toBe('EM')
+    await expect(canvas.getByText('code').tagName).toBe('CODE')
+    // No literal asterisks or backticks in the output.
+    await expect(canvasElement.textContent).not.toContain('**bold**')
+    await expect(canvasElement.textContent).not.toContain('`code`')
+    // No block elements — the whole thing renders inside a <span>.
+    await expect(canvasElement.querySelector('p')).toBeNull()
+    await expect(canvasElement.querySelector('h1')).toBeNull()
+  },
+}
+
+/** MarkdownInline strips block-level constructs (headings, lists) to plain text. */
+export const InlineBlocksStripped: StoryObj = {
+  render: () => <MarkdownInline>{'# Heading text'}</MarkdownInline>,
+  play: async ({ canvasElement }) => {
+    // The heading text survives but no <h1> element is emitted.
+    await expect(canvasElement.textContent).toContain('Heading text')
+    await expect(canvasElement.querySelector('h1')).toBeNull()
   },
 }
