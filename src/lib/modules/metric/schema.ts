@@ -10,57 +10,44 @@ export const metricSourceKindSchema = z.enum(['checklist-checked', 'checklist-to
 export type MetricSourceKind = z.infer<typeof metricSourceKindSchema>
 
 /**
- * Optional live binding (ticket-23, extended by ticket-31). Points a metric at a
+ * Optional live binding (ticket-23) — the PERSISTED form. Points a metric at a
  * sibling block in the same page so its displayed value is DERIVED from that block's
  * current state instead of being manually maintained. The AI declares the binding
  * (which block, which count); it never computes the number — derivation lives in
  * `derive.ts`.
  *
- * Two ways to name the source block:
- *
- * - `blockId` — an EXISTING sibling block (from the injected context). This is what
- *   a persisted, resolved binding always carries.
- * - `ref` — a batch-local KEY (ticket-31 same-batch bindings). When the AI creates a
- *   checklist/table AND a metric that counts it in ONE `changes[]` batch, the source
- *   block has no id yet (the client mints ids on accept — t16 branch 2). The create
- *   op tags itself with a `key`, and the metric references that `key` via `ref`. On
- *   accept the client resolves `ref` → the freshly-minted `blockId` in a single pass,
- *   so what actually PERSISTS is always the `blockId` form — an unresolved `ref`
- *   never survives into storage. An unknown `ref` (its create op was rejected) drops
- *   the whole `source`, so the metric falls back to its manual value and never
- *   dangles.
- *
- * Exactly one of `blockId` / `ref` is present. Modelled as a union so the emit-time
- * schema forbids both-or-neither.
+ * `blockId` only, deliberately. The EMIT-time schema (ai-composition.ts) additionally
+ * accepts `metricSourceRefSchema` below — a batch-local `ref` for same-batch bindings
+ * (ticket-31) — but that form is resolved to a real `blockId` at accept time and must
+ * NEVER reach storage. Keeping the persisted schema blockId-only makes that invariant
+ * structural: a forgotten resolve pass FAILS `blockSchema` validation in
+ * `hydrateBlock` (the change is skipped) instead of silently persisting a `ref`.
  */
-export const metricSourceSchema = z.union([
-  z.object({
-    /** The sibling block whose state feeds this metric (an existing block's id). */
-    blockId: z.string(),
-    kind: metricSourceKindSchema,
-  }),
-  z.object({
-    /** A batch-local key naming a block created in the SAME changes[] batch. Resolved
-     *  to a real `blockId` at accept time; never persisted in this form. */
-    ref: z.string(),
-    kind: metricSourceKindSchema,
-  }),
-])
+export const metricSourceSchema = z.object({
+  /** The sibling block whose state feeds this metric (an existing block's id). */
+  blockId: z.string(),
+  kind: metricSourceKindSchema,
+})
 
 export type MetricSource = z.infer<typeof metricSourceSchema>
 
 /**
- * The RESOLVED source id, or `undefined` for a source still naming a batch-local
- * `ref` (which only exists transiently before accept-time resolution). Everything
- * that reads a live value — derive.ts, the view, serialize — goes through here, so a
- * pre-resolution `ref` degrades to "unbound" rather than crashing on a missing
- * `blockId`. A persisted metric always carries the `blockId` form, so in practice
- * this returns the id.
+ * The EMIT-only same-batch binding form (ticket-31). `ref` names a `bindKey` the AI
+ * put on a sibling create in the SAME batch — a propose_changes create op, or a
+ * create_page block entry. The client resolves `ref` → the freshly-minted `blockId`
+ * at accept time (`same-batch-refs.ts`); an unknown `ref` (its create was rejected or
+ * failed validation) drops the whole `source` so the metric lands manual, never
+ * dangling. Composed into the emit union in ai-composition.ts; NOT part of the
+ * persisted `metricSchema` (see above).
  */
-export function sourceBlockId(source: MetricSource | undefined): string | undefined {
-  if (!source) return undefined
-  return 'blockId' in source ? source.blockId : undefined
-}
+export const metricSourceRefSchema = z.object({
+  /** A `bindKey` from a sibling create in the same batch. Resolved to a real
+   *  `blockId` on accept; never persisted in this form. */
+  ref: z.string(),
+  kind: metricSourceKindSchema,
+})
+
+export type MetricSourceRef = z.infer<typeof metricSourceRefSchema>
 
 /**
  * A single labelled number with an optional unit and trend. Read-only display.
@@ -88,25 +75,21 @@ export const metricDescriptor: ModuleDescriptor<MetricBlock> = {
     "`checklist-checked` counts ticked items in a checklist, `checklist-total` counts all its items, `table-rows` counts a table's rows. " +
     'Prefer a bound metric over a hand-entered count when the same fact already lives in a checklist or table on the page, so the number stays live. ' +
     'Two ways to name the source: (1) `source: { blockId, kind }` binds to an EXISTING block from the injected context; ' +
-    '(2) `source: { ref, kind }` binds to a block you create in the SAME batch — give that create op a `key`, then reference it here with the same string as `ref`. ' +
-    'This means you can and SHOULD create a checklist (or table) and its bound metric together in one turn: put `key: "chores"` on the checklist create, and `source: { ref: "chores", kind: "checklist-checked" }` on the metric. Never invent a blockId for a block you are creating.',
+    '(2) `source: { ref, kind }` binds to a sibling block created in the SAME batch — put `bindKey: "chores"` on that sibling (on the create operation in propose_changes, or directly on the block entry in create_page blocks), then reference it here as `source: { ref: "chores", kind: "checklist-checked" }`. ' +
+    'You can and SHOULD create a checklist (or table) and its bound metric together in one turn this way — in propose_changes AND in create_page. Never invent a blockId for a block you are creating; use bindKey/ref for those.',
   // A bound metric must serialize the SAME number the UI derives — the AI's page
   // context and the embeddings must never disagree with what the user sees. With
   // `siblings` in hand we derive exactly as the view does (stale → manual value,
   // flagged); without them we state the binding + fallback instead of guessing.
   serialize: (data, siblings) => {
     const unit = data.unit ? ` ${data.unit}` : ''
-    const boundId = sourceBlockId(data.source)
-    // No source, or a source still naming an unresolved batch-local `ref` (which
-    // only exists transiently before accept — a persisted metric never serializes
-    // one): treat as the plain manual figure.
-    if (!data.source || boundId === undefined) return `${data.label}: ${data.value}${unit}`
+    if (!data.source) return `${data.label}: ${data.value}${unit}`
     if (siblings === undefined) {
-      return `${data.label}: derived live from block ${boundId} (manual fallback: ${data.value}${unit})`
+      return `${data.label}: derived live from block ${data.source.blockId} (manual fallback: ${data.value}${unit})`
     }
     const derived = deriveMetricValue(data, siblings as readonly Block[])
     return derived.state === 'derived'
       ? `${data.label}: ${derived.value}${unit} (live, derived from block ${derived.sourceId})`
-      : `${data.label}: ${data.value}${unit} (bound source ${boundId} missing; manual value shown)`
+      : `${data.label}: ${data.value}${unit} (bound source ${data.source.blockId} missing; manual value shown)`
   },
 }

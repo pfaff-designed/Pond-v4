@@ -5,7 +5,12 @@
  * over the registry, id-less) and the `propose_changes` batch shape, plus the
  * prompt catalog. These are the emit-time structural gate (branch 7 gate 1).
  */
-import { moduleDataSchema, proposeChangesSchema, moduleCatalog } from '@/lib/modules/ai-composition'
+import {
+  moduleDataSchema,
+  proposeChangesSchema,
+  createPageBlockSchema,
+  moduleCatalog,
+} from '@/lib/modules/ai-composition'
 
 describe('moduleDataSchema (AI-emitted module data)', () => {
   it('accepts a content block with no id', () => {
@@ -114,12 +119,12 @@ describe('proposeChangesSchema (the tool input)', () => {
     expect(r.success).toBe(true)
   })
 
-  it('accepts a keyed create (batch-local key for same-batch binding, ticket-31)', () => {
+  it('accepts a keyed create (batch-local bindKey for same-batch binding, ticket-31)', () => {
     const r = proposeChangesSchema.safeParse({
       changes: [
         {
           op: 'create',
-          key: 'chores',
+          bindKey: 'chores',
           data: { type: 'todo', items: [{ label: 'a', checked: false }] },
         },
         {
@@ -186,9 +191,49 @@ describe('moduleCatalog (prompt teaching)', () => {
     expect(metricLine).toContain('checklist-checked')
     // Still teaches binding to an EXISTING block…
     expect(metricLine).toMatch(/EXISTING/i)
-    // …and now the same-batch ref path that ticket-31 opened (the key↔ref pairing).
+    // …and now the same-batch ref path that ticket-31 opened (the bindKey↔ref pairing).
     expect(metricLine).toContain('ref')
-    expect(metricLine).toContain('key')
+    expect(metricLine).toContain('bindKey')
     expect(metricLine).toMatch(/same batch/i)
+  })
+
+  it('scopes the bindKey teaching to where it actually works (review fix: catalog ↔ reality)', () => {
+    // The original audit bug reborn: teaching key/ref where it silently drops would
+    // recreate static lying metrics. bindKey now works in BOTH surfaces — the create
+    // op (propose_changes) and the block entry (create_page) — and the catalog must
+    // say exactly that, naming both, so the model never emits a ref anywhere it
+    // would be dropped. Pinned here so a future catalog edit cannot silently
+    // reopen the gap.
+    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))!
+    expect(metricLine).toContain('propose_changes')
+    expect(metricLine).toContain('create_page')
+  })
+})
+
+describe('createPageBlockSchema (create_page block entries, ticket-31)', () => {
+  it('preserves a bindKey on a block entry (a bare moduleDataSchema would strip it)', () => {
+    const r = createPageBlockSchema.safeParse({
+      type: 'todo',
+      bindKey: 'milestones',
+      items: [{ label: 'a', checked: false }],
+    })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.bindKey).toBe('milestones')
+  })
+
+  it('accepts an entry without a bindKey and a ref-bound metric entry', () => {
+    expect(createPageBlockSchema.safeParse({ type: 'text', content: 'hi' }).success).toBe(true)
+    expect(
+      createPageBlockSchema.safeParse({
+        type: 'metric',
+        label: 'Done',
+        value: 0,
+        source: { ref: 'milestones', kind: 'checklist-checked' },
+      }).success
+    ).toBe(true)
+  })
+
+  it('still rejects an unknown module type', () => {
+    expect(createPageBlockSchema.safeParse({ type: 'chart', bindKey: 'x' }).success).toBe(false)
   })
 })

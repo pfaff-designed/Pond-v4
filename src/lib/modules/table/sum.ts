@@ -60,6 +60,32 @@ export function sumColumn(
   return { total, counted }
 }
 
+/**
+ * Format a column total for display, carrying the column's own currency prefix /
+ * percent suffix when the numeric cells consistently use one — so a total of $
+ * prices reads "$1,299" and a % column reads "35%". Falls back to a plain grouped
+ * number. Lives here (not in the view) so all knowledge of how cells encode
+ * numbers — parsing AND affordance detection — stays in one module.
+ */
+export function formatTotal(
+  total: number,
+  rows: readonly { cells: string[] }[],
+  columnIndex: number
+): string {
+  const cells = rows.map((r) => r.cells[columnIndex] ?? '').filter((c) => /\d/.test(c))
+  const grouped = total.toLocaleString(undefined, { maximumFractionDigits: 2 })
+
+  // A leading currency symbol shared by every numeric cell → prefix the total.
+  const prefixMatch = cells[0]?.trim().match(/^\s*([$£€¥])/)
+  const prefix = prefixMatch?.[1]
+  if (prefix && cells.every((c) => c.trim().startsWith(prefix))) return `${prefix}${grouped}`
+
+  // A trailing % on every numeric cell → suffix the total.
+  if (cells.length > 0 && cells.every((c) => /%\s*$/.test(c))) return `${grouped}%`
+
+  return grouped
+}
+
 // --- internals -------------------------------------------------------------------
 
 const NUMBER = String.raw`-?\d[\d,]*(?:\.\d+)?`

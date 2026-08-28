@@ -138,6 +138,12 @@ export function AITerminal() {
   // Proposal-time target page per batch (BUG 1/2 fix): recorded the moment the
   // part streams in, so Accept commits there even after the user navigates away.
   const [changeTargets, setChangeTargets] = useState<Record<string, ProposalTarget>>({})
+  // Same-batch binding memory (ticket-31): bindKey→minted-id per proposal, shared
+  // across per-change Accept clicks so a metric and its keyed checklist bind even
+  // when accepted separately, in either order. A ref (not state): consumed inside
+  // the accept write only, never rendered. Session-scoped by design — lost on
+  // reload, where a later ref degrades to the clean manual fallback.
+  const proposalRefIds = useRef<Record<string, Record<string, string>>>({})
 
   // create_page decisions + the user-chosen destination, keyed by toolCallId. Same
   // no-execute caveat as propose_changes: the local maps (not the SDK part) drive
@@ -518,6 +524,10 @@ export function AITerminal() {
         toolCallId,
         openNodeId: nodeId,
         changes: indices.map((i) => allChanges[i]),
+        // Ticket-31: refs resolve against the FULL batch (not just this click's
+        // subset), with minted ids remembered per proposal across clicks.
+        batch: allChanges,
+        refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
       if (skipped > 0) {
         setChangeSkipped((prev) => ({ ...prev, [toolCallId]: (prev[toolCallId] ?? 0) + skipped }))

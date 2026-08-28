@@ -26,6 +26,13 @@ export async function writeAcceptedChanges(opts: {
   toolCallId: string
   openNodeId: string | null
   changes: ModuleChange[]
+  /** The FULL proposal batch the accepted subset came from (ticket-31 same-batch
+   *  bindings resolve refs against the whole batch, not just this click's subset).
+   *  Defaults to `changes` when the caller has no wider batch. */
+  batch?: ModuleChange[]
+  /** Caller-owned bindKey→minted-id memory for this proposal, shared across
+   *  per-change accept clicks so split accepts still bind (mutated). */
+  refIds?: Record<string, string>
 }): Promise<number> {
   const { supabase, queryClient, resolutions, toolCallId, openNodeId, changes } = opts
   if (changes.length === 0) return 0
@@ -36,7 +43,27 @@ export async function writeAcceptedChanges(opts: {
   const page = await getPage(supabase, target)
   if (!page) return changes.length
 
-  const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID())
+  const batch = opts.batch ?? changes
+  // A bindKey whose create the user already REJECTED must not be a binding target:
+  // a metric ref'ing it falls back to manual instead of dangling on an id that will
+  // never land. Rejection state lives in the resolutions envelope (ticket-19),
+  // keyed `${toolCallId}:${changeIndex}`.
+  const rejectedKeys = new Set<string>()
+  batch.forEach((change, index) => {
+    if (
+      change.op === 'create' &&
+      change.bindKey &&
+      resolutions.changes[`${toolCallId}:${index}`] === 'rejected'
+    ) {
+      rejectedKeys.add(change.bindKey)
+    }
+  })
+
+  const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID(), {
+    batch,
+    refIds: opts.refIds,
+    rejectedKeys,
+  })
   await commitBlocks(supabase, queryClient, target, result.blocks)
   // External write to the target page — invalidate ['page', target] (not the open
   // page's key) so an open DocumentPanel on that page refetches and adopts the new

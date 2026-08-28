@@ -2,7 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
-import { sumColumn as sumTableColumn } from './sum'
+import { sumColumn as sumTableColumn, formatTotal } from './sum'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view
@@ -23,11 +23,8 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   // least one cell parsed to a number — an all-junk column shows no footer rather
   // than a misleading "0". Recomputed every render so an inline cell edit re-totals
   // live (the whole block re-renders through onChange).
-  const sumIndex = data.sumColumn
-  const footer =
-    sumIndex !== undefined && sumIndex < columns.length ? sumTableColumn(rows, sumIndex) : null
-  const showFooter = footer !== null && footer.counted > 0
-  const totalDisplay = showFooter ? formatTotal(footer.total, rows, sumIndex!) : null
+  const footer = computeFooter(data.sumColumn, columns, rows)
+  const sumIndex = footer?.index
 
   function patchRow(rowIndex: number, patch: Partial<TableRow>) {
     onChange?.({
@@ -108,7 +105,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
             </tr>
           ))}
         </tbody>
-        {showFooter && (
+        {footer && (
           <tfoot>
             <tr className="border-t-2 border-zinc-300">
               {columns.map((_, ci) => {
@@ -125,7 +122,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                 if (ci === sumIndex) {
                   return (
                     <td key={ci} className="py-1.5 pr-3 font-semibold text-zinc-900 tabular-nums">
-                      {totalDisplay}
+                      {footer.display}
                     </td>
                   )
                 }
@@ -150,22 +147,18 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
 }
 
 /**
- * Format a column total, carrying the column's own currency prefix / percent suffix
- * when the numeric cells consistently use one — so a total of $ prices reads "$1,299"
- * and a % column reads "35%". Falls back to a plain grouped number. Purely cosmetic:
- * the value is already the parser's sum.
+ * Resolve the sum footer, or null when there is nothing honest to show: no
+ * `sumColumn`, an out-of-range index, or a column where no cell parsed to a number
+ * (an all-junk column must not show a misleading "0"). Formatting — including the
+ * currency/% affordance carried from the cells — lives in `sum.ts` with the parser.
  */
-function formatTotal(total: number, rows: readonly TableRow[], columnIndex: number): string {
-  const cells = rows.map((r) => r.cells[columnIndex] ?? '').filter((c) => /\d/.test(c))
-  const grouped = total.toLocaleString(undefined, { maximumFractionDigits: 2 })
-
-  // A leading currency symbol shared by every numeric cell → prefix the total.
-  const prefixMatch = cells[0]?.trim().match(/^\s*([$£€¥])/)
-  const prefix = prefixMatch?.[1]
-  if (prefix && cells.every((c) => c.trim().startsWith(prefix))) return `${prefix}${grouped}`
-
-  // A trailing % on every numeric cell → suffix the total.
-  if (cells.length > 0 && cells.every((c) => /%\s*$/.test(c))) return `${grouped}%`
-
-  return grouped
+function computeFooter(
+  sumColumn: number | undefined,
+  columns: readonly string[],
+  rows: readonly TableRow[]
+): { index: number; display: string } | null {
+  if (sumColumn === undefined || sumColumn >= columns.length) return null
+  const { total, counted } = sumTableColumn(rows, sumColumn)
+  if (counted === 0) return null
+  return { index: sumColumn, display: formatTotal(total, rows, sumColumn) }
 }

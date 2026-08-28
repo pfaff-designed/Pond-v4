@@ -4,10 +4,12 @@
  * transpile node_modules, so jsdom suites that transitively import the module
  * registry (→ metric view → NumberFlow) can't load the real one.
  *
- * The count-up ANIMATION is verified by the Storybook story test (vitest browser env,
- * native ESM + custom elements), not by jest. This stub just renders the plain
- * number + suffix so jsdom assertions on the derived value stay meaningful without
- * pulling the custom-element chain into the jest transformer.
+ * The metric Storybook story test runs the REAL NumberFlow (vitest browser env,
+ * native ESM + custom elements) and asserts the derived VALUE updates through it;
+ * the count-up animation itself is not asserted anywhere — it is verified by eye in
+ * live checks. This stub just renders the plain number + suffix so jsdom assertions
+ * on the derived value stay meaningful without pulling the custom-element chain into
+ * the jest transformer.
  */
 export default function NumberFlow({
   value,

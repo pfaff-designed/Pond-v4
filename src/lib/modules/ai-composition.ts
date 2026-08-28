@@ -21,7 +21,7 @@ import { z } from 'zod'
 import { moduleDescriptors } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
-import { metricSchema } from './metric/schema'
+import { metricSchema, metricSourceSchema, metricSourceRefSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
@@ -48,14 +48,23 @@ import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lin
  * authoring-discipline nudge, NOT a persistence constraint: the persisted
  * `textSchema` stays unchanged, so nothing already saved becomes invalid.
  */
-const textData = textSchema.omit({ id: true }).refine((d) => !isMarkdownPipeTable(d.content), {
-  message: PIPE_TABLE_IN_TEXT_MESSAGE,
-  path: ['content'],
-})
+const textBase = textSchema.omit({ id: true })
+const noPipeTable = (d: { content: string }) => !isMarkdownPipeTable(d.content)
+const pipeTableIssue = { message: PIPE_TABLE_IN_TEXT_MESSAGE, path: ['content'] }
+const textData = textBase.refine(noPipeTable, pipeTableIssue)
 const todoData = todoSchema
   .omit({ id: true })
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
-const metricData = metricSchema.omit({ id: true })
+/**
+ * Metric EMIT data (ticket-31): the persisted schema accepts only a resolved
+ * `{ blockId }` source, but at emit time the model may alternatively bind by
+ * `{ ref }` to a `bindKey` on a sibling create in the same batch. The accept path
+ * resolves ref→minted blockId before hydration; the persisted schema then rejects
+ * any `ref` that slipped through unresolved (structural invariant, not convention).
+ */
+const metricData = metricSchema.omit({ id: true }).extend({
+  source: z.union([metricSourceSchema, metricSourceRefSchema]).optional(),
+})
 const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
   .omit({ id: true })
@@ -84,6 +93,41 @@ const reason = z
   .optional()
   .describe('A short, optional note on what this change does and why (shown to the user)')
 
+/**
+ * A batch-local binding key (ticket-31 same-batch bindings). Carried by a `create`
+ * op (propose_changes) or a block entry (create_page blocks); a metric in the same
+ * batch binds to it via `source: { ref: <bindKey>, kind }`. The client resolves
+ * ref→minted-id at accept time.
+ */
+const bindKey = z
+  .string()
+  .optional()
+  .describe(
+    'A batch-local key naming THIS new block so a metric in the SAME batch can bind to it before its id exists ' +
+      '(the metric sets `source: { ref: <this bindKey>, kind }`). The client resolves ref→minted-id on accept. ' +
+      'Only needed when another block in this batch references this one; omit otherwise.'
+  )
+
+/**
+ * A create_page block entry: module data plus the optional `bindKey` (ticket-31).
+ * The wrapper lives at the entry level (like the create op above) so the PERSISTED
+ * block schemas stay free of authoring-only fields; `hydrateProposalBlocks` strips
+ * it after resolving refs (schema validation drops the unknown key). Built as its
+ * own discriminated union with `bindKey` extended onto every member — not an
+ * intersection — so the derived JSON tool schema is a clean `oneOf` whose branches
+ * each allow `bindKey` (an intersection's `allOf` would clash with the branches'
+ * `additionalProperties: false` and steer the model away from ever emitting it).
+ * The text branch re-applies the ticket-21 pipe-table lint so both unions gate it.
+ */
+export const createPageBlockSchema = z.discriminatedUnion('type', [
+  textBase.extend({ bindKey }).refine(noPipeTable, pipeTableIssue),
+  todoData.extend({ bindKey }),
+  metricData.extend({ bindKey }),
+  metricRingData.extend({ bindKey }),
+  tableData.extend({ bindKey }),
+])
+export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
+
 export const changeSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('create'),
@@ -92,14 +136,7 @@ export const changeSchema = z.discriminatedUnion('op', [
       .string()
       .optional()
       .describe('Existing blockId to insert after; omit to append to the end'),
-    key: z
-      .string()
-      .optional()
-      .describe(
-        'A batch-local key naming THIS new block so a metric in the SAME batch can bind to it before its id exists ' +
-          '(the metric sets `source: { ref: <this key>, kind }`). The client resolves ref→minted-id on accept. ' +
-          'Only needed when another change references this block; ignored otherwise.'
-      ),
+    bindKey,
     reason,
   }),
   z.object({

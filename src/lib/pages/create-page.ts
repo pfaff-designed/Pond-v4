@@ -21,9 +21,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import type { ModuleData } from '@/lib/modules/ai-composition'
+import type { CreatePageBlock } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
-import { resolveSourceRef } from '@/lib/modules/same-batch-refs'
+import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 import { createPage } from '@/lib/pages/client'
 import { resolveParentId } from '@/lib/nodes/create'
 
@@ -33,23 +33,30 @@ import { resolveParentId } from '@/lib/nodes/create'
  * accept path uses). Malformed blocks are skipped (never written); block order is
  * preserved. The `mintId` closure is injected so the client supplies
  * `crypto.randomUUID` and tests supply a deterministic counter.
+ *
+ * Same-batch bindings (ticket-31): a block entry may carry a `bindKey`, and a metric
+ * in the same proposal may bind to it via `source: { ref: <bindKey>, kind }` — so an
+ * AI-scaffolded page is born with LIVE metrics (the original audit finding was
+ * exactly a create_page metric that could not bind to its own checklist). The whole
+ * proposal lands atomically here, so this is the simple single-pass case: keys map
+ * only for entries that pass validation (a skipped block can't be a binding target);
+ * an unknown ref drops the binding (metric lands manual, never dangling). `bindKey`
+ * is authoring-only — `hydrateBlock`'s schema validation strips it from what
+ * persists.
  */
-export function hydrateProposalBlocks(data: ModuleData[], mintId: () => string): Block[] {
+export function hydrateProposalBlocks(data: CreatePageBlock[], mintId: () => string): Block[] {
+  const refs = collectBatchRefIds(
+    data.map((b) => ({ bindKey: b.bindKey, data: b })),
+    mintId
+  )
   const out: Block[] = []
   for (const item of data) {
-    // create_page has no batch-local `key` mechanism (its blocks carry no keys), so
-    // the ref map is empty: a metric that still names a `source.ref` here has no
-    // resolvable target and the binding is dropped cleanly (falls back to manual)
-    // rather than persisting an unresolved ref. Same-batch bindings are a
-    // propose_changes affordance; the model is steered to plain `blockId` bindings
-    // (or none) inside create_page.
-    const block = hydrateBlock(resolveSourceRef(item, EMPTY_REFS), mintId(), mintId)
+    const id = (item.bindKey ? refs.get(item.bindKey) : undefined) ?? mintId()
+    const block = hydrateBlock(resolveSourceRef(item, refs), id, mintId)
     if (block) out.push(block)
   }
   return out
 }
-
-const EMPTY_REFS: ReadonlyMap<string, string> = new Map()
 
 /** A create_page proposal after the user has (optionally) corrected its placement. */
 export interface CreatePageProposal {
@@ -62,8 +69,8 @@ export interface CreatePageProposal {
    *  accepts either), or null = top-level. The AI proposes a title; the client may
    *  substitute a picked page id — both flow through here. */
   parentRef?: string | null
-  /** Id-less scaffolded blocks the AI proposed. */
-  blocks: ModuleData[]
+  /** Id-less scaffolded blocks the AI proposed (each may carry a `bindKey`). */
+  blocks: CreatePageBlock[]
 }
 
 export interface CreatedPage {

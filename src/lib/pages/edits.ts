@@ -1,13 +1,33 @@
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
-import { resolveSourceRef } from '@/lib/modules/same-batch-refs'
+import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 
 export interface ApplyChangesResult {
   blocks: Block[]
   applied: number
   /** Changes dropped as no-ops: missing target, or data that failed re-validation. */
   skipped: number
+}
+
+/** Same-batch binding context (ticket-31) for partial/per-change accepts. */
+export interface ApplyChangesOptions {
+  /**
+   * The FULL proposal batch the accepted `changes` subset came from. Refs are
+   * resolved against the whole batch, not just the subset — so accepting the metric
+   * and its keyed checklist in separate clicks (either order) still binds them.
+   * Defaults to `changes` (an Accept-all is its own batch).
+   */
+  batch?: readonly ModuleChange[]
+  /**
+   * Caller-owned cross-call memory of bindKey→minted-id for THIS proposal. MUTATED:
+   * newly reserved ids are written back, so a later per-change accept of the keyed
+   * create lands it with the id an earlier accept already bound a metric to.
+   */
+  refIds?: Record<string, string>
+  /** bindKeys whose create op the user explicitly REJECTED — excluded from the ref
+   *  map so a metric ref'ing one falls back to manual (never dangles). */
+  rejectedKeys?: ReadonlySet<string>
 }
 
 /**
@@ -23,17 +43,21 @@ export interface ApplyChangesResult {
  * (branch 7). `edit` preserves the block's identity and, by default, its position;
  * it may type-morph and may reorder when it carries `after`.
  *
- * Same-batch bindings (ticket-31): a `create` op may carry a batch-local `key`, and a
- * metric in the same batch may bind to it via `source: { ref: <key>, kind }`. Create
- * ids are minted in a FIRST pass so a metric can reference a checklist that appears
- * LATER in the array; then every `source.ref` is resolved to the minted `blockId`
- * (unknown ref → the binding is dropped, metric falls back to manual). What persists
- * is always the ordinary `{ blockId, kind }` form.
+ * Same-batch bindings (ticket-31): a `create` op may carry a batch-local `bindKey`,
+ * and a metric in the same batch may bind to it via `source: { ref: <bindKey>, kind }`.
+ * The bindKey→id map is built over the FULL proposal batch (`opts.batch`) by
+ * `collectBatchRefIds` — only for creates that pass validation and were not
+ * rejected — so a metric can reference a checklist later in the array OR one being
+ * accepted in a separate click. Every `source.ref` is then resolved to the mapped
+ * `blockId` (unknown ref → the binding is dropped, metric falls back to manual).
+ * What persists is always the ordinary `{ blockId, kind }` form — the persisted
+ * metric schema rejects a `ref`, so a resolution miss is skipped, never written.
  */
 export function applyProposedChanges(
   blocks: Block[],
   changes: ModuleChange[],
-  mintId: () => string
+  mintId: () => string,
+  opts?: ApplyChangesOptions
 ): ApplyChangesResult {
   let next = [...blocks]
   let applied = 0
@@ -42,18 +66,14 @@ export function applyProposedChanges(
   // placed after each anchor and offset the next insert past them (branch 3).
   const placedAfter = new Map<string, number>()
 
-  // First pass: pre-mint one id per create op and build the batch-local key→id map,
-  // so a metric can bind (via `source.ref`) to a create that appears later in the
-  // array (ticket-31). Ids are consumed in the same order below, so deterministic
-  // mintId counters in tests stay predictable.
-  const createIds = new Map<ModuleChange, string>()
-  const refs = new Map<string, string>()
-  for (const change of changes) {
-    if (change.op !== 'create') continue
-    const id = mintId()
-    createIds.set(change, id)
-    if (change.key) refs.set(change.key, id)
-  }
+  // The bindKey→id map over the WHOLE batch (defaults to the accepted subset).
+  // Reserved ids are remembered in opts.refIds across per-change accept calls.
+  const batch = opts?.batch ?? changes
+  const refs = collectBatchRefIds(
+    batch.filter((c) => c.op === 'create').map((c) => ({ bindKey: c.bindKey, data: c.data })),
+    mintId,
+    { refIds: opts?.refIds, rejectedKeys: opts?.rejectedKeys }
+  )
 
   const insertAfter = (arr: Block[], block: Block, after?: string): Block[] => {
     if (!after) return [...arr, block]
@@ -78,7 +98,11 @@ export function applyProposedChanges(
 
     if (change.op === 'create') {
       const resolved = resolveSourceRef(change.data, refs)
-      const block = hydrateBlock(resolved, createIds.get(change)!, mintId)
+      // A keyed create lands with its RESERVED id (possibly bound to by a metric in
+      // an earlier accept call); anything else mints inline. A keyed create absent
+      // from the map (invalid/rejected) mints a throwaway id and is skipped below.
+      const id = (change.bindKey ? refs.get(change.bindKey) : undefined) ?? mintId()
+      const block = hydrateBlock(resolved, id, mintId)
       if (!block) {
         skipped++
         continue

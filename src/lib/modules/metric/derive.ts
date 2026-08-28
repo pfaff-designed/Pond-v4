@@ -13,7 +13,6 @@
  */
 import type { Block } from '../content'
 import type { MetricBlock, MetricSource } from './schema'
-import { sourceBlockId } from './schema'
 
 export type DerivedMetric =
   | { state: 'unbound'; value: number }
@@ -45,17 +44,13 @@ function countFor(kind: MetricSource['kind'], block: Block): number | null {
  */
 export function deriveMetricValue(metric: MetricBlock, siblings: readonly Block[]): DerivedMetric {
   const source = metric.source
-  // No source, or a source still naming an unresolved batch-local `ref` (present only
-  // transiently before accept-time resolution — a persisted metric always carries a
-  // real blockId). Either way there is no live block to read: show the manual value.
-  const blockId = sourceBlockId(source)
-  if (!source || blockId === undefined) return { state: 'unbound', value: metric.value }
+  if (!source) return { state: 'unbound', value: metric.value }
 
-  const target = siblings.find((b) => b.id === blockId)
-  if (!target) return { state: 'stale', value: metric.value, sourceId: blockId }
+  const target = siblings.find((b) => b.id === source.blockId)
+  if (!target) return { state: 'stale', value: metric.value, sourceId: source.blockId }
 
   const count = countFor(source.kind, target)
-  if (count === null) return { state: 'stale', value: metric.value, sourceId: blockId }
+  if (count === null) return { state: 'stale', value: metric.value, sourceId: source.blockId }
 
-  return { state: 'derived', value: count, sourceId: blockId }
+  return { state: 'derived', value: count, sourceId: source.blockId }
 }
