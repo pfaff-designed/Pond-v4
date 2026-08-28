@@ -110,6 +110,69 @@ describe('writeAcceptedChanges', () => {
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
   })
 
+  it('cross-page edit resolves block ids against the TARGET page, not the open one (ticket-30)', async () => {
+    // The open page and the target page have DIFFERENT blocks. An edit references a
+    // block id that exists only on the TARGET page; it must resolve there (applied),
+    // and commit to the target — proving the accept reads the stamped target's blocks.
+    mockedGetPage.mockImplementation(async (_sb, id) => {
+      if (id === 'ceramics-id') {
+        return {
+          id: 'ceramics-id',
+          blocks: [{ id: 'blk-target', type: 'text', content: 'old plan' }],
+        } as unknown as Awaited<ReturnType<typeof getPage>>
+      }
+      // The open page has an unrelated block — an edit to blk-target must NOT match here.
+      return {
+        id: 'open-id',
+        blocks: [{ id: 'blk-open', type: 'text', content: 'something else' }],
+      } as unknown as Awaited<ReturnType<typeof getPage>>
+    })
+
+    const editChanges: ModuleChange[] = [
+      { op: 'edit', blockId: 'blk-target', data: { type: 'text', content: 'new plan' } },
+    ] as ModuleChange[]
+
+    const skipped = await writeAcceptedChanges({
+      supabase,
+      queryClient,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id', // user is elsewhere
+      changes: editChanges,
+    })
+
+    // The edit's block id exists on the target, so nothing is skipped, and the write
+    // lands on the target page's block array (with the edit applied).
+    expect(skipped).toBe(0)
+    expect(mockedGetPage).toHaveBeenCalledWith(supabase, 'ceramics-id')
+    expect(mockedCommitBlocks).toHaveBeenCalledWith(supabase, queryClient, 'ceramics-id', [
+      expect.objectContaining({ id: 'blk-target', type: 'text', content: 'new plan' }),
+    ])
+    // The target page's cache is invalidated so it is fresh when the user visits.
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'ceramics-id'] })
+  })
+
+  it('cross-page edit whose block id is absent on the target is skipped (never wrong-page write)', async () => {
+    // Edit references a block that lives on the OPEN page but not the stamped TARGET —
+    // it must be skipped, not silently applied to the wrong block.
+    mockedGetPage.mockResolvedValue({
+      id: 'ceramics-id',
+      blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const skipped = await writeAcceptedChanges({
+      supabase,
+      queryClient,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id',
+      changes: [
+        { op: 'edit', blockId: 'blk-open', data: { type: 'text', content: 'x' } },
+      ] as ModuleChange[],
+    })
+    expect(skipped).toBe(1)
+  })
+
   it('an empty accepted batch is a no-op', async () => {
     const skipped = await writeAcceptedChanges({
       supabase,

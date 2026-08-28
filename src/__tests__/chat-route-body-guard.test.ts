@@ -26,7 +26,13 @@ jest.mock('@/lib/supabase/server', () => ({
   })),
 }))
 jest.mock('@/lib/conversation/transcript', () => ({ toModelMessages: async (m: unknown) => m }))
-jest.mock('@/lib/context/assemble', () => ({ buildChatContext: async () => null }))
+jest.mock('@/lib/context/assemble', () => ({
+  buildChatContext: async () => null,
+  // read_page's execute (ticket-30) calls these; the toolset assertions below only
+  // need the tool to be registered, so stubs suffice.
+  fetchNodeContext: async () => null,
+  formatNodeContext: () => '',
+}))
 jest.mock('@/lib/embeddings/retrieve', () => ({
   retrievePages: async () => [],
   formatRetrievedPages: () => '',
@@ -35,7 +41,6 @@ jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 
 import { streamText } from 'ai'
 import { POST, parseChatBody } from '@/app/api/chat/route'
-import { NO_OPEN_PAGE_STEERING } from '@/app/api/chat/prompt'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>
 
@@ -98,7 +103,7 @@ describe('POST /api/chat body guard', () => {
   })
 })
 
-describe('POST /api/chat toolset gating (build-brief propose-changes-target)', () => {
+describe('POST /api/chat toolset (ticket-30 cross-page edits)', () => {
   function post(body: Record<string, unknown>) {
     return POST(
       new Request('http://localhost/api/chat', {
@@ -117,18 +122,21 @@ describe('POST /api/chat toolset gating (build-brief propose-changes-target)', (
 
   beforeEach(() => mockedStreamText.mockClear())
 
-  it('offers propose_changes when a node is open', async () => {
+  it('offers propose_changes and read_page when a node is open', async () => {
     await post({ messages: [], nodeId: 'n1', nodeType: 'project' })
-    const { system, tools } = lastStreamTextArgs()
-    expect(Object.keys(tools)).toContain('propose_changes')
-    expect(system).not.toContain(NO_OPEN_PAGE_STEERING.trim())
+    const { tools } = lastStreamTextArgs()
+    expect(Object.keys(tools)).toEqual(
+      expect.arrayContaining(['propose_changes', 'read_page', 'create_page', 'fetch_context'])
+    )
   })
 
-  it('withholds propose_changes and steers when no node is open', async () => {
+  it('still offers propose_changes and read_page when NO node is open (cross-page path)', async () => {
     await post({ messages: [] })
-    const { system, tools } = lastStreamTextArgs()
-    expect(Object.keys(tools)).not.toContain('propose_changes')
-    expect(Object.keys(tools)).toEqual(expect.arrayContaining(['create_page', 'fetch_context']))
-    expect(system).toContain(NO_OPEN_PAGE_STEERING.trim())
+    const { tools } = lastStreamTextArgs()
+    // Ticket-30: propose_changes is no longer withheld from Life home — the model
+    // names another page by id and edits it. read_page loads that page's blocks.
+    expect(Object.keys(tools)).toEqual(
+      expect.arrayContaining(['propose_changes', 'read_page', 'create_page', 'fetch_context'])
+    )
   })
 })

@@ -256,7 +256,8 @@ describe('formatNodeContext', () => {
 
 // ── formatWorkspaceOutline ───────────────────────────────────────────────────
 // The outline exists so create_page can infer a parent (parentTitle) even from
-// the Home view: titles only, top-level pages + their direct children.
+// the Home view AND so a cross-page edit (ticket-30) can name a page by id: each
+// entry carries an [id] prefix; top-level pages + their direct children.
 
 describe('formatWorkspaceOutline', () => {
   const pages: PageSummary[] = [
@@ -276,7 +277,7 @@ describe('formatWorkspaceOutline', () => {
 
   it('nests direct children under their top-level parent', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).toContain('  - Area: Woodworking')
+    expect(out).toContain('  - [w1] Area: Woodworking')
   })
 
   it('stops at two levels — grandchildren are not listed', () => {
@@ -284,10 +285,12 @@ describe('formatWorkspaceOutline', () => {
     expect(out).not.toContain('Bench build')
   })
 
-  it('never includes page ids (titles only, kept lean)', () => {
+  it('surfaces each page id so a cross-page edit can target it (ticket-30)', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).not.toContain('a1')
-    expect(out).not.toContain('w1')
+    // Ids ride an [id] prefix on every listed entry.
+    expect(out).toContain('[a1] Area: Creativity')
+    expect(out).toContain('[w1] Area: Woodworking')
+    expect(out).toContain('[n1] Page: Scratch note')
   })
 
   it('returns an empty string for an empty workspace', () => {
