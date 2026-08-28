@@ -94,6 +94,21 @@ const reason = z
   .describe('A short, optional note on what this change does and why (shown to the user)')
 
 /**
+ * Inferred-vs-requested split (ticket-30). A change the user explicitly asked for
+ * omits this flag; a change YOU inferred as a helpful side-effect (e.g. ticking
+ * "first class booked" when they only asked to add a flight) sets `inferred: true`
+ * so the card can label it distinctly and the user decides it separately. Purely an
+ * authoring annotation — it never reaches storage (the accept path reads only op /
+ * data / blockId / after / bindKey).
+ */
+const inferred = z
+  .boolean()
+  .optional()
+  .describe(
+    'Set true ONLY for a change you inferred as a side-effect the user did not explicitly ask for, so it is presented as a separate decision. Omit for changes the user directly requested.'
+  )
+
+/**
  * A batch-local binding key (ticket-31 same-batch bindings). Carried by a `create`
  * op (propose_changes) or a block entry (create_page blocks); a metric in the same
  * batch binds to it via `source: { ref: <bindKey>, kind }`. The client resolves
@@ -138,6 +153,7 @@ export const changeSchema = z.discriminatedUnion('op', [
       .describe('Existing blockId to insert after; omit to append to the end'),
     bindKey,
     reason,
+    inferred,
   }),
   z.object({
     op: z.literal('edit'),
@@ -148,17 +164,35 @@ export const changeSchema = z.discriminatedUnion('op', [
       .optional()
       .describe('Move the block to just after this blockId; omit to keep its position'),
     reason,
+    inferred,
   }),
   z.object({
     op: z.literal('remove'),
     blockId: z.string().describe('Existing block id, from the injected context'),
     reason,
+    inferred,
   }),
 ])
 export type ModuleChange = z.infer<typeof changeSchema>
 
-/** The `propose_changes` tool input: a non-empty batch of composition operations. */
+/**
+ * The `propose_changes` tool input: a non-empty batch of composition operations,
+ * optionally aimed at a page OTHER than the one currently open (ticket-30).
+ *
+ * `targetPageId` names the page this batch edits, taken by ID from the injected
+ * workspace outline (never fuzzy title). Omit it to edit the currently-open page.
+ * When set, the model MUST have called `read_page` on that id first so its block
+ * ids in `edit`/`remove`/`after` reference the TARGET page's real blocks. The
+ * client resolves the id against the user's pages and stamps the proposal target;
+ * an id absent from the workspace is ignored (falls back to the open page).
+ */
 export const proposeChangesSchema = z.object({
+  targetPageId: z
+    .string()
+    .optional()
+    .describe(
+      'The id of the page to edit when it is NOT the page currently open — copy it verbatim from the [Workspace outline] in context. Call read_page on this id first so your block references are correct. Omit to edit the current page.'
+    ),
   changes: z.array(changeSchema).min(1),
 })
 export type ProposeChanges = z.infer<typeof proposeChangesSchema>

@@ -89,7 +89,7 @@ export const createPageTool = {
 
 export const proposeChangesTool = {
   description:
-    'Propose a batch of composition changes to the current node — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Use when the user explicitly asks to build or compose content. The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
+    'Propose a batch of composition changes to an EXISTING page — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Edits the page the user has open by default; to edit ANOTHER page they named, first read_page that page and set `targetPageId` to its id (from the [Workspace outline]). Use when the user explicitly asks to build or compose content (never to create a brand-new page — that is create_page). The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
   inputSchema: proposeChangesSchema,
 } as const
 
@@ -98,5 +98,28 @@ export const fetchContextTool = {
     'Search the user\'s entire workspace (all areas, projects, routines, and documents) for content semantically related to a query. Call this ONLY when the user explicitly asks to recall what they wrote before or to bring in context from elsewhere (e.g. "what have I written about X", "pull in my notes on Y"). Never call it to browse unprompted.',
   inputSchema: z.object({
     query: z.string().min(1).describe('What to search the workspace for'),
+  }),
+} as const
+
+/**
+ * read_page (ticket-30) — fetch one page's current blocks BY ID so the model can
+ * propose a correct cross-page edit to a page that is NOT the one open. The user's
+ * open page is auto-injected already; this is for editing ANOTHER page the user
+ * named. Server-executed (the route owns the closure that captures the per-request
+ * supabase client + user): the model calls read_page with an id copied from the
+ * [Workspace outline], reads back the page's title/type and its blocks WITH ids,
+ * then emits a propose_changes batch whose `targetPageId` is that same id and whose
+ * edit/remove/after references use those block ids. Never guess ids — read first.
+ */
+export const readPageTool = {
+  description:
+    'Read one page by its id — its title, type, and its editable blocks WITH their ids — so you can propose a correct edit to a page the user named that is NOT the page currently open. Copy the id verbatim from the [Workspace outline] in context; never invent one. Call this BEFORE a cross-page propose_changes so your block references resolve against that page. Do not call it for the page already open (its blocks are already in context) or to browse unprompted.',
+  inputSchema: z.object({
+    pageId: z
+      .string()
+      .min(1)
+      .describe(
+        'The id of the page to read, taken verbatim from the [Workspace outline] in context'
+      ),
   }),
 } as const

@@ -21,6 +21,7 @@ import {
   parseResolutions,
   emptyResolutions,
   resolveAcceptTarget,
+  resolveStampTarget,
   type ConversationResolutions,
 } from '@/lib/conversation/resolutions'
 import { toModelMessages } from '@/lib/conversation/transcript'
@@ -223,5 +224,67 @@ describe('resolveAcceptTarget', () => {
 
   it('returns null when unstamped and no node is open', () => {
     expect(resolveAcceptTarget(emptyResolutions(), 'pc1', null)).toBeNull()
+  })
+
+  it('a missing-target stamp returns null even with a node open — never the open page (ticket-30)', () => {
+    const missing: ConversationResolutions = {
+      ...emptyResolutions(),
+      targets: { pc1: { nodeId: 'gone-id', nodeName: '', missing: true } },
+    }
+    expect(resolveAcceptTarget(missing, 'pc1', 'open-id')).toBeNull()
+  })
+})
+
+// ── resolveStampTarget (ticket-30 review must-fix 1) ─────────────────────────
+// The stamp is write-once and persisted, so it must never mis-resolve: a
+// cross-page target is stamped only from the LOADED pages list, deferred while
+// that list is in-flight, and marked missing (not open-page-fallback) when the
+// id is absent.
+
+describe('resolveStampTarget', () => {
+  const pages = [
+    { id: 'ceramics-id', title: 'Ceramics Studio Plan' },
+    { id: 'garage-id', title: 'Garage' },
+  ]
+  const base = { pages, pagesLoaded: true, openNodeId: 'open-id', openNodeName: 'Open Page' }
+
+  it('resolves a cross-page target by id from the loaded pages list', () => {
+    expect(resolveStampTarget({ ...base, targetPageId: 'ceramics-id' })).toEqual({
+      nodeId: 'ceramics-id',
+      nodeName: 'Ceramics Studio Plan',
+    })
+  })
+
+  it('DEFERS while the pages list is in-flight — never stamps against a partial list', () => {
+    expect(resolveStampTarget({ ...base, pagesLoaded: false, targetPageId: 'ceramics-id' })).toBe(
+      'defer'
+    )
+  })
+
+  it('an id absent from the loaded list stamps missing — never falls back to the open page', () => {
+    expect(resolveStampTarget({ ...base, targetPageId: 'deleted-id' })).toEqual({
+      nodeId: 'deleted-id',
+      nodeName: '',
+      missing: true,
+    })
+  })
+
+  it('no targetPageId → the open page (id + name)', () => {
+    expect(resolveStampTarget({ ...base })).toEqual({ nodeId: 'open-id', nodeName: 'Open Page' })
+  })
+
+  it('no targetPageId and no open page → null (unstamped; accept skips)', () => {
+    expect(resolveStampTarget({ ...base, openNodeId: null, openNodeName: null })).toBeNull()
+  })
+
+  it('a missing stamp survives the resolutions parse round-trip', () => {
+    const parsed = parseResolutions({
+      changes: {},
+      creates: {},
+      skipped: {},
+      targets: { pc1: { nodeId: 'gone-id', nodeName: '', missing: true } },
+    })
+    expect(parsed.targets.pc1?.missing).toBe(true)
+    expect(resolveAcceptTarget(parsed, 'pc1', 'open-id')).toBeNull()
   })
 })

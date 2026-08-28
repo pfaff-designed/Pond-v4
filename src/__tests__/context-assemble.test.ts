@@ -256,7 +256,9 @@ describe('formatNodeContext', () => {
 
 // ── formatWorkspaceOutline ───────────────────────────────────────────────────
 // The outline exists so create_page can infer a parent (parentTitle) even from
-// the Home view: titles only, top-level pages + their direct children.
+// the Home view AND so a cross-page edit (ticket-30) can name ANY page by id:
+// every page at every depth carries an [id] prefix — a depth-3+ page must be as
+// editable as it is readable (ticket-30 review must-fix 2).
 
 describe('formatWorkspaceOutline', () => {
   const pages: PageSummary[] = [
@@ -264,6 +266,7 @@ describe('formatWorkspaceOutline', () => {
     { id: 'a2', parentId: null, type: 'area', title: 'Health' },
     { id: 'w1', parentId: 'a1', type: 'area', title: 'Woodworking' },
     { id: 'p1', parentId: 'w1', type: 'project', title: 'Bench build' },
+    { id: 'g1', parentId: 'p1', type: 'page', title: 'Cut list' },
     { id: 'n1', parentId: null, type: 'page', title: 'Scratch note' },
   ]
 
@@ -276,18 +279,22 @@ describe('formatWorkspaceOutline', () => {
 
   it('nests direct children under their top-level parent', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).toContain('  - Area: Woodworking')
+    expect(out).toContain('  - [w1] Area: Woodworking')
   })
 
-  it('stops at two levels — grandchildren are not listed', () => {
+  it('lists ALL depths with ids — a depth-3+ page is a targetable edit target (ticket-30)', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).not.toContain('Bench build')
+    // depth 3 (grandchild) and depth 4 (great-grandchild), indented under their parents.
+    expect(out).toContain('    - [p1] Project: Bench build')
+    expect(out).toContain('      - [g1] Page: Cut list')
   })
 
-  it('never includes page ids (titles only, kept lean)', () => {
+  it('surfaces each page id so a cross-page edit can target it (ticket-30)', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).not.toContain('a1')
-    expect(out).not.toContain('w1')
+    // Ids ride an [id] prefix on every listed entry.
+    expect(out).toContain('[a1] Area: Creativity')
+    expect(out).toContain('[w1] Area: Woodworking')
+    expect(out).toContain('[n1] Page: Scratch note')
   })
 
   it('returns an empty string for an empty workspace', () => {

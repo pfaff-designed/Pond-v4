@@ -45,15 +45,22 @@ export async function retrievePages(
 /**
  * Render retrieved pages as a compact context block for the fetch_context tool
  * result — the string the model reads. Pure.
+ *
+ * Each entry carries the page's `[id]` (ticket-30 review): a retrieved page is
+ * often exactly the one the user then asks to edit, so the id makes it a valid
+ * `read_page` / `targetPageId` target no matter how deep it sits — the same
+ * id-not-title convention as the workspace outline.
  */
 export function formatRetrievedPages(pages: MatchedPage[]): string {
   if (pages.length === 0) return 'No matching pages found in the workspace.'
 
-  const lines: string[] = ['[Retrieved from workspace]']
+  const lines: string[] = [
+    '[Retrieved from workspace] (the [id] targets a page for read_page or a cross-page edit)',
+  ]
   for (const page of pages) {
     const body = blocksToText(page.blocks)
     const title = page.title || 'Untitled'
-    lines.push(body ? `- "${title}": ${body}` : `- "${title}"`)
+    lines.push(body ? `- [${page.id}] "${title}": ${body}` : `- [${page.id}] "${title}"`)
   }
   return lines.join('\n')
 }

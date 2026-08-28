@@ -22,10 +22,15 @@ import type { UIMessage } from 'ai'
 export type ProposalDecision = 'accepted' | 'rejected'
 
 /** The page a propose_changes batch was made against, recorded when the part
- *  streams in — so Accept commits there, not to wherever the user is now. */
+ *  streams in — so Accept commits there, not to wherever the user is now.
+ *  `missing: true` (ticket-30 review) marks a cross-page target id that was NOT
+ *  found among the user's pages (deleted, or a hallucinated id): the card shows
+ *  a "target page not found" notice and Accept skips every change — it must
+ *  NEVER fall back to writing the open page (a create op would land there). */
 export interface ProposalTarget {
   nodeId: string
   nodeName: string
+  missing?: boolean
 }
 
 export interface ConversationResolutions {
@@ -75,13 +80,63 @@ export function parseResolutions(value: unknown): ConversationResolutions {
  * The page an Accept should commit to: the target stamped at proposal time,
  * else (legacy unstamped card) the currently-open node, else null — meaning
  * there is nowhere safe to write and every change must count as skipped.
+ *
+ * A stamp marked `missing` returns null: the batch named a page that does not
+ * exist, so there is no safe target — falling back to the open page here would
+ * append the batch's create ops to whatever the user happens to have open
+ * (ticket-30 review, must-fix 1).
  */
 export function resolveAcceptTarget(
   resolutions: ConversationResolutions,
   toolCallId: string,
   openNodeId: string | null
 ): string | null {
-  return resolutions.targets[toolCallId]?.nodeId ?? openNodeId
+  const stamped = resolutions.targets[toolCallId]
+  if (stamped) return stamped.missing ? null : stamped.nodeId
+  return openNodeId
+}
+
+// ── Stamp-time target resolution (ticket-30) ─────────────────────────────────
+
+/** A page row as the stamping path needs it — id + title only. */
+export interface StampPageRef {
+  id: string
+  title: string
+}
+
+/**
+ * Resolve the target to stamp onto a freshly streamed propose_changes part.
+ * Pure — the terminal's stamping effect calls this per part.
+ *
+ *   - `targetPageId` present and found in `pages` (BY ID, never fuzzy title) →
+ *     stamp that page.
+ *   - `targetPageId` present but the pages list has not loaded yet → `'defer'`:
+ *     do NOT stamp — a write-once stamp taken against an in-flight list would
+ *     silently mis-resolve to the open page. The effect re-runs when the list
+ *     resolves and stamps then (ticket-30 review, must-fix 1).
+ *   - `targetPageId` present, pages loaded, id absent → stamp `missing: true`
+ *     (deleted page / hallucinated id): the card shows a notice and Accept
+ *     skips. Never falls back to the open page.
+ *   - no `targetPageId` → the open page when one is open (with its name — an
+ *     empty name would mislabel the card), else `null` (leave unstamped;
+ *     Accept then has nowhere safe to write and skips).
+ */
+export function resolveStampTarget(opts: {
+  targetPageId?: string
+  pages: readonly StampPageRef[]
+  pagesLoaded: boolean
+  openNodeId: string | null
+  openNodeName: string | null
+}): ProposalTarget | 'defer' | null {
+  const { targetPageId, pages, pagesLoaded, openNodeId, openNodeName } = opts
+  if (targetPageId) {
+    if (!pagesLoaded) return 'defer'
+    const page = pages.find((p) => p.id === targetPageId)
+    if (page) return { nodeId: page.id, nodeName: page.title }
+    return { nodeId: targetPageId, nodeName: '', missing: true }
+  }
+  if (openNodeId && openNodeName) return { nodeId: openNodeId, nodeName: openNodeName }
+  return null
 }
 
 type ToolPartLike = {

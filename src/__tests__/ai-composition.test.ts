@@ -171,6 +171,53 @@ describe('proposeChangesSchema (the tool input)', () => {
       proposeChangesSchema.safeParse({ changes: [{ op: 'move', blockId: 'a' }] }).success
     ).toBe(false)
   })
+
+  // ── ticket-30: cross-page targeting + inferred split ──────────────────────
+  it('accepts an optional targetPageId naming another page to edit (ticket-30)', () => {
+    const r = proposeChangesSchema.safeParse({
+      targetPageId: 'page-abc',
+      changes: [{ op: 'edit', blockId: 'b1', data: { type: 'text', content: 'x' } }],
+    })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.targetPageId).toBe('page-abc')
+  })
+
+  it('omitting targetPageId is valid (edits the open page)', () => {
+    const r = proposeChangesSchema.safeParse({
+      changes: [{ op: 'create', data: { type: 'text', content: 'x' } }],
+    })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.targetPageId).toBeUndefined()
+  })
+
+  it('accepts an inferred flag on any op, and defaults it off (ticket-30)', () => {
+    const r = proposeChangesSchema.safeParse({
+      changes: [
+        { op: 'create', data: { type: 'text', content: 'requested' } },
+        {
+          op: 'edit',
+          blockId: 'b',
+          inferred: true,
+          data: { type: 'text', content: 'side-effect' },
+        },
+        { op: 'remove', blockId: 'c', inferred: true },
+      ],
+    })
+    expect(r.success).toBe(true)
+    if (r.success) {
+      expect(r.data.changes[0].inferred).toBeUndefined()
+      expect(r.data.changes[1].inferred).toBe(true)
+      expect(r.data.changes[2].inferred).toBe(true)
+    }
+  })
+
+  it('rejects a non-boolean inferred', () => {
+    expect(
+      proposeChangesSchema.safeParse({
+        changes: [{ op: 'create', inferred: 'yes', data: { type: 'text', content: 'x' } }],
+      }).success
+    ).toBe(false)
+  })
 })
 
 describe('moduleCatalog (prompt teaching)', () => {

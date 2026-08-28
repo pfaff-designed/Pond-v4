@@ -48,6 +48,14 @@ describe('formatRetrievedPages', () => {
     expect(out).toContain('"Health"') // no body → title only
   })
 
+  it('carries each page id so a retrieved page is a cross-page edit target (ticket-30)', () => {
+    // A deep page surfaced by search is often the one the user then edits: the
+    // [id] makes it a valid read_page / targetPageId target regardless of depth.
+    const out = formatRetrievedPages([page(), page({ id: 'd2', title: 'Health', blocks: [] })])
+    expect(out).toContain('[d1] "Woodworking"')
+    expect(out).toContain('[d2] "Health"')
+  })
+
   it('reports when nothing matched', () => {
     expect(formatRetrievedPages([])).toMatch(/No matching pages/i)
   })

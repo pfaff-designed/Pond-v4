@@ -42,6 +42,10 @@ interface ModuleDiffCardProps {
   after?: Block | null
   /** Optional one-line note from the model on what changed and why. */
   reason?: string
+  /** Ticket-30: true when the model INFERRED this change as a side-effect rather
+   *  than the user explicitly requesting it — shown as a distinct badge so the
+   *  user decides it as its own thing. */
+  inferred?: boolean
   /** pending → actions shown; accepted/rejected → resolved status line. */
   status?: ProposalStatus
   onAccept: () => void
@@ -103,6 +107,7 @@ export function ModuleDiffCard({
   before,
   after,
   reason,
+  inferred = false,
   status = 'pending',
   onAccept,
   onReject,
@@ -127,6 +132,11 @@ export function ModuleDiffCard({
         <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
           Proposed {OP_LABEL[op]} · {type}
         </span>
+        {inferred && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+            Inferred
+          </span>
+        )}
       </div>
 
       {/* Typed body */}

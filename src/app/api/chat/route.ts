@@ -11,11 +11,12 @@ import {
 } from '@/lib/conversation/resolutions'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
-import { buildSystemPrompt, NO_OPEN_PAGE_STEERING } from './prompt'
-import { createPageTool, proposeChangesTool, fetchContextTool } from './tools'
+import { buildSystemPrompt } from './prompt'
+import { createPageTool, proposeChangesTool, fetchContextTool, readPageTool } from './tools'
 import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
+import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import type { NodeType } from '@/lib/supabase/types'
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -99,11 +100,6 @@ export async function POST(req: Request) {
   if (contextBlocks.length > 0) {
     system = buildSystemPrompt(contextBlocks.join('\n\n'))
   }
-  // No open node → propose_changes is withheld below; steer the model to say
-  // "open that page and ask again" instead of faking the edit via create_page.
-  if (!nodeId) {
-    system += NO_OPEN_PAGE_STEERING
-  }
 
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
@@ -127,9 +123,24 @@ export async function POST(req: Request) {
     repairToolCall: makeRepairToolCall(),
     tools: {
       create_page: tool(createPageTool),
-      // propose_changes edits the CURRENT page — with no node open there is no
-      // valid target, so the tool is withheld entirely (build-brief decision 2).
-      ...(nodeId ? { propose_changes: tool(proposeChangesTool) } : {}),
+      // propose_changes can now target ANY page the model names by id from the
+      // workspace outline, not just the open one (ticket-30): it edits the open
+      // page by default, or a page named via `targetPageId` after a read_page.
+      // Always offered — even from Life home, where the cross-page path is the
+      // whole point.
+      propose_changes: tool(proposeChangesTool),
+      // read_page (ticket-30): fetch a named page's current blocks (with ids) so a
+      // cross-page edit references the right target blocks. Server-executed here so
+      // the closure can capture the per-request supabase client + user.
+      read_page: tool({
+        ...readPageTool,
+        execute: async ({ pageId }) => {
+          if (!user) return 'No user session; cannot read that page.'
+          const data = await fetchNodeContext(supabase, user.id, pageId)
+          if (!data) return `No page found with id ${pageId} (it may not exist or is not yours).`
+          return formatNodeContext(data, { label: `Read: ${data.title}`, includeBlockIds: true })
+        },
+      }),
       fetch_context: tool({
         ...fetchContextTool,
         execute: async ({ query }) => {
