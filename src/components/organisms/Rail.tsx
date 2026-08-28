@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
 import { ancestorPath } from '@/lib/pages/overview'
 import {
@@ -96,6 +97,7 @@ function RailRow({
   depth,
   accent,
   selectedId,
+  pathIds,
   expanded,
   busyId,
   callbacks,
@@ -104,6 +106,7 @@ function RailRow({
   depth: number
   accent: string
   selectedId: string | null
+  pathIds: ReadonlySet<string>
   expanded: Set<string>
   busyId: string | null
   callbacks: RowCallbacks
@@ -112,6 +115,9 @@ function RailRow({
   const hasChildren = node.children.length > 0
   const isExpanded = expanded.has(node.id)
   const isSelected = node.id === selectedId
+  // An ancestor of the current node — the trail reads at a slightly raised tone,
+  // calmer than the selected row's soft background (ticket-25).
+  const isOnPath = !isSelected && pathIds.has(node.id)
   const isBusy = node.id === busyId
   const showCaret = isArea || hasChildren
 
@@ -141,13 +147,26 @@ function RailRow({
           <span className="w-[22px] flex-shrink-0" />
         )}
 
-        {/* name — opens the page */}
+        {/* name — opens the page. On the path to the current node the tone is
+            raised one step (foreground for areas, body for leaves) so the trail
+            reads in the rail without competing with the selected row. */}
         <button
           className={`flex-1 min-w-0 flex items-center gap-2 text-left py-1.5 ${
             isArea
-              ? `text-[13px] font-semibold ${isSelected ? 'text-foreground' : 'text-press-body hover:text-foreground'}`
-              : `text-[12.5px] ${isSelected ? 'text-foreground font-medium' : 'text-press-muted hover:text-foreground'}`
+              ? `text-[13px] font-semibold ${
+                  isSelected || isOnPath
+                    ? 'text-foreground'
+                    : 'text-press-body hover:text-foreground'
+                }`
+              : `text-[12.5px] ${
+                  isSelected
+                    ? 'text-foreground font-medium'
+                    : isOnPath
+                      ? 'text-press-body hover:text-foreground'
+                      : 'text-press-muted hover:text-foreground'
+                }`
           }`}
+          data-on-path={isOnPath || undefined}
           onClick={() => callbacks.onSelect(node)}
           title={node.title || 'Untitled'}
         >
@@ -188,6 +207,7 @@ function RailRow({
               depth={depth + 1}
               accent={accent}
               selectedId={selectedId}
+              pathIds={pathIds}
               expanded={expanded}
               busyId={busyId}
               callbacks={callbacks}
@@ -201,9 +221,13 @@ function RailRow({
 
 // ── Presentational rail ──────────────────────────────────────────────────────
 
+const NO_PATH: ReadonlySet<string> = new Set()
+
 export interface RailViewProps extends RowCallbacks {
   tree: RailNode[]
   selectedId: string | null
+  /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
+  pathIds?: ReadonlySet<string>
   expanded: Set<string>
   busyId: string | null
   isLoading: boolean
@@ -215,6 +239,7 @@ export interface RailViewProps extends RowCallbacks {
 export function RailView({
   tree,
   selectedId,
+  pathIds = NO_PATH,
   expanded,
   busyId,
   isLoading,
@@ -267,6 +292,7 @@ export function RailView({
             depth={0}
             accent={pageAccent(node.id)}
             selectedId={selectedId}
+            pathIds={pathIds}
             expanded={expanded}
             busyId={busyId}
             callbacks={callbacks}
@@ -298,6 +324,16 @@ export function Rail() {
 
   const tree = useMemo(() => buildTree(pages), [pages])
   const selectedNodeId = searchParams.get('nodeId')
+
+  // The ancestor ids of the selected node — the rail renders these at a raised
+  // tone so the trail to "you are here" reads even in a deep tree (ticket-25).
+  const pathIds = useMemo<ReadonlySet<string>>(
+    () =>
+      selectedNodeId
+        ? new Set(ancestorPath(pages, selectedNodeId).map((c) => c.id))
+        : new Set<string>(),
+    [pages, selectedNodeId]
+  )
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, an overview card, the
@@ -357,12 +393,7 @@ export function Rail() {
   }, [isLoading, pages.length, queryClient])
 
   function navigateTo(node: { id: string; type: string; title: string }) {
-    const params = new URLSearchParams({
-      nodeType: node.type,
-      nodeId: node.id,
-      nodeName: node.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
+    router.push(workspaceUrl(node))
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -487,6 +518,7 @@ export function Rail() {
       <RailView
         tree={tree}
         selectedId={selectedNodeId}
+        pathIds={pathIds}
         expanded={expanded}
         busyId={busyId}
         isLoading={isLoading}

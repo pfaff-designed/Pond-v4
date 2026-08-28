@@ -38,19 +38,21 @@ export const Default: Story = {
     await userEvent.click(canvas.getByText('Life'))
     await expect(args.onNavigate).toHaveBeenCalledWith(null)
 
-    // an ancestor crumb navigates to its id
+    // an ancestor crumb navigates with the whole crumb (id + type + title)
     await userEvent.click(canvas.getByText('Health'))
-    await expect(args.onNavigate).toHaveBeenCalledWith('health')
+    await expect(args.onNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'health', type: 'area' })
+    )
   },
 }
 
-/** The current node is not a link — clicking it does nothing. */
+/** The current node is not a link — clicking it navigates nowhere at all. */
 export const CurrentIsNotClickable: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     const current = canvas.getByText('3-Day Full-Body Routine')
     await userEvent.click(current)
-    await expect(args.onNavigate).not.toHaveBeenCalledWith(expect.stringContaining('3-Day'))
+    await expect(args.onNavigate).not.toHaveBeenCalled()
     await expect(current).toHaveAttribute('aria-current', 'page')
   },
 }

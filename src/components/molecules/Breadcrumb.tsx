@@ -18,8 +18,8 @@ import type { Crumb } from '@/lib/pages/overview'
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
   crumbs: Crumb[]
-  /** Navigate to a crumb (or, for Life, to the root when `id` is null). */
-  onNavigate: (id: string | null) => void
+  /** Navigate to a crumb (or, for Life, to the root when `crumb` is null). */
+  onNavigate: (crumb: Crumb | null) => void
   /**
    * The current node's title, rendered as a non-clickable tail. Omit on the
    * editor surface, where the title input is the tail instead.
@@ -47,7 +47,7 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
         <Fragment key={c.id}>
           {sep}
           <button
-            onClick={() => onNavigate(c.id)}
+            onClick={() => onNavigate(c)}
             className="hover:text-foreground transition-colors truncate max-w-[180px]"
             title={c.title}
           >

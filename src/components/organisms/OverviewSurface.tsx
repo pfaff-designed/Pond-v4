@@ -24,7 +24,8 @@ import {
   type OverviewCardModel,
   type OverviewModel,
 } from '@/lib/pages/overview'
-import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { fetchPages } from '@/lib/pages/tree'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 
@@ -58,7 +59,7 @@ export interface OverviewSurfaceProps {
    * "Life"). Omit `onNavigateCrumb` to keep the plain kicker (Storybook).
    */
   crumbs?: Crumb[]
-  onNavigateCrumb?: (id: string | null) => void
+  onNavigateCrumb?: (crumb: Crumb | null) => void
   /** The current node's title in the trail; when omitted, `kicker` is used. */
   current?: string
   model: OverviewModel
@@ -166,35 +167,20 @@ export function OverviewSurface({
 export function useOpenCard() {
   const router = useRouter()
   return function openCard(card: OverviewCardModel) {
-    const params = new URLSearchParams({
-      nodeType: card.type,
-      nodeId: card.id,
-      nodeName: card.title,
-    })
-    router.push(`/workspace?${params.toString()}`)
+    router.push(workspaceUrl(card))
   }
 }
 
 /**
- * Breadcrumb → workspace navigation (ticket-25). A `null` id goes to the Life
- * root; a crumb id resolves its type/title from the ['pages'] rows so the URL
- * carries the same params a rail click would. Shared by the overview and editor
- * headers so the trail always lands on the real node surface.
+ * Breadcrumb → workspace navigation (ticket-25). A `null` crumb goes to the
+ * Life root; a crumb carries its own type/title, so the URL gets the same
+ * params a rail click would (via the shared workspaceUrl). Shared by the
+ * overview and editor headers so the trail always lands on the real surface.
  */
-export function useNavigateCrumb(rows: PageRow[]) {
+export function useNavigateCrumb() {
   const router = useRouter()
-  return function navigate(id: string | null) {
-    if (!id) {
-      router.push('/workspace')
-      return
-    }
-    const row = rows.find((r) => r.id === id)
-    const params = new URLSearchParams({
-      nodeType: row?.type ?? 'page',
-      nodeId: id,
-      nodeName: row?.title ?? '',
-    })
-    router.push(`/workspace?${params.toString()}`)
+  return function navigate(crumb: Crumb | null) {
+    router.push(workspaceUrl(crumb))
   }
 }
 
@@ -219,7 +205,7 @@ export function AreaOverviewPanel({
 }) {
   const openCard = useOpenCard()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
-  const navigateCrumb = useNavigateCrumb(rows)
+  const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
   const accent = useMemo(() => {
@@ -255,7 +241,7 @@ export function AreaOverviewPanel({
 export function LifeOverviewPanel() {
   const openCard = useOpenCard()
   const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
-  const navigateCrumb = useNavigateCrumb(rows)
+  const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => lifeOverview(rows, new Date()), [rows])
 

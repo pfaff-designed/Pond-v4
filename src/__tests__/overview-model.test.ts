@@ -74,8 +74,26 @@ describe('areaOverview', () => {
   it('counts only content pages in the focal numeral (areas excluded), cards per direct child', () => {
     const model = areaOverview(ROWS, 'health', NOW)
     expect(model.focal).toBe('3') // sleep + marathon + week-1 (all non-areas)
-    expect(model.focalCaption).toBe('pages within, at a glance.')
+    // 2 direct (sleep, marathon) ≠ 3 total → the focal caption spells the split
+    // out, so the focal "3" is never bigger than the two cards can explain.
+    expect(model.focalCaption).toBe('2 pages · 1 nested within.')
     expect(model.cards.map((c) => c.title)).toEqual(['Sleep', 'Marathon Training'])
+  })
+
+  it('a flat area (all content direct) keeps the calm at-a-glance caption', () => {
+    const flat = [
+      row('area', null, 'area', 'Area'),
+      row('a', 'area', 'page', 'A'),
+      row('b', 'area', 'page', 'B'),
+    ]
+    const model = areaOverview(flat, 'area', NOW)
+    expect(model.focal).toBe('2')
+    expect(model.focalCaption).toBe('pages within, at a glance.')
+  })
+
+  it('a single flat page reads the singular at-a-glance caption', () => {
+    const one = [row('area', null, 'area', 'Area'), row('a', 'area', 'page', 'A')]
+    expect(areaOverview(one, 'area', NOW).focalCaption).toBe('page within, at a glance.')
   })
 
   it('card stats count content descendants; nested phrasing when direct != total', () => {
@@ -99,11 +117,23 @@ describe('areaOverview', () => {
     expect(new Set(model.cards.map((c) => c.accent)).size).toBe(1)
   })
 
-  it("an area's card in a parent reads the nested split", () => {
-    // Health as a card would be: 2 direct content (sleep, marathon) + 1 nested (week-1)
-    const cards = childCards(ROWS, 'health', NOW)
-    const marathonCard = cards.find((c) => c.id === 'marathon')!
-    expect(marathonCard.sub.startsWith('1 page inside')).toBe(true)
+  it('a nested sub-area is never counted, but its content is', () => {
+    // personal (area) ─ food (area) ─ recipes · personal ─ trips
+    const rows = [
+      row('personal', null, 'area', 'Personal'),
+      row('food', 'personal', 'area', 'Food', 0),
+      row('recipes', 'food', 'page', 'Recipes'),
+      row('trips', 'personal', 'page', 'Trips', 1),
+    ]
+    const model = areaOverview(rows, 'personal', NOW)
+    // recipes + trips; the food area itself is not a content page
+    expect(model.focal).toBe('2')
+    // 1 direct content child (trips — food is an area) · 1 nested (recipes)
+    expect(model.focalCaption).toBe('1 page · 1 nested within.')
+    // the food card counts recipes as its 1 direct content page
+    const food = childCards(rows, 'personal', NOW).find((c) => c.id === 'food')!
+    expect(food.stat).toBe('1')
+    expect(food.sub.startsWith('1 page inside')).toBe(true)
   })
 })
 
@@ -112,8 +142,21 @@ describe('lifeOverview', () => {
     const model = lifeOverview(ROWS, NOW)
     // 6 rows − 2 areas (health, personal) = 4 content pages
     expect(model.focal).toBe('4')
-    expect(model.focalCaption).toBe('pages across your life.')
+    // 1 top-level content page (scratch) ≠ 4 total → explicit split: the "1
+    // page" is the top-level leaf (its own card shows stat 0 — nothing inside
+    // it), the "3 nested" live inside the top-level cards.
+    expect(model.focalCaption).toBe('1 page · 3 nested across your life.')
     expect(model.cards.map((c) => c.title)).toEqual(['Health', 'Personal', 'Scratchpad'])
+  })
+
+  it('the caption split reconciles the focal with the cards: nested = sum of card stats', () => {
+    // A top-level content page counts 1 in the focal but its card stat counts
+    // only what's INSIDE it (0 for a leaf) — the "N pages · M nested" split is
+    // what makes this honest: N = top-level pages, M = Σ card stats.
+    const model = lifeOverview(ROWS, NOW)
+    const cardSum = model.cards.reduce((sum, c) => sum + Number(c.stat), 0)
+    expect(cardSum).toBe(3) // health 3 + personal 0 + scratch 0
+    expect(Number(model.focal)).toBe(1 + cardSum) // 1 top-level page + 3 nested
   })
 
   it('the Health card counts its content only: 2 direct · 1 nested', () => {

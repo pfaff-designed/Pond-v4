@@ -84,6 +84,31 @@ export const Expanded: Story = {
   },
 }
 
+/**
+ * The trail to the current node (ticket-25): ancestors of the selection carry
+ * the raised on-path tone (data-on-path) so "you are here" reads in the rail;
+ * the selected row and off-path rows don't.
+ */
+export const PathToSelection: Story = {
+  args: {
+    expanded: new Set(['personal', 'food']),
+    selectedId: 'recipes',
+    pathIds: new Set(['personal', 'food']),
+    lifeActive: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'Personal' })).toHaveAttribute('data-on-path')
+    await expect(canvas.getByRole('button', { name: 'Food' })).toHaveAttribute('data-on-path')
+    // the selected row itself uses the selected treatment, not the path tone
+    await expect(canvas.getByRole('button', { name: 'Recipes' })).not.toHaveAttribute(
+      'data-on-path'
+    )
+    // an area off the path stays at resting tone
+    await expect(canvas.getByRole('button', { name: 'Health' })).not.toHaveAttribute('data-on-path')
+  },
+}
+
 /** The caret toggles a folder without navigating; the name opens the page. */
 export const Interactions: Story = {
   play: async ({ canvas, args }) => {

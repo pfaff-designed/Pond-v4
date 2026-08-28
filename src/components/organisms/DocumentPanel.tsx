@@ -66,7 +66,7 @@ export function DocumentPanel() {
   // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
   const openCard = useOpenCard()
-  const navigateCrumb = useNavigateCrumb(rows)
+  const navigateCrumb = useNavigateCrumb()
   const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
   // The ancestor trail for the editor header — the title input stays the tail,
   // so the breadcrumb shows only the path down to (not including) this node.

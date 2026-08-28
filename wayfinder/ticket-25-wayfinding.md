@@ -88,3 +88,32 @@ rule, nested phrasing, singular captions, `ancestorPath`).
 **Validation:** `npm run typecheck` clean; `npm test` 369 passed (35 suites);
 `npm run test-storybook` 80 passed (20 files, incl. 4 new Breadcrumb stories);
 eslint clean on all touched files.
+
+### Review round (2026-08-28)
+
+Code review found no blockers but two spec partials + cleanups, all addressed:
+
+- **Rail path styling** — ancestors of the selection now carry a raised on-path
+  tone (foreground for areas, body for leaves; `data-on-path` attr), calmer
+  than the selected row's soft background, so the trail reads in the rail —
+  not just the leaf. `pathIds` prop on `RailView`; `PathToSelection` story.
+- **Focal captions get the nested split too** — the area (and Life) focal now
+  uses the same direct·nested phrasing as the cards when they differ: Health
+  with one card but two content pages reads focal `2` · "1 page · 1 nested
+  within." — killing the focal-vs-cards ambiguity one level up as well.
+- **Top-level-page residual, made honest** — a top-level content page counts 1
+  in the Life focal but its card stat counts only what's INSIDE it (0 for a
+  leaf), so card stats alone sum to less than the focal. The Life caption's
+  split is what reconciles this: **"N pages · M nested across your life"**
+  where N = top-level content pages (each its own card) and M = every content
+  page inside a top-level card = exactly the sum of the card stats. Asserted
+  by a dedicated reconciliation test (`nested = Σ card stats`). When all
+  content is top-level the flat caption returns ("pages across your life.").
+- Cleanups: one shared `workspaceUrl` nav helper (`lib/pages/nav.ts`) used by
+  the rail, cards, and breadcrumb (was 3 copies); `Breadcrumb.onNavigate` now
+  passes the whole `Crumb` (uses `Crumb.type`, no row re-lookup —
+  `useNavigateCrumb()` needs no rows); fragile `replace('pages','page')`
+  singularisation replaced with explicit singular/plural caption params;
+  `CurrentIsNotClickable` story asserts `not.toHaveBeenCalled()`; misnamed
+  "nested split" test replaced with a real nested-sub-area case (sub-area not
+  counted, its content is).

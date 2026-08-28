@@ -141,22 +141,39 @@ export function childCards(rows: PageRow[], parentId: string, now: Date): Overvi
 
 /**
  * The focal caption for a "content inside" numeral — matches the honest count.
- * `word` names the count ("within" for an area, "across your life" for Life).
+ * The same direct·nested split the cards use (ticket-25): when some content
+ * lives deeper than the direct children, the caption spells the split out
+ * ("1 page · 1 nested within.") so the focal is never bigger than the cards
+ * below can explain. `suffix` places the count ("within" for an area, "across
+ * your life" for Life); `singular`/`plural` are the flat-case captions.
  */
-function focalCaption(count: number, filled: string, empty: string): string {
-  if (count === 0) return empty
-  if (count === 1) return filled.replace('pages', 'page')
-  return filled
+function focalCaption(
+  direct: number,
+  total: number,
+  suffix: string,
+  singular: string,
+  plural: string,
+  empty: string
+): string {
+  if (total === 0) return empty
+  if (direct !== total) {
+    return `${direct} ${pagesWord(direct)} · ${total - direct} nested ${suffix}.`
+  }
+  return total === 1 ? singular : plural
 }
 
 /** The overview for one area page: focal = content pages within, card per direct child. */
 export function areaOverview(rows: PageRow[], areaId: string, now: Date): OverviewModel {
+  const direct = directContentChildren(rows, areaId)
   const within = contentDescendants(rows, areaId)
 
   return {
     focal: String(within),
     focalCaption: focalCaption(
+      direct,
       within,
+      'within',
+      'page within, at a glance.',
       'pages within, at a glance.',
       'nothing inside yet — add a page, or ask Pond.'
     ),
@@ -164,16 +181,27 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
   }
 }
 
-/** The Life overview: focal = every content page across the workspace, card per top-level page. */
+/**
+ * The Life overview: focal = every content page across the workspace, card per
+ * top-level page. `direct` is the top-level content pages: each is its own card
+ * whose stat counts only what's INSIDE it (0 for a leaf), so the nested split
+ * is what reconciles the focal with the cards — every content page is either
+ * top-level (the "N pages" part) or inside exactly one top-level card (the
+ * "M nested" part, which equals the sum of the card stats).
+ */
 export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
   const roots = childrenOf(rows, null)
+  const direct = roots.filter(isContent).length
   const total = totalContentPages(rows)
 
   return {
     focal: String(total),
     focalCaption: focalCaption(
+      direct,
       total,
+      'across your life',
+      'page across your life.',
       'pages across your life.',
       'nothing here yet — create a page, or ask Pond.'
     ),
