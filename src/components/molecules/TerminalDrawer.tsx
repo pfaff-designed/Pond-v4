@@ -169,7 +169,7 @@ export function TerminalDrawer({
           className="group h-1.5 -mt-1 cursor-ns-resize flex items-center justify-center outline-none touch-none"
           data-testid="terminal-resize-handle"
         >
-          <span className="h-0.5 w-8 rounded-full bg-press-faint/60 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
+          <span className="h-1 w-10 rounded-full bg-press-muted/40 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
         </div>
       )}
 

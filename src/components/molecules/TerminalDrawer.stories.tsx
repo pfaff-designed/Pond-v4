@@ -108,6 +108,21 @@ export const ClearDisabledWhenEmpty: Story = {
   },
 }
 
+/** The resize handle carries a visible centered grip affordance (Fix-3 / F7). */
+export const GripVisible: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const handle = canvas.getByRole('separator', { name: 'Resize terminal' })
+    // The grip span is inside the handle element.
+    const grip = handle.querySelector('span')
+    await expect(grip).toBeTruthy()
+    // Grip is horizontally centered (flex + items-center on the handle).
+    await expect(handle).toHaveClass('flex')
+    await expect(handle).toHaveClass('items-center')
+    await expect(handle).toHaveClass('justify-center')
+  },
+}
+
 /** Keyboard resize: ↑/↓ on the handle actually change the rendered drawer height
  *  (stateful render so the controlled height round-trips), and each nudge commits. */
 export const KeyboardResize: Story = {

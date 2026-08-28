@@ -38,6 +38,7 @@ import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
 import {
   stageTextForParts,
+  hasActiveTool,
   THINKING_STAGE_TEXT,
   type StagePart,
 } from '@/lib/conversation/stage-text'
@@ -315,6 +316,10 @@ export function AITerminal() {
       // disabled input (mid-stream) silently drops it rather than leaving a
       // stale flag that would steal focus on some later collapse/ready change.
       el.focus()
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      // Brief visual emphasis so the user knows focus arrived.
+      el.classList.add('ring-1', 'ring-press-accent')
+      setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
       pendingFocus.current = false
       return
     }
@@ -477,7 +482,13 @@ export function AITerminal() {
   // finished uncollapsing). Runs after the commit that mounts the textarea.
   useEffect(() => {
     if (!effectiveCollapsed && pendingFocus.current) {
-      inputRef.current?.focus()
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        el.classList.add('ring-1', 'ring-press-accent')
+        setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
+      }
       pendingFocus.current = false
     }
   }, [effectiveCollapsed, isReady])
@@ -695,12 +706,14 @@ export function AITerminal() {
     if (!last || last.role !== 'assistant') return null
     return stageTextForParts(last.parts as StagePart[], { resolvePageName })
   }, [isStreaming, messages, resolvePageName])
-  // The resting stage line yields the moment the reply starts arriving — from then on
-  // the letterpress card is itself the feedback, so no whispered line under it.
-  const lastAssistantHasText = useMemo(() => {
+  // Fix-5 (F10): the stage line now also shows while a tool is still running even
+  // after reply text has begun streaming. We track whether the latest assistant message
+  // has any ACTIVE tool part — if so, the stage line stays visible alongside the
+  // growing text so the user knows a long tool call is still in progress.
+  const lastAssistantHasActiveTool = useMemo(() => {
     const last = messages[messages.length - 1]
     if (!last || last.role !== 'assistant') return false
-    return last.parts.some((p) => p.type === 'text' && (p as { text: string }).text.length > 0)
+    return hasActiveTool(last.parts as StagePart[])
   }, [messages])
 
   // The transcript shares the document's own column — the drawer spans the full
@@ -749,14 +762,11 @@ export function AITerminal() {
             <div key={message.id} className="space-y-3">
               {text &&
                 (message.role === 'user' ? (
-                  // The user's line is a quiet aside — right-anchored, indented, verbatim
-                  // (never interpret their keystrokes as markdown), calm ink on a faint
-                  // sage wash. NOT a chat bubble competing with the authored reply.
-                  <div className="flex justify-end">
-                    <p className="max-w-[85%] whitespace-pre-wrap rounded-md border-r-2 border-press-accent/40 bg-press-accent-wash px-3.5 py-2 text-right font-serif text-[0.95rem] leading-[1.55] text-press-body">
-                      {text}
-                    </p>
-                  </div>
+                  // The user's line is a quiet aside — left-aligned on the shared reading edge,
+                  // with a faint sage left border. NOT a chat bubble competing with the authored reply.
+                  <p className="whitespace-pre-wrap border-l-2 border-press-accent/40 bg-press-accent-wash pl-3.5 pr-2 py-2 font-serif text-[0.95rem] leading-[1.55] text-press-body">
+                    {text}
+                  </p>
                 ) : (
                   // The AI reply is set as full typeset prose in the document's own
                   // measure — letter-style correspondence, not a card in a console. A
@@ -870,16 +880,23 @@ export function AITerminal() {
             </div>
           )
         })}
-        {/* While streaming with no visible answer yet, show a derived stage line
-            ("drafting your page…") in place of the old bare ellipsis (ticket-32);
-            once text is arriving the reply itself is the feedback, so this yields. */}
-        {isStreaming && !lastAssistantHasText && (
+        {/* Stage line (ticket-32 + Fix-5/F10): shown while streaming whenever a tool
+            is still running — even after reply text has started arriving. A long tool
+            call (read_page, web_search) alongside growing text would otherwise look
+            stalled; the stage line stays until the tool part settles. Falls back to
+            THINKING_STAGE_TEXT while the model is working but no narratable tool is
+            active yet. */}
+        {isStreaming && lastAssistantHasActiveTool && (
           <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
         )}
         <div ref={bottomRef} />
       </div>
     </div>
   )
+
+  // Auto-grow the textarea with content (cap 6 lines) so the user can review
+  // multi-line input without scrolling inside the field.
+  const inputRows = Math.min(6, Math.max(2, (input.match(/\n/g)?.length ?? 0) + 1))
 
   // The input stays quietly monospace by design (ticket-32): it is the console
   // *threshold* — the one seam where the user's typed intent crosses into the serif
@@ -897,7 +914,7 @@ export function AITerminal() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Talk to Pond… (/clear · /handoff · /save)"
-          rows={2}
+          rows={inputRows}
           className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
           disabled={isStreaming || !isReady}
         />
