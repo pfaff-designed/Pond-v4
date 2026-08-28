@@ -24,6 +24,9 @@ const meta = {
     isOnPath: false,
     isFocused: false,
     isBusy: false,
+    isArea: true,
+    posInSet: 1,
+    setSize: 3,
     accent: '#5f7355',
     onSelect: fn(),
     onToggle: fn(),
@@ -44,6 +47,8 @@ export const AreaFolder: Story = {
     const row = canvas.getByRole('treeitem')
     await expect(row).toHaveAttribute('aria-expanded', 'false')
     await expect(row).toHaveAttribute('aria-level', '2')
+    await expect(row).toHaveAttribute('aria-posinset', '1')
+    await expect(row).toHaveAttribute('aria-setsize', '3')
   },
 }
 
@@ -63,6 +68,7 @@ export const Leaf: Story = {
     title: 'Ceramics Studio Plan',
     depth: 3,
     isFolder: false,
+    isArea: false,
     accent: undefined,
   },
   play: async ({ canvasElement }) => {
@@ -99,6 +105,7 @@ export const Root: Story = {
     title: 'Life',
     depth: 0,
     isRoot: true,
+    isArea: false,
     isFolder: true,
     isExpanded: true,
     accent: undefined,
@@ -131,13 +138,21 @@ export const CaretVsLabel: Story = {
   },
 }
 
-/** Hover CRUD fires add / delete for the row (revealed on hover / focus). */
+/**
+ * Hover CRUD fires add / delete for the row (revealed on hover / focus-within)
+ * — and the controls are REAL tab stops (t27 keyboard reachability): a keyboard
+ * user tabs from the row into ＋ and ×.
+ */
 export const HoverCrud: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Add sub-page to Health' }))
+    const add = canvas.getByRole('button', { name: 'Add sub-page to Health' })
+    const del = canvas.getByRole('button', { name: 'Delete Health' })
+    await expect(add).not.toHaveAttribute('tabindex', '-1')
+    await expect(del).not.toHaveAttribute('tabindex', '-1')
+    await userEvent.click(add)
     await expect(args.onAddChild).toHaveBeenCalledWith('health')
-    await userEvent.click(canvas.getByRole('button', { name: 'Delete Health' }))
+    await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('health')
   },
 }
@@ -160,5 +175,12 @@ export const KeyboardNav: Story = {
     const [passedId, event] = (args.onKeyDown as ReturnType<typeof fn>).mock.calls.at(-1)!
     await expect(passedId).toBe('health')
     await expect((event as KeyboardEvent).key).toBe('ArrowDown')
+
+    // keys pressed on an inner control (＋/×) do NOT drive the tree — the row
+    // callback is guarded on the event target
+    const calls = (args.onKeyDown as ReturnType<typeof fn>).mock.calls.length
+    canvas.getByRole('button', { name: 'Add sub-page to Health' }).focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect((args.onKeyDown as ReturnType<typeof fn>).mock.calls.length).toBe(calls)
   },
 }

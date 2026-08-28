@@ -15,17 +15,24 @@
  *     lean on this; we render them as `press-hair` so they whisper).
  *   • caret — an authored SVG chevron (not a glyph), rotating 90° on expand with
  *     a single calm ease; a leaf gets a blank of the same width so labels align.
+ *     The caret never takes focus (tabIndex -1 + mousedown preventDefault) —
+ *     clicking it toggles without stealing the roving focus from the row.
  *   • dot — the muted sage-family square that color-codes an area by its hue.
- *   • label — opens the page (works for a composite page that is also a folder).
+ *   • label — opens the page (works for a composite page that is also a folder);
+ *     the caret/label split is strict: the label never toggles expansion.
  *   • hover CRUD — ＋ / × resting at opacity-0, revealed on hover / focus-within
- *     / the control's own focus-visible, so the resting rail stays quiet
- *     (ticket-27) while staying keyboard- and AT-reachable.
+ *     so the resting rail stays quiet (ticket-27). The controls are REAL tab
+ *     stops (no tabIndex=-1): a keyboard or AT user tabs from a focused row
+ *     straight into its ＋ and ×, and the container additionally binds Delete/⌫
+ *     and + on the focused row itself.
  *
  * Accessibility follows the WAI-ARIA APG tree pattern: `role="treeitem"` with
- * `aria-expanded` / `aria-selected` / `aria-level`, a single roving tab stop
- * (`tabIndex` 0 on the focused row, -1 elsewhere) and arrow-key handling owned
- * by the container. The whole row is one focus target; the caret and CRUD
- * controls stay reachable but don't add extra tab stops.
+ * `aria-expanded` / `aria-selected` / `aria-level` / `aria-posinset` /
+ * `aria-setsize`, a single roving tab stop for the rows themselves (`tabIndex`
+ * 0 on the focused row, -1 elsewhere) and arrow-key handling owned by the
+ * container. Focus / keydown callbacks fire only for the row itself (guarded
+ * on event target), so focusing or typing in an inner control never
+ * double-drives the tree.
  */
 
 import { forwardRef, type KeyboardEvent, type ReactNode } from 'react'
@@ -91,6 +98,12 @@ export interface TreeRowProps {
   isBusy: boolean
   /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
   isRoot?: boolean
+  /** An area row — bolder label voice than a leaf. */
+  isArea?: boolean
+  /** 1-based position among visible siblings at this level (aria-posinset). */
+  posInSet?: number
+  /** Number of visible siblings at this level (aria-setsize). */
+  setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
   accent?: string
   /** A leading icon slot (e.g. the Life root's mark) — replaces the dot. */
@@ -100,8 +113,10 @@ export interface TreeRowProps {
 
   onSelect: (id: string) => void
   onToggle: (id: string) => void
-  onAddChild: (id: string) => void
-  onDelete: (id: string) => void
+  /** Omit (with isRoot) to render no ＋ affordance. */
+  onAddChild?: (id: string) => void
+  /** Omit (with isRoot) to render no × affordance. */
+  onDelete?: (id: string) => void
   onFocus: (id: string) => void
   onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
 }
@@ -118,6 +133,9 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
     isFocused,
     isBusy,
     isRoot = false,
+    isArea = false,
+    posInSet,
+    setSize,
     accent,
     leading,
     trailing,
@@ -131,7 +149,6 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
   ref
 ) {
   const label = title || 'Untitled'
-  const isAreaLike = accent !== undefined || isRoot
   const padLeft = INDENT_BASE + depth * INDENT_STEP
 
   return (
@@ -141,11 +158,21 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       aria-level={depth + 1}
       aria-selected={isSelected}
       aria-expanded={isFolder ? isExpanded : undefined}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
       data-on-path={isOnPath || undefined}
-      onFocus={() => onFocus(id)}
-      onKeyDown={(e) => onKeyDown(id, e)}
+      onFocus={(e) => {
+        // Only the row itself — focusing an inner control (＋/×) must not yank
+        // the roving focus back to the row.
+        if (e.target === e.currentTarget) onFocus(id)
+      }}
+      onKeyDown={(e) => {
+        // Only keys pressed on the row itself — Enter on an inner ＋/× button
+        // already clicks it; it must not also bubble into an "open" command.
+        if (e.target === e.currentTarget) onKeyDown(id, e)
+      }}
       className={`group relative flex items-center h-[34px] rounded-[10px] pr-1.5 outline-none transition-colors cursor-pointer
         focus-visible:ring-2 focus-visible:ring-press-accent focus-visible:ring-offset-0
         ${
@@ -172,13 +199,15 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         />
       ))}
 
-      {/* caret — toggles the folder without navigating; leaf gets a spacer */}
+      {/* caret — toggles the folder without navigating and without taking
+          focus (the row keeps the roving tab stop); leaf gets a spacer */}
       {isFolder ? (
         <button
           type="button"
           tabIndex={-1}
           aria-hidden
           className="w-[20px] h-full flex-shrink-0 grid place-items-center text-press-faint hover:text-foreground transition-colors"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
             onToggle(id)
@@ -190,14 +219,15 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         <span className="w-[20px] flex-shrink-0" aria-hidden />
       )}
 
-      {/* label — opens the page (composite pages are folders that also open) */}
+      {/* label — opens the page (composite pages are folders that also open);
+          strictly never toggles expansion (the caret owns that) */}
       <button
         type="button"
         tabIndex={-1}
         className={`flex-1 min-w-0 flex items-center gap-2 text-left leading-none ${
           isRoot
             ? `text-[14px] ${isSelected ? 'font-bold text-foreground' : 'font-semibold text-press-body group-hover:text-foreground'}`
-            : isAreaLike
+            : isArea
               ? `text-[13px] font-semibold ${
                   isSelected || isOnPath
                     ? 'text-foreground'
@@ -223,52 +253,55 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
 
       {trailing}
 
-      {/* hover CRUD — quiet at rest, reachable by keyboard/AT (ticket-27). The
+      {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and REAL
+          tab stops so keyboard/AT users reach them without a pointer (t27). The
           root (Life) is the workspace, not a row: no add/delete. */}
-      {!isRoot && (
-        <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-focus-visible:opacity-100">
-          <button
-            type="button"
-            tabIndex={-1}
-            className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-foreground hover:bg-press-ink/[0.04] focus-visible:opacity-100 outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
-            title="Add sub-page"
-            aria-label={`Add sub-page to ${label}`}
-            disabled={isBusy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onAddChild(id)
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-              <path
-                d="M6 2.4v7.2M2.4 6h7.2"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-destructive hover:bg-press-rust/[0.06] focus-visible:opacity-100 outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
-            title="Delete page"
-            aria-label={`Delete ${label}`}
-            disabled={isBusy}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(id)
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-              <path
-                d="M3 3l6 6M9 3l-6 6"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+      {!isRoot && (onAddChild || onDelete) && (
+        <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          {onAddChild && (
+            <button
+              type="button"
+              className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-foreground hover:bg-press-ink/[0.04] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
+              title="Add sub-page"
+              aria-label={`Add sub-page to ${label}`}
+              disabled={isBusy}
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddChild(id)
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path
+                  d="M6 2.4v7.2M2.4 6h7.2"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-destructive hover:bg-press-rust/[0.06] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
+              title="Delete page"
+              aria-label={`Delete ${label}`}
+              disabled={isBusy}
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(id)
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path
+                  d="M3 3l6 6M9 3l-6 6"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </div>

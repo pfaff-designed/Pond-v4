@@ -11,21 +11,27 @@
  * Life › area › page › sub-page, to arbitrary depth. Any node with children is
  * a folder (disclosure chevron); any leaf is a file. A composite page (blocks
  * AND children, ticket-22) is a folder that also opens as a document — VS Code's
- * split: the caret toggles expand, the label opens.
+ * split, kept strict: the caret toggles expand, the label opens, and the label
+ * never toggles.
  *
  * Life is the workspace root, NOT a row in `pages`: it can't be renamed or
- * deleted, and its caret is a collapse-all / expand-all for the whole tree.
- * The data source is unchanged — the `['pages']` query + parent_id tree
- * (ticket-25's reveal, ticket-27's delete, ticket-26's create all preserved) —
- * this is a view-layer restructure.
+ * deleted, and its caret is a collapse-all (collapsing closes every folder, so
+ * re-opening shows the resting top level). The data source is unchanged — the
+ * `['pages']` query + parent_id tree (ticket-25's reveal, ticket-27's delete,
+ * ticket-26's create all preserved) — this is a view-layer restructure.
  *
- * Split for Storybook: <RailView> is presentational (state + mutations raised
- * as props); <Rail> is the container that wires Supabase + React Query.
+ * Split for Storybook: <RailView> is presentational (all data and mutations
+ * raised as props) but OWNS the roving focus + keyboard machine, since focus is
+ * a view concern; <Rail> is the container that wires Supabase + React Query.
  *
- * Keyboard (WAI-ARIA APG tree): a single roving tab stop; ↑/↓ move focus
- * through visible rows, → expands (or steps into the first child), ← collapses
- * (or steps out to the parent), Enter/Space open the focused page, Home/End
- * jump to the first/last visible row.
+ * Keyboard (WAI-ARIA APG tree — pure rules in `lib/rail/tree.ts`, jest-covered):
+ * one roving tab stop; ↑/↓ move, → expands / steps into the first child,
+ * ← collapses / steps out to the parent, Enter/Space open, Home/End jump,
+ * Delete/⌫ deletes the focused row (through the same confirm/undo path as ×),
+ * + adds a child. The row's ＋/× are also real tab stops (ticket-27
+ * reachability). When the focused row vanishes (deleted, or hidden by an
+ * ancestor collapse) focus falls to the nearest surviving neighbor, VS Code
+ * style.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -38,6 +44,15 @@ import { workspaceUrl } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
 import { ancestorPath } from '@/lib/pages/overview'
 import {
+  LIFE_ID,
+  buildTree,
+  flattenVisible,
+  treeKeyCommand,
+  focusFallback,
+  type RailNode,
+  type FlatRow,
+} from '@/lib/rail/tree'
+import {
   countDescendants,
   subtreeIds,
   needsConfirm,
@@ -48,77 +63,9 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { TreeRow } from '@/components/molecules/TreeRow'
 
-// ── Tree types + helpers ─────────────────────────────────────────────────────
-
-/** The synthetic id of the Life root — never a real `pages` row. */
-export const LIFE_ID = '__life__'
-
-export interface RailNode {
-  id: string
-  parentId: string | null
-  type: string
-  title: string
-  order: number
-  children: RailNode[]
-}
-
-/** Build a nested tree from the flat page list, sorted by order then title. */
-export function buildTree(rows: PageRow[]): RailNode[] {
-  const byId = new Map<string, RailNode>()
-  for (const r of rows) {
-    byId.set(r.id, {
-      id: r.id,
-      parentId: r.parent_id,
-      type: r.type,
-      title: r.title,
-      order: r.order ?? 0,
-      children: [],
-    })
-  }
-  const roots: RailNode[] = []
-  for (const node of byId.values()) {
-    const parent = node.parentId ? byId.get(node.parentId) : undefined
-    if (parent) parent.children.push(node)
-    else roots.push(node)
-  }
-  const sortRec = (arr: RailNode[]) => {
-    arr.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
-    arr.forEach((n) => sortRec(n.children))
-  }
-  sortRec(roots)
-  return roots
-}
-
-/** A node is a folder if it's an area or has children (composite pages count). */
-export function isFolderNode(node: RailNode): boolean {
-  return node.type === 'area' || node.children.length > 0
-}
-
-/** A flattened, in-order view of the tree — only rows currently visible given
- *  `expanded`. Drives keyboard navigation and the roving tab stop. */
-export interface FlatRow {
-  node: RailNode
-  depth: number
-  isFolder: boolean
-}
-
-export function flattenVisible(
-  roots: RailNode[],
-  expanded: ReadonlySet<string>,
-  lifeExpanded: boolean
-): FlatRow[] {
-  const out: FlatRow[] = []
-  const walk = (nodes: RailNode[], depth: number) => {
-    for (const node of nodes) {
-      const folder = isFolderNode(node)
-      out.push({ node, depth, isFolder: folder })
-      if (folder && expanded.has(node.id)) walk(node.children, depth + 1)
-    }
-  }
-  // The areas sit at depth 1 under the Life root; shown only when Life is open.
-  if (lifeExpanded) walk(roots, 1)
-  return out
-}
+// Re-exported so stories and consumers keep one import site for the tree types.
+export { LIFE_ID, buildTree, flattenVisible, isFolderNode } from '@/lib/rail/tree'
+export type { RailNode, FlatRow } from '@/lib/rail/tree'
 
 // ── Presentational rail ──────────────────────────────────────────────────────
 
@@ -135,16 +82,12 @@ export interface RailViewProps {
   busyId: string | null
   isLoading: boolean
   isEmpty: boolean
-  /** The single roving tab stop; null → default to selection, then Life root. */
-  focusedId: string | null
   onSelect: (id: string) => void
   onToggle: (id: string) => void
   onAddChild: (id: string) => void
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
-  onFocusRow: (id: string) => void
-  onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
 }
 
 /** The Life root's mark — a calm sage half-disc, drawn (not a glyph). */
@@ -166,15 +109,12 @@ export function RailView({
   busyId,
   isLoading,
   isEmpty,
-  focusedId,
   onSelect,
   onToggle,
   onAddChild,
   onDelete,
   onLife,
   onToggleLife,
-  onFocusRow,
-  onKeyDown,
 }: RailViewProps) {
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
@@ -185,16 +125,21 @@ export function RailView({
     []
   )
 
+  // The ONE flattened list — Life first — driving render, ARIA coordinates,
+  // and keyboard order alike (they can't drift; see lib/rail/tree.ts).
   const flat = useMemo(
     () => flattenVisible(tree, expanded, lifeExpanded),
     [tree, expanded, lifeExpanded]
   )
+  const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
+
+  // ── Roving focus (view-owned: focus is a view concern) ─────────────────────
+  const [focusedId, setFocusedId] = useState<string | null>(null)
 
   // The effective roving tab stop: the focused row if it's still visible, else
   // the selection, else the Life root — always exactly one tabbable row.
-  const visibleIds = useMemo(() => new Set(flat.map((f) => f.node.id)), [flat])
   const rovingId =
-    focusedId && (focusedId === LIFE_ID || visibleIds.has(focusedId))
+    focusedId && visibleIds.has(focusedId)
       ? focusedId
       : selectedId && visibleIds.has(selectedId)
         ? selectedId
@@ -203,8 +148,104 @@ export function RailView({
   // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
   // keep firing on the newly focused row.
   useEffect(() => {
-    if (focusedId) rowRefs.current.get(focusedId)?.focus()
-  }, [focusedId])
+    if (focusedId && visibleIds.has(focusedId)) rowRefs.current.get(focusedId)?.focus()
+  }, [focusedId, visibleIds])
+
+  // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
+  // keep focus in the tree like VS Code: fall to the nearest surviving neighbor
+  // in the previous order (else the nearest before it, else Life). Only re-grab
+  // DOM focus if the removal actually dropped it to <body> — never steal focus
+  // the user has moved elsewhere (e.g. into the editor).
+  const prevOrderRef = useRef<string[]>([])
+  useEffect(() => {
+    const prev = prevOrderRef.current
+    prevOrderRef.current = flat.map((f) => f.id)
+    if (!focusedId || visibleIds.has(focusedId)) return
+    const fallback = focusFallback(prev, focusedId, visibleIds)
+    setFocusedId(fallback)
+    if (document.activeElement === document.body) rowRefs.current.get(fallback)?.focus()
+  }, [flat, focusedId, visibleIds])
+
+  // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
+  function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
+    const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
+    if (!cmd) return
+    e.preventDefault()
+    switch (cmd.kind) {
+      case 'focus':
+        setFocusedId(cmd.id)
+        break
+      case 'expand':
+      case 'collapse':
+        if (cmd.id === LIFE_ID) onToggleLife()
+        else onToggle(cmd.id)
+        break
+      case 'open':
+        if (cmd.id === LIFE_ID) onLife()
+        else onSelect(cmd.id)
+        break
+      case 'delete':
+        onDelete(cmd.id)
+        break
+      case 'addChild':
+        onAddChild(cmd.id)
+        break
+    }
+  }
+
+  const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) =>
+    id === LIFE_ID ? (
+      <TreeRow
+        ref={setRowRef(id)}
+        key={id}
+        id={id}
+        title="Life"
+        depth={0}
+        isFolder
+        isExpanded={lifeExpanded}
+        isSelected={selectedId === null}
+        isOnPath={false}
+        isFocused={rovingId === id}
+        isBusy={false}
+        isRoot
+        posInSet={posInSet}
+        setSize={setSize}
+        leading={<LifeMark />}
+        trailing={
+          <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint pr-1 select-none">
+            all
+          </span>
+        }
+        onSelect={onLife}
+        onToggle={onToggleLife}
+        onFocus={setFocusedId}
+        onKeyDown={handleKeyDown}
+      />
+    ) : (
+      <TreeRow
+        ref={setRowRef(id)}
+        key={id}
+        id={id}
+        title={node.title}
+        depth={depth}
+        isFolder={isFolder}
+        isExpanded={expanded.has(id)}
+        isSelected={id === selectedId}
+        isOnPath={id !== selectedId && pathIds.has(id)}
+        isFocused={rovingId === id}
+        isBusy={id === busyId}
+        isArea={node.type === 'area'}
+        posInSet={posInSet}
+        setSize={setSize}
+        accent={node.type === 'area' ? pageAccent(id) : undefined}
+        onSelect={onSelect}
+        onToggle={onToggle}
+        onAddChild={onAddChild}
+        onDelete={onDelete}
+        onFocus={setFocusedId}
+        onKeyDown={handleKeyDown}
+      />
+    )
 
   return (
     <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pt-6 pb-8 font-sans">
@@ -213,69 +254,21 @@ export function RailView({
       </div>
 
       <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-        {/* Life — the root folder of the whole tree (depth 0). Caret is a
-            collapse-all / expand-all; the label opens the Life overview. */}
-        <TreeRow
-          ref={setRowRef(LIFE_ID)}
-          id={LIFE_ID}
-          title="Life"
-          depth={0}
-          isFolder
-          isExpanded={lifeExpanded}
-          isSelected={selectedId === null}
-          isOnPath={false}
-          isFocused={rovingId === LIFE_ID}
-          isBusy={false}
-          isRoot
-          leading={<LifeMark />}
-          trailing={
-            <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint pr-1 select-none">
-              all
-            </span>
-          }
-          onSelect={onLife}
-          onToggle={onToggleLife}
-          onAddChild={() => {}}
-          onDelete={() => {}}
-          onFocus={onFocusRow}
-          onKeyDown={onKeyDown}
-        />
-
-        {isLoading && (
-          <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
-            Loading…
-          </p>
-        )}
-        {!isLoading && isEmpty && (
-          <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
-            Setting up your workspace…
-          </p>
-        )}
-
-        {lifeExpanded &&
-          flat.map(({ node, depth, isFolder }) => (
-            <TreeRow
-              ref={setRowRef(node.id)}
-              key={node.id}
-              id={node.id}
-              title={node.title}
-              depth={depth}
-              isFolder={isFolder}
-              isExpanded={expanded.has(node.id)}
-              isSelected={node.id === selectedId}
-              isOnPath={node.id !== selectedId && pathIds.has(node.id)}
-              isFocused={rovingId === node.id}
-              isBusy={node.id === busyId}
-              accent={node.type === 'area' ? pageAccent(node.id) : undefined}
-              onSelect={onSelect}
-              onToggle={onToggle}
-              onAddChild={onAddChild}
-              onDelete={onDelete}
-              onFocus={onFocusRow}
-              onKeyDown={onKeyDown}
-            />
-          ))}
+        {flat.map(renderRow)}
       </div>
+
+      {/* Status text lives OUTSIDE the tree — role="tree" only allows treeitem
+          children (WAI-ARIA); a <p> inside it would be an illegal child. */}
+      {isLoading && (
+        <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
+          Loading…
+        </p>
+      )}
+      {!isLoading && isEmpty && (
+        <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
+          Setting up your workspace…
+        </p>
+      )}
     </aside>
   )
 }
@@ -291,7 +284,6 @@ export function Rail() {
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [lifeExpanded, setLifeExpanded] = useState(true)
-  const [focusedId, setFocusedId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
@@ -491,93 +483,19 @@ export function Rail() {
     })
   }
 
-  /** Life's caret: collapse-all (close every area folder) / expand-all toggle. */
+  /** Life's caret: collapse-all. Collapsing also clears open folders, so
+   *  re-opening returns to the resting top level (not the previous open set). */
   function handleToggleLife() {
     setLifeExpanded((prev) => {
-      // Collapsing Life also clears open folders so re-opening starts clean at
-      // the top level (the resting state).
       if (prev) setExpanded(new Set())
       return !prev
     })
   }
 
-  /** Opening a page from the rail also opens its folder (the proto's openArea). */
+  /** Open a page — strictly navigation; expansion belongs to the caret alone. */
   function handleSelect(id: string) {
     const node = nodeById.get(id)
-    if (!node) return
-    if (isFolderNode(node)) setExpanded((prev) => new Set(prev).add(id))
-    navigateTo(node)
-  }
-
-  // ── Keyboard navigation (WAI-ARIA APG tree) ─────────────────────────────────
-  // ↑/↓ move focus through visible rows; → expands or steps into the first
-  // child; ← collapses or steps out to the parent; Enter/Space open; Home/End
-  // jump to the first/last visible row. The Life root is the first row.
-  const flat = useMemo(
-    () => flattenVisible(tree, expanded, lifeExpanded),
-    [tree, expanded, lifeExpanded]
-  )
-  const order = useMemo(() => [LIFE_ID, ...flat.map((f) => f.node.id)], [flat])
-
-  function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
-    const idx = order.indexOf(id)
-    const move = (to: number) => {
-      const clamped = Math.max(0, Math.min(order.length - 1, to))
-      setFocusedId(order[clamped])
-    }
-    const node = id === LIFE_ID ? null : nodeById.get(id)
-    const folder = id === LIFE_ID ? true : node ? isFolderNode(node) : false
-    const isOpen = id === LIFE_ID ? lifeExpanded : expanded.has(id)
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        move(idx + 1)
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        move(idx - 1)
-        break
-      case 'Home':
-        e.preventDefault()
-        move(0)
-        break
-      case 'End':
-        e.preventDefault()
-        move(order.length - 1)
-        break
-      case 'ArrowRight':
-        e.preventDefault()
-        if (folder && !isOpen) {
-          if (id === LIFE_ID) setLifeExpanded(true)
-          else setExpanded((p) => new Set(p).add(id))
-        } else if (folder && isOpen) {
-          move(idx + 1) // step into the first child
-        }
-        break
-      case 'ArrowLeft':
-        e.preventDefault()
-        if (folder && isOpen) {
-          if (id === LIFE_ID) handleToggleLife()
-          else
-            setExpanded((p) => {
-              const n = new Set(p)
-              n.delete(id)
-              return n
-            })
-        } else {
-          // step out to the parent (Life is the parent of top-level areas)
-          const parentId = node?.parentId ?? (id === LIFE_ID ? null : LIFE_ID)
-          if (parentId) setFocusedId(parentId)
-        }
-        break
-      case 'Enter':
-      case ' ':
-        e.preventDefault()
-        if (id === LIFE_ID) router.push('/workspace')
-        else handleSelect(id)
-        break
-    }
+    if (node) navigateTo(node)
   }
 
   const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
@@ -593,15 +511,12 @@ export function Rail() {
         busyId={busyId}
         isLoading={isLoading}
         isEmpty={!isLoading && pages.length === 0}
-        focusedId={focusedId}
         onSelect={handleSelect}
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
         onLife={() => router.push('/workspace')}
         onToggleLife={handleToggleLife}
-        onFocusRow={setFocusedId}
-        onKeyDown={handleKeyDown}
       />
       <ConfirmDialog
         open={confirmTarget !== null}

@@ -1,0 +1,272 @@
+/**
+ * The rail file tree's pure logic (ticket-28): building the nested tree,
+ * flattening the visible rows (render + keyboard order, ARIA coordinates),
+ * the WAI-ARIA APG keyboard state machine, and the focus-fallback rule for
+ * when the focused row disappears.
+ */
+
+import {
+  LIFE_ID,
+  buildTree,
+  isFolderNode,
+  flattenVisible,
+  treeKeyCommand,
+  focusFallback,
+  type RailNode,
+  type FlatRow,
+} from '@/lib/rail/tree'
+import type { PageRow } from '@/lib/pages/tree'
+
+const row = (
+  id: string,
+  parent_id: string | null,
+  type: string,
+  title: string,
+  order = 0
+): PageRow => ({ id, parent_id, type, title, order, updated_at: '2026-08-28T00:00:00Z' })
+
+const node = (
+  id: string,
+  type: string,
+  title: string,
+  children: RailNode[] = [],
+  order = 0,
+  parentId: string | null = null
+): RailNode => ({ id, parentId, type, title, order, children })
+
+/** health(area)[sleep, marathon] · personal(area)[food(area)[recipes], trips] · scratch(page) */
+const TREE: RailNode[] = [
+  node('health', 'area', 'Health', [
+    node('sleep', 'page', 'Sleep', [], 0, 'health'),
+    node('marathon', 'project', 'Marathon', [], 1, 'health'),
+  ]),
+  node(
+    'personal',
+    'area',
+    'Personal',
+    [
+      node(
+        'food',
+        'area',
+        'Food',
+        [node('recipes', 'page', 'Recipes', [], 0, 'food')],
+        0,
+        'personal'
+      ),
+      node('trips', 'page', 'Trips', [], 1, 'personal'),
+    ],
+    1
+  ),
+  node('scratch', 'page', 'Scratchpad', [], 2),
+]
+
+const ids = (flat: FlatRow[]) => flat.map((f) => f.id)
+
+describe('buildTree', () => {
+  it('nests children under parents and leaves roots at the top', () => {
+    const tree = buildTree([
+      row('a', null, 'area', 'A'),
+      row('b', 'a', 'page', 'B'),
+      row('c', 'b', 'page', 'C'),
+    ])
+    expect(tree).toHaveLength(1)
+    expect(tree[0].children[0].id).toBe('b')
+    expect(tree[0].children[0].children[0].id).toBe('c')
+  })
+
+  it('sorts siblings by order, then title', () => {
+    const tree = buildTree([
+      row('z', null, 'page', 'Zebra', 0),
+      row('m', null, 'page', 'Mango', 1),
+      row('a', null, 'page', 'Apple', 0),
+    ])
+    expect(tree.map((n) => n.id)).toEqual(['a', 'z', 'm'])
+  })
+
+  it('treats a row whose parent is missing as a root (orphan-safe)', () => {
+    const tree = buildTree([row('orphan', 'gone', 'page', 'Orphan')])
+    expect(tree.map((n) => n.id)).toEqual(['orphan'])
+  })
+})
+
+describe('isFolderNode', () => {
+  it('an area is a folder even with no children', () => {
+    expect(isFolderNode(node('a', 'area', 'A'))).toBe(true)
+  })
+  it('a page with children (composite) is a folder', () => {
+    expect(isFolderNode(node('p', 'page', 'P', [node('c', 'page', 'C')]))).toBe(true)
+  })
+  it('a childless page is a leaf', () => {
+    expect(isFolderNode(node('p', 'page', 'P'))).toBe(false)
+  })
+})
+
+describe('flattenVisible', () => {
+  it('always emits the Life root first, at depth 0, a set of one', () => {
+    const flat = flattenVisible(TREE, new Set(), true)
+    expect(flat[0]).toMatchObject({
+      id: LIFE_ID,
+      depth: 0,
+      isFolder: true,
+      posInSet: 1,
+      setSize: 1,
+    })
+  })
+
+  it('life collapsed → only the Life row', () => {
+    expect(ids(flattenVisible(TREE, new Set(['health']), false))).toEqual([LIFE_ID])
+  })
+
+  it('collapsed folders hide their subtrees', () => {
+    expect(ids(flattenVisible(TREE, new Set(), true))).toEqual([
+      LIFE_ID,
+      'health',
+      'personal',
+      'scratch',
+    ])
+  })
+
+  it('expanding reveals children in order, at the right depth, to any nesting', () => {
+    const flat = flattenVisible(TREE, new Set(['personal', 'food']), true)
+    expect(ids(flat)).toEqual([
+      LIFE_ID,
+      'health',
+      'personal',
+      'food',
+      'recipes',
+      'trips',
+      'scratch',
+    ])
+    const depthOf = (id: string) => flat.find((f) => f.id === id)!.depth
+    expect(depthOf('personal')).toBe(1)
+    expect(depthOf('food')).toBe(2)
+    expect(depthOf('recipes')).toBe(3)
+  })
+
+  it('carries ARIA sibling coordinates per level', () => {
+    const flat = flattenVisible(TREE, new Set(['health']), true)
+    const at = (id: string) => flat.find((f) => f.id === id)!
+    // top level: health, personal, scratch = a set of 3
+    expect(at('health')).toMatchObject({ posInSet: 1, setSize: 3 })
+    expect(at('scratch')).toMatchObject({ posInSet: 3, setSize: 3 })
+    // inside health: sleep, marathon = a set of 2
+    expect(at('sleep')).toMatchObject({ posInSet: 1, setSize: 2 })
+    expect(at('marathon')).toMatchObject({ posInSet: 2, setSize: 2 })
+  })
+})
+
+describe('treeKeyCommand', () => {
+  const open = new Set(['personal', 'food'])
+  const flat = flattenVisible(TREE, open, true)
+  const opts = { expanded: open, lifeExpanded: true }
+  const key = (k: string, id: string) => treeKeyCommand(k, id, flat, opts)
+
+  it('ArrowDown / ArrowUp move focus through visible rows', () => {
+    expect(key('ArrowDown', LIFE_ID)).toEqual({ kind: 'focus', id: 'health' })
+    expect(key('ArrowDown', 'personal')).toEqual({ kind: 'focus', id: 'food' })
+    expect(key('ArrowUp', 'food')).toEqual({ kind: 'focus', id: 'personal' })
+  })
+
+  it('clamps at both ends instead of wrapping', () => {
+    expect(key('ArrowUp', LIFE_ID)).toEqual({ kind: 'focus', id: LIFE_ID })
+    expect(key('ArrowDown', 'scratch')).toEqual({ kind: 'focus', id: 'scratch' })
+  })
+
+  it('Home / End jump to the first / last visible row', () => {
+    expect(key('Home', 'trips')).toEqual({ kind: 'focus', id: LIFE_ID })
+    expect(key('End', LIFE_ID)).toEqual({ kind: 'focus', id: 'scratch' })
+  })
+
+  it('ArrowRight expands a closed folder', () => {
+    expect(key('ArrowRight', 'health')).toEqual({ kind: 'expand', id: 'health' })
+  })
+
+  it('ArrowRight on an open folder steps into its first child', () => {
+    expect(key('ArrowRight', 'personal')).toEqual({ kind: 'focus', id: 'food' })
+  })
+
+  it('ArrowRight is a no-op on a leaf and on an open folder with no visible child', () => {
+    expect(key('ArrowRight', 'scratch')).toBeNull()
+    // an open area with no children: expand an empty area
+    const emptyArea = [node('empty', 'area', 'Empty')]
+    const f = flattenVisible(emptyArea, new Set(['empty']), true)
+    expect(
+      treeKeyCommand('ArrowRight', 'empty', f, { expanded: new Set(['empty']), lifeExpanded: true })
+    ).toBeNull()
+  })
+
+  it('ArrowLeft collapses an open folder', () => {
+    expect(key('ArrowLeft', 'personal')).toEqual({ kind: 'collapse', id: 'personal' })
+    expect(treeKeyCommand('ArrowLeft', LIFE_ID, flat, opts)).toEqual({
+      kind: 'collapse',
+      id: LIFE_ID,
+    })
+  })
+
+  it('ArrowLeft steps out to the parent from a leaf or closed folder', () => {
+    expect(key('ArrowLeft', 'recipes')).toEqual({ kind: 'focus', id: 'food' })
+    expect(key('ArrowLeft', 'health')).toEqual({ kind: 'focus', id: LIFE_ID }) // closed folder, Life is the parent of top-level rows
+    expect(key('ArrowLeft', 'scratch')).toEqual({ kind: 'focus', id: LIFE_ID })
+  })
+
+  it('ArrowLeft on a collapsed Life root is a no-op (nowhere to step out)', () => {
+    const closed = flattenVisible(TREE, new Set(), false)
+    expect(
+      treeKeyCommand('ArrowLeft', LIFE_ID, closed, { expanded: new Set(), lifeExpanded: false })
+    ).toBeNull()
+  })
+
+  it('Enter and Space open the row', () => {
+    expect(key('Enter', 'trips')).toEqual({ kind: 'open', id: 'trips' })
+    expect(key(' ', 'personal')).toEqual({ kind: 'open', id: 'personal' })
+    expect(key('Enter', LIFE_ID)).toEqual({ kind: 'open', id: LIFE_ID })
+  })
+
+  it('Delete / Backspace delete the row — but never the Life root', () => {
+    expect(key('Delete', 'trips')).toEqual({ kind: 'delete', id: 'trips' })
+    expect(key('Backspace', 'health')).toEqual({ kind: 'delete', id: 'health' })
+    expect(key('Delete', LIFE_ID)).toBeNull()
+  })
+
+  it('+ adds a child — but never on the Life root', () => {
+    expect(key('+', 'personal')).toEqual({ kind: 'addChild', id: 'personal' })
+    expect(key('+', LIFE_ID)).toBeNull()
+  })
+
+  it('unknown keys and stale ids return null (no focus jump)', () => {
+    expect(key('a', 'health')).toBeNull()
+    expect(key('ArrowDown', 'deleted-row')).toBeNull()
+  })
+})
+
+describe('focusFallback', () => {
+  const prevOrder = [LIFE_ID, 'health', 'sleep', 'marathon', 'personal', 'scratch']
+
+  it('falls to the nearest surviving row after the removed one', () => {
+    const visible = new Set([LIFE_ID, 'health', 'marathon', 'personal', 'scratch'])
+    expect(focusFallback(prevOrder, 'sleep', visible)).toBe('marathon')
+  })
+
+  it('falls back to the nearest row before it when nothing survives after', () => {
+    const visible = new Set([LIFE_ID, 'health'])
+    expect(focusFallback(prevOrder, 'scratch', visible)).toBe('health')
+  })
+
+  it('collapse-hides a whole subtree → lands on the parent', () => {
+    // health collapsed: sleep + marathon gone, nearest after = personal? No —
+    // the nearest AFTER sleep that survives is personal; VS Code lands there
+    // when deleting, but when a subtree hides, the parent (health) survives
+    // BEFORE it too. The rule is nearest-after first:
+    const visible = new Set([LIFE_ID, 'health', 'personal', 'scratch'])
+    expect(focusFallback(prevOrder, 'sleep', visible)).toBe('personal')
+    // when the removed row was last inside the collapsed tail, we walk back:
+    expect(focusFallback([LIFE_ID, 'health', 'sleep'], 'sleep', new Set([LIFE_ID, 'health']))).toBe(
+      'health'
+    )
+  })
+
+  it('unknown removed id or nothing surviving → the Life root', () => {
+    expect(focusFallback(prevOrder, 'never-existed', new Set([LIFE_ID]))).toBe(LIFE_ID)
+    expect(focusFallback(prevOrder, 'health', new Set<string>())).toBe(LIFE_ID)
+  })
+})

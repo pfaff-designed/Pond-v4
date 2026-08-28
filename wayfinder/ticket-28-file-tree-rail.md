@@ -89,19 +89,24 @@ lifeExpanded)` → the in-order list of currently-visible rows that drives both
    replaced by mapping the flattened list to `TreeRow`.
 
 3. **Keyboard navigation — WAI-ARIA APG tree pattern.** A single roving tab stop
-   (`tabIndex` 0 on exactly one row, -1 elsewhere; container-owned `focusedId`
+   (`tabIndex` 0 on exactly one row, -1 elsewhere; view-owned `focusedId`
    state, reflected into DOM focus via effect). `↑/↓` move through visible rows,
    `→` expands a closed folder or steps into the first child of an open one,
    `←` collapses an open folder or steps out to the parent (Life is the parent
    of top-level areas), `Enter`/`Space` open the focused page, `Home`/`End` jump
-   to the first/last visible row. `role="treeitem"` carries `aria-level` /
-   `aria-expanded` / `aria-selected`.
+   to the first/last visible row, `Delete`/`⌫` delete the focused row through
+   the same blast-radius-confirm / undo path as ×, and `+` adds a child. The
+   row's ＋/× are additionally REAL tab stops (t27 reachability). The pure key
+   rules live in `src/lib/rail/tree.ts` (`treeKeyCommand`), jest-covered.
+   `role="treeitem"` carries `aria-level` / `aria-expanded` / `aria-selected` /
+   `aria-posinset` / `aria-setsize`.
 
-4. **Life root = expand-all / collapse-all.** Life's caret toggles `lifeExpanded`;
-   collapsing it hides the whole tree AND clears open folders, so re-expanding
-   returns to the resting top-level state (the "collapse everything" affordance).
-   The label still opens the Life overview. `t25` reveal now also re-opens Life
-   if it was collapsed when you navigate.
+4. **Life root = collapse-all.** Life's caret toggles `lifeExpanded`; collapsing
+   it hides the whole tree AND clears open folders, so re-expanding returns to
+   the resting top-level state — areas collapsed (it is a collapse-all with a
+   clean re-open, deliberately NOT a symmetric expand-all). The label still
+   opens the Life overview. `t25` reveal now also re-opens Life if it was
+   collapsed when you navigate.
 
 ### Design — references that shaped it
 
@@ -160,14 +165,64 @@ t26/t27 suites, and the reveal effect was updated to also re-open Life.
 ### Validation
 
 - `npm run typecheck` — clean.
-- `npm test` (jest) — 364 passed / 35 suites.
-- `npm run test-storybook` — 94 passed / 21 files (incl. new **TreeRow**:
+- `npm test` (jest) — 392 passed / 36 suites (incl. the new `rail-tree` suite:
+  buildTree / isFolderNode / flattenVisible / treeKeyCommand / focusFallback).
+- `npm run test-storybook` — 95 passed / 21 files (incl. new **TreeRow**:
   AreaFolder/Expanded/Leaf/Selected/OnPath/Root/CaretVsLabel/HoverCrud/
   KeyboardNav, and rewritten **Rail**: Resting/LifeCollapsed/Expanded/
-  PathToSelection/Interactions/LifeCaretCollapsesAll/HoverCrud/KeyboardNav/
-  Loading/Empty).
-- Lint — the four touched files are clean; the ~80 pre-existing charts/proto
+  AriaCoordinates/PathToSelection/Interactions/LifeCaretCollapsesAll/HoverCrud/
+  KeyboardNav/Loading/Empty).
+- Lint — all touched files are clean; the ~80 pre-existing charts/proto
   problems are identical to main and untouched.
+
+### Review round (2026-08-28)
+
+Code review passed the aesthetic ("genuinely elevated, not timid") but flagged
+six defects, all fixed:
+
+1. **Keyboard CRUD regression (t27).** The row's ＋/× had `tabIndex={-1}` —
+   keyboard/AT users couldn't add or delete. Fixed both ways: the controls are
+   REAL tab stops again (tab from a focused row straight into its ＋/×, with the
+   focus-within reveal), AND the tree binds `Delete`/`⌫` → delete the focused
+   row (same ConfirmDialog / undo path as ×) and `+` → add child. Guards added
+   so inner-control events don't double-drive the tree: the row's focus and
+   keydown callbacks fire only when the event target IS the row (Enter on ＋
+   clicks it without also "opening" the row; tabbing into × no longer yanks
+   focus back to the row).
+2. **Focus retention on row removal.** When the focused row vanishes (deleted,
+   or hidden by an ancestor collapse), focus now falls to the nearest surviving
+   neighbor in the previous order (else nearest-before, else Life) — pure
+   `focusFallback` in `lib/rail/tree.ts`, VS Code's rule — and DOM focus is
+   re-grabbed only if the removal actually dropped it to `<body>`. Stale ids in
+   the key handler return null instead of jumping focus to Life
+   (`treeKeyCommand` guards a missing row).
+3. **Keyboard/state-machine jest coverage.** All pure tree logic extracted to
+   `src/lib/rail/tree.ts` (buildTree, isFolderNode, flattenVisible,
+   treeKeyCommand, focusFallback) and covered by 28 jest tests in
+   `rail-tree.test.ts` — step-in/step-out, clamping, Home/End, root
+   protections, Delete/+, stale ids, fallback rules. Stories keep the
+   presentational layer.
+4. **Caret/label split made strict.** `handleSelect` no longer auto-expands on
+   label-click/Enter — the label ONLY opens; expansion belongs to the caret
+   (and →) alone, matching the spec's VS Code split. (The t25 reveal effect
+   still expands ancestors when the selection changes — the node itself stays
+   as it was.)
+5. **ARIA correctness.** Loading/empty status text moved OUTSIDE the
+   `role="tree"` container (a `<p>` is an illegal tree child);
+   `aria-posinset`/`aria-setsize` added to every row from the flattened
+   structure (asserted in the AriaCoordinates story); the caret keeps
+   `tabIndex=-1` and now `preventDefault`s mousedown so clicking it can't move
+   focus off the row.
+6. **Resolution overclaim fixed.** Life's caret is documented as what it is — a
+   collapse-all with a clean re-open (areas collapsed), deliberately not a
+   symmetric expand-all.
+
+Cleanups from the same review: ONE `flattenVisible` (Life included in the flat
+list — render, ARIA coordinates, and keyboard order all drive off the same
+list; the container no longer computes its own copy — the view owns focus and
+the keyboard machine, since focus is a view concern); `isArea` is an explicit
+`TreeRow` prop (was inferred from accent-prop presence); `onAddChild`/`onDelete`
+are optional (the Life root passes none instead of no-op stubs).
 
 ### Deferred / not in this pass
 

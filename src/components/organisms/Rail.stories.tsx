@@ -8,26 +8,40 @@ const node = (
   type: string,
   title: string,
   children: RailNode[] = [],
-  order = 0
-): RailNode => ({ id, parentId: null, type, title, order, children })
+  order = 0,
+  parentId: string | null = null
+): RailNode => ({ id, parentId, type, title, order, children })
 
 /** A small realistic tree: three areas (one nested), one free-floating leaf. */
 const TREE: RailNode[] = [
   node('health', 'area', 'Health', [
-    node('sleep', 'page', 'Sleep'),
-    node('marathon', 'project', 'Marathon Training'),
+    node('sleep', 'page', 'Sleep', [], 0, 'health'),
+    node('marathon', 'project', 'Marathon Training', [], 1, 'health'),
   ]),
   node(
     'personal',
     'area',
     'Personal',
     [
-      node('food', 'area', 'Food', [node('recipes', 'page', 'Recipes')]),
-      node('trips', 'page', 'Trips'),
+      node(
+        'food',
+        'area',
+        'Food',
+        [node('recipes', 'page', 'Recipes', [], 0, 'food')],
+        0,
+        'personal'
+      ),
+      node('trips', 'page', 'Trips', [], 1, 'personal'),
     ],
     1
   ),
-  node('creativity', 'area', 'Creativity', [node('shelf', 'page', 'Walnut Shelf')], 2),
+  node(
+    'creativity',
+    'area',
+    'Creativity',
+    [node('shelf', 'page', 'Walnut Shelf', [], 0, 'creativity')],
+    2
+  ),
   node('scratch', 'page', 'Scratchpad', [], 3),
 ]
 
@@ -50,15 +64,12 @@ const meta = {
     busyId: null,
     isLoading: false,
     isEmpty: false,
-    focusedId: null,
     onSelect: fn(),
     onToggle: fn(),
     onAddChild: fn(),
     onDelete: fn(),
     onLife: fn(),
     onToggleLife: fn(),
-    onFocusRow: fn(),
-    onKeyDown: fn(),
   },
 } satisfies Meta<typeof RailView>
 
@@ -100,6 +111,25 @@ export const Expanded: Story = {
     await expect(canvas.getByText('Trips')).toBeInTheDocument()
     // nested sub-area folder is itself collapsed
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
+  },
+}
+
+/** ARIA coordinates: levels and sibling positions come from the flattened tree. */
+export const AriaCoordinates: Story = {
+  args: { expanded: new Set(['health']) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const life = canvas.getByRole('treeitem', { name: /Life/ })
+    await expect(life).toHaveAttribute('aria-level', '1')
+    await expect(life).toHaveAttribute('aria-setsize', '1')
+    const health = canvas.getByRole('treeitem', { name: /Health/ })
+    await expect(health).toHaveAttribute('aria-level', '2')
+    await expect(health).toHaveAttribute('aria-posinset', '1')
+    await expect(health).toHaveAttribute('aria-setsize', '4')
+    const sleep = canvas.getByRole('treeitem', { name: /Sleep/ })
+    await expect(sleep).toHaveAttribute('aria-level', '3')
+    await expect(sleep).toHaveAttribute('aria-posinset', '1')
+    await expect(sleep).toHaveAttribute('aria-setsize', '2')
   },
 }
 
@@ -148,7 +178,7 @@ export const Interactions: Story = {
   },
 }
 
-/** The Life root's caret is a collapse-all / expand-all for the whole tree. */
+/** The Life root's caret is a collapse-all for the whole tree. */
 export const LifeCaretCollapsesAll: Story = {
   play: async ({ canvas, args }) => {
     const life = canvas.getByRole('treeitem', { name: /Life/ })
@@ -158,12 +188,21 @@ export const LifeCaretCollapsesAll: Story = {
   },
 }
 
-/** Hover CRUD is present per row (revealed on hover; always in the a11y tree). */
+/**
+ * Hover CRUD is present per row, revealed on hover / focus-within — and the
+ * controls are REAL tab stops (ticket-27 keyboard reachability): no
+ * tabindex=-1 on ＋/×.
+ */
 export const HoverCrud: Story = {
   play: async ({ canvas, args }) => {
-    await userEvent.click(canvas.getByRole('button', { name: 'Add sub-page to Health' }))
+    const add = canvas.getByRole('button', { name: 'Add sub-page to Health' })
+    const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
+    // reachable by keyboard: not opted out of the tab order
+    await expect(add).not.toHaveAttribute('tabindex', '-1')
+    await expect(del).not.toHaveAttribute('tabindex', '-1')
+    await userEvent.click(add)
     await expect(args.onAddChild).toHaveBeenCalledWith('health')
-    await userEvent.click(canvas.getByRole('button', { name: 'Delete Scratchpad' }))
+    await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('scratch')
     // the Life root has no CRUD affordances
     await expect(canvas.queryByRole('button', { name: /Delete Life/ })).not.toBeInTheDocument()
@@ -171,26 +210,38 @@ export const HoverCrud: Story = {
 }
 
 /**
- * Keyboard nav (WAI-ARIA tree): a single roving tab stop; arrow keys move it.
- * The focused row is the one tabbable treeitem; pressing an arrow raises the
- * key to the container's handler.
+ * Keyboard nav (WAI-ARIA tree): a single roving tab stop that arrow keys move
+ * for real — ArrowDown walks Life → Health; Delete on a focused row raises
+ * onDelete (same confirm/undo path as ×); + raises onAddChild.
  */
 export const KeyboardNav: Story = {
-  args: { focusedId: 'health' },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
+    const life = canvas.getByRole('treeitem', { name: /Life/ })
     const health = canvas.getByRole('treeitem', { name: /Health/ })
-    // exactly the focused row is the tab stop
-    await expect(health).toHaveAttribute('tabindex', '0')
-    await expect(canvas.getByRole('treeitem', { name: /Scratchpad/ })).toHaveAttribute(
-      'tabindex',
-      '-1'
-    )
-    health.focus()
+
+    // exactly one tab stop at rest: the Life root
+    await expect(life).toHaveAttribute('tabindex', '0')
+    await expect(health).toHaveAttribute('tabindex', '-1')
+
+    // ArrowDown moves the roving focus to the first area — for real
+    life.focus()
     await userEvent.keyboard('{ArrowDown}')
-    await expect(args.onKeyDown).toHaveBeenCalled()
-    const [, event] = (args.onKeyDown as ReturnType<typeof fn>).mock.calls.at(-1)!
-    await expect((event as KeyboardEvent).key).toBe('ArrowDown')
+    await expect(health).toHaveAttribute('tabindex', '0')
+    await expect(health).toHaveFocus()
+    await expect(life).toHaveAttribute('tabindex', '-1')
+
+    // ArrowRight on a closed folder expands it (raised to the container)
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(args.onToggle).toHaveBeenCalledWith('health')
+
+    // Delete on the focused row deletes it through the shared path
+    await userEvent.keyboard('{Delete}')
+    await expect(args.onDelete).toHaveBeenCalledWith('health')
+
+    // + adds a child to the focused row
+    await userEvent.keyboard('+')
+    await expect(args.onAddChild).toHaveBeenCalledWith('health')
   },
 }
 
