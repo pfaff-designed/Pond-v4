@@ -6,7 +6,7 @@ import type { OverviewModel } from '@/lib/pages/overview'
 
 const MODEL: OverviewModel = {
   focal: '7',
-  focalCaption: 'pages within, at a glance.',
+  focalCaption: '7 pages within, 3 tucked deeper.',
   cards: [
     {
       id: 'sleep',
@@ -79,7 +79,7 @@ export const Life: Story = {
     accent: undefined,
     model: {
       focal: '23',
-      focalCaption: 'pages across your life.',
+      focalCaption: '23 pages across your life, 12 of them in Personal.',
       cards: [
         {
           id: 'health',
@@ -112,7 +112,9 @@ export const Life: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('23')).toBeInTheDocument()
-    await expect(canvas.getByText('pages across your life.')).toBeInTheDocument()
+    await expect(
+      canvas.getByText('23 pages across your life, 12 of them in Personal.')
+    ).toBeInTheDocument()
     await expect(canvas.getByText('Health')).toBeInTheDocument()
   },
 }
@@ -164,7 +166,7 @@ export const Empty: Story = {
   args: {
     model: {
       focal: '0',
-      focalCaption: 'nothing inside yet — add a page, or ask Pond.',
+      focalCaption: 'Nothing here yet.',
       cards: [],
     },
   },

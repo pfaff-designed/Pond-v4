@@ -5,8 +5,13 @@
  *
  * Counting rule (ticket-25): a *content page* is any node whose type !== 'area'.
  * Areas are the shell (rail folders); every headline count excludes them. Where
- * direct children and deeper descendants differ, the caption says so explicitly
- * ("2 pages · 1 nested").
+ * direct children and deeper descendants differ, the CARD caption says so
+ * explicitly ("2 pages · 1 nested").
+ *
+ * Focal caption voice (ticket-33): the focal numeral stays the TOTAL content
+ * pages; its caption speaks the breakdown like a person ("1 page, tucked in
+ * Creativity." / "4 pages across your life, 3 of them in Health."). The phrasing
+ * lives in `phraseFocalCaption`, table-tested below.
  */
 
 import {
@@ -15,6 +20,7 @@ import {
   childCards,
   ancestorPath,
   insideLabel,
+  phraseFocalCaption,
   timeAgo,
 } from '@/lib/pages/overview'
 import type { PageRow } from '@/lib/pages/tree'
@@ -74,9 +80,9 @@ describe('areaOverview', () => {
   it('counts only content pages in the focal numeral (areas excluded), cards per direct child', () => {
     const model = areaOverview(ROWS, 'health', NOW)
     expect(model.focal).toBe('3') // sleep + marathon + week-1 (all non-areas)
-    // 2 direct (sleep, marathon) ≠ 3 total → the focal caption spells the split
-    // out, so the focal "3" is never bigger than the two cards can explain.
-    expect(model.focalCaption).toBe('2 pages · 1 nested within.')
+    // 2 direct (sleep, marathon), 1 more (week-1) nested deeper → the focal 3
+    // reads human, and the caption names what's tucked below the visible cards.
+    expect(model.focalCaption).toBe('3 pages within, 1 tucked deeper.')
     expect(model.cards.map((c) => c.title)).toEqual(['Sleep', 'Marathon Training'])
   })
 
@@ -88,12 +94,12 @@ describe('areaOverview', () => {
     ]
     const model = areaOverview(flat, 'area', NOW)
     expect(model.focal).toBe('2')
-    expect(model.focalCaption).toBe('pages within, at a glance.')
+    expect(model.focalCaption).toBe('2 pages within.')
   })
 
-  it('a single flat page reads the singular at-a-glance caption', () => {
+  it('a single flat page reads the singular caption', () => {
     const one = [row('area', null, 'area', 'Area'), row('a', 'area', 'page', 'A')]
-    expect(areaOverview(one, 'area', NOW).focalCaption).toBe('page within, at a glance.')
+    expect(areaOverview(one, 'area', NOW).focalCaption).toBe('1 page within.')
   })
 
   it('card stats count content descendants; nested phrasing when direct != total', () => {
@@ -108,7 +114,7 @@ describe('areaOverview', () => {
   it('an empty area gets the quiet empty caption and no cards', () => {
     const model = areaOverview(ROWS, 'personal', NOW)
     expect(model.focal).toBe('0')
-    expect(model.focalCaption).toBe('nothing inside yet — add a page, or ask Pond.')
+    expect(model.focalCaption).toBe('Nothing here yet.')
     expect(model.cards).toEqual([])
   })
 
@@ -128,8 +134,8 @@ describe('areaOverview', () => {
     const model = areaOverview(rows, 'personal', NOW)
     // recipes + trips; the food area itself is not a content page
     expect(model.focal).toBe('2')
-    // 1 direct content child (trips — food is an area) · 1 nested (recipes)
-    expect(model.focalCaption).toBe('1 page · 1 nested within.')
+    // 1 direct content child (trips — food is an area), recipes tucked deeper
+    expect(model.focalCaption).toBe('2 pages within, 1 tucked deeper.')
     // the food card counts recipes as its 1 direct content page
     const food = childCards(rows, 'personal', NOW).find((c) => c.id === 'food')!
     expect(food.stat).toBe('1')
@@ -142,21 +148,24 @@ describe('lifeOverview', () => {
     const model = lifeOverview(ROWS, NOW)
     // 6 rows − 2 areas (health, personal) = 4 content pages
     expect(model.focal).toBe('4')
-    // 1 top-level content page (scratch) ≠ 4 total → explicit split: the "1
-    // page" is the top-level leaf (its own card shows stat 0 — nothing inside
-    // it), the "3 nested" live inside the top-level cards.
-    expect(model.focalCaption).toBe('1 page · 3 nested across your life.')
+    // The focal 4 reads human; the caption names the concentration — Health holds
+    // 3 of the 4 (sleep + marathon + week-1), a clear plurality.
+    expect(model.focalCaption).toBe('4 pages across your life, 3 of them in Health.')
     expect(model.cards.map((c) => c.title)).toEqual(['Health', 'Personal', 'Scratchpad'])
   })
 
-  it('the caption split reconciles the focal with the cards: nested = sum of card stats', () => {
-    // A top-level content page counts 1 in the focal but its card stat counts
-    // only what's INSIDE it (0 for a leaf) — the "N pages · M nested" split is
-    // what makes this honest: N = top-level pages, M = Σ card stats.
+  it('the focal reconciles with the cards: total = top-level pages + Σ card stats', () => {
+    // Focal semantics moved to total-with-breakdown-caption in ticket-33: the
+    // focal is the TOTAL content pages, not the top-level count. The math still
+    // reconciles, though — every content page is either top-level (its own card,
+    // stat counting only what's inside it) or nested inside exactly one card, so
+    // total = (top-level content pages) + Σ card stats. This guards the focal
+    // number itself; the human caption is table-tested separately.
     const model = lifeOverview(ROWS, NOW)
     const cardSum = model.cards.reduce((sum, c) => sum + Number(c.stat), 0)
     expect(cardSum).toBe(3) // health 3 + personal 0 + scratch 0
-    expect(Number(model.focal)).toBe(1 + cardSum) // 1 top-level page + 3 nested
+    const topLevelContentPages = 1 // scratch (health + personal are areas)
+    expect(Number(model.focal)).toBe(topLevelContentPages + cardSum)
   })
 
   it('the Health card counts its content only: 2 direct · 1 nested', () => {
@@ -176,15 +185,118 @@ describe('lifeOverview', () => {
   it('an empty workspace gets the quiet empty caption', () => {
     const model = lifeOverview([], NOW)
     expect(model.focal).toBe('0')
-    expect(model.focalCaption).toBe('nothing here yet — create a page, or ask Pond.')
+    expect(model.focalCaption).toBe('Nothing here yet.')
     expect(model.cards).toEqual([])
   })
 
-  it('a single content page reads the singular caption', () => {
+  it('a single top-level content page reads "right at the top"', () => {
     const one = [row('note', null, 'page', 'A note', 0)]
     const model = lifeOverview(one, NOW)
     expect(model.focal).toBe('1')
-    expect(model.focalCaption).toBe('page across your life.')
+    expect(model.focalCaption).toBe('1 page, right at the top.')
+  })
+
+  it('a single page tucked in an area reads "tucked in <Area>" (audit finding 10)', () => {
+    // The exact case the audit flagged: one page created inside Creativity read
+    // "1 — 0 pages · 1 nested across your life." — now it reads like a person.
+    const rows = [
+      row('creativity', null, 'area', 'Creativity', 0),
+      row('ceramics', 'creativity', 'page', 'Ceramics Studio Plan', 0),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('1')
+    expect(model.focalCaption).toBe('1 page, tucked in Creativity.')
+  })
+})
+
+describe('phraseFocalCaption — the human voice matrix (ticket-33)', () => {
+  // The focal numeral stays the TOTAL; this engine speaks the breakdown like a
+  // person. The table below IS the spec for the copy — one row per phrasing.
+  // Life rows use `dominant` (direct is —); area rows use `direct` (dominant
+  // is —) — matching the FocalPhrasing union.
+  it.each`
+    label                              | scope     | total | direct | dominant                            | expected
+    ${'empty life'}                    | ${'life'} | ${0}  | ${0}   | ${null}                             | ${'Nothing here yet.'}
+    ${'empty area'}                    | ${'area'} | ${0}  | ${0}   | ${null}                             | ${'Nothing here yet.'}
+    ${'one page, top of life'}         | ${'life'} | ${1}  | ${0}   | ${null}                             | ${'1 page, right at the top.'}
+    ${'one page, tucked in an area'}   | ${'life'} | ${1}  | ${0}   | ${{ name: 'Creativity', count: 1 }} | ${'1 page, tucked in Creativity.'}
+    ${'many, one area dominates'}      | ${'life'} | ${4}  | ${0}   | ${{ name: 'Health', count: 3 }}     | ${'4 pages across your life, 3 of them in Health.'}
+    ${'many, all in one area'}         | ${'life'} | ${4}  | ${0}   | ${{ name: 'Health', count: 4 }}     | ${'4 pages across your life, all in Health.'}
+    ${'many, even spread (no leader)'} | ${'life'} | ${6}  | ${0}   | ${null}                             | ${'6 pages across your life.'}
+    ${'one page in an area'}           | ${'area'} | ${1}  | ${1}   | ${null}                             | ${'1 page within.'}
+    ${'flat area, all direct'}         | ${'area'} | ${3}  | ${3}   | ${null}                             | ${'3 pages within.'}
+    ${'area with a page tucked deep'}  | ${'area'} | ${2}  | ${1}   | ${null}                             | ${'2 pages within, 1 tucked deeper.'}
+    ${'area, several tucked deeper'}   | ${'area'} | ${5}  | ${2}   | ${null}                             | ${'5 pages within, 3 tucked deeper.'}
+  `('$label → "$expected"', ({ scope, total, direct, dominant, expected }) => {
+    const input =
+      scope === 'life'
+        ? { scope: 'life' as const, total, dominant }
+        : { scope: 'area' as const, total, direct }
+    expect(phraseFocalCaption(input)).toBe(expected)
+  })
+
+  it('a lone page with no area at all stays plain ("right at the top")', () => {
+    expect(phraseFocalCaption({ scope: 'life', total: 1, dominant: null })).toBe(
+      '1 page, right at the top.'
+    )
+  })
+})
+
+describe('lifeOverview — dominant-area resolution feeds the caption', () => {
+  it('names no leader when two areas hold equal content (even spread)', () => {
+    // health: sleep + walk (2) · personal: trips + recipes (2) — a tie.
+    const rows = [
+      row('health', null, 'area', 'Health', 0),
+      row('sleep', 'health', 'page', 'Sleep', 0),
+      row('walk', 'health', 'page', 'Walking', 1),
+      row('personal', null, 'area', 'Personal', 1),
+      row('trips', 'personal', 'page', 'Trips', 0),
+      row('recipes', 'personal', 'page', 'Recipes', 1),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('4')
+    expect(model.focalCaption).toBe('4 pages across your life.')
+  })
+
+  it('does not crown a single-page lead among many top-level pages', () => {
+    // 3 top-level leaves + Creativity holding just 1 → no real concentration.
+    const rows = [
+      row('a', null, 'page', 'A', 0),
+      row('b', null, 'page', 'B', 1),
+      row('c', null, 'page', 'C', 2),
+      row('creativity', null, 'area', 'Creativity', 3),
+      row('ceramics', 'creativity', 'page', 'Ceramics', 0),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('4')
+    // Creativity's 1 is not a plurality over the 3 top-level pages → plain total.
+    expect(model.focalCaption).toBe('4 pages across your life.')
+  })
+
+  it('names the clear leader across many pages', () => {
+    const rows = [
+      row('health', null, 'area', 'Health', 0),
+      row('sleep', 'health', 'page', 'Sleep', 0),
+      row('walk', 'health', 'page', 'Walking', 1),
+      row('run', 'health', 'page', 'Running', 2),
+      row('personal', null, 'area', 'Personal', 1),
+      row('trips', 'personal', 'page', 'Trips', 0),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('4')
+    expect(model.focalCaption).toBe('4 pages across your life, 3 of them in Health.')
+  })
+
+  it('reads "all in <Area>" when every page lives in the one area', () => {
+    const rows = [
+      row('health', null, 'area', 'Health', 0),
+      row('sleep', 'health', 'page', 'Sleep', 0),
+      row('walk', 'health', 'page', 'Walking', 1),
+      row('personal', null, 'area', 'Personal', 1),
+    ]
+    const model = lifeOverview(rows, NOW)
+    expect(model.focal).toBe('2')
+    expect(model.focalCaption).toBe('2 pages across your life, all in Health.')
   })
 })
 
