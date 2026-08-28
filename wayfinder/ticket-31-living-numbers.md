@@ -50,35 +50,54 @@ tables add up on the page; bound numbers count up.
 
 ### 1. Same-batch bindings — symbolic refs (closes t23's deferred item)
 
-A metric can now bind, in ONE `changes[]` batch, to a checklist/table created in
-the same batch — the AI no longer has to split it across two turns.
+A metric can now bind, in ONE batch, to a checklist/table created in the same
+batch — in BOTH authoring surfaces (propose_changes and create_page). The AI no
+longer has to split it across two turns.
 
-- **Ref scheme.** The t16 create op carries an optional batch-local `key`
-  (`{ op: 'create', key: 'chores', data }`); a metric's `source` is now a Zod
-  UNION — `{ blockId, kind }` (existing block) **or** `{ ref, kind }` (a `key`
-  emitted in the same batch). Exactly one side; the union forbids neither/both
-  (a stray `ref` alongside `blockId` is stripped to the safe blockId form).
-- **Client resolves at accept time, single pass.** `pages/edits.applyProposedChanges`
-  now pre-mints one id per create op FIRST (so a metric can ref a create that
-  appears LATER in the array), builds a `key → minted-id` map, then rewrites every
-  `source.ref` → the real `blockId` before hydration
-  (`modules/same-batch-refs.resolveSourceRef`). **Unknown ref** (its create was
-  rejected, or the key was never emitted) → the whole `source` is dropped, so the
-  metric falls back to its manual `value` and **never dangles**. What persists is
-  ALWAYS the ordinary `{ blockId, kind }` form — a `ref` never reaches storage, so
-  t23's serialize honesty holds (post-accept a ref-bound metric is a normal blockId
-  binding).
-- **Catalog teaching.** The metric descriptor now teaches the `key`/`ref` pairing
-  and says the AI can and SHOULD create a checklist + its bound metric together.
-  `create_page` has no `key` mechanism (its blocks carry no keys) — a stray `ref`
-  there resolves against an empty map and drops cleanly; same-batch binding is a
-  `propose_changes` affordance.
-- **Jest**: `same-batch-refs.test.ts` (resolver in isolation + end-to-end through
-  `applyProposedChanges`: the core checklist+metric proof, a ref to a LATER create,
-  unknown-ref drop, partial-accept where the source create is rejected → binding
-  falls back manual, and a resolvable-ref-but-malformed metric still skipped by the
-  accept gate). `ai-composition.test.ts` extended (keyed create, ref source,
-  both-keys→blockId).
+- **Ref scheme.** A create — a propose_changes `create` op OR a create_page block
+  entry — carries an optional batch-local `bindKey` (`{ op: 'create', bindKey:
+'chores', data }` / a `bindKey` field on the block entry). A metric's EMIT-time
+  `source` is a union — `{ blockId, kind }` (existing block) or `{ ref, kind }` (a
+  `bindKey` in the same batch). The PERSISTED `metricSourceSchema` is **blockId
+  only** (emit/persisted split, per the t21 precedent): an unresolved `ref` FAILS
+  `blockSchema` validation in `hydrateBlock` and is skipped — "a ref never reaches
+  storage" is structural, not convention. A stray `ref` alongside `blockId` is
+  stripped to the safe blockId form (union order).
+- **Accept-time resolution** (`modules/same-batch-refs.ts`): `collectBatchRefIds`
+  builds the `bindKey → minted-id` map over the **FULL proposal batch** (not just
+  the clicked subset) — mapping a key ONLY if its create's data passes a validation
+  probe (a create that will be skipped can never be a binding target) and was not
+  explicitly REJECTED (rejection state read from the t19 resolutions envelope).
+  `resolveSourceRef` then rewrites each `source.ref` → the mapped `blockId` before
+  hydration; an unknown ref drops the whole `source` (metric lands manual, never
+  dangles). Chained key→key bindings are deliberately unsupported.
+- **Per-change accepts stay consistent.** Minted ids are remembered per proposal in
+  a caller-owned `refIds` record (AITerminal holds one per toolCallId, in a ref):
+  accept the checklist then the metric → the metric binds to the landed id; accept
+  the metric FIRST → it binds to the id RESERVED for the pending checklist, which
+  then lands with that same id, healing the binding. The memory is session-scoped
+  by design — after a reload a later ref degrades to the clean manual fallback.
+- **create_page parity** (review fix — the original audit finding was exactly a
+  create_page metric that couldn't bind to its own checklist). `blocks` entries
+  accept `bindKey` via `createPageBlockSchema` — a dedicated discriminated union
+  with `bindKey` extended onto every member (NOT an intersection: `allOf` would
+  clash with the branches' `additionalProperties: false` in the derived JSON tool
+  schema). `hydrateProposalBlocks` runs the same collect+resolve pass; `bindKey`
+  is authoring-only and is stripped by schema validation before persisting. The
+  t21 pipe-table lint is re-applied on the keyed text branch.
+- **Catalog teaching matches reality** (review fix): the metric descriptor teaches
+  the `bindKey`/`ref` pairing and names BOTH surfaces (propose_changes op,
+  create_page block entry); the create_page `blocks` field description teaches it
+  too. Pinned by jest so a catalog edit can't silently reopen the
+  teach-where-it-drops gap.
+- **Jest**: `same-batch-refs.test.ts` — resolver pieces in isolation
+  (`resolveSourceRef`, `collectBatchRefIds` incl. validation-probe and rejected-key
+  exclusion, persisted-schema-rejects-ref) + end-to-end through BOTH accept paths:
+  the core checklist+metric proof, ref to a LATER create, split accepts across
+  calls in both orders, rejected-source fallback, malformed-keyed-source (phantom
+  fix), malformed metric still gated, create_page born-live page + unknown-ref
+  drop. `ai-composition.test.ts` — keyed create, ref source, both-keys→blockId,
+  `createPageBlockSchema`, catalog pins.
 
 ### 2. Table sums
 
@@ -94,7 +113,9 @@ the same batch — the AI no longer has to split it across two turns.
   their number; junk/blank/lone-dash → null and is SKIPPED (never counted as 0).
   `sumColumn` totals only the cells that parsed. Serialize appends the total so the
   AI's context + embeddings match the page. Catalog teaches enabling it for
-  budget-shaped tables. Hard-fenced in `table-sum.test.ts`.
+  budget-shaped tables. Hard-fenced in `table-sum.test.ts`. All display formatting —
+  including the shared `$`/`%` affordance detection — lives in `sum.ts` with the
+  parser (review cleanup), so the view holds no cell-parsing knowledge.
 
 ### 3. Bound metrics animate
 
@@ -118,21 +139,50 @@ story test) read one stable string while digits animate.
   left untouched. No ticket-31 console errors (only a transient Supabase
   `ERR_NETWORK_CHANGED` on a title-save, unrelated).
 
+### Review-fix round (2026-08-28, same day)
+
+/code-review traced the mechanism sound and passed the aesthetic ("Press-grade
+restraint") with four must-fixes, all shipped:
+
+1. **create_page catalog gap (audit bug reborn)** — the catalog taught key/ref
+   binding while create_page silently dropped refs. Fixed on BOTH ends: create_page
+   blocks now genuinely support `bindKey` (see §1), and the catalog names both
+   surfaces explicitly — pinned by jest.
+2. **Per-change accept lost bindings** — refs used to resolve per Accept click.
+   Now resolved against the FULL stamped batch with per-proposal id memory
+   (`refIds`), so split accepts bind in either order (jest: both orders).
+3. **Phantom-blockId dangle** — a keyed create that failed validation could still
+   be mapped, persisting a binding to an id that never lands. `collectBatchRefIds`
+   now maps only creates that pass a validation probe (jest: malformed keyed
+   source → binding drops, metric lands manual).
+4. **Emit/persisted schema split** — the persisted `metricSourceSchema` is blockId
+   only; the ref form lives solely in the emit union (`ai-composition`). A missed
+   resolve now fails validation instead of persisting a ref (jest fence).
+
+Cleanups: `key`→`bindKey` (self-describing); `formatTotal` moved into `sum.ts`
+(all cell-encoding knowledge in one module); NumberFlow mock comment no longer
+overclaims (the story asserts the VALUE through the real element; the animation is
+verified by eye); `sumIndex!` assertion removed (footer resolved in one helper).
+
 ### Validation
 
-`npm run typecheck` clean. `npm test` → 37 suites / 389 tests pass. `test-storybook`
-→ 84 pass (incl. metric BoundLive count-up on a real NumberFlow, table `SumFooter` +
+`npm run typecheck` clean. `npm test` → 37 suites / 404 tests pass. `test-storybook`
+→ 84 pass (incl. metric BoundLive value-through-real-NumberFlow, table `SumFooter` +
 `SumFooterLiveEdit`). Lint: every file this ticket touched is clean; repo-wide count
 unchanged from `main` (pre-existing problems all in `src/components/charts/` +
 `src/app/proto/`).
 
 ### Deferred / boundaries
 
-- **create_page same-batch binding** — no `key` mechanism there (its blocks carry no
-  keys); a `ref` inside create_page drops cleanly. Fold in if a real case wants a
-  bound metric scaffolded at page-creation time (would need per-block keys on the
-  create_page blocks array).
 - **Range→midpoint** is the documented choice; a "min/max/first" policy could be a
-  per-column option later.
+  per-column option later. Accepted quirk: a **date-shaped cell** ("2026-08-28",
+  "3-5 Jun") parses as a range → midpoint and would contribute a number; don't
+  point `sumColumn` at date columns (the AI is taught money/quantity columns).
+- **refIds memory is session-scoped** — a reload between split per-change accepts
+  loses the reservation; a later ref then degrades to the clean manual fallback
+  (documented in `same-batch-refs.ts`). Persisting it in the t19 resolutions
+  envelope is the upgrade path if this ever bites.
+- **Chained key→key bindings** (a keyed metric that itself refs another key) are
+  unsupported — the validation probe treats an unresolved ref as invalid.
 - Table **column-predicate** metric bindings (t23's other deferred `kind`) still
   open — orthogonal to this ticket.

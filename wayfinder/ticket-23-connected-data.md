@@ -154,11 +154,12 @@ StaleSource). `npm run lint` has 80 pre-existing problems, all in
   natural next `kind` but needs a column/value selector in the schema and picker.
 - **Same-batch binding** — ~~see the boundary above; would need a symbolic-ref
   scheme resolved at accept-time hydrate.~~ **CLOSED by ticket-31 (2026-08-28)**:
-  a `create` op may carry a batch-local `key`, a metric's `source` may name it via
-  `{ ref, kind }`, and `applyProposedChanges` resolves ref→minted-id in a single
-  accept-time pass (unknown ref → binding dropped, metric falls back manual). What
-  persists is always the `{ blockId, kind }` form, so the serialize honesty above
-  is untouched.
+  a create (a propose_changes `create` op or a create_page block entry) may carry a
+  batch-local `bindKey`, a metric's emit-time `source` may name it via
+  `{ ref, kind }`, and the accept paths resolve ref→minted-id (unknown/rejected/
+  invalid ref → binding dropped, metric falls back manual). The PERSISTED metric
+  source schema stays blockId-only, so an unresolved ref fails validation rather
+  than reaching storage — the serialize honesty above is untouched, structurally.
 - **Authoring discipline** (teach the AI one-canonical-structure-per-fact) is
   complementary and still worth folding into the catalog/prompt work; bindings
   make the redundant-representation case survivable, discipline would avoid it.
