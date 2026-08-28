@@ -133,6 +133,32 @@ export const WithAddContent: Story = {
   },
 }
 
+/**
+ * A renamable area overview (ticket-26): the kicker is an inline click-to-rename
+ * field. Typing + Enter commits via onRenameKicker; Escape abandons the edit;
+ * a page must be renamable from every surface it renders as.
+ */
+export const EditableTitle: Story = {
+  args: { onRenameKicker: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const field = canvas.getByRole('textbox', { name: /rename page/i })
+    await expect(field).toHaveValue('Health')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Fitness{Enter}')
+    await expect(args.onRenameKicker).toHaveBeenCalledWith('Fitness')
+    await expect(args.onRenameKicker).toHaveBeenCalledTimes(1)
+
+    // Escape reverts — the edit is abandoned, NOT committed. (Regression guard:
+    // Escape blurs the field, and blur fires its commit synchronously with the
+    // stale edited draft still in the closure — it must not perform the rename.)
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Abandoned{Escape}')
+    await expect(args.onRenameKicker).toHaveBeenCalledTimes(1)
+    await expect(field).toHaveValue('Health')
+  },
+}
+
 /** An empty area: zero focal, no card grid, still calm. */
 export const Empty: Story = {
   args: {

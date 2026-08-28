@@ -19,6 +19,7 @@ import type {
 import { getPage, listPages } from '@/lib/pages/client'
 import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
 import { toParentOptions } from '@/lib/pages/parent-options'
+import { workspaceHref } from '@/lib/pages/nav'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { SavePickerModal } from './SavePickerModal'
@@ -212,8 +213,8 @@ export function AITerminal() {
 
   // The chat AI's creation gesture is now create_page (client-resolved, rendered as
   // a proposal card below) — there is no create_node tool in this path, so useChat
-  // needs no onToolCall handler. The NodeCreationModal stays in the codebase for the
-  // sidebar's manual "New node" affordance, not this terminal.
+  // needs no onToolCall handler. The manual creation gesture is the top bar's ＋
+  // (CreatePageModal, ticket-26), not this terminal.
   const { messages, sendMessage, setMessages, status } = useChat()
   const [input, setInput] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -575,9 +576,7 @@ export function AITerminal() {
         )
         await queryClient.invalidateQueries({ queryKey: ['pages'] })
         await queryClient.invalidateQueries({ queryKey: ['pages', 'list'] })
-        router.push(
-          `/workspace?nodeType=${part.type}&nodeId=${created.id}&nodeName=${encodeURIComponent(part.title)}`
-        )
+        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('create_page failed', err)

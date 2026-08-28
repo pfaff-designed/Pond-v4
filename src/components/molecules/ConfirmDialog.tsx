@@ -16,6 +16,7 @@
  */
 
 import { AlertDialog } from '@base-ui/react/alert-dialog'
+import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog-chrome'
 import { Button, buttonVariants } from '@/components/ui/button'
 
 export interface ConfirmDialogProps {
@@ -43,8 +44,8 @@ export function ConfirmDialog({
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-press-ink/25 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <AlertDialog.Popup className="fixed left-1/2 top-1/2 z-50 w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-press-line bg-press-paper p-6 shadow-2xl outline-none transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
+        <AlertDialog.Backdrop className={dialogBackdropClass} />
+        <AlertDialog.Popup className={`${dialogPopupClass} w-[min(24rem,calc(100vw-2rem))]`}>
           <AlertDialog.Title className="text-base font-semibold text-foreground">
             {title}
           </AlertDialog.Title>

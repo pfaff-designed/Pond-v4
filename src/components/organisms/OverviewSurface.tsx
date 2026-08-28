@@ -10,9 +10,11 @@
  * follow-up with its own grill.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+import { updateTitle } from '@/lib/pages/client'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
@@ -46,9 +48,79 @@ function Rise({
   )
 }
 
+/**
+ * The kicker micro-label above the numeral. Static text when read-only; an
+ * inline click-to-rename field when `onRename` is supplied (ticket-26). Kept
+ * uppercase-mono so a renamed area reads the same resting as a static one, and
+ * the caption ("Health") stays legible while typing lowercase — the CSS
+ * uppercases the display. Enter commits + blurs; Escape reverts; blur commits.
+ */
+function EditableKicker({
+  value,
+  onRename,
+}: {
+  value: string
+  onRename?: (title: string) => void
+}) {
+  const kickerClass = 'font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint'
+  const [draft, setDraft] = useState(value)
+  // Escape blurs to end the edit, and blur normally commits — but an Escape
+  // blur must NOT commit (the whole point is to revert). The blur event fires
+  // synchronously inside the keydown handler, before React re-renders, so the
+  // blur-commit would otherwise read the STALE edited draft from its closure
+  // and perform the rename Escape meant to cancel. This ref flags that one
+  // blur as a revert.
+  const reverting = useRef(false)
+
+  if (!onRename) {
+    return <span className={kickerClass}>{value}</span>
+  }
+  const rename = onRename
+
+  function commit() {
+    if (reverting.current) {
+      reverting.current = false
+      return
+    }
+    const next = draft.trim()
+    // Only persist a genuine change; an empty title is refused (revert to value).
+    if (next && next !== value) rename(next)
+    else setDraft(value)
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        } else if (e.key === 'Escape') {
+          reverting.current = true
+          setDraft(value)
+          e.currentTarget.blur()
+        }
+      }}
+      aria-label="Rename page"
+      className={`${kickerClass} bg-transparent outline-none rounded-sm px-1 -mx-1 min-w-[6ch] hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-body transition-colors`}
+    />
+  )
+}
+
 export interface OverviewSurfaceProps {
   /** Micro-label above the numeral, e.g. the page title or "Life". */
   kicker: string
+  /**
+   * When set, the kicker becomes an inline click-to-rename field (ticket-26):
+   * a page must be renamable from every surface it renders as, and an area's
+   * overview is one such surface. Called with the committed new title on blur or
+   * Enter; a no-op change is ignored by the caller. Omit for non-renamable
+   * surfaces (the Life root), which keep a static label.
+   */
+  onRenameKicker?: (title: string) => void
   /** Muted accent for the kicker dot (an area's hue); omit for Life. */
   accent?: string
   /**
@@ -78,6 +150,7 @@ export interface OverviewSurfaceProps {
 
 export function OverviewSurface({
   kicker,
+  onRenameKicker,
   accent,
   crumbs,
   onNavigateCrumb,
@@ -103,12 +176,24 @@ export function OverviewSurface({
                 style={{ background: accent }}
               />
             )}
+            {/* Breadcrumb trail (ticket-25) with the current node as the tail;
+                when the surface supports rename (ticket-26) the tail is the
+                EditableKicker instead of the static current label. Keyed on
+                value so an external rename (rail/AI) re-seeds the draft. */}
             {showBreadcrumb ? (
-              <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} current={current} />
+              onRenameKicker ? (
+                <span className="flex items-center flex-wrap min-w-0">
+                  <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} />
+                  <span className="font-mono text-[11px] text-press-faint/60 px-1.5 select-none">
+                    ›
+                  </span>
+                  <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
+                </span>
+              ) : (
+                <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} current={current} />
+              )
             ) : (
-              <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint">
-                {kicker}
-              </span>
+              <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
             )}
           </div>
           <div className="flex items-center gap-4">
@@ -204,6 +289,7 @@ export function AreaOverviewPanel({
   onAddContent?: () => void
 }) {
   const openCard = useOpenCard()
+  const queryClient = useQueryClient()
   const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
   const navigateCrumb = useNavigateCrumb()
 
@@ -214,10 +300,21 @@ export function AreaOverviewPanel({
   }, [rows, areaId])
   const crumbs = useMemo(() => ancestorPath(rows, areaId), [rows, areaId])
 
+  // Rename from the overview surface (ticket-26): same updateTitle path the
+  // editor uses, then invalidate ['pages'] so the rail label updates and
+  // ['page'] so the editor title stays in step if it opens this page next.
+  async function handleRename(next: string) {
+    const supabase = createClient()
+    await updateTitle(supabase, areaId, next)
+    await queryClient.invalidateQueries({ queryKey: ['pages'] })
+    await queryClient.invalidateQueries({ queryKey: ['page', areaId] })
+  }
+
   const name = title || 'Untitled'
   return (
     <OverviewSurface
       kicker={name}
+      onRenameKicker={handleRename}
       accent={accent}
       crumbs={crumbs}
       onNavigateCrumb={navigateCrumb}
