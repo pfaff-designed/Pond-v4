@@ -1,19 +1,34 @@
 'use client'
 
 /**
- * The left rail — v85 Clearing chrome harvested into the real app.
+ * The left rail — a true VS Code-grade recursive file tree, rooted at Life
+ * (ticket-28). Elevated to the Press aesthetic: hairline indentation guides,
+ * a calm authored chevron, breathing row rhythm, and the muted sage dot
+ * language.
  *
- * Fully data-driven from the ['pages'] tree: every top-level page is a rail
- * entry — `type='area'` renders as a collapsible folder (caret toggles the
- * folder, the name opens the page), every other type is a plain leaf row.
- * Nothing is hardcoded; the five canonical areas are just seed content.
+ * ONE continuous tree. Life is the root folder at depth 0 — not a separate
+ * header button, but the first `treeitem`. Everything nests under it:
+ * Life › area › page › sub-page, to arbitrary depth. Any node with children is
+ * a folder (disclosure chevron); any leaf is a file. A composite page (blocks
+ * AND children, ticket-22) is a folder that also opens as a document — VS Code's
+ * split: the caret toggles expand, the label opens.
  *
- * Split for Storybook: <RailView> is presentational (all state and mutations
- * raised as props); <Rail> is the container that wires Supabase + React Query
- * and replaces the old Sidebar in the workspace layout.
+ * Life is the workspace root, NOT a row in `pages`: it can't be renamed or
+ * deleted, and its caret is a collapse-all / expand-all for the whole tree.
+ * The data source is unchanged — the `['pages']` query + parent_id tree
+ * (ticket-25's reveal, ticket-27's delete, ticket-26's create all preserved) —
+ * this is a view-layer restructure.
+ *
+ * Split for Storybook: <RailView> is presentational (state + mutations raised
+ * as props); <Rail> is the container that wires Supabase + React Query.
+ *
+ * Keyboard (WAI-ARIA APG tree): a single roving tab stop; ↑/↓ move focus
+ * through visible rows, → expands (or steps into the first child), ← collapses
+ * (or steps out to the parent), Enter/Space open the focused page, Home/End
+ * jump to the first/last visible row.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
@@ -31,8 +46,12 @@ import {
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
+import { TreeRow } from '@/components/molecules/TreeRow'
 
 // ── Tree types + helpers ─────────────────────────────────────────────────────
+
+/** The synthetic id of the Life root — never a real `pages` row. */
+export const LIFE_ID = '__life__'
 
 export interface RailNode {
   id: string
@@ -70,170 +89,72 @@ export function buildTree(rows: PageRow[]): RailNode[] {
   return roots
 }
 
-/** A muted rounded-square dot — the calm way to color-code an area. */
-function KindDot({ color }: { color: string }) {
-  return (
-    <span
-      aria-hidden
-      className="w-[7px] h-[7px] rounded-[2px] flex-shrink-0"
-      style={{ background: color }}
-    />
-  )
+/** A node is a folder if it's an area or has children (composite pages count). */
+export function isFolderNode(node: RailNode): boolean {
+  return node.type === 'area' || node.children.length > 0
 }
 
-const kicker = 'font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint'
-
-// ── Rows ─────────────────────────────────────────────────────────────────────
-
-interface RowCallbacks {
-  onSelect: (node: RailNode) => void
-  onToggle: (id: string) => void
-  onAddChild: (node: RailNode) => void
-  onDelete: (node: RailNode) => void
-}
-
-function RailRow({
-  node,
-  depth,
-  accent,
-  selectedId,
-  pathIds,
-  expanded,
-  busyId,
-  callbacks,
-}: {
+/** A flattened, in-order view of the tree — only rows currently visible given
+ *  `expanded`. Drives keyboard navigation and the roving tab stop. */
+export interface FlatRow {
   node: RailNode
   depth: number
-  accent: string
-  selectedId: string | null
-  pathIds: ReadonlySet<string>
-  expanded: Set<string>
-  busyId: string | null
-  callbacks: RowCallbacks
-}) {
-  const isArea = node.type === 'area'
-  const hasChildren = node.children.length > 0
-  const isExpanded = expanded.has(node.id)
-  const isSelected = node.id === selectedId
-  // An ancestor of the current node — the trail reads at a slightly raised tone,
-  // calmer than the selected row's soft background (ticket-25).
-  const isOnPath = !isSelected && pathIds.has(node.id)
-  const isBusy = node.id === busyId
-  const showCaret = isArea || hasChildren
+  isFolder: boolean
+}
 
-  return (
-    <div className="mb-0.5">
-      <div
-        className={`group flex items-center rounded-[10px] pr-1.5 transition-colors ${
-          isSelected ? 'bg-press-accent-soft' : 'hover:bg-press-accent-wash'
-        }`}
-      >
-        {/* caret — toggles the folder without navigating */}
-        {showCaret ? (
-          <button
-            className={`w-[22px] h-[30px] flex-shrink-0 grid place-items-center text-press-faint hover:text-foreground text-[9px] transition-transform duration-200 ${
-              isExpanded ? 'rotate-90' : ''
-            }`}
-            aria-label={
-              isExpanded
-                ? `Collapse ${node.title || 'Untitled'}`
-                : `Expand ${node.title || 'Untitled'}`
-            }
-            onClick={() => callbacks.onToggle(node.id)}
-          >
-            ▶
-          </button>
-        ) : (
-          <span className="w-[22px] flex-shrink-0" />
-        )}
-
-        {/* name — opens the page. On the path to the current node the tone is
-            raised one step (foreground for areas, body for leaves) so the trail
-            reads in the rail without competing with the selected row. */}
-        <button
-          className={`flex-1 min-w-0 flex items-center gap-2 text-left py-1.5 ${
-            isArea
-              ? `text-[13px] font-semibold ${
-                  isSelected || isOnPath
-                    ? 'text-foreground'
-                    : 'text-press-body hover:text-foreground'
-                }`
-              : `text-[12.5px] ${
-                  isSelected
-                    ? 'text-foreground font-medium'
-                    : isOnPath
-                      ? 'text-press-body hover:text-foreground'
-                      : 'text-press-muted hover:text-foreground'
-                }`
-          }`}
-          data-on-path={isOnPath || undefined}
-          onClick={() => callbacks.onSelect(node)}
-          title={node.title || 'Untitled'}
-        >
-          {isArea && <KindDot color={accent} />}
-          <span className="truncate">{node.title || 'Untitled'}</span>
-        </button>
-
-        {/* hover CRUD — revealed on hover so the resting rail stays calm; also
-            revealed when the row (or a control) has keyboard focus so it's
-            reachable without a pointer (focus-within on the group + focus-visible
-            on the control itself). */}
-        <button
-          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-foreground focus-visible:text-foreground text-sm leading-none px-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30"
-          title="Add sub-page"
-          aria-label={`Add sub-page to ${node.title || 'Untitled'}`}
-          disabled={isBusy}
-          onClick={() => callbacks.onAddChild(node)}
-        >
-          +
-        </button>
-        <button
-          className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm leading-none px-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30"
-          title="Delete page"
-          aria-label={`Delete ${node.title || 'Untitled'}`}
-          disabled={isBusy}
-          onClick={() => callbacks.onDelete(node)}
-        >
-          ×
-        </button>
-      </div>
-
-      {isExpanded && hasChildren && (
-        <div className="ml-[22px]">
-          {node.children.map((child) => (
-            <RailRow
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              accent={accent}
-              selectedId={selectedId}
-              pathIds={pathIds}
-              expanded={expanded}
-              busyId={busyId}
-              callbacks={callbacks}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
+export function flattenVisible(
+  roots: RailNode[],
+  expanded: ReadonlySet<string>,
+  lifeExpanded: boolean
+): FlatRow[] {
+  const out: FlatRow[] = []
+  const walk = (nodes: RailNode[], depth: number) => {
+    for (const node of nodes) {
+      const folder = isFolderNode(node)
+      out.push({ node, depth, isFolder: folder })
+      if (folder && expanded.has(node.id)) walk(node.children, depth + 1)
+    }
+  }
+  // The areas sit at depth 1 under the Life root; shown only when Life is open.
+  if (lifeExpanded) walk(roots, 1)
+  return out
 }
 
 // ── Presentational rail ──────────────────────────────────────────────────────
 
 const NO_PATH: ReadonlySet<string> = new Set()
 
-export interface RailViewProps extends RowCallbacks {
+export interface RailViewProps {
   tree: RailNode[]
   selectedId: string | null
   /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
   pathIds?: ReadonlySet<string>
   expanded: Set<string>
+  /** Whether the Life root is expanded (reveals the whole tree). */
+  lifeExpanded: boolean
   busyId: string | null
   isLoading: boolean
   isEmpty: boolean
-  lifeActive: boolean
+  /** The single roving tab stop; null → default to selection, then Life root. */
+  focusedId: string | null
+  onSelect: (id: string) => void
+  onToggle: (id: string) => void
+  onAddChild: (id: string) => void
+  onDelete: (id: string) => void
   onLife: () => void
+  onToggleLife: () => void
+  onFocusRow: (id: string) => void
+  onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
+}
+
+/** The Life root's mark — a calm sage half-disc, drawn (not a glyph). */
+function LifeMark() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden className="flex-shrink-0">
+      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--press-accent)" strokeWidth="1.2" />
+      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--press-accent)" opacity="0.85" />
+    </svg>
+  )
 }
 
 export function RailView({
@@ -241,64 +162,120 @@ export function RailView({
   selectedId,
   pathIds = NO_PATH,
   expanded,
+  lifeExpanded,
   busyId,
   isLoading,
   isEmpty,
-  lifeActive,
-  onLife,
+  focusedId,
   onSelect,
   onToggle,
   onAddChild,
   onDelete,
+  onLife,
+  onToggleLife,
+  onFocusRow,
+  onKeyDown,
 }: RailViewProps) {
-  const callbacks = { onSelect, onToggle, onAddChild, onDelete }
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+  const setRowRef = useCallback(
+    (id: string) => (el: HTMLDivElement | null) => {
+      if (el) rowRefs.current.set(id, el)
+      else rowRefs.current.delete(id)
+    },
+    []
+  )
+
+  const flat = useMemo(
+    () => flattenVisible(tree, expanded, lifeExpanded),
+    [tree, expanded, lifeExpanded]
+  )
+
+  // The effective roving tab stop: the focused row if it's still visible, else
+  // the selection, else the Life root — always exactly one tabbable row.
+  const visibleIds = useMemo(() => new Set(flat.map((f) => f.node.id)), [flat])
+  const rovingId =
+    focusedId && (focusedId === LIFE_ID || visibleIds.has(focusedId))
+      ? focusedId
+      : selectedId && visibleIds.has(selectedId)
+        ? selectedId
+        : LIFE_ID
+
+  // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
+  // keep firing on the newly focused row.
+  useEffect(() => {
+    if (focusedId) rowRefs.current.get(focusedId)?.focus()
+  }, [focusedId])
+
   return (
-    <aside className="w-[250px] flex-shrink-0 h-full overflow-y-auto px-4 pt-6 pb-8 font-sans">
-      <div className="flex items-baseline gap-2.5 px-2 pb-5">
-        <span className="font-display text-[25px] text-foreground">Pond</span>
+    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pt-6 pb-8 font-sans">
+      <div className="flex items-baseline gap-2.5 px-2 pb-6">
+        <span className="font-display text-[26px] text-foreground">Pond</span>
       </div>
 
-      {/* Life — the top overview page (everything, across your life) */}
-      <div className="mb-4">
-        <button
-          className={`flex items-center gap-[11px] w-full text-left px-2.5 py-2 rounded-[10px] text-sm transition-colors ${
-            lifeActive
-              ? 'bg-press-accent-soft text-foreground font-bold'
-              : 'text-press-muted font-semibold hover:bg-press-accent-soft hover:text-foreground'
-          }`}
-          onClick={onLife}
-        >
-          <span
-            aria-hidden
-            className={`w-4 text-center text-[13px] ${lifeActive ? 'text-press-accent' : 'text-press-faint'}`}
-          >
-            ◒
-          </span>
-          Life
-          <span className={`${kicker} ml-auto`}>all</span>
-        </button>
-      </div>
+      <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
+        {/* Life — the root folder of the whole tree (depth 0). Caret is a
+            collapse-all / expand-all; the label opens the Life overview. */}
+        <TreeRow
+          ref={setRowRef(LIFE_ID)}
+          id={LIFE_ID}
+          title="Life"
+          depth={0}
+          isFolder
+          isExpanded={lifeExpanded}
+          isSelected={selectedId === null}
+          isOnPath={false}
+          isFocused={rovingId === LIFE_ID}
+          isBusy={false}
+          isRoot
+          leading={<LifeMark />}
+          trailing={
+            <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint pr-1 select-none">
+              all
+            </span>
+          }
+          onSelect={onLife}
+          onToggle={onToggleLife}
+          onAddChild={() => {}}
+          onDelete={() => {}}
+          onFocus={onFocusRow}
+          onKeyDown={onKeyDown}
+        />
 
-      <div className={`${kicker} px-2.5 pb-2`}>Pages</div>
-      <nav>
-        {isLoading && <p className="px-2.5 text-xs text-press-faint">Loading…</p>}
-        {!isLoading && isEmpty && (
-          <p className="px-2.5 text-xs text-press-faint">Setting up your workspace…</p>
+        {isLoading && (
+          <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
+            Loading…
+          </p>
         )}
-        {tree.map((node) => (
-          <RailRow
-            key={node.id}
-            node={node}
-            depth={0}
-            accent={pageAccent(node.id)}
-            selectedId={selectedId}
-            pathIds={pathIds}
-            expanded={expanded}
-            busyId={busyId}
-            callbacks={callbacks}
-          />
-        ))}
-      </nav>
+        {!isLoading && isEmpty && (
+          <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
+            Setting up your workspace…
+          </p>
+        )}
+
+        {lifeExpanded &&
+          flat.map(({ node, depth, isFolder }) => (
+            <TreeRow
+              ref={setRowRef(node.id)}
+              key={node.id}
+              id={node.id}
+              title={node.title}
+              depth={depth}
+              isFolder={isFolder}
+              isExpanded={expanded.has(node.id)}
+              isSelected={node.id === selectedId}
+              isOnPath={node.id !== selectedId && pathIds.has(node.id)}
+              isFocused={rovingId === node.id}
+              isBusy={node.id === busyId}
+              accent={node.type === 'area' ? pageAccent(node.id) : undefined}
+              onSelect={onSelect}
+              onToggle={onToggle}
+              onAddChild={onAddChild}
+              onDelete={onDelete}
+              onFocus={onFocusRow}
+              onKeyDown={onKeyDown}
+            />
+          ))}
+      </div>
     </aside>
   )
 }
@@ -310,8 +287,11 @@ export function Rail() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const seededRef = useRef(false)
-  // Area folders start collapsed (the proto's resting state) and open per session.
+  // Area folders start collapsed and open per session; Life starts expanded so
+  // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [lifeExpanded, setLifeExpanded] = useState(true)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   // The subtree-delete confirm (blast-radius modal); null when closed.
   const [confirmTarget, setConfirmTarget] = useState<RailNode | null>(null)
@@ -323,6 +303,16 @@ export function Rail() {
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
+  const nodeById = useMemo(() => {
+    const map = new Map<string, RailNode>()
+    const walk = (nodes: RailNode[]) =>
+      nodes.forEach((n) => {
+        map.set(n.id, n)
+        walk(n.children)
+      })
+    walk(tree)
+    return map
+  }, [tree])
   const selectedNodeId = searchParams.get('nodeId')
 
   // The ancestor ids of the selected node — the rail renders these at a raised
@@ -338,13 +328,9 @@ export function Rail() {
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, an overview card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
-  // the path to the current node so it's revealed and its ancestors highlight.
-  // We reveal a given selection exactly once (tracked by ref) so a manual
-  // re-collapse afterward isn't fought: collapsing a folder changes neither the
-  // selection nor the rows, so this effect stays quiet until you navigate again.
-  // A page created via chat lands in the URL before ['pages'] refetches, so the
-  // effect also depends on `pages` and reveals once the new node's ancestors
-  // become resolvable.
+  // the path to the current node (and Life itself) so it's revealed and its
+  // ancestors highlight. We reveal a given selection exactly once (tracked by
+  // ref) so a manual re-collapse afterward isn't fought.
   const revealedForRef = useRef<string | null>(null)
   useEffect(() => {
     if (!selectedNodeId) {
@@ -356,13 +342,18 @@ export function Rail() {
     if (!pages.some((r) => r.id === selectedNodeId)) return
     const ancestors = ancestorPath(pages, selectedNodeId).map((c) => c.id)
     revealedForRef.current = selectedNodeId
+    // The two reveals below respond to an external navigation (URL ?nodeId, incl.
+    // chat/＋ creation) — open Life and every ancestor folder so the current node
+    // shows. Guarded to fire once per selection; not a derived-state computation.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setLifeExpanded(true)
     if (ancestors.length === 0) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reveals the path in response to an external navigation (URL ?nodeId, incl. chat/＋ creation), guarded to fire once per selection; not a derived-state computation
     setExpanded((prev) => {
       const next = new Set(prev)
       for (const id of ancestors) next.add(id)
       return next
     })
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [selectedNodeId, pages])
 
   // Deferred commits fire up to ~6s after staging — read the selection fresh at
@@ -410,14 +401,14 @@ export function Rail() {
     return result
   }
 
-  async function handleAddChild(node: RailNode) {
-    setBusyId(node.id)
+  async function handleAddChild(id: string) {
+    setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: node.id, type: 'page', title: 'Untitled' })
+        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled' })
       )
       // ensure the parent folder is open so the new child is visible
-      setExpanded((prev) => new Set(prev).add(node.id))
+      setExpanded((prev) => new Set(prev).add(id))
       if (created) navigateTo({ id: created.id, type: 'page', title: 'Untitled' })
     } finally {
       setBusyId(null)
@@ -456,7 +447,9 @@ export function Rail() {
     }
   }
 
-  function handleDelete(node: RailNode) {
+  function handleDelete(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
     // A subtree delete is irreversible and heavy — gate it behind the styled
     // blast-radius confirm. A leaf goes straight to an optimistic-remove + undo
     // toast (deferred commit), no modal.
@@ -465,11 +458,6 @@ export function Rail() {
       return
     }
 
-    // Leaf: surgically drop this one row from the tree cache so it vanishes at
-    // once, open an undo toast, and defer the destructive write. Undo re-inserts
-    // ONLY this row (never a whole snapshot — a snapshot would resurrect other
-    // concurrently-deleted rows) and reconciles with the server, whose row still
-    // exists during the grace window (see the caveat in deferred-commit.ts).
     const removedRow = pages.find((r) => r.id === node.id)
     queryClient.setQueryData<PageRow[]>(['pages'], (rows) => removeRow(rows ?? [], node.id))
     if (selectedNodeId === node.id) router.push('/workspace')
@@ -503,12 +491,93 @@ export function Rail() {
     })
   }
 
+  /** Life's caret: collapse-all (close every area folder) / expand-all toggle. */
+  function handleToggleLife() {
+    setLifeExpanded((prev) => {
+      // Collapsing Life also clears open folders so re-opening starts clean at
+      // the top level (the resting state).
+      if (prev) setExpanded(new Set())
+      return !prev
+    })
+  }
+
   /** Opening a page from the rail also opens its folder (the proto's openArea). */
-  function handleSelect(node: RailNode) {
-    if (node.type === 'area' || node.children.length > 0) {
-      setExpanded((prev) => new Set(prev).add(node.id))
-    }
+  function handleSelect(id: string) {
+    const node = nodeById.get(id)
+    if (!node) return
+    if (isFolderNode(node)) setExpanded((prev) => new Set(prev).add(id))
     navigateTo(node)
+  }
+
+  // ── Keyboard navigation (WAI-ARIA APG tree) ─────────────────────────────────
+  // ↑/↓ move focus through visible rows; → expands or steps into the first
+  // child; ← collapses or steps out to the parent; Enter/Space open; Home/End
+  // jump to the first/last visible row. The Life root is the first row.
+  const flat = useMemo(
+    () => flattenVisible(tree, expanded, lifeExpanded),
+    [tree, expanded, lifeExpanded]
+  )
+  const order = useMemo(() => [LIFE_ID, ...flat.map((f) => f.node.id)], [flat])
+
+  function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
+    const idx = order.indexOf(id)
+    const move = (to: number) => {
+      const clamped = Math.max(0, Math.min(order.length - 1, to))
+      setFocusedId(order[clamped])
+    }
+    const node = id === LIFE_ID ? null : nodeById.get(id)
+    const folder = id === LIFE_ID ? true : node ? isFolderNode(node) : false
+    const isOpen = id === LIFE_ID ? lifeExpanded : expanded.has(id)
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        move(idx + 1)
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        move(idx - 1)
+        break
+      case 'Home':
+        e.preventDefault()
+        move(0)
+        break
+      case 'End':
+        e.preventDefault()
+        move(order.length - 1)
+        break
+      case 'ArrowRight':
+        e.preventDefault()
+        if (folder && !isOpen) {
+          if (id === LIFE_ID) setLifeExpanded(true)
+          else setExpanded((p) => new Set(p).add(id))
+        } else if (folder && isOpen) {
+          move(idx + 1) // step into the first child
+        }
+        break
+      case 'ArrowLeft':
+        e.preventDefault()
+        if (folder && isOpen) {
+          if (id === LIFE_ID) handleToggleLife()
+          else
+            setExpanded((p) => {
+              const n = new Set(p)
+              n.delete(id)
+              return n
+            })
+        } else {
+          // step out to the parent (Life is the parent of top-level areas)
+          const parentId = node?.parentId ?? (id === LIFE_ID ? null : LIFE_ID)
+          if (parentId) setFocusedId(parentId)
+        }
+        break
+      case 'Enter':
+      case ' ':
+        e.preventDefault()
+        if (id === LIFE_ID) router.push('/workspace')
+        else handleSelect(id)
+        break
+    }
   }
 
   const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
@@ -520,15 +589,19 @@ export function Rail() {
         selectedId={selectedNodeId}
         pathIds={pathIds}
         expanded={expanded}
+        lifeExpanded={lifeExpanded}
         busyId={busyId}
         isLoading={isLoading}
         isEmpty={!isLoading && pages.length === 0}
-        lifeActive={!selectedNodeId}
-        onLife={() => router.push('/workspace')}
+        focusedId={focusedId}
         onSelect={handleSelect}
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onLife={() => router.push('/workspace')}
+        onToggleLife={handleToggleLife}
+        onFocusRow={setFocusedId}
+        onKeyDown={handleKeyDown}
       />
       <ConfirmDialog
         open={confirmTarget !== null}
