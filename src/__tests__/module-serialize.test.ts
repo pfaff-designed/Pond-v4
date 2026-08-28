@@ -138,6 +138,37 @@ describe('bound metric serialize (ticket-23 — AI sees what the UI shows)', () 
   })
 })
 
+describe('table sum footer serialize (ticket-31 — AI sees the total the page shows)', () => {
+  const tableSerialize = moduleDescriptors.table.serialize
+  const budget: Extract<Block, { type: 'table' }> = {
+    id: 't1',
+    type: 'table',
+    title: 'Budget',
+    columns: ['Item', 'Cost'],
+    rows: [
+      { id: 'r1', cells: ['Wood', '$120'] },
+      { id: 'r2', cells: ['Screws', '$8 (bought)'] },
+      { id: 'r3', cells: ['Stain', 'TBD'] },
+    ],
+    sumColumn: 1,
+  }
+
+  it('appends the derived column total (lenient parse; junk skipped)', () => {
+    const out = tableSerialize(budget)
+    expect(out).toContain('total Cost: 128')
+  })
+
+  it('omits the total when the summed column has no numbers', () => {
+    const out = tableSerialize({ ...budget, sumColumn: 0 })
+    expect(out).not.toMatch(/total/i)
+  })
+
+  it('a table without sumColumn serializes exactly as before', () => {
+    const out = tableSerialize({ ...budget, sumColumn: undefined })
+    expect(out).not.toMatch(/total/i)
+  })
+})
+
 describe('registry completeness', () => {
   const contentDescriptors = Object.values(moduleDescriptors).filter((d) => d.type !== 'page')
 

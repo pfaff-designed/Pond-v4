@@ -2,6 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
+import { sumColumn as sumTableColumn } from './sum'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view
@@ -17,6 +18,16 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   // missing columns/rows rather than crash the whole tree.
   const columns = data.columns ?? []
   const rows = data.rows ?? []
+
+  // Sum footer (ticket-31). Only when `sumColumn` points at a real column AND at
+  // least one cell parsed to a number — an all-junk column shows no footer rather
+  // than a misleading "0". Recomputed every render so an inline cell edit re-totals
+  // live (the whole block re-renders through onChange).
+  const sumIndex = data.sumColumn
+  const footer =
+    sumIndex !== undefined && sumIndex < columns.length ? sumTableColumn(rows, sumIndex) : null
+  const showFooter = footer !== null && footer.counted > 0
+  const totalDisplay = showFooter ? formatTotal(footer.total, rows, sumIndex!) : null
 
   function patchRow(rowIndex: number, patch: Partial<TableRow>) {
     onChange?.({
@@ -97,6 +108,33 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
             </tr>
           ))}
         </tbody>
+        {showFooter && (
+          <tfoot>
+            <tr className="border-t-2 border-zinc-300">
+              {columns.map((_, ci) => {
+                if (ci === 0) {
+                  return (
+                    <td
+                      key={ci}
+                      className="py-1.5 pr-3 text-[11px] font-medium tracking-[0.08em] text-zinc-400 uppercase"
+                    >
+                      Total
+                    </td>
+                  )
+                }
+                if (ci === sumIndex) {
+                  return (
+                    <td key={ci} className="py-1.5 pr-3 font-semibold text-zinc-900 tabular-nums">
+                      {totalDisplay}
+                    </td>
+                  )
+                }
+                return <td key={ci} className="py-1.5 pr-3" aria-hidden />
+              })}
+              {editable && <td className="w-6" aria-hidden />}
+            </tr>
+          </tfoot>
+        )}
       </table>
       {editable && (
         <button
@@ -109,4 +147,25 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
       )}
     </div>
   )
+}
+
+/**
+ * Format a column total, carrying the column's own currency prefix / percent suffix
+ * when the numeric cells consistently use one — so a total of $ prices reads "$1,299"
+ * and a % column reads "35%". Falls back to a plain grouped number. Purely cosmetic:
+ * the value is already the parser's sum.
+ */
+function formatTotal(total: number, rows: readonly TableRow[], columnIndex: number): string {
+  const cells = rows.map((r) => r.cells[columnIndex] ?? '').filter((c) => /\d/.test(c))
+  const grouped = total.toLocaleString(undefined, { maximumFractionDigits: 2 })
+
+  // A leading currency symbol shared by every numeric cell → prefix the total.
+  const prefixMatch = cells[0]?.trim().match(/^\s*([$£€¥])/)
+  const prefix = prefixMatch?.[1]
+  if (prefix && cells.every((c) => c.trim().startsWith(prefix))) return `${prefix}${grouped}`
+
+  // A trailing % on every numeric cell → suffix the total.
+  if (cells.length > 0 && cells.every((c) => /%\s*$/.test(c))) return `${grouped}%`
+
+  return grouped
 }

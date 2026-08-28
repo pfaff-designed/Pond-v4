@@ -85,6 +85,48 @@ export const AddAndRemoveRows: Story = {
   },
 }
 
+/** A budget table with a sum footer (ticket-31): the Cost column totals in a footer. */
+const budget: TableBlock = {
+  id: 'tbl-3',
+  type: 'table',
+  title: 'Ceramics studio budget',
+  columns: ['Item', 'Cost'],
+  rows: [
+    { id: 'b1', cells: ['Wheel', '$459 (bought!)'] },
+    { id: 'b2', cells: ['Kiln', '$1,200'] },
+    { id: 'b3', cells: ['Clay (bulk)', '$85'] },
+    { id: 'b4', cells: ['Glaze set', '$20–60'] }, // midpoint 40
+    { id: 'b5', cells: ['Apron', 'TBD'] }, // skipped, not counted as 0
+  ],
+  sumColumn: 1,
+}
+
+/** Read-only sum footer: totals the money column leniently, junk skipped. */
+export const SumFooter: Story = {
+  args: { data: budget },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Total')).toBeInTheDocument()
+    // 459 + 1200 + 85 + 40 = 1784, "TBD" skipped → carries the $ prefix.
+    await expect(canvas.getByText('$1,784')).toBeInTheDocument()
+  },
+}
+
+/** Editable sum footer re-totals live as a cell is edited (ticket-31). */
+export const SumFooterLiveEdit: Story = {
+  args: { data: budget },
+  render: (args) => <StatefulTable data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('$1,784')).toBeInTheDocument()
+    const kiln = canvas.getByLabelText('Cost, row 2')
+    await userEvent.clear(kiln)
+    await userEvent.type(kiln, '$1,000')
+    // 459 + 1000 + 85 + 40 = 1584 — the footer re-parsed and re-totalled live.
+    await expect(canvas.getByText('$1,584')).toBeInTheDocument()
+  },
+}
+
 /** Empty table (columns only): read-only shows a quiet placeholder row. */
 export const Empty: Story = {
   args: {
