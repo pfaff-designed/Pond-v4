@@ -30,9 +30,17 @@ import {
   TERMINAL_MAX_HEIGHT,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
+import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/atoms/Markdown'
+import { StageText } from '@/components/atoms/StageText'
+import { pressKickerClass } from '@/components/atoms/press-kicker'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
+import {
+  stageTextForParts,
+  THINKING_STAGE_TEXT,
+  type StagePart,
+} from '@/lib/conversation/stage-text'
 import {
   CreatePageProposalCard,
   TOP_LEVEL_VALUE,
@@ -55,8 +63,11 @@ type CommandResult = 'clear' | 'handoff' | 'save' | null
 const TERMINAL_HEIGHT_KEY = 'pond:terminal-height'
 const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
 // When a proposal card arrives the drawer auto-grows to at least this so the
-// user can review create-page/diff cards without inner scrolling.
-const PROPOSAL_MIN_HEIGHT = 460
+// user can review create-page/diff cards without inner scrolling. Raised from 460
+// for the letterpress skin (ticket-32): the create-page card's display-serif title
+// and roomier chrome added ~30px, and the whole card (header + preview + Save-to +
+// actions) must fit the floor — live-verified against a real create_page proposal.
+const PROPOSAL_MIN_HEIGHT = 500
 
 // Tiny persisted-state helpers: localStorage can throw (privacy modes, quota),
 // and the drawer must degrade to defaults rather than crash.
@@ -430,7 +441,7 @@ export function AITerminal() {
 
   // Drag wins over the floor (ticket-24 review): resizing while the floor pins
   // the drawer records an override for exactly this proposal set, so the drag is
-  // live from the visible height instead of dead until it crosses 460. A new
+  // live from the visible height instead of dead until it crosses the floor. A new
   // proposal (different key) re-arms the floor; resolution falls back to the
   // remembered height on its own.
   const unresolvedKey = unresolvedIds.join(',')
@@ -666,178 +677,241 @@ export function AITerminal() {
     [supabaseClient, queryClient, router]
   )
 
-  const messagesBody = (
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm">
-      {!isReady && <p className="text-press-faint text-xs">Loading…</p>}
-      {isReady && messages.length === 0 && (
-        <p className="text-press-faint text-xs">Start a conversation…</p>
-      )}
-      {messages.map((message) => {
-        const text = message.parts
-          .filter((p) => p.type === 'text')
-          .map((p) => (p as { type: 'text'; text: string }).text)
-          .join('')
-        const changeBatches = (message.parts as Array<{ type: string }>).filter(
-          isProposeChangesPart
-        )
-        const createPageParts = (message.parts as Array<{ type: string }>).filter(isCreatePagePart)
-        // Web-search citations (ticket-29): the route streams `source-url` parts for
-        // each cited result; collect them so the answer carries a Sources row.
-        const sources: Source[] = (
-          message.parts as Array<{
-            type: string
-            sourceId?: string
-            url?: string
-            title?: string
-          }>
-        )
-          .filter((p) => p.type === 'source-url' && typeof p.url === 'string')
-          .map((p, i) => ({
-            sourceId: p.sourceId ?? `${message.id}-src-${i}`,
-            url: p.url!,
-            title: p.title,
-          }))
+  // ── Streaming stage text (ticket-32) ──────────────────────────────────────
+  // A 25–30s generation used to show a bare "…". Derive a human stage line from the
+  // tool-call parts already in the latest assistant message ("reading Ceramics
+  // Studio Plan…", "drafting your page…") — see lib/conversation/stage-text. Page
+  // ids in a read_page part resolve to titles against the loaded pages list. Only
+  // the LATEST assistant message's parts feed the line (an earlier turn's tools are
+  // done), and only while streaming with no visible answer yet does the terminal
+  // render it (below).
+  const resolvePageName = useCallback(
+    (id: string) => allPages.find((p) => p.id === id)?.title,
+    [allPages]
+  )
+  const stageLine = useMemo(() => {
+    if (!isStreaming) return null
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return null
+    return stageTextForParts(last.parts as StagePart[], { resolvePageName })
+  }, [isStreaming, messages, resolvePageName])
+  // The resting stage line yields the moment the reply starts arriving — from then on
+  // the letterpress card is itself the feedback, so no whispered line under it.
+  const lastAssistantHasText = useMemo(() => {
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return false
+    return last.parts.some((p) => p.type === 'text' && (p as { text: string }).text.length > 0)
+  }, [messages])
 
-        return (
-          <div key={message.id} className="space-y-2">
-            {text && (
-              <div className={message.role === 'user' ? 'text-right' : 'text-left'}>
-                {message.role === 'user' ? (
-                  // User text is verbatim — never interpret their keystrokes as markdown.
-                  <span className="inline-block text-sm px-3 py-1.5 rounded max-w-prose whitespace-pre-wrap text-left bg-press-ink text-press-paper">
-                    {text}
-                  </span>
+  // The transcript shares the document's own column — the drawer spans the full
+  // window while the document centers inside <main> (right of the 252px Rail), so a
+  // matching pl-[252px] here makes this max-w-2xl column center over the exact same
+  // region DocumentPanel centers in. One typeset object, not a console bolted under
+  // a document. (Coupled to Rail's w-[252px]; both are the fixed shell metric.)
+  const messagesBody = (
+    <div className="flex-1 overflow-y-auto py-4 pl-[252px]">
+      <div className="mx-auto w-full max-w-2xl space-y-6 px-8">
+        {!isReady && <p className="font-serif text-sm italic text-press-faint">Loading…</p>}
+        {isReady && messages.length === 0 && (
+          <p className="font-serif text-sm italic text-press-faint">
+            Talk with Pond — think out loud, ask, or compose.
+          </p>
+        )}
+        {messages.map((message) => {
+          const text = message.parts
+            .filter((p) => p.type === 'text')
+            .map((p) => (p as { type: 'text'; text: string }).text)
+            .join('')
+          const changeBatches = (message.parts as Array<{ type: string }>).filter(
+            isProposeChangesPart
+          )
+          const createPageParts = (message.parts as Array<{ type: string }>).filter(
+            isCreatePagePart
+          )
+          // Web-search citations (ticket-29): the route streams `source-url` parts for
+          // each cited result; collect them so the answer carries a Sources row.
+          const sources: Source[] = (
+            message.parts as Array<{
+              type: string
+              sourceId?: string
+              url?: string
+              title?: string
+            }>
+          )
+            .filter((p) => p.type === 'source-url' && typeof p.url === 'string')
+            .map((p, i) => ({
+              sourceId: p.sourceId ?? `${message.id}-src-${i}`,
+              url: p.url!,
+              title: p.title,
+            }))
+
+          return (
+            <div key={message.id} className="space-y-3">
+              {text &&
+                (message.role === 'user' ? (
+                  // The user's line is a quiet aside — right-anchored, indented, verbatim
+                  // (never interpret their keystrokes as markdown), calm ink on a faint
+                  // sage wash. NOT a chat bubble competing with the authored reply.
+                  <div className="flex justify-end">
+                    <p className="max-w-[85%] whitespace-pre-wrap rounded-md border-r-2 border-press-accent/40 bg-press-accent-wash px-3.5 py-2 text-right font-serif text-[0.95rem] leading-[1.55] text-press-body">
+                      {text}
+                    </p>
+                  </div>
                 ) : (
-                  // Assistant answers author in markdown everywhere; render it typeset
-                  // (ticket-20). Streaming-safe: `text` grows token-by-token and
-                  // react-markdown re-parses each partial string on every render.
-                  <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
+                  // The AI reply is set as full typeset prose in the document's own
+                  // measure — letter-style correspondence, not a card in a console. A
+                  // press-hair rule with a small-caps "Pond" attribution heads each
+                  // reply; the prose below is the same Press serif the page reads in.
+                  // Arrives with one calm breath (press-arrive). Streaming-safe: `text`
+                  // grows token-by-token and react-markdown re-parses each partial
+                  // (ticket-20).
+                  <div className="press-arrive">
+                    <div className="mb-2.5 flex items-center gap-3">
+                      <span className={pressKickerClass}>Pond</span>
+                      <span aria-hidden className="h-px flex-1 bg-press-hair" />
+                    </div>
                     <Markdown variant="terminal">{text}</Markdown>
                     {sources.length > 0 && <SourceList sources={sources} />}
                   </div>
-                )}
-              </div>
-            )}
-            {/* Sources can arrive on an assistant message with no text bubble
-                (rare, but the citation should still show). */}
-            {message.role !== 'user' && !text && sources.length > 0 && (
-              <div className="text-left">
-                <div className="inline-block text-sm px-3 py-1.5 rounded max-w-prose text-left bg-press-accent-soft text-foreground">
+                ))}
+              {/* Sources can arrive on an assistant message with no text (rare, but the
+                citation should still show) — same attributed-letter treatment. */}
+              {message.role !== 'user' && !text && sources.length > 0 && (
+                <div className="press-arrive">
+                  <div className="mb-2.5 flex items-center gap-3">
+                    <span className={pressKickerClass}>Pond</span>
+                    <span aria-hidden className="h-px flex-1 bg-press-hair" />
+                  </div>
                   <SourceList sources={sources} />
                 </div>
-              </div>
-            )}
-            {changeBatches.map((part) => {
-              // While the tool input is still streaming, `part.input` is partially
-              // parsed JSON — block payloads can be missing required fields, and the
-              // module views render them unvalidated. Wait for the complete input.
-              if (part.state === 'input-streaming') return null
-              const rawChanges = part.input?.changes ?? []
-              // The stamped target (ticket-30), computed once: `crossPage` is set
-              // when the batch resolved to a real page other than the open one.
-              const target = changeTargets[part.toolCallId]
-              const targetMissing = target?.missing === true
-              const crossPage = target && !targetMissing && target.nodeId !== nodeId ? target : null
-              // Cross-page edit: diff against the TARGET page's blocks; fall back
-              // to the open page's blocks for a same-page proposal.
-              const targetBlocks = crossPage
-                ? (blocksForTarget.get(crossPage.nodeId) ?? [])
-                : (currentPage?.blocks ?? [])
-              const previews = rawChanges.map((c) => previewForChange(c, targetBlocks))
-              const statuses = rawChanges.map((_, i) =>
-                changeStatus(changeDecisions, part.toolCallId, i)
-              )
-              const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
-              // Accept-all sweeps REQUESTED changes only (review must-fix 3): an
-              // inferred side-effect stays pending for its own click.
-              const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
-              const skipped = changeSkipped[part.toolCallId] ?? 0
-              return (
-                <div key={part.toolCallId} className="space-y-1.5">
-                  <ProposalGroup
-                    changes={previews}
-                    statuses={statuses}
-                    targetName={target?.nodeName || contextLabel}
-                    targetMissing={targetMissing}
-                    onOpenTarget={crossPage ? () => openTargetPage(crossPage) : undefined}
-                    onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
-                    onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
-                    onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
-                    onAcceptAll={() => acceptChanges(part.toolCallId, rawChanges, pendingRequested)}
-                    onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
+              )}
+              {changeBatches.map((part) => {
+                // While the tool input is still streaming, `part.input` is partially
+                // parsed JSON — block payloads can be missing required fields, and the
+                // module views render them unvalidated. Wait for the complete input.
+                if (part.state === 'input-streaming') return null
+                const rawChanges = part.input?.changes ?? []
+                // The stamped target (ticket-30), computed once: `crossPage` is set
+                // when the batch resolved to a real page other than the open one.
+                const target = changeTargets[part.toolCallId]
+                const targetMissing = target?.missing === true
+                const crossPage =
+                  target && !targetMissing && target.nodeId !== nodeId ? target : null
+                // Cross-page edit: diff against the TARGET page's blocks; fall back
+                // to the open page's blocks for a same-page proposal.
+                const targetBlocks = crossPage
+                  ? (blocksForTarget.get(crossPage.nodeId) ?? [])
+                  : (currentPage?.blocks ?? [])
+                const previews = rawChanges.map((c) => previewForChange(c, targetBlocks))
+                const statuses = rawChanges.map((_, i) =>
+                  changeStatus(changeDecisions, part.toolCallId, i)
+                )
+                const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
+                // Accept-all sweeps REQUESTED changes only (review must-fix 3): an
+                // inferred side-effect stays pending for its own click.
+                const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
+                const skipped = changeSkipped[part.toolCallId] ?? 0
+                return (
+                  <div key={part.toolCallId} className="press-arrive space-y-1.5">
+                    <ProposalGroup
+                      changes={previews}
+                      statuses={statuses}
+                      targetName={target?.nodeName || contextLabel}
+                      targetMissing={targetMissing}
+                      onOpenTarget={crossPage ? () => openTargetPage(crossPage) : undefined}
+                      onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
+                      onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
+                      onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
+                      onAcceptAll={() =>
+                        acceptChanges(part.toolCallId, rawChanges, pendingRequested)
+                      }
+                      onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
+                    />
+                    {skipped > 0 && (
+                      <p className="font-serif text-xs italic text-press-rust">
+                        {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
+                        {skipped > 1 ? 'were' : 'was'} skipped.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+              {createPageParts.map((part) => {
+                // Same streaming caveat as above: a partially-parsed `blocks` array
+                // crashes the block previews (e.g. TableView on undefined rows).
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                if (!input?.title || !input.type) return null
+                const status = createDecisions[part.toolCallId] ?? 'pending'
+                const selectedParentId =
+                  createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
+                return (
+                  <CreatePageProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    title={input.title}
+                    type={input.type}
+                    kind={input.kind}
+                    blocks={input.blocks ?? []}
+                    reason={input.reason}
+                    status={status}
+                    selectedParentId={selectedParentId}
+                    parentOptions={parentOptions}
+                    onParentChange={(id) =>
+                      setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
+                    onReject={() =>
+                      setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
                   />
-                  {skipped > 0 && (
-                    <p className="text-xs text-amber-600">
-                      {skipped} change{skipped > 1 ? 's' : ''} couldn’t be applied and{' '}
-                      {skipped > 1 ? 'were' : 'was'} skipped.
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-            {createPageParts.map((part) => {
-              // Same streaming caveat as above: a partially-parsed `blocks` array
-              // crashes the block previews (e.g. TableView on undefined rows).
-              if (part.state === 'input-streaming') return null
-              const input = part.input
-              if (!input?.title || !input.type) return null
-              const status = createDecisions[part.toolCallId] ?? 'pending'
-              const selectedParentId =
-                createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
-              return (
-                <CreatePageProposalCard
-                  key={part.toolCallId}
-                  title={input.title}
-                  type={input.type}
-                  kind={input.kind}
-                  blocks={input.blocks ?? []}
-                  reason={input.reason}
-                  status={status}
-                  selectedParentId={selectedParentId}
-                  parentOptions={parentOptions}
-                  onParentChange={(id) =>
-                    setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
-                  }
-                  onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
-                  onReject={() =>
-                    setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
-                  }
-                />
-              )
-            })}
-          </div>
-        )
-      })}
-      {isStreaming && (
-        <div className="text-left">
-          <span className="inline-block text-sm px-3 py-1.5 rounded bg-press-accent-soft text-press-faint">
-            …
-          </span>
-        </div>
-      )}
-      <div ref={bottomRef} />
+                )
+              })}
+            </div>
+          )
+        })}
+        {/* While streaming with no visible answer yet, show a derived stage line
+            ("drafting your page…") in place of the old bare ellipsis (ticket-32);
+            once text is arriving the reply itself is the feedback, so this yields. */}
+        {isStreaming && !lastAssistantHasText && (
+          <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+        )}
+        <div ref={bottomRef} />
+      </div>
     </div>
   )
 
+  // The input stays quietly monospace by design (ticket-32): it is the console
+  // *threshold* — the one seam where the user's typed intent crosses into the serif
+  // correspondence. Mono keeps commands (/clear · /handoff · /save) legible as
+  // commands and marks "you are typing" distinct from "Pond is speaking". Its dress
+  // is pure Press, no stock widgets: a hairline rule above, a bare paper field whose
+  // baseline inks sage on focus, and a small-caps Send in the kicker voice — set in
+  // the same centered column as the correspondence above.
   const inputFooter = (
-    <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair flex-shrink-0">
-      <textarea
-        ref={inputRef}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Talk to Pond… (/clear · /handoff · /save)"
-        rows={2}
-        className="flex-1 resize-none border border-border rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring font-mono bg-transparent placeholder:text-press-faint"
-        disabled={isStreaming || !isReady}
-      />
-      <button
-        onClick={handleSend}
-        disabled={isStreaming || !input.trim() || !isReady}
-        className="px-3 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-full hover:opacity-90 disabled:opacity-40 self-end"
-      >
-        Send
-      </button>
+    <div className="border-t border-press-hair flex-shrink-0 pl-[252px]">
+      <div className="mx-auto flex w-full max-w-2xl items-end gap-4 px-8 py-3">
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Talk to Pond… (/clear · /handoff · /save)"
+          rows={2}
+          className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
+          disabled={isStreaming || !isReady}
+        />
+        <button
+          onClick={handleSend}
+          disabled={isStreaming || !input.trim() || !isReady}
+          className={cn(
+            pressKickerClass,
+            'self-end pb-2 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent'
+          )}
+        >
+          Send
+        </button>
+      </div>
     </div>
   )
 

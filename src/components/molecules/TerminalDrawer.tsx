@@ -173,8 +173,11 @@ export function TerminalDrawer({
         </div>
       )}
 
-      {/* Header: context + visible controls (collapse toggle, clear). */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-muted-foreground font-mono flex-shrink-0">
+      {/* Header: context + visible controls (collapse toggle, clear). The context
+          label carries the correspondence serif (ticket-32) so the strip reads as
+          the head of a letter, not a console status bar; the Clear control stays a
+          quiet lower-case affordance. */}
+      <div className="flex items-center justify-between px-5 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted flex-shrink-0">
         <button
           type="button"
           onClick={onToggleCollapsed}
@@ -190,8 +193,8 @@ export function TerminalDrawer({
           >
             ▾
           </span>
-          <span>
-            Context: <span className="text-foreground">{contextLabel}</span>
+          <span className="font-serif italic">
+            Context: <span className="not-italic font-medium text-foreground">{contextLabel}</span>
           </span>
         </button>
         <button
@@ -200,7 +203,7 @@ export function TerminalDrawer({
           disabled={!canClear}
           aria-label="Clear conversation"
           title="Clear conversation (/clear)"
-          className="text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
+          className="font-serif italic text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
         >
           Clear
         </button>

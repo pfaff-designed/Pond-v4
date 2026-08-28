@@ -9,21 +9,25 @@ import {
 } from './TerminalDrawer'
 
 const sampleFooter = (
-  <div className="flex items-end gap-2 px-4 py-2 border-t border-press-hair">
-    <textarea
-      placeholder="Talk to Pond…"
-      rows={2}
-      className="flex-1 resize-none border border-border rounded px-3 py-2 text-sm font-mono bg-transparent"
-    />
-    <button className="px-3 py-2 bg-primary text-primary-foreground text-sm rounded-full">
-      Send
-    </button>
+  <div className="border-t border-press-hair">
+    <div className="mx-auto flex w-full max-w-2xl items-end gap-4 px-8 py-3">
+      <textarea
+        placeholder="Talk to Pond…"
+        rows={2}
+        className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm"
+      />
+      <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-accent">
+        Send
+      </button>
+    </div>
   </div>
 )
 
 const sampleBody = (
-  <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-mono text-sm">
-    <p className="text-press-faint text-xs">Start a conversation…</p>
+  <div className="flex-1 overflow-y-auto py-4">
+    <div className="mx-auto w-full max-w-2xl px-8">
+      <p className="font-serif text-sm italic text-press-faint">Start a conversation…</p>
+    </div>
   </div>
 )
 

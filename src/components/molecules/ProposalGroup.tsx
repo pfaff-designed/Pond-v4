@@ -76,18 +76,18 @@ export function ProposalGroup({
       className={cn('space-y-2', className)}
     >
       {targetMissing ? (
-        <div className="text-xs font-medium text-amber-600">
+        <div className="font-serif text-xs font-medium italic text-press-rust">
           Target page not found — this proposal can’t be applied.
         </div>
       ) : (
         targetName && (
-          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+          <div className="flex items-center gap-2 text-xs font-medium text-press-muted">
             <span>→ {targetName}</span>
             {onOpenTarget && (
               <button
                 type="button"
                 onClick={onOpenTarget}
-                className="underline underline-offset-2 hover:text-zinc-700"
+                className="text-press-accent underline underline-offset-2 hover:decoration-press-accent"
               >
                 open page
               </button>
@@ -96,8 +96,8 @@ export function ProposalGroup({
         )
       )}
       {showGroupBar && (
-        <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5">
-          <span className="text-xs font-medium text-zinc-500">
+        <div className="flex items-center justify-between rounded-md border border-press-line bg-press-accent-wash px-3 py-1.5">
+          <span className="text-xs font-medium text-press-muted">
             {changes.length} proposed changes
           </span>
           <ProposalActions

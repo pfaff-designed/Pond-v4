@@ -9,7 +9,7 @@ const meta = {
   parameters: { layout: 'padded' },
   decorators: [
     (Story) => (
-      <div className="max-w-prose rounded bg-press-accent-soft px-3 py-1.5 font-mono text-sm text-foreground">
+      <div className="max-w-prose font-serif text-[0.95rem] leading-[1.6] text-press-body">
         <p>Beginner pottery wheels currently run roughly $400–$700 for a tabletop model.</p>
         <Story />
       </div>
