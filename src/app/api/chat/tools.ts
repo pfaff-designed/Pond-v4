@@ -100,3 +100,26 @@ export const fetchContextTool = {
     query: z.string().min(1).describe('What to search the workspace for'),
   }),
 } as const
+
+/**
+ * read_page (ticket-30) — fetch one page's current blocks BY ID so the model can
+ * propose a correct cross-page edit to a page that is NOT the one open. The user's
+ * open page is auto-injected already; this is for editing ANOTHER page the user
+ * named. Server-executed (the route owns the closure that captures the per-request
+ * supabase client + user): the model calls read_page with an id copied from the
+ * [Workspace outline], reads back the page's title/type and its blocks WITH ids,
+ * then emits a propose_changes batch whose `targetPageId` is that same id and whose
+ * edit/remove/after references use those block ids. Never guess ids — read first.
+ */
+export const readPageTool = {
+  description:
+    'Read one page by its id — its title, type, and its editable blocks WITH their ids — so you can propose a correct edit to a page the user named that is NOT the page currently open. Copy the id verbatim from the [Workspace outline] in context; never invent one. Call this BEFORE a cross-page propose_changes so your block references resolve against that page. Do not call it for the page already open (its blocks are already in context) or to browse unprompted.',
+  inputSchema: z.object({
+    pageId: z
+      .string()
+      .min(1)
+      .describe(
+        'The id of the page to read, taken verbatim from the [Workspace outline] in context'
+      ),
+  }),
+} as const
