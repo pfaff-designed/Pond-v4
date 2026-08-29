@@ -45,6 +45,20 @@ const samples: Record<string, Block> = {
       { id: 'r2', cells: ['Bandsaw', 'Left wall'] },
     ],
   },
+  kanban: {
+    id: 'b1',
+    type: 'kanban',
+    title: 'Bookshelf build',
+    columns: [
+      { id: 'c1', title: 'To do', cards: [{ id: 'k1', title: 'Cut boards' }] },
+      {
+        id: 'c2',
+        title: 'Doing',
+        cards: [{ id: 'k2', title: 'Sand', note: 'to 220 grit' }],
+      },
+      { id: 'c3', title: 'Done', cards: [] },
+    ],
+  },
 }
 
 function serialize(block: Block): string {

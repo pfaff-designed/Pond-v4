@@ -75,13 +75,13 @@ describe('module registry (t12)', () => {
       blockSchema.safeParse({ id: 'x', type: 'metric-ring', label: '9', pct: 2 }).success
     ).toBe(false)
     // unknown type
-    expect(blockSchema.safeParse({ id: 'x', type: 'kanban', cards: [] }).success).toBe(false)
+    expect(blockSchema.safeParse({ id: 'x', type: 'gantt', cards: [] }).success).toBe(false)
     // metric missing required value
     expect(blockSchema.safeParse({ id: 'x', type: 'metric', label: 'X' }).success).toBe(false)
   })
 
   it('an unregistered module type renders nothing instead of throwing', () => {
-    const { container } = render(<ModuleView type="kanban" data={{ id: 'z', type: 'kanban' }} />)
+    const { container } = render(<ModuleView type="gantt" data={{ id: 'z', type: 'gantt' }} />)
     expect(container).toBeEmptyDOMElement()
   })
 })
