@@ -122,13 +122,17 @@ export const GripVisible: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const handle = canvas.getByRole('separator', { name: 'Resize terminal' })
-    // The grip span is inside the handle element.
-    const grip = handle.querySelector('span')
-    await expect(grip).toBeTruthy()
-    // Grip is horizontally centered (flex + items-center on the handle).
+    // ticket-42 follow-up: the handle stays a full-width drag target (flex +
+    // items-center), but the visible grip is centered WITHIN the column via an
+    // inner max-w-2xl wrapper (justify-center lives there, not on the handle).
     await expect(handle).toHaveClass('flex')
     await expect(handle).toHaveClass('items-center')
-    await expect(handle).toHaveClass('justify-center')
+    const columnWrap = handle.querySelector('span')
+    await expect(columnWrap).toBeTruthy()
+    await expect(columnWrap).toHaveClass('justify-center')
+    await expect(columnWrap).toHaveClass('max-w-2xl')
+    // the grip pill is the inner-inner span
+    await expect(columnWrap!.querySelector('span')).toBeTruthy()
   },
 }
 
