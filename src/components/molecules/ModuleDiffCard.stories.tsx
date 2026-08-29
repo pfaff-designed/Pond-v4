@@ -97,6 +97,12 @@ export const Accepted: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Accepted')).toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
+    // ticket-41: the card settles to inert — it always carries the transition
+    // class, and the resolved state adds the settle (scale + dim) target.
+    const card = canvas.getByRole('group', { name: /Proposed/ })
+    await expect(card).toHaveClass('motion-resolve')
+    await expect(card).toHaveClass('scale-[0.99]')
+    await expect(card).toHaveClass('opacity-70')
   },
 }
 

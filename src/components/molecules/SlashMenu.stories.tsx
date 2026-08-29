@@ -40,6 +40,8 @@ export const Default: Story = {
     await expect(
       canvas.getByText('A checklist of items, each toggleable done/undone.')
     ).toBeInTheDocument()
+    // ticket-41: the palette grows from its anchor via the token-driven class.
+    await expect(canvas.getByRole('menu')).toHaveClass('motion-menu')
 
     await userEvent.click(canvas.getByText('Todo'))
     await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'todo' }))

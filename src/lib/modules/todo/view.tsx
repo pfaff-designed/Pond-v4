@@ -24,6 +24,13 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
           <input
             type="checkbox"
             checked={item.checked}
+            // ticket-41: on check, the box settles (a hair over-scale back to rest)
+            // so the completion reads as a confirming beat — and lands in time with
+            // any bound metric's count-up (the metric NumberFlow ticks on the same
+            // state change), making the pair feel causal. Applied only when checked
+            // so the settle plays on the meaningful direction; guarded globally by
+            // the reduced-motion contract in globals.css.
+            className={item.checked ? 'motion-check' : undefined}
             disabled={!editable}
             // Read-only rows have a `checked` prop but no `onChange`; mark them
             // `readOnly` so React does not warn about a controlled field without a

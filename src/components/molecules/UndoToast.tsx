@@ -46,7 +46,7 @@ export function UndoToast({
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-xl border border-press-line bg-press-ink px-4 py-2.5 text-sm text-press-paper shadow-2xl"
+      className="motion-toast pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-xl border border-press-line bg-press-ink px-4 py-2.5 text-sm text-press-paper shadow-2xl"
     >
       <span className="truncate">{message}</span>
       {onUndo && (

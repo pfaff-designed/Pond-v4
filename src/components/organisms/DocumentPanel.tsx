@@ -196,6 +196,12 @@ export function DocumentPanel() {
   // a block ghosted.
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
 
+  // ticket-41: ids of blocks just inserted this session, so a freshly-inserted
+  // block SETTLES in (motion-settle-in) while blocks present on page load do
+  // not. State (read during render to decide the class); the mutating insert
+  // already commits an edit, so tracking it here adds no extra render.
+  const [insertedIds] = useState<Set<string>>(() => new Set())
+
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
   // edits (`saved`) and the server blocks differ from ours, adopt them: that
@@ -303,7 +309,9 @@ export function DocumentPanel() {
   }
 
   function addTextBlock() {
-    commitLocalEdit([...viewBlocks, { id: crypto.randomUUID(), type: 'text', content: '' }])
+    const nb: Block = { id: crypto.randomUUID(), type: 'text', content: '' }
+    insertedIds.add(nb.id)
+    commitLocalEdit([...viewBlocks, nb])
   }
 
   // Insert an empty block of the picked palette type at `at` (ticket-37). No-op
@@ -311,6 +319,8 @@ export function DocumentPanel() {
   function insertBlockAt(at: number, item: SlashMenuItem) {
     const nb = emptyBlockForType(item.id)
     if (!nb) return
+    // ticket-41: mark it so it settles in on mount (not the whole page on load).
+    insertedIds.add(nb.id)
     commitLocalEdit([...viewBlocks.slice(0, at), nb, ...viewBlocks.slice(at)])
   }
 
@@ -384,6 +394,7 @@ export function DocumentPanel() {
               <React.Fragment key={block.id}>
                 <BlockEditor
                   block={block}
+                  settleOnMount={insertedIds.has(block.id)}
                   onChange={(next) => setBlockAt(i, next)}
                   onRemove={() => removeBlockAt(i)}
                   onMoveUp={() => moveBlockAt(i, 'up')}
@@ -463,6 +474,7 @@ export function DocumentPanel() {
  */
 function BlockEditor({
   block,
+  settleOnMount = false,
   onChange,
   onRemove,
   onMoveUp,
@@ -478,6 +490,8 @@ function BlockEditor({
   onDrop,
 }: {
   block: Block
+  /** ticket-41: settle this block in on mount (freshly inserted, not page-load). */
+  settleOnMount?: boolean
   onChange: (next: Block) => void
   onRemove: () => void
   onMoveUp?: () => void
@@ -510,7 +524,11 @@ function BlockEditor({
 
   return (
     <div
-      className={cn('group relative', isDragging && 'opacity-50')}
+      className={cn(
+        'group relative',
+        settleOnMount && 'motion-settle-in',
+        isDragging && 'opacity-50'
+      )}
       id={blockDomId(block.id)}
       draggable={dragArmed}
       onDragStart={onDragStart}

@@ -1132,7 +1132,11 @@ export function AITerminal() {
       <div className="mx-auto w-full max-w-2xl px-8">
         <div className="border-t border-press-hair">
           <div className="flex items-end gap-4 py-3">
-            <div className="relative flex-1">
+            {/* ticket-41: the threshold. The sage baseline DRAWS in left→right on
+                focus (motion-focus-draw's ::after) rather than the border flipping
+                color — a stroke, not a flash. The static hairline below stays;
+                the draw is the focus signal. Reduced-motion snaps it in. */}
+            <div className="motion-focus-draw relative flex-1">
               {chatMenuOpen && (
                 <SlashMenu
                   items={CHAT_COMMANDS}
@@ -1148,7 +1152,9 @@ export function AITerminal() {
                     }
                   }}
                   onClose={() => setChatMenuOpen(false)}
-                  className="absolute bottom-full left-0 z-20 w-64 mb-1"
+                  // ticket-41: anchored above the composer, so it grows from its
+                  // bottom edge (--motion-menu-origin overrides the default top-left).
+                  className="absolute bottom-full left-0 z-20 w-64 mb-1 [--motion-menu-origin:bottom_left]"
                 />
               )}
               <textarea
@@ -1167,7 +1173,7 @@ export function AITerminal() {
                 onKeyDown={handleKeyDown}
                 placeholder="Talk to Pond… (/clear · /handoff · /save)"
                 rows={inputRows}
-                className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
+                className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none placeholder:text-press-faint disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>

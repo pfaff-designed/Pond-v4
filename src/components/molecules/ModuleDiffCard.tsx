@@ -123,8 +123,11 @@ export function ModuleDiffCard({
       role="group"
       aria-label={`Proposed ${OP_LABEL[op]}`}
       className={cn(
-        'press-letter overflow-hidden rounded-lg text-left',
-        resolved && 'opacity-70',
+        // ticket-41: on resolve the card SETTLES to inert — eases opacity down
+        // and a hair of scale (motion-resolve transition) instead of snapping
+        // grey, so accept/reject reads as the card coming to rest. Guarded.
+        'press-letter motion-resolve overflow-hidden rounded-lg text-left',
+        resolved && 'scale-[0.99] opacity-70',
         className
       )}
     >
