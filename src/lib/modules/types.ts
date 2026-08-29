@@ -26,10 +26,16 @@ import type { ZodType } from 'zod'
 // `Path` is computed in a parameter default, not inline on the property: a
 // conditional on `T` inside the structure makes T's variance unmeasurable and
 // breaks the registry `satisfies` (ZodType fails the structural fallback).
-export interface ModuleDescriptor<
-  T = unknown,
-  Path extends string = T extends object ? keyof T & string : string,
-> {
+//
+// A path is either a top-level field (`'items'`, `'rows'`) or ONE dotted deep
+// segment (`'columns.cards'`, ticket-35 kanban) — the deep form names a field on
+// the objects of a top-level array whose OWN elements also carry ids. Only the
+// first segment is keyed to `T` (a typo'd top-level field is still a compile
+// error); the nested segment is a plain string the walkers dereference at runtime.
+export type NestedIdPath<T> = T extends object
+  ? (keyof T & string) | `${keyof T & string}.${string}`
+  : string
+export interface ModuleDescriptor<T = unknown, Path extends string = NestedIdPath<T>> {
   type: string
   schema: ZodType<T>
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
@@ -55,13 +61,16 @@ export interface ModuleDescriptor<
   /** One-line listing for the id-addressed editable-blocks context. Defaults to `serialize`. */
   preview?(data: T, siblings?: readonly unknown[]): string
   /**
-   * Top-level fields holding id-bearing collections (e.g. `['items']`, `['rows']`).
-   * The one declared fact behind every id walk: write-time minting (`hydrate.ts`)
-   * and display-time stamping (`preview.ts`) both traverse these paths. Omit when
-   * the module has none.
+   * Fields holding id-bearing collections. A top-level field (`['items']`,
+   * `['rows']`) OR a dotted deep path (`'columns.cards'` — cards nested one level
+   * inside a top-level `columns` array, ticket-35 kanban). The one declared fact
+   * behind every id walk: write-time minting (`hydrate.ts`) and display-time
+   * stamping (`preview.ts`) both traverse these paths. Omit when the module has
+   * none. A deep path implies its parent is also walked — declare BOTH
+   * (`['columns', 'columns.cards']`) so the parent array elements get ids too.
    */
-  // Keyed to T so a typo'd path is a compile error on a concrete descriptor;
-  // plain strings for generic walkers (T = unknown).
+  // First segment keyed to T (a typo'd top-level field is a compile error); the
+  // nested segment is a plain string the walkers dereference at runtime.
   nestedIdPaths?: readonly Path[]
 }
 
