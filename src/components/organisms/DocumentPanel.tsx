@@ -362,12 +362,13 @@ export function DocumentPanel() {
 
         {/* Provide sibling-block state so bound metrics derive live and their `→`
             can scroll to source (ticket-23). Keyed off the live `viewBlocks`, so a
-            checklist toggle re-derives every metric in the same render.
+            checklist toggle re-derives every metric in the same render. `pageId` lets a
+            cross-page rollup metric find this page's children (ticket-38).
 
             The InsertBetween separators (ticket-37) replace the old space-y gap:
             the h-4 separator IS the block rhythm now, and every seam — before the
             first block included — is an insertion point. */}
-        <SiblingBlocksProvider value={{ blocks: viewBlocks, scrollToBlock }}>
+        <SiblingBlocksProvider value={{ blocks: viewBlocks, scrollToBlock, pageId: page.id }}>
           <div className="space-y-0">
             <InsertBetween onInsert={(item) => insertBlockAt(0, item)} />
             {viewBlocks.map((block, i) => (

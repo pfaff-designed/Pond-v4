@@ -11,6 +11,7 @@ import {
   createPageBlockSchema,
   moduleCatalog,
 } from '@/lib/modules/ai-composition'
+import { metricSchema } from '@/lib/modules/metric/schema'
 
 describe('moduleDataSchema (AI-emitted module data)', () => {
   it('accepts a content block with no id', () => {
@@ -91,6 +92,65 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     if (r.success && r.data.type === 'metric') {
       expect(r.data.source).toEqual({ blockId: 'b', kind: 'table-rows' })
     }
+  })
+
+  it('accepts a cross-page metric binding and PRESERVES pageId (ticket-38)', () => {
+    // Ordering fence: the permissive same-page `{ blockId }` branch must NOT swallow a
+    // `{ pageId, blockId }` and strip pageId — that would silently downgrade a
+    // cross-page rollup into a same-page one.
+    const r = moduleDataSchema.safeParse({
+      type: 'metric',
+      label: 'Milestone tasks',
+      value: 0,
+      source: { pageId: 'other-page', blockId: 'todo-9', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(true)
+    if (r.success && r.data.type === 'metric') {
+      expect(r.data.source).toEqual({
+        pageId: 'other-page',
+        blockId: 'todo-9',
+        kind: 'checklist-checked',
+      })
+    }
+  })
+
+  it('accepts a child-pages aggregate binding (ticket-38 rollup)', () => {
+    const r = moduleDataSchema.safeParse({
+      type: 'metric',
+      label: 'Tasks across milestones',
+      value: 0,
+      source: { pages: 'children', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(true)
+    if (r.success && r.data.type === 'metric') {
+      expect(r.data.source).toEqual({ pages: 'children', kind: 'checklist-checked' })
+    }
+  })
+
+  it('rejects an aggregate scope other than "children" (only the stable literal)', () => {
+    expect(
+      moduleDataSchema.safeParse({
+        type: 'metric',
+        label: 'x',
+        value: 0,
+        source: { pages: 'all', kind: 'table-rows' },
+      }).success
+    ).toBe(false)
+  })
+
+  it('REJECTS a malformed { pageId, ref } source outright (review fix: no silent collapse)', () => {
+    // Without a strict ref branch this shape (no blockId, so every stable branch fails)
+    // would fall through to the ref schema, which strips `pageId` — cross-page intent
+    // silently becoming a same-batch ref. It must instead fail the whole union so the
+    // tool-input gate triggers repairToolCall and the model re-emits a valid form.
+    expect(
+      moduleDataSchema.safeParse({
+        type: 'metric',
+        label: 'x',
+        value: 0,
+        source: { pageId: 'other-page', ref: 'chores', kind: 'checklist-checked' },
+      }).success
+    ).toBe(false)
   })
 
   it('accepts a table with an opt-in sum footer (ticket-31)', () => {
@@ -254,6 +314,51 @@ describe('moduleCatalog (prompt teaching)', () => {
     const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))!
     expect(metricLine).toContain('propose_changes')
     expect(metricLine).toContain('create_page')
+  })
+
+  it('teaches cross-page & child-pages rollups, and PREFERS a rollup over a manual table (ticket-38)', () => {
+    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))!
+    // The two new persisted forms are taught by shape…
+    expect(metricLine).toContain('pageId')
+    expect(metricLine).toContain('pages: "children"')
+    // …with the scope stated (SUMS across child pages)…
+    expect(metricLine).toMatch(/child pages/i)
+    // …and the anti-pattern the AI apologized into is steered against: prefer a live
+    // rollup over a hand-written summary table. Pinned so the teaching can't regress.
+    expect(metricLine).toMatch(/PREFER/i)
+    expect(metricLine).toMatch(/summary table/i)
+  })
+})
+
+describe('persisted metric source schema (ticket-38 — stable forms persist, ref does not)', () => {
+  const base = { id: 'm1', type: 'metric' as const, label: 'x', value: 0 }
+
+  it('PERSISTS the cross-page form, keeping pageId (a stable reference, unlike a ref)', () => {
+    const r = metricSchema.safeParse({
+      ...base,
+      source: { pageId: 'p', blockId: 'b', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(true)
+    if (r.success)
+      expect(r.data.source).toEqual({ pageId: 'p', blockId: 'b', kind: 'checklist-checked' })
+  })
+
+  it('PERSISTS the child-pages aggregate form', () => {
+    const r = metricSchema.safeParse({ ...base, source: { pages: 'children', kind: 'table-rows' } })
+    expect(r.success).toBe(true)
+    if (r.success) expect(r.data.source).toEqual({ pages: 'children', kind: 'table-rows' })
+  })
+
+  it('still REJECTS a raw ref source at persistence (the ticket-31 invariant is intact)', () => {
+    // The ephemeral `ref` must never reach storage: the persisted union has no ref
+    // branch, so hydration fails and the change is skipped rather than persisting a
+    // dangling binding. Cross-page/aggregate are stable and DO persist — that's the
+    // whole justification per the t31 precedent.
+    const r = metricSchema.safeParse({
+      ...base,
+      source: { ref: 'chores', kind: 'checklist-checked' },
+    })
+    expect(r.success).toBe(false)
   })
 })
 

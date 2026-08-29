@@ -21,7 +21,13 @@ import { z } from 'zod'
 import { moduleDescriptors } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
-import { metricSchema, metricSourceSchema, metricSourceRefSchema } from './metric/schema'
+import {
+  metricSchema,
+  metricSourceSamePageSchema,
+  metricSourceCrossPageSchema,
+  metricSourceAggregateSchema,
+  metricSourceRefSchema,
+} from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
 import { kanbanSchema, kanbanColumnSchema, kanbanCardSchema } from './kanban/schema'
@@ -60,14 +66,33 @@ const todoData = todoSchema
   .omit({ id: true })
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
 /**
- * Metric EMIT data (ticket-31): the persisted schema accepts only a resolved
- * `{ blockId }` source, but at emit time the model may alternatively bind by
- * `{ ref }` to a `bindKey` on a sibling create in the same batch. The accept path
- * resolves ref→minted blockId before hydration; the persisted schema then rejects
- * any `ref` that slipped through unresolved (structural invariant, not convention).
+ * Metric EMIT data (ticket-31, ticket-38): the persisted schema accepts the three
+ * STABLE source forms (same-page block, cross-page block, child-pages aggregate). At
+ * emit time the model may ALSO bind by `{ ref }` to a `bindKey` on a sibling create in
+ * the same batch (ticket-31). The accept path resolves ref→minted blockId before
+ * hydration; the persisted schema then rejects any `ref` that slipped through
+ * unresolved (structural invariant, not convention). The union is spelled out flat
+ * (per-form, not nested unions) so the derived JSON tool schema is a clean `oneOf`.
+ *
+ * Branch ORDER matters (zod strips unknown keys, so a permissive branch swallows a
+ * richer one): cross-page (`pageId`+`blockId`) and aggregate (`pages`) come BEFORE the
+ * bare same-page `{ blockId }`, else `{ pageId, blockId }` would collapse to same-page.
+ * `ref` stays LAST so a stray `{ blockId, ref }` still resolves to the safe blockId form
+ * (the existing ticket-31 both-keys test) — and is STRICT (review fix): a lax ref branch
+ * would catch a malformed `{ pageId, ref, kind }` (no blockId, so every stable branch
+ * fails) and silently strip the `pageId`, turning cross-page intent into a same-batch
+ * ref. Strict makes that shape fail the whole union → the tool-input gate rejects it and
+ * `repairToolCall` re-asks the model, instead of persisting the wrong binding.
  */
 const metricData = metricSchema.omit({ id: true }).extend({
-  source: z.union([metricSourceSchema, metricSourceRefSchema]).optional(),
+  source: z
+    .union([
+      metricSourceCrossPageSchema,
+      metricSourceAggregateSchema,
+      metricSourceSamePageSchema,
+      metricSourceRefSchema.strict(),
+    ])
+    .optional(),
 })
 const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
