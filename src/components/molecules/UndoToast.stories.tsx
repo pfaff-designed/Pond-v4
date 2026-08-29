@@ -34,6 +34,9 @@ export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Deleted "Scratchpad"')).toBeInTheDocument()
+    // ticket-41: the toast carries the token-driven entry class (the animation
+    // itself is visual; we assert the class is wired, not the frames).
+    await expect(canvas.getByRole('status')).toHaveClass('motion-toast')
     await userEvent.click(canvas.getByRole('button', { name: 'Undo' }))
     await expect(args.onUndo).toHaveBeenCalled()
     await expect(args.onDismiss).not.toHaveBeenCalled()

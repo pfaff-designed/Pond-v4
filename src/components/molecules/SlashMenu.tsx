@@ -62,7 +62,11 @@ export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProp
   return (
     <div
       className={cn(
-        'press-arrive bg-press-paper border border-press-line rounded-lg shadow-xl overflow-hidden',
+        // ticket-41: the palette grows from its anchor (quick), rather than
+        // rising like a page surface — it reads as summoned in place. The
+        // caller positions it; transform-origin follows via --motion-menu-origin
+        // when the anchor isn't top-left.
+        'motion-menu bg-press-paper border border-press-line rounded-lg shadow-xl overflow-hidden',
         className
       )}
       role="menu"

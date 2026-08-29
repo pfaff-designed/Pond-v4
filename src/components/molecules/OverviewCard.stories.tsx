@@ -31,6 +31,9 @@ export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Marathon Training')).toBeInTheDocument()
+    // ticket-41: hover lifts, press settles back — both token-timed. Assert the
+    // press-down active state is wired (the hover/press frames are visual).
+    await expect(canvas.getByRole('button')).toHaveClass('active:scale-[0.994]')
     await userEvent.click(canvas.getByRole('button'))
     await expect(args.onOpen).toHaveBeenCalled()
   },

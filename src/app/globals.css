@@ -29,7 +29,36 @@
   --color-press-lime: var(--press-lime);
   --color-press-lime-ink: var(--press-lime-ink);
   --color-press-rust: var(--press-rust);
+  /* ── Motion system (ticket-41) — ONE language, token-sourced ──────────────
+     Durations and easings that every authored moment maps from, so the app
+     moves with one voice instead of scattered magic numbers. Referenced from
+     Tailwind as `duration-[var(--motion-quick)]` / `ease-[var(--ease-out)]`
+     and from bespoke @keyframes/animation below.
+
+     Discipline (impeccable): motion is CONFIRMATION, not decoration. A change
+     the user caused earns a quick acknowledgement; content arriving on its own
+     earns a calm breath. Nothing overshoots for show — things SETTLE.
+
+     Duration ladder — pick by intent, not by taste:
+       instant  reflex feedback (press-down, color hover) — barely perceptible
+       quick    a change the user just caused (checkbox mark, count tick,
+                menu grow, focus draw) — reads as immediate cause→effect
+       settle   a thing finding its rest after a move (tree children, caret,
+                reorder shift, card resolve) — the "settle, not snap" tier
+       calm     a single authored object arriving (a reply, a toast, a card)
+       slow     a page's worth of surfaces staggering in (press-rise on mount) */
+  --motion-instant: 90ms;
+  --motion-quick: 150ms;
+  --motion-settle: 280ms;
+  --motion-calm: 460ms;
+  --motion-slow: 560ms;
+
+  /* Easings. --ease-press is the house settle curve (a soft, slightly-eased
+     landing — no bounce). --ease-out decelerates into rest (entries, draws);
+     --ease-in accelerates away (exits/dismissals). */
   --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -234,27 +263,154 @@
   }
 }
 
-@layer components {
-  /* Staggered rise-on-mount — the Clearing motion idiom (delay set inline). */
-  .press-rise {
-    animation: press-rise 560ms var(--ease-press) both;
+/* ── ticket-41 micro-interaction keyframes ──────────────────────────────────
+   Each one is a single confirming gesture; timing/easing come from the motion
+   tokens at the call site (the animation shorthand references the var). */
+
+/* Toast entry — rise + fade from just below its rest, a whisper of settle. The
+   physical rise-from-below reads as the notice belonging to the workspace it
+   reports on (60fps: Telegram Copy-Link toast — slide-up + fade, subtle overshoot;
+   we keep the settle without the bounce to stay in the Press register). */
+@keyframes motion-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .press-rise {
-      animation: none;
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Menu / palette open — grow from its anchor (top-left), quick. Keeps spatial
+   context so the surface reads as an extension of where it was summoned, not a
+   new plane dropped in (60fps: Google AI-mode search morph — scale-from-anchor,
+   ease-in-out, preserves context; Amie accordion — scale 0.96 anchored top). */
+@keyframes motion-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Checkbox mark — the tick DRAWS in rather than appearing, so the completion
+   reads as an authored stroke, then the box settles from a hair over-scale back
+   to rest. Paired with the bound metric's count-up, the two land together as
+   one cause→effect (60fps: CRED paid-check — checkmark trim-draw + spring
+   settle to 1.0; 1Password Watchtower — draw synchronized with a count ticker). */
+@keyframes motion-check-settle {
+  0% {
+    transform: scale(0.86);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@layer components {
+  /* Staggered rise-on-mount — the Clearing motion idiom (delay set inline).
+     ticket-41: sourced from --motion-slow (a page's worth of surfaces). */
+  .press-rise {
+    animation: press-rise var(--motion-slow) var(--ease-press) both;
   }
 
   /* Conversation-surface arrival (ticket-32): a calmer, shorter breath than the
      full-page press-rise, tuned for a single message/card entering the transcript —
-     one authored moment, not a scatter. Same ease + reduced-motion contract. */
+     one authored moment, not a scatter. ticket-41: --motion-calm. */
   .press-arrive {
-    animation: press-rise 460ms var(--ease-press) both;
+    animation: press-rise var(--motion-calm) var(--ease-press) both;
   }
+
+  /* ── ticket-41 micro-interaction classes — each token-driven, one language ──*/
+
+  /* Toast entry (UndoToast). Calm arrival tier — the notice belongs to the
+     workspace, so it rises rather than pops. */
+  .motion-toast {
+    animation: motion-toast-in var(--motion-calm) var(--ease-out) both;
+  }
+
+  /* Menu / palette open (SlashMenu, InsertBetween palette). Quick, grows from
+     the anchor set by the caller's transform-origin. */
+  .motion-menu {
+    transform-origin: var(--motion-menu-origin, top left);
+    animation: motion-menu-in var(--motion-quick) var(--ease-out) both;
+  }
+
+  /* Checkbox mark settle (todo). Quick — a change the user just caused. Applied
+     to the box when it flips to checked; the paired bound-metric NumberFlow tick
+     lands in the same beat so the pair reads causal. */
+  .motion-check {
+    animation: motion-check-settle var(--motion-quick) var(--ease-press) both;
+  }
+
+  /* Card resolve (ModuleDiffCard / ProposalGroup). Settle tier — the card eases
+     down to inert as it dims, never snaps. Transition (not keyframe) so it rides
+     the status → resolved class flip both directions cleanly. */
+  .motion-resolve {
+    transition:
+      opacity var(--motion-settle) var(--ease-out),
+      transform var(--motion-settle) var(--ease-press);
+  }
+
+  /* Tree children settle (TreeRow subtree) & block insert/reorder settle. A
+     newly revealed / moved row eases into place from a hair up + faded, so the
+     list SETTLES rather than pops (60fps: Amie accordion — anchored scale + fade,
+     children reveal from the top). Settle tier. */
+  .motion-settle-in {
+    animation: motion-toast-in var(--motion-settle) var(--ease-out) both;
+  }
+
+  /* One consolidated reduced-motion contract for the whole authored-motion set:
+     honour the OS preference by collapsing every entrance/settle to its end
+     state instantly. Color/opacity hover transitions elsewhere are already
+     imperceptible and stay (they carry no travel). */
   @media (prefers-reduced-motion: reduce) {
-    .press-arrive {
+    .press-rise,
+    .press-arrive,
+    .motion-toast,
+    .motion-menu,
+    .motion-check,
+    .motion-settle-in {
       animation: none;
     }
+    .motion-resolve {
+      transition: none;
+    }
+    /* The baseline still appears on focus (it's a state indicator, not decor) —
+       it just snaps to full width instead of drawing. */
+    .motion-focus-draw::after {
+      transition: none;
+    }
+  }
+
+  /* Threshold-focus baseline: a sage hairline under the composer that draws in
+     left→right on focus. Rendered as an ::after so it needs no extra element.
+     The draw is guarded above. */
+  .motion-focus-draw {
+    position: relative;
+  }
+  .motion-focus-draw::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1.5px;
+    background: var(--press-accent);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--motion-quick) var(--ease-out);
+    pointer-events: none;
+  }
+  .motion-focus-draw:focus-within::after {
+    transform: scaleX(1);
   }
 
   /* Letterpress authored card (ticket-32): the AI reply and every proposal object in

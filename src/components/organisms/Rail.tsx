@@ -238,6 +238,9 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         accent={node.type === 'area' ? pageAccent(id) : undefined}
+        // ticket-41: a row revealed on expand (any non-top-level row) settles in
+        // rather than popping. Keyed by id, so only newly-mounted rows animate.
+        settleOnMount={depth > 0}
         onSelect={onSelect}
         onToggle={onToggle}
         onAddChild={onAddChild}

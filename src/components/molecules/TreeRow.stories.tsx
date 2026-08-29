@@ -49,6 +49,18 @@ export const AreaFolder: Story = {
     await expect(row).toHaveAttribute('aria-level', '2')
     await expect(row).toHaveAttribute('aria-posinset', '1')
     await expect(row).toHaveAttribute('aria-setsize', '3')
+    // ticket-41: a resting (not-just-revealed) row carries no settle class.
+    await expect(row).not.toHaveClass('motion-settle-in')
+  },
+}
+
+/** ticket-41: a row revealed on expand settles in — token-driven, guarded by
+ *  the global reduced-motion contract. Assert the class is wired, not the frames. */
+export const SettlesInOnReveal: Story = {
+  args: { settleOnMount: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('treeitem')).toHaveClass('motion-settle-in')
   },
 }
 

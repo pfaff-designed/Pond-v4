@@ -177,6 +177,10 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                       key={card.id}
                       className={[
                         'flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
+                        // ticket-41: a quiet hover raise (shadow only — the card is
+                        // a drag object, not a click target, so it lifts rather than
+                        // presses). Token-timed, reduced-motion drops the travel.
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
                         // The lifted source card fades to a placeholder ghost.
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}

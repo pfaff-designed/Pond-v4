@@ -51,7 +51,7 @@ function Chevron({ open }: { open: boolean }) {
       viewBox="0 0 10 10"
       fill="none"
       aria-hidden
-      className={`transition-transform duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+      className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-press)] ${
         open ? 'rotate-90' : ''
       }`}
     >
@@ -106,6 +106,11 @@ export interface TreeRowProps {
   setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
   accent?: string
+  /** Play the settle-in entrance when this row mounts (ticket-41). Set for rows
+   *  that appear on expand (children) so a revealed subtree SETTLES from a hair
+   *  up + faded rather than popping into place. React keys rows by id, so only a
+   *  genuinely new row runs it; a re-rendered existing row keeps its identity. */
+  settleOnMount?: boolean
   /** A leading icon slot (e.g. the Life root's mark) — replaces the dot. */
   leading?: ReactNode
   /** Trailing meta slot (e.g. the root's "all" caption). */
@@ -137,6 +142,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
     posInSet,
     setSize,
     accent,
+    settleOnMount = false,
     leading,
     trailing,
     onSelect,
@@ -175,7 +181,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       }}
       className={`group relative flex items-center h-[34px] rounded-[10px] pr-1.5 outline-none transition-colors cursor-pointer
         focus-visible:ring-2 focus-visible:ring-press-accent focus-visible:ring-offset-0
-        ${
+        ${settleOnMount ? 'motion-settle-in ' : ''}${
           isSelected
             ? 'bg-press-accent-soft'
             : isRoot
