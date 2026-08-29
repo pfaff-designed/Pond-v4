@@ -1,7 +1,7 @@
 ---
 id: 40
 label: cycle-3:w4
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
