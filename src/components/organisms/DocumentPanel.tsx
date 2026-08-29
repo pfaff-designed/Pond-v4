@@ -241,8 +241,9 @@ export function DocumentPanel() {
 
         {/* Provide sibling-block state so bound metrics derive live and their `→`
             can scroll to source (ticket-23). Keyed off the live `viewBlocks`, so a
-            checklist toggle re-derives every metric in the same render. */}
-        <SiblingBlocksProvider value={{ blocks: viewBlocks, scrollToBlock }}>
+            checklist toggle re-derives every metric in the same render. `pageId` lets a
+            cross-page rollup metric find this page's children (ticket-38). */}
+        <SiblingBlocksProvider value={{ blocks: viewBlocks, scrollToBlock, pageId: page.id }}>
           <div className="space-y-3">
             {viewBlocks.map((block, i) => (
               <BlockEditor

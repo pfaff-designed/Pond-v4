@@ -25,7 +25,9 @@ export function PageView({ data, editable, onChange }: ModuleViewProps<PageModul
   return (
     // Sibling state so a bound metric derives from its checklist/table (ticket-23);
     // re-derives whenever `data.blocks` changes (e.g. a child checkbox toggles).
-    <SiblingBlocksProvider value={{ blocks: data.blocks, scrollToBlock }}>
+    // `data.id` is this page's own id — a cross-page rollup uses it to find children
+    // (ticket-38).
+    <SiblingBlocksProvider value={{ blocks: data.blocks, scrollToBlock, pageId: data.id }}>
       <div className="space-y-4">
         {data.title && <h1 className="text-xl font-semibold text-zinc-900">{data.title}</h1>}
         {data.blocks.map((block, i) => (
