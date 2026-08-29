@@ -21,7 +21,11 @@ export function OverviewCard({
   return (
     <button
       onClick={onOpen}
-      className="group w-full text-left bg-card border border-border rounded-[20px] px-[18px] py-4 cursor-pointer transition-all duration-200 shadow-[0_1px_2px_rgba(40,34,24,0.04),0_8px_24px_rgba(40,34,24,0.06)] hover:-translate-y-px hover:shadow-[0_2px_4px_rgba(40,34,24,0.05),0_12px_30px_rgba(40,34,24,0.09)]"
+      // ticket-41: hover lift + press-down settle, token-timed. The active state
+      // presses the card back to rest (a physical "click") so the tap reads as
+      // cause, not just a hover flourish. Reduced-motion still gets the visual
+      // change instantly (no travel is perceptible at the token durations).
+      className="group w-full text-left bg-card border border-border rounded-[20px] px-[18px] py-4 cursor-pointer transition-[transform,box-shadow] duration-[var(--motion-settle)] ease-[var(--ease-press)] shadow-[0_1px_2px_rgba(40,34,24,0.04),0_8px_24px_rgba(40,34,24,0.06)] hover:-translate-y-px hover:shadow-[0_2px_4px_rgba(40,34,24,0.05),0_12px_30px_rgba(40,34,24,0.09)] active:translate-y-0 active:scale-[0.994] active:duration-[var(--motion-instant)] motion-reduce:transition-none"
     >
       <span className="flex flex-col gap-2.5">
         <span className="flex items-center gap-2">
@@ -33,7 +37,7 @@ export function OverviewCard({
           <span className="text-[13.5px] font-semibold text-foreground truncate">{title}</span>
           <span
             aria-hidden
-            className="ml-auto text-[15px] text-press-faint group-hover:text-press-accent transition-colors duration-200"
+            className="ml-auto text-[15px] text-press-faint group-hover:text-press-accent transition-colors duration-[var(--motion-settle)]"
           >
             ›
           </span>
