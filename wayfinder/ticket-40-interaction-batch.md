@@ -39,7 +39,19 @@ pressKickerClass, SlashMenu precedent).
    turn) so Pond can propose a table/chart via the normal gate. Jest the
    parser hard (quotes, commas-in-cells, CRLF, BOM, ragged rows).
 
+5. **Inline composer ghost-suggestion (from user's wireframe)**: when the
+   composer is empty (or on a lull), show a single quiet greyed ghost-completion
+   INSIDE the input — a model/context-suggested next thing to say (e.g. the top
+   follow-up chip's text, or a phase-appropriate prompt) — with Tab/→ to accept
+   (fills the input, doesn't send) and a small caret to cycle alternatives.
+   Source the suggestions from the SAME set as the chip row (reuse t39
+   suggest_followups; don't add a second suggestion channel). Never obstruct
+   typing — vanishes the instant the user types. Quiet Press styling
+   (press-faint), reduced-motion safe. Keep it OFF when the model has no
+   suggestion. Story-test the accept + vanish-on-type + empty-source paths.
+
 Token regime: jest+story proof (palette nav, selection-affordance logic as
-testable units, CSV parser matrix); NO dev server; touched-files lint clean.
+testable units, CSV parser matrix, ghost accept/vanish); NO dev server;
+touched-files lint clean.
 Preserve all shipped machinery (t39 chips/cards/lifecycle untouched).
 Resolution + status: resolved.
