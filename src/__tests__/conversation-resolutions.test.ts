@@ -136,6 +136,53 @@ describe('applyResolutions', () => {
   })
 })
 
+describe('applyResolutions — question cards (ticket-39)', () => {
+  function questionTranscript(): UIMessage[] {
+    return [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'build it' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-ask_question',
+            toolCallId: 'q1',
+            state: 'input-available',
+            input: { question: 'What kiln?', options: ['Gas', 'Wood-fired'], branch: 'kiln type' },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an answered question card as a tool result so the model stops asking', () => {
+    const out = applyResolutions(questionTranscript(), {
+      ...emptyResolutions(),
+      questions: { q1: { answer: 'Wood-fired', via: 'option' } },
+    })
+    const part = findPart(out, 'q1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ answer: 'Wood-fired', via: 'option' })
+    expect((part.output as { note: string }).note).toMatch(/do not ask it again/i)
+  })
+
+  it('leaves an unanswered question card untouched (its branch stays open)', () => {
+    const out = applyResolutions(questionTranscript(), emptyResolutions())
+    expect(findPart(out, 'q1').state).toBe('input-available')
+  })
+
+  it('an answered question survives real SDK replay; unanswered is dropped', async () => {
+    const answered = applyResolutions(questionTranscript(), {
+      ...emptyResolutions(),
+      questions: { q1: { answer: 'Wood-fired', via: 'free' } },
+    })
+    const model = await toModelMessages(answered)
+    expect(model.some((m) => m.role === 'tool')).toBe(true)
+    const unanswered = await toModelMessages(applyResolutions(questionTranscript(), emptyResolutions()))
+    expect(unanswered.some((m) => m.role === 'tool')).toBe(false)
+  })
+})
+
 describe('applyResolutions → toModelMessages (real SDK replay)', () => {
   function toolCallIds(model: Awaited<ReturnType<typeof toModelMessages>>): string[] {
     return model.flatMap((m) =>
@@ -168,6 +215,7 @@ describe('parseResolutions', () => {
       creates: { cp1: 'rejected' },
       skipped: { pc1: 2 },
       targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
+      questions: {}, // ticket-39: question-card answers ride the same envelope
     }
     expect(parseResolutions(value)).toEqual(value)
   })
@@ -195,6 +243,7 @@ describe('parseResolutions', () => {
       creates: {},
       skipped: { x: 1 },
       targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
+      questions: {}, // ticket-39: present-but-empty on a row with no question cards
     })
   })
 

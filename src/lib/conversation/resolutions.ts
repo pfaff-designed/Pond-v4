@@ -16,8 +16,17 @@
  * replay exactly as before.
  *
  * Server-safe: pure data, no React.
+ *
+ * Ticket-39 (THE SPINE) folds two more facts into the SAME envelope, so the
+ * lifecycle and question cards persist and re-seed exactly like proposal cards:
+ *   - `lifecycle` — the project phase (grill → wayfinding → build-out), so a
+ *     returning session resumes mid-arc.
+ *   - `questions` — branch-pause question-card answers, so an answered card
+ *     renders inert after reload and its answer rides the chat body.
  */
 import type { UIMessage } from 'ai'
+import { parseQuestionResolutions, type QuestionResolutions } from './parts'
+import { parseLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 
 export type ProposalDecision = 'accepted' | 'rejected'
 
@@ -42,10 +51,15 @@ export interface ConversationResolutions {
   skipped: Record<string, number>
   /** Proposal-time target page per propose_changes batch, by toolCallId. */
   targets: Record<string, ProposalTarget>
+  /** Branch-pause question-card answers, by toolCallId (ticket-39). */
+  questions: QuestionResolutions
+  /** The project lifecycle phase, so a returning session resumes mid-arc
+   *  (ticket-39). Optional in persisted rows: absent ⇒ ordinary chat (idle). */
+  lifecycle?: LifecycleState
 }
 
 export function emptyResolutions(): ConversationResolutions {
-  return { changes: {}, creates: {}, skipped: {}, targets: {} }
+  return { changes: {}, creates: {}, skipped: {}, targets: {}, questions: {} }
 }
 
 /** Tolerant parse of a persisted/sent resolutions value — never throws, drops
@@ -68,11 +82,18 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     x !== null &&
     typeof (x as ProposalTarget).nodeId === 'string' &&
     typeof (x as ProposalTarget).nodeName === 'string'
+  const lifecycle = parseLifecycle(v.lifecycle)
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
     skipped: pick('skipped', isCount),
     targets: pick('targets', isTarget),
+    // Question-card answers + lifecycle ride the same envelope (ticket-39),
+    // parsed by their own owning modules so the record shapes stay one home.
+    questions: parseQuestionResolutions(v.questions),
+    // Only carry the lifecycle when a project is actually in flight — an idle
+    // state is the default and stays off ordinary-chat rows.
+    ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
   }
 }
 
@@ -143,7 +164,7 @@ type ToolPartLike = {
   type: string
   toolCallId: string
   state: string
-  input?: { changes?: unknown[] }
+  input?: { changes?: unknown[]; question?: string }
 }
 
 /**
@@ -151,6 +172,10 @@ type ToolPartLike = {
  * results (`output-available`), so `toModelMessages` preserves them and the
  * model sees what was actioned. Parts with no recorded decision are returned
  * untouched. Pure — input messages are not mutated.
+ *
+ * Ticket-39: an ANSWERED question card is stamped the same way — the model sees
+ * the user's branch decision (which chip / free answer) and stops re-asking,
+ * exactly as it stops re-proposing an actioned card.
  */
 export function applyResolutions(
   messages: UIMessage[],
@@ -158,7 +183,8 @@ export function applyResolutions(
 ): UIMessage[] {
   if (
     Object.keys(resolutions.changes).length === 0 &&
-    Object.keys(resolutions.creates).length === 0
+    Object.keys(resolutions.creates).length === 0 &&
+    Object.keys(resolutions.questions).length === 0
   ) {
     return messages
   }
@@ -170,6 +196,20 @@ export function applyResolutions(
 
 function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): ToolPartLike {
   if (part.state !== 'input-available') return part
+
+  if (part.type === 'tool-ask_question') {
+    const answer = resolutions.questions[part.toolCallId]
+    if (!answer) return part
+    return {
+      ...part,
+      state: 'output-available',
+      output: {
+        answer: answer.answer,
+        via: answer.via,
+        note: 'The user answered this question. Apply this branch and do not ask it again.',
+      },
+    } as ToolPartLike
+  }
 
   if (part.type === 'tool-propose_changes') {
     const changeCount = part.input?.changes?.length ?? 0

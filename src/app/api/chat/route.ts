@@ -12,7 +12,16 @@ import {
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt } from './prompt'
-import { createPageTool, proposeChangesTool, fetchContextTool, readPageTool } from './tools'
+import {
+  createPageTool,
+  proposeChangesTool,
+  fetchContextTool,
+  readPageTool,
+  askQuestionTool,
+  suggestFollowupsTool,
+} from './tools'
+import { stepBudgetForPhase } from './step-budget'
+import { lifecycleContextNote } from '@/lib/conversation/lifecycle'
 import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
@@ -97,9 +106,22 @@ export async function POST(req: Request) {
     })
     if (context) contextBlocks.push(context)
   }
+  // Stuck-in-grill guard (ticket-39 review): once the grill has run
+  // GRILL_NUDGE_THRESHOLD turns, inject the [Lifecycle] note that forces an
+  // advance chip into this reply's suggest_followups (the CORRESPONDENCE
+  // section teaches the model to obey it). Deterministic — the grillTurns
+  // counter rides the envelope, so this fires regardless of model mood.
+  const lifecycleNote = resolutions.lifecycle ? lifecycleContextNote(resolutions.lifecycle) : null
+  if (lifecycleNote) contextBlocks.push(lifecycleNote)
   if (contextBlocks.length > 0) {
     system = buildSystemPrompt(contextBlocks.join('\n\n'))
   }
+
+  // Step budget by lifecycle phase (ticket-39 §4). A BUILD-OUT turn lands the
+  // structure as several separate tool batches and so needs more round-trips
+  // than a chat turn; grill/wayfinding/idle keep the incumbent cap. The phase
+  // rides the resolutions envelope (parsed above), defaulting to idle chat.
+  const phase = resolutions.lifecycle?.phase ?? 'idle'
 
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
@@ -113,7 +135,8 @@ export async function POST(req: Request) {
     // create_page stays client-side (no execute) and still ends the turn as before.
     // The web_search tool caps its own uses per turn (WEB_SEARCH_MAX_USES); this
     // outer bound covers the read-then-answer round-trips around those searches.
-    stopWhen: stepCountIs(8),
+    // Build-out turns get more head-room (ticket-39 §4 — see step-budget.ts).
+    stopWhen: stepCountIs(stepBudgetForPhase(phase)),
     // Self-correction on top of the strict inputSchema gate (t16 branch 7): if the
     // model emits a tool call whose arguments fail schema validation — most likely a
     // slightly-off propose_changes batch against the closed discriminated union —
@@ -152,6 +175,13 @@ export async function POST(req: Request) {
       // Provider-executed web search (ticket-29): Anthropic runs the search and
       // returns cited results; the SDK surfaces them as `source-url` message parts.
       web_search: webSearchTool,
+      // ask_question (ticket-39): a branch-pause question card during build-out.
+      // Client-resolved (no execute) — the tool call renders the card and the
+      // user's pick rides the resolutions envelope, exactly like a proposal.
+      ask_question: tool(askQuestionTool),
+      // suggest_followups (ticket-39): quiet follow-up chips under a reply.
+      // Client-resolved (no execute); clicking a chip sends its text.
+      suggest_followups: tool(suggestFollowupsTool),
     },
   })
 

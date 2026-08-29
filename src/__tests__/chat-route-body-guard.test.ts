@@ -50,7 +50,8 @@ describe('parseChatBody', () => {
       messages: [],
       nodeId: undefined,
       nodeType: undefined,
-      resolutions: { changes: {}, creates: {}, skipped: {}, targets: {} },
+      // ticket-39: the envelope now also carries question-card answers.
+      resolutions: { changes: {}, creates: {}, skipped: {}, targets: {}, questions: {} },
     })
   })
 
@@ -68,7 +69,13 @@ describe('parseChatBody', () => {
     expect(valid?.resolutions.changes).toEqual({ 'pc1:0': 'accepted' })
 
     const garbage = parseChatBody({ messages: [], resolutions: 'nope' })
-    expect(garbage?.resolutions).toEqual({ changes: {}, creates: {}, skipped: {}, targets: {} })
+    expect(garbage?.resolutions).toEqual({
+      changes: {},
+      creates: {},
+      skipped: {},
+      targets: {},
+      questions: {},
+    })
   })
 
   it('rejects a non-object body', () => {
