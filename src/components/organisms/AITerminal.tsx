@@ -27,6 +27,15 @@ import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import {
+  TextSelectionPopover,
+  type SelectionContext,
+} from '@/components/molecules/TextSelectionPopover'
+import { VoiceInputButton } from '@/components/atoms/VoiceInputButton'
+import { CsvAttachmentPill } from '@/components/atoms/CsvAttachmentPill'
+import { QuoteChip } from '@/components/atoms/QuoteChip'
+import { GhostSuggestion, useGhostKeyHandler } from '@/components/atoms/GhostSuggestion'
+import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
+import {
   TerminalDrawer,
   TERMINAL_DEFAULT_HEIGHT,
   TERMINAL_MAX_HEIGHT,
@@ -362,7 +371,98 @@ export function AITerminal() {
   const [isReady, setIsReady] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
+
+  // ── Highlight-to-ask quote context (ticket-40 F20) ────────────────────────
+  const [quoteCtx, setQuoteCtx] = useState<SelectionContext | null>(null)
+
+  const handleAskFromSelection = useCallback((ctx: SelectionContext) => {
+    setQuoteCtx(ctx)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [])
+
+  // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
+  const [csvAttachment, setCsvAttachment] = useState<{
+    parsed: CsvParseOk
+    filename: string
+  } | null>(null)
+
+  const processCsvFile = useCallback((file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const raw = e.target?.result
+      if (typeof raw !== 'string') return
+      const result = parseCsv(raw)
+      if (!result.ok) {
+        setInput(`[CSV error: ${result.message}]`)
+        return
+      }
+      setCsvAttachment({ parsed: result, filename: file.name })
+    }
+    reader.readAsText(file)
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const file = Array.from(e.dataTransfer.files).find((f) => f.name.endsWith('.csv'))
+      if (file) processCsvFile(file)
+    },
+    [processCsvFile]
+  )
+
+  const handleCsvPaperclip = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.csv,text/csv'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) processCsvFile(file)
+    }
+    input.click()
+  }, [processCsvFile])
+
+  // ── Ghost suggestion from t39 followup chips (ticket-40 §5) ──────────────
+  const ghostSuggestion = useMemo<string | null>(() => {
+    if (isStreaming) return null
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const parts = messages[i].parts as Array<{ type: string }>
+      const fp = parts.filter(isSuggestFollowupsPart)
+      for (const p of fp) {
+        const s = (p as SuggestFollowupsPart).input?.suggestions?.[0]
+        if (s) return s
+      }
+    }
+    return null
+  }, [messages, isStreaming])
+
+  const [ghostDismissed, setGhostDismissed] = useState(false)
+  const prevGhost = useRef(ghostSuggestion)
+  useEffect(() => {
+    if (ghostSuggestion !== prevGhost.current) {
+      prevGhost.current = ghostSuggestion
+      setGhostDismissed(false)
+    }
+  }, [ghostSuggestion])
+
+  const activeSuggestion = ghostDismissed ? null : ghostSuggestion
+
+  const handleGhostAccept = useCallback((text: string) => {
+    setInput(text)
+    setGhostDismissed(false)
+  }, [])
+
+  const handleGhostDismiss = useCallback(() => {
+    setGhostDismissed(true)
+  }, [])
+
+  const ghostKeyHandler = useGhostKeyHandler({
+    suggestion: activeSuggestion,
+    inputValue: input,
+    onAccept: handleGhostAccept,
+    onDismiss: handleGhostDismiss,
+  })
 
   // ── Drawer ergonomics (ticket-24) ─────────────────────────────────────────
   // Height + collapse are user-controlled and remembered across sessions. The
@@ -649,13 +749,28 @@ export function AITerminal() {
       const outgoing: ConversationResolutions = isLifecycleActive(advanced)
         ? { ...resolutions, lifecycle: advanced }
         : { ...resolutions, lifecycle: undefined }
+
+      // Build the final message text, injecting quote + CSV context single-turn.
+      let finalText = text
+      if (quoteCtx) {
+        const blockNote = quoteCtx.blockId ? ` [block:${quoteCtx.blockId}]` : ''
+        finalText = `> "${quoteCtx.text}"${blockNote}\n\n${text}`
+        setQuoteCtx(null)
+      }
+      if (csvAttachment) {
+        const ctx = formatCsvContext(csvAttachment.parsed, csvAttachment.filename)
+        finalText = `${finalText}\n\n${ctx}`
+        setCsvAttachment(null)
+      }
+
       // Send the open node so the server can auto-inject its context (Track C),
       // plus the card resolutions so replay carries the user's decisions (t19)
       // and the route reads this turn's lifecycle phase (t39).
-      sendMessage({ text }, { body: { nodeId, nodeType, resolutions: outgoing } })
+      sendMessage({ text: finalText }, { body: { nodeId, nodeType, resolutions: outgoing } })
       setInput('')
+      setGhostDismissed(false)
     },
-    [nextLifecycle, resolutions, sendMessage, nodeId, nodeType]
+    [nextLifecycle, resolutions, sendMessage, nodeId, nodeType, quoteCtx, csvAttachment]
   )
 
   // ── Send ──────────────────────────────────────────────────────────────────
@@ -694,6 +809,10 @@ export function AITerminal() {
   )
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Ghost suggestion: Tab/→ accepts before any other handling.
+    ghostKeyHandler(e)
+    if (e.defaultPrevented) return
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       setChatMenuOpen(false)
@@ -1128,11 +1247,35 @@ export function AITerminal() {
   // no full-width hairline spanning edge-to-edge. paddingLeft: RAIL_WIDTH_PX
   // shares the single metric with TerminalDrawer's header chrome.
   const inputFooter = (
-    <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
+    <div
+      className="flex-shrink-0"
+      style={{ paddingLeft: RAIL_WIDTH_PX }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDrop={handleDrop}
+    >
       <div className="mx-auto w-full max-w-2xl px-8">
         <div className="border-t border-press-hair">
+          {/* Quote chip — highlight-to-ask (ticket-40 F20) */}
+          {quoteCtx && (
+            <div className="pt-2">
+              <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />
+            </div>
+          )}
+          {/* CSV attachment pill (ticket-40 F16) */}
+          {csvAttachment && (
+            <div className="pt-2">
+              <CsvAttachmentPill
+                filename={csvAttachment.filename}
+                rowCount={csvAttachment.parsed.totalRows}
+                onRemove={() => setCsvAttachment(null)}
+              />
+            </div>
+          )}
           <div className="flex items-end gap-4 py-3">
-            <div className="relative flex-1">
+            <div ref={composerRef} className="relative flex-1">
               {chatMenuOpen && (
                 <SlashMenu
                   items={CHAT_COMMANDS}
@@ -1151,13 +1294,22 @@ export function AITerminal() {
                   className="absolute bottom-full left-0 z-20 w-64 mb-1"
                 />
               )}
+              {/* Ghost suggestion (ticket-40 §5) — behind the textarea, visible only when empty */}
+              <GhostSuggestion
+                suggestion={activeSuggestion}
+                inputValue={input}
+                onAccept={handleGhostAccept}
+                onDismiss={handleGhostDismiss}
+                id="ghost-suggestion"
+                className="py-1.5"
+              />
               <textarea
                 ref={inputRef}
                 value={input}
+                aria-describedby={activeSuggestion && !input ? 'ghost-suggestion' : undefined}
                 onChange={(e) => {
                   const val = e.target.value
                   setInput(val)
-                  // Open command menu when the user types exactly '/' (or starts with '/' and no space yet)
                   if (val === '/' || (val.startsWith('/') && !val.includes(' '))) {
                     setChatMenuOpen(true)
                   } else {
@@ -1167,10 +1319,29 @@ export function AITerminal() {
                 onKeyDown={handleKeyDown}
                 placeholder="Talk to Pond… (/clear · /handoff · /save)"
                 rows={inputRows}
-                className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
+                className="relative z-10 w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>
+            {/* Voice input button (ticket-40 F6) */}
+            <VoiceInputButton
+              onTranscript={(t) => setInput(t)}
+              disabled={isStreaming || !isReady}
+              className="self-end mb-2"
+            />
+            {/* CSV paperclip (ticket-40 F16) */}
+            <button
+              type="button"
+              aria-label="Attach CSV file"
+              title="Attach CSV file"
+              onClick={handleCsvPaperclip}
+              disabled={isStreaming || !isReady}
+              className="self-end mb-2 text-press-faint hover:text-press-accent transition-colors disabled:opacity-40"
+            >
+              <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
+                <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 0 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3Z" />
+              </svg>
+            </button>
             <button
               onClick={handleSend}
               disabled={isStreaming || !input.trim() || !isReady}
@@ -1195,6 +1366,8 @@ export function AITerminal() {
 
   return (
     <>
+      {/* Highlight-to-ask popover (ticket-40 F20) — global selection listener */}
+      <TextSelectionPopover onAsk={handleAskFromSelection} disabled={isStreaming} />
       <TerminalDrawer
         contextLabel={phaseContextLabel}
         height={effectiveHeight}

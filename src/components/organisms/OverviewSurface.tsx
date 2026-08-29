@@ -29,7 +29,6 @@ import {
 import { fetchPages } from '@/lib/pages/tree'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
-import { requestTerminalFocus } from '@/lib/terminal-focus'
 
 /** Staggered rise-on-mount wrapper. index drives the delay. */
 function Rise({
@@ -138,8 +137,6 @@ export interface OverviewSurfaceProps {
   /** The closing serif line, e.g. "That's Health at a glance…". */
   closing: string
   onOpenCard: (card: OverviewCardModel) => void
-  /** The quiet "ask Pond →" affordance — focuses the terminal. */
-  onAskPond?: () => void
   /**
    * The quiet "+ Add content" affordance. Present when this node could hold its
    * own blocks but has none yet (a pure area/container). Adding a block flips the
@@ -158,7 +155,6 @@ export function OverviewSurface({
   model,
   closing,
   onOpenCard,
-  onAskPond,
   onAddContent,
 }: OverviewSurfaceProps) {
   let ri = 0
@@ -203,14 +199,6 @@ export function OverviewSurface({
                 className="text-[12.5px] font-medium text-press-muted hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
               >
                 + Add content
-              </button>
-            )}
-            {onAskPond && (
-              <button
-                onClick={onAskPond}
-                className="text-[12.5px] font-medium text-press-accent hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
-              >
-                ask Pond →
               </button>
             )}
           </div>
@@ -322,7 +310,6 @@ export function AreaOverviewPanel({
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
       onOpenCard={openCard}
-      onAskPond={requestTerminalFocus}
       onAddContent={onAddContent}
     />
   )
@@ -358,7 +345,6 @@ export function LifeOverviewPanel() {
       model={model}
       closing="That’s the whole of it. Open an area, or ask."
       onOpenCard={openCard}
-      onAskPond={requestTerminalFocus}
     />
   )
 }
