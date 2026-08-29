@@ -13,6 +13,7 @@ import { todoDescriptor } from './todo/schema'
 import { metricDescriptor } from './metric/schema'
 import { metricRingDescriptor } from './metric-ring/schema'
 import { tableDescriptor } from './table/schema'
+import { kanbanDescriptor } from './kanban/schema'
 import { pageDescriptor } from './page/schema'
 
 export const moduleDescriptors = {
@@ -21,6 +22,7 @@ export const moduleDescriptors = {
   metric: metricDescriptor,
   'metric-ring': metricRingDescriptor,
   table: tableDescriptor,
+  kanban: kanbanDescriptor,
   page: pageDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 

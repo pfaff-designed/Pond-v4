@@ -24,6 +24,7 @@ import { todoSchema, todoItemSchema } from './todo/schema'
 import { metricSchema, metricSourceSchema, metricSourceRefSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
+import { kanbanSchema, kanbanColumnSchema, kanbanCardSchema } from './kanban/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -69,6 +70,21 @@ const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
   .omit({ id: true })
   .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
+/**
+ * Kanban EMIT data (ticket-35): strip ids at BOTH nested levels the descriptor
+ * declares (`['columns', 'columns.cards']`) — the block id, each column id, and each
+ * card id. The AI emits titles/notes only; `hydrateBlock`'s deep-path walker mints
+ * every id on accept. Kept as an explicit nested omit-chain (not registry-derived)
+ * per the file's convention; the strip∘hydrate round-trip is fenced in
+ * `module-nested-ids.test.ts`.
+ */
+const kanbanData = kanbanSchema.omit({ id: true }).extend({
+  columns: z.array(
+    kanbanColumnSchema
+      .omit({ id: true })
+      .extend({ cards: z.array(kanbanCardSchema.omit({ id: true })) })
+  ),
+})
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -76,6 +92,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   metricData,
   metricRingData,
   tableData,
+  kanbanData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -140,6 +157,7 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   metricData.extend({ bindKey }),
   metricRingData.extend({ bindKey }),
   tableData.extend({ bindKey }),
+  kanbanData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
