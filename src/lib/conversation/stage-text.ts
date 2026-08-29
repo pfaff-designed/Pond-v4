@@ -81,6 +81,12 @@ export function stageTextForPart(part: StagePart, options: StageTextOptions = {}
     }
     case 'tool-propose_changes':
       return 'proposing changes…'
+    // Ticket-39 lifecycle tools — a build-out turn narrates a branch-pause and
+    // its follow-up suggestions like any other tool step.
+    case 'tool-ask_question':
+      return 'thinking through a decision…'
+    case 'tool-suggest_followups':
+      return 'thinking of next moves…'
     default:
       return null
   }

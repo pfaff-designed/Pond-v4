@@ -37,6 +37,8 @@ import { Markdown } from '@/components/atoms/Markdown'
 import { StageText } from '@/components/atoms/StageText'
 import { pressKickerClass } from '@/components/atoms/press-kicker'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
+import { FollowupChips } from '@/components/molecules/FollowupChips'
+import { QuestionCard, type QuestionAnswerVia } from '@/components/molecules/QuestionCard'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
 import {
   stageTextForParts,
@@ -55,6 +57,21 @@ import {
   unresolvedProposalIds,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
+import {
+  ASK_QUESTION_TYPE,
+  SUGGEST_FOLLOWUPS_TYPE,
+  type QuestionResolutions,
+} from '@/lib/conversation/parts'
+import {
+  idleLifecycle,
+  detectLifecycleIntent,
+  detectLifecycleSignal,
+  applyLifecycleSignal,
+  beginLifecycle,
+  lifecycleContextLabel,
+  isLifecycleActive,
+  type LifecycleState,
+} from '@/lib/conversation/lifecycle'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -129,6 +146,33 @@ function isCreatePagePart(part: { type: string }): part is CreatePagePart {
   return part.type === 'tool-create_page'
 }
 
+/** An ask_question tool part — a branch-pause question card (ticket-39). Client-
+ *  resolved (no execute); the QuestionCard below drives the answer, which rides
+ *  the resolutions envelope. */
+interface AskQuestionPart {
+  type: typeof ASK_QUESTION_TYPE
+  toolCallId: string
+  state: string
+  input?: { question?: string; options?: string[]; branch?: string }
+}
+
+function isAskQuestionPart(part: { type: string }): part is AskQuestionPart {
+  return part.type === ASK_QUESTION_TYPE
+}
+
+/** A suggest_followups tool part — quiet follow-up chips (ticket-39). Client-
+ *  resolved (no execute); clicking a chip sends its text. */
+interface SuggestFollowupsPart {
+  type: typeof SUGGEST_FOLLOWUPS_TYPE
+  toolCallId: string
+  state: string
+  input?: { suggestions?: string[] }
+}
+
+function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowupsPart {
+  return part.type === SUGGEST_FOLLOWUPS_TYPE
+}
+
 function parseCommand(text: string): CommandResult {
   const t = text.trim()
   if (t === '/clear') return 'clear'
@@ -182,10 +226,23 @@ export function AITerminal() {
   const [createDecisions, setCreateDecisions] = useState<Record<string, ProposalStatus>>({})
   const [createParent, setCreateParent] = useState<Record<string, string>>({})
 
+  // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
+  // no-execute caveat as the proposal maps: the SDK part stays input-available,
+  // so this local map drives the card's answered/inert state and rides the
+  // resolutions envelope so an answered card stays inert across reloads.
+  const [questionAnswers, setQuestionAnswers] = useState<QuestionResolutions>({})
+
+  // The project lifecycle phase (ticket-39). Drives the context-bar phase word
+  // and the per-turn step budget; persists in the same envelope so a returning
+  // session resumes mid-arc. Advanced deterministically from the user's messages
+  // (the user calls the shot) — the model does the adaptive-grill reasoning.
+  const [lifecycle, setLifecycle] = useState<LifecycleState>(idleLifecycle)
+
   // The persistable projection of the decision maps (ticket-19): saved with the
   // transcript so cards stay resolved across reloads, and sent with each chat
   // request so the model sees which proposals were actioned. 'pending' is never
-  // stored, only settled decisions.
+  // stored, only settled decisions. Ticket-39 folds question answers + the
+  // lifecycle phase into the SAME envelope.
   const resolutions: ConversationResolutions = useMemo(() => {
     const settled = (map: Record<string, ProposalStatus>) =>
       Object.fromEntries(Object.entries(map).filter(([, v]) => v !== 'pending')) as Record<
@@ -197,8 +254,12 @@ export function AITerminal() {
       creates: settled(createDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
+      questions: questionAnswers,
+      // Only carry the lifecycle when a project is in flight (keeps ordinary-chat
+      // transcripts clean); the route defaults an absent phase to idle chat.
+      ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
     }
-  }, [changeDecisions, createDecisions, changeSkipped, changeTargets])
+  }, [changeDecisions, createDecisions, changeSkipped, changeTargets, questionAnswers, lifecycle])
 
   const resetResolutions = useCallback(() => {
     setChangeDecisions({})
@@ -207,7 +268,19 @@ export function AITerminal() {
     setChangeTargets({})
     setCreateDecisions({})
     setCreateParent({})
+    setQuestionAnswers({})
+    setLifecycle(idleLifecycle())
   }, [])
+
+  // Record a question-card answer (ticket-39): stamps the local map, which rides
+  // the envelope so the card renders inert and the answer reaches the model next
+  // turn (applyResolutions stamps it as a synthetic tool result).
+  const answerQuestion = useCallback(
+    (toolCallId: string, answer: string, via: QuestionAnswerVia) => {
+      setQuestionAnswers((prev) => ({ ...prev, [toolCallId]: { answer, via } }))
+    },
+    []
+  )
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
@@ -376,6 +449,10 @@ export function AITerminal() {
       setChangeSkipped(conversation.resolutions.skipped ?? {})
       setChangeTargets(conversation.resolutions.targets ?? {})
       setCreateDecisions(conversation.resolutions.creates ?? {})
+      // Ticket-39: restore answered question cards + the lifecycle phase so an
+      // answered branch stays inert and a returning session resumes mid-arc.
+      setQuestionAnswers(conversation.resolutions.questions ?? {})
+      if (conversation.resolutions.lifecycle) setLifecycle(conversation.resolutions.lifecycle)
       setIsReady(true)
     })
   }, [setMessages])
@@ -548,6 +625,42 @@ export function AITerminal() {
     resetResolutions()
   }, [conversationId, messages, queryClient, setMessages, resetResolutions])
 
+  // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
+  // The phase moves on the OUTGOING user message (the user calls the shot): if a
+  // project is in flight, the message's transition signal advances / abandons /
+  // escapes the phase; otherwise a project-shaped ask (or the escape hatch)
+  // BEGINS the arc. The next phase is computed here — synchronously — so it can
+  // ride the SAME request body and the route's step budget reflects it this turn.
+  const nextLifecycle = useCallback(
+    (text: string): LifecycleState => {
+      if (isLifecycleActive(lifecycle)) {
+        return applyLifecycleSignal(lifecycle, detectLifecycleSignal(text, lifecycle.phase))
+      }
+      return beginLifecycle(lifecycle, detectLifecycleIntent(text))
+    },
+    [lifecycle]
+  )
+
+  // The one send path — used by the input's Send AND a follow-up chip / question
+  // click. Advances the lifecycle from the text, sends it with the up-to-date
+  // resolutions (so the route sees this turn's phase + the user's card decisions),
+  // and clears the input.
+  const sendText = useCallback(
+    (text: string) => {
+      const advanced = nextLifecycle(text)
+      setLifecycle(advanced)
+      const outgoing: ConversationResolutions = isLifecycleActive(advanced)
+        ? { ...resolutions, lifecycle: advanced }
+        : { ...resolutions, lifecycle: undefined }
+      // Send the open node so the server can auto-inject its context (Track C),
+      // plus the card resolutions so replay carries the user's decisions (t19)
+      // and the route reads this turn's lifecycle phase (t39).
+      sendMessage({ text }, { body: { nodeId, nodeType, resolutions: outgoing } })
+      setInput('')
+    },
+    [nextLifecycle, resolutions, sendMessage, nodeId, nodeType]
+  )
+
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -570,11 +683,18 @@ export function AITerminal() {
       return
     }
 
-    // Send the open node so the server can auto-inject its context (Track C),
-    // plus the card resolutions so replay carries the user's decisions (t19).
-    sendMessage({ text }, { body: { nodeId, nodeType, resolutions } })
-    setInput('')
-  }, [input, isStreaming, sendMessage, handleClear, handleHandoff, nodeId, nodeType, resolutions])
+    sendText(text)
+  }, [input, isStreaming, handleClear, handleHandoff, sendText])
+
+  // A follow-up chip / question option click sends its text as the next message
+  // (ticket-39). Ignored mid-stream so a click can't interleave a turn.
+  const handleChipPick = useCallback(
+    (chip: string) => {
+      if (isStreaming) return
+      sendText(chip)
+    },
+    [isStreaming, sendText]
+  )
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -805,6 +925,14 @@ export function AITerminal() {
           const createPageParts = (message.parts as Array<{ type: string }>).filter(
             isCreatePagePart
           )
+          // Ticket-39: branch-pause question cards + follow-up chips, both client-
+          // resolved tool parts on the assistant message.
+          const questionParts = (message.parts as Array<{ type: string }>).filter(
+            isAskQuestionPart
+          )
+          const followupParts = (message.parts as Array<{ type: string }>).filter(
+            isSuggestFollowupsPart
+          )
           // Web-search citations (ticket-29): the route streams `source-url` parts for
           // each cited result; collect them so the answer carries a Sources row.
           const sources: Source[] = (
@@ -936,6 +1064,40 @@ export function AITerminal() {
                   />
                 )
               })}
+              {/* Branch-pause question cards (ticket-39 §2): a decision that is the
+                  user's to make. Answering rides the resolutions envelope; an
+                  answered card renders inert. */}
+              {questionParts.map((part) => {
+                if (part.state === 'input-streaming') return null
+                const q = part.input
+                if (!q?.question || !Array.isArray(q.options) || q.options.length === 0) return null
+                return (
+                  <QuestionCard
+                    key={part.toolCallId}
+                    question={q.question}
+                    options={q.options}
+                    branch={q.branch}
+                    answer={questionAnswers[part.toolCallId]?.answer}
+                    onAnswer={(answer, via) => answerQuestion(part.toolCallId, answer, via)}
+                  />
+                )
+              })}
+              {/* Follow-up chips (ticket-39 §3): quiet suggestions below the reply;
+                  clicking one sends its text. Disabled mid-stream. */}
+              {followupParts.map((part) => {
+                if (part.state === 'input-streaming') return null
+                const chips = part.input?.suggestions ?? []
+                if (chips.length === 0) return null
+                return (
+                  <FollowupChips
+                    key={part.toolCallId}
+                    chips={chips}
+                    label="Next"
+                    disabled={isStreaming}
+                    onPick={handleChipPick}
+                  />
+                )
+              })}
             </div>
           )
         })}
@@ -1020,10 +1182,16 @@ export function AITerminal() {
     </div>
   )
 
+  // The quiet phase indicator (ticket-39 §2): while a project is in flight the
+  // context bar reads e.g. "Kiln Studio · charting"; otherwise just the base
+  // context label. Derived from the lifecycle state (grilling → charting →
+  // building), kept Press-calm.
+  const phaseContextLabel = lifecycleContextLabel(lifecycle, contextLabel)
+
   return (
     <>
       <TerminalDrawer
-        contextLabel={contextLabel}
+        contextLabel={phaseContextLabel}
         height={effectiveHeight}
         collapsed={effectiveCollapsed}
         onToggleCollapsed={toggleCollapsed}
