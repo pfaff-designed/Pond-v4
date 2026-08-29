@@ -434,10 +434,9 @@ export function AITerminal() {
   // proposals that arrive during THIS session.
   const [initialMessageIds, setInitialMessageIds] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
+    supabaseClient.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
-      const conversation = await getOrCreateConversation(supabase, user.id)
+      const conversation = await getOrCreateConversation(supabaseClient, user.id)
       setConversationId(conversation.id)
       if (conversation.messages.length > 0) {
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
@@ -455,17 +454,16 @@ export function AITerminal() {
       if (conversation.resolutions.lifecycle) setLifecycle(conversation.resolutions.lifecycle)
       setIsReady(true)
     })
-  }, [setMessages])
+  }, [setMessages, supabaseClient])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
   // persists immediately, not only after the next exchange.
   useEffect(() => {
     if (status === 'ready' && conversationId && messages.length > 0) {
-      const supabase = createClient()
-      saveTranscript(supabase, conversationId, messages, resolutions).catch(console.error)
+      saveTranscript(supabaseClient, conversationId, messages, resolutions).catch(console.error)
     }
-  }, [status, conversationId, messages, resolutions])
+  }, [status, conversationId, messages, resolutions, supabaseClient])
 
   // ── Stamp proposal targets on stream ──────────────────────────────────────
   // The moment a propose_changes part finishes streaming, record which page it
@@ -588,31 +586,29 @@ export function AITerminal() {
   // ── Handle /clear ─────────────────────────────────────────────────────────
   const handleClear = useCallback(async () => {
     if (!conversationId) return
-    const supabase = createClient()
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await supabaseClient.auth.getUser()
     if (!user) return
-    await dissolveConversation(supabase, conversationId)
-    const fresh = await getOrCreateConversation(supabase, user.id)
+    await dissolveConversation(supabaseClient, conversationId)
+    const fresh = await getOrCreateConversation(supabaseClient, user.id)
     setConversationId(fresh.id)
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
-  }, [conversationId, setMessages, resetResolutions])
+  }, [conversationId, setMessages, resetResolutions, supabaseClient])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
   // Extract entities from the transcript (Quick model), write them all, then
   // dissolve and start a fresh session (build-brief §9).
   const handleHandoff = useCallback(async () => {
     if (!conversationId) return
-    const supabase = createClient()
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await supabaseClient.auth.getUser()
     if (!user) return
     const { freshConversation, written } = await performHandoff(
-      supabase,
+      supabaseClient,
       conversationId,
       user.id,
       messages
@@ -623,7 +619,7 @@ export function AITerminal() {
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [conversationId, messages, queryClient, setMessages, resetResolutions])
+  }, [conversationId, messages, queryClient, setMessages, resetResolutions, supabaseClient])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a

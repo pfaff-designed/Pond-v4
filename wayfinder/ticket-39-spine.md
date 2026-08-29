@@ -131,6 +131,22 @@ into AITerminal: cards render in the transcript, answers ride the envelope, a
 chip click sends its text. Context bar shows "<project> · <phase>". 10 story
 tests + 23 parts jest tests.
 
+Honesty note: "blocks only its branch" is a TAUGHT behaviour, not a mechanical
+guarantee — like the t16 propose gate's "never emits unprompted", the prompt
+instructs Pond to keep scaffolding the other branches around an open question,
+and live passes verify compliance. What IS mechanical: an unanswered card stays
+`input-available` (dropped from replay), an answered one is stamped as a
+synthetic tool result, and `openQuestionIds`/`briefOpenQuestions` track the open
+branches deterministically.
+
+Stuck-in-grill guard (review fix): the CORRESPONDENCE section requires an escape
+chip ("just build it" / "enough — chart the route") in EVERY grill-turn's
+suggest_followups, and a `grillTurns` counter in the lifecycle state gives it a
+deterministic floor — at `GRILL_NUDGE_THRESHOLD` (4) stay-turns the route injects
+a `[Lifecycle]` note that this reply's chips MUST include an advance ("turn this
+into the plan"). Counter + note are pure and jest-pinned; the chip emission
+itself is taught (verified in live passes).
+
 ### 4. Step budget by mode + prompt refactor
 
 `stepBudgetForPhase` (documented in `src/app/api/chat/step-budget.ts`): idle/grill
@@ -142,15 +158,18 @@ eval-pinned rule string preserved verbatim (pinned by `prompt-sections.test.ts`)
 
 ### Validation
 
-- **jest**: 54 suites / **745 tests** green (baseline 633 → +112: lifecycle 59,
-  parts 23, prompt-sections 21, step-budget 6, resolutions +3). Four assertions
-  legitimately updated for the new `questions: {}` envelope field.
+- **jest**: 54 suites / **756 tests** green (baseline 633 → +123: lifecycle 68,
+  parts 23, prompt-sections 23, step-budget 6, resolutions +3). Five assertions
+  legitimately updated (four for the new `questions: {}` envelope field; one for
+  stay-in-grill now counting a turn).
 - **test-storybook**: **149** green (incl. 10 new FollowupChips/QuestionCard tests).
 - **tsc --noEmit**: clean.
 - **lint**: every touched file clean.
-- **routing eval** (`scripts/eval-routing.mts --runs 2`): re-run after the prompt
-  refactor — see the report for the delta (the prompt grew persona + lifecycle
-  sections; routing behaviour must be unregressed).
+- **routing eval** (`scripts/eval-routing.mts --runs 2`): **44/44** after the
+  review-fix round — the first pass surfaced one true regression ("add a recipe"
+  on an index page → the model minted a page instead of editing the index),
+  fixed with the ROUTING section's DESTINATION SURFACE rule. Full deltas in
+  `wayfinder/t39-eval-report.md`.
 
 ### Deferred / boundaries
 
