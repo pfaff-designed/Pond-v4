@@ -12,6 +12,13 @@
  * Height is controlled by the parent (persisted to localStorage there); this
  * molecule reports drag deltas and toggles via callbacks. Purely presentational
  * and prop-driven so its states are exercisable in Storybook.
+ *
+ * ticket-42: the terminal's visible chrome now lives entirely within the same
+ * centered column the transcript uses. The outer section is transparent so paper
+ * shows through outside the column — no full-width beige slab. The shared
+ * RAIL_WIDTH_PX constant is the single source of truth for the rail-offset
+ * coupling (Rail.tsx also uses w-[252px]); AITerminal imports it so text and
+ * chrome can't drift.
  */
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -22,6 +29,14 @@ export const TERMINAL_MAX_HEIGHT = 640
 export const TERMINAL_DEFAULT_HEIGHT = 288 // 18rem — the incumbent fixed height
 /** Header height shown when collapsed (just the grab/context strip). */
 export const TERMINAL_COLLAPSED_HEIGHT = 40
+
+/**
+ * The rail sidebar's fixed width in px. Both Rail (w-[252px]) and the terminal
+ * column offset (pl-[252px]) couple to this value. Exporting it here gives
+ * AITerminal a single import to keep text and chrome aligned — if Rail's width
+ * ever changes, updating this constant fixes both.
+ */
+export const RAIL_WIDTH_PX = 252
 
 export function clampTerminalHeight(h: number): number {
   return Math.min(TERMINAL_MAX_HEIGHT, Math.max(TERMINAL_MIN_HEIGHT, h))
@@ -148,13 +163,18 @@ export function TerminalDrawer({
     [collapsed, height, onHeightChange, onHeightCommit]
   )
 
+  // ticket-42: the outer section is transparent — no full-width bg-card slab.
+  // Only the column-scoped inner surface carries the background and borders.
+  // The section still manages height for the flex layout.
   return (
     <section
-      className="flex flex-col border-t border-border bg-card flex-shrink-0"
+      className="flex flex-col flex-shrink-0"
       style={{ height: collapsed ? TERMINAL_COLLAPSED_HEIGHT : height + TERMINAL_COLLAPSED_HEIGHT }}
       aria-label="Pond terminal"
     >
-      {/* Resize handle — a thin grabbable strip along the top edge (hidden when collapsed). */}
+      {/* Resize handle — a thin transparent strip along the top edge (hidden when
+          collapsed). Spans full width so the drag target is easy to hit, but the
+          visible grip is centered over the column (flex items-center justify-center). */}
       {!collapsed && (
         <div
           role="separator"
@@ -173,40 +193,46 @@ export function TerminalDrawer({
         </div>
       )}
 
-      {/* Header: context + visible controls (collapse toggle, clear). The context
-          label carries the correspondence serif (ticket-32) so the strip reads as
-          the head of a letter, not a console status bar; the Clear control stays a
-          quiet lower-case affordance. */}
-      <div className="flex items-center justify-between px-5 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted flex-shrink-0">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Expand terminal' : 'Collapse terminal'}
-          title={collapsed ? 'Expand terminal' : 'Collapse terminal'}
-          className="flex items-center gap-2 hover:text-foreground transition-colors cursor-pointer"
-        >
-          <span
-            aria-hidden
-            className="inline-block text-[10px] transition-transform"
-            style={{ transform: collapsed ? 'rotate(-90deg)' : 'none' }}
-          >
-            ▾
-          </span>
-          <span className="font-serif italic">
-            Context: <span className="not-italic font-medium text-foreground">{contextLabel}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onClear}
-          disabled={!canClear}
-          aria-label="Clear conversation"
-          title="Clear conversation (/clear)"
-          className="font-serif italic text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
-        >
-          Clear
-        </button>
+      {/* Header: context + visible controls (collapse toggle, clear). Confined to the
+          same centered column the transcript uses — no full-width bg strip. The
+          bg-press-accent-wash and hairline border sit only within the column so paper
+          shows through at the left and right margins.
+          ticket-32: the context label carries the correspondence serif. */}
+      <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
+        <div className="mx-auto w-full max-w-2xl px-8">
+          <div className="flex items-center justify-between py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted">
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? 'Expand terminal' : 'Collapse terminal'}
+              title={collapsed ? 'Expand terminal' : 'Collapse terminal'}
+              className="flex items-center gap-2 hover:text-foreground transition-colors cursor-pointer"
+            >
+              <span
+                aria-hidden
+                className="inline-block text-[10px] transition-transform"
+                style={{ transform: collapsed ? 'rotate(-90deg)' : 'none' }}
+              >
+                ▾
+              </span>
+              <span className="font-serif italic">
+                Context:{' '}
+                <span className="not-italic font-medium text-foreground">{contextLabel}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onClear}
+              disabled={!canClear}
+              aria-label="Clear conversation"
+              title="Clear conversation (/clear)"
+              className="font-serif italic text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Body + footer collapse away, but the header strip stays as the re-open affordance. */}
