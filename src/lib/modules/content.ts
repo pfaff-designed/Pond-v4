@@ -19,6 +19,9 @@ import { metricSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema } from './table/schema'
 import { kanbanSchema } from './kanban/schema'
+import { chartLineSchema } from './chart-line/schema'
+import { chartBarSchema } from './chart-bar/schema'
+import { chartAreaSchema } from './chart-area/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -27,6 +30,10 @@ export const blockSchema = z.discriminatedUnion('type', [
   metricRingSchema,
   tableSchema,
   kanbanSchema,
+  // ticket-36: Bklit chart promotion (line / bar / area).
+  chartLineSchema,
+  chartBarSchema,
+  chartAreaSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

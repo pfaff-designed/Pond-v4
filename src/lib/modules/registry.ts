@@ -15,6 +15,9 @@ import { metricRingDescriptor } from './metric-ring/schema'
 import { tableDescriptor } from './table/schema'
 import { kanbanDescriptor } from './kanban/schema'
 import { pageDescriptor } from './page/schema'
+import { chartLineDescriptor } from './chart-line/schema'
+import { chartBarDescriptor } from './chart-bar/schema'
+import { chartAreaDescriptor } from './chart-area/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -24,6 +27,10 @@ export const moduleDescriptors = {
   table: tableDescriptor,
   kanban: kanbanDescriptor,
   page: pageDescriptor,
+  // ticket-36: Bklit chart promotion (line / bar / area).
+  'chart-line': chartLineDescriptor,
+  'chart-bar': chartBarDescriptor,
+  'chart-area': chartAreaDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors
