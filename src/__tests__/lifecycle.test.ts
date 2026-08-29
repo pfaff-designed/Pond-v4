@@ -21,6 +21,9 @@ import {
   lifecycleContextLabel,
   parseLifecycle,
   isLifecycleActive,
+  grillNudgeDue,
+  lifecycleContextNote,
+  GRILL_NUDGE_THRESHOLD,
   WORKING_PHASES,
   type LifecycleState,
 } from '@/lib/conversation/lifecycle'
@@ -153,8 +156,12 @@ describe('applyLifecycleSignal — the transition table', () => {
     expect(applyLifecycleSignal(grill, 'abandon')).toEqual({ phase: 'idle' })
   })
 
-  it('stay is unchanged (same reference-equal content)', () => {
-    expect(applyLifecycleSignal(grill, 'stay')).toEqual(grill)
+  it('stay keeps phase + project, but counts a grill turn while grilling (review fix)', () => {
+    // In the grill, each stay is one more grill turn (the stuck-in-grill counter)…
+    expect(applyLifecycleSignal(grill, 'stay')).toEqual({ ...grill, grillTurns: 1 })
+    // …outside it, stay is fully unchanged.
+    const charting: LifecycleState = { phase: 'wayfinding', projectName: 'Kiln Studio' }
+    expect(applyLifecycleSignal(charting, 'stay')).toEqual(charting)
   })
 
   it('never mutates its input', () => {
@@ -233,5 +240,60 @@ describe('isLifecycleActive', () => {
     for (const phase of WORKING_PHASES) {
       expect(isLifecycleActive({ phase })).toBe(true)
     }
+  })
+})
+
+describe('stuck-in-grill guard (review fix)', () => {
+  it('each stay mid-grill increments the grillTurns counter', () => {
+    let s: LifecycleState = { phase: 'grill' }
+    s = applyLifecycleSignal(s, 'stay')
+    s = applyLifecycleSignal(s, 'stay')
+    expect(s.grillTurns).toBe(2)
+  })
+
+  it('stay outside the grill does not count', () => {
+    expect(applyLifecycleSignal({ phase: 'wayfinding' }, 'stay').grillTurns).toBeUndefined()
+    expect(applyLifecycleSignal({ phase: 'idle' }, 'stay').grillTurns).toBeUndefined()
+  })
+
+  it('advancing or escaping the grill resets the counter', () => {
+    const long: LifecycleState = { phase: 'grill', grillTurns: 5 }
+    expect(applyLifecycleSignal(long, 'advance').grillTurns).toBeUndefined()
+    expect(applyLifecycleSignal(long, 'escape').grillTurns).toBeUndefined()
+  })
+
+  it('the nudge fires at the threshold, not before', () => {
+    expect(grillNudgeDue({ phase: 'grill', grillTurns: GRILL_NUDGE_THRESHOLD - 1 })).toBe(false)
+    expect(grillNudgeDue({ phase: 'grill', grillTurns: GRILL_NUDGE_THRESHOLD })).toBe(true)
+    expect(grillNudgeDue({ phase: 'grill' })).toBe(false)
+  })
+
+  it('the nudge never fires outside the grill', () => {
+    expect(grillNudgeDue({ phase: 'wayfinding', grillTurns: 9 })).toBe(false)
+    expect(grillNudgeDue({ phase: 'idle' })).toBe(false)
+  })
+
+  it('the threshold is 4 (documented)', () => {
+    expect(GRILL_NUDGE_THRESHOLD).toBe(4)
+  })
+
+  it('the [Lifecycle] note demands an advance chip alongside the escape chip', () => {
+    const note = lifecycleContextNote({ phase: 'grill', grillTurns: 5 })
+    expect(note).toMatch(/^\[Lifecycle\]/)
+    expect(note).toMatch(/MUST include/i)
+    expect(note).toMatch(/turn this into the plan/)
+    expect(note).toMatch(/escape chip/i)
+  })
+
+  it('no note before the threshold or outside the grill', () => {
+    expect(lifecycleContextNote({ phase: 'grill', grillTurns: 2 })).toBeNull()
+    expect(lifecycleContextNote({ phase: 'build-out' })).toBeNull()
+  })
+
+  it('grillTurns round-trips through the envelope; it never rides a non-grill phase', () => {
+    expect(parseLifecycle({ phase: 'grill', grillTurns: 3 }).grillTurns).toBe(3)
+    expect(parseLifecycle({ phase: 'wayfinding', grillTurns: 3 }).grillTurns).toBeUndefined()
+    expect(parseLifecycle({ phase: 'grill', grillTurns: -1 }).grillTurns).toBeUndefined()
+    expect(parseLifecycle({ phase: 'grill', grillTurns: 'lots' }).grillTurns).toBeUndefined()
   })
 })

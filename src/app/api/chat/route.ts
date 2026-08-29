@@ -21,6 +21,7 @@ import {
   suggestFollowupsTool,
 } from './tools'
 import { stepBudgetForPhase } from './step-budget'
+import { lifecycleContextNote } from '@/lib/conversation/lifecycle'
 import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
@@ -105,6 +106,13 @@ export async function POST(req: Request) {
     })
     if (context) contextBlocks.push(context)
   }
+  // Stuck-in-grill guard (ticket-39 review): once the grill has run
+  // GRILL_NUDGE_THRESHOLD turns, inject the [Lifecycle] note that forces an
+  // advance chip into this reply's suggest_followups (the CORRESPONDENCE
+  // section teaches the model to obey it). Deterministic — the grillTurns
+  // counter rides the envelope, so this fires regardless of model mood.
+  const lifecycleNote = resolutions.lifecycle ? lifecycleContextNote(resolutions.lifecycle) : null
+  if (lifecycleNote) contextBlocks.push(lifecycleNote)
   if (contextBlocks.length > 0) {
     system = buildSystemPrompt(contextBlocks.join('\n\n'))
   }

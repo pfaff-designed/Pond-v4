@@ -70,6 +70,24 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(PROMPT_SECTIONS.CORRESPONDENCE).toMatch(/branch-pause/i)
   })
 
+  it('grill chips MUST always include an escape, and an advance when the grill runs long (review fix)', () => {
+    const s = PROMPT_SECTIONS.CORRESPONDENCE
+    // Every grill turn offers a way out without typing…
+    expect(s).toMatch(/MUST ALWAYS be an escape/i)
+    expect(s).toMatch(/just build it/)
+    // …and the injected [Lifecycle] long-grill note forces an advance chip.
+    expect(s).toMatch(/\[Lifecycle\]/)
+    expect(s).toMatch(/MUST advance/i)
+    expect(s).toMatch(/turn this into the plan/)
+  })
+
+  it('routing prefers propose_changes when the user names an existing destination surface (eval regression fix)', () => {
+    expect(PROMPT_SECTIONS.ROUTING).toMatch(/DESTINATION SURFACE/)
+    expect(PROMPT_SECTIONS.ROUTING).toMatch(
+      /prefer propose_changes on that page over minting a new page/
+    )
+  })
+
   it('teaches the visible Brief sub-page maintained via the normal gate + completeness reasoning', () => {
     const s = PROMPT_SECTIONS.BRIEF
     expect(s).toMatch(/Brief/)

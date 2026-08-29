@@ -59,6 +59,12 @@ export interface LifecycleState {
   /** The stakes read the model stated at grill start, so the UI + prompt echo
    *  the same posture the user was told. */
   stakes?: ProjectStakes
+  /** How many user turns have stayed inside the GRILL phase (review fix:
+   *  stuck-in-grill guard). Incremented on every `stay` while grilling; once it
+   *  reaches {@link GRILL_NUDGE_THRESHOLD} the route injects a [Lifecycle] note
+   *  telling the model its next chips MUST include an advance — a deterministic
+   *  floor under the prompt's taught behaviour. */
+  grillTurns?: number
 }
 
 /** The resting state: ordinary chat, no project in flight. */
@@ -202,10 +208,11 @@ function nextPhase(phase: LifecyclePhase): LifecyclePhase {
  * mutates. The single home of "what does this signal do to the phase", so the
  * route, the terminal, and the tests can't drift.
  *
- *   - `advance`  → next phase in the arc.
+ *   - `advance`  → next phase in the arc (and the grill counter resets).
  *   - `escape`   → jump to build-out (unless already there / idle).
  *   - `abandon`  → back to idle, project context cleared.
- *   - `stay`     → unchanged.
+ *   - `stay`     → unchanged — except mid-GRILL, where each stay is one more
+ *                  grill turn (the stuck-in-grill counter).
  */
 export function applyLifecycleSignal(
   state: LifecycleState,
@@ -213,15 +220,17 @@ export function applyLifecycleSignal(
 ): LifecycleState {
   switch (signal) {
     case 'advance':
-      return { ...state, phase: nextPhase(state.phase) }
+      return { ...state, phase: nextPhase(state.phase), grillTurns: undefined }
     case 'escape':
       return state.phase === 'idle' || state.phase === 'build-out'
         ? state
-        : { ...state, phase: 'build-out' }
+        : { ...state, phase: 'build-out', grillTurns: undefined }
     case 'abandon':
       return idleLifecycle()
     case 'stay':
-      return state
+      return state.phase === 'grill'
+        ? { ...state, grillTurns: (state.grillTurns ?? 0) + 1 }
+        : state
   }
 }
 
@@ -303,6 +312,14 @@ export function parseLifecycle(value: unknown): LifecycleState {
   if (v.stakes === 'small' || v.stakes === 'big') {
     state.stakes = v.stakes
   }
+  if (
+    typeof v.grillTurns === 'number' &&
+    Number.isFinite(v.grillTurns) &&
+    v.grillTurns >= 0 &&
+    validPhase === 'grill'
+  ) {
+    state.grillTurns = Math.floor(v.grillTurns)
+  }
   return state
 }
 
@@ -311,4 +328,29 @@ export function parseLifecycle(value: unknown): LifecycleState {
  *  ride the envelope (keeps ordinary-chat transcripts clean). */
 export function isLifecycleActive(state: LifecycleState): boolean {
   return state.phase !== 'idle'
+}
+
+// ── Stuck-in-grill guard (review fix) ────────────────────────────────────────
+
+/** Grill turns after which the chips MUST include an advance ("turn this into
+ *  the plan"). The prompt teaches an escape chip on EVERY grill turn; this
+ *  threshold is the deterministic floor: once reached, the route injects a
+ *  [Lifecycle] note the model is instructed to obey. */
+export const GRILL_NUDGE_THRESHOLD = 4
+
+/** True when the grill has run long enough that the next reply's chips must
+ *  offer an advance out of it. */
+export function grillNudgeDue(state: LifecycleState): boolean {
+  return state.phase === 'grill' && (state.grillTurns ?? 0) >= GRILL_NUDGE_THRESHOLD
+}
+
+/**
+ * The [Lifecycle] context note the route injects when the nudge is due, phrased
+ * to match the CORRESPONDENCE section's "when the context tells you the grill
+ * has run long" instruction. Null when no note is needed. Pure — jest-pinned.
+ */
+export function lifecycleContextNote(state: LifecycleState): string | null {
+  if (!grillNudgeDue(state)) return null
+  const n = state.grillTurns ?? 0
+  return `[Lifecycle] The grill has run ${n} turns. This reply's suggest_followups MUST include a chip that advances the arc ("turn this into the plan") alongside the escape chip — offer the user the way out.`
 }
