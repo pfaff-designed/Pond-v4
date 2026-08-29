@@ -144,6 +144,40 @@ t31 NumberFlow count-up now also fires on an `aggregate` value change (the
 - Lint: every touched file clean; repo-wide 79 problems unchanged from main (all
   in `src/components/charts/` + `src/app/proto/`).
 
+### Review-fix round (2026-08-29)
+
+The review pair verified the architecture sound with four fixes, all shipped:
+
+1. **Aggregate error-silence (must-fix).** A fetch-ERRORED child (or an errored
+   `['pages']` tree) was treated as settled and silently dropped — a transient
+   network error rendered a confident under-count (or "0 across 0 pages").
+   `CrossPageBlocks` gains `errored`; the hook sets it from `isError` on the tree
+   - every child query, and `deriveAggregate` returns **`stale`** (manual
+     fallback + "source missing" note). Chosen over holding `pending`: a
+     persistent failure would pin an eternal placeholder, while stale self-heals —
+     the next successful refetch (react-query retries / the standard
+     invalidations) re-derives live. A single cross-page source needs no flag (its
+     errored page is absent from the map → already stale). Jest: pure
+     partial-load case + hook errored-child + hook errored-tree.
+2. **`{ pageId, ref }` collapse (must-fix).** The emit union let that malformed
+   shape (no blockId → every stable branch fails) fall through to the lax ref
+   branch, which stripped `pageId` — cross-page intent silently becoming a
+   same-batch ref. The ref branch is now **`.strict()`**: the shape fails the
+   whole union → the tool-input gate rejects → `repairToolCall` re-asks the
+   model. Fenced by an exact `{ pageId, ref, kind }` rejection test.
+3. **schema↔derive value cycle (must-fix).** derive.ts value-imported the source
+   narrowers from schema.ts while schema.ts value-imports `deriveMetricValue`
+   back — a real init-order hazard contradicting schema's own header claim. The
+   narrowers moved to **`metric/source-guards.ts`** (zero runtime imports;
+   type-only schema import), killing the cycle: schema → {derive, source-guards},
+   derive → source-guards. Header comment corrected.
+4. **Minor:** the same-batch resolved-ref assertion restored to a full `toEqual`
+   — pinning both the exact minted id AND the absence of any stray key (`ref`,
+   `pageId`) on the resolved source.
+
+Post-fix: typecheck clean, jest **45 suites / 573 tests**, test-storybook 119,
+touched files lint-clean.
+
 ### Deferred / boundaries
 
 - **Cross-page `→` scroll** — an aggregate has no single source to jump to (no
