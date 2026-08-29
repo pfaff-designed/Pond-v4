@@ -138,6 +138,21 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     ).toBe(false)
   })
 
+  it('REJECTS a malformed { pageId, ref } source outright (review fix: no silent collapse)', () => {
+    // Without a strict ref branch this shape (no blockId, so every stable branch fails)
+    // would fall through to the ref schema, which strips `pageId` — cross-page intent
+    // silently becoming a same-batch ref. It must instead fail the whole union so the
+    // tool-input gate triggers repairToolCall and the model re-emits a valid form.
+    expect(
+      moduleDataSchema.safeParse({
+        type: 'metric',
+        label: 'x',
+        value: 0,
+        source: { pageId: 'other-page', ref: 'chores', kind: 'checklist-checked' },
+      }).success
+    ).toBe(false)
+  })
+
   it('accepts a table with an opt-in sum footer (ticket-31)', () => {
     const r = moduleDataSchema.safeParse({
       type: 'table',

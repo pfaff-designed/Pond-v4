@@ -26,7 +26,7 @@ import { getPage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
 import type { Block } from '../content'
 import type { MetricSource } from './schema'
-import { isAggregateSource, isCrossPageSource } from './schema'
+import { isAggregateSource, isCrossPageSource } from './source-guards'
 import type { CrossPageBlocks } from './derive'
 
 /** An empty, already-loaded resolution — for metrics that need no cross-page read. */
@@ -56,7 +56,11 @@ export function useCrossPageBlocks(
   // constructing a Supabase client at all (the queryFn is the only place `createClient`
   // runs), so an unbound/same-page metric — the overwhelming majority — stays inert and
   // renders fine anywhere (Storybook, the AI-terminal reference render, jest).
-  const { data: allPages, isPending: pagesPending } = useQuery({
+  const {
+    data: allPages,
+    isPending: pagesPending,
+    isError: pagesErrored,
+  } = useQuery({
     queryKey: ['pages'],
     queryFn: fetchPages,
     enabled: isAggregate,
@@ -94,17 +98,34 @@ export function useCrossPageBlocks(
     if (isAggregate && (!pageId || pagesPending)) return { ...NOT_NEEDED, loaded: false }
 
     // Loaded only when every needed page query has settled (success OR error — an errored
-    // page is treated as gone/missing downstream, not an eternal spinner).
+    // page is treated as unavailable downstream, not an eternal spinner).
     const loaded = pageQueries.every((q) => !q.isPending)
+    // Any needed fetch errored → flag it. The aggregate must NOT sum only the children
+    // that happened to load (a transient network error would render a confident
+    // under-count); derive falls back to `stale` and self-heals on the next successful
+    // refetch. Includes the ['pages'] tree itself: without it the child set reads as
+    // empty and the rollup would claim a confident "0 across 0 pages".
+    const errored = (isAggregate && pagesErrored) || pageQueries.some((q) => q.isError)
 
     const blocksByPage = new Map<string, readonly Block[]>()
     targetPageIds.forEach((id, i) => {
       const page = pageQueries[i]?.data
-      // Only a resolved page contributes blocks; a missing/errored one is simply absent
-      // from the map → derive reads it as stale (cross-page) or skips it (aggregate).
+      // Only a resolved page contributes blocks; a null (deleted) page is simply absent
+      // from the map → derive reads it as stale (cross-page) or skips it (aggregate,
+      // where genuine deletion pending the ['pages'] refetch is fine to drop — unlike
+      // an ERROR, which sets the flag above instead).
       if (page) blocksByPage.set(id, page.blocks)
     })
 
-    return { loaded, blocksByPage, childPageIds }
-  }, [isAggregate, isCrossPage, pageId, pagesPending, pageQueries, targetPageIds, childPageIds])
+    return { loaded, blocksByPage, childPageIds, errored }
+  }, [
+    isAggregate,
+    isCrossPage,
+    pageId,
+    pagesPending,
+    pagesErrored,
+    pageQueries,
+    targetPageIds,
+    childPageIds,
+  ])
 }

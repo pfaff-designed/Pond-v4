@@ -210,6 +210,46 @@ describe('useCrossPageBlocks — child-pages aggregate', () => {
       })
     )
   })
+
+  it('ERRORED child fetch → stale fallback, never a confident sum of the loaded rest (review fix)', async () => {
+    // c1 loads (1 checked), c2's fetch REJECTS (transient network error, not deletion).
+    // Summing only c1 would render a confident under-count of 1 "across 1 page"; the
+    // hook must flag the error so derive falls back to the manual value instead.
+    mockFetchPages.mockResolvedValue(rows(['c1', 'c2']))
+    mockGetPage.mockImplementation((_sb: unknown, id: string) =>
+      id === 'c1'
+        ? Promise.resolve(pageWith(id, [todo('t', 1, 2)]))
+        : Promise.reject(new Error('network down'))
+    )
+    const client = freshClient()
+    const { result } = renderHook(() => useCrossPageBlocks(source, holdingPage), {
+      wrapper: wrapper(client),
+    })
+
+    await waitFor(() => expect(result.current.loaded).toBe(true))
+    expect(result.current.errored).toBe(true)
+    // metricFor's manual value is -1 — the honest fallback, not a partial 1.
+    expect(deriveMetricValue(metricFor(source), [], result.current)).toEqual({
+      state: 'stale',
+      value: -1,
+    })
+  })
+
+  it('ERRORED ["pages"] tree → stale fallback, never a confident "0 across 0 pages"', async () => {
+    // Without the tree the child set reads as empty; a lax hook would report a settled
+    // empty rollup. The tree error must flag `errored` so derive lands stale instead.
+    mockFetchPages.mockRejectedValue(new Error('network down'))
+    const client = freshClient()
+    const { result } = renderHook(() => useCrossPageBlocks(source, holdingPage), {
+      wrapper: wrapper(client),
+    })
+
+    await waitFor(() => expect(result.current.errored).toBe(true))
+    expect(deriveMetricValue(metricFor(source), [], result.current)).toEqual({
+      state: 'stale',
+      value: -1,
+    })
+  })
 })
 
 describe('useCrossPageBlocks — no fetch when not needed', () => {

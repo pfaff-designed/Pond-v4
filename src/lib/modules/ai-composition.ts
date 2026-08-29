@@ -74,7 +74,11 @@ const todoData = todoSchema
  * richer one): cross-page (`pageId`+`blockId`) and aggregate (`pages`) come BEFORE the
  * bare same-page `{ blockId }`, else `{ pageId, blockId }` would collapse to same-page.
  * `ref` stays LAST so a stray `{ blockId, ref }` still resolves to the safe blockId form
- * (the existing ticket-31 both-keys test).
+ * (the existing ticket-31 both-keys test) — and is STRICT (review fix): a lax ref branch
+ * would catch a malformed `{ pageId, ref, kind }` (no blockId, so every stable branch
+ * fails) and silently strip the `pageId`, turning cross-page intent into a same-batch
+ * ref. Strict makes that shape fail the whole union → the tool-input gate rejects it and
+ * `repairToolCall` re-asks the model, instead of persisting the wrong binding.
  */
 const metricData = metricSchema.omit({ id: true }).extend({
   source: z
@@ -82,7 +86,7 @@ const metricData = metricSchema.omit({ id: true }).extend({
       metricSourceCrossPageSchema,
       metricSourceAggregateSchema,
       metricSourceSamePageSchema,
-      metricSourceRefSchema,
+      metricSourceRefSchema.strict(),
     ])
     .optional(),
 })

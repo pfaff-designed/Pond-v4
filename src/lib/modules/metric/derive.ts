@@ -23,7 +23,11 @@
  */
 import type { Block } from '../content'
 import type { MetricBlock, MetricSource, MetricSourceKind } from './schema'
-import { isAggregateSource, isCrossPageSource } from './schema'
+// Value import from source-guards (NOT schema): schema.ts value-imports
+// deriveMetricValue from this file for its serialize facet, so importing a value
+// back from schema here would be a runtime cycle. source-guards has no runtime
+// imports, keeping the graph acyclic.
+import { isAggregateSource, isCrossPageSource } from './source-guards'
 
 export type DerivedMetric =
   | { state: 'unbound'; value: number }
@@ -50,6 +54,18 @@ export interface CrossPageBlocks {
   blocksByPage: ReadonlyMap<string, readonly Block[]>
   /** Direct child page ids of the page holding the metric (aggregate scope). */
   childPageIds: readonly string[]
+  /**
+   * True when any needed fetch ERRORED (a child page, or the ['pages'] tree for the
+   * aggregate scope). An error is not a deletion: an aggregate must not sum the pages
+   * that DID load and present a confident under-count (nor caption a shrunken "across
+   * N"). Errored → the aggregate falls back to `stale` (manual value + "source
+   * missing" note) — chosen over holding `pending` forever because a persistent
+   * failure would otherwise pin an eternal placeholder, while `stale` self-heals: the
+   * next successful refetch (react-query retries / the standard invalidations)
+   * re-derives live. A single cross-page source needs no flag: its errored page is
+   * simply absent from the map, which already lands `stale`.
+   */
+  errored?: boolean
 }
 
 /** Compute a count from a resolved block, per the binding `kind`. null = not countable. */
@@ -124,6 +140,9 @@ function deriveAggregate(
   cross: CrossPageBlocks | undefined
 ): DerivedMetric {
   if (!cross || !cross.loaded) return { state: 'pending' }
+  // Any needed fetch errored → NEVER a confident partial sum over the children that
+  // did load. Fall back to the manual value, flagged (see the `errored` doc above).
+  if (cross.errored) return { state: 'stale', value: metric.value }
 
   let total = 0
   // A page COUNTS toward the scope caption only if it contributes at least one

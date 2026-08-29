@@ -1,9 +1,12 @@
 import { z } from 'zod'
 import type { ModuleDescriptor } from '../types'
 // Type-only: erased at compile, so no runtime cycle with content.ts (which
-// imports this schema). derive.ts itself imports only types — safe at runtime.
+// imports this schema). derive.ts imports only TYPES from this file (its value
+// imports — the source narrowers — live in source-guards.ts, which itself has no
+// runtime imports), so the schema→derive value import below is acyclic and safe.
 import type { Block } from '../content'
 import { deriveMetricValue } from './derive'
+import { isAggregateSource, isCrossPageSource } from './source-guards'
 
 /** What a metric counts from its bound source block. */
 export const metricSourceKindSchema = z.enum(['checklist-checked', 'checklist-total', 'table-rows'])
@@ -85,16 +88,9 @@ export const metricSourceSchema = z.union([
 
 export type MetricSource = z.infer<typeof metricSourceSchema>
 
-/** Narrowers over the persisted source union (keep the shape-checks in one place). */
-export function isCrossPageSource(source: MetricSource): source is MetricSourceCrossPage {
-  return 'pageId' in source
-}
-export function isAggregateSource(source: MetricSource): source is MetricSourceAggregate {
-  return 'pages' in source
-}
-export function isSamePageSource(source: MetricSource): source is MetricSourceSamePage {
-  return !isCrossPageSource(source) && !isAggregateSource(source)
-}
+// The shape narrowers (isCrossPageSource / isAggregateSource / isSamePageSource) live
+// in source-guards.ts — NOT here — so derive.ts never has to value-import from this
+// file (which value-imports deriveMetricValue back; see the header note).
 
 /**
  * The EMIT-only same-batch binding form (ticket-31). `ref` names a `bindKey` the AI

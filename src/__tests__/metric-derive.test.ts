@@ -246,4 +246,20 @@ describe('deriveMetricValue — child-pages aggregate (ticket-38)', () => {
     expect(deriveMetricValue(aggMetric(), [], stillLoading)).toEqual({ state: 'pending' })
     expect(deriveMetricValue(aggMetric(), [])).toEqual({ state: 'pending' })
   })
+
+  it('ERRORED fetch: falls back to the manual value, NEVER a confident partial sum', () => {
+    // One child loaded fine (1 checked), another errored (review fix): summing only the
+    // loaded child would show a confident under-count of 1. The errored flag forces the
+    // stale fallback (manual 99 + "source missing" note) until a refetch succeeds.
+    const partiallyLoaded: CrossPageBlocks = {
+      loaded: true,
+      blocksByPage: new Map([['child-1', [todoA]]]),
+      childPageIds: ['child-1', 'child-2'],
+      errored: true,
+    }
+    expect(deriveMetricValue(aggMetric(), [], partiallyLoaded)).toEqual({
+      state: 'stale',
+      value: 99,
+    })
+  })
 })
