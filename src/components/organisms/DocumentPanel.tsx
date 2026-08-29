@@ -22,6 +22,7 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { ModuleView } from '@/lib/modules/renderers'
+import { emptyKanban } from '@/lib/modules/kanban/schema'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import {
@@ -92,6 +93,14 @@ function emptyBlockForType(type: string): Block | null {
       return { id, type: 'metric', label: '', value: 0 }
     case 'metric-ring':
       return { id, type: 'metric-ring', label: '', pct: 0 }
+    // Wave-2 modules (t35/t36), wired at merge so a palette pick never no-ops.
+    case 'kanban':
+      return emptyKanban(id, () => crypto.randomUUID())
+    case 'chart-line':
+    case 'chart-bar':
+    case 'chart-area':
+      // ChartCard renders a calm "No data yet" for an empty points array.
+      return { id, type, title: '', points: [] }
     default:
       return null
   }
