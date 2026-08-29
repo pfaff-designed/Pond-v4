@@ -11,6 +11,7 @@
 import { z } from 'zod'
 import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
+import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 
 // The web_search tool (ticket-29) lives in ./web-search so this routing-schema
 // module — imported by lint tests and the eval in a jsdom environment — stays free
@@ -122,4 +123,35 @@ export const readPageTool = {
         'The id of the page to read, taken verbatim from the [Workspace outline] in context'
       ),
   }),
+} as const
+
+/**
+ * ask_question (ticket-39, THE SPINE) — a BRANCH-PAUSE question card. During
+ * build-out, when you reach a decision that is the USER's to make, emit this
+ * INSTEAD of guessing or stopping: a question + 2-4 option chips + a free answer.
+ * It blocks ONLY its own branch — keep scaffolding the rest of the structure and
+ * apply the answered branch when the user picks. Client-resolved (no execute):
+ * the tool call renders the card; the user's pick rides the resolutions envelope
+ * so the card renders inert after reload and the answer reaches you next turn.
+ * Do NOT use this to defer an ordinary edit or to re-ask something already
+ * answered — only for genuine user-owned forks in a build-out.
+ */
+export const askQuestionTool = {
+  description:
+    'Ask the user a single branch-pause QUESTION when a build-out reaches a decision that is theirs to make (e.g. which kiln type, which budget tier). Emit a clear question + 2-4 option chips + let them type a free answer. This BLOCKS ONLY THAT BRANCH — continue scaffolding everything else and apply their answer when they pick. Client-resolved (no execute); do NOT re-ask a question the user has already answered, and do NOT use it to stall on a change you can just propose.',
+  inputSchema: askQuestionSchema,
+} as const
+
+/**
+ * suggest_followups (ticket-39, THE SPINE) — up to four quiet follow-up chips
+ * under your reply. Each is a short phrase the user can click to send: an answer
+ * to your own question, or a next move ("turn this into the plan", "add a phase
+ * for glazing"). Essential in grill/wayfinding to carry the thinking forward,
+ * but allowed in any mode. Client-resolved (no execute); clicking a chip sends
+ * its text as the user's next message.
+ */
+export const suggestFollowupsTool = {
+  description:
+    'Offer up to four short follow-up chips under your reply — answers to your own question or sensible next moves the user can click to send. Use them especially while grilling or wayfinding to keep the thinking moving; keep them quiet and few. Client-resolved (no execute).',
+  inputSchema: suggestFollowupsSchema,
 } as const
