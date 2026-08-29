@@ -138,6 +138,60 @@ describe('bound metric serialize (ticket-23 — AI sees what the UI shows)', () 
   })
 })
 
+describe('cross-page & aggregate metric serialize honesty (ticket-38)', () => {
+  const metricSerialize = moduleDescriptors.metric.serialize
+
+  const crossPage: Extract<Block, { type: 'metric' }> = {
+    id: 'm1',
+    type: 'metric',
+    label: 'Milestone tasks',
+    value: 7,
+    source: { pageId: 'page-A', blockId: 'todo-1', kind: 'checklist-checked' },
+  }
+  const aggregate: Extract<Block, { type: 'metric' }> = {
+    id: 'm2',
+    type: 'metric',
+    label: 'Tasks across milestones',
+    value: 42,
+    source: { pages: 'children', kind: 'checklist-checked' },
+  }
+
+  // The whole point: serialize can't reach OTHER pages (siblings hold only this page's
+  // blocks, and serialize is a pure server-safe facet). It must NEVER print a derived
+  // number it cannot compute — it states the binding + the manual fallback honestly, so
+  // the AI's context can never disagree with the UI by fabricating a value.
+  it('cross-page: never emits a fabricated number; names the page + block + fallback', () => {
+    // Even when THIS page happens to hold a same-id todo, the cross-page source must
+    // not be derived from it — honesty over a wrong guess.
+    const localDecoy: Block = {
+      id: 'todo-1',
+      type: 'todo',
+      items: [{ id: 'x', label: 'wrong', checked: true }],
+    }
+    const out = metricSerialize(crossPage, [localDecoy])
+    expect(out).toContain('page page-A')
+    expect(out).toContain('block todo-1')
+    expect(out).toContain('cross-page')
+    expect(out).toContain('manual fallback: 7')
+    // No bare "Milestone tasks: <number>" that would read as a live value.
+    expect(out).not.toMatch(/^Milestone tasks: \d/)
+  })
+
+  it('aggregate: states the rollup scope + fallback, never a computed sum', () => {
+    const out = metricSerialize(aggregate, [])
+    expect(out).toMatch(/child pages/)
+    expect(out).toContain('manual fallback: 42')
+    expect(out).not.toMatch(/^Tasks across milestones: \d/)
+  })
+
+  it('cross-page/aggregate honesty holds whether or not siblings are passed', () => {
+    // siblings can never resolve these forms, so the output must be identical with and
+    // without them — no accidental branch that emits a number when siblings are present.
+    expect(metricSerialize(crossPage)).toBe(metricSerialize(crossPage, []))
+    expect(metricSerialize(aggregate)).toBe(metricSerialize(aggregate, []))
+  })
+})
+
 describe('table sum footer serialize (ticket-31 — AI sees the total the page shows)', () => {
   const tableSerialize = moduleDescriptors.table.serialize
   const budget: Extract<Block, { type: 'table' }> = {

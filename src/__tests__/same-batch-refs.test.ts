@@ -224,8 +224,9 @@ describe('applyProposedChanges — same-batch binding end to end', () => {
 
     const second = applyProposedChanges(first.blocks, [keyedChecklist], mint, { batch, refIds })
     const todo = second.blocks.find((b) => b.type === 'todo')!
-    // The checklist landed with exactly the id the metric was bound to.
-    expect(metric.source!.blockId).toBe(todo.id)
+    // The checklist landed with exactly the id the metric was bound to. A resolved
+    // ref becomes a same-page `{ blockId }` source (ticket-38 widened the union).
+    expect(metric.source).toMatchObject({ blockId: todo.id })
   })
 
   it('partial accept: the source create was REJECTED → binding drops, metric lands manual', () => {
