@@ -1,7 +1,7 @@
 ---
 id: 37
 label: cycle-3:vocabulary
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
@@ -32,3 +32,34 @@ Touches DocumentPanel + AITerminal composer + new molecule; do NOT touch
 ai-composition/registry contracts beyond reading them (t35/t36 are editing
 those files in parallel — read-only access keeps your merge clean).
 Token regime: jest+story proof, no dev server. Resolution + status: resolved.
+
+## Resolution (2026-08-29, branch ticket-37)
+
+All four parts shipped:
+
+1. **SlashMenu molecule** (`src/components/molecules/SlashMenu.tsx`): paper
+   panel (press tokens, press-arrive), filter-as-you-type input, ↑/↓ + Enter,
+   Escape, item = name + muted when-to-use, max-h scroll, "No blocks match"
+   empty line. Stories carry play tests for nav/filter/select/empty
+   (`SlashMenu.stories.tsx`, storybook/test).
+2. **Page surface** (DocumentPanel): palette derived at load from
+   `Object.values(moduleDescriptors)` minus `page` — registry read-only, so
+   t35/t36 modules appear at merge with zero edits. '/' typed into an EMPTY
+   text block opens the palette (the slash never persists); picking replaces
+   the block with that module's empty state via `emptyBlockForType` (todo: 1
+   blank item; table: 2×2; metric: manual 0; metric-ring: 0%; unknown type →
+   null → graceful no-op). `InsertBetween` hover-reveal + at every seam
+   (before-first included) inserts THERE via the same palette.
+3. **Block reorder**: ⠿ drag handle in the left gutter (hover-reveal);
+   `draggable` armed only while the pointer is down on the handle so text
+   selection inside module inputs never starts a block drag; drop splices
+   (not swaps); dragend clears the ghost. Keyboard alternative ⌥↑/⌥↓ on the
+   focused block. Both persist via the normal debounced save.
+4. **Chat surface** (AITerminal): '/' at composer start opens the same
+   SlashMenu with clear/handoff/save, each wired to the existing handlers
+   (`handleClear`, `handleHandoff`, `setIsSavePickerOpen`) — selection
+   executes immediately.
+
+Proof: tsc 0 errors; jest 567/567 (28 new across slash-menu / block-palette /
+chat-command-menu suites); test-storybook 121/121; touched files eslint-clean.
+No dev server run, registry/ai-composition untouched.
