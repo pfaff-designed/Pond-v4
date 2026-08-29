@@ -16,6 +16,9 @@ import { MetricView } from './metric/view'
 import { MetricRingView } from './metric-ring/view'
 import { TableView } from './table/view'
 import { PageView } from './page/view'
+import { ChartLineView } from './chart-line/view'
+import { ChartBarView } from './chart-bar/view'
+import { ChartAreaView } from './chart-area/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -31,6 +34,10 @@ export const moduleRenderers = {
   'metric-ring': { view: MetricRingView },
   table: { view: TableView },
   page: { view: PageView },
+  // ticket-36: Bklit chart promotion. Read-only views (AI-maintained, like metric).
+  'chart-line': { view: ChartLineView },
+  'chart-bar': { view: ChartBarView },
+  'chart-area': { view: ChartAreaView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

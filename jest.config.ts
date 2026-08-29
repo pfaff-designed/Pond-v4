@@ -10,6 +10,13 @@ const config: Config = {
   // Never run tests from local-only worktree/session copies.
   testPathIgnorePatterns: ['/node_modules/', '/.claude/', '/.claude-worktrees/'],
   moduleNameMapper: {
+    // ticket-36: the Bklit chart entry modules the promoted chart views import pull
+    // in @visx → d3-shape (pure ESM) which next/jest won't transpile. Stub them in
+    // jsdom (real render covered by the chart Storybook story tests). Matched on the
+    // resolved path tail (not the `@/` alias, which next resolves before this map
+    // sees it) and placed FIRST so it wins over the `^@/` catch-all below.
+    'components/charts/(line-chart|bar-chart|area-chart|line|bar|area|grid)$':
+      '<rootDir>/src/__mocks__/charts.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     // react-markdown (+ its remark plugins) is pure ESM; next/jest doesn't
     // transpile node_modules, so stub them in jsdom. Typeset rendering is covered

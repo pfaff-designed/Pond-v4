@@ -35,16 +35,52 @@ const samples: Record<string, ModuleData> = {
     columns: ['Tool', 'Location'],
     rows: [{ cells: ['Table Saw', 'Centre of shop'] }, { cells: ['Bandsaw', 'Left wall'] }],
   },
+  // ticket-36: Bklit chart promotion. Charts have no nested id-bearing collections
+  // (points are plain `{ x, values }`), so these round-trip with a top-level id strip.
+  'chart-line': {
+    type: 'chart-line',
+    title: 'Weekly mileage',
+    points: [
+      { x: '2026-01', values: { Miles: 32 } },
+      { x: '2026-02', values: { Miles: 38 } },
+    ],
+  },
+  'chart-bar': {
+    type: 'chart-bar',
+    title: 'Spend by category',
+    points: [
+      { x: 'Rent', values: { Amount: 1800 } },
+      { x: 'Food', values: { Amount: 420 } },
+    ],
+  },
+  'chart-area': {
+    type: 'chart-area',
+    title: 'Balance',
+    points: [
+      { x: '2026-01', values: { Balance: 1200 } },
+      { x: '2026-02', values: { Balance: 1650 } },
+    ],
+  },
 }
 
 const contentTypes = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
 
-/** Every array-of-objects field on a block (the shape nested ids live in). */
-function objectArrays(block: object): Record<string, unknown>[][] {
-  return Object.values(block).filter(
-    (v): v is Record<string, unknown>[] =>
-      Array.isArray(v) && v.every((el) => typeof el === 'object' && el !== null)
-  )
+/**
+ * The block's ID-BEARING object-array collections — the ones the descriptor
+ * DECLARES via `nestedIdPaths`. Not every object-array carries ids: a `chart-*`
+ * block's `points` are plain `{ x, values }` with no id, and hydrate/stamp
+ * deliberately leave them alone (ticket-36). Walking the declared paths (not every
+ * array-of-objects on the block) keeps this fence honest for those modules.
+ */
+function idBearingArrays(type: string, block: object): Record<string, unknown>[][] {
+  const paths = descriptorFor(type)?.nestedIdPaths ?? []
+  const rec = block as Record<string, unknown>
+  return paths
+    .map((p) => rec[p])
+    .filter(
+      (v): v is Record<string, unknown>[] =>
+        Array.isArray(v) && v.every((el) => typeof el === 'object' && el !== null)
+    )
 }
 
 describe('registry completeness', () => {
@@ -63,7 +99,7 @@ describe('hydrateBlock mints every nested id the schema demands', () => {
     // the schema requires was not minted.
     expect(block).not.toBeNull()
     expect(block!.id).toBe('blk-1')
-    for (const arr of objectArrays(block!)) {
+    for (const arr of idBearingArrays(type, block!)) {
       for (const el of arr) {
         expect(typeof el.id).toBe('string')
         expect((el.id as string).startsWith('mint-')).toBe(true)
@@ -75,7 +111,9 @@ describe('hydrateBlock mints every nested id the schema demands', () => {
     let n = 0
     const todo = hydrateBlock(samples.todo, 'blk-1', () => `mint-${n++}`)
     const table = hydrateBlock(samples.table, 'blk-2', () => `mint-${n++}`)
-    const nested = [...objectArrays(todo!), ...objectArrays(table!)].flat().map((el) => el.id)
+    const nested = [...idBearingArrays('todo', todo!), ...idBearingArrays('table', table!)]
+      .flat()
+      .map((el) => el.id)
     expect(new Set(nested).size).toBe(nested.length)
   })
 })
@@ -107,7 +145,7 @@ describe('stampDisplayIds stamps the same collections for display', () => {
   it.each(contentTypes)('%s gets a block id and an id on every nested element', (type) => {
     const block = stampDisplayIds(samples[type], 'preview-0')
     expect(block.id).toBe('preview-0')
-    for (const arr of objectArrays(block)) {
+    for (const arr of idBearingArrays(type, block)) {
       arr.forEach((el, j) => {
         expect(el.id).toBe(`preview-0-${j}`)
       })
@@ -117,11 +155,22 @@ describe('stampDisplayIds stamps the same collections for display', () => {
   it('todo items and table rows carry stamped display ids', () => {
     const todo = stampDisplayIds(samples.todo, 'preview-1')
     const table = stampDisplayIds(samples.table, 'preview-2')
-    expect(objectArrays(todo)[0].map((el) => el.id)).toEqual(['preview-1-0', 'preview-1-1'])
+    expect(idBearingArrays('todo', todo)[0].map((el) => el.id)).toEqual([
+      'preview-1-0',
+      'preview-1-1',
+    ])
     expect(
-      objectArrays(table)
+      idBearingArrays('table', table)
         .flat()
         .map((el) => el.id)
     ).toEqual(['preview-2-0', 'preview-2-1'])
+  })
+
+  it('a chart block keeps its point objects id-free (no nestedIdPaths declared)', () => {
+    // The complement of the todo/table case: a module that DOESN'T declare
+    // nestedIdPaths must not have ids injected into its object-arrays.
+    const chart = stampDisplayIds(samples['chart-line'], 'preview-3') as Record<string, unknown>
+    const points = chart.points as Record<string, unknown>[]
+    expect(points.every((p) => !('id' in p))).toBe(true)
   })
 })

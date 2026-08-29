@@ -45,6 +45,36 @@ const samples: Record<string, Block> = {
       { id: 'r2', cells: ['Bandsaw', 'Left wall'] },
     ],
   },
+  // ticket-36: Bklit chart promotion. serialize is an honest summary — series
+  // name + range + last value — not a per-point dump.
+  'chart-line': {
+    id: 'b1',
+    type: 'chart-line',
+    title: 'Weekly mileage',
+    points: [
+      { x: '2026-01', values: { Miles: 32 } },
+      { x: '2026-02', values: { Miles: 41 } },
+      { x: '2026-03', values: { Miles: 38 } },
+    ],
+  },
+  'chart-bar': {
+    id: 'b1',
+    type: 'chart-bar',
+    title: 'Spend by category',
+    points: [
+      { x: 'Rent', values: { Amount: 1800 } },
+      { x: 'Food', values: { Amount: 420 } },
+    ],
+  },
+  'chart-area': {
+    id: 'b1',
+    type: 'chart-area',
+    title: 'Balance',
+    points: [
+      { x: '2026-01', values: { Balance: 1200 } },
+      { x: '2026-02', values: { Balance: 1650 } },
+    ],
+  },
 }
 
 function serialize(block: Block): string {
@@ -78,6 +108,30 @@ describe('descriptor.serialize (full-fidelity body)', () => {
     expect(serialize(samples.table)).toBe(
       'Power Tools — columns: Tool | Location; rows: Table Saw | Centre of shop ; Bandsaw | Left wall'
     )
+  })
+
+  it('chart-line: kind, title, point count, series range + last value', () => {
+    expect(serialize(samples['chart-line'])).toBe(
+      'Line chart "Weekly mileage" over 3 points; Miles: 32–41 (last 38)'
+    )
+  })
+
+  it('chart-bar: reads as a bar chart with the category series summarized', () => {
+    expect(serialize(samples['chart-bar'])).toBe(
+      'Bar chart "Spend by category" over 2 points; Amount: 420–1800 (last 420)'
+    )
+  })
+
+  it('chart-area: reads as an area chart', () => {
+    expect(serialize(samples['chart-area'])).toBe(
+      'Area chart "Balance" over 2 points; Balance: 1200–1650 (last 1650)'
+    )
+  })
+
+  it('an empty chart serializes to a calm "(no data)", not a crash', () => {
+    expect(
+      moduleDescriptors['chart-line'].serialize({ id: 'e1', type: 'chart-line', points: [] })
+    ).toBe('Line chart: (no data)')
   })
 })
 

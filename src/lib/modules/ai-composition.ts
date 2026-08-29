@@ -24,6 +24,9 @@ import { todoSchema, todoItemSchema } from './todo/schema'
 import { metricSchema, metricSourceSchema, metricSourceRefSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
+import { chartLineSchema } from './chart-line/schema'
+import { chartBarSchema } from './chart-bar/schema'
+import { chartAreaSchema } from './chart-area/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -69,6 +72,12 @@ const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
   .omit({ id: true })
   .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
+// ticket-36: Bklit chart promotion. Charts carry no nested id-bearing collections
+// (their `points` are plain `{ x, values }`), so a flat top-level id strip is the
+// whole omit-chain — the module-nested-ids fence pins that.
+const chartLineData = chartLineSchema.omit({ id: true })
+const chartBarData = chartBarSchema.omit({ id: true })
+const chartAreaData = chartAreaSchema.omit({ id: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -76,6 +85,9 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   metricData,
   metricRingData,
   tableData,
+  chartLineData,
+  chartBarData,
+  chartAreaData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -140,6 +152,11 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   metricData.extend({ bindKey }),
   metricRingData.extend({ bindKey }),
   tableData.extend({ bindKey }),
+  // ticket-36: Bklit chart promotion. No block in a batch binds to a chart, but the
+  // union must list every content type so a page can be created WITH a chart.
+  chartLineData.extend({ bindKey }),
+  chartBarData.extend({ bindKey }),
+  chartAreaData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
