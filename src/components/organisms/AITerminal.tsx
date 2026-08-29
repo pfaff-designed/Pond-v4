@@ -25,6 +25,7 @@ import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
+import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import {
   TerminalDrawer,
   TERMINAL_DEFAULT_HEIGHT,
@@ -60,6 +61,12 @@ import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
+
+const CHAT_COMMANDS: SlashMenuItem[] = [
+  { id: 'clear', name: '/clear', description: 'Clear the conversation and start fresh' },
+  { id: 'handoff', name: '/handoff', description: 'Extract entities and start a fresh session' },
+  { id: 'save', name: '/save', description: 'Save the conversation to a page' },
+]
 
 // Remembered drawer ergonomics (ticket-24).
 const TERMINAL_HEIGHT_KEY = 'pond:terminal-height'
@@ -276,6 +283,7 @@ export function AITerminal() {
   // (CreatePageModal, ticket-26), not this terminal.
   const { messages, sendMessage, setMessages, status } = useChat()
   const [input, setInput] = useState('')
+  const [chatMenuOpen, setChatMenuOpen] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -571,6 +579,7 @@ export function AITerminal() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      setChatMenuOpen(false)
       handleSend()
     }
   }
@@ -958,16 +967,45 @@ export function AITerminal() {
   const inputFooter = (
     <div className="border-t border-press-hair flex-shrink-0 pl-[252px]">
       <div className="mx-auto flex w-full max-w-2xl items-end gap-4 px-8 py-3">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Talk to Pond… (/clear · /handoff · /save)"
-          rows={inputRows}
-          className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
-          disabled={isStreaming || !isReady}
-        />
+        <div className="relative flex-1">
+          {chatMenuOpen && (
+            <SlashMenu
+              items={CHAT_COMMANDS}
+              onSelect={(item) => {
+                setChatMenuOpen(false)
+                setInput('')
+                if (item.id === 'clear') {
+                  handleClear()
+                } else if (item.id === 'handoff') {
+                  handleHandoff()
+                } else if (item.id === 'save') {
+                  setIsSavePickerOpen(true)
+                }
+              }}
+              onClose={() => setChatMenuOpen(false)}
+              className="absolute bottom-full left-0 z-20 w-64 mb-1"
+            />
+          )}
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => {
+              const val = e.target.value
+              setInput(val)
+              // Open command menu when the user types exactly '/' (or starts with '/' and no space yet)
+              if (val === '/' || (val.startsWith('/') && !val.includes(' '))) {
+                setChatMenuOpen(true)
+              } else {
+                setChatMenuOpen(false)
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="Talk to Pond… (/clear · /handoff · /save)"
+            rows={inputRows}
+            className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
+            disabled={isStreaming || !isReady}
+          />
+        </div>
         <button
           onClick={handleSend}
           disabled={isStreaming || !input.trim() || !isReady}
