@@ -35,6 +35,36 @@ const samples: Record<string, ModuleData> = {
     columns: ['Tool', 'Location'],
     rows: [{ cells: ['Table Saw', 'Centre of shop'] }, { cells: ['Bandsaw', 'Left wall'] }],
   },
+  // Kanban (ticket-35): two nested id levels — columns AND cards inside them.
+  kanban: {
+    type: 'kanban',
+    columns: [
+      {
+        title: 'To do',
+        cards: [{ title: 'Cut boards' }, { title: 'Sand', note: 'grit 120 then 220' }],
+      },
+      { title: 'Doing', cards: [{ title: 'Glue-up' }] },
+      { title: 'Done', cards: [] },
+    ],
+  },
+}
+
+/**
+ * Resolve a nested-id path (`'columns'` or the deep `'columns.cards'`, ticket-35)
+ * to the flat list of id-bearing element objects it addresses — the collections a
+ * strip must have emptied of `id`. Mirrors the walker in `hydrate.ts`.
+ */
+function elementsAtPath(block: Record<string, unknown>, path: string): Record<string, unknown>[] {
+  const dot = path.indexOf('.')
+  if (dot === -1) {
+    const collection = block[path]
+    return Array.isArray(collection) ? (collection as Record<string, unknown>[]) : []
+  }
+  const parent = block[path.slice(0, dot)]
+  if (!Array.isArray(parent)) return []
+  return (parent as Record<string, unknown>[]).flatMap((el) =>
+    elementsAtPath(el, path.slice(dot + 1))
+  )
 }
 
 const contentTypes = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
@@ -93,7 +123,7 @@ describe('moduleDataSchema strips every id nestedIdPaths declares (ai-compositio
     const data = parsed.data as Record<string, unknown>
     expect('id' in data).toBe(false)
     for (const path of descriptorFor(type)?.nestedIdPaths ?? []) {
-      const collection = data[path] as Record<string, unknown>[]
+      const collection = elementsAtPath(data, path)
       expect(collection.length).toBeGreaterThan(0)
       for (const el of collection) {
         expect('id' in el).toBe(false)

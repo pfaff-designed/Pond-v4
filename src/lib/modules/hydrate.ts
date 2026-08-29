@@ -24,11 +24,42 @@ export function hydrateBlock(data: unknown, id: string, mintId: () => string): B
   const descriptor = descriptorFor(d.type as string)
   const withIds: Record<string, unknown> = { ...d, id }
   for (const path of descriptor?.nestedIdPaths ?? []) {
-    const collection = d[path]
-    if (Array.isArray(collection)) {
-      withIds[path] = collection.map((el) => ({ ...(el as object), id: mintId() }))
-    }
+    mintNestedIds(withIds, path, () => mintId())
   }
   const parsed = blockSchema.safeParse(withIds)
   return parsed.success ? parsed.data : null
+}
+
+/**
+ * Mint an `id` on every element of the array reached by `path` — a top-level field
+ * (`'columns'`) or one dotted deep segment (`'columns.cards'`, walking each column's
+ * `cards`, ticket-35). `next(index)` supplies each fresh id. Mutates `root` in
+ * place; a missing or non-array target is skipped (the schema re-validation in
+ * `hydrateBlock` catches a real omission). A module declaring BOTH a parent and its
+ * deep child (`['columns', 'columns.cards']`) walks the parent first, so the deep
+ * pass sees the already-id'd columns. Shares its deep-path shape with `preview.ts`'s
+ * display stamp — one convention, two id sources (minted uuid here, deterministic
+ * `${base}-${i}` there).
+ */
+export function mintNestedIds(
+  root: Record<string, unknown>,
+  path: string,
+  next: (index: number) => string
+): void {
+  const dot = path.indexOf('.')
+  if (dot === -1) {
+    const collection = root[path]
+    if (Array.isArray(collection)) {
+      root[path] = collection.map((el, i) => ({ ...(el as object), id: next(i) }))
+    }
+    return
+  }
+  const parent = root[path.slice(0, dot)]
+  if (!Array.isArray(parent)) return
+  const nested = path.slice(dot + 1)
+  root[path.slice(0, dot)] = parent.map((el) => {
+    const clone = { ...(el as Record<string, unknown>) }
+    mintNestedIds(clone, nested, next)
+    return clone
+  })
 }

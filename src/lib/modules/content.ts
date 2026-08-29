@@ -18,6 +18,7 @@ import { todoSchema } from './todo/schema'
 import { metricSchema } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema } from './table/schema'
+import { kanbanSchema } from './kanban/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -25,6 +26,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   metricSchema,
   metricRingSchema,
   tableSchema,
+  kanbanSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */
