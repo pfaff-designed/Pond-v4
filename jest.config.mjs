@@ -1,9 +1,11 @@
-import type { Config } from 'jest'
 import nextJest from 'next/jest.js'
 
+// ESM config (not .ts) so a clean checkout runs the suite without ts-node —
+// jest.config.ts silently required ts-node, which is not a declared dependency.
 const createJestConfig = nextJest({ dir: './' })
 
-const config: Config = {
+/** @type {import('jest').Config} */
+const config = {
   coverageProvider: 'v8',
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
