@@ -30,6 +30,7 @@ import {
   TerminalDrawer,
   TERMINAL_DEFAULT_HEIGHT,
   TERMINAL_MAX_HEIGHT,
+  RAIL_WIDTH_PX,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
 import { cn } from '@/lib/utils'
@@ -897,12 +898,14 @@ export function AITerminal() {
   }, [messages])
 
   // The transcript shares the document's own column — the drawer spans the full
-  // window while the document centers inside <main> (right of the 252px Rail), so a
-  // matching pl-[252px] here makes this max-w-2xl column center over the exact same
-  // region DocumentPanel centers in. One typeset object, not a console bolted under
-  // a document. (Coupled to Rail's w-[252px]; both are the fixed shell metric.)
+  // window while the document centers inside <main> (right of the Rail), so a
+  // matching paddingLeft: RAIL_WIDTH_PX here makes this max-w-2xl column center
+  // over the exact same region DocumentPanel centers in. One typeset object, not a
+  // console bolted under a document. RAIL_WIDTH_PX is the single shared metric
+  // (ticket-42) — imported from TerminalDrawer so the header chrome and transcript
+  // text are always coupled to the same value.
   const messagesBody = (
-    <div className="flex-1 overflow-y-auto py-4 pl-[252px]">
+    <div className="flex-1 overflow-y-auto py-4" style={{ paddingLeft: RAIL_WIDTH_PX }}>
       <div className="mx-auto w-full max-w-2xl space-y-6 px-8">
         {!isReady && <p className="font-serif text-sm italic text-press-faint">Loading…</p>}
         {isReady && messages.length === 0 && (
@@ -923,9 +926,7 @@ export function AITerminal() {
           )
           // Ticket-39: branch-pause question cards + follow-up chips, both client-
           // resolved tool parts on the assistant message.
-          const questionParts = (message.parts as Array<{ type: string }>).filter(
-            isAskQuestionPart
-          )
+          const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
           const followupParts = (message.parts as Array<{ type: string }>).filter(
             isSuggestFollowupsPart
           )
@@ -1122,58 +1123,66 @@ export function AITerminal() {
   // is pure Press, no stock widgets: a hairline rule above, a bare paper field whose
   // baseline inks sage on focus, and a small-caps Send in the kicker voice — set in
   // the same centered column as the correspondence above.
+  //
+  // ticket-42: the border-t and padding all live inside the column measure —
+  // no full-width hairline spanning edge-to-edge. paddingLeft: RAIL_WIDTH_PX
+  // shares the single metric with TerminalDrawer's header chrome.
   const inputFooter = (
-    <div className="border-t border-press-hair flex-shrink-0 pl-[252px]">
-      <div className="mx-auto flex w-full max-w-2xl items-end gap-4 px-8 py-3">
-        <div className="relative flex-1">
-          {chatMenuOpen && (
-            <SlashMenu
-              items={CHAT_COMMANDS}
-              onSelect={(item) => {
-                setChatMenuOpen(false)
-                setInput('')
-                if (item.id === 'clear') {
-                  handleClear()
-                } else if (item.id === 'handoff') {
-                  handleHandoff()
-                } else if (item.id === 'save') {
-                  setIsSavePickerOpen(true)
-                }
-              }}
-              onClose={() => setChatMenuOpen(false)}
-              className="absolute bottom-full left-0 z-20 w-64 mb-1"
-            />
-          )}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              const val = e.target.value
-              setInput(val)
-              // Open command menu when the user types exactly '/' (or starts with '/' and no space yet)
-              if (val === '/' || (val.startsWith('/') && !val.includes(' '))) {
-                setChatMenuOpen(true)
-              } else {
-                setChatMenuOpen(false)
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Talk to Pond… (/clear · /handoff · /save)"
-            rows={inputRows}
-            className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
-            disabled={isStreaming || !isReady}
-          />
+    <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
+      <div className="mx-auto w-full max-w-2xl px-8">
+        <div className="border-t border-press-hair">
+          <div className="flex items-end gap-4 py-3">
+            <div className="relative flex-1">
+              {chatMenuOpen && (
+                <SlashMenu
+                  items={CHAT_COMMANDS}
+                  onSelect={(item) => {
+                    setChatMenuOpen(false)
+                    setInput('')
+                    if (item.id === 'clear') {
+                      handleClear()
+                    } else if (item.id === 'handoff') {
+                      handleHandoff()
+                    } else if (item.id === 'save') {
+                      setIsSavePickerOpen(true)
+                    }
+                  }}
+                  onClose={() => setChatMenuOpen(false)}
+                  className="absolute bottom-full left-0 z-20 w-64 mb-1"
+                />
+              )}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setInput(val)
+                  // Open command menu when the user types exactly '/' (or starts with '/' and no space yet)
+                  if (val === '/' || (val.startsWith('/') && !val.includes(' '))) {
+                    setChatMenuOpen(true)
+                  } else {
+                    setChatMenuOpen(false)
+                  }
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Talk to Pond… (/clear · /handoff · /save)"
+                rows={inputRows}
+                className="w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60"
+                disabled={isStreaming || !isReady}
+              />
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={isStreaming || !input.trim() || !isReady}
+              className={cn(
+                pressKickerClass,
+                'self-end pb-2 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent'
+              )}
+            >
+              Send
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleSend}
-          disabled={isStreaming || !input.trim() || !isReady}
-          className={cn(
-            pressKickerClass,
-            'self-end pb-2 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent'
-          )}
-        >
-          Send
-        </button>
       </div>
     </div>
   )

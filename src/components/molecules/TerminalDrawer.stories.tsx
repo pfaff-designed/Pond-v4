@@ -6,25 +6,34 @@ import {
   TerminalDrawer,
   TERMINAL_COLLAPSED_HEIGHT,
   TERMINAL_DEFAULT_HEIGHT,
+  RAIL_WIDTH_PX,
 } from './TerminalDrawer'
 
+// ticket-42: footer confines its visible chrome (border + composer) to the
+// same column the transcript uses — no full-width hairline edge-to-edge.
 const sampleFooter = (
-  <div className="border-t border-press-hair">
-    <div className="mx-auto flex w-full max-w-2xl items-end gap-4 px-8 py-3">
-      <textarea
-        placeholder="Talk to Pond…"
-        rows={2}
-        className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm"
-      />
-      <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-accent">
-        Send
-      </button>
+  <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
+    <div className="mx-auto w-full max-w-2xl px-8">
+      <div className="border-t border-press-hair">
+        <div className="flex items-end gap-4 py-3">
+          <textarea
+            placeholder="Talk to Pond…"
+            rows={2}
+            className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm"
+          />
+          <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-accent">
+            Send
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 )
 
+// ticket-42: body also uses RAIL_WIDTH_PX via inline style so text + chrome
+// share the single metric and can't drift.
 const sampleBody = (
-  <div className="flex-1 overflow-y-auto py-4">
+  <div className="flex-1 overflow-y-auto py-4" style={{ paddingLeft: RAIL_WIDTH_PX }}>
     <div className="mx-auto w-full max-w-2xl px-8">
       <p className="font-serif text-sm italic text-press-faint">Start a conversation…</p>
     </div>
@@ -120,6 +129,24 @@ export const GripVisible: Story = {
     await expect(handle).toHaveClass('flex')
     await expect(handle).toHaveClass('items-center')
     await expect(handle).toHaveClass('justify-center')
+  },
+}
+
+/** ticket-42: the outer section carries no background (paper shows through outside
+ *  the column); the header chrome sits inside the column-scoped wrapper. */
+export const ColumnConfined: Story = {
+  play: async ({ canvasElement }) => {
+    const section = canvasElement.querySelector('section')!
+    // Outer section must be transparent — no bg-card or border-t.
+    await expect(section).not.toHaveClass('bg-card')
+    await expect(section).not.toHaveClass('border-t')
+    // The header inner wrapper carries the bg and border — verify it exists and
+    // has the expected column classes.
+    const headerInner = section.querySelector('[class*="bg-press-accent-wash"]')
+    await expect(headerInner).toBeTruthy()
+    // Context label is still readable.
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Life')).toBeInTheDocument()
   },
 }
 
