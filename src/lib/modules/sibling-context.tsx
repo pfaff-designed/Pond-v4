@@ -28,6 +28,15 @@ export interface SiblingBlocksValue {
   blocks: readonly Block[]
   /** Scroll to and briefly highlight a sibling block by id (host owns the DOM ids). */
   scrollToBlock?: (blockId: string) => void
+  /**
+   * The id of the page hosting this module (ticket-38). A cross-page rollup metric
+   * (`source: { pages: 'children' }`) needs it to find the page's direct children in
+   * the ['pages'] tree. Optional: a host without a page identity (a Storybook story,
+   * the AI-terminal reference render) omits it, and a cross-page metric then degrades
+   * to a quiet placeholder rather than deriving from the wrong data — never a wrong
+   * number.
+   */
+  pageId?: string
 }
 
 const SiblingBlocksContext = createContext<SiblingBlocksValue>({ blocks: [] })
