@@ -52,7 +52,6 @@ const meta = {
     model: MODEL,
     closing: 'That’s Health at a glance. Open any of it, or ask.',
     onOpenCard: fn(),
-    onAskPond: fn(),
   },
 } satisfies Meta<typeof OverviewSurface>
 
@@ -67,8 +66,6 @@ export const Area: Story = {
     await expect(canvas.getByText('Everything within')).toBeInTheDocument()
     await userEvent.click(canvas.getByText('Marathon Training'))
     await expect(args.onOpenCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'marathon' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'ask Pond →' }))
-    await expect(args.onAskPond).toHaveBeenCalled()
   },
 }
 

@@ -5,19 +5,51 @@
  *
  *   ＋   opens the New page creation flow (ticket-26): a name-first dialog that
  *        defaults the destination to the page in view, then lands in the editor.
- *        (Was a dead end — it instant-created an untitled top-level `area` and
- *        dumped you on an empty overview with no editor and no name prompt.)
- *   ⌘K  focuses the terminal input (the proto's free-text→Pond), also bound
- *        as a global ⌘K/Ctrl-K hotkey
+ *   ⌘K  opens the command palette (ticket-40): search pages, quick actions, recents.
+ *        '/' stays local in the composer (F22 division). The old "focus terminal"
+ *        behaviour is preserved as the "Ask Pond" quick action inside the palette.
  *
  * The notifications icon (◔) is deliberately omitted — no notifications system
  * exists yet, and a dead icon is worse than none.
  */
 
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
+import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { workspaceUrl } from '@/lib/pages/nav'
+import { fetchPages } from '@/lib/pages/tree'
+
+const RECENT_PAGES_KEY = 'pond:recent-pages'
+const RECENT_MAX = 5
+
+interface RecentEntry {
+  id: string
+  type: string
+  title: string
+}
+
+function readRecents(): RecentEntry[] {
+  try {
+    return JSON.parse(window.localStorage.getItem(RECENT_PAGES_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+export function writeRecent(entry: RecentEntry) {
+  try {
+    const prev = readRecents().filter((r) => r.id !== entry.id)
+    window.localStorage.setItem(
+      RECENT_PAGES_KEY,
+      JSON.stringify([entry, ...prev].slice(0, RECENT_MAX))
+    )
+  } catch {
+    /* ignore */
+  }
+}
 
 const iconBtn =
   'press-glass rounded-full px-3.5 py-[9px] leading-none text-foreground cursor-pointer hover:text-press-accent transition-colors disabled:opacity-40'
@@ -41,8 +73,8 @@ export function TopBarView({
       </button>
       <button
         className={iconBtn}
-        title="Talk to Pond (⌘K)"
-        aria-label="Talk to Pond (⌘K)"
+        title="Command palette (⌘K)"
+        aria-label="Command palette (⌘K)"
         onClick={onCommandK}
       >
         <span className="font-mono text-[11px] px-[7px] py-0.5 rounded-md border border-border bg-press-ink/[0.03] text-press-body">
@@ -55,35 +87,98 @@ export function TopBarView({
 
 export function TopBar() {
   const searchParams = useSearchParams()
-  // The page in view — the new page nests under it by default (null = Life root
-  // → top level). Read fresh each render so ＋ always reflects the current page.
+  const router = useRouter()
   const currentNodeId = searchParams.get('nodeId')
   const [createOpen, setCreateOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
-  // Global ⌘K/Ctrl-K → focus the terminal input. Registered in the *capture*
+  // Pages for palette search.
+  const { data: pages = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+
+  const openPalette = useCallback(() => setPaletteOpen(true), [])
+  const closePalette = useCallback(() => setPaletteOpen(false), [])
+
+  // Global ⌘K/Ctrl-K → open the palette. Registered in the *capture*
   // phase on the document so it fires before any focused editor/input can
-  // swallow the event (the observed "⌘K didn't fire" in ticket-24), and before
-  // a browser default binding on ⌘K can claim it.
+  // swallow the event.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         e.stopPropagation()
-        requestTerminalFocus()
+        setPaletteOpen((prev) => !prev) // toggle
       }
     }
     document.addEventListener('keydown', onKey, { capture: true })
     return () => document.removeEventListener('keydown', onKey, { capture: true })
   }, [])
 
+  // Build palette items: quick actions first, then recents, then all pages.
+  const paletteItems = useCallback((): PaletteItem[] => {
+    const actions: PaletteItem[] = [
+      { id: '__new_page', label: 'New page', subtitle: 'Create a new page', group: 'action' },
+      {
+        id: '__ask_pond',
+        label: 'Ask Pond',
+        subtitle: 'Focus the composer',
+        group: 'action',
+      },
+    ]
+
+    const recents = readRecents().map((r): PaletteItem => ({
+      id: `rec:${r.id}`,
+      label: r.title || 'Untitled',
+      subtitle: `Recent · ${r.type}`,
+      group: 'recent',
+    }))
+
+    const pageItems = pages.map((p): PaletteItem => ({
+      id: `pg:${p.id}`,
+      label: p.title || 'Untitled',
+      subtitle: p.type,
+      group: 'page',
+    }))
+
+    return [...actions, ...recents, ...pageItems]
+  }, [pages])
+
+  const handlePaletteSelect = useCallback(
+    (item: PaletteItem) => {
+      closePalette()
+      if (item.id === '__new_page') {
+        setCreateOpen(true)
+        return
+      }
+      if (item.id === '__ask_pond') {
+        requestTerminalFocus()
+        return
+      }
+      // Recent or page — navigate.
+      const rawId = item.id.replace(/^(rec:|pg:)/, '')
+      const page = pages.find((p) => p.id === rawId)
+      if (page) {
+        writeRecent({ id: page.id, type: page.type, title: page.title })
+        router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
+      }
+    },
+    [closePalette, pages, router]
+  )
+
   return (
     <>
-      <TopBarView onCreate={() => setCreateOpen(true)} onCommandK={requestTerminalFocus} />
+      <TopBarView onCreate={() => setCreateOpen(true)} onCommandK={openPalette} />
       <CreatePageModal
         open={createOpen}
         onOpenChange={setCreateOpen}
         defaultParentId={currentNodeId}
       />
+      {paletteOpen && (
+        <CommandPalette
+          items={paletteItems()}
+          onSelect={handlePaletteSelect}
+          onClose={closePalette}
+        />
+      )}
     </>
   )
 }

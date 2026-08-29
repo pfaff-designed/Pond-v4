@@ -29,7 +29,7 @@ export const Resting: Story = {
   play: async ({ canvas, args }) => {
     await userEvent.click(canvas.getByRole('button', { name: 'New page' }))
     await expect(args.onCreate).toHaveBeenCalled()
-    await userEvent.click(canvas.getByRole('button', { name: 'Talk to Pond (⌘K)' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Command palette (⌘K)' }))
     await expect(args.onCommandK).toHaveBeenCalled()
   },
 }
