@@ -186,10 +186,16 @@ export function TerminalDrawer({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onKeyDown={onHandleKeyDown}
-          className="group h-1.5 -mt-1 cursor-ns-resize flex items-center justify-center outline-none touch-none"
+          className="group h-1.5 -mt-1 cursor-ns-resize flex items-center outline-none touch-none"
           data-testid="terminal-resize-handle"
+          style={{ paddingLeft: RAIL_WIDTH_PX }}
         >
-          <span className="h-1 w-10 rounded-full bg-press-muted/40 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
+          {/* Grip centered over the column (not the full window), matching the
+              confined chrome below. The handle itself stays full-width for an
+              easy drag target. */}
+          <span className="mx-auto w-full max-w-2xl px-8 flex justify-center">
+            <span className="h-1 w-10 rounded-full bg-press-muted/40 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
+          </span>
         </div>
       )}
 
