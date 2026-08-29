@@ -1,30 +1,28 @@
-"use client";
+'use client'
 
-import { animate, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { LINE_LOADING_PULSE_EASE } from "./line-loading-timing";
+import type { CurveFactory } from '@visx/vendor/d3-shape'
+import { animate, useReducedMotion } from 'motion/react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { LINE_LOADING_PULSE_EASE } from './line-loading-timing'
 import {
   computeSeriesPathPoints,
   interpolateSeriesPathPoints,
   type SeriesPathPoint,
   seriesPathFromPoints,
   seriesPathTransitionSignature,
-} from "./series-path-utils";
-
-// biome-ignore lint/suspicious/noExplicitAny: d3 curve factory type
-type CurveFactory = any;
+} from './series-path-utils'
 
 export interface UseAnimatedSeriesPathOptions {
-  renderData: Record<string, unknown>[];
-  xAccessor: (datum: Record<string, unknown>) => Date;
-  xScale: (value: Date) => number | undefined;
-  yScale: (value: number) => number | undefined;
-  dataKey: string;
-  curve: CurveFactory;
-  chartPhase: string;
-  durationMs: number;
-  innerWidth: number;
-  enabled: boolean;
+  renderData: Record<string, unknown>[]
+  xAccessor: (datum: Record<string, unknown>) => Date
+  xScale: (value: Date) => number | undefined
+  yScale: (value: number) => number | undefined
+  dataKey: string
+  curve: CurveFactory
+  chartPhase: string
+  durationMs: number
+  innerWidth: number
+  enabled: boolean
 }
 
 export function useAnimatedSeriesPath({
@@ -39,17 +37,15 @@ export function useAnimatedSeriesPath({
   innerWidth,
   enabled,
 }: UseAnimatedSeriesPathOptions) {
-  const reducedMotion = useReducedMotion();
-  const [animatedPoints, setAnimatedPoints] = useState<
-    SeriesPathPoint[] | null
-  >(null);
-  const displayedPointsRef = useRef<SeriesPathPoint[] | null>(null);
-  const animatingRef = useRef(false);
+  const reducedMotion = useReducedMotion()
+  const [animatedPoints, setAnimatedPoints] = useState<SeriesPathPoint[] | null>(null)
+  const displayedPointsRef = useRef<SeriesPathPoint[] | null>(null)
+  const animatingRef = useRef(false)
 
   const xScaleDomain = useMemo(() => {
-    const scaleWithDomain = xScale as { domain?: () => [Date, Date] };
-    return scaleWithDomain.domain?.() ?? [new Date(0), new Date(0)];
-  }, [xScale]);
+    const scaleWithDomain = xScale as { domain?: () => [Date, Date] }
+    return scaleWithDomain.domain?.() ?? [new Date(0), new Date(0)]
+  }, [xScale])
 
   const transitionSignature = useMemo(
     () =>
@@ -62,51 +58,50 @@ export function useAnimatedSeriesPath({
         xDomainMax: xScaleDomain[1]?.getTime?.() ?? 0,
       }),
     [renderData, xAccessor, dataKey, innerWidth, xScaleDomain]
-  );
+  )
 
   const targetPoints = useMemo(
-    () =>
-      computeSeriesPathPoints(renderData, xAccessor, xScale, yScale, dataKey),
+    () => computeSeriesPathPoints(renderData, xAccessor, xScale, yScale, dataKey),
     [renderData, xAccessor, xScale, yScale, dataKey]
-  );
+  )
 
-  const prevTransitionSignatureRef = useRef(transitionSignature);
+  const prevTransitionSignatureRef = useRef(transitionSignature)
 
   useEffect(() => {
     if (!animatingRef.current) {
-      displayedPointsRef.current = targetPoints;
+      displayedPointsRef.current = targetPoints
     }
-  }, [targetPoints]);
+  }, [targetPoints])
 
   useEffect(() => {
     const shouldAnimate =
-      enabled &&
-      !reducedMotion &&
-      chartPhase === "ready" &&
-      durationMs > 0 &&
-      renderData.length > 0;
+      enabled && !reducedMotion && chartPhase === 'ready' && durationMs > 0 && renderData.length > 0
 
     if (!shouldAnimate) {
-      animatingRef.current = false;
-      setAnimatedPoints(null);
-      displayedPointsRef.current = targetPoints;
-      prevTransitionSignatureRef.current = transitionSignature;
-      return;
+      animatingRef.current = false
+      // Clearing the interpolated points snaps rendering back to raw data when
+      // animation is off/finished — an intentional one-shot reset inside this guarded
+      // effect, not a render-loop (ticket-36 lint cleanup — was a biome-ignore).
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded one-shot reset, not a cascade
+      setAnimatedPoints(null)
+      displayedPointsRef.current = targetPoints
+      prevTransitionSignatureRef.current = transitionSignature
+      return
     }
 
     if (prevTransitionSignatureRef.current === transitionSignature) {
-      return;
+      return
     }
-    prevTransitionSignatureRef.current = transitionSignature;
+    prevTransitionSignatureRef.current = transitionSignature
 
-    const fromPoints = displayedPointsRef.current ?? targetPoints;
+    const fromPoints = displayedPointsRef.current ?? targetPoints
     if (fromPoints.length === 0) {
-      displayedPointsRef.current = targetPoints;
-      return;
+      displayedPointsRef.current = targetPoints
+      return
     }
 
-    animatingRef.current = true;
-    const fromSnapshot = fromPoints;
+    animatingRef.current = true
+    const fromSnapshot = fromPoints
 
     const control = animate(0, 1, {
       duration: durationMs / 1000,
@@ -118,26 +113,22 @@ export function useAnimatedSeriesPath({
           xScale,
           yScale,
           dataKey
-        );
-        const next = interpolateSeriesPathPoints(
-          fromSnapshot,
-          currentTarget,
-          progress
-        );
-        displayedPointsRef.current = next;
-        setAnimatedPoints(next);
+        )
+        const next = interpolateSeriesPathPoints(fromSnapshot, currentTarget, progress)
+        displayedPointsRef.current = next
+        setAnimatedPoints(next)
       },
       onComplete: () => {
-        animatingRef.current = false;
-        displayedPointsRef.current = targetPoints;
-        setAnimatedPoints(null);
+        animatingRef.current = false
+        displayedPointsRef.current = targetPoints
+        setAnimatedPoints(null)
       },
-    });
+    })
 
     return () => {
-      control.stop();
-      animatingRef.current = false;
-    };
+      control.stop()
+      animatingRef.current = false
+    }
   }, [
     transitionSignature,
     chartPhase,
@@ -150,16 +141,13 @@ export function useAnimatedSeriesPath({
     yScale,
     dataKey,
     targetPoints,
-  ]);
+  ])
 
-  const activePoints = animatedPoints ?? targetPoints;
-  const pathD = useMemo(
-    () => seriesPathFromPoints(activePoints, curve),
-    [activePoints, curve]
-  );
+  const activePoints = animatedPoints ?? targetPoints
+  const pathD = useMemo(() => seriesPathFromPoints(activePoints, curve), [activePoints, curve])
 
   return {
     pathD,
     isPathAnimating: animatedPoints != null,
-  };
+  }
 }

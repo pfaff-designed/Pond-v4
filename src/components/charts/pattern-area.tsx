@@ -1,33 +1,27 @@
-"use client";
+'use client'
 
-import { curveMonotoneX } from "@visx/curve";
-import { AreaClosed } from "@visx/shape";
-import { useChartStable } from "./chart-context";
-
-// biome-ignore lint/suspicious/noExplicitAny: d3 curve factory type
-type CurveFactory = any;
+import { curveMonotoneX } from '@visx/curve'
+import { AreaClosed } from '@visx/shape'
+import type { CurveFactory } from '@visx/vendor/d3-shape'
+import { useChartStable } from './chart-context'
 
 export interface PatternAreaProps {
   /** Key in data to use for y values */
-  dataKey: string;
+  dataKey: string
   /** Fill color or pattern URL (e.g. `url(#pattern-id)`) */
-  fill: string;
+  fill: string
   /** Curve function. Default: curveMonotoneX */
-  curve?: CurveFactory;
+  curve?: CurveFactory
   /** @deprecated Pattern fill is not clip-revealed; only the stroke `Area` animates. */
-  animate?: boolean;
+  animate?: boolean
 }
 
 /**
  * Filled area using an SVG pattern (`url(#id)`).
  * Pair with `PatternLines` in `AreaChart` children and an `Area` with `fillOpacity={0}` for the stroke line.
  */
-export function PatternArea({
-  dataKey,
-  fill,
-  curve = curveMonotoneX,
-}: PatternAreaProps) {
-  const { renderData, xScale, yScale, xAccessor } = useChartStable();
+export function PatternArea({ dataKey, fill, curve = curveMonotoneX }: PatternAreaProps) {
+  const { renderData, xScale, yScale, xAccessor } = useChartStable()
 
   return (
     <AreaClosed
@@ -36,14 +30,14 @@ export function PatternArea({
       fill={fill}
       x={(d) => xScale(xAccessor(d)) ?? 0}
       y={(d) => {
-        const v = d[dataKey];
-        return typeof v === "number" ? (yScale(v) ?? 0) : 0;
+        const v = d[dataKey]
+        return typeof v === 'number' ? (yScale(v) ?? 0) : 0
       }}
       yScale={yScale}
     />
-  );
+  )
 }
 
-PatternArea.displayName = "PatternArea";
+PatternArea.displayName = 'PatternArea'
 
-export default PatternArea;
+export default PatternArea

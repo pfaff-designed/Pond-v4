@@ -1,62 +1,58 @@
-"use client";
+'use client'
 
-import { curveMonotoneX } from "@visx/curve";
-import { AreaClosed, LinePath } from "@visx/shape";
+import { curveMonotoneX } from '@visx/curve'
+import { AreaClosed, LinePath } from '@visx/shape'
+// The real d3 curve factory type, re-exported by visx's vendored d3-shape
+// (ticket-36 lint cleanup — replaces a local `type CurveFactory = any`).
+import type { CurveFactory } from '@visx/vendor/d3-shape'
 
-// CurveFactory type - simplified version compatible with visx
-// biome-ignore lint/suspicious/noExplicitAny: d3 curve factory type
-type CurveFactory = any;
-
-import { useCallback, useId, useMemo, useRef, useState } from "react";
-import { AreaGradientDefs } from "./area-gradient-defs";
-import { chartCssVars, useChartStable, useYScale } from "./chart-context";
-import type { ChartPhase, LoadingStyle } from "./chart-phase";
-import { type FadeEdges, resolveFadeSides } from "./fade-edges";
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { AreaGradientDefs } from './area-gradient-defs'
+import { chartCssVars, useChartStable, useYScale } from './chart-context'
+import type { ChartPhase, LoadingStyle } from './chart-phase'
+import { type FadeEdges, resolveFadeSides } from './fade-edges'
 import {
   type LineLoadingPulseMode,
   LineLoadingPulseStroke,
   resolveLineLoadingPulseMode,
-} from "./line-loading-pulse";
-import { LINE_LOADING_LOOP_PAUSE_MS } from "./line-loading-timing";
-import { LineLoadingSweep } from "./loading-sweep";
-import {
-  resolveDashTailBounds,
-  usePathStrokeMetrics,
-} from "./path-stroke-utils";
-import { SeriesDashTailOverlay } from "./series-dash-tail-overlay";
-import { SeriesHighlightLayer } from "./series-highlight-layer";
-import { SeriesHoverDim } from "./series-hover-dim";
-import { SeriesMarkers } from "./series-markers";
-import type { SeriesPointMarkerStyle } from "./series-point-marker";
+} from './line-loading-pulse'
+import { LINE_LOADING_LOOP_PAUSE_MS } from './line-loading-timing'
+import { LineLoadingSweep } from './loading-sweep'
+import { resolveDashTailBounds, usePathStrokeMetrics } from './path-stroke-utils'
+import { SeriesDashTailOverlay } from './series-dash-tail-overlay'
+import { SeriesHighlightLayer } from './series-highlight-layer'
+import { SeriesHoverDim } from './series-hover-dim'
+import { SeriesMarkers } from './series-markers'
+import type { SeriesPointMarkerStyle } from './series-point-marker'
 
 export interface AreaProps {
   /** Key in data to use for y values */
-  dataKey: string;
+  dataKey: string
   /** Y-scale group id (Recharts `yAxisId`). Default: `"left"`. */
-  yAxisId?: string | number;
+  yAxisId?: string | number
   /** Fill color for the area gradient start. Default: var(--chart-line-primary) */
-  fill?: string;
+  fill?: string
   /** Fill opacity at the top of the area. Default: 0.4 */
-  fillOpacity?: number;
+  fillOpacity?: number
   /** Stroke color for the line. Default: same as fill */
-  stroke?: string;
+  stroke?: string
   /** Stroke width. Default: 2 */
-  strokeWidth?: number;
+  strokeWidth?: number
   /** Curve function. Default: curveMonotoneX */
-  curve?: CurveFactory;
+  curve?: CurveFactory
   /** Whether to animate the area. Default: true */
-  animate?: boolean;
+  animate?: boolean
   /** Whether to show the stroke line. Default: true */
-  showLine?: boolean;
+  showLine?: boolean
   /** Whether to show highlight segment on hover. Default: true */
-  showHighlight?: boolean;
+  showHighlight?: boolean
   /** Gradient opacity at bottom (0 = fully transparent). Default: 0 */
-  gradientToOpacity?: number;
+  gradientToOpacity?: number
   /**
    * Vertical extent of the fill gradient (0–1). `1` fades across the full
    * height; lower values compress the gradient toward the top.
    */
-  gradientSpan?: number;
+  gradientSpan?: number
   /**
    * Fade the area fill (and stroke) toward transparent at the chart edges.
    * - `true` fades both edges, `false` disables the fade entirely.
@@ -64,35 +60,35 @@ export interface AreaProps {
    *   edge butts up against another element you don't want to fade into.
    * Default: false
    */
-  fadeEdges?: FadeEdges;
+  fadeEdges?: FadeEdges
   /** Render scatter-style circle markers at each data point. Default: false */
-  showMarkers?: boolean;
+  showMarkers?: boolean
   /** Marker styling (same options as Scatter). */
-  markers?: SeriesPointMarkerStyle;
+  markers?: SeriesPointMarkerStyle
   /**
    * Data index from which the line stroke becomes dashed (inclusive).
    * Useful for projecting incomplete periods, e.g. dashed from yesterday through today.
    */
-  dashFromIndex?: number;
+  dashFromIndex?: number
   /** Dash pattern for the tail segment when `dashFromIndex` is set. Default: "6,4" */
-  dashArray?: string;
+  dashArray?: string
   /** Pulse stroke color while chart is loading. Default: var(--foreground) */
-  loadingStroke?: string;
+  loadingStroke?: string
   /** Pulse stroke opacity while chart is loading. Default: 0.5 */
-  loadingStrokeOpacity?: number;
+  loadingStrokeOpacity?: number
   /**
    * Show the loading pulse overlay. Default: follows chart loading phase.
    * Set `false` to disable even during loading.
    */
-  loading?: boolean;
+  loading?: boolean
   /** Override pulse animation mode (loop / exit / enter). */
-  loadingPulseMode?: LineLoadingPulseMode;
+  loadingPulseMode?: LineLoadingPulseMode
   /**
    * Loading animation while the chart is in loading status: the default
    * traveling `"pulse"`, or a diagonal `"sweep"` shimmer across the skeleton
    * area. Default: `"pulse"`.
    */
-  loadingStyle?: LoadingStyle;
+  loadingStyle?: LoadingStyle
 }
 
 function useAreaLoadingPulseState(
@@ -101,27 +97,23 @@ function useAreaLoadingPulseState(
   loadingPulseMode: LineLoadingPulseMode | undefined,
   notifyLoadingPulseComplete?: () => void
 ) {
-  const phasePulseMode = resolveLineLoadingPulseMode(chartPhase);
+  const phasePulseMode = resolveLineLoadingPulseMode(chartPhase)
   const pulseMode =
-    loading === false
-      ? null
-      : (loadingPulseMode ?? (loading === true ? "loop" : phasePulseMode));
-  const showLoadingPulse = pulseMode != null;
+    loading === false ? null : (loadingPulseMode ?? (loading === true ? 'loop' : phasePulseMode))
+  const showLoadingPulse = pulseMode != null
   const showSeriesContent =
-    chartPhase === "revealing" ||
-    chartPhase === "ready" ||
-    chartPhase === "exitingReady";
-  const [pulseEpoch, setPulseEpoch] = useState(0);
+    chartPhase === 'revealing' || chartPhase === 'ready' || chartPhase === 'exitingReady'
+  const [pulseEpoch, setPulseEpoch] = useState(0)
 
   const handleLoadingPulseComplete = useCallback(() => {
-    if (pulseMode === "loop") {
+    if (pulseMode === 'loop') {
       window.setTimeout(() => {
-        setPulseEpoch((epoch) => epoch + 1);
-      }, LINE_LOADING_LOOP_PAUSE_MS);
-      return;
+        setPulseEpoch((epoch) => epoch + 1)
+      }, LINE_LOADING_LOOP_PAUSE_MS)
+      return
     }
-    notifyLoadingPulseComplete?.();
-  }, [notifyLoadingPulseComplete, pulseMode]);
+    notifyLoadingPulseComplete?.()
+  }, [notifyLoadingPulseComplete, pulseMode])
 
   return {
     handleLoadingPulseComplete,
@@ -129,7 +121,7 @@ function useAreaLoadingPulseState(
     pulseEpoch,
     showLoadingPulse,
     showSeriesContent,
-  };
+  }
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mirrors Line series layout (fill, stroke, dash, markers, pulse)
@@ -150,12 +142,12 @@ export function Area({
   showMarkers = false,
   markers,
   dashFromIndex,
-  dashArray = "6,4",
+  dashArray = '6,4',
   loading,
   loadingStroke = chartCssVars.foreground,
   loadingStrokeOpacity = 0.5,
   loadingPulseMode,
-  loadingStyle = "pulse",
+  loadingStyle = 'pulse',
 }: AreaProps) {
   // Stable slice only: hover state lives inside `<SeriesHoverDim>` and
   // `<SeriesHighlightLayer>` so this component (and its expensive
@@ -173,27 +165,17 @@ export function Area({
     lines,
     chartPhase,
     notifyLoadingPulseComplete,
-  } = useChartStable();
-  const yScale = useYScale(yAxisId);
-  const {
-    handleLoadingPulseComplete,
-    pulseMode,
-    pulseEpoch,
-    showLoadingPulse,
-    showSeriesContent,
-  } = useAreaLoadingPulseState(
-    chartPhase,
-    loading,
-    loadingPulseMode,
-    notifyLoadingPulseComplete
-  );
+  } = useChartStable()
+  const yScale = useYScale(yAxisId)
+  const { handleLoadingPulseComplete, pulseMode, pulseEpoch, showLoadingPulse, showSeriesContent } =
+    useAreaLoadingPulseState(chartPhase, loading, loadingPulseMode, notifyLoadingPulseComplete)
 
   const seriesIndex = useMemo(() => {
-    const index = lines.findIndex((line) => line.dataKey === dataKey);
-    return index >= 0 ? index : 0;
-  }, [lines, dataKey]);
+    const index = lines.findIndex((line) => line.dataKey === dataKey)
+    return index >= 0 ? index : 0
+  }, [lines, dataKey])
 
-  const pathRef = useRef<SVGPathElement>(null);
+  const pathRef = useRef<SVGPathElement>(null)
   const { pathLength, pathD } = usePathStrokeMetrics(pathRef, [
     renderData,
     innerWidth,
@@ -201,48 +183,46 @@ export function Area({
     showLine,
     showSeriesContent,
     showLoadingPulse,
-  ]);
+  ])
 
   // Unique IDs for this area
-  const uniqueId = useId();
-  const gradientId = `area-gradient-${dataKey}-${uniqueId}`;
-  const strokeGradientId = `area-stroke-gradient-${dataKey}-${uniqueId}`;
-  const edgeMaskId = `area-edge-mask-${dataKey}-${uniqueId}`;
-  const edgeGradientId = `${edgeMaskId}-gradient`;
+  const uniqueId = useId()
+  const gradientId = `area-gradient-${dataKey}-${uniqueId}`
+  const strokeGradientId = `area-stroke-gradient-${dataKey}-${uniqueId}`
+  const edgeMaskId = `area-edge-mask-${dataKey}-${uniqueId}`
+  const edgeGradientId = `${edgeMaskId}-gradient`
 
-  const isPatternFill = fill.startsWith("url(");
-  const showAreaFill = isPatternFill || fillOpacity > 0;
-  const areaFill = isPatternFill ? fill : `url(#${gradientId})`;
+  const isPatternFill = fill.startsWith('url(')
+  const showAreaFill = isPatternFill || fillOpacity > 0
+  const areaFill = isPatternFill ? fill : `url(#${gradientId})`
 
   // Resolved stroke color (defaults to fill; pattern URLs need a real color)
-  const resolvedStroke =
-    stroke || (isPatternFill ? chartCssVars.linePrimary : fill);
+  const resolvedStroke = stroke || (isPatternFill ? chartCssVars.linePrimary : fill)
 
   const getY = useCallback(
     (d: Record<string, unknown>) => {
-      const value = d[dataKey];
-      return typeof value === "number" ? (yScale(value) ?? 0) : 0;
+      const value = d[dataKey]
+      return typeof value === 'number' ? (yScale(value) ?? 0) : 0
     },
     [dataKey, yScale]
-  );
+  )
 
-  const hasDashTail = resolveDashTailBounds(dashFromIndex, data.length);
+  const hasDashTail = resolveDashTailBounds(dashFromIndex, data.length)
   // The stroke gradient is only emitted when at least one edge fades, so fall
   // back to the resolved solid color otherwise — avoids an invalid url(#...).
-  const fadeSides = resolveFadeSides(fadeEdges);
-  const useViewportEdgeFade = fadeSides.any && !isPatternFill;
-  let strokePaint = resolvedStroke;
+  const fadeSides = resolveFadeSides(fadeEdges)
+  const useViewportEdgeFade = fadeSides.any && !isPatternFill
+  let strokePaint = resolvedStroke
   if (!useViewportEdgeFade && fadeSides.any) {
-    strokePaint = `url(#${strokeGradientId})`;
+    strokePaint = `url(#${strokeGradientId})`
   }
-  const highlightEnabled =
-    showHighlight && showLine && !showLoadingPulse && showSeriesContent;
-  const showSeriesStroke = showSeriesContent && showLine;
-  let visibleStroke = "transparent";
+  const highlightEnabled = showHighlight && showLine && !showLoadingPulse && showSeriesContent
+  const showSeriesStroke = showSeriesContent && showLine
+  let visibleStroke = 'transparent'
   if (showSeriesStroke && !hasDashTail) {
-    visibleStroke = strokePaint;
+    visibleStroke = strokePaint
   }
-  const shouldMeasurePath = showLine && (showSeriesContent || showLoadingPulse);
+  const shouldMeasurePath = showLine && (showSeriesContent || showLoadingPulse)
 
   const seriesLayers = (
     <>
@@ -287,13 +267,12 @@ export function Area({
         </>
       ) : null}
     </>
-  );
+  )
 
   // Sweep style owns all loading modes (loop + the exit/enter transitions),
   // drawing its own silhouette; the pulse covers the default style.
-  const sweepLoading =
-    showLoadingPulse && innerWidth > 0 && loadingStyle === "sweep";
-  const pulseLoading = showLoadingPulse && innerWidth > 0 && !sweepLoading;
+  const sweepLoading = showLoadingPulse && innerWidth > 0 && loadingStyle === 'sweep'
+  const pulseLoading = showLoadingPulse && innerWidth > 0 && !sweepLoading
 
   return (
     <>
@@ -313,16 +292,8 @@ export function Area({
         strokeGradientId={strokeGradientId}
       />
 
-      <SeriesHoverDim
-        dimOpacity={0.6}
-        enabled={showHighlight}
-        seriesIndex={seriesIndex}
-      >
-        {useViewportEdgeFade ? (
-          <g mask={`url(#${edgeMaskId})`}>{seriesLayers}</g>
-        ) : (
-          seriesLayers
-        )}
+      <SeriesHoverDim dimOpacity={0.6} enabled={showHighlight} seriesIndex={seriesIndex}>
+        {useViewportEdgeFade ? <g mask={`url(#${edgeMaskId})`}>{seriesLayers}</g> : seriesLayers}
       </SeriesHoverDim>
 
       {/* Highlight segment on hover — isolated hover subscriber. */}
@@ -348,7 +319,7 @@ export function Area({
         <LineLoadingSweep
           curve={curve}
           key="loading-sweep"
-          mode={pulseMode ?? "loop"}
+          mode={pulseMode ?? 'loop'}
           onTransitionComplete={handleLoadingPulseComplete}
           stroke={loadingStroke}
           strokeOpacity={loadingStrokeOpacity}
@@ -369,9 +340,9 @@ export function Area({
         />
       ) : null}
     </>
-  );
+  )
 }
 
-Area.displayName = "Area";
+Area.displayName = 'Area'
 
-export default Area;
+export default Area
