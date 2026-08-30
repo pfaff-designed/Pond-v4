@@ -9,10 +9,12 @@
  * never partially persisted). Renaming refreshes the sidebar via the ['pages']
  * query. Re-embedding on save is wired in Slice 6 alongside the retrieval switch.
  *
- * Manual block authoring (ticket-37): the user is now an equal author to the AI.
- * A '/' in an empty text block (or the quiet + between blocks) opens the block
- * palette — the same module vocabulary the AI composes from, derived live from
- * the registry. Blocks reorder by drag handle or ⌥↑/⌥↓ on a focused block.
+ * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
+ * the AI. The editor body — the `/` palette, hover `+` insert, reorder, and the
+ * always-visible palette-first "+ Add a block" foot affordance — is the shared
+ * <BlockCanvas>, so the Life home page, area pages, and document pages all author
+ * identically. This panel owns the title header, the debounced save, and the
+ * children grid; BlockCanvas owns the blocks.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
@@ -21,135 +23,33 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { getPage, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
-import { ModuleView } from '@/lib/modules/renderers'
-import { emptyKanban } from '@/lib/modules/kanban/schema'
-import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
-import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import {
   AreaOverviewPanel,
   LifeOverviewPanel,
   useNavigateCrumb,
   useOpenCard,
 } from '@/components/organisms/OverviewSurface'
+import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
+import { emptyBlockForType } from '@/lib/modules/palette'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
-import { moduleDescriptors } from '@/lib/modules/registry'
-import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
-import { cn } from '@/lib/utils'
+import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
-
-/** A short, human label for a block in the undo toast ("Deleted text block"). */
-function blockLabel(block: Block): string {
-  return `Deleted ${block.type} block`
-}
-
-// ── Block palette derived from the registry (ticket-37) ───────────────────────
-// One vocabulary with the AI's catalog: the palette lists every registered
-// module's type + when-to-use description, read from moduleDescriptors at load.
-// Excludes 'page' (structural, not a content block a user drops into a page).
-// A module added by a parallel ticket (t35 kanban, t36 charts) appears here at
-// merge with zero edits — the registry is the single source, never a hardcoded
-// list.
-const EXCLUDED_FROM_PALETTE = new Set(['page'])
-
-const paletteItems: SlashMenuItem[] = Object.values(moduleDescriptors)
-  .filter((d) => !EXCLUDED_FROM_PALETTE.has(d.type))
-  .map((d) => ({
-    id: d.type,
-    name: d.type.charAt(0).toUpperCase() + d.type.slice(1).replace(/-/g, ' '),
-    description: d.description,
-  }))
-
-// ── Empty-block factories (ticket-37) ─────────────────────────────────────────
-// The manual-authoring empty state per module: todo = one blank item, table =
-// 2×2, metric = manual 0. Returns null for a type with no local empty state
-// (e.g. a module registered by a not-yet-merged branch) — callers must guard
-// null, so an unknown palette pick degrades to a no-op instead of a crash.
-function emptyBlockForType(type: string): Block | null {
-  const id = crypto.randomUUID()
-  switch (type) {
-    case 'text':
-      return { id, type: 'text', content: '' }
-    case 'todo':
-      return {
-        id,
-        type: 'todo',
-        items: [{ id: crypto.randomUUID(), label: '', checked: false }],
-      }
-    case 'table':
-      return {
-        id,
-        type: 'table',
-        columns: ['Column 1', 'Column 2'],
-        rows: [
-          { id: crypto.randomUUID(), cells: ['', ''] },
-          { id: crypto.randomUUID(), cells: ['', ''] },
-        ],
-      }
-    case 'metric':
-      return { id, type: 'metric', label: '', value: 0 }
-    case 'metric-ring':
-      return { id, type: 'metric-ring', label: '', pct: 0 }
-    // Wave-2 modules (t35/t36), wired at merge so a palette pick never no-ops.
-    case 'kanban':
-      return emptyKanban(id, () => crypto.randomUUID())
-    case 'chart-line':
-    case 'chart-bar':
-    case 'chart-area':
-      // ChartCard renders a calm "No data yet" for an empty points array.
-      return { id, type, title: '', points: [] }
-    default:
-      return null
-  }
-}
-
-// ── InsertBetween affordance (ticket-37) ──────────────────────────────────────
-// A quiet separator between blocks: hover reveals a '+' that opens the block
-// palette and inserts THERE (insert-between, not append). The hairline gives
-// the hover target an honest footprint without adding visual weight at rest.
-function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) => void }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="group relative h-4 flex items-center" role="separator">
-      <button
-        className="absolute left-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-press-muted hover:text-press-accent text-sm w-4 h-4 flex items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
-        aria-label="Insert block"
-        onClick={() => setOpen(true)}
-      >
-        +
-      </button>
-      <span
-        aria-hidden
-        className="w-full h-px bg-press-hair opacity-0 group-hover:opacity-50 transition-opacity"
-      />
-      {open && (
-        <SlashMenu
-          items={paletteItems}
-          onSelect={(item) => {
-            onInsert(item)
-            setOpen(false)
-          }}
-          onClose={() => setOpen(false)}
-          className="absolute left-0 top-full z-10 mt-1 w-72"
-        />
-      )}
-    </div>
-  )
-}
 
 export function DocumentPanel() {
   const searchParams = useSearchParams()
   const nodeId = searchParams.get('nodeId')
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
-  const { stageDeletion, flushScope } = useDeletionUndo()
+  const { flushScope } = useDeletionUndo()
 
   // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
-  // Flush pending block toasts when leaving a page — a surviving toast's Undo
-  // would otherwise re-insert the old page's block into the newly-opened page.
+  // Flush pending block toasts (staged by BlockCanvas) when leaving a page — a
+  // surviving toast's Undo would otherwise re-insert the old page's block into
+  // the newly-opened page.
   useEffect(() => {
     return () => {
       flushScope('block')
@@ -187,19 +87,11 @@ export function DocumentPanel() {
   const serverSig = useRef<string>('') // signature of the server blocks we've reconciled
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Which block index has the '/' palette open (null = closed). Index, not block
-  // id: the palette replaces the text block AT that position (ticket-37).
-  const [slashMenuOpenAt, setSlashMenuOpenAt] = useState<number | null>(null)
-
-  // Which block index is mid-drag (null = no drag). Drives the dragged block's
-  // ghost opacity; cleared on drop OR dragend so a cancelled drag never leaves
-  // a block ghosted.
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
-
   // ticket-41: ids of blocks just inserted this session, so a freshly-inserted
   // block SETTLES in (motion-settle-in) while blocks present on page load do
-  // not. State (read during render to decide the class); the mutating insert
-  // already commits an edit, so tracking it here adds no extra render.
+  // not. The mutating insert already commits an edit, so tracking it here adds no
+  // extra render. Owned here (not BlockCanvas) so it survives the panel's stable
+  // mount across ?nodeId changes.
   const [insertedIds] = useState<Set<string>>(() => new Set())
 
   // Seed local editable state when a different page loads. On a *same-page*
@@ -271,67 +163,22 @@ export function DocumentPanel() {
     scheduleSave(value, viewBlocks)
   }
 
-  // Apply an in-editor block change: update local state and schedule the
-  // debounced persist. (Named to avoid colliding with the DB-level commitBlocks.)
+  // Apply an in-editor block change (from BlockCanvas): update local state and
+  // schedule the debounced persist. (Named to avoid colliding with the DB-level
+  // commitBlocks.)
   function commitLocalEdit(next: Block[]) {
     setBlocks(next)
     scheduleSave(viewTitle, next)
   }
 
-  function setBlockAt(index: number, next: Block) {
-    commitLocalEdit(viewBlocks.map((b, i) => (i === index ? next : b)))
-  }
-
-  function removeBlockAt(index: number) {
-    // Optimistically drop the block (this schedules the debounced save, so the
-    // removal persists) and offer an undo toast that re-inserts it at its
-    // original index. The write isn't held back — instead undo re-adds the block
-    // and re-saves; the grace window is the user's chance to catch a misclick.
-    const removed = viewBlocks[index]
-    if (!removed) return
-    commitLocalEdit(viewBlocks.filter((_, i) => i !== index))
-    stageDeletion({
-      message: blockLabel(removed),
-      // The removal already persists via the debounced save — nothing to defer.
-      // Flushed via scope 'block' on page change so the toast can't outlive its page.
-      scope: 'block',
-      commit: () => {},
-      undo: () => {
-        setBlocks((current) => {
-          // Re-insert at the original index (clamped, in case the array shifted).
-          const at = Math.min(index, current.length)
-          const next = [...current.slice(0, at), removed, ...current.slice(at)]
-          scheduleSave(viewTitle, next)
-          return next
-        })
-      },
-    })
-  }
-
-  function addTextBlock() {
-    const nb: Block = { id: crypto.randomUUID(), type: 'text', content: '' }
-    insertedIds.add(nb.id)
-    commitLocalEdit([...viewBlocks, nb])
-  }
-
-  // Insert an empty block of the picked palette type at `at` (ticket-37). No-op
-  // for a type with no empty-state factory (unknown module — see emptyBlockForType).
-  function insertBlockAt(at: number, item: SlashMenuItem) {
+  // The area "+ Add content" pick (ticket-44 §2): the overview surface now opens
+  // the palette directly, so this inserts the CHOSEN module's empty state (not a
+  // bare text block), flipping the pure area to the composite editor below.
+  function addContentFromPalette(item: SlashMenuItem) {
     const nb = emptyBlockForType(item.id)
     if (!nb) return
-    // ticket-41: mark it so it settles in on mount (not the whole page on load).
     insertedIds.add(nb.id)
-    commitLocalEdit([...viewBlocks.slice(0, at), nb, ...viewBlocks.slice(at)])
-  }
-
-  // Keyboard reorder (⌥↑/⌥↓, ticket-37): swap with the neighbor; persists via
-  // the normal debounced save like every other edit.
-  function moveBlockAt(index: number, dir: 'up' | 'down') {
-    const target = dir === 'up' ? index - 1 : index + 1
-    if (target < 0 || target >= viewBlocks.length) return
-    const next = [...viewBlocks]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    commitLocalEdit(next)
+    commitLocalEdit([...viewBlocks, nb])
   }
 
   // ── Root: the Life overview owns the panel (no more empty state) ──────────
@@ -349,14 +196,17 @@ export function DocumentPanel() {
   // ── Type switch (ticket-22) ───────────────────────────────────────────────
   // "Everything is a page": a node may hold BOTH its own blocks AND children.
   //   • A pure area/container (no blocks) keeps the calm Press overview — its
-  //     focal treatment earns its place. A "+ Add content" affordance lets it
-  //     gain blocks, which flips it to the composite below.
+  //     focal treatment earns its place. A "+ Add content" affordance (now
+  //     palette-first, ticket-44) lets it gain blocks, which flips it to the
+  //     composite below.
   //   • Any node WITH blocks (or a non-area with children) shows its content in
   //     the full editor, with the "Everything within" children grid *below* it —
   //     so an accepted edit is immediately visible, and no page can ever hide
   //     its own content behind a folder view.
   if (page.type === 'area' && viewBlocks.length === 0) {
-    return <AreaOverviewPanel areaId={page.id} title={page.title} onAddContent={addTextBlock} />
+    return (
+      <AreaOverviewPanel areaId={page.id} title={page.title} onAddContent={addContentFromPalette} />
+    )
   }
 
   // ── Editor (+ children grid when the node has sub-pages) ──────────────────────
@@ -379,70 +229,16 @@ export function DocumentPanel() {
           </span>
         </div>
 
-        {/* Provide sibling-block state so bound metrics derive live and their `→`
-            can scroll to source (ticket-23). Keyed off the live `viewBlocks`, so a
-            checklist toggle re-derives every metric in the same render. `pageId` lets a
-            cross-page rollup metric find this page's children (ticket-38).
-
-            The InsertBetween separators (ticket-37) replace the old space-y gap:
-            the h-4 separator IS the block rhythm now, and every seam — before the
-            first block included — is an insertion point. */}
-        <SiblingBlocksProvider value={{ blocks: viewBlocks, scrollToBlock, pageId: page.id }}>
-          <div className="space-y-0">
-            <InsertBetween onInsert={(item) => insertBlockAt(0, item)} />
-            {viewBlocks.map((block, i) => (
-              <React.Fragment key={block.id}>
-                <BlockEditor
-                  block={block}
-                  settleOnMount={insertedIds.has(block.id)}
-                  onChange={(next) => setBlockAt(i, next)}
-                  onRemove={() => removeBlockAt(i)}
-                  onMoveUp={() => moveBlockAt(i, 'up')}
-                  onMoveDown={() => moveBlockAt(i, 'down')}
-                  onSlashKey={() => setSlashMenuOpenAt(i)}
-                  slashMenuOpen={slashMenuOpenAt === i}
-                  onSlashSelect={(item) => {
-                    // Replace the empty text block at i with the picked module's
-                    // empty state (the '/' gesture: text block → chosen block).
-                    const nb = emptyBlockForType(item.id)
-                    if (!nb) return
-                    commitLocalEdit(viewBlocks.map((b, bi) => (bi === i ? nb : b)))
-                    setSlashMenuOpenAt(null)
-                  }}
-                  onSlashClose={() => setSlashMenuOpenAt(null)}
-                  isDragging={draggingIndex === i}
-                  onDragStart={() => setDraggingIndex(i)}
-                  onDragEnd={() => setDraggingIndex(null)}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    if (draggingIndex === null || draggingIndex === i) {
-                      setDraggingIndex(null)
-                      return
-                    }
-                    // Move the dragged block to position i (splice, not swap, so
-                    // the blocks between shift by one — the reorder a user expects).
-                    const next = [...viewBlocks]
-                    const [moved] = next.splice(draggingIndex, 1)
-                    next.splice(i, 0, moved)
-                    commitLocalEdit(next)
-                    setDraggingIndex(null)
-                  }}
-                />
-                <InsertBetween onInsert={(item) => insertBlockAt(i + 1, item)} />
-              </React.Fragment>
-            ))}
-          </div>
-        </SiblingBlocksProvider>
-
-        <button
-          className="mt-4 text-sm text-muted-foreground hover:text-foreground"
-          onClick={addTextBlock}
-        >
-          + Add text
-        </button>
+        {/* The shared authoring surface (ticket-44): the `/` palette, hover `+`
+            InsertBetween, reorder, bound metrics, and the always-visible palette-
+            first "+ Add a block" foot affordance. Controlled — it emits the full
+            next array and this panel schedules the debounced whole-array save. */}
+        <BlockCanvas
+          blocks={viewBlocks}
+          pageId={page.id}
+          onChange={commitLocalEdit}
+          insertedIds={insertedIds}
+        />
 
         {/* Content above, children below — the page's own blocks stay primary; its
             sub-pages read as a quiet index beneath them (ticket-22). Collapses to
@@ -453,143 +249,6 @@ export function DocumentPanel() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-// ── Per-block editor ───────────────────────────────────────────────────────────
-
-/**
- * One block row: drag handle + delete affordance + the module's own view, editable.
- * Rendering goes through the ModuleView registry — the panel has no per-type
- * branches, so every registered module (and any future one) is editable here with
- * zero edits. Views that fold editing in (text/todo/table) emit full-state
- * onChange into the debounced save; display-only views ignore `editable`.
- *
- * Ticket-37 adds: '/' in an empty text block opens the block palette (intercepted
- * in the onChange below, so the slash never persists); ⌥↑/⌥↓ reorders the focused
- * block; the ⠿ handle drags to reorder. `draggable` is armed only while the
- * pointer is down on the handle — a block that is always draggable would hijack
- * text-selection drags inside the module's own inputs.
- */
-function BlockEditor({
-  block,
-  settleOnMount = false,
-  onChange,
-  onRemove,
-  onMoveUp,
-  onMoveDown,
-  onSlashKey,
-  slashMenuOpen,
-  onSlashSelect,
-  onSlashClose,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
-}: {
-  block: Block
-  /** ticket-41: settle this block in on mount (freshly inserted, not page-load). */
-  settleOnMount?: boolean
-  onChange: (next: Block) => void
-  onRemove: () => void
-  onMoveUp?: () => void
-  onMoveDown?: () => void
-  onSlashKey?: () => void
-  slashMenuOpen?: boolean
-  onSlashSelect?: (item: SlashMenuItem) => void
-  onSlashClose?: () => void
-  isDragging?: boolean
-  onDragStart?: () => void
-  onDragEnd?: () => void
-  onDragOver?: (e: React.DragEvent) => void
-  onDrop?: (e: React.DragEvent) => void
-}) {
-  // Armed by pointer-down on the ⠿ handle, disarmed when the drag ends (or the
-  // pointer is released without dragging). Keeps `draggable` off during normal
-  // editing so selecting text inside a textarea never starts a block drag.
-  const [dragArmed, setDragArmed] = useState(false)
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.altKey && e.key === 'ArrowUp') {
-      e.preventDefault()
-      onMoveUp?.()
-    }
-    if (e.altKey && e.key === 'ArrowDown') {
-      e.preventDefault()
-      onMoveDown?.()
-    }
-  }
-
-  return (
-    <div
-      className={cn(
-        'group relative',
-        settleOnMount && 'motion-settle-in',
-        isDragging && 'opacity-50'
-      )}
-      id={blockDomId(block.id)}
-      draggable={dragArmed}
-      onDragStart={onDragStart}
-      onDragEnd={() => {
-        setDragArmed(false)
-        onDragEnd?.()
-      }}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onKeyDown={handleKeyDown}
-    >
-      {/* Drag handle (ticket-37): arms the block's draggable for this gesture. */}
-      <button
-        className="absolute -left-8 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-press-ink text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent cursor-grab"
-        title="Drag to reorder"
-        aria-label="Drag to reorder block"
-        onPointerDown={() => setDragArmed(true)}
-        onPointerUp={() => setDragArmed(false)}
-      >
-        ⠿
-      </button>
-      <button
-        className="absolute -left-5 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
-        title="Delete block"
-        aria-label="Delete block"
-        onClick={onRemove}
-      >
-        ×
-      </button>
-
-      {/* The '/' block palette, anchored under this block (ticket-37). */}
-      {slashMenuOpen && (
-        <SlashMenu
-          items={paletteItems}
-          onSelect={onSlashSelect ?? (() => {})}
-          onClose={onSlashClose ?? (() => {})}
-          className="absolute left-0 top-full z-10 mt-1 w-72"
-        />
-      )}
-
-      <ModuleView
-        type={block.type}
-        data={block}
-        editable
-        onChange={(next) => {
-          const nextBlock = next as Block
-          // '/' typed into an EMPTY text block opens the palette instead of
-          // persisting the slash (ticket-37). Only the empty→'/' transition
-          // triggers — a '/' mid-sentence is just prose.
-          if (
-            nextBlock.type === 'text' &&
-            block.type === 'text' &&
-            (block as { content: string }).content === '' &&
-            (nextBlock as { content: string }).content === '/'
-          ) {
-            onSlashKey?.()
-            return
-          }
-          onChange(nextBlock)
-        }}
-      />
     </div>
   )
 }

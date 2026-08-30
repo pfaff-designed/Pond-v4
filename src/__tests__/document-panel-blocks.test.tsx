@@ -166,20 +166,25 @@ describe('DocumentPanel type-switch (ticket-22): blocks and children both render
     expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
   })
 
-  it('"+ Add content" promotes a pure area to the editor and persists the new block', async () => {
+  it('"+ Add content" opens the palette, then a pick promotes the area and persists that block', async () => {
     renderWith({ id: 'page-1', type: 'area', title: 'Health', blocks: [] }, [
       nodeRow({ type: 'area', title: 'Health' }),
       childRow,
     ])
+    // ticket-44 §2: "+ Add content" is palette-first — it opens the block picker
+    // rather than dropping a text block.
     fireEvent.click(await screen.findByRole('button', { name: '+ Add content' }))
+    const filterInput = await screen.findByLabelText('Filter blocks')
+    fireEvent.change(filterInput, { target: { value: 'Todo' } })
+    fireEvent.click(await screen.findByText('Todo'))
 
     // The node flips to the composite editor…
     expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
     expect(await screen.findByText('Everything within')).toBeInTheDocument()
-    // …and the added block rides the same debounced save as any edit.
+    // …and the picked module (not a bare text block) rides the debounced save.
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
     const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]
     expect(savedBlocks).toHaveLength(1)
-    expect(savedBlocks[0].type).toBe('text')
+    expect(savedBlocks[0].type).toBe('todo')
   })
 })
