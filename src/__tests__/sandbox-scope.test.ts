@@ -215,6 +215,9 @@ describe('fetchPages scope isolation', () => {
         if (col === 'workspace') currentScope = val as string
         return chain
       }),
+      // ticket-44 merge: fetchPages also chains .neq('type','home'); pass-through
+      // (this suite asserts workspace scoping, not the home filter).
+      neq: jest.fn(() => chain),
       order: jest.fn(() =>
         Promise.resolve({ data: scopeResolvedRows[currentScope] ?? [], error: null })
       ),
