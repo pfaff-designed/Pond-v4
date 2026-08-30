@@ -39,7 +39,6 @@ import {
   TerminalDrawer,
   TERMINAL_DEFAULT_HEIGHT,
   TERMINAL_MAX_HEIGHT,
-  RAIL_WIDTH_PX,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
 import { cn } from '@/lib/utils'
@@ -1024,8 +1023,11 @@ export function AITerminal() {
   // (ticket-42) — imported from TerminalDrawer so the header chrome and transcript
   // text are always coupled to the same value.
   const messagesBody = (
-    <div className="flex-1 overflow-y-auto py-4" style={{ paddingLeft: RAIL_WIDTH_PX }}>
-      <div className="mx-auto w-full max-w-2xl space-y-6 px-8">
+    // ticket-42 follow-up: the TerminalDrawer card now provides the column
+    // (RAIL_WIDTH_PX offset + max-w-2xl centering), so the body only owns its
+    // scroll + inner gutter — no re-centering here.
+    <div className="flex-1 overflow-y-auto py-4">
+      <div className="w-full space-y-6 px-8">
         {!isReady && <p className="font-serif text-sm italic text-press-faint">Loading…</p>}
         {isReady && messages.length === 0 && (
           <p className="font-serif text-sm italic text-press-faint">
@@ -1243,20 +1245,18 @@ export function AITerminal() {
   // baseline inks sage on focus, and a small-caps Send in the kicker voice — set in
   // the same centered column as the correspondence above.
   //
-  // ticket-42: the border-t and padding all live inside the column measure —
-  // no full-width hairline spanning edge-to-edge. paddingLeft: RAIL_WIDTH_PX
-  // shares the single metric with TerminalDrawer's header chrome.
+  // ticket-42 follow-up: the TerminalDrawer card owns the column; the footer only
+  // owns its inner gutter + the divider above it. No re-centering here.
   const inputFooter = (
     <div
       className="flex-shrink-0"
-      style={{ paddingLeft: RAIL_WIDTH_PX }}
       onDragOver={(e) => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
       }}
       onDrop={handleDrop}
     >
-      <div className="mx-auto w-full max-w-2xl px-8">
+      <div className="w-full px-8">
         <div className="border-t border-press-hair">
           {/* Quote chip — highlight-to-ask (ticket-40 F20) */}
           {quoteCtx && (

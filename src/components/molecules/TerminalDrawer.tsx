@@ -199,14 +199,21 @@ export function TerminalDrawer({
         </div>
       )}
 
-      {/* Header: context + visible controls (collapse toggle, clear). Confined to the
-          same centered column the transcript uses — no full-width bg strip. The
-          bg-press-accent-wash and hairline border sit only within the column so paper
-          shows through at the left and right margins.
-          ticket-32: the context label carries the correspondence serif. */}
-      <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
-        <div className="mx-auto w-full max-w-2xl px-8">
-          <div className="flex items-center justify-between py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted">
+      {/* The whole chat is ONE rounded, bordered card confined to the center
+          column (a floating panel over the paper, matching the v85 proto) — not a
+          full-width dock. The single outer wrapper below carries the border,
+          rounding and background; header / body / footer live inside it as
+          sections, so the inner column wrappers (AITerminal) no longer re-center.
+          RAIL_WIDTH_PX is the shared metric that keeps the card aligned to the
+          document column above. */}
+      <div
+        className="flex-1 min-h-0 flex px-4 pb-3"
+        style={{ paddingLeft: RAIL_WIDTH_PX }}
+      >
+        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-2xl border border-press-hair bg-card shadow-sm">
+          {/* Header: context + visible controls (collapse toggle, clear).
+              ticket-32: the context label carries the correspondence serif. */}
+          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted">
             <button
               type="button"
               onClick={onToggleCollapsed}
@@ -238,16 +245,17 @@ export function TerminalDrawer({
               Clear
             </button>
           </div>
+
+          {/* Body + footer collapse away, but the header stays as the re-open
+              affordance. When collapsed the card shrinks to just the header bar. */}
+          {!collapsed && (
+            <>
+              <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+              <div className="flex-shrink-0">{footer}</div>
+            </>
+          )}
         </div>
       </div>
-
-      {/* Body + footer collapse away, but the header strip stays as the re-open affordance. */}
-      {!collapsed && (
-        <>
-          <div className="flex-1 min-h-0 flex flex-col">{children}</div>
-          <div className="flex-shrink-0">{footer}</div>
-        </>
-      )}
     </section>
   )
 }

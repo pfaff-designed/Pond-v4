@@ -144,8 +144,12 @@ export const ColumnConfined: Story = {
     // Outer section must be transparent — no bg-card or border-t.
     await expect(section).not.toHaveClass('bg-card')
     await expect(section).not.toHaveClass('border-t')
-    // The header inner wrapper carries the bg and border — verify it exists and
-    // has the expected column classes.
+    // The chat is ONE rounded, bordered card within the column (the bg lives here,
+    // not on the section) — a floating panel over the paper, not a full-width dock.
+    const card = section.querySelector('.rounded-2xl.border')
+    await expect(card).toBeTruthy()
+    await expect(card).toHaveClass('bg-card')
+    // The header sits inside that card and carries its own wash + divider.
     const headerInner = section.querySelector('[class*="bg-press-accent-wash"]')
     await expect(headerInner).toBeTruthy()
     // Context label is still readable.
