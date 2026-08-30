@@ -10,11 +10,15 @@
  * follow-up with its own grill.
  */
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { updateTitle } from '@/lib/pages/client'
+import { commitBlocks } from '@/lib/pages/commit'
+import { getOrCreateHomePage } from '@/lib/pages/home'
+import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import type { Block } from '@/lib/documents/types'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
@@ -30,6 +34,8 @@ import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
+import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
+import { paletteItems } from '@/lib/modules/palette'
 
 /** Staggered rise-on-mount wrapper. index drives the delay. */
 function Rise({
@@ -110,6 +116,39 @@ function EditableKicker({
   )
 }
 
+/**
+ * The palette-first "+ Add content" affordance for a pure area (ticket-44 §2).
+ * Opens the block palette directly (not a text block); the pick flows to the
+ * caller, which inserts that module's empty state and flips to the composite
+ * editor. Anchored below the button so the picker grows in place.
+ */
+function AddContentButton({ onAddContent }: { onAddContent: (item: SlashMenuItem) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(true)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="text-[12.5px] font-medium text-press-muted hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
+      >
+        + Add content
+      </button>
+      {open && (
+        <SlashMenu
+          items={paletteItems}
+          onSelect={(item) => {
+            onAddContent(item)
+            setOpen(false)
+          }}
+          onClose={() => setOpen(false)}
+          className="absolute right-0 top-full z-10 mt-1 w-72"
+        />
+      )}
+    </div>
+  )
+}
+
 export interface OverviewSurfaceProps {
   /** Micro-label above the numeral, e.g. the page title or "Life". */
   kicker: string
@@ -140,10 +179,19 @@ export interface OverviewSurfaceProps {
   onOpenCard: (card: OverviewCardModel) => void
   /**
    * The quiet "+ Add content" affordance. Present when this node could hold its
-   * own blocks but has none yet (a pure area/container). Adding a block flips the
-   * node to the composite editor+children surface (ticket-22).
+   * own blocks but has none yet (a pure area/container). Palette-first (ticket-44
+   * §2): clicking opens the block palette; picking a module hands the item back
+   * here, and the caller inserts that module's empty state — flipping the node to
+   * the composite editor+children surface (ticket-22).
    */
-  onAddContent?: () => void
+  onAddContent?: (item: SlashMenuItem) => void
+  /**
+   * The Life home page's own editable blocks (ticket-44 §1), rendered BETWEEN the
+   * focal numeral and the areas grid so Life reads as a real page: its content
+   * above, its areas below. Only the Life root passes this; area/document surfaces
+   * omit it. The slot already carries its own always-visible "+ Add a block".
+   */
+  homeCanvas?: React.ReactNode
 }
 
 export function OverviewSurface({
@@ -157,6 +205,7 @@ export function OverviewSurface({
   closing,
   onOpenCard,
   onAddContent,
+  homeCanvas,
 }: OverviewSurfaceProps) {
   let ri = 0
   const showBreadcrumb = !!onNavigateCrumb
@@ -194,14 +243,7 @@ export function OverviewSurface({
             )}
           </div>
           <div className="flex items-center gap-4">
-            {onAddContent && (
-              <button
-                onClick={onAddContent}
-                className="text-[12.5px] font-medium text-press-muted hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
-              >
-                + Add content
-              </button>
-            )}
+            {onAddContent && <AddContentButton onAddContent={onAddContent} />}
           </div>
         </Rise>
 
@@ -209,6 +251,15 @@ export function OverviewSurface({
         <Rise i={ri++} className="mt-7 mb-1.5">
           <FocalNumeral value={model.focal} caption={model.focalCaption} />
         </Rise>
+
+        {/* ── Life home blocks (ticket-44 §1): the Life root's own content, above
+            its areas. Its own always-visible "+ Add a block" lives inside. Only
+            Life passes homeCanvas; area/document surfaces omit it. ────────────── */}
+        {homeCanvas && (
+          <Rise i={ri++} className="mt-10">
+            {homeCanvas}
+          </Rise>
+        )}
 
         {/* ── Everything within — a card per child page ───────────────────── */}
         {model.cards.length > 0 && (
@@ -278,8 +329,9 @@ export function AreaOverviewPanel({
 }: {
   areaId: string
   title: string
-  /** When set, the surface offers a "+ Add content" affordance (ticket-22). */
-  onAddContent?: () => void
+  /** When set, the surface offers a palette-first "+ Add content" affordance
+   *  (ticket-22/ticket-44); the pick is the module to insert. */
+  onAddContent?: (item: SlashMenuItem) => void
 }) {
   const openCard = useOpenCard()
   const queryClient = useQueryClient()
@@ -324,9 +376,17 @@ export function AreaOverviewPanel({
 // ── Life container ───────────────────────────────────────────────────────────
 
 /**
- * The Life/home overview at the workspace root — replaces the old "Select a
- * page" empty state. Structural only: real counts and recency per top-level
- * page; the "Across your life" AI synthesis is a deferred follow-up.
+ * The Life/home overview at the workspace root — now a REAL home page that holds
+ * its own blocks (ticket-44 §1). Composite: Life's own blocks (the full
+ * <BlockCanvas> editor) render BETWEEN the focal numeral and the areas grid, so
+ * Life reads as a page with content above and its areas below. An empty Life
+ * shows just the overview + the always-visible "+ Add a block" (inside the
+ * canvas). Pond composes Life's blocks through the normal propose_changes gate —
+ * the home row is a real page in the workspace outline, reached by targetPageId.
+ *
+ * Structural counts still exclude the home row (fetchPages strips it), so Life's
+ * own blocks never inflate the areas overview and the home row is never a rail
+ * child. The "Across your life" AI synthesis remains a deferred follow-up.
  */
 export function LifeOverviewPanel() {
   const openCard = useOpenCard()
@@ -352,6 +412,113 @@ export function LifeOverviewPanel() {
       model={model}
       closing="That’s the whole of it. Open an area, or ask."
       onOpenCard={openCard}
+      homeCanvas={<LifeHomeCanvas />}
+    />
+  )
+}
+
+/**
+ * The Life home page's own editable blocks (ticket-44 §1). Loads the reserved
+ * home row (created on first access), renders the shared <BlockCanvas>, and owns
+ * a debounced whole-array save to that row through the same commitBlocks tail as
+ * every other page. Kept a leaf component so its ['home'] query and save state
+ * don't entangle the overview's ['pages'] read.
+ *
+ * Adopts an EXTERNAL write (an accepted Pond proposal against Life) the same way
+ * DocumentPanel does: when settled, if the server blocks differ from what we last
+ * reconciled, take them — so a composed Life block appears without a reload.
+ */
+function LifeHomeCanvas() {
+  const supabase = useMemo(() => createClient(), [])
+  const queryClient = useQueryClient()
+  const { data: home } = useQuery({ queryKey: ['home'], queryFn: () => getOrCreateHomePage(supabase) })
+
+  const [blocks, setBlocks] = useState<Block[]>([])
+  // Which home row our local blocks were seeded from (null = not yet). A ref, so
+  // the seed condition is a ref compare (like DocumentPanel) rather than a state
+  // the effect must also depend on.
+  const loadedId = useRef<string | null>(null)
+  const serverSig = useRef<string>('')
+  const savedRef = useRef(true)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [insertedIds] = useState<Set<string>>(() => new Set())
+
+  // Seed local blocks from the home row on load; on a settled same-row refetch
+  // adopt server blocks only when they changed vs. what we last reconciled — i.e.
+  // an external write (an accepted Pond proposal against Life). Mirrors the
+  // DocumentPanel seeding effect exactly (its structure keeps the setState off
+  // the effect's guaranteed path, satisfying react-hooks/set-state-in-effect).
+  useEffect(() => {
+    if (home && home.id !== loadedId.current) {
+      loadedId.current = home.id
+      serverSig.current = JSON.stringify(home.blocks)
+      setBlocks(home.blocks)
+    } else if (home && home.id === loadedId.current && savedRef.current) {
+      const sig = JSON.stringify(home.blocks)
+      if (sig !== serverSig.current) {
+        serverSig.current = sig
+        setBlocks(home.blocks)
+      }
+    }
+  }, [home])
+
+  // Schedule the debounced whole-array save for `next` (shared by every edit
+  // path). Kept separate from the setState so the undo path can call it from
+  // inside a functional updater without nesting setState.
+  function scheduleSave(next: Block[]) {
+    if (!home) return
+    savedRef.current = false
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      await commitBlocks(supabase, queryClient, home.id, next)
+      serverSig.current = JSON.stringify(next)
+      // Keep the ['home'] cache in step so the adopt above only fires for genuinely
+      // external writes.
+      queryClient.setQueryData(['home'], (prev: typeof home) =>
+        prev ? { ...prev, blocks: next } : prev
+      )
+      savedRef.current = true
+    }, 600)
+  }
+
+  function commitLocalEdit(next: Block[]) {
+    if (!home) return
+    setBlocks(next)
+    scheduleSave(next)
+  }
+
+  // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
+  // via a functional update + re-save, so an edit between delete and Undo isn't
+  // clobbered by a re-base on the stale stage-time snapshot.
+  function undoRemove(index: number, block: Block) {
+    setBlocks((current) => {
+      const at = Math.min(index, current.length)
+      const next = [...current.slice(0, at), block, ...current.slice(at)]
+      scheduleSave(next)
+      return next
+    })
+  }
+
+  // Clear a pending debounced save on unmount / home-row change (ticket-44
+  // review): mirror DocumentPanel's discipline so a save can't fire against an
+  // unmounted component or a stale closure when the Life view changes.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [])
+
+  // Until the home row loads, render nothing (the overview still shows). An empty
+  // home row renders the canvas with just the "+ Add a block" foot affordance.
+  if (!home) return null
+
+  return (
+    <BlockCanvas
+      blocks={blocks}
+      pageId={home.id}
+      onChange={commitLocalEdit}
+      onUndoRemove={undoRemove}
+      insertedIds={insertedIds}
     />
   )
 }

@@ -169,3 +169,45 @@ describe('Drag handle', () => {
     expect(handles.length).toBeGreaterThanOrEqual(1)
   })
 })
+
+// ── Delete → edit → Undo must re-base on the LATEST blocks (ticket-44 review) ──
+// Regression for the stale-closure bug: BlockCanvas's undo closed over the
+// stage-time `blocks` snapshot, so an edit between delete and Undo was dropped.
+// The fix routes re-insert through onUndoRemove → the parent's functional
+// setBlocks((current) => …). This asserts the edit SURVIVES the undo.
+describe('Undo after an intervening edit (functional re-insert)', () => {
+  it('re-inserts the deleted block WITHOUT clobbering an edit made after the delete', async () => {
+    const blocks: Block[] = [
+      { id: 'b1', type: 'text', content: 'First' },
+      { id: 'b2', type: 'text', content: 'Second' },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    // Delete b1 (the first block).
+    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
+    fireEvent.click(deleteButtons[0])
+
+    // Now edit the surviving block (b2): drop into its textarea and change it.
+    const editTrigger = await screen.findByRole('button', { name: 'Edit text block' })
+    fireEvent.click(editTrigger)
+    const textarea = await screen.findByDisplayValue('Second')
+    fireEvent.change(textarea, { target: { value: 'Second (edited)' } })
+
+    // Undo the delete — b1 comes back, and b2 must keep the edit.
+    fireEvent.click(await screen.findByText('Undo'))
+
+    await waitFor(
+      () => {
+        const calls = mockCommitBlocks.mock.calls
+        const last = calls[calls.length - 1]?.[3] as Block[] | undefined
+        expect(last).toBeDefined()
+        // b1 re-inserted at its original index, b2 keeps the edit — the re-insert
+        // re-based on the LATEST blocks, not the stale pre-edit snapshot.
+        expect(last!.map((b) => b.id)).toEqual(['b1', 'b2'])
+        const b2 = last!.find((b) => b.id === 'b2')
+        expect(b2 && b2.type === 'text' && b2.content).toBe('Second (edited)')
+      },
+      { timeout: 2000 }
+    )
+  })
+})

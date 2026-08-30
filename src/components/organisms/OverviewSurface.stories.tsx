@@ -118,8 +118,10 @@ export const Life: Story = {
 
 /**
  * A pure container that can gain its own content: the quiet "+ Add content"
- * affordance sits beside "ask Pond". Clicking it flips the node to the composite
- * editor+children surface (ticket-22).
+ * affordance sits in the header. Palette-first (ticket-44 §2) — clicking it opens
+ * the block picker; picking a module hands that item to onAddContent, which
+ * inserts its empty state and flips the node to the composite editor+children
+ * surface (ticket-22).
  */
 export const WithAddContent: Story = {
   args: { onAddContent: fn() },
@@ -127,8 +129,13 @@ export const WithAddContent: Story = {
     const canvas = within(canvasElement)
     const add = canvas.getByRole('button', { name: '+ Add content' })
     await expect(add).toBeInTheDocument()
+    // Click opens the palette (does NOT add anything on its own).
     await userEvent.click(add)
-    await expect(args.onAddContent).toHaveBeenCalled()
+    const filter = await canvas.findByLabelText('Filter blocks')
+    await userEvent.type(filter, 'Todo')
+    await userEvent.click(await canvas.findByText('Todo'))
+    // The pick — a SlashMenuItem — is what reaches onAddContent.
+    await expect(args.onAddContent).toHaveBeenCalledWith(expect.objectContaining({ id: 'todo' }))
   },
 }
 

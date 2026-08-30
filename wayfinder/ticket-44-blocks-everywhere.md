@@ -1,7 +1,7 @@
 ---
 id: 44
 label: cycle-4:authoring
-status: open
+status: resolved
 blocked-by: []
 blocks: []
 ---
@@ -58,3 +58,77 @@ orchestrator live-verifies (in the /sandbox once ticket-43 lands). Preserve all
 shipped machinery (t22 composite, t37 slash/insert/reorder, t38 empty states,
 t39 lifecycle, t42 column, bindings). Touched-files lint clean. Resolution +
 status: resolved.
+
+## Resolution
+
+Shipped on `ticket-44` (3 commits). tsc clean · jest 58 suites / 791 tests ·
+test-storybook 37 files / 170 tests · touched-files lint clean.
+
+### The Life-home data approach (LOCKED decision 1)
+
+Life is a REAL page now: a **reserved, per-user `home`-type row** — top-level
+(`parent_id = null`), one per user, `title = 'Life'`, holding its own `blocks`.
+
+- **Migration `0005_life_home_page.sql`** (additive + reversible): widens the
+  `pages.type` CHECK to admit `home`, and adds a partial unique index
+  `pages_one_home_per_user` (one home row per user; a create race fails cleanly,
+  the loser re-reads the winner). No data moved.
+- **`lib/pages/home.ts` · `getOrCreateHomePage`**: fetch-or-create, lazy on first
+  Life view; idempotent under a race. Created empty (no seeded blocks), so an
+  untouched Life shows just the overview + the add affordance.
+- **No leak — ONE boundary.** `fetchPages` does a DB-side `.neq('type','home')`,
+  so the `['pages']` cache the rail + overview + breadcrumb read never contains
+  the home row: it can't become a rail child or inflate the areas overview. The
+  home blocks are reached only through `home.ts` (a separate `['home']` query).
+- **AI composes via the normal gate.** The home row IS surfaced in the AI
+  workspace outline (`TYPE_LABEL.home = 'Home'`), so Pond targets it by id
+  (`propose_changes` `targetPageId`) and the existing `writeAcceptedChanges` /
+  `commitBlocks` tail writes to it — zero new AI plumbing. `LifeHomeCanvas`
+  adopts that external write the way `DocumentPanel` does.
+- The synthetic rail root (`LIFE_ID`) and `/workspace` (`?nodeId=null`) are
+  UNCHANGED — Life still renders at the root URL; the home row backs its blocks.
+
+### Palette-first + always-visible add (LOCKED decision 2)
+
+- Shared `<BlockCanvas>` (extracted from DocumentPanel) is the ONE authoring body
+  for Life, area pages, and document pages: `/` palette, hover `+` InsertBetween
+  (t37, kept), reorder, bound metrics, delete+undo.
+- New `AddBlockButton` (in the shared `BlockInserters` molecule): an
+  always-visible, palette-first "+ Add a block" at the foot of every editable
+  page, replacing the text-only "+ Add text".
+- Area "+ Add content" opens the block palette directly; the pick inserts that
+  module's empty state and flips to the composite editor.
+- `paletteItems` + `emptyBlockForType` moved to `lib/modules/palette.ts` (still
+  registry-derived — kanban/charts covered), imported by every surface.
+
+### Tests added
+
+`pages-home.test.ts` (get-or-create, idempotency, race, no-leak), 
+`pages-tree-home-filter.test.ts` (fetchPages strips home), 
+`life-home-composite.test.ts` (Life composite render + empty + always-visible add
+opens palette + inserts each module empty state + persists to the home row),
+updated `document-panel-blocks` (area palette-open) and the `OverviewSurface` +
+new `BlockInserters` stories.
+
+### Review fixes (post-pair)
+
+- **Stale-closure undo (BlockCanvas):** the undo re-insert no longer routes
+  through `onChange` on the stage-time `blocks` snapshot. BlockCanvas now takes an
+  `onUndoRemove(index, block)` prop; DocumentPanel and LifeHomeCanvas implement it
+  with a functional `setBlocks((current) => …)` + re-save, so an edit made between
+  delete and Undo survives. Regression jest in `block-palette.test.tsx`
+  (delete → edit surviving block → Undo → edit preserved, order restored).
+- **LifeHomeCanvas debounce cleanup:** a `useEffect` cleanup now
+  `clearTimeout(saveTimer.current)` on unmount, mirroring DocumentPanel — a save
+  can't fire against an unmounted component / stale closure on Life view change.
+- **markInserted doc:** commented that `insertedIds` is parent-owned; BlockCanvas
+  only records into it.
+
+### Follow-ups
+
+- `lib/pages/home.ts` uses `supabase as any` for the insert chain (Supabase's
+  generated types don't narrow through the builder — same pattern as
+  `pages/client.ts`). Drop the cast by regenerating DB types from migration 0005.
+- Migration filename (`0005_…`) and the `fetchPages` `.neq('type','home')` filter
+  will be reconciled with ticket-43 at merge (renumber to 0006, merge both
+  fetchPages filters, fix the `pages-tree-home-filter` mock) — per coordinator.
