@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { CreatePageBlock } from '@/lib/modules/ai-composition'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 import { createPage } from '@/lib/pages/client'
@@ -86,7 +87,8 @@ export interface CreatedPage {
 export async function createPageFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: CreatePageProposal,
-  mintId: () => string
+  mintId: () => string,
+  workspace: WorkspaceScope = 'main'
 ): Promise<CreatedPage> {
   const {
     data: { user },
@@ -97,7 +99,7 @@ export async function createPageFromProposal(
   const sb = supabase as any
 
   const ref = proposal.parentRef?.trim()
-  const parentId = ref ? await resolveParentId(sb, user.id, ref) : null
+  const parentId = ref ? await resolveParentId(sb, user.id, ref, workspace) : null
 
   const blocks = hydrateProposalBlocks(proposal.blocks, mintId)
 
@@ -109,6 +111,7 @@ export async function createPageFromProposal(
     title: proposal.title,
     blocks,
     props,
+    workspace,
   })
   return { id: page.id }
 }

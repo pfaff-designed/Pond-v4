@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { UIMessage } from 'ai'
 import { emptyResolutions, parseResolutions, type ConversationResolutions } from './resolutions'
 
@@ -17,12 +18,14 @@ type ConversationRecord = {
 
 export async function getOrCreateConversation(
   supabase: SupabaseClient<Database>,
-  userId: string
+  userId: string,
+  workspace: WorkspaceScope = 'main'
 ): Promise<ActiveConversation> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id, transcript')
     .eq('user_id', userId)
+    .eq('workspace', workspace)
     .is('dissolved_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -41,7 +44,7 @@ export async function getOrCreateConversation(
   const sb = supabase as any
   const { data: created, error } = await sb
     .from('conversations')
-    .insert({ user_id: userId })
+    .insert({ user_id: userId, workspace })
     .select('id')
     .single()
 

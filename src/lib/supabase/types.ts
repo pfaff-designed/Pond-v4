@@ -7,6 +7,10 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 // the others are carried over from the pre-unification node kinds.
 export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page'
 
+// The workspace scope discriminator (ticket-43). 'main' is the real workspace;
+// 'sandbox' is the isolated orchestrator/user testing scope.
+export type Workspace = 'main' | 'sandbox'
+
 export interface Database {
   public: {
     Tables: {
@@ -27,6 +31,7 @@ export interface Database {
           status: string | null
           props: Json
           order: number
+          workspace: Workspace
           updated_at: string
           created_at: string
         }
@@ -41,6 +46,7 @@ export interface Database {
           status?: string | null
           props?: Json
           order?: number
+          workspace?: Workspace
         }
         Update: {
           parent_id?: string | null
@@ -51,6 +57,7 @@ export interface Database {
           status?: string | null
           props?: Json
           order?: number
+          workspace?: Workspace
           updated_at?: string
         }
       }
@@ -59,11 +66,12 @@ export interface Database {
           id: string
           user_id: string
           transcript: Json
+          workspace: Workspace
           created_at: string
           dissolved_at: string | null
         }
-        Insert: { id?: string; user_id: string; transcript?: Json }
-        Update: { transcript?: Json; dissolved_at?: string }
+        Insert: { id?: string; user_id: string; transcript?: Json; workspace?: Workspace }
+        Update: { transcript?: Json; workspace?: Workspace; dissolved_at?: string }
       }
     }
   }
