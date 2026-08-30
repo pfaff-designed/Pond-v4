@@ -4,8 +4,10 @@
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
 
 // A page's type tag in the unified page tree. 'page' is the generic default;
-// the others are carried over from the pre-unification node kinds.
-export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page'
+// the others are carried over from the pre-unification node kinds. 'home' is the
+// reserved Life home page (ticket-44) — one per user, top-level, never a rail
+// child and never counted; it holds the Life root's own blocks.
+export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page' | 'home'
 
 export interface Database {
   public: {

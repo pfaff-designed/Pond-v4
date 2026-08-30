@@ -97,6 +97,9 @@ const TYPE_LABEL: Record<NodeType, string> = {
   project: 'Project',
   action: 'Action',
   page: 'Page',
+  // ticket-44: the reserved Life home page. Surfaced in the outline so Pond can
+  // target it (propose_changes targetPageId) — composing Life's own home blocks.
+  home: 'Home',
 }
 
 /** One-line preview of a block's content, for the id-addressed listing. */
