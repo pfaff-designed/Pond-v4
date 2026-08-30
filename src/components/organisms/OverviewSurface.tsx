@@ -455,9 +455,11 @@ function LifeHomeCanvas() {
     }
   }, [home])
 
-  function commitLocalEdit(next: Block[]) {
+  // Schedule the debounced whole-array save for `next` (shared by every edit
+  // path). Kept separate from the setState so the undo path can call it from
+  // inside a functional updater without nesting setState.
+  function scheduleSave(next: Block[]) {
     if (!home) return
-    setBlocks(next)
     savedRef.current = false
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
@@ -472,11 +474,44 @@ function LifeHomeCanvas() {
     }, 600)
   }
 
+  function commitLocalEdit(next: Block[]) {
+    if (!home) return
+    setBlocks(next)
+    scheduleSave(next)
+  }
+
+  // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
+  // via a functional update + re-save, so an edit between delete and Undo isn't
+  // clobbered by a re-base on the stale stage-time snapshot.
+  function undoRemove(index: number, block: Block) {
+    setBlocks((current) => {
+      const at = Math.min(index, current.length)
+      const next = [...current.slice(0, at), block, ...current.slice(at)]
+      scheduleSave(next)
+      return next
+    })
+  }
+
+  // Clear a pending debounced save on unmount / home-row change (ticket-44
+  // review): mirror DocumentPanel's discipline so a save can't fire against an
+  // unmounted component or a stale closure when the Life view changes.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [])
+
   // Until the home row loads, render nothing (the overview still shows). An empty
   // home row renders the canvas with just the "+ Add a block" foot affordance.
   if (!home) return null
 
   return (
-    <BlockCanvas blocks={blocks} pageId={home.id} onChange={commitLocalEdit} insertedIds={insertedIds} />
+    <BlockCanvas
+      blocks={blocks}
+      pageId={home.id}
+      onChange={commitLocalEdit}
+      onUndoRemove={undoRemove}
+      insertedIds={insertedIds}
+    />
   )
 }

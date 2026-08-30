@@ -41,9 +41,20 @@ export interface BlockCanvasProps {
   /** Emit the full next block array; the caller owns persistence (debounced save). */
   onChange: (next: Block[]) => void
   /**
+   * Undo a block removal (ticket-44 review). The caller re-inserts `block` at
+   * `index` via a FUNCTIONAL state update against its LATEST blocks — NOT through
+   * `onChange`, which would re-base on the stale `blocks` snapshot captured when
+   * the toast was staged. This preserves DocumentPanel's original
+   * `setBlocks((current) => …)` correctness: an edit between remove and Undo
+   * must not be clobbered by the re-insert. Required whenever removal is possible.
+   */
+  onUndoRemove: (index: number, block: Block) => void
+  /**
    * Block ids inserted this session, so a freshly-inserted block SETTLES in
-   * (motion-settle-in) while blocks present on load do not (ticket-41). Optional —
-   * a surface that doesn't track it passes nothing and no block animates.
+   * (motion-settle-in) while blocks present on load do not (ticket-41). The Set is
+   * OWNED BY THE PARENT (so it survives the panel's stable mount across page
+   * changes), not by BlockCanvas — `markInserted` mutates it through this prop.
+   * Optional — a surface that doesn't track it passes nothing and no block animates.
    */
   insertedIds?: Set<string>
 }
@@ -53,7 +64,13 @@ export interface BlockCanvasProps {
  * next array up; the caller schedules the persist. Reorder, insert, remove, and
  * the palette picks all reduce to one `emit`.
  */
-export function BlockCanvas({ blocks, pageId, onChange, insertedIds }: BlockCanvasProps) {
+export function BlockCanvas({
+  blocks,
+  pageId,
+  onChange,
+  onUndoRemove,
+  insertedIds,
+}: BlockCanvasProps) {
   const { stageDeletion } = useDeletionUndo()
 
   // Which block index has the `/` palette open (null = closed). Index, not id:
@@ -62,6 +79,8 @@ export function BlockCanvas({ blocks, pageId, onChange, insertedIds }: BlockCanv
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
 
+  // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
+  // prop doc): BlockCanvas doesn't own it, it just records into it.
   function markInserted(id: string) {
     insertedIds?.add(id)
   }
@@ -78,12 +97,14 @@ export function BlockCanvas({ blocks, pageId, onChange, insertedIds }: BlockCanv
       message: blockLabel(removed),
       // The removal already persists via the caller's debounced save; undo
       // re-inserts and re-saves. Flushed via scope 'block' on page change.
+      //
+      // Route the re-insert through the caller's FUNCTIONAL update
+      // (onUndoRemove), NOT onChange: `blocks` here is the snapshot at
+      // stage-time, so an edit before Undo would otherwise re-base the insert on
+      // stale state and drop that edit (ticket-44 review).
       scope: 'block',
       commit: () => {},
-      undo: () => {
-        const at = Math.min(index, blocks.length)
-        onChange([...blocks.slice(0, at), removed, ...blocks.slice(at)])
-      },
+      undo: () => onUndoRemove(index, removed),
     })
   }
 

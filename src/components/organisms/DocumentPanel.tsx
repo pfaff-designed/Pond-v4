@@ -171,6 +171,19 @@ export function DocumentPanel() {
     scheduleSave(viewTitle, next)
   }
 
+  // Undo a block removal (ticket-44 review): re-insert against the LATEST blocks
+  // via a functional update, so an edit made between the delete and the Undo
+  // isn't clobbered by a re-base on the stale stage-time snapshot (the original
+  // DocumentPanel behaviour, preserved through BlockCanvas.onUndoRemove).
+  function undoRemove(index: number, block: Block) {
+    setBlocks((current) => {
+      const at = Math.min(index, current.length)
+      const next = [...current.slice(0, at), block, ...current.slice(at)]
+      scheduleSave(viewTitle, next)
+      return next
+    })
+  }
+
   // The area "+ Add content" pick (ticket-44 §2): the overview surface now opens
   // the palette directly, so this inserts the CHOSEN module's empty state (not a
   // bare text block), flipping the pure area to the composite editor below.
@@ -237,6 +250,7 @@ export function DocumentPanel() {
           blocks={viewBlocks}
           pageId={page.id}
           onChange={commitLocalEdit}
+          onUndoRemove={undoRemove}
           insertedIds={insertedIds}
         />
 

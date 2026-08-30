@@ -109,3 +109,26 @@ Life is a REAL page now: a **reserved, per-user `home`-type row** — top-level
 opens palette + inserts each module empty state + persists to the home row),
 updated `document-panel-blocks` (area palette-open) and the `OverviewSurface` +
 new `BlockInserters` stories.
+
+### Review fixes (post-pair)
+
+- **Stale-closure undo (BlockCanvas):** the undo re-insert no longer routes
+  through `onChange` on the stage-time `blocks` snapshot. BlockCanvas now takes an
+  `onUndoRemove(index, block)` prop; DocumentPanel and LifeHomeCanvas implement it
+  with a functional `setBlocks((current) => …)` + re-save, so an edit made between
+  delete and Undo survives. Regression jest in `block-palette.test.tsx`
+  (delete → edit surviving block → Undo → edit preserved, order restored).
+- **LifeHomeCanvas debounce cleanup:** a `useEffect` cleanup now
+  `clearTimeout(saveTimer.current)` on unmount, mirroring DocumentPanel — a save
+  can't fire against an unmounted component / stale closure on Life view change.
+- **markInserted doc:** commented that `insertedIds` is parent-owned; BlockCanvas
+  only records into it.
+
+### Follow-ups
+
+- `lib/pages/home.ts` uses `supabase as any` for the insert chain (Supabase's
+  generated types don't narrow through the builder — same pattern as
+  `pages/client.ts`). Drop the cast by regenerating DB types from migration 0005.
+- Migration filename (`0005_…`) and the `fetchPages` `.neq('type','home')` filter
+  will be reconciled with ticket-43 at merge (renumber to 0006, merge both
+  fetchPages filters, fix the `pages-tree-home-filter` mock) — per coordinator.
