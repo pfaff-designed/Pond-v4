@@ -1325,7 +1325,12 @@ export function AITerminal() {
                   }
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Talk to Pond… (/clear · /handoff · /save)"
+                // When a ghost suggestion is showing on the empty input, it IS the
+                // empty-state hint — suppress the static placeholder so the two
+                // don't render on top of each other.
+                placeholder={
+                  activeSuggestion && !input ? '' : 'Talk to Pond… (/clear · /handoff · /save)'
+                }
                 rows={inputRows}
                 // relative z-10 (ticket-40) keeps the textarea above the ghost
                 // suggestion behind it; the focus signal is ticket-41's draw-in
