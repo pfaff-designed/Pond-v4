@@ -26,9 +26,11 @@ import { paletteItems } from '@/lib/modules/palette'
  */
 export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) => void }) {
   const [open, setOpen] = useState(false)
+  const [btnEl, setBtnEl] = useState<HTMLButtonElement | null>(null)
   return (
     <div className="group relative h-4 flex items-center" role="separator">
       <button
+        ref={setBtnEl}
         className="absolute left-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-press-muted hover:text-press-accent text-sm w-4 h-4 flex items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
         aria-label="Insert block"
         onClick={() => setOpen(true)}
@@ -47,7 +49,7 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
             setOpen(false)
           }}
           onClose={() => setOpen(false)}
-          className="absolute left-0 top-full z-10 mt-1 w-72"
+          anchorEl={btnEl}
         />
       )}
     </div>
@@ -62,9 +64,13 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
  */
 export function AddBlockButton({ onAdd }: { onAdd: (item: SlashMenuItem) => void }) {
   const [open, setOpen] = useState(false)
+  // State-backed element ref (not `useRef().current` — reading a ref in render is
+  // disallowed) so the portal-anchored palette can position against the button.
+  const [btnEl, setBtnEl] = useState<HTMLButtonElement | null>(null)
   return (
-    <div className="relative mt-4">
+    <div className="mt-4">
       <button
+        ref={setBtnEl}
         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         aria-label="Add a block"
         aria-haspopup="menu"
@@ -74,6 +80,8 @@ export function AddBlockButton({ onAdd }: { onAdd: (item: SlashMenuItem) => void
         + Add a block
       </button>
       {open && (
+        // Portal-anchored to the button so the palette floats above the areas
+        // overview grid AND the terminal region (escapes their stacking contexts).
         <SlashMenu
           items={paletteItems}
           onSelect={(item) => {
@@ -81,7 +89,7 @@ export function AddBlockButton({ onAdd }: { onAdd: (item: SlashMenuItem) => void
             setOpen(false)
           }}
           onClose={() => setOpen(false)}
-          className="absolute left-0 top-full z-10 mt-1 w-72"
+          anchorEl={btnEl}
         />
       )}
     </div>

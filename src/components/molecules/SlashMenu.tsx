@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 export interface SlashMenuItem {
@@ -15,9 +16,18 @@ export interface SlashMenuProps {
   onClose: () => void
   /** Additional className for the panel — use for positioning (e.g. 'absolute bottom-full left-0 mb-1') */
   className?: string
+  /**
+   * When set, the panel renders in a portal on `document.body` at a FIXED
+   * position just below the anchor — escaping every parent stacking context
+   * (the areas overview grid, the terminal region) so an open palette always
+   * floats above page content. Without it the panel positions inline via
+   * `className` (the chat command menu, which lives at the top of its own
+   * stack, uses that path).
+   */
+  anchorEl?: HTMLElement | null
 }
 
-export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProps) {
+export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: SlashMenuProps) {
   const [filter, setFilter] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -29,6 +39,24 @@ export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProp
 
   // Clamp activeIndex to valid range when filteredItems changes
   const clampedIndex = Math.min(activeIndex, Math.max(0, filteredItems.length - 1))
+
+  // Portal positioning: fixed coords just below the anchor, tracked across
+  // scroll/resize so the floating panel stays put.
+  const [fixedPos, setFixedPos] = useState<{ top: number; left: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!anchorEl) return
+    const update = () => {
+      const r = anchorEl.getBoundingClientRect()
+      setFixedPos({ top: r.bottom + 4, left: r.left })
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [anchorEl])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -59,7 +87,7 @@ export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProp
     }
   }
 
-  return (
+  const panel = (
     <div
       className={cn(
         // ticket-41: the palette grows from its anchor (quick), rather than
@@ -67,8 +95,11 @@ export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProp
         // caller positions it; transform-origin follows via --motion-menu-origin
         // when the anchor isn't top-left.
         'motion-menu bg-press-paper border border-press-line rounded-lg shadow-xl overflow-hidden',
-        className
+        // Portal mode owns its own fixed box (w-72, high z); inline mode takes
+        // the caller's positioning className.
+        anchorEl ? 'fixed z-[100] w-72' : className
       )}
+      style={anchorEl && fixedPos ? { top: fixedPos.top, left: fixedPos.left } : undefined}
       role="menu"
       aria-label="Block picker"
     >
@@ -110,4 +141,11 @@ export function SlashMenu({ items, onSelect, onClose, className }: SlashMenuProp
       </div>
     </div>
   )
+
+  // Portal the panel to document.body so it escapes the overview grid + terminal
+  // stacking contexts; inline callers (chat command menu) render in place.
+  if (anchorEl && typeof document !== 'undefined') {
+    return createPortal(panel, document.body)
+  }
+  return panel
 }
