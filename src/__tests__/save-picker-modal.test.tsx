@@ -195,10 +195,11 @@ describe('SavePickerModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => {
-      expect(mockCreateNode).toHaveBeenCalledWith(expect.anything(), {
-        type: 'area',
-        name: 'Travel',
-      })
+      expect(mockCreateNode).toHaveBeenCalledWith(
+        expect.anything(),
+        { type: 'area', name: 'Travel' },
+        'main'
+      )
     })
   })
 
@@ -269,10 +270,11 @@ describe('SavePickerModal', () => {
 
     await waitFor(() => {
       expect(mockCreateNode).toHaveBeenCalledTimes(1)
-      expect(mockCreateNode).toHaveBeenCalledWith(expect.anything(), {
-        type: 'area',
-        name: 'Area A',
-      })
+      expect(mockCreateNode).toHaveBeenCalledWith(
+        expect.anything(),
+        { type: 'area', name: 'Area A' },
+        'main'
+      )
     })
     // Action B still visible
     expect(screen.getByText('Action B')).toBeInTheDocument()

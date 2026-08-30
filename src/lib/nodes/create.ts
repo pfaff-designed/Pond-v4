@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 import { createPage } from '@/lib/pages/client'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────
@@ -59,18 +60,22 @@ export interface CreatedNode {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** Resolve a parent reference that may be a UUID or a page title, to a page id. */
+/** Resolve a parent reference that may be a UUID or a page title, to a page id.
+ *  ticket-43: the title lookup is scoped to `workspace` so a sandbox parent
+ *  title resolves against sandbox rows only (a UUID needs no scope — it's exact). */
 export async function resolveParentId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   userId: string,
-  idOrName: string
+  idOrName: string,
+  workspace: WorkspaceScope = 'main'
 ): Promise<string> {
   if (UUID_RE.test(idOrName)) return idOrName
   const { data, error } = await sb
     .from('pages')
     .select('id')
     .eq('user_id', userId)
+    .eq('workspace', workspace)
     .ilike('title', idOrName)
     .limit(1)
     .maybeSingle()
@@ -106,7 +111,8 @@ export function parseActionCard(json: string): ActionCard | null {
  */
 export async function createNode(
   supabase: SupabaseClient<Database>,
-  card: ActionCard
+  card: ActionCard,
+  workspace: WorkspaceScope = 'main'
 ): Promise<CreatedNode> {
   const {
     data: { user },
@@ -121,12 +127,13 @@ export async function createNode(
   if (card.type === 'project' || card.type === 'routine') parentRef = card.area_id
   else if (card.type === 'action') parentRef = card.project_id ?? card.area_id
 
-  const parentId = parentRef ? await resolveParentId(sb, user.id, parentRef) : null
+  const parentId = parentRef ? await resolveParentId(sb, user.id, parentRef, workspace) : null
 
   const page = await createPage(supabase, user.id, {
     parentId,
     type: card.type,
     title: card.name,
+    workspace,
   })
   return { id: page.id }
 }

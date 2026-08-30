@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 
 export interface PageRow {
   id: string
@@ -14,7 +15,7 @@ export interface PageRow {
   updated_at: string
 }
 
-export async function fetchPages(): Promise<PageRow[]> {
+export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
@@ -25,6 +26,7 @@ export async function fetchPages(): Promise<PageRow[]> {
     .from('pages')
     .select('id, parent_id, type, title, "order", updated_at')
     .eq('user_id', user.id)
+    .eq('workspace', workspace)
     .order('order')
 
   if (error) throw error

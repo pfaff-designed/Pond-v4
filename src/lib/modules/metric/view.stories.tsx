@@ -28,7 +28,9 @@ function seededClient(seed: {
   for (const p of seed.pages ?? []) {
     client.setQueryData(['page', p.id], { id: p.id, title: p.id, blocks: p.blocks })
   }
-  if (seed.tree) client.setQueryData(['pages'], seed.tree)
+  // ticket-43: the ['pages'] tree is now scoped by workspace; stories render
+  // without a WorkspaceProvider so the hook reads the 'main' default.
+  if (seed.tree) client.setQueryData(['pages', 'main'], seed.tree)
   return client
 }
 

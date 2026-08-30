@@ -10,11 +10,18 @@
  * Framework-agnostic — takes a SupabaseClient, no Next.js imports. Follows the
  * cast-to-any pattern for insert/update chains (Supabase's generated types don't
  * narrow well through the builder). Supersedes lib/documents/client.ts.
+ *
+ * ticket-43: all reads pass workspace='main'|'sandbox' to isolate scopes.
+ * Writes (createPage) also stamp the workspace column. Reads by id (getPage,
+ * saveBlocks, updateTitle, deletePage) are id-scoped and trust the caller has
+ * the right page — no workspace filter needed there (FK cascade and id primary
+ * key keep them safe).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +42,7 @@ export interface CreatePageInput {
   blocks?: Block[]
   status?: string | null
   props?: Record<string, unknown>
+  workspace?: WorkspaceScope
 }
 
 /** A page returned by semantic search, with its cosine similarity to the query. */
@@ -89,13 +97,21 @@ export async function getPage(
  * Direct child pages of a node, ordered by `order`. Pass `null` for the
  * top-level pages (those with no parent). A page may have zero, one, or many
  * children of any type.
+ *
+ * ticket-43: workspace filters to the correct scope so sandbox children
+ * never appear in main queries and vice-versa.
  */
 export async function getChildPages(
   supabase: SupabaseClient<Database>,
   userId: string,
-  parentId: string | null
+  parentId: string | null,
+  workspace: WorkspaceScope = 'main'
 ): Promise<PondPage[]> {
-  let query = supabase.from('pages').select(PAGE_COLUMNS).eq('user_id', userId)
+  let query = supabase
+    .from('pages')
+    .select(PAGE_COLUMNS)
+    .eq('user_id', userId)
+    .eq('workspace', workspace)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.
   query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId)
@@ -111,15 +127,19 @@ export async function getChildPages(
  * tree from this shape in memory; the AI create_page proposal card uses it to
  * populate the destination (parent) picker and to pre-resolve an AI-proposed parent
  * title to an id. Reads the same columns as the other list reads.
+ *
+ * ticket-43: workspace filters to the correct scope.
  */
 export async function listPages(
   supabase: SupabaseClient<Database>,
-  userId: string
+  userId: string,
+  workspace: WorkspaceScope = 'main'
 ): Promise<PondPage[]> {
   const { data } = await supabase
     .from('pages')
     .select(PAGE_COLUMNS)
     .eq('user_id', userId)
+    .eq('workspace', workspace)
     .order('order', { ascending: true })
 
   const rows = (data ?? []) as PageRow[]
@@ -142,6 +162,7 @@ export async function createPage(
     blocks: input.blocks ?? [],
     status: input.status ?? null,
     props: input.props ?? {},
+    workspace: input.workspace ?? 'main',
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -27,7 +27,8 @@ import {
   type OverviewModel,
 } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { useWorkspace } from '@/lib/workspace/context'
+import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
 
 /** Staggered rise-on-mount wrapper. index drives the delay. */
@@ -239,8 +240,10 @@ export function OverviewSurface({
  * composite content+children surface (ticket-22). */
 export function useOpenCard() {
   const router = useRouter()
+  const workspace = useWorkspace()
+  const basePath = workspaceBasePath(workspace)
   return function openCard(card: OverviewCardModel) {
-    router.push(workspaceUrl(card))
+    router.push(workspaceUrl(card, basePath))
   }
 }
 
@@ -252,8 +255,10 @@ export function useOpenCard() {
  */
 export function useNavigateCrumb() {
   const router = useRouter()
+  const workspace = useWorkspace()
+  const basePath = workspaceBasePath(workspace)
   return function navigate(crumb: Crumb | null) {
-    router.push(workspaceUrl(crumb))
+    router.push(workspaceUrl(crumb, basePath))
   }
 }
 
@@ -278,7 +283,8 @@ export function AreaOverviewPanel({
 }) {
   const openCard = useOpenCard()
   const queryClient = useQueryClient()
-  const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const workspace = useWorkspace()
+  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
   const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
@@ -294,7 +300,7 @@ export function AreaOverviewPanel({
   async function handleRename(next: string) {
     const supabase = createClient()
     await updateTitle(supabase, areaId, next)
-    await queryClient.invalidateQueries({ queryKey: ['pages'] })
+    await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     await queryClient.invalidateQueries({ queryKey: ['page', areaId] })
   }
 
@@ -324,7 +330,8 @@ export function AreaOverviewPanel({
  */
 export function LifeOverviewPanel() {
   const openCard = useOpenCard()
-  const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const workspace = useWorkspace()
+  const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
   const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => lifeOverview(rows, new Date()), [rows])

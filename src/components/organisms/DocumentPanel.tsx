@@ -35,6 +35,7 @@ import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
+import { useWorkspace } from '@/lib/workspace/context'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -145,6 +146,7 @@ export function DocumentPanel() {
   const nodeId = searchParams.get('nodeId')
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
+  const workspace = useWorkspace()
   const { stageDeletion, flushScope } = useDeletionUndo()
 
   // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
@@ -167,7 +169,7 @@ export function DocumentPanel() {
   // `new Date()` is captured per rows/nodeId change, so the cards' "updated Xd
   // ago" captions refresh with the data rather than the wall clock — the same
   // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
-  const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
   const openCard = useOpenCard()
   const navigateCrumb = useNavigateCrumb()
   const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
@@ -256,7 +258,7 @@ export function DocumentPanel() {
       // the ['pages'] invalidation inside commitBlocks lands after the rename,
       // keeping the sidebar rename immediate.
       await updateTitle(supabase, id, nextTitle)
-      await commitBlocks(supabase, queryClient, id, nextBlocks)
+      await commitBlocks(supabase, queryClient, id, nextBlocks, workspace)
       // keep the ['page'] cache in step with what we just saved, so the
       // same-page adopt above only fires for genuinely external writes.
       queryClient.setQueryData(['page', id], (prev: typeof page) =>

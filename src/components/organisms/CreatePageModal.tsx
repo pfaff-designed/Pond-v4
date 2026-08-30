@@ -28,6 +28,7 @@ import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog
 import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
 import { fetchPages } from '@/lib/pages/tree'
+import { useWorkspace } from '@/lib/workspace/context'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import type { NodeType } from '@/lib/supabase/types'
@@ -154,12 +155,13 @@ export function CreatePageModal({
 }) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const workspace = useWorkspace()
   const [title, setTitle] = useState('')
   const [parentValue, setParentValue] = useState<string>(TOP_LEVEL_VALUE)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { data: rows = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
 
   const parentOptions: CreatePageParentOption[] = useMemo(() => {
     const pages: ParentPageRow[] = rows.map((r) => ({
@@ -204,8 +206,9 @@ export function CreatePageModal({
         // Never write an empty title — 'Untitled' in the DB, matching what the
         // rail/editor display anyway (the fallback shouldn't mask an empty row).
         title: title.trim() || 'Untitled',
+        workspace,
       })
-      await queryClient.invalidateQueries({ queryKey: ['pages'] })
+      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       onOpenChange(false)
 
       // Land in the editor. A blocks-less `page` → DocumentPanel renders the

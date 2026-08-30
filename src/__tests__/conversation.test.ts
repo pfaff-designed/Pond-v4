@@ -78,7 +78,7 @@ describe('getOrCreateConversation', () => {
 
     expect(result.id).toBe('conv-1')
     expect(result.messages).toEqual([])
-    expect(chain.insert).toHaveBeenCalledWith({ user_id: 'user-1' })
+    expect(chain.insert).toHaveBeenCalledWith({ user_id: 'user-1', workspace: 'main' })
   })
 
   it('returns empty messages when transcript is not an array', async () => {

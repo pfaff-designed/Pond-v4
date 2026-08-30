@@ -18,9 +18,10 @@ import {
   type ProposalTarget,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { useWorkspace } from '@/lib/workspace/context'
 import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
 import { toParentOptions } from '@/lib/pages/parent-options'
-import { workspaceHref } from '@/lib/pages/nav'
+import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
@@ -201,6 +202,8 @@ export function AITerminal() {
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()
   const supabaseClient = useMemo(() => createClient(), [])
+  const workspace = useWorkspace()
+  const basePath = workspaceBasePath(workspace)
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
   // so we can't drive the card's resolved state off the SDK part — the local maps
@@ -308,12 +311,12 @@ export function AITerminal() {
   // sidebar's ['pages'] cache (different shape), but invalidated by the same key so a
   // new page refreshes both.
   const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
-    queryKey: ['pages', 'list'],
+    queryKey: ['pages', workspace],
     queryFn: async () => {
       const {
         data: { user },
       } = await supabaseClient.auth.getUser()
-      return user ? listPages(supabaseClient, user.id) : []
+      return user ? listPages(supabaseClient, user.id, workspace) : []
     },
   })
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
@@ -536,7 +539,7 @@ export function AITerminal() {
   useEffect(() => {
     supabaseClient.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
-      const conversation = await getOrCreateConversation(supabaseClient, user.id)
+      const conversation = await getOrCreateConversation(supabaseClient, user.id, workspace)
       setConversationId(conversation.id)
       if (conversation.messages.length > 0) {
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
@@ -554,7 +557,7 @@ export function AITerminal() {
       if (conversation.resolutions.lifecycle) setLifecycle(conversation.resolutions.lifecycle)
       setIsReady(true)
     })
-  }, [setMessages, supabaseClient])
+  }, [setMessages, supabaseClient, workspace])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
@@ -691,12 +694,12 @@ export function AITerminal() {
     } = await supabaseClient.auth.getUser()
     if (!user) return
     await dissolveConversation(supabaseClient, conversationId)
-    const fresh = await getOrCreateConversation(supabaseClient, user.id)
+    const fresh = await getOrCreateConversation(supabaseClient, user.id, workspace)
     setConversationId(fresh.id)
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
-  }, [conversationId, setMessages, resetResolutions, supabaseClient])
+  }, [conversationId, setMessages, resetResolutions, supabaseClient, workspace])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
   // Extract entities from the transcript (Quick model), write them all, then
@@ -711,15 +714,17 @@ export function AITerminal() {
       supabaseClient,
       conversationId,
       user.id,
-      messages
+      messages,
+      undefined,
+      workspace
     )
     if (written > 0) {
-      await queryClient.invalidateQueries({ queryKey: ['pages'] })
+      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     }
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [conversationId, messages, queryClient, setMessages, resetResolutions, supabaseClient])
+  }, [conversationId, messages, queryClient, setMessages, resetResolutions, supabaseClient, workspace])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -878,11 +883,14 @@ export function AITerminal() {
           action: openTarget
             ? () =>
                 router.push(
-                  workspaceHref({
-                    id: openTarget,
-                    type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
-                    title: targetName,
-                  })
+                  workspaceHref(
+                    {
+                      id: openTarget,
+                      type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
+                      title: targetName,
+                    },
+                    basePath
+                  )
                 )
             : undefined,
           actionLabel: 'Open',
@@ -904,6 +912,7 @@ export function AITerminal() {
       contextLabel,
       router,
       allPages,
+      basePath,
     ]
   )
 
@@ -937,14 +946,17 @@ export function AITerminal() {
   const openTargetPage = useCallback(
     (target: ProposalTarget) => {
       router.push(
-        workspaceHref({
-          id: target.nodeId,
-          type: allPages.find((p) => p.id === target.nodeId)?.type ?? 'page',
-          title: target.nodeName,
-        })
+        workspaceHref(
+          {
+            id: target.nodeId,
+            type: allPages.find((p) => p.id === target.nodeId)?.type ?? 'page',
+            title: target.nodeName,
+          },
+          basePath
+        )
       )
     },
-    [router, allPages]
+    [router, allPages, basePath]
   )
 
   // ── create_page resolution (M1) ───────────────────────────────────────────
@@ -969,11 +981,11 @@ export function AITerminal() {
             parentRef,
             blocks: part.blocks ?? [],
           },
-          () => crypto.randomUUID()
+          () => crypto.randomUUID(),
+          workspace
         )
-        await queryClient.invalidateQueries({ queryKey: ['pages'] })
-        await queryClient.invalidateQueries({ queryKey: ['pages', 'list'] })
-        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
+        await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }, basePath))
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('create_page failed', err)
@@ -984,7 +996,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, router]
+    [supabaseClient, queryClient, router, workspace, basePath]
   )
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────

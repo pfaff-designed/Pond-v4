@@ -21,6 +21,7 @@ import { CommandPalette, type PaletteItem } from '@/components/molecules/Command
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
+import { useWorkspace } from '@/lib/workspace/context'
 
 const RECENT_PAGES_KEY = 'pond:recent-pages'
 const RECENT_MAX = 5
@@ -91,9 +92,10 @@ export function TopBar() {
   const currentNodeId = searchParams.get('nodeId')
   const [createOpen, setCreateOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const workspace = useWorkspace()
 
   // Pages for palette search.
-  const { data: pages = [] } = useQuery({ queryKey: ['pages'], queryFn: fetchPages })
+  const { data: pages = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
 
   const openPalette = useCallback(() => setPaletteOpen(true), [])
   const closePalette = useCallback(() => setPaletteOpen(false), [])

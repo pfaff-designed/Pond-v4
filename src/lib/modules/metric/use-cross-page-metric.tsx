@@ -24,6 +24,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { getPage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { useWorkspace } from '@/lib/workspace/context'
 import type { Block } from '../content'
 import type { MetricSource } from './schema'
 import { isAggregateSource, isCrossPageSource } from './source-guards'
@@ -49,6 +50,7 @@ export function useCrossPageBlocks(
 ): CrossPageBlocks {
   const isAggregate = !!source && isAggregateSource(source)
   const isCrossPage = !!source && isCrossPageSource(source)
+  const workspace = useWorkspace()
 
   // The ['pages'] tree — only actually needed for the aggregate scope, but the query is
   // shared (rail/overview already prime it), so subscribing is nearly free. `enabled`
@@ -61,8 +63,8 @@ export function useCrossPageBlocks(
     isPending: pagesPending,
     isError: pagesErrored,
   } = useQuery({
-    queryKey: ['pages'],
-    queryFn: fetchPages,
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
     enabled: isAggregate,
   })
 
