@@ -172,9 +172,11 @@ export function TerminalDrawer({
       style={{ height: collapsed ? TERMINAL_COLLAPSED_HEIGHT : height + TERMINAL_COLLAPSED_HEIGHT }}
       aria-label="Pond terminal"
     >
-      {/* Resize handle — a thin transparent strip along the top edge (hidden when
-          collapsed). Spans full width so the drag target is easy to hit, but the
-          visible grip is centered over the column (flex items-center justify-center). */}
+      {/* Resize handle — a strip along the top edge (hidden when collapsed).
+          `relative z-40` lifts it ABOVE the page content and the card below, so
+          the grip is never covered and always grabbable; pulled up (-mt-3) so the
+          grip sits clear of the card's top border. Spans full width for an easy
+          drag target; the visible grip is centered over the column. */}
       {!collapsed && (
         <div
           role="separator"
@@ -186,7 +188,7 @@ export function TerminalDrawer({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onKeyDown={onHandleKeyDown}
-          className="group h-1.5 -mt-1 cursor-ns-resize flex items-center outline-none touch-none"
+          className="group relative z-40 h-4 -mt-3 cursor-ns-resize flex items-center outline-none touch-none"
           data-testid="terminal-resize-handle"
           style={{ paddingLeft: RAIL_WIDTH_PX }}
         >
