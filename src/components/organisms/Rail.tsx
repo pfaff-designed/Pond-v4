@@ -40,7 +40,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { fetchPages, type PageRow } from '@/lib/pages/tree'
-import { workspaceUrl } from '@/lib/pages/nav'
+import { useWorkspace } from '@/lib/workspace/context'
+import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
 import { ancestorPath } from '@/lib/pages/overview'
 import {
@@ -282,6 +283,7 @@ export function Rail() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+  const workspace = useWorkspace()
   const seededRef = useRef(false)
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
@@ -293,8 +295,8 @@ export function Rail() {
   const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
-    queryKey: ['pages'],
-    queryFn: fetchPages,
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
@@ -370,16 +372,19 @@ export function Rail() {
       } = await supabase.auth.getUser()
       if (!user) return
 
+      const seedFn = workspace === 'sandbox' ? 'seed_sandbox_pages' : 'seed_default_pages'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('seed_default_pages', { p_user_id: user.id })
-      queryClient.invalidateQueries({ queryKey: ['pages'] })
+      await (supabase.rpc as any)(seedFn, { p_user_id: user.id })
+      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     }
 
     seed()
-  }, [isLoading, pages.length, queryClient])
+  }, [isLoading, pages.length, queryClient, workspace])
+
+  const basePath = workspaceBasePath(workspace)
 
   function navigateTo(node: { id: string; type: string; title: string }) {
-    router.push(workspaceUrl(node))
+    router.push(workspaceUrl(node, basePath))
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -392,7 +397,7 @@ export function Rail() {
     } = await supabase.auth.getUser()
     if (!user) return undefined
     const result = await fn(supabase, user.id)
-    await queryClient.invalidateQueries({ queryKey: ['pages'] })
+    await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     return result
   }
 
@@ -400,7 +405,7 @@ export function Rail() {
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled' })
+        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', workspace })
       )
       // ensure the parent folder is open so the new child is visible
       setExpanded((prev) => new Set(prev).add(id))
@@ -413,11 +418,11 @@ export function Rail() {
   /** Put a single optimistically-removed row back (surgical) and reconcile. */
   function restoreDeletedRow(row: PageRow | undefined) {
     if (row) {
-      queryClient.setQueryData<PageRow[]>(['pages'], (rows) =>
+      queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) =>
         rows ? restoreRow(rows, row) : rows
       )
     }
-    queryClient.invalidateQueries({ queryKey: ['pages'] })
+    queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
   }
 
   /**
@@ -434,7 +439,7 @@ export function Rail() {
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
-        router.push('/workspace')
+        router.push(basePath)
       }
     } catch {
       restoreDeletedRow(removedRow)
@@ -454,8 +459,8 @@ export function Rail() {
     }
 
     const removedRow = pages.find((r) => r.id === node.id)
-    queryClient.setQueryData<PageRow[]>(['pages'], (rows) => removeRow(rows ?? [], node.id))
-    if (selectedNodeId === node.id) router.push('/workspace')
+    queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => removeRow(rows ?? [], node.id))
+    if (selectedNodeId === node.id) router.push(basePath)
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
@@ -518,7 +523,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
-        onLife={() => router.push('/workspace')}
+        onLife={() => router.push(basePath)}
         onToggleLife={handleToggleLife}
       />
       <ConfirmDialog

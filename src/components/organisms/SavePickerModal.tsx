@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createNode } from '@/lib/nodes/create'
+import { useWorkspace } from '@/lib/workspace/context'
 import type { UIMessage } from 'ai'
 import type { SaveExtraction } from '@/app/api/save-extract/route'
 
@@ -26,6 +27,7 @@ export function SavePickerModal({ isOpen, messages, onClose }: SavePickerModalPr
   const [isLoading, setIsLoading] = useState(true)
   const [items, setItems] = useState<ExtractionItem[]>([])
   const queryClient = useQueryClient()
+  const workspace = useWorkspace()
 
   useEffect(() => {
     if (!isOpen) return
@@ -55,8 +57,8 @@ export function SavePickerModal({ isOpen, messages, onClose }: SavePickerModalPr
 
     try {
       const supabase = createClient()
-      await createNode(supabase, { type: item.type, name: item.name })
-      await queryClient.invalidateQueries({ queryKey: ['pages'] })
+      await createNode(supabase, { type: item.type, name: item.name }, workspace)
+      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'saved' } : i)))
     } catch (err) {
       setItems((prev) =>
