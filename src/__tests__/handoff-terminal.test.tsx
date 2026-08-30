@@ -85,7 +85,9 @@ describe('AITerminal /handoff command', () => {
         'user-1',
         expect.arrayContaining([
           expect.objectContaining({ parts: [{ type: 'text', text: 'plan a trip' }] }),
-        ])
+        ]),
+        undefined,
+        'main'
       )
     })
 
