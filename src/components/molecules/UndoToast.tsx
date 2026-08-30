@@ -90,15 +90,15 @@ export function UndoToast({
 }
 
 /**
- * The stack for active toasts — bottom-right of its nearest `relative` ancestor.
+ * The stack for active toasts — TOP-right of its nearest `relative` ancestor.
  * There must be exactly ONE viewport (the DeletionUndoProvider renders it inside
- * the workspace's content row), positioned by that container rather than the
- * window so it stays clear of the full-width AI terminal below, whatever the
- * drawer's height. Kept separate so the toast itself stays layout-free.
+ * the workspace's content row). Top-right keeps receipts in the eye-line and
+ * clear of the AI terminal at the bottom. Kept separate so the toast itself
+ * stays layout-free.
  */
 export function UndoToastViewport({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none absolute bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div className="pointer-events-none absolute top-4 right-4 z-40 flex flex-col items-end gap-2">
       {children}
     </div>
   )
