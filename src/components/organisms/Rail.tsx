@@ -252,8 +252,10 @@ export function RailView({
     )
 
   return (
-    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pt-6 pb-8 font-sans">
-      <div className="flex items-baseline gap-2.5 px-2 pb-6">
+    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pb-8 font-sans">
+      {/* Pinned to the top-left: the wordmark stays put while the tree scrolls
+          beneath it (sticky, with the paper bg so rows pass under cleanly). */}
+      <div className="sticky top-0 z-10 flex items-baseline gap-2.5 bg-background px-2 pt-6 pb-4">
         <span className="font-display text-[26px] text-foreground">Pond</span>
       </div>
 
@@ -459,7 +461,9 @@ export function Rail() {
     }
 
     const removedRow = pages.find((r) => r.id === node.id)
-    queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => removeRow(rows ?? [], node.id))
+    queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) =>
+      removeRow(rows ?? [], node.id)
+    )
     if (selectedNodeId === node.id) router.push(basePath)
 
     stageDeletion({

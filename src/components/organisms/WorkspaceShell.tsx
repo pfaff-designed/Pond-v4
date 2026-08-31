@@ -24,26 +24,34 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   return (
     <WorkspaceProvider workspace={workspace}>
+      {/* Rail is a full-viewport-height left column (the "file cabinet"); the
+          content + terminal stack to its right. Pulling the rail out of the
+          middle row (rather than nesting it above the terminal) lets it stretch
+          the whole height. The terminal now lives inside the right column, so it
+          no longer needs the manual RAIL_WIDTH_PX offset it used when it spanned
+          the full window. */}
       <div className="flex flex-col h-full">
         {isSandbox && <SandboxBanner />}
         <div className="relative flex flex-1 min-h-0">
           <DeletionUndoProvider>
-            <Suspense fallback={<div className="w-[250px] flex-shrink-0" />}>
+            <Suspense fallback={<div className="w-[252px] flex-shrink-0" />}>
               <Rail />
             </Suspense>
-            <main className="flex-1 overflow-y-auto">
-              {children}
-              <Suspense fallback={null}>
-                <DocumentPanel />
+            <div className="relative flex flex-col flex-1 min-h-0">
+              <main className="flex-1 overflow-y-auto">
+                {children}
+                <Suspense fallback={null}>
+                  <DocumentPanel />
+                </Suspense>
+              </main>
+              <Suspense fallback={<div className="h-72 border-t border-border bg-card" />}>
+                <AITerminal />
               </Suspense>
-            </main>
+            </div>
             <TopBar />
             <NotifyBridge />
           </DeletionUndoProvider>
         </div>
-        <Suspense fallback={<div className="h-72 border-t border-border bg-card" />}>
-          <AITerminal />
-        </Suspense>
       </div>
     </WorkspaceProvider>
   )
