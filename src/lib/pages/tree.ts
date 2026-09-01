@@ -8,6 +8,7 @@
  * the areas overview. Its blocks are reached only via lib/pages/home.ts.
  */
 
+import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
@@ -40,4 +41,35 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
 
   if (error) throw error
   return (data ?? []) as PageRow[]
+}
+
+/**
+ * Optimistically insert a just-created page into the ['pages', workspace] cache so
+ * the rail sees it synchronously — before the navigate — instead of waiting on the
+ * invalidate refetch. Fixes F26 (a new page shows at ROOT until a manual refresh):
+ * the rail's reveal effect bailed because the new node wasn't in the stale cache
+ * yet, and its once-per-selection guard then blocked a retry when the refetch
+ * landed. Idempotent (dedupes by id); the subsequent invalidate reconciles the
+ * placeholder `order`/`updated_at` with server truth.
+ */
+export function insertPageOptimistic(
+  queryClient: QueryClient,
+  workspace: WorkspaceScope,
+  page: { id: string; parentId: string | null; type: string; title: string }
+): void {
+  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+    const existing = rows ?? []
+    if (existing.some((r) => r.id === page.id)) return existing
+    return [
+      ...existing,
+      {
+        id: page.id,
+        parent_id: page.parentId,
+        type: page.type,
+        title: page.title,
+        order: 0,
+        updated_at: new Date().toISOString(),
+      },
+    ]
+  })
 }
