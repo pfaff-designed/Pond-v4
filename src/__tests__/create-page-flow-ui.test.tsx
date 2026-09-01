@@ -58,8 +58,11 @@ jest.mock('@/lib/pages/client', () => ({
 }))
 
 // The pages tree read used by the destination picker — empty is fine.
+// insertPageOptimistic (F26) is called on create before navigation; stub it so
+// the real setQueryData path doesn't run under the mocked query client.
 jest.mock('@/lib/pages/tree', () => ({
   fetchPages: jest.fn().mockResolvedValue([]),
+  insertPageOptimistic: jest.fn(),
 }))
 
 jest.mock('@/lib/ai/transports', () => ({
