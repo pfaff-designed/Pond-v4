@@ -1,11 +1,13 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { KanbanBlock } from './schema'
 import { addCard, addColumn, moveCard, patchCard, removeCard, renameColumn } from './move'
 import { MarkdownInline } from '@/components/atoms/Markdown'
+import { usePageLinks } from '../page-link/context'
+import type { PageLinkCapabilities, PageRef } from '../page-link/context'
 
 /**
  * Kanban view (ticket-35). An interactive module like todo/table: editing is folded
@@ -23,6 +25,12 @@ import { MarkdownInline } from '@/components/atoms/Markdown'
  * clone under the pointer; the column the pointer is over brightens its wash; release
  * drops the card to that column's foot via the pure `moveCard`. Within-column
  * reordering is out of scope (spec: drag BETWEEN columns).
+ *
+ * F27 — card→page links: a card may hold an optional `pageId`. When set, the linked
+ * page is the source of truth for the card's title (the stored `title` is a
+ * denormalized cache), a click navigates to it, and a card menu mints/links/unlinks.
+ * These capabilities arrive via `usePageLinks()` (host context); when absent (AI
+ * terminal reference render, Storybook) the view degrades to plain cards.
  */
 
 const DRAG_THRESHOLD = 4 // px before a press becomes a drag (vs. a click into a field)
@@ -37,12 +45,24 @@ interface DragState {
   active: boolean // past threshold — the lift is showing
 }
 
+/** Per-card link status, resolved against the host's pages cache. */
+type LinkState = { kind: 'none' } | { kind: 'linked'; ref: PageRef } | { kind: 'missing' } // pageId set but the page is gone (orphaned)
+
+function cardLinkState(pageId: string | undefined, links: PageLinkCapabilities | null): LinkState {
+  if (!pageId) return { kind: 'none' }
+  const ref = links?.resolvePage(pageId)
+  return ref ? { kind: 'linked', ref } : { kind: 'missing' }
+}
+
 export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanBlock>) {
   // Tolerate partially-parsed streamed data (like table/todo) rather than crash.
   const columns = data.columns ?? []
+  const links = usePageLinks()
 
   const [drag, setDrag] = useState<DragState | null>(null)
   const [overColumn, setOverColumn] = useState<string | null>(null)
+  // Which card's link menu is open (only one at a time).
+  const [menuCard, setMenuCard] = useState<string | null>(null)
   const columnRefs = useRef(new Map<string, HTMLElement>())
   // The drag is driven ENTIRELY through refs, not state: pointerdown → move → up all
   // fire in one event burst with no re-render between, so a handler closing over
@@ -54,6 +74,34 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
 
   function emit(next: KanbanBlock) {
     onChange?.(next)
+  }
+
+  // ── F27 link actions ──────────────────────────────────────────────────────
+  async function createAndLink(cardId: string, currentTitle: string) {
+    if (!links) return
+    const ref = await links.createLinkedPage(currentTitle)
+    // Adopt the page's title as the card's cache so the two start in sync.
+    emit(patchCard(data, cardId, { pageId: ref.id, title: ref.title }))
+    setMenuCard(null)
+  }
+  function linkExisting(cardId: string, ref: PageRef) {
+    emit(patchCard(data, cardId, { pageId: ref.id, title: ref.title }))
+    setMenuCard(null)
+  }
+  function unlink(cardId: string) {
+    // Setting pageId undefined drops it on serialize — the card reverts to free-text,
+    // keeping its last (cached) title.
+    emit(patchCard(data, cardId, { pageId: undefined }))
+    setMenuCard(null)
+  }
+  function openLink(ref: PageRef) {
+    links?.navigateToPage(ref)
+    setMenuCard(null)
+  }
+  // Write-through: on blur/enter of a linked card's title, rename the page (source of
+  // truth). Fires on commit, not per keystroke, to avoid a write per character.
+  function commitLinkedTitle(pageId: string, title: string) {
+    void links?.renamePage(pageId, title)
   }
 
   // ── Drag lifecycle (pointer events) ──────────────────────────────────────
@@ -172,11 +220,12 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                 )}
                 {col.cards.map((card) => {
                   const isDragging = drag?.active && drag.cardId === card.id
+                  const link = cardLinkState(card.pageId, links)
                   return (
                     <li
                       key={card.id}
                       className={[
-                        'flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
+                        'relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
                         // ticket-41: a quiet hover raise (shadow only — the card is
                         // a drag object, not a click target, so it lifts rather than
                         // presses). Token-timed, reduced-motion drops the travel.
@@ -201,11 +250,38 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                         <CardBody
                           card={card}
                           editable={!!editable}
+                          link={link}
+                          canLink={!!links}
                           onTitle={(title) => emit(patchCard(data, card.id, { title }))}
+                          onTitleCommit={(title) => {
+                            // Take the live input value (not the render-closure cache,
+                            // which lags a paste-then-blur) so the page is renamed to
+                            // exactly what the field shows.
+                            if (card.pageId) commitLinkedTitle(card.pageId, title)
+                          }}
                           onNote={(note) => emit(patchCard(data, card.id, { note }))}
                           onRemove={() => emit(removeCard(data, card.id))}
+                          onOpen={link.kind === 'linked' ? () => openLink(link.ref) : undefined}
+                          onToggleMenu={
+                            editable && links
+                              ? () => setMenuCard((c) => (c === card.id ? null : card.id))
+                              : undefined
+                          }
                         />
                       </div>
+
+                      {/* Link menu — mint / link-existing / open / unlink. */}
+                      {editable && links && menuCard === card.id && (
+                        <CardLinkMenu
+                          links={links}
+                          link={link}
+                          onOpen={() => link.kind === 'linked' && openLink(link.ref)}
+                          onCreate={() => createAndLink(card.id, card.title)}
+                          onPick={(ref) => linkExisting(card.id, ref)}
+                          onUnlink={() => unlink(card.id)}
+                          onClose={() => setMenuCard(null)}
+                        />
+                      )}
                     </li>
                   )
                 })}
@@ -248,24 +324,85 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
   )
 }
 
-/** One card's editable/read-only body — title (+ optional note), remove affordance. */
+/** A quiet inline glyph marking a linked (↗) or orphaned (missing) card. */
+function LinkGlyph({ link }: { link: LinkState }) {
+  if (link.kind === 'linked') {
+    return (
+      <span
+        className="shrink-0 text-press-accent/70 select-none"
+        aria-hidden
+        title="Linked to a page"
+      >
+        ↗
+      </span>
+    )
+  }
+  if (link.kind === 'missing') {
+    return (
+      <span
+        className="shrink-0 text-[0.65rem] text-press-muted/70 italic select-none"
+        title="Linked page is missing"
+      >
+        missing
+      </span>
+    )
+  }
+  return null
+}
+
+/**
+ * One card's editable/read-only body — title (+ optional note), link affordances,
+ * and (when linkable) the archive + link-menu controls.
+ *
+ * A linked card in READ-ONLY mode renders its title as a navigating button; in
+ * EDITABLE mode the title input's blur writes through to the page (`onTitleCommit`).
+ * The stored `card.title` is the input's live value so typing stays responsive; the
+ * page is reconciled as the source of truth on commit.
+ */
 function CardBody({
   card,
   editable,
+  link,
+  canLink,
   onTitle,
+  onTitleCommit,
   onNote,
   onRemove,
+  onOpen,
+  onToggleMenu,
 }: {
-  card: { title: string; note?: string }
+  card: { title: string; note?: string; pageId?: string }
   editable: boolean
+  link: LinkState
+  canLink: boolean
   onTitle: (v: string) => void
+  onTitleCommit: (title: string) => void
   onNote: (v: string) => void
   onRemove: () => void
+  onOpen?: () => void
+  onToggleMenu?: () => void
 }) {
   if (!editable) {
+    // Read-only (AI terminal reference). A resolved link navigates on click; an
+    // orphan shows its cached title with a quiet "missing" marker.
+    const titleNode =
+      link.kind === 'linked' && onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-left font-medium text-press-accent underline decoration-press-accent/30 underline-offset-2 hover:decoration-press-accent"
+        >
+          {link.ref.title}
+        </button>
+      ) : (
+        <MarkdownInline className="font-medium">{card.title}</MarkdownInline>
+      )
     return (
       <>
-        <MarkdownInline className="font-medium">{card.title}</MarkdownInline>
+        <div className="flex items-center gap-1.5">
+          {titleNode}
+          <LinkGlyph link={link} />
+        </div>
         {card.note && (
           <MarkdownInline className="mt-0.5 block text-xs text-press-muted">
             {card.note}
@@ -277,12 +414,19 @@ function CardBody({
   return (
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1">
-        <input
-          className="w-full bg-transparent font-medium outline-none"
-          value={card.title}
-          aria-label={`Card title: ${card.title || 'untitled'}`}
-          onChange={(e) => onTitle(e.target.value)}
-        />
+        <div className="flex items-center gap-1.5">
+          <input
+            className="w-full bg-transparent font-medium outline-none"
+            value={card.title}
+            aria-label={`Card title: ${card.title || 'untitled'}`}
+            onChange={(e) => onTitle(e.target.value)}
+            onBlur={(e) => onTitleCommit(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+            }}
+          />
+          <LinkGlyph link={link} />
+        </div>
         <input
           className="mt-0.5 w-full bg-transparent text-xs text-press-muted outline-none"
           value={card.note ?? ''}
@@ -291,6 +435,17 @@ function CardBody({
           onChange={(e) => onNote(e.target.value)}
         />
       </div>
+      {canLink && onToggleMenu && (
+        <button
+          type="button"
+          aria-label={`Link options: ${card.title || 'untitled'}`}
+          aria-haspopup="menu"
+          className="leading-none text-press-muted/60 select-none hover:text-press-ink"
+          onClick={onToggleMenu}
+        >
+          ⋯
+        </button>
+      )}
       <button
         type="button"
         aria-label={`Archive card: ${card.title || 'untitled'}`}
@@ -300,6 +455,123 @@ function CardBody({
         ×
       </button>
     </div>
+  )
+}
+
+/**
+ * The card link menu (F27) — a quiet Press popover anchored to the card. Two modes:
+ * a small action list, and an inline page picker for "link existing" that filters the
+ * pages cache via `links.searchPages`. Closes on outside click or Escape.
+ */
+function CardLinkMenu({
+  links,
+  link,
+  onOpen,
+  onCreate,
+  onPick,
+  onUnlink,
+  onClose,
+}: {
+  links: PageLinkCapabilities
+  link: LinkState
+  onOpen: () => void
+  onCreate: () => void
+  onPick: (ref: PageRef) => void
+  onUnlink: () => void
+  onClose: () => void
+}) {
+  const [mode, setMode] = useState<'menu' | 'pick'>('menu')
+  const [query, setQuery] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const isLinked = link.kind !== 'none'
+
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  const results = mode === 'pick' ? links.searchPages(query) : []
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      className="press-arrive absolute top-7 right-1 z-50 w-52 rounded-md border border-press-line bg-press-paper py-1 text-xs shadow-md"
+    >
+      {mode === 'menu' ? (
+        <ul>
+          {link.kind === 'linked' && <MenuItem label="Open page" onClick={onOpen} />}
+          {link.kind === 'missing' && (
+            <li className="px-3 py-1.5 text-press-muted/70 italic">Linked page is missing</li>
+          )}
+          <MenuItem label="Create page & link" onClick={onCreate} />
+          <MenuItem label="Link existing page…" onClick={() => setMode('pick')} />
+          {isLinked && <MenuItem label="Unlink" onClick={onUnlink} destructive />}
+        </ul>
+      ) : (
+        <div className="px-1.5 pb-1">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search pages…"
+            aria-label="Search pages to link"
+            className="mb-1 w-full rounded-sm bg-press-card/60 px-2 py-1 outline-none placeholder:text-press-muted/60"
+          />
+          <ul className="max-h-40 overflow-y-auto">
+            {results.length === 0 && <li className="px-2 py-1.5 text-press-muted/70">No pages</li>}
+            {results.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => onPick(r)}
+                  className="block w-full truncate rounded-sm px-2 py-1.5 text-left hover:bg-press-accent-wash"
+                >
+                  {r.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({
+  label,
+  onClick,
+  destructive,
+}: {
+  label: string
+  onClick: () => void
+  destructive?: boolean
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onClick}
+        className={[
+          'block w-full px-3 py-1.5 text-left hover:bg-press-accent-wash',
+          destructive ? 'text-press-rust/90 hover:text-press-rust' : 'text-press-ink',
+        ].join(' ')}
+      >
+        {label}
+      </button>
+    </li>
   )
 }
 

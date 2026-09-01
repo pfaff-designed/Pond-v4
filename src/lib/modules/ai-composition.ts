@@ -105,12 +105,17 @@ const tableData = tableSchema
  * every id on accept. Kept as an explicit nested omit-chain (not registry-derived)
  * per the file's convention; the strip∘hydrate round-trip is fenced in
  * `module-nested-ids.test.ts`.
+ *
+ * F27: `pageId` is ALSO stripped from cards — card→page links are a manual-only
+ * feature this cycle, so the model can neither read nor emit them. (When the AI
+ * learns to author links in the database epic, this omit is lifted and the
+ * descriptor's serialize starts surfacing linked page titles.)
  */
 const kanbanData = kanbanSchema.omit({ id: true }).extend({
   columns: z.array(
     kanbanColumnSchema
       .omit({ id: true })
-      .extend({ cards: z.array(kanbanCardSchema.omit({ id: true })) })
+      .extend({ cards: z.array(kanbanCardSchema.omit({ id: true, pageId: true })) })
   ),
 })
 // ticket-36: Bklit chart promotion. Charts carry no nested id-bearing collections

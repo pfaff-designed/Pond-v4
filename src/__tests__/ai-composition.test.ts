@@ -42,6 +42,14 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     expect(parsed.type === 'todo' && 'id' in parsed.items[0]).toBe(false)
   })
 
+  it('strips a kanban card pageId — links are manual-only, the AI cannot author them (F27)', () => {
+    const parsed = moduleDataSchema.parse({
+      type: 'kanban',
+      columns: [{ title: 'To do', cards: [{ title: 'Cut boards', pageId: 'page-1' }] }],
+    })
+    expect(parsed.type === 'kanban' && 'pageId' in parsed.columns[0].cards[0]).toBe(false)
+  })
+
   it('rejects a malformed content block (metric value must be a number)', () => {
     expect(moduleDataSchema.safeParse({ type: 'metric', label: 'x', value: 'lots' }).success).toBe(
       false

@@ -75,6 +75,34 @@ describe('addCard / removeCard / patchCard', () => {
   })
 })
 
+describe('F27 — card→page links (patchCard carries pageId)', () => {
+  it('links a card to a page and stays schema-valid', () => {
+    const next = patchCard(board, 'c1', { pageId: 'page-123' })
+    expect(next.columns[0].cards[0]).toEqual({ id: 'c1', title: 'Cut boards', pageId: 'page-123' })
+    expect(kanbanSchema.safeParse(next).success).toBe(true)
+  })
+
+  it('unlinks by clearing pageId (undefined drops the field)', () => {
+    const linked = patchCard(board, 'c1', { pageId: 'page-123' })
+    const next = patchCard(linked, 'c1', { pageId: undefined })
+    expect(next.columns[0].cards[0].pageId).toBeUndefined()
+    expect(kanbanSchema.safeParse(next).success).toBe(true)
+  })
+
+  it('write-through: renaming a linked card patches the cached title, leaving the link intact', () => {
+    const linked = patchCard(board, 'c1', { pageId: 'page-123' })
+    const next = patchCard(linked, 'c1', { title: 'Mill stock' })
+    expect(next.columns[0].cards[0]).toEqual({ id: 'c1', title: 'Mill stock', pageId: 'page-123' })
+  })
+
+  it('a board with a free-text card and a page-backed card is valid (hybrid coexistence)', () => {
+    const hybrid = patchCard(board, 'c2', { pageId: 'page-9' })
+    expect(hybrid.columns[0].cards[0].pageId).toBeUndefined() // c1 still free-text
+    expect(hybrid.columns[0].cards[1].pageId).toBe('page-9') // c2 page-backed
+    expect(kanbanSchema.safeParse(hybrid).success).toBe(true)
+  })
+})
+
 describe('renameColumn / addColumn', () => {
   it('renames one column only', () => {
     const next = renameColumn(board, 'doing', 'In progress')
