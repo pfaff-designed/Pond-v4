@@ -48,7 +48,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 <AITerminal />
               </Suspense>
             </div>
-            <TopBar />
+            <Suspense fallback={null}>
+              <TopBar />
+            </Suspense>
             <NotifyBridge />
           </DeletionUndoProvider>
         </div>

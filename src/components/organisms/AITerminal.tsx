@@ -22,6 +22,7 @@ import { useWorkspace } from '@/lib/workspace/context'
 import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
 import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { createPageFromProposal } from '@/lib/pages/create-page'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
@@ -724,7 +725,15 @@ export function AITerminal() {
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [conversationId, messages, queryClient, setMessages, resetResolutions, supabaseClient, workspace])
+  }, [
+    conversationId,
+    messages,
+    queryClient,
+    setMessages,
+    resetResolutions,
+    supabaseClient,
+    workspace,
+  ])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -984,8 +993,16 @@ export function AITerminal() {
           () => crypto.randomUUID(),
           workspace
         )
-        await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        // F26: seed the cache with the new row (correct parent_id) before navigating,
+        // so the rail nests it immediately; reconcile in the background.
+        insertPageOptimistic(queryClient, workspace, {
+          id: created.id,
+          parentId: parentRef,
+          type: part.type,
+          title: part.title,
+        })
         router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }, basePath))
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('create_page failed', err)
@@ -1293,7 +1310,6 @@ export function AITerminal() {
                 the draw is the focus signal. Reduced-motion snaps it in.
                 ticket-40: composerRef anchors the highlight-to-ask popover. */}
             <div ref={composerRef} className="motion-focus-draw relative flex-1">
-
               {chatMenuOpen && (
                 <SlashMenu
                   items={CHAT_COMMANDS}

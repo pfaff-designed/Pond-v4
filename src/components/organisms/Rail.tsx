@@ -39,7 +39,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { createPage, deletePage } from '@/lib/pages/client'
-import { fetchPages, type PageRow } from '@/lib/pages/tree'
+import { fetchPages, insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
@@ -411,7 +411,17 @@ export function Rail() {
       )
       // ensure the parent folder is open so the new child is visible
       setExpanded((prev) => new Set(prev).add(id))
-      if (created) navigateTo({ id: created.id, type: 'page', title: 'Untitled' })
+      if (created) {
+        // F26: seed the cache with the new row so the reveal nests it immediately,
+        // rather than depending on the refetch having landed before we navigate.
+        insertPageOptimistic(queryClient, workspace, {
+          id: created.id,
+          parentId: id,
+          type: 'page',
+          title: 'Untitled',
+        })
+        navigateTo({ id: created.id, type: 'page', title: 'Untitled' })
+      }
     } finally {
       setBusyId(null)
     }

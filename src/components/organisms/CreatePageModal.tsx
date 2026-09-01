@@ -27,7 +27,7 @@ import { Dialog } from '@base-ui/react/dialog'
 import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog-chrome'
 import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
-import { fetchPages } from '@/lib/pages/tree'
+import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
@@ -161,7 +161,10 @@ export function CreatePageModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
+  const { data: rows = [] } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+  })
 
   const parentOptions: CreatePageParentOption[] = useMemo(() => {
     const pages: ParentPageRow[] = rows.map((r) => ({
@@ -208,12 +211,20 @@ export function CreatePageModal({
         title: title.trim() || 'Untitled',
         workspace,
       })
-      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      // F26: seed the cache with the new row (correct parent_id) before navigating,
+      // so the rail nests it immediately; reconcile in the background.
+      insertPageOptimistic(queryClient, workspace, {
+        id: created.id,
+        parentId,
+        type: created.type,
+        title: created.title,
+      })
       onOpenChange(false)
 
       // Land in the editor. A blocks-less `page` → DocumentPanel renders the
       // editor (ticket-22), with the title pre-filled.
       router.push(workspaceHref(created))
+      void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create page')
       setBusy(false)
