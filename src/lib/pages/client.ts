@@ -244,6 +244,35 @@ export async function deletePage(supabase: SupabaseClient<Database>, id: string)
 }
 
 /**
+ * Move a page in the tree (F25): set its `parent_id` (null = top-level), then
+ * densely reindex the target sibling group so `order` is `0..N-1` in the new
+ * visual order — which also repairs the legacy all-zeros `order` state on first
+ * touch. `siblingOrder` is the full ordered list of the target group's child ids
+ * AFTER the move (including the moved node); the caller (computeMove) builds it.
+ * Id-scoped like the other by-id writes (id is the PK).
+ */
+export async function movePage(
+  supabase: SupabaseClient<Database>,
+  input: { id: string; newParentId: string | null; siblingOrder: string[] }
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: parentErr } = await (supabase as any)
+    .from('pages')
+    .update({ parent_id: input.newParentId, updated_at: new Date().toISOString() })
+    .eq('id', input.id)
+
+  if (parentErr) throw new Error(parentErr.message)
+
+  await Promise.all(
+    input.siblingOrder.map(async (id, index) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from('pages').update({ order: index }).eq('id', id)
+      if (error) throw new Error(error.message)
+    })
+  )
+}
+
+/**
  * Semantic search across all of a user's pages (Track D). Delegates the
  * cosine-similarity ranking to the match_pages pgvector RPC; the caller supplies
  * an already-computed query embedding (see embeddings/retrieve.ts). Returns

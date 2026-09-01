@@ -70,6 +70,8 @@ const meta = {
     onDelete: fn(),
     onLife: fn(),
     onToggleLife: fn(),
+    canDrop: () => true,
+    onMove: fn(),
   },
 } satisfies Meta<typeof RailView>
 

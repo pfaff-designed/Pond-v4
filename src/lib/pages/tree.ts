@@ -73,3 +73,29 @@ export function insertPageOptimistic(
     ]
   })
 }
+
+/**
+ * Optimistically apply a MOVE (F25) to the ['pages', workspace] cache so the rail
+ * restructures instantly — before movePage's write lands. Sets the moved row's
+ * `parent_id` and rewrites `order = index` for every id in the reindexed target
+ * group (computeMove's `siblingOrder`). Mirrors insertPageOptimistic; returns the
+ * pre-move rows so the caller can roll back if the persistence call fails. A
+ * subsequent invalidate reconciles with server truth.
+ */
+export function applyMoveOptimistic(
+  queryClient: QueryClient,
+  workspace: WorkspaceScope,
+  move: { movedId: string; newParentId: string | null; siblingOrder: string[] }
+): PageRow[] | undefined {
+  const snapshot = queryClient.getQueryData<PageRow[]>(['pages', workspace])
+  const orderById = new Map(move.siblingOrder.map((id, index) => [id, index]))
+  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+    if (!rows) return rows
+    return rows.map((r) => {
+      const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id
+      const order = orderById.has(r.id) ? orderById.get(r.id)! : r.order
+      return parent_id === r.parent_id && order === r.order ? r : { ...r, parent_id, order }
+    })
+  })
+  return snapshot
+}
