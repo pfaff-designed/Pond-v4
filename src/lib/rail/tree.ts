@@ -67,6 +67,116 @@ export function isFolderNode(node: RailNode): boolean {
   return node.type === 'area' || node.children.length > 0
 }
 
+// ── Move (drag-to-reparent / reorder, F25) ───────────────────────────────────
+
+/** Where a dropped node lands relative to the hovered target row. */
+export type DropZone = 'before' | 'into' | 'after'
+
+/**
+ * Is `nodeId` a descendant of `maybeAncestorId`? Walks `parent_id` up from the
+ * node; a node is never its own descendant. Guards against pre-existing cyclic
+ * data so a corrupt chain can't loop forever.
+ */
+export function isDescendant(rows: PageRow[], nodeId: string, maybeAncestorId: string): boolean {
+  const parentOf = (id: string) => rows.find((r) => r.id === id)?.parent_id ?? null
+  let current = parentOf(nodeId)
+  const seen = new Set<string>()
+  while (current !== null) {
+    if (current === maybeAncestorId) return true
+    if (seen.has(current)) break
+    seen.add(current)
+    current = parentOf(current)
+  }
+  return false
+}
+
+/** The child ids of `parentId` (null = top-level) in visual order — the same
+ *  `order`-then-`title` sort `buildTree` uses, so a computed group matches the
+ *  rendered one. */
+function sortedChildIds(rows: PageRow[], parentId: string | null): string[] {
+  return rows
+    .filter((r) => (r.parent_id ?? null) === parentId)
+    .slice()
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title))
+    .map((r) => r.id)
+}
+
+/**
+ * The parent a drop assigns, or `undefined` if the target/zone is structurally
+ * invalid (before/after the synthetic Life root — Life is a set of one, so it's
+ * an into-only target). `into` → the target itself (Life → top-level null);
+ * before/after → the target's parent (a new sibling of the target).
+ */
+function moveParent(rows: PageRow[], targetId: string, zone: DropZone): string | null | undefined {
+  if (zone === 'into') return targetId === LIFE_ID ? null : targetId
+  if (targetId === LIFE_ID) return undefined
+  const target = rows.find((r) => r.id === targetId)
+  return target ? target.parent_id : undefined
+}
+
+/**
+ * Whether a drag→drop should offer a landing (drop-line / into-highlight): the
+ * target is a real, valid slot and the move wouldn't create a cycle. This is the
+ * dragover AFFORDANCE gate — a no-op slot still returns true (the drop just does
+ * nothing). Rejects: dropping onto self, an invalid target (before/after Life),
+ * or into the dragged node's own subtree.
+ */
+export function canMove(
+  rows: PageRow[],
+  draggedId: string,
+  targetId: string,
+  zone: DropZone
+): boolean {
+  if (draggedId === targetId) return false
+  if (!rows.some((r) => r.id === draggedId)) return false
+  const newParentId = moveParent(rows, targetId, zone)
+  if (newParentId === undefined) return false
+  if (
+    newParentId !== null &&
+    (newParentId === draggedId || isDescendant(rows, newParentId, draggedId))
+  ) {
+    return false
+  }
+  return true
+}
+
+/**
+ * Resolve a drop into the persisted change, or `null` when nothing should
+ * happen (invalid target, cycle, or a no-op that leaves parent AND position
+ * unchanged). Returns the new parent and the target sibling group's full id
+ * order AFTER the move — densely reindexed `0..N-1` by the caller, which repairs
+ * the legacy all-zeros `order` state on first touch.
+ */
+export function computeMove(
+  rows: PageRow[],
+  draggedId: string,
+  targetId: string,
+  zone: DropZone
+): { newParentId: string | null; siblingOrder: string[] } | null {
+  if (!canMove(rows, draggedId, targetId, zone)) return null
+  const newParentId = moveParent(rows, targetId, zone) as string | null
+
+  const group = sortedChildIds(rows, newParentId).filter((id) => id !== draggedId)
+  if (zone === 'into') {
+    group.push(draggedId)
+  } else {
+    const ti = group.indexOf(targetId)
+    if (ti === -1) return null // target isn't a child of the resolved parent (defensive)
+    group.splice(zone === 'before' ? ti : ti + 1, 0, draggedId)
+  }
+
+  // No-op: same parent AND identical resulting order → no write, no cache change.
+  const dragged = rows.find((r) => r.id === draggedId)!
+  if ((dragged.parent_id ?? null) === newParentId) {
+    const current = sortedChildIds(rows, newParentId)
+    if (current.length === group.length && current.every((id, i) => id === group[i])) {
+      return null
+    }
+  }
+
+  return { newParentId, siblingOrder: group }
+}
+
 /**
  * One currently-visible row of the tree, in render order. `posInSet`/`setSize`
  * are the ARIA sibling coordinates at that row's level (the Life root is a

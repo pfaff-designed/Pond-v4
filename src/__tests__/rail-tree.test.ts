@@ -12,6 +12,9 @@ import {
   flattenVisible,
   treeKeyCommand,
   focusFallback,
+  isDescendant,
+  canMove,
+  computeMove,
   type RailNode,
   type FlatRow,
 } from '@/lib/rail/tree'
@@ -268,5 +271,105 @@ describe('focusFallback', () => {
   it('unknown removed id or nothing surviving → the Life root', () => {
     expect(focusFallback(prevOrder, 'never-existed', new Set([LIFE_ID]))).toBe(LIFE_ID)
     expect(focusFallback(prevOrder, 'health', new Set<string>())).toBe(LIFE_ID)
+  })
+})
+
+// ── Move (F25) ────────────────────────────────────────────────────────────────
+
+/** Flat rows mirroring TREE:
+ *  health[sleep, marathon] · personal[food[recipes], trips] · scratch */
+const ROWS: PageRow[] = [
+  row('health', null, 'area', 'Health', 0),
+  row('sleep', 'health', 'page', 'Sleep', 0),
+  row('marathon', 'health', 'project', 'Marathon', 1),
+  row('personal', null, 'area', 'Personal', 1),
+  row('food', 'personal', 'area', 'Food', 0),
+  row('recipes', 'food', 'page', 'Recipes', 0),
+  row('trips', 'personal', 'page', 'Trips', 1),
+  row('scratch', null, 'page', 'Scratchpad', 2),
+]
+
+describe('isDescendant', () => {
+  it('a node is not its own descendant', () => {
+    expect(isDescendant(ROWS, 'personal', 'personal')).toBe(false)
+  })
+  it('a direct child is a descendant of its parent', () => {
+    expect(isDescendant(ROWS, 'food', 'personal')).toBe(true)
+  })
+  it('a deep descendant is found by walking parent_id up', () => {
+    expect(isDescendant(ROWS, 'recipes', 'personal')).toBe(true)
+  })
+  it('unrelated nodes are not descendants', () => {
+    expect(isDescendant(ROWS, 'sleep', 'personal')).toBe(false)
+    expect(isDescendant(ROWS, 'health', 'recipes')).toBe(false)
+  })
+})
+
+describe('computeMove', () => {
+  it('into: moves the node to be the target’s last child, reindexed', () => {
+    const move = computeMove(ROWS, 'scratch', 'health', 'into')
+    expect(move).toEqual({ newParentId: 'health', siblingOrder: ['sleep', 'marathon', 'scratch'] })
+  })
+
+  it('before: inserts as a sibling above the target under the target’s parent', () => {
+    const move = computeMove(ROWS, 'scratch', 'marathon', 'before')
+    // health’s children reindexed: sleep, scratch, marathon
+    expect(move).toEqual({ newParentId: 'health', siblingOrder: ['sleep', 'scratch', 'marathon'] })
+  })
+
+  it('after: inserts as a sibling below the target under the target’s parent', () => {
+    const move = computeMove(ROWS, 'scratch', 'sleep', 'after')
+    expect(move).toEqual({ newParentId: 'health', siblingOrder: ['sleep', 'scratch', 'marathon'] })
+  })
+
+  it('into Life: makes the node top-level (null parent), appended after existing roots', () => {
+    const move = computeMove(ROWS, 'recipes', LIFE_ID, 'into')
+    expect(move).toEqual({
+      newParentId: null,
+      siblingOrder: ['health', 'personal', 'scratch', 'recipes'],
+    })
+  })
+
+  it('cycle: dropping a node into its own subtree → null', () => {
+    expect(computeMove(ROWS, 'personal', 'food', 'into')).toBeNull() // into a descendant
+    expect(computeMove(ROWS, 'personal', 'recipes', 'into')).toBeNull() // into a deep descendant
+    expect(computeMove(ROWS, 'personal', 'food', 'before')).toBeNull() // sibling-of-own-child
+    expect(computeMove(ROWS, 'personal', 'personal', 'into')).toBeNull() // into self
+  })
+
+  it('no-op: same parent and same position → null', () => {
+    expect(computeMove(ROWS, 'sleep', 'sleep', 'into')).toBeNull() // onto self
+    expect(computeMove(ROWS, 'sleep', 'marathon', 'before')).toBeNull() // already above marathon
+    expect(computeMove(ROWS, 'marathon', 'sleep', 'after')).toBeNull() // already below sleep
+    expect(computeMove(ROWS, 'marathon', 'health', 'into')).toBeNull() // already health’s last child
+  })
+
+  it('before/after the Life root is invalid (Life is into-only) → null', () => {
+    expect(computeMove(ROWS, 'scratch', LIFE_ID, 'before')).toBeNull()
+    expect(computeMove(ROWS, 'scratch', LIFE_ID, 'after')).toBeNull()
+  })
+
+  it('leaf into: dropping into a childless page nests it there (leaf becomes a folder)', () => {
+    const move = computeMove(ROWS, 'trips', 'sleep', 'into')
+    expect(move).toEqual({ newParentId: 'sleep', siblingOrder: ['trips'] })
+  })
+
+  it('reindex is dense 0..N-1 in the returned order (repairs the legacy all-zeros state)', () => {
+    // all top-level rows share order values; a reorder still yields a dense group
+    const move = computeMove(ROWS, 'scratch', 'health', 'before')
+    expect(move!.siblingOrder).toEqual(['scratch', 'health', 'personal'])
+    move!.siblingOrder.forEach((id, i) => expect(i).toBe(move!.siblingOrder.indexOf(id)))
+  })
+})
+
+describe('canMove (dragover affordance gate)', () => {
+  it('true for a valid, non-cyclic slot (even a no-op)', () => {
+    expect(canMove(ROWS, 'scratch', 'health', 'into')).toBe(true)
+    expect(canMove(ROWS, 'sleep', 'marathon', 'before')).toBe(true) // no-op still offers a landing
+  })
+  it('false for self, cycle, and before/after Life', () => {
+    expect(canMove(ROWS, 'health', 'health', 'into')).toBe(false)
+    expect(canMove(ROWS, 'personal', 'recipes', 'into')).toBe(false)
+    expect(canMove(ROWS, 'scratch', LIFE_ID, 'before')).toBe(false)
   })
 })

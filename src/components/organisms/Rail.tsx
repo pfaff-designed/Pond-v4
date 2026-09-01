@@ -34,12 +34,25 @@
  * style.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { createPage, deletePage } from '@/lib/pages/client'
-import { fetchPages, insertPageOptimistic, type PageRow } from '@/lib/pages/tree'
+import { createPage, deletePage, movePage } from '@/lib/pages/client'
+import {
+  fetchPages,
+  insertPageOptimistic,
+  applyMoveOptimistic,
+  type PageRow,
+} from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
@@ -50,8 +63,11 @@ import {
   flattenVisible,
   treeKeyCommand,
   focusFallback,
+  canMove,
+  computeMove,
   type RailNode,
   type FlatRow,
+  type DropZone,
 } from '@/lib/rail/tree'
 import {
   countDescendants,
@@ -89,6 +105,11 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
+  /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
+   *  return paints the not-allowed affordance instead of a drop-line. */
+  canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
+  /** Commit a drag→drop move (reparent/reorder). No-ops are absorbed downstream. */
+  onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
 
 /** The Life root's mark — a calm sage half-disc, drawn (not a glyph). */
@@ -116,6 +137,8 @@ export function RailView({
   onDelete,
   onLife,
   onToggleLife,
+  canDrop,
+  onMove,
 }: RailViewProps) {
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
@@ -194,6 +217,73 @@ export function RailView({
     }
   }
 
+  // ── Drag-to-reparent / reorder (F25; view-owned like focus) ─────────────────
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{
+    id: string
+    zone: DropZone
+    rejected: boolean
+  } | null>(null)
+
+  /** Three-zone hit-test from the pointer's Y within the row: top ¼ before,
+   *  bottom ¼ after, middle into. The Life root is an into-only target. */
+  function zoneFor(id: string, e: DragEvent<HTMLDivElement>): DropZone {
+    if (id === LIFE_ID) return 'into'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const frac = (e.clientY - rect.top) / rect.height
+    if (frac < 0.25) return 'before'
+    if (frac > 0.75) return 'after'
+    return 'into'
+  }
+
+  function handleDragStart(id: string, e: DragEvent<HTMLDivElement>) {
+    setDraggingId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    // Firefox requires data to be set for a drag to initiate.
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  function handleDragOver(id: string, e: DragEvent<HTMLDivElement>) {
+    if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
+    const zone = zoneFor(id, e)
+    if (canDrop(draggingId, id, zone)) {
+      // A valid landing: allow the drop (preventDefault) and paint the indicator.
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDropTarget({ id, zone, rejected: false })
+    } else {
+      // A cycle / invalid target: no drop (leave preventDefault off so onDrop
+      // can't fire) and show the not-allowed affordance, no drop-line.
+      e.dataTransfer.dropEffect = 'none'
+      setDropTarget({ id, zone, rejected: true })
+    }
+  }
+
+  function handleDragLeave(id: string, e: DragEvent<HTMLDivElement>) {
+    // Only clear when the pointer actually leaves this row (not on entering a
+    // child element); dragover on the next row re-sets the target immediately.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setDropTarget((prev) => (prev?.id === id ? null : prev))
+  }
+
+  function handleDrop(id: string, e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const dragged = draggingId
+    const zone = dropTarget?.id === id ? dropTarget.zone : zoneFor(id, e)
+    setDraggingId(null)
+    setDropTarget(null)
+    if (dragged) onMove(dragged, id, zone) // computeMove absorbs self/cycle/no-op
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null)
+    setDropTarget(null)
+  }
+
+  const dropZoneFor = (id: string): DropZone | null =>
+    dropTarget && dropTarget.id === id && !dropTarget.rejected ? dropTarget.zone : null
+  const isDropRejected = (id: string) => dropTarget?.id === id && dropTarget.rejected
+
   const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) =>
     id === LIFE_ID ? (
       <TreeRow
@@ -221,6 +311,12 @@ export function RailView({
         onToggle={onToggleLife}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
+        dropZone={dropZoneFor(id)}
+        isDropRejected={isDropRejected(id)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       />
     ) : (
       <TreeRow
@@ -248,6 +344,15 @@ export function RailView({
         onDelete={onDelete}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
+        draggable
+        isDragging={draggingId === id}
+        dropZone={dropZoneFor(id)}
+        isDropRejected={isDropRejected(id)}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
       />
     )
 
@@ -520,6 +625,50 @@ export function Rail() {
     if (node) navigateTo(node)
   }
 
+  // ── Drag-to-reparent / reorder (F25) ────────────────────────────────────────
+
+  /** The dragover affordance gate — valid, non-cyclic target (no-ops allowed). */
+  function canDrop(draggedId: string, targetId: string, zone: DropZone) {
+    return canMove(pages, draggedId, targetId, zone)
+  }
+
+  /**
+   * Commit a move: resolve it (computeMove absorbs self / cycle / no-op → null),
+   * apply it optimistically so the rail restructures instantly, auto-expand the
+   * target on an *into* so the moved child is visible, then persist. On failure,
+   * restore the pre-move snapshot, surface the miss, and reconcile.
+   */
+  async function handleMove(draggedId: string, targetId: string, zone: DropZone) {
+    const move = computeMove(pages, draggedId, targetId, zone)
+    if (!move) return
+
+    const snapshot = applyMoveOptimistic(queryClient, workspace, {
+      movedId: draggedId,
+      newParentId: move.newParentId,
+      siblingOrder: move.siblingOrder,
+    })
+
+    // Expand-on-drop: an into-drop reveals the moved child under its new parent.
+    if (zone === 'into') {
+      if (targetId === LIFE_ID) setLifeExpanded(true)
+      else setExpanded((prev) => new Set(prev).add(targetId))
+    }
+
+    try {
+      await withUser((sb) =>
+        movePage(sb, {
+          id: draggedId,
+          newParentId: move.newParentId,
+          siblingOrder: move.siblingOrder,
+        })
+      )
+    } catch {
+      if (snapshot) queryClient.setQueryData<PageRow[]>(['pages', workspace], snapshot)
+      notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)
+      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+    }
+  }
+
   const confirmCount = confirmTarget ? countDescendants(confirmTarget) : 0
 
   return (
@@ -539,6 +688,8 @@ export function Rail() {
         onDelete={handleDelete}
         onLife={() => router.push(basePath)}
         onToggleLife={handleToggleLife}
+        canDrop={canDrop}
+        onMove={handleMove}
       />
       <ConfirmDialog
         open={confirmTarget !== null}

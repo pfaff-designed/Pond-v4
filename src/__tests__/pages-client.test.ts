@@ -21,6 +21,7 @@ import {
   saveBlocks,
   updateTitle,
   deletePage,
+  movePage,
   matchPages,
 } from '@/lib/pages/client'
 import type { Block } from '@/lib/documents/types'
@@ -293,6 +294,52 @@ describe('deletePage', () => {
     })
     const sb = makeSupabase(chain)
     await expect(deletePage(sb as never, 'page-1')).rejects.toThrow(/del boom/)
+  })
+})
+
+// ── movePage ─────────────────────────────────────────────────────────────────
+
+describe('movePage', () => {
+  it('sets parent_id on the moved row then reindexes the sibling group order', async () => {
+    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
+    const sb = makeSupabase(chain)
+
+    await movePage(sb as never, {
+      id: 'x',
+      newParentId: 'health',
+      siblingOrder: ['a', 'x', 'b'],
+    })
+
+    // first update = the moved row's parent
+    const parentUpdate = chain.update.mock.calls[0][0]
+    expect(parentUpdate.parent_id).toBe('health')
+    expect(typeof parentUpdate.updated_at).toBe('string')
+    expect(chain.eq).toHaveBeenCalledWith('id', 'x')
+
+    // then one order update per id, dense 0..N-1
+    const orderUpdates = chain.update.mock.calls.slice(1).map((c) => c[0])
+    expect(orderUpdates).toEqual([{ order: 0 }, { order: 1 }, { order: 2 }])
+    expect(chain.eq).toHaveBeenCalledWith('id', 'a')
+    expect(chain.eq).toHaveBeenCalledWith('id', 'b')
+  })
+
+  it('moves a page to top-level with a null parent_id', async () => {
+    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
+    const sb = makeSupabase(chain)
+
+    await movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
+
+    expect(chain.update.mock.calls[0][0].parent_id).toBeNull()
+  })
+
+  it('throws when the parent update fails', async () => {
+    const chain = makeChain({
+      eq: jest.fn().mockResolvedValue({ data: null, error: { message: 'move boom' } }),
+    })
+    const sb = makeSupabase(chain)
+    await expect(
+      movePage(sb as never, { id: 'x', newParentId: null, siblingOrder: ['x'] })
+    ).rejects.toThrow(/move boom/)
   })
 })
 

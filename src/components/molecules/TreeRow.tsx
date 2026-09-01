@@ -35,7 +35,8 @@
  * double-drives the tree.
  */
 
-import { forwardRef, type KeyboardEvent, type ReactNode } from 'react'
+import { forwardRef, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import type { DropZone } from '@/lib/rail/tree'
 
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 export const INDENT_STEP = 16
@@ -124,6 +125,23 @@ export interface TreeRowProps {
   onDelete?: (id: string) => void
   onFocus: (id: string) => void
   onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
+
+  // ── Drag-to-reparent/reorder (F25) ──────────────────────────────────────────
+  /** Row is a drag source (every row except the Life root). */
+  draggable?: boolean
+  /** This row is the one being dragged — dims to ~50% (ticket precedent). */
+  isDragging?: boolean
+  /** The live drop zone when this row is the hovered, VALID target — drives the
+   *  before/after drop-line or the into-highlight; null when it isn't a target. */
+  dropZone?: DropZone | null
+  /** This row is the hovered target but the drop is rejected (a cycle) — shows a
+   *  not-allowed affordance and no drop-line. */
+  isDropRejected?: boolean
+  onDragStart?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragOver?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragLeave?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDrop?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragEnd?: (id: string, e: DragEvent<HTMLDivElement>) => void
 }
 
 export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow(
@@ -151,6 +169,15 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
     onDelete,
     onFocus,
     onKeyDown,
+    draggable = false,
+    isDragging = false,
+    dropZone = null,
+    isDropRejected = false,
+    onDragStart,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    onDragEnd,
   },
   ref
 ) {
@@ -169,6 +196,12 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
       data-on-path={isOnPath || undefined}
+      draggable={draggable}
+      onDragStart={onDragStart ? (e) => onDragStart(id, e) : undefined}
+      onDragOver={onDragOver ? (e) => onDragOver(id, e) : undefined}
+      onDragLeave={onDragLeave ? (e) => onDragLeave(id, e) : undefined}
+      onDrop={onDrop ? (e) => onDrop(id, e) : undefined}
+      onDragEnd={onDragEnd ? (e) => onDragEnd(id, e) : undefined}
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
         // the roving focus back to the row.
@@ -179,9 +212,11 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center h-[34px] rounded-[10px] pr-1.5 outline-none transition-colors cursor-pointer
+      className={`group relative flex items-center h-[34px] rounded-[10px] pr-1.5 outline-none transition-colors
         focus-visible:ring-2 focus-visible:ring-press-accent focus-visible:ring-offset-0
-        ${settleOnMount ? 'motion-settle-in ' : ''}${
+        ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
+        ${isDragging ? 'opacity-50' : ''}
+        ${dropZone === 'into' ? 'ring-2 ring-inset ring-press-accent ' : ''}${settleOnMount ? 'motion-settle-in ' : ''}${
           isSelected
             ? 'bg-press-accent-soft'
             : isRoot
@@ -190,6 +225,22 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         }`}
       style={{ paddingLeft: padLeft }}
     >
+      {/* Drop-line for a before/after reorder — a calm accent rule at the row's
+          top/bottom edge; pointer-events-none so it never eats a drag event. The
+          into-highlight is the ring on the row itself (above). */}
+      {dropZone === 'before' && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 right-2 -top-px h-0.5 rounded-full bg-press-accent"
+        />
+      )}
+      {dropZone === 'after' && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-press-accent"
+        />
+      )}
+
       {/* Indentation guides — one hairline per ancestor level. Positioned so
           each rule sits on the gridline the corresponding caret column would.
           The selected/on-path row brightens its own trail a touch so the eye
