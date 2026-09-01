@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, screen, userEvent, within } from 'storybook/test'
 
 import { AddBlockButton, InsertBetween } from './BlockInserters'
 
@@ -32,16 +32,18 @@ export const AlwaysVisibleAdd: Story = {
   args: { onAdd: fn() },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    // At rest: the button is visible with no palette open.
+    // At rest: the button is visible with no palette open. The palette (SlashMenu)
+    // portals to document.body, so its contents are queried via `screen`, not the
+    // story canvas.
     const add = canvas.getByRole('button', { name: 'Add a block' })
     await expect(add).toBeInTheDocument()
-    await expect(canvas.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
+    await expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
     // Click opens the palette; onAdd not yet called.
     await userEvent.click(add)
-    await expect(await canvas.findByLabelText('Filter blocks')).toBeInTheDocument()
+    await expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
     await expect(args.onAdd).not.toHaveBeenCalled()
     // Picking a module hands that item back.
-    await userEvent.click(await canvas.findByText('Table'))
+    await userEvent.click(await screen.findByText('Table'))
     await expect(args.onAdd).toHaveBeenCalledWith(expect.objectContaining({ id: 'table' }))
   },
 }
@@ -58,7 +60,8 @@ export const InsertBetweenBlocks: StoryObj<typeof InsertBetween> = {
     const canvas = within(canvasElement)
     const insert = canvas.getByRole('button', { name: 'Insert block' })
     await userEvent.click(insert)
-    await userEvent.click(await canvas.findByText('Todo'))
+    // The palette portals to document.body, so query it via `screen`.
+    await userEvent.click(await screen.findByText('Todo'))
     await expect(args.onInsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'todo' }))
   },
 }
