@@ -123,13 +123,41 @@ export async function POST(req: Request) {
   // rides the resolutions envelope (parsed above), defaulting to idle chat.
   const phase = resolutions.lifecycle?.phase ?? 'idle'
 
+  // Prompt caching: one ephemeral breakpoint on the final transcript message
+  // caches the whole prefix up to it (tools + system + prior turns). Next turn
+  // that block sits mid-history, so system+tools+transcript read from cache at
+  // ~0.1x and don't count against rate limits. system carries per-node context,
+  // so a node switch rewrites the cache; within a node's thread every turn after
+  // the first is a hit. Verify via usage.cacheReadInputTokens > 0 on turn 2.
+  const modelMessages = await toModelMessages(applyResolutions(messages, resolutions))
+  // @ai-sdk/anthropic reads cacheControl from part.providerOptions (part-level),
+  // NOT message-level — so the breakpoint must go on the last content PART of the
+  // last message. That caches the whole prefix up to it (tools + system + prior
+  // turns); next turn it reads back at ~0.1x and skips rate-limit accounting.
+  const lastMessage = modelMessages.at(-1) as
+    { content: unknown; providerOptions?: Record<string, unknown> } | undefined
+  if (lastMessage) {
+    const cc = { anthropic: { cacheControl: { type: 'ephemeral' as const } } }
+    // convertToModelMessages collapses a single-text message to a STRING content;
+    // @ai-sdk/anthropic reads cacheControl at the part level, so normalize to a
+    // parts array first, then tag the last part. Either way a real content part
+    // carries the breakpoint, caching tools + system + prior turns up to here.
+    if (typeof lastMessage.content === 'string') {
+      lastMessage.content = [{ type: 'text', text: lastMessage.content, providerOptions: cc }]
+    } else if (Array.isArray(lastMessage.content)) {
+      const parts = lastMessage.content as Array<{ providerOptions?: Record<string, unknown> }>
+      const lastPart = parts.at(-1)
+      if (lastPart) lastPart.providerOptions = { ...(lastPart.providerOptions ?? {}), ...cc }
+    }
+  }
+
   const result = streamText({
     model: anthropic(AI_MODELS.standard),
     system,
     // Resolved proposal cards are stamped with their user decision as a synthetic
     // tool result (ticket-19) so the model sees what was actioned and stops
     // re-proposing; unresolved calls are still dropped by toModelMessages.
-    messages: await toModelMessages(applyResolutions(messages, resolutions)),
+    messages: modelMessages,
     // Allow several round-trips: the model can call fetch_context or run one or more
     // web searches (ticket-29), read the results, and answer in the same turn.
     // create_page stays client-side (no execute) and still ends the turn as before.
