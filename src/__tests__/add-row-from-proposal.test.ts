@@ -54,11 +54,25 @@ describe('resolveRowValues', () => {
     expect(resolveRowValues(schema, { Rating: 'not a number' })).toEqual({ 'p-rating': null })
   })
 
-  it('coerces a checkbox and passes a status value through as a string', () => {
+  it('coerces a checkbox and resolves a status label to its option id', () => {
+    // A select/status value is stored as the option *id*, not the label: the model
+    // proposes "Reading" → resolved to its stable id (rename-safe, #19 prereq).
     expect(resolveRowValues(schema, { Done: true, Status: 'Reading' })).toEqual({
       'p-done': true,
-      'p-status': 'Reading',
+      'p-status': 'o-r',
     })
+  })
+
+  it('matches a status label case-insensitively when resolving to an id', () => {
+    expect(resolveRowValues(schema, { Status: 'finished' })).toEqual({ 'p-status': 'o-f' })
+  })
+
+  it('keeps a status value that is already an option id (idempotent)', () => {
+    expect(resolveRowValues(schema, { Status: 'o-r' })).toEqual({ 'p-status': 'o-r' })
+  })
+
+  it('keeps an off-schema status value raw rather than dropping it (lenient)', () => {
+    expect(resolveRowValues(schema, { Status: 'Abandoned' })).toEqual({ 'p-status': 'Abandoned' })
   })
 
   it('never emits the reserved _schema key', () => {
