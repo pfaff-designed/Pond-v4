@@ -182,7 +182,7 @@ export function withSchema(props: Props | null | undefined, schema: PropertySche
 
 /**
  * Merge one property value into `props`, preserving `_schema` and every sibling
- * value. The single write path for `set_property` / manual edits — it can never
+ * value. The single write path for `set_property` (planned, #19) / manual edits — it can never
  * clobber the collection's schema. Clearing a value writes `emptyValue`, never a
  * key delete (removing a value is not the same gesture as removing a property).
  */

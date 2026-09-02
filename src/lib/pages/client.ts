@@ -354,7 +354,7 @@ async function saveProps(
  * Set one typed property value on a page (#17). Read-modify-write: fetches the
  * current `props`, merges the single value in via `withValue` (preserving
  * `_schema` and every sibling value), and persists. The primitive behind the
- * manual inspector, the `set_property` AI tool, and #19's optimistic edits.
+ * manual inspector, the `set_property` AI tool (planned, #19), and #19's optimistic edits.
  * No-op-safe: a missing page is ignored rather than throwing.
  */
 export async function setProperty(

@@ -5,7 +5,7 @@
  * properties. Given a page's `_schema` and its stored values, it renders one
  * labeled control per property so a human can inspect and tweak values without
  * going through Pond. This is the manual half of the property primitive; the AI
- * half is the `define_schema`/`set_property` tools.
+ * half is the `define_schema` tool (and the `set_property` tool, planned in #19).
  *
  * Purely presentational: it reads values leniently (`coerceValue`) and raises
  * `onChange(key, value)` per edit. The host (DocumentPanel) owns persistence and
