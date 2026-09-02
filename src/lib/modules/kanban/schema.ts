@@ -10,6 +10,15 @@ export const kanbanCardSchema = z.object({
   title: z.string(),
   /** Optional one-line note shown under the card title. */
   note: z.string().optional(),
+  /**
+   * F27: the page this card links to. A REFERENCE to an existing page's id — not a
+   * minted collection id, so the id walkers (`hydrate.ts` mint, `preview.ts` stamp)
+   * leave it untouched (they only stamp the `id` key). When set, the linked page is
+   * the source of truth for the card's title; `title` above is a denormalized cache
+   * for fast render + AI serialize. The AI cannot author it this cycle — `pageId` is
+   * stripped from the emit schema in `ai-composition.ts`.
+   */
+  pageId: z.string().optional(),
 })
 
 /**

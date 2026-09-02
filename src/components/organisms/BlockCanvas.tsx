@@ -25,6 +25,8 @@ import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
 import { paletteItems, emptyBlockForType } from '@/lib/modules/palette'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { PageLinkProvider } from '@/lib/modules/page-link/context'
+import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 
@@ -72,6 +74,10 @@ export function BlockCanvas({
   insertedIds,
 }: BlockCanvasProps) {
   const { stageDeletion } = useDeletionUndo()
+  // F27: link capabilities for card→page links, parented at THIS page. Provided to
+  // every module view below via context — modules that don't link (all but kanban
+  // today) simply never read it.
+  const pageLinks = usePageLinkCapabilities(pageId)
 
   // Which block index has the `/` palette open (null = closed). Index, not id:
   // the palette replaces the text block AT that position (ticket-37).
@@ -131,7 +137,7 @@ export function BlockCanvas({
   }
 
   return (
-    <>
+    <PageLinkProvider value={pageLinks}>
       {/* Provide sibling-block state so bound metrics derive live and their `→`
           can scroll to source (ticket-23). Keyed off the live `blocks`, so a
           checklist toggle re-derives every metric in the same render. `pageId`
@@ -187,7 +193,7 @@ export function BlockCanvas({
       {/* The always-visible palette-first foot add (ticket-44 §3) — replaces the
           old text-only "+ Add text". */}
       <AddBlockButton onAdd={addBlockFromPalette} />
-    </>
+    </PageLinkProvider>
   )
 }
 
