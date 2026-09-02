@@ -15,6 +15,7 @@ import { buildSystemPrompt } from './prompt'
 import {
   createPageTool,
   defineSchemaTool,
+  addRowTool,
   proposeChangesTool,
   fetchContextTool,
   readPageTool,
@@ -180,6 +181,11 @@ export async function POST(req: Request) {
       // renders a proposal card and the user's Accept/Reject rides the
       // resolutions envelope, exactly like create_page.
       define_schema: tool(defineSchemaTool),
+      // add_row (#18): add one schema-bound row to an existing collection.
+      // Client-resolved (no execute) — the tool call renders a proposal card and
+      // the user's Accept/Reject rides the resolutions envelope, exactly like
+      // define_schema. Distinct from create_page (ordinary sub-page).
+      add_row: tool(addRowTool),
       // propose_changes can now target ANY page the model names by id from the
       // workspace outline, not just the open one (ticket-30): it edits the open
       // page by default, or a page named via `targetPageId` after a read_page.

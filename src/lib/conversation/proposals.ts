@@ -23,6 +23,7 @@ export interface ProposalMessageLike {
 export const PROPOSE_CHANGES_TYPE = 'tool-propose_changes'
 export const CREATE_PAGE_TYPE = 'tool-create_page'
 export const DEFINE_SCHEMA_TYPE = 'tool-define_schema'
+export const ADD_ROW_TYPE = 'tool-add_row'
 
 /** A single change's decision inside a propose_changes batch ('pending' when undecided). */
 export function changeStatus<T extends string>(
@@ -47,7 +48,8 @@ export function unresolvedProposalIds(
   changeDecisions: Record<string, string>,
   createDecisions: Record<string, string>,
   excludeMessageIds: ReadonlySet<string> = new Set(),
-  schemaDecisions: Record<string, string> = {}
+  schemaDecisions: Record<string, string> = {},
+  rowDecisions: Record<string, string> = {}
 ): string[] {
   const ids: string[] = []
   for (const message of messages) {
@@ -69,6 +71,10 @@ export function unresolvedProposalIds(
         }
       } else if (part.type === DEFINE_SCHEMA_TYPE) {
         if ((schemaDecisions[part.toolCallId] ?? 'pending') === 'pending') {
+          ids.push(part.toolCallId)
+        }
+      } else if (part.type === ADD_ROW_TYPE) {
+        if ((rowDecisions[part.toolCallId] ?? 'pending') === 'pending') {
           ids.push(part.toolCallId)
         }
       }

@@ -49,6 +49,8 @@ export interface ConversationResolutions {
   creates: Record<string, ProposalDecision>
   /** define_schema decisions, keyed by toolCallId (#17 slice 5). */
   schemas: Record<string, ProposalDecision>
+  /** add_row decisions, keyed by toolCallId (#18). */
+  rows: Record<string, ProposalDecision>
   /** Accepted changes skipped by the accept-time re-validation gate, by toolCallId. */
   skipped: Record<string, number>
   /** Proposal-time target page per propose_changes batch, by toolCallId. */
@@ -61,7 +63,15 @@ export interface ConversationResolutions {
 }
 
 export function emptyResolutions(): ConversationResolutions {
-  return { changes: {}, creates: {}, schemas: {}, skipped: {}, targets: {}, questions: {} }
+  return {
+    changes: {},
+    creates: {},
+    schemas: {},
+    rows: {},
+    skipped: {},
+    targets: {},
+    questions: {},
+  }
 }
 
 /** Tolerant parse of a persisted/sent resolutions value — never throws, drops
@@ -89,6 +99,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
     schemas: pick('schemas', isDecision),
+    rows: pick('rows', isDecision),
     skipped: pick('skipped', isCount),
     targets: pick('targets', isTarget),
     // Question-card answers + lifecycle ride the same envelope (ticket-39),
@@ -188,6 +199,7 @@ export function applyResolutions(
     Object.keys(resolutions.changes).length === 0 &&
     Object.keys(resolutions.creates).length === 0 &&
     Object.keys(resolutions.schemas).length === 0 &&
+    Object.keys(resolutions.rows).length === 0 &&
     Object.keys(resolutions.questions).length === 0
   ) {
     return messages
@@ -270,6 +282,22 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         note:
           decision === 'accepted'
             ? 'User accepted; the schema was defined. Do not propose it again.'
+            : 'User dismissed this proposal. Do not propose it again unless asked.',
+      },
+    } as ToolPartLike
+  }
+
+  if (part.type === 'tool-add_row') {
+    const decision = resolutions.rows[part.toolCallId]
+    if (!decision) return part
+    return {
+      ...part,
+      state: 'output-available',
+      output: {
+        decision,
+        note:
+          decision === 'accepted'
+            ? 'User accepted; the row was added. Do not propose it again.'
             : 'User dismissed this proposal. Do not propose it again unless asked.',
       },
     } as ToolPartLike
