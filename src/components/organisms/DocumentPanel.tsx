@@ -21,8 +21,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { getPage, updateTitle } from '@/lib/pages/client'
+import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
+import { PropertyInspector } from '@/components/molecules/PropertyInspector'
+import { readSchema, readValues, withValue, type PropertyValue } from '@/lib/properties/schema'
 import {
   AreaOverviewPanel,
   LifeOverviewPanel,
@@ -69,7 +71,10 @@ export function DocumentPanel() {
   // `new Date()` is captured per rows/nodeId change, so the cards' "updated Xd
   // ago" captions refresh with the data rather than the wall clock — the same
   // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
-  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
+  const { data: rows = [] } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+  })
   const openCard = useOpenCard()
   const navigateCrumb = useNavigateCrumb()
   const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
@@ -165,6 +170,19 @@ export function DocumentPanel() {
     scheduleSave(value, viewBlocks)
   }
 
+  // Set one typed property (#17). Direct user manipulation → OPTIMISTIC write
+  // (decision 17: never the AI/proposal path): reflect it in the ['page'] cache
+  // at once, then persist via the merge-safe setProperty (which preserves
+  // _schema). `withValue` also refuses the reserved key, matching the writer.
+  function onProperty(key: string, value: PropertyValue) {
+    const id = loadedId.current
+    if (!id) return
+    queryClient.setQueryData(['page', id], (prev: typeof page) =>
+      prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
+    )
+    void setProperty(supabase, id, key, value)
+  }
+
   // Apply an in-editor block change (from BlockCanvas): update local state and
   // schedule the debounced persist. (Named to avoid colliding with the DB-level
   // commitBlocks.)
@@ -243,6 +261,21 @@ export function DocumentPanel() {
             {saved ? 'Saved' : 'Saving…'}
           </span>
         </div>
+
+        {/* Typed properties (#17): shown only when the page carries a schema (it
+            is a collection). Edits write optimistically, bypassing the AI gate. */}
+        {(() => {
+          const propSchema = readSchema(page.props)
+          return propSchema ? (
+            <div className="mb-6 border-b border-press-hair pb-6">
+              <PropertyInspector
+                schema={propSchema}
+                values={readValues(page.props)}
+                onChange={onProperty}
+              />
+            </div>
+          ) : null
+        })()}
 
         {/* The shared authoring surface (ticket-44): the `/` palette, hover `+`
             InsertBetween, reorder, bound metrics, and the always-visible palette-
