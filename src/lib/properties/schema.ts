@@ -22,6 +22,14 @@ import { z } from 'zod'
 export const SCHEMA_KEY = '_schema' as const
 
 /**
+ * The NodeType of a collection's schema-bound child (#18 decision 8). A `row` is a
+ * real, openable page (own blocks + props) but is filtered out of the ['pages']
+ * tree the rail and overview read (`fetchPages`), so it never appears as a rail
+ * child or inflates an overview count — it is surfaced only through a view (#19).
+ */
+export const ROW_TYPE = 'row' as const
+
+/**
  * The 7 property types (#17 decision 3). `relation` is *defined* here — its value
  * shape (an array of page-ids) round-trips — but its authoring/render surface is
  * built in #20. Deliberately no url/formula/multi-select this pass.

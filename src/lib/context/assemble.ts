@@ -98,6 +98,9 @@ const TYPE_LABEL: Record<NodeType, string> = {
   // ticket-44: the reserved Life home page. Surfaced in the outline so Pond can
   // target it (propose_changes targetPageId) — composing Life's own home blocks.
   home: 'Home',
+  // #18: a collection's schema-bound child. Kept out of the rail/overview tree,
+  // but labelled here so any context path that does surface one reads cleanly.
+  row: 'Row',
 }
 
 /** One-line preview of a block's content, for the id-addressed listing. */
