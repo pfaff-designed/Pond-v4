@@ -37,7 +37,6 @@ export interface PondPage {
   type: NodeType
   title: string
   blocks: Block[]
-  status: string | null
   order: number
   /**
    * Typed page properties (#17): a jsonb object holding row values keyed by
@@ -54,7 +53,6 @@ export interface CreatePageInput {
   type?: NodeType
   title?: string
   blocks?: Block[]
-  status?: string | null
   props?: Record<string, unknown>
   workspace?: WorkspaceScope
 }
@@ -70,12 +68,15 @@ type PageRow = {
   type: NodeType
   title: string
   blocks: unknown
-  status: string | null
   props: unknown
   order: number
 }
 
-const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, status, props, "order"'
+// `status` is a dormant legacy column (pre-unification vestige, never written):
+// #17 makes status a select-typed *property* in `props`, not a first-class
+// column — so it's deliberately absent here. The DB column is left in place but
+// unread.
+const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, props, "order"'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,6 @@ function mapRow(row: PageRow): PondPage {
     type: row.type,
     title: row.title,
     blocks: toBlocks(row.blocks),
-    status: row.status ?? null,
     props: toProps(row.props),
     order: row.order ?? 0,
   }
@@ -183,7 +183,6 @@ export async function createPage(
     type: input.type ?? 'page',
     title: input.title ?? '',
     blocks: input.blocks ?? [],
-    status: input.status ?? null,
     props: input.props ?? {},
     workspace: input.workspace ?? 'main',
   }
@@ -199,7 +198,6 @@ export async function createPage(
     type: insert.type,
     title: insert.title,
     blocks: insert.blocks as Block[],
-    status: insert.status,
     props: toProps(insert.props),
     order: 0,
   }
@@ -324,7 +322,6 @@ export async function matchPages(
     type: (r.type ?? 'page') as NodeType,
     title: r.title as string,
     blocks: toBlocks(r.blocks),
-    status: r.status ?? null,
     props: toProps(r.props),
     order: 0,
     similarity: r.similarity as number,

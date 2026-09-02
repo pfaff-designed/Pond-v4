@@ -451,7 +451,6 @@ describe('matchPages', () => {
         type: 'page',
         title: 'Oak table',
         blocks: sampleBlocks,
-        status: null,
         props: {},
         order: 0,
         similarity: 0.73,

@@ -28,13 +28,11 @@ import type { Block } from '@/lib/documents/types'
 export interface ChildSummary {
   type: NodeType
   title: string
-  status?: string
 }
 
 export interface NodeContextData {
   type: NodeType
   title: string
-  status?: string
   documents: { title: string; blocks: Block[] }[]
   children: ChildSummary[]
 }
@@ -124,8 +122,7 @@ export function formatNodeContext(
   const lines: string[] = []
   lines.push(`[${opts.label ?? 'Current node'}]`)
 
-  const status = data.status ? ` (${data.status})` : ''
-  lines.push(`${TYPE_LABEL[data.type]}: ${data.title}${status}`)
+  lines.push(`${TYPE_LABEL[data.type]}: ${data.title}`)
 
   const docText = data.documents
     .map((doc) => {
@@ -156,8 +153,7 @@ export function formatNodeContext(
   if (data.children.length > 0) {
     lines.push('Children:')
     for (const child of data.children) {
-      const cs = child.status ? ` (${child.status})` : ''
-      lines.push(`  - ${TYPE_LABEL[child.type]}: ${child.title}${cs}`)
+      lines.push(`  - ${TYPE_LABEL[child.type]}: ${child.title}`)
     }
   }
 
@@ -217,7 +213,7 @@ export async function fetchNodeContext(
 ): Promise<NodeContextData | null> {
   const { data: own } = await sb
     .from('pages')
-    .select('type, title, status, blocks')
+    .select('type, title, blocks')
     .eq('id', nodeId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -234,7 +230,6 @@ export async function fetchNodeContext(
   return {
     type: row.type as NodeType,
     title: row.title as string,
-    status: (row.status as string | null) ?? undefined,
     documents,
     children,
   }
@@ -243,7 +238,7 @@ export async function fetchNodeContext(
 /** Direct child pages of a node — one query, any type, arbitrary depth. */
 async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<ChildSummary[]> {
   const pages = await getChildPages(sb, userId, nodeId)
-  return pages.map((p) => ({ type: p.type, title: p.title, status: p.status ?? undefined }))
+  return pages.map((p) => ({ type: p.type, title: p.title }))
 }
 
 /** All of a user's pages as lean title rows for the workspace outline — one

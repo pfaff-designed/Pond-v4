@@ -54,7 +54,6 @@ function pageWith(id: string, blocks: unknown[]): PondPage {
     type: 'page',
     title: id,
     blocks: blocks as PondPage['blocks'],
-    status: null,
     props: {},
     order: 0,
   }
