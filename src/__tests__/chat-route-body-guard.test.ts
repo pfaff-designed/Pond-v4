@@ -51,7 +51,15 @@ describe('parseChatBody', () => {
       nodeId: undefined,
       nodeType: undefined,
       // ticket-39: the envelope now also carries question-card answers.
-      resolutions: { changes: {}, creates: {}, skipped: {}, targets: {}, questions: {} },
+      // #17 slice 5: and define_schema decisions (`schemas`).
+      resolutions: {
+        changes: {},
+        creates: {},
+        schemas: {},
+        skipped: {},
+        targets: {},
+        questions: {},
+      },
     })
   })
 
@@ -72,6 +80,7 @@ describe('parseChatBody', () => {
     expect(garbage?.resolutions).toEqual({
       changes: {},
       creates: {},
+      schemas: {},
       skipped: {},
       targets: {},
       questions: {},

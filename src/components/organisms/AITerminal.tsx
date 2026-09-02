@@ -24,7 +24,7 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
-import { createPageFromProposal } from '@/lib/pages/create-page'
+import { createPageFromProposal, defineSchemaFromProposal } from '@/lib/pages/create-page'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -62,10 +62,12 @@ import {
   TOP_LEVEL_VALUE,
   type ParentOption,
 } from '@/components/molecules/CreatePageProposalCard'
+import { DefineSchemaProposalCard } from '@/components/molecules/DefineSchemaProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
   changeStatus,
   unresolvedProposalIds,
+  DEFINE_SCHEMA_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
 import {
@@ -87,6 +89,7 @@ import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
+import { withSchema, type AiPropertyDef } from '@/lib/properties/schema'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -155,6 +158,24 @@ interface CreatePagePart {
 
 function isCreatePagePart(part: { type: string }): part is CreatePagePart {
   return part.type === 'tool-create_page'
+}
+
+/** A define_schema tool part — a proposed property schema for an EXISTING page
+ *  (#17 slice 5). Client-resolved (no execute); the card below drives
+ *  accept/reject + which page it applies to. */
+interface DefineSchemaPart {
+  type: typeof DEFINE_SCHEMA_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    pageId?: string
+    properties?: AiPropertyDef[]
+    reason?: string
+  }
+}
+
+function isDefineSchemaPart(part: { type: string }): part is DefineSchemaPart {
+  return part.type === DEFINE_SCHEMA_TYPE
 }
 
 /** An ask_question tool part — a branch-pause question card (ticket-39). Client-
@@ -239,6 +260,14 @@ export function AITerminal() {
   const [createDecisions, setCreateDecisions] = useState<Record<string, ProposalStatus>>({})
   const [createParent, setCreateParent] = useState<Record<string, string>>({})
 
+  // define_schema decisions + the user-chosen target page, keyed by toolCallId
+  // (#17 slice 5). Same no-execute caveat as create_page: the local maps (not the
+  // SDK part) drive each card's resolved state and picked target. `undefined` in
+  // the target map means "not yet touched" — the card falls back to the
+  // AI-proposed pageId until the user overrides it.
+  const [schemaDecisions, setSchemaDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [schemaTarget, setSchemaTarget] = useState<Record<string, string>>({})
+
   // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
   // no-execute caveat as the proposal maps: the SDK part stays input-available,
   // so this local map drives the card's answered/inert state and rides the
@@ -265,6 +294,7 @@ export function AITerminal() {
     return {
       changes: settled(changeDecisions),
       creates: settled(createDecisions),
+      schemas: settled(schemaDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
       questions: questionAnswers,
@@ -272,7 +302,15 @@ export function AITerminal() {
       // transcripts clean); the route defaults an absent phase to idle chat.
       ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
     }
-  }, [changeDecisions, createDecisions, changeSkipped, changeTargets, questionAnswers, lifecycle])
+  }, [
+    changeDecisions,
+    createDecisions,
+    schemaDecisions,
+    changeSkipped,
+    changeTargets,
+    questionAnswers,
+    lifecycle,
+  ])
 
   const resetResolutions = useCallback(() => {
     setChangeDecisions({})
@@ -281,6 +319,8 @@ export function AITerminal() {
     setChangeTargets({})
     setCreateDecisions({})
     setCreateParent({})
+    setSchemaDecisions({})
+    setSchemaTarget({})
     setQuestionAnswers({})
     setLifecycle(idleLifecycle())
   }, [])
@@ -552,6 +592,7 @@ export function AITerminal() {
       setChangeSkipped(conversation.resolutions.skipped ?? {})
       setChangeTargets(conversation.resolutions.targets ?? {})
       setCreateDecisions(conversation.resolutions.creates ?? {})
+      setSchemaDecisions(conversation.resolutions.schemas ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
       setQuestionAnswers(conversation.resolutions.questions ?? {})
@@ -632,9 +673,10 @@ export function AITerminal() {
         messages as ProposalMessageLike[],
         changeDecisions,
         createDecisions,
-        initialMessageIds
+        initialMessageIds,
+        schemaDecisions
       ),
-    [messages, changeDecisions, createDecisions, initialMessageIds]
+    [messages, changeDecisions, createDecisions, initialMessageIds, schemaDecisions]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
@@ -1016,6 +1058,45 @@ export function AITerminal() {
     [supabaseClient, queryClient, router, workspace, basePath]
   )
 
+  // ── define_schema resolution (#17 slice 5) ────────────────────────────────
+  // Accept: mint property/option ids, write the schema to the chosen target page
+  // via the merge-safe defineSchema (preserving existing row values), then seed
+  // the target's ['page', id] cache with the new _schema so the PropertyInspector
+  // appears immediately, and invalidate ['pages'] so the collection is reflected
+  // elsewhere. The user's chosen target wins over the AI's proposed pageId.
+  const acceptDefineSchema = useCallback(
+    async (toolCallId: string, part: DefineSchemaPart['input'], selectedTargetId: string) => {
+      const properties = part?.properties ?? []
+      if (!selectedTargetId || properties.length === 0) return
+      setSchemaDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        const schema = await defineSchemaFromProposal(
+          supabaseClient,
+          { pageId: selectedTargetId, schema: properties },
+          () => crypto.randomUUID()
+        )
+        // Optimistic seed: merge the freshly-written schema into the target page's
+        // cached props (via the reserved-key merge helper, never a raw overwrite),
+        // so DocumentPanel renders the inspector without waiting on a refetch.
+        queryClient.setQueryData(['page', selectedTargetId], (prev: unknown) => {
+          if (!prev || typeof prev !== 'object') return prev
+          const page = prev as { props?: Record<string, unknown> }
+          return { ...page, props: withSchema(page.props, schema) }
+        })
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      } catch (err) {
+        // Surface the failure by reverting the card to pending so the user can retry.
+        console.error('define_schema failed', err)
+        setSchemaDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, workspace]
+  )
+
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
   // tool-call parts already in the latest assistant message ("reading Ceramics
@@ -1073,6 +1154,9 @@ export function AITerminal() {
           )
           const createPageParts = (message.parts as Array<{ type: string }>).filter(
             isCreatePagePart
+          )
+          const defineSchemaParts = (message.parts as Array<{ type: string }>).filter(
+            isDefineSchemaPart
           )
           // Ticket-39: branch-pause question cards + follow-up chips, both client-
           // resolved tool parts on the assistant message.
@@ -1207,6 +1291,38 @@ export function AITerminal() {
                     onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
                     onReject={() =>
                       setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
+                  />
+                )
+              })}
+              {/* define_schema proposal cards (#17 slice 5): turn an existing page
+                  into a collection. Client-resolved; Accept writes the schema and
+                  the decision rides the resolutions envelope so the card goes
+                  inert and the model stops re-proposing. */}
+              {defineSchemaParts.map((part) => {
+                // Same streaming caveat as the other cards: a partially-parsed
+                // `properties` array would render an incomplete preview.
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                const properties = input?.properties ?? []
+                if (!input?.pageId || properties.length === 0) return null
+                const status = schemaDecisions[part.toolCallId] ?? 'pending'
+                const selectedTargetId = schemaTarget[part.toolCallId] ?? input.pageId
+                return (
+                  <DefineSchemaProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    properties={properties}
+                    reason={input.reason}
+                    status={status}
+                    selectedTargetId={selectedTargetId}
+                    targetOptions={parentOptions}
+                    onTargetChange={(id) =>
+                      setSchemaTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
+                    onReject={() =>
+                      setSchemaDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
                   />
                 )

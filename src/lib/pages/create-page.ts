@@ -25,8 +25,14 @@ import type { CreatePageBlock } from '@/lib/modules/ai-composition'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
-import { createPage } from '@/lib/pages/client'
+import { createPage, getPage, defineSchema } from '@/lib/pages/client'
 import { resolveParentId } from '@/lib/nodes/create'
+import {
+  propertyDefSchema,
+  type AiPropertyDef,
+  type PropertyDef,
+  type PropertySchema,
+} from '@/lib/properties/schema'
 
 /**
  * Hydrate a full proposed block array in order — minting block-level and nested ids
@@ -114,4 +120,70 @@ export async function createPageFromProposal(
     workspace,
   })
   return { id: page.id }
+}
+
+// ── define_schema accept path (#17 slice 5) ─────────────────────────────────
+//
+// A `define_schema` tool call is client-resolved (no execute), exactly like
+// create_page: the model proposes turning an EXISTING page into a collection by
+// giving it a property schema (id-less, since the model never mints stable ids),
+// the user reviews it on a proposal card, and ONLY on accept do we write. This
+// mirror owns that write:
+//
+//   1. hydratePropertySchema — mint any missing property AND option ids for the
+//      id-less schema the AI emits, re-validating each def against the strict
+//      `propertyDefSchema` so a malformed property is skipped, never written
+//      (the same gate hydrateProposalBlocks applies to blocks).
+//   2. defineSchemaFromProposal — confirm the target page exists, then persist
+//      through the merge-safe `defineSchema` client fn (which uses `withSchema`,
+//      so existing row values alongside the schema are never clobbered).
+
+/**
+ * Hydrate an id-less AI property schema into a persistable {@link PropertySchema}:
+ * mint an id for every property and every option that lacks one (the AI never
+ * mints ids — a rename must never orphan the rows pointing at an option), then
+ * validate each def against `propertyDefSchema`. A malformed def is skipped, not
+ * written (mirrors block hydration); property order is preserved. The `mintId`
+ * closure is injected so the client supplies `crypto.randomUUID` and tests a
+ * deterministic counter.
+ */
+export function hydratePropertySchema(defs: AiPropertyDef[], mintId: () => string): PropertySchema {
+  const out: PropertyDef[] = []
+  for (const raw of defs) {
+    const candidate = {
+      ...raw,
+      id: raw.id ?? mintId(),
+      ...(raw.options ? { options: raw.options.map((o) => ({ ...o, id: o.id ?? mintId() })) } : {}),
+    }
+    const parsed = propertyDefSchema.safeParse(candidate)
+    if (parsed.success) out.push(parsed.data)
+  }
+  return out
+}
+
+/** A define_schema proposal after the user has (optionally) corrected its target. */
+export interface DefineSchemaProposal {
+  /** The page the schema is applied to — makes it a collection (#18). */
+  pageId: string
+  /** The id-less property schema the AI proposed. */
+  schema: AiPropertyDef[]
+}
+
+/**
+ * Write an accepted define_schema proposal. Confirms the target page exists
+ * (throws otherwise, so the card can revert rather than silently no-op), hydrates
+ * the schema (minting property/option ids), and merges it in via the merge-safe
+ * `defineSchema` — every existing row value alongside the schema is preserved.
+ * Returns the hydrated schema so the caller can seed its page cache optimistically.
+ */
+export async function defineSchemaFromProposal(
+  supabase: SupabaseClient<Database>,
+  proposal: DefineSchemaProposal,
+  mintId: () => string
+): Promise<PropertySchema> {
+  const page = await getPage(supabase, proposal.pageId)
+  if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
+  const schema = hydratePropertySchema(proposal.schema, mintId)
+  await defineSchema(supabase, proposal.pageId, schema)
+  return schema
 }

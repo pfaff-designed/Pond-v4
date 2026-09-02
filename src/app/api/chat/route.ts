@@ -14,6 +14,7 @@ import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt } from './prompt'
 import {
   createPageTool,
+  defineSchemaTool,
   proposeChangesTool,
   fetchContextTool,
   readPageTool,
@@ -174,6 +175,11 @@ export async function POST(req: Request) {
     repairToolCall: makeRepairToolCall(),
     tools: {
       create_page: tool(createPageTool),
+      // define_schema (#17): give an existing page a typed property schema (turn
+      // it into a collection). Client-resolved (no execute) — the tool call
+      // renders a proposal card and the user's Accept/Reject rides the
+      // resolutions envelope, exactly like create_page.
+      define_schema: tool(defineSchemaTool),
       // propose_changes can now target ANY page the model names by id from the
       // workspace outline, not just the open one (ticket-30): it edits the open
       // page by default, or a page named via `targetPageId` after a read_page.

@@ -65,6 +65,35 @@ export type PropertyDef = z.infer<typeof propertyDefSchema>
 export const propertySchemaSchema = z.array(propertyDefSchema)
 export type PropertySchema = z.infer<typeof propertySchemaSchema>
 
+// ── AI-authored variant (#17 slice 5) ────────────────────────────────────────
+// The `define_schema` tool lets the model PROPOSE a schema, but — exactly like
+// block ids in create_page — the model must NEVER mint the stable ids that a
+// rename relies on. So the AI-facing schema makes every `id` optional; the
+// accept path (`hydratePropertySchema` in pages/create-page) mints any missing
+// property/option id before the schema is validated against the strict
+// `propertyDefSchema` and written. Same 7 types, same option/relation shape.
+
+/** A `select`/`status` option as the model proposes it — `id` minted on accept. */
+export const aiPropertyOptionSchema = z.object({
+  id: z.string().optional(),
+  label: z.string(),
+  color: z.string().optional(),
+})
+
+/** One property definition as the model proposes it — `id` minted on accept. */
+export const aiPropertyDefSchema = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  type: propertyTypeSchema,
+  options: z.array(aiPropertyOptionSchema).optional(),
+  single: z.boolean().optional(),
+})
+export type AiPropertyDef = z.infer<typeof aiPropertyDefSchema>
+
+/** The ordered schema the `define_schema` tool accepts (ids optional). */
+export const aiPropertySchemaSchema = z.array(aiPropertyDefSchema)
+export type AiPropertySchema = z.infer<typeof aiPropertySchemaSchema>
+
 /**
  * A stored property value. The canonical empty is `null` for scalar/choice types,
  * `false` for checkbox, `[]` for relation (see {@link emptyValue}).
