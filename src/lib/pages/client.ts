@@ -22,6 +22,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
+import {
+  withSchema,
+  withValue,
+  type PropertySchema,
+  type PropertyValue,
+} from '@/lib/properties/schema'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -33,6 +39,14 @@ export interface PondPage {
   blocks: Block[]
   status: string | null
   order: number
+  /**
+   * Typed page properties (#17): a jsonb object holding row values keyed by
+   * property id, plus — on a collection page — the schema at the reserved
+   * `_schema` key. Read the schema/values through `@/lib/properties/schema`
+   * (readSchema/readValues); write it only via {@link setProperty}/
+   * {@link defineSchema} so the reserved key is never clobbered.
+   */
+  props: Record<string, unknown>
 }
 
 export interface CreatePageInput {
@@ -57,16 +71,24 @@ type PageRow = {
   title: string
   blocks: unknown
   status: string | null
+  props: unknown
   order: number
 }
 
-const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, status, "order"'
+const PAGE_COLUMNS = 'id, parent_id, type, title, blocks, status, props, "order"'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Blocks are stored as jsonb; coerce anything non-array to []. */
 function toBlocks(value: unknown): Block[] {
   return Array.isArray(value) ? (value as Block[]) : []
+}
+
+/** Props are stored as jsonb; coerce anything non-object (or array/null) to {}. */
+function toProps(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
 }
 
 function mapRow(row: PageRow): PondPage {
@@ -77,6 +99,7 @@ function mapRow(row: PageRow): PondPage {
     title: row.title,
     blocks: toBlocks(row.blocks),
     status: row.status ?? null,
+    props: toProps(row.props),
     order: row.order ?? 0,
   }
 }
@@ -177,6 +200,7 @@ export async function createPage(
     title: insert.title,
     blocks: insert.blocks as Block[],
     status: insert.status,
+    props: toProps(insert.props),
     order: 0,
   }
 }
@@ -301,7 +325,64 @@ export async function matchPages(
     title: r.title as string,
     blocks: toBlocks(r.blocks),
     status: r.status ?? null,
+    props: toProps(r.props),
     order: 0,
     similarity: r.similarity as number,
   }))
+}
+
+// ── Property writes (#17) ─────────────────────────────────────────────────────
+
+/**
+ * Overwrite a page's entire `props` object (schema + values). Low-level and
+ * whole-object, mirroring `saveBlocks` — prefer {@link setProperty} /
+ * {@link defineSchema}, which read-modify-write through the merge helpers so the
+ * reserved `_schema` key (and sibling values) can never be clobbered.
+ */
+async function saveProps(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  props: Record<string, unknown>
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('pages')
+    .update({ props, updated_at: new Date().toISOString() })
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Set one typed property value on a page (#17). Read-modify-write: fetches the
+ * current `props`, merges the single value in via `withValue` (preserving
+ * `_schema` and every sibling value), and persists. The primitive behind the
+ * manual inspector, the `set_property` AI tool, and #19's optimistic edits.
+ * No-op-safe: a missing page is ignored rather than throwing.
+ */
+export async function setProperty(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  key: string,
+  value: PropertyValue
+): Promise<void> {
+  const page = await getPage(supabase, id)
+  if (!page) return
+  await saveProps(supabase, id, withValue(page.props, key, value))
+}
+
+/**
+ * Define (or replace) a page's property schema (#17) — the act that makes a page
+ * a collection (#18). Read-modify-write: merges the schema at the reserved
+ * `_schema` key via `withSchema`, preserving every existing row value.
+ * No-op-safe on a missing page.
+ */
+export async function defineSchema(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  schema: PropertySchema
+): Promise<void> {
+  const page = await getPage(supabase, id)
+  if (!page) return
+  await saveProps(supabase, id, withSchema(page.props, schema))
 }

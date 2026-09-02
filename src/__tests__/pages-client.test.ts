@@ -23,8 +23,11 @@ import {
   deletePage,
   movePage,
   matchPages,
+  setProperty,
+  defineSchema,
 } from '@/lib/pages/client'
 import type { Block } from '@/lib/documents/types'
+import { SCHEMA_KEY, type PropertySchema } from '@/lib/properties/schema'
 
 // ── Chain mock helpers ──────────────────────────────────────────────────────
 
@@ -108,6 +111,20 @@ describe('getPage', () => {
     const sb = makeSupabase(chain)
     const result = await getPage(sb as never, 'page-1')
     expect(result!.blocks).toEqual([])
+  })
+
+  it('reads props and coerces a null/array props column to an empty object', async () => {
+    const withProps = makeChain({
+      maybeSingle: jest
+        .fn()
+        .mockResolvedValue({ data: pageRow({ props: { count: 3 } }), error: null }),
+    })
+    expect((await getPage(makeSupabase(withProps) as never, 'page-1'))!.props).toEqual({ count: 3 })
+
+    const badProps = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({ data: pageRow({ props: null }), error: null }),
+    })
+    expect((await getPage(makeSupabase(badProps) as never, 'page-1'))!.props).toEqual({})
   })
 })
 
@@ -343,6 +360,62 @@ describe('movePage', () => {
   })
 })
 
+// ── setProperty / defineSchema (#17, merge-safe props writes) ─────────────────
+
+const SCHEMA: PropertySchema = [
+  { id: 'stage', name: 'Stage', type: 'status' },
+  { id: 'title', name: 'Title', type: 'text' },
+]
+
+describe('setProperty', () => {
+  it('merges one value into props, preserving _schema and sibling values', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: pageRow({ props: { [SCHEMA_KEY]: SCHEMA, stage: 'todo' } }),
+        error: null,
+      }),
+    })
+    const sb = makeSupabase(chain)
+
+    await setProperty(sb as never, 'page-1', 'stage', 'done')
+
+    const updated = chain.update.mock.calls[0][0]
+    expect(updated.props[SCHEMA_KEY]).toEqual(SCHEMA)
+    expect(updated.props.stage).toBe('done')
+    expect(typeof updated.updated_at).toBe('string')
+    expect(chain.eq).toHaveBeenCalledWith('id', 'page-1')
+  })
+
+  it('is a no-op on a missing page (never writes)', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    })
+    const sb = makeSupabase(chain)
+
+    await setProperty(sb as never, 'missing', 'stage', 'done')
+
+    expect(chain.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('defineSchema', () => {
+  it('writes _schema while preserving existing row values (never clobbers them)', async () => {
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: pageRow({ props: { title: 'keep me' } }),
+        error: null,
+      }),
+    })
+    const sb = makeSupabase(chain)
+
+    await defineSchema(sb as never, 'page-1', SCHEMA)
+
+    const updated = chain.update.mock.calls[0][0]
+    expect(updated.props[SCHEMA_KEY]).toEqual(SCHEMA)
+    expect(updated.props.title).toBe('keep me')
+  })
+})
+
 // ── matchPages ───────────────────────────────────────────────────────────────
 
 describe('matchPages', () => {
@@ -379,6 +452,7 @@ describe('matchPages', () => {
         title: 'Oak table',
         blocks: sampleBlocks,
         status: null,
+        props: {},
         order: 0,
         similarity: 0.73,
       },

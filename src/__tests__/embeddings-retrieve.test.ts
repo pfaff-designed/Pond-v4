@@ -32,6 +32,7 @@ function page(overrides: Partial<MatchedPage> = {}): MatchedPage {
     title: 'Woodworking',
     blocks,
     status: null,
+    props: {},
     order: 0,
     similarity: 0.5,
     ...overrides,
