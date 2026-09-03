@@ -22,6 +22,7 @@ import { kanbanSchema } from './kanban/schema'
 import { chartLineSchema } from './chart-line/schema'
 import { chartBarSchema } from './chart-bar/schema'
 import { chartAreaSchema } from './chart-area/schema'
+import { viewSchema } from './view/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -34,6 +35,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   chartLineSchema,
   chartBarSchema,
   chartAreaSchema,
+  // #19: the inline collection view block (config only; rows are child pages).
+  viewSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

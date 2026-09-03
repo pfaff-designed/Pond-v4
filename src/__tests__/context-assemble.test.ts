@@ -145,6 +145,32 @@ describe('blocksToText', () => {
     expect(text).not.toContain('99')
   })
 
+  it('renders a view block with its config and injected row titles (#19 hydration)', () => {
+    // A view is config-only; the assemble seam attaches `rows` (this page's
+    // type=row children) before serialize. Here we simulate that injection.
+    const view = { id: 'v1', type: 'view' as const, mode: 'table' as const, groupBy: 'p-stage' }
+    // Attach rows on a variable (not a fresh literal) so the transient field is
+    // allowed — this mirrors what the assemble seam grafts before serialize.
+    const hydrated = {
+      ...view,
+      rows: [
+        { id: 'r1', title: 'Dune' },
+        { id: 'r2', title: 'Hyperion' },
+      ],
+    }
+    const text = blocksToText([hydrated])
+    expect(text).toContain('table')
+    expect(text).toContain('grouped by p-stage')
+    expect(text).toContain('2 rows')
+    expect(text).toContain('Dune')
+    expect(text).toContain('Hyperion')
+  })
+
+  it('renders a view with no injected rows honestly as "no rows"', () => {
+    const blocks: Block[] = [{ id: 'v1', type: 'view', mode: 'gallery' }]
+    expect(blocksToText(blocks)).toContain('no rows')
+  })
+
   it('returns an empty string for no blocks', () => {
     expect(blocksToText([])).toBe('')
   })

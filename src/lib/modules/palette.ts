@@ -21,8 +21,11 @@ import { moduleDescriptors } from '@/lib/modules/registry'
 import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 
-// Excludes 'page' (structural, not a content block a user drops into a page).
-const EXCLUDED_FROM_PALETTE = new Set(['page'])
+// Excludes 'page' (structural, not a content block a user drops into a page) and,
+// this cycle, 'view' (#19): its renderer is a slice-2 stub and a manual empty view
+// has no collection context yet — surfaced in the palette once the real renderers
+// land (slice 3), alongside an `emptyBlockForType` case.
+const EXCLUDED_FROM_PALETTE = new Set(['page', 'view'])
 
 export const paletteItems: SlashMenuItem[] = Object.values(moduleDescriptors)
   .filter((d) => !EXCLUDED_FROM_PALETTE.has(d.type))

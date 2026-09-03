@@ -20,6 +20,7 @@ import { PageView } from './page/view'
 import { ChartLineView } from './chart-line/view'
 import { ChartBarView } from './chart-bar/view'
 import { ChartAreaView } from './chart-area/view'
+import { ViewView } from './view/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -40,6 +41,8 @@ export const moduleRenderers = {
   'chart-line': { view: ChartLineView },
   'chart-bar': { view: ChartBarView },
   'chart-area': { view: ChartAreaView },
+  // #19: collection view. Slice-2 stub renderer; real renderers land in slices 3–4.
+  view: { view: ViewView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

@@ -18,6 +18,7 @@ import { pageDescriptor } from './page/schema'
 import { chartLineDescriptor } from './chart-line/schema'
 import { chartBarDescriptor } from './chart-bar/schema'
 import { chartAreaDescriptor } from './chart-area/schema'
+import { viewDescriptor } from './view/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -31,6 +32,8 @@ export const moduleDescriptors = {
   'chart-line': chartLineDescriptor,
   'chart-bar': chartBarDescriptor,
   'chart-area': chartAreaDescriptor,
+  // #19: an inline view of a collection's rows (table/board/calendar/gallery).
+  view: viewDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors

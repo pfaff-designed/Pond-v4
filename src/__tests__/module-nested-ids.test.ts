@@ -73,6 +73,9 @@ const samples: Record<string, ModuleData> = {
       { x: '2026-02', values: { Balance: 1650 } },
     ],
   },
+  // #19: a view is config only (no nested id-bearing collections), so it round-trips
+  // with a flat top-level id strip — like a chart.
+  view: { type: 'view', mode: 'board', groupBy: 'p-status' },
 }
 
 /**

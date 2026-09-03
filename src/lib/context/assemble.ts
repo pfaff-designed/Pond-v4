@@ -22,6 +22,8 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
 import { descriptorFor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
+import { ROW_TYPE } from '@/lib/properties/schema'
+import type { ViewRow } from '@/lib/modules/view/schema'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -225,7 +227,12 @@ export async function fetchNodeContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = own as any
 
-  const blocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  const rawBlocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  // #19 read-hydration seam (decision 16): a `view` block draws this page's
+  // `type='row'` children, but serialize is sync and gets page-mates, not children.
+  // Fetch the rows once (only when a view is present) and attach them to each view
+  // block BEFORE it serializes — so blocksToText / blockPreview render the rows.
+  const blocks = await hydrateViewBlocks(sb, userId, nodeId, rawBlocks)
   const documents = blocks.length ? [{ title: row.title as string, blocks }] : []
 
   const children = await fetchChildren(sb, userId, nodeId)
@@ -242,6 +249,35 @@ export async function fetchNodeContext(
 async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<ChildSummary[]> {
   const pages = await getChildPages(sb, userId, nodeId)
   return pages.map((p) => ({ type: p.type, title: p.title }))
+}
+
+/**
+ * #19 read-hydration seam (decision 16). Attach a page's `type='row'` children to
+ * every inline `view` block on it, so the sync `serialize`/`preview` path can
+ * render the rows the view draws. No-op (and no extra query) when the page has no
+ * view block. Inline-only this cycle: rows come from THIS page (nodeId); a linked
+ * view (`collectionId` set) is left un-hydrated — the stub is guarded here and
+ * surfaced in the block's serialize (decision 12). The `rows` field is transient
+ * (never persisted): the persisted view schema is config-only.
+ */
+async function hydrateViewBlocks(
+  sb: Sb,
+  userId: string,
+  nodeId: string,
+  blocks: Block[]
+): Promise<Block[]> {
+  const isInlineView = (b: Block) => b.type === 'view' && !b.collectionId
+  if (!blocks.some(isInlineView)) return blocks
+
+  const children = await getChildPages(sb, userId, nodeId)
+  const rows: ViewRow[] = children
+    .filter((p) => p.type === ROW_TYPE)
+    .map((p) => ({ id: p.id, title: p.title }))
+
+  // `b.type === 'view'` narrows to ViewBlock so the `rows` graft type-checks (a
+  // plain boolean helper wouldn't narrow, and grafting rows onto a table block's
+  // own `rows` would collide).
+  return blocks.map((b) => (b.type === 'view' && !b.collectionId ? { ...b, rows } : b))
 }
 
 /** All of a user's pages as lean title rows for the workspace outline — one
