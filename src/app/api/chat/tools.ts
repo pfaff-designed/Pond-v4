@@ -13,6 +13,7 @@ import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-co
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 import { aiPropertyDefSchema } from '@/lib/properties/schema'
+import { viewModeSchema, filterOpSchema } from '@/lib/modules/view/schema'
 
 // The web_search tool (ticket-29) lives in ./web-search so this routing-schema
 // module — imported by lint tests and the eval in a jsdom environment — stays free
@@ -176,6 +177,86 @@ export const addRowTool = {
   description:
     'Add ONE row (item/entry/record) to an EXISTING collection — a page that ALREADY has a property schema (columns). Use this when the user asks to add an item/entry/row/record to a database, tracker, or collection they already have (e.g. "add Dune to my reading list", "log today\'s workout", "add a task: mill the stock, priority high"). Name the target collection by its id from the [Workspace outline]; give the row a `title` and put its field values in `props` keyed by the schema\'s property NAMES. This is DISTINCT from create_page (which makes an ordinary standalone sub-page, not a schema-bound row) and from define_schema (which defines the columns). Only use add_row when the target already carries a schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card and can correct the target collection before anything is written; do NOT re-ask for confirmation. Use the human property names, never ids. One row per card.',
   inputSchema: addRowInput,
+} as const
+
+/**
+ * configure_view input schema (#19 slice 5). The model names an EXISTING collection
+ * page by id and SELECTS which of the four existing renderers draws its rows, plus
+ * an optional single-clause group-by / sort / filter. Every property reference is a
+ * NAME (from the [Properties] line in context), never an id — the client resolves
+ * name→id (and a select/status filter value label→id) on accept, exactly like
+ * add_row. This is a select/configure gesture, NOT a create: nothing new is built.
+ *
+ * The `.superRefine` forces a board to carry a group-by: a board with no group-by
+ * cannot bucket its rows (it degrades to a "needs a group-by" notice), so the model
+ * must name one — a failure triggers `repairToolCall`, which re-asks with the fix.
+ */
+const configureViewInput = z
+  .object({
+    pageId: z
+      .string()
+      .min(1)
+      .describe(
+        'The id of the EXISTING collection page (one that ALREADY has a property schema) whose view to configure, taken verbatim from the [Workspace outline] in context. Never invent an id.'
+      ),
+    mode: viewModeSchema.describe(
+      'Which of the four existing layouts draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), or "gallery" (cards). Pick the one the user asked for.'
+    ),
+    groupBy: z
+      .string()
+      .optional()
+      .describe(
+        'For a BOARD: the NAME of the select or status property to bucket rows under (required for mode="board"), taken from the [Properties] line in context. Use the human property NAME, never an id. Omit for table/gallery; a calendar places rows by its date property automatically.'
+      ),
+    sort: z
+      .object({
+        key: z.string().describe('The NAME of the property to sort by (from [Properties]).'),
+        dir: z.enum(['asc', 'desc']).describe('Sort direction.'),
+      })
+      .optional()
+      .describe('An optional single-key sort by a property NAME.'),
+    filter: z
+      .object({
+        property: z.string().describe('The NAME of the property to filter on (from [Properties]).'),
+        op: filterOpSchema.describe('The comparison: eq, neq, contains, gt, or lt.'),
+        value: z
+          .string()
+          .describe(
+            'The value to compare against. For a select/status property use the option LABEL.'
+          ),
+      })
+      .optional()
+      .describe('An optional single-clause filter (property NAME op value). One clause only.'),
+    reason: z
+      .string()
+      .optional()
+      .describe('A short, optional note on what this view is for (shown on the proposal card).'),
+  })
+  .superRefine((input, ctx) => {
+    if (input.mode === 'board' && !input.groupBy?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'A board must group its rows: set `groupBy` to the NAME of a select or status property from the collection (see the [Properties] line in context).',
+        path: ['groupBy'],
+      })
+    }
+  })
+
+/**
+ * configure_view (#19 slice 5) — SELECT which layout (table/board/calendar/gallery)
+ * draws an existing collection's rows, plus an optional group-by/sort/filter. The
+ * four renderers already exist; this only picks one and points it at properties by
+ * NAME. Client-resolved (no execute): the tool call renders a proposal card, the
+ * user reviews the resolved config and can correct the target collection, and only
+ * on accept does the client resolve names→ids and upsert THE view block on the page
+ * (reconfigure the existing one, or mint one when there is none). DISTINCT from
+ * propose_changes (content blocks), define_schema (columns), and add_row (items).
+ */
+export const configureViewTool = {
+  description:
+    'Configure how an EXISTING collection\'s items are displayed — SELECT a layout (table, board, calendar, or gallery) for its rows, optionally grouped, sorted, or filtered. Use this when the user asks to show/display/view/format a collection\'s items a certain way (e.g. "show my tasks as a board grouped by status", "view my reading list as a gallery", "sort this table by due date", "show only the books I\'m still reading"). Name the target collection by its id from the [Workspace outline]; name any group-by / sort / filter property by its NAME from the [Properties] line in context (never an id) — for a board you MUST name a select/status property to group by. This does NOT build a new kind of view (the four renderers already exist) and is DISTINCT from propose_changes (edits content blocks), define_schema (defines columns), and add_row (adds an item). Only use it on a page that ALREADY has a property schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card showing the resolved layout and can correct the target before anything is written; do NOT re-ask for confirmation. Use property NAMES, never ids.',
+  inputSchema: configureViewInput,
 } as const
 
 export const proposeChangesTool = {

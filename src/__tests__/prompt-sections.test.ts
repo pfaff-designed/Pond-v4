@@ -36,12 +36,16 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     // RESEARCH (ticket-29).
     'You have a web_search tool',
     'from memory, not today',
+    // #19 slice 5: configure_view routing.
+    'call the configure_view tool',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
 
   it('embeds the registry-derived module catalog', () => {
-    expect(SYSTEM_PROMPT).toContain('The available block types (used by BOTH create_page and propose_changes) are:')
+    expect(SYSTEM_PROMPT).toContain(
+      'The available block types (used by BOTH create_page and propose_changes) are:'
+    )
   })
 })
 

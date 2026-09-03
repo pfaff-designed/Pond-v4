@@ -22,7 +22,8 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
 import { descriptorFor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
-import { ROW_TYPE } from '@/lib/properties/schema'
+import { ROW_TYPE, readSchema } from '@/lib/properties/schema'
+import type { PropertySchema } from '@/lib/properties/schema'
 import type { ViewRow } from '@/lib/modules/view/schema'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -37,6 +38,13 @@ export interface NodeContextData {
   title: string
   documents: { title: string; blocks: Block[] }[]
   children: ChildSummary[]
+  /**
+   * #19 slice 5: the page's property schema when it is a collection — surfaced so
+   * the model can name a group-by / sort / filter property (and add_row/
+   * define_schema by name) against real column names. `null` when the page carries
+   * no `_schema` (an ordinary, non-collection page).
+   */
+  schema?: PropertySchema | null
 }
 
 export interface MentionRef {
@@ -105,6 +113,26 @@ const TYPE_LABEL: Record<NodeType, string> = {
   row: 'Row',
 }
 
+/**
+ * Render a collection's schema as one compact line (#19 slice 5) — the property
+ * NAMES + types the model must use to name a group-by / sort / filter (and to
+ * author add_row/define_schema by name). Select/status props list their option
+ * labels so the model can name a filter value. Returns '' for an empty schema.
+ *
+ *   Properties: Status (status: To do | Doing | Done) · Due (date) · Notes (text)
+ */
+export function formatSchemaLine(schema: PropertySchema): string {
+  if (schema.length === 0) return ''
+  const cols = schema.map((def) => {
+    const opts =
+      (def.type === 'select' || def.type === 'status') && def.options?.length
+        ? `: ${def.options.map((o) => o.label).join(' | ')}`
+        : ''
+    return `${def.name} (${def.type}${opts})`
+  })
+  return `Properties: ${cols.join(' · ')}`
+}
+
 /** One-line preview of a block's content, for the id-addressed listing. */
 function blockPreview(block: Block, siblings: Block[]): string {
   const descriptor = descriptorFor(block.type)
@@ -128,6 +156,12 @@ export function formatNodeContext(
   lines.push(`[${opts.label ?? 'Current node'}]`)
 
   lines.push(`${TYPE_LABEL[data.type]}: ${data.title}`)
+
+  // #19 slice 5: a collection's property columns, so the model can name a
+  // group-by / sort / filter (and add_row / define_schema) against real names.
+  if (data.schema && data.schema.length > 0) {
+    lines.push(formatSchemaLine(data.schema))
+  }
 
   const docText = data.documents
     .map((doc) => {
@@ -218,7 +252,7 @@ export async function fetchNodeContext(
 ): Promise<NodeContextData | null> {
   const { data: own } = await sb
     .from('pages')
-    .select('type, title, blocks')
+    .select('type, title, blocks, props')
     .eq('id', nodeId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -242,6 +276,8 @@ export async function fetchNodeContext(
     title: row.title as string,
     documents,
     children,
+    // #19 slice 5: a collection's schema, so the model can name its columns.
+    schema: readSchema(row.props as Record<string, unknown> | null),
   }
 }
 

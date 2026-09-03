@@ -245,6 +245,57 @@ describe('applyResolutions — add_row cards (#18)', () => {
   })
 })
 
+describe('applyResolutions — configure_view cards (#19 slice 5)', () => {
+  function viewTranscript(): UIMessage[] {
+    return [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'show my tasks as a board grouped by status' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-configure_view',
+            toolCallId: 'cv1',
+            state: 'input-available',
+            input: { pageId: 'coll-tasks', mode: 'board', groupBy: 'Status' },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an accepted configure_view as a tool result so the model stops re-proposing', () => {
+    const out = applyResolutions(viewTranscript(), {
+      ...emptyResolutions(),
+      views: { cv1: 'accepted' },
+    })
+    const part = findPart(out, 'cv1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'accepted' })
+    expect((part.output as { note: string }).note).toMatch(/do not propose it again/i)
+  })
+
+  it('stamps a rejected configure_view with a dismissal note', () => {
+    const out = applyResolutions(viewTranscript(), {
+      ...emptyResolutions(),
+      views: { cv1: 'rejected' },
+    })
+    const part = findPart(out, 'cv1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'rejected' })
+    expect((part.output as { note: string }).note).toMatch(/dismissed/i)
+  })
+
+  it('leaves an undecided configure_view card untouched (still dropped from replay)', () => {
+    const out = applyResolutions(viewTranscript(), emptyResolutions())
+    expect(findPart(out, 'cv1').state).toBe('input-available')
+  })
+})
+
 describe('applyResolutions — question cards (ticket-39)', () => {
   function questionTranscript(): UIMessage[] {
     return [
@@ -326,6 +377,7 @@ describe('parseResolutions', () => {
       creates: { cp1: 'rejected' },
       schemas: { ds1: 'accepted' }, // #17 slice 5: define_schema decisions
       rows: { ar1: 'accepted' }, // #18: add_row decisions
+      views: { cv1: 'accepted' }, // #19 slice 5: configure_view decisions
       skipped: { pc1: 2 },
       targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: question-card answers ride the same envelope
@@ -356,6 +408,7 @@ describe('parseResolutions', () => {
       creates: {},
       schemas: {}, // #17 slice 5: present-but-empty on a row with no schema cards
       rows: {}, // #18: present-but-empty on a row with no add_row cards
+      views: {}, // #19 slice 5: present-but-empty on a row with no configure_view cards
       skipped: { x: 1 },
       targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: present-but-empty on a row with no question cards

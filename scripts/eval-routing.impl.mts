@@ -25,6 +25,7 @@ import {
   createPageTool,
   proposeChangesTool,
   fetchContextTool,
+  configureViewTool,
 } from '../src/app/api/chat/tools.ts'
 // The SAME heuristics the emit-time gate enforces (ticket-21) — imported, not
 // re-implemented, so the eval's tells and the gate can't drift.
@@ -36,6 +37,7 @@ const tools = {
   create_page: tool(createPageTool),
   propose_changes: tool(proposeChangesTool),
   fetch_context: tool(fetchContextTool),
+  configure_view: tool(configureViewTool),
 }
 
 /** Expected outcome: a specific tool name, or null = the model must call NO tool. */
@@ -232,6 +234,13 @@ const SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'make me a page called Japan Trip Ideas for jotting down places to visit',
     note: 'ticket-21: even a plain note page must not open with a "## Japan Trip Ideas" heading echoing its own title.',
+  },
+  {
+    name: '#19 slice 5: show a collection as a board → configure_view (not add_row / propose_changes)',
+    expect: 'configure_view',
+    ctx: 'The user is on their Tasks page — a collection.\nProperties: Status (status: To do | Doing | Done) · Due (date)\n[Workspace outline]\n- [coll-tasks] Page: Tasks',
+    text: 'show my tasks as a board grouped by status',
+    note: '#19: selecting a layout for an existing collection is configure_view — not add_row (adds an item), define_schema (defines columns), or propose_changes (edits blocks).',
   },
 ]
 

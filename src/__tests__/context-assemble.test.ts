@@ -17,11 +17,13 @@ import {
   parseMentions,
   blocksToText,
   formatNodeContext,
+  formatSchemaLine,
   formatWorkspaceOutline,
   type NodeContextData,
   type PageSummary,
 } from '@/lib/context/assemble'
 import type { Block } from '@/lib/documents/types'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 // ── parseMentions ────────────────────────────────────────────────────────────
 
@@ -188,6 +190,35 @@ function baseData(overrides: Partial<NodeContextData> = {}): NodeContextData {
   }
 }
 
+describe('formatSchemaLine', () => {
+  it('lists each property name + type, joined with a middot', () => {
+    const schema: PropertySchema = [
+      { id: 'p-notes', name: 'Notes', type: 'text' },
+      { id: 'p-due', name: 'Due', type: 'date' },
+    ]
+    expect(formatSchemaLine(schema)).toBe('Properties: Notes (text) · Due (date)')
+  })
+
+  it('appends select/status option labels so the model can name a filter value', () => {
+    const schema: PropertySchema = [
+      {
+        id: 'p-status',
+        name: 'Status',
+        type: 'status',
+        options: [
+          { id: 'o1', label: 'To do' },
+          { id: 'o2', label: 'Doing' },
+        ],
+      },
+    ]
+    expect(formatSchemaLine(schema)).toBe('Properties: Status (status: To do | Doing)')
+  })
+
+  it('returns an empty string for an empty schema', () => {
+    expect(formatSchemaLine([])).toBe('')
+  })
+})
+
 describe('formatNodeContext', () => {
   it('includes the node type and title', () => {
     const out = formatNodeContext(baseData())
@@ -228,6 +259,27 @@ describe('formatNodeContext', () => {
     const out = formatNodeContext(baseData())
     expect(typeof out).toBe('string')
     expect(out.length).toBeGreaterThan(0)
+  })
+
+  // ── collection schema exposure (#19 slice 5: configure_view names properties) ─
+  // A collection page surfaces its property columns so the model can name a
+  // group-by / sort / filter (and add_row / define_schema) against real names.
+
+  it('renders a Properties line for a collection, listing names + types', () => {
+    const schema: PropertySchema = [
+      { id: 'p-status', name: 'Status', type: 'status', options: [{ id: 'o1', label: 'To do' }] },
+      { id: 'p-due', name: 'Due', type: 'date' },
+    ]
+    const out = formatNodeContext(baseData({ schema }))
+    expect(out).toContain('Properties:')
+    expect(out).toContain('Status (status: To do)')
+    expect(out).toContain('Due (date)')
+  })
+
+  it('omits the Properties line for a non-collection page (no schema)', () => {
+    expect(formatNodeContext(baseData())).not.toContain('Properties:')
+    expect(formatNodeContext(baseData({ schema: null }))).not.toContain('Properties:')
+    expect(formatNodeContext(baseData({ schema: [] }))).not.toContain('Properties:')
   })
 
   // ── block-id exposure (Slice 2: propose_changes needs stable UUIDs) ─────────
