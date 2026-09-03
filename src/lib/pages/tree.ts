@@ -12,6 +12,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
+import { ROW_TYPE } from '@/lib/properties/schema'
 
 export interface PageRow {
   id: string
@@ -37,6 +38,10 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
     // ticket-44: the reserved Life home row never enters the ['pages'] cache
     // (rail / overview counts / breadcrumb) — home blocks are read separately.
     .neq('type', HOME_TYPE)
+    // #18: a collection's schema-bound `row` children are surfaced only through
+    // views, never as rail children or overview cards — this is the ONE boundary
+    // that keeps them out of the tree. They stay directly openable via getPage.
+    .neq('type', ROW_TYPE)
     .order('order')
 
   if (error) throw error

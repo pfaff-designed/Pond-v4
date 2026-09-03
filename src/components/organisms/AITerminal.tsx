@@ -24,7 +24,11 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
-import { createPageFromProposal, defineSchemaFromProposal } from '@/lib/pages/create-page'
+import {
+  createPageFromProposal,
+  defineSchemaFromProposal,
+  addRowFromProposal,
+} from '@/lib/pages/create-page'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -63,11 +67,13 @@ import {
   type ParentOption,
 } from '@/components/molecules/CreatePageProposalCard'
 import { DefineSchemaProposalCard } from '@/components/molecules/DefineSchemaProposalCard'
+import { AddRowProposalCard } from '@/components/molecules/AddRowProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
   changeStatus,
   unresolvedProposalIds,
   DEFINE_SCHEMA_TYPE,
+  ADD_ROW_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
 import {
@@ -89,7 +95,7 @@ import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
-import { withSchema, type AiPropertyDef } from '@/lib/properties/schema'
+import { withSchema, isCollection, type AiPropertyDef } from '@/lib/properties/schema'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -176,6 +182,25 @@ interface DefineSchemaPart {
 
 function isDefineSchemaPart(part: { type: string }): part is DefineSchemaPart {
   return part.type === DEFINE_SCHEMA_TYPE
+}
+
+/** An add_row tool part — a proposed row (a schema-bound child page) for an
+ *  EXISTING collection (#18). Client-resolved (no execute); the card below drives
+ *  accept/reject + which collection it joins. */
+interface AddRowPart {
+  type: typeof ADD_ROW_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    collectionId?: string
+    title?: string
+    props?: Record<string, unknown>
+    reason?: string
+  }
+}
+
+function isAddRowPart(part: { type: string }): part is AddRowPart {
+  return part.type === ADD_ROW_TYPE
 }
 
 /** An ask_question tool part — a branch-pause question card (ticket-39). Client-
@@ -268,6 +293,14 @@ export function AITerminal() {
   const [schemaDecisions, setSchemaDecisions] = useState<Record<string, ProposalStatus>>({})
   const [schemaTarget, setSchemaTarget] = useState<Record<string, string>>({})
 
+  // add_row decisions + the user-chosen target collection, keyed by toolCallId
+  // (#18). Same no-execute caveat as define_schema: the local maps (not the SDK
+  // part) drive each card's resolved state and picked collection. `undefined` in
+  // the target map means "not yet touched" — the card falls back to the
+  // AI-proposed collectionId until the user overrides it.
+  const [rowDecisions, setRowDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [rowTarget, setRowTarget] = useState<Record<string, string>>({})
+
   // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
   // no-execute caveat as the proposal maps: the SDK part stays input-available,
   // so this local map drives the card's answered/inert state and rides the
@@ -295,6 +328,7 @@ export function AITerminal() {
       changes: settled(changeDecisions),
       creates: settled(createDecisions),
       schemas: settled(schemaDecisions),
+      rows: settled(rowDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
       questions: questionAnswers,
@@ -306,6 +340,7 @@ export function AITerminal() {
     changeDecisions,
     createDecisions,
     schemaDecisions,
+    rowDecisions,
     changeSkipped,
     changeTargets,
     questionAnswers,
@@ -321,6 +356,8 @@ export function AITerminal() {
     setCreateParent({})
     setSchemaDecisions({})
     setSchemaTarget({})
+    setRowDecisions({})
+    setRowTarget({})
     setQuestionAnswers({})
     setLifecycle(idleLifecycle())
   }, [])
@@ -348,11 +385,17 @@ export function AITerminal() {
   // pre-resolve an AI-proposed parent title to an id, and to resolve a cross-page
   // proposal target BY ID (ticket-30). `pagesLoaded` gates target stamping: a
   // write-once stamp must never be taken against a still-in-flight list (it
-  // would mis-read a valid target as missing). Keyed separately from the
-  // sidebar's ['pages'] cache (different shape), but invalidated by the same key so a
-  // new page refreshes both.
+  // would mis-read a valid target as missing).
+  //
+  // MUST be keyed separately from the sidebar's ['pages', workspace] cache: that
+  // one is fed by `fetchPages`, a lean projection with NO `props`. This query is
+  // `listPages` — the full page shape *including* `props`, which #18's
+  // `collectionOptions` needs to read `_schema` (isCollection). Sharing the key
+  // let React Query serve the props-less shape here, silently emptying the
+  // collection picker. The extra key segment keeps them distinct while
+  // prefix-based `invalidateQueries(['pages'])` still refreshes both.
   const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
-    queryKey: ['pages', workspace],
+    queryKey: ['pages', workspace, 'full'],
     queryFn: async () => {
       const {
         data: { user },
@@ -390,6 +433,14 @@ export function AITerminal() {
   // Duplicate titles are disambiguated with their ancestor path (and type as a
   // tie-break) so "Woodworking" ×2 are tellable apart in the picker.
   const parentOptions: ParentOption[] = useMemo(() => toParentOptions(allPages), [allPages])
+
+  // The add_row destination picker (#18) offers ONLY collections — pages that
+  // carry a `_schema` — so a row can never be added to a page with no columns to
+  // coerce it against. Same duplicate-title disambiguation as parentOptions.
+  const collectionOptions: ParentOption[] = useMemo(
+    () => toParentOptions(allPages.filter((p) => isCollection(p.props))),
+    [allPages]
+  )
   // Resolve an AI-proposed parent title (or id) to a selectable option id.
   const resolveProposedParent = useCallback(
     (parentTitle?: string | null): string => {
@@ -593,6 +644,7 @@ export function AITerminal() {
       setChangeTargets(conversation.resolutions.targets ?? {})
       setCreateDecisions(conversation.resolutions.creates ?? {})
       setSchemaDecisions(conversation.resolutions.schemas ?? {})
+      setRowDecisions(conversation.resolutions.rows ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
       setQuestionAnswers(conversation.resolutions.questions ?? {})
@@ -674,9 +726,10 @@ export function AITerminal() {
         changeDecisions,
         createDecisions,
         initialMessageIds,
-        schemaDecisions
+        schemaDecisions,
+        rowDecisions
       ),
-    [messages, changeDecisions, createDecisions, initialMessageIds, schemaDecisions]
+    [messages, changeDecisions, createDecisions, initialMessageIds, schemaDecisions, rowDecisions]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
@@ -1097,6 +1150,38 @@ export function AITerminal() {
     [supabaseClient, queryClient, workspace]
   )
 
+  // ── add_row resolution (#18) ──────────────────────────────────────────────
+  // Accept: create a type='row' child page under the chosen collection, its values
+  // coerced against the collection's schema (addRowFromProposal), then invalidate
+  // ['pages'] so the collection reflects the new row. The user's chosen collection
+  // wins over the AI's proposed collectionId. A row is filtered out of the rail
+  // tree, so there's no ['page', id] seed to do here (unlike define_schema, which
+  // seeds the target's _schema so its inspector appears at once).
+  const acceptAddRow = useCallback(
+    async (toolCallId: string, part: AddRowPart['input'], selectedCollectionId: string) => {
+      const rowProps = part?.props ?? {}
+      if (!selectedCollectionId) return
+      setRowDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        await addRowFromProposal(
+          supabaseClient,
+          { collectionId: selectedCollectionId, title: part?.title, props: rowProps },
+          workspace
+        )
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      } catch (err) {
+        // Surface the failure by reverting the card to pending so the user can retry.
+        console.error('add_row failed', err)
+        setRowDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, workspace]
+  )
+
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
   // tool-call parts already in the latest assistant message ("reading Ceramics
@@ -1158,6 +1243,7 @@ export function AITerminal() {
           const defineSchemaParts = (message.parts as Array<{ type: string }>).filter(
             isDefineSchemaPart
           )
+          const addRowParts = (message.parts as Array<{ type: string }>).filter(isAddRowPart)
           // Ticket-39: branch-pause question cards + follow-up chips, both client-
           // resolved tool parts on the assistant message.
           const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
@@ -1323,6 +1409,38 @@ export function AITerminal() {
                     onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
                       setSchemaDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
+                  />
+                )
+              })}
+              {/* add_row proposal cards (#18): add a schema-bound row to an existing
+                  collection. Client-resolved; Accept creates the row and the
+                  decision rides the resolutions envelope so the card goes inert and
+                  the model stops re-proposing. */}
+              {addRowParts.map((part) => {
+                // Same streaming caveat as the other cards: a partially-parsed
+                // `props` map would render an incomplete preview.
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                if (!input?.collectionId) return null
+                const status = rowDecisions[part.toolCallId] ?? 'pending'
+                const selectedTargetId = rowTarget[part.toolCallId] ?? input.collectionId
+                return (
+                  <AddRowProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    title={input.title}
+                    props={input.props ?? {}}
+                    reason={input.reason}
+                    status={status}
+                    selectedTargetId={selectedTargetId}
+                    targetOptions={collectionOptions}
+                    onTargetChange={(id) =>
+                      setRowTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
+                    onReject={() =>
+                      setRowDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
                   />
                 )
