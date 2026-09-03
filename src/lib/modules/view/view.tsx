@@ -13,18 +13,27 @@
  *
  * Cells resolve each stored value against the collection `_schema`
  * (`optionForValue` for select/status chips — id-or-legacy-label tolerant, slice 1).
- * Filter/sort/group run through the pure `apply.ts`. Direct edits — a table cell or
- * a dragged board card — write OPTIMISTICALLY via `setValue`, bypassing the AI
- * (decision 17). Calendar/gallery (slice 4) fall back to the table with a quiet note.
+ * Filter/sort/group run through the pure `apply.ts`. Direct edits — a table cell, a
+ * dragged board/calendar card, a calendar date field — write OPTIMISTICALLY via
+ * `setValue`, bypassing the AI (decision 17). Calendar (agenda, drag + inline date
+ * reschedule) and gallery (read-only card grid) are slice 4.
  */
 
-import { useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import { useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { useCollectionRows } from './use-collection-rows'
-import { applyView, displayValue, groupRows, type CollectionRow } from './apply'
+import {
+  applyView,
+  displayValue,
+  groupRows,
+  groupRowsByDate,
+  pickDateDef,
+  type CollectionRow,
+} from './apply'
+import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import {
   coerceValue,
   optionForValue,
@@ -108,16 +117,8 @@ export function CollectionView({
     return <ViewNotice>This view needs a collection with properties.</ViewNotice>
   }
 
-  const isFuture = config.mode === 'calendar' || config.mode === 'gallery'
-
   return (
     <div className="text-sm text-press-ink">
-      {isFuture && (
-        <p className="mb-2 text-xs italic text-press-muted">
-          {config.mode.charAt(0).toUpperCase() + config.mode.slice(1)} view is coming soon — showing
-          as a table.
-        </p>
-      )}
       {config.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
@@ -126,6 +127,16 @@ export function CollectionView({
           editable={editable}
           onEdit={onEdit}
         />
+      ) : config.mode === 'calendar' ? (
+        <CollectionCalendar
+          schema={schema}
+          rows={processed}
+          groupBy={config.groupBy}
+          editable={editable}
+          onEdit={onEdit}
+        />
+      ) : config.mode === 'gallery' ? (
+        <CollectionGallery schema={schema} rows={processed} />
       ) : (
         <CollectionTable schema={schema} rows={processed} editable={editable} onEdit={onEdit} />
       )}
@@ -193,16 +204,9 @@ function CollectionTable({
 
 // ── Board ──────────────────────────────────────────────────────────────────────
 
-const DRAG_THRESHOLD = 4
-
-interface DragState {
-  rowId: string
-  x: number
-  y: number
-  dx: number
-  dy: number
-  active: boolean
-}
+// The DOM key for a null (unset) bucket — a stable sentinel shared by board columns
+// and calendar lanes so the drag hook can hit-test them uniformly.
+const NULL_BUCKET = '__none__'
 
 function CollectionBoard({
   schema,
@@ -218,82 +222,26 @@ function CollectionBoard({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
 }) {
   const grouped = useMemo(() => groupRows(rows, schema, groupBy), [rows, schema, groupBy])
+  const groupKey = (id: string | null) => id ?? NULL_BUCKET
 
-  // Drag lives entirely in refs (one event burst, no re-render between) — state only
-  // re-renders the lift visuals. Ported from the kanban view (finding F4).
-  const [drag, setDrag] = useState<DragState | null>(null)
-  const [overGroup, setOverGroup] = useState<string | null>(null)
-  const groupRefs = useRef(new Map<string, HTMLElement>())
-  const dragRef = useRef<DragState | null>(null)
-  const startRef = useRef<{ x: number; y: number } | null>(null)
-  const overGroupRef = useRef<string | null>(null)
+  // Card drag between columns (finding F4), now shared with the calendar via the
+  // hook. Dropping into a bucket writes that option id onto the group-by property;
+  // the "No <name>" bucket clears the value (null). A no-op drop into the same
+  // column is idempotent — the optimistic cache dedupes it.
+  const { drag, overKey, registerBucket, onCardPointerDown, containerHandlers } =
+    usePointerBucketDrag({
+      editable: !!editable,
+      onDrop: (rowId, key) => {
+        if (!grouped) return
+        const target = grouped.groups.find((g) => groupKey(g.id) === key)
+        if (target) onEdit?.(rowId, grouped.def.id, target.id)
+      },
+    })
 
   if (!grouped) {
     return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
   }
   const { def: groupDef, groups } = grouped
-
-  // The DOM key for a group column (null bucket → a stable sentinel).
-  const groupKey = (id: string | null) => id ?? '__none__'
-
-  function groupAt(x: number, y: number): string | null {
-    for (const [key, el] of groupRefs.current) {
-      const r = el.getBoundingClientRect()
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return key
-    }
-    return null
-  }
-
-  function onCardPointerDown(e: ReactPointerEvent, rowId: string) {
-    if (!editable) return
-    const rect = (
-      (e.currentTarget as HTMLElement).closest('li') as HTMLElement
-    ).getBoundingClientRect()
-    startRef.current = { x: e.clientX, y: e.clientY }
-    const next: DragState = {
-      rowId,
-      x: e.clientX,
-      y: e.clientY,
-      dx: e.clientX - rect.left,
-      dy: e.clientY - rect.top,
-      active: false,
-    }
-    dragRef.current = next
-    setDrag(next)
-  }
-
-  function onPointerMove(e: ReactPointerEvent) {
-    const d = dragRef.current
-    if (!d || !startRef.current) return
-    const moved =
-      Math.abs(e.clientX - startRef.current.x) + Math.abs(e.clientY - startRef.current.y)
-    const active = d.active || moved > DRAG_THRESHOLD
-    const next: DragState = { ...d, x: e.clientX, y: e.clientY, active }
-    dragRef.current = next
-    setDrag(next)
-    if (active) {
-      const over = groupAt(e.clientX, e.clientY)
-      overGroupRef.current = over
-      setOverGroup(over)
-    }
-  }
-
-  function onPointerUp() {
-    const d = dragRef.current
-    const overKey = overGroupRef.current
-    if (d?.active && overKey) {
-      const target = groups.find((g) => groupKey(g.id) === overKey)
-      // Dropping into a bucket writes that option id onto the group-by property; the
-      // "No <name>" bucket clears the value (null). Skip a no-op drop into the same
-      // column by letting setValue be idempotent — the optimistic cache dedupes it.
-      if (target) onEdit?.(d.rowId, groupDef.id, target.id)
-    }
-    dragRef.current = null
-    startRef.current = null
-    overGroupRef.current = null
-    setDrag(null)
-    setOverGroup(null)
-  }
 
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
   // The other select/status properties shown as context chips on each card.
@@ -302,22 +250,15 @@ function CollectionBoard({
   )
 
   return (
-    <div
-      onPointerMove={editable ? onPointerMove : undefined}
-      onPointerUp={editable ? onPointerUp : undefined}
-      onPointerLeave={editable && drag ? onPointerUp : undefined}
-    >
+    <div {...containerHandlers}>
       <div className="flex gap-4 overflow-x-auto pb-1">
         {groups.map((group) => {
           const key = groupKey(group.id)
-          const isOver = editable && drag?.active && overGroup === key
+          const isOver = editable && drag?.active && overKey === key
           return (
             <section
               key={key}
-              ref={(el) => {
-                if (el) groupRefs.current.set(key, el)
-                else groupRefs.current.delete(key)
-              }}
+              ref={registerBucket(key)}
               className={[
                 'min-w-[13rem] flex-1 rounded-md border px-3 py-2 transition-colors',
                 isOver
@@ -395,6 +336,197 @@ function CollectionBoard({
           <div className="font-medium text-press-ink">{draggingRow.title || 'Untitled'}</div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Calendar (agenda) ───────────────────────────────────────────────────────────
+
+/** Format a `YYYY-MM-DD` lane key as a human header ("Mon Sep 8"). Built from the
+ *  date parts at local midnight so the weekday never drifts a day by timezone. */
+function formatDateHeader(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return iso
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+/**
+ * Calendar view — a chronological agenda (decision: slice-4 grill). Rows sit under a
+ * header per date, earliest first, with a trailing "No date" lane. The date property
+ * is the one the view names in `groupBy` (reused field) if it's a date, else the
+ * first date property. Reschedule two ways: drag a card onto another lane (writes
+ * that lane's date; the "No date" lane clears it) OR edit the inline date field to
+ * reach any date. Both write optimistically via `onEdit`.
+ */
+function CollectionCalendar({
+  schema,
+  rows,
+  groupBy,
+  editable,
+  onEdit,
+}: {
+  schema: PropertySchema
+  rows: CollectionRow[]
+  groupBy?: string
+  editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+}) {
+  const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
+  const grouped = useMemo(
+    () => (dateDef ? groupRowsByDate(rows, schema, dateDef.id) : null),
+    [rows, schema, dateDef]
+  )
+  const laneKey = (iso: string | null) => iso ?? NULL_BUCKET
+
+  const { drag, overKey, registerBucket, onCardPointerDown, containerHandlers } =
+    usePointerBucketDrag({
+      editable: !!editable,
+      onDrop: (rowId, key) => {
+        if (!dateDef) return
+        onEdit?.(rowId, dateDef.id, key === NULL_BUCKET ? null : key)
+      },
+    })
+
+  if (!dateDef || !grouped) {
+    return <ViewNotice>This calendar needs a date property.</ViewNotice>
+  }
+  const { buckets } = grouped
+
+  const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
+  const chipDefs = schema.filter((d) => d.type === 'select' || d.type === 'status')
+
+  return (
+    <div {...containerHandlers}>
+      {buckets.length === 0 && <p className="py-2 text-press-faint">No rows yet</p>}
+      <div className="space-y-4">
+        {buckets.map((bucket) => {
+          const key = laneKey(bucket.iso)
+          const isOver = editable && drag?.active && overKey === key
+          return (
+            <section
+              key={key}
+              ref={registerBucket(key)}
+              className={[
+                'rounded-md border px-3 py-2 transition-colors',
+                isOver
+                  ? 'border-press-accent bg-press-accent-wash'
+                  : 'border-press-hair bg-press-card/40',
+              ].join(' ')}
+            >
+              <header className="mb-2 flex items-center justify-between gap-2">
+                <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
+                  {bucket.iso ? formatDateHeader(bucket.iso) : 'No date'}
+                </span>
+                <span className="text-[0.65rem] text-press-muted tabular-nums">
+                  {bucket.rows.length}
+                </span>
+              </header>
+
+              <ul className="space-y-2">
+                {bucket.rows.map((row) => {
+                  const isDragging = drag?.active && drag.rowId === row.id
+                  return (
+                    <li
+                      key={row.id}
+                      className={[
+                        'relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
+                        isDragging ? 'opacity-30' : '',
+                      ].join(' ')}
+                    >
+                      {editable && (
+                        <button
+                          type="button"
+                          aria-label={`Drag card: ${row.title || 'untitled'}`}
+                          onPointerDown={(e) => onCardPointerDown(e, row.id)}
+                          className="mt-0.5 cursor-grab touch-none leading-none text-press-muted/50 select-none hover:text-press-muted"
+                        >
+                          ⠿
+                        </button>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
+                        {chipDefs.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {chipDefs.map((def) => {
+                              const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
+                              if (!opt) return null
+                              return <OptionChip key={def.id} label={opt.label} color={opt.color} />
+                            })}
+                          </div>
+                        )}
+                        {editable && (
+                          <div className="mt-1.5">
+                            <Cell
+                              def={dateDef}
+                              value={coerceValue(dateDef, row.values[dateDef.id])}
+                              editable
+                              onChange={(v) => onEdit?.(row.id, dateDef.id, v)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          )
+        })}
+      </div>
+
+      {/* Floating clone that tracks the pointer — the lift. */}
+      {draggingRow && drag && (
+        <div
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-md border border-press-line bg-press-card px-2.5 py-2 shadow-lg motion-reduce:rotate-0"
+          style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
+          aria-hidden
+        >
+          <div className="font-medium text-press-ink">{draggingRow.title || 'Untitled'}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Gallery ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Gallery view — a read-only card grid. There is no image property type this cycle,
+ * so a card is the row's title over its resolved property values (select/status as
+ * chips, others as read text via the shared `Cell`). Editing stays in the table;
+ * gallery is a browse surface (slice-4 grill).
+ */
+function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
+  if (rows.length === 0) {
+    return <p className="py-2 text-press-faint">No rows yet</p>
+  }
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+      {rows.map((row) => (
+        <article
+          key={row.id}
+          className="rounded-md border border-press-line bg-press-card px-3 py-2.5 shadow-sm"
+        >
+          <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
+          <dl className="mt-2 space-y-1">
+            {schema.map((def) => (
+              <div key={def.id} className="flex items-baseline gap-2 text-xs">
+                <dt className="shrink-0 text-press-muted">{def.name}</dt>
+                <dd className="min-w-0 text-press-body">
+                  <Cell
+                    def={def}
+                    value={coerceValue(def, row.values[def.id])}
+                    editable={false}
+                    onChange={() => {}}
+                  />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+      ))}
     </div>
   )
 }

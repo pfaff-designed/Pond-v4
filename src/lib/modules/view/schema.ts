@@ -19,7 +19,7 @@ import type { ModuleDescriptor } from '../types'
  * `assemble.ts`, surfaced in `serialize`).
  */
 
-/** The four render modes (decision 13). table/board build first (slices 3), calendar/gallery next (slice 4). */
+/** The four render modes (decision 13). table/board landed in slice 3; calendar (agenda) + gallery in slice 4. */
 export const VIEW_MODES = ['table', 'board', 'calendar', 'gallery'] as const
 export const viewModeSchema = z.enum(VIEW_MODES)
 export type ViewMode = z.infer<typeof viewModeSchema>
