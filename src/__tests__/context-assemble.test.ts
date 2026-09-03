@@ -169,26 +169,17 @@ describe('formatNodeContext', () => {
     expect(out.toLowerCase()).toContain('area')
   })
 
-  it('includes a status when present', () => {
-    const out = formatNodeContext(
-      baseData({ type: 'project', title: 'Build a workbench', status: 'active' })
-    )
-    expect(out).toContain('Build a workbench')
-    expect(out).toContain('active')
-  })
-
-  it('lists direct children with their type and status', () => {
+  it('lists direct children with their type', () => {
     const out = formatNodeContext(
       baseData({
         children: [
-          { type: 'project', title: 'Build a workbench', status: 'active' },
-          { type: 'action', title: 'Buy chisel set', status: 'open' },
+          { type: 'project', title: 'Build a workbench' },
+          { type: 'action', title: 'Buy chisel set' },
         ],
       })
     )
     expect(out).toContain('Build a workbench')
     expect(out).toContain('Buy chisel set')
-    expect(out).toContain('open')
   })
 
   it('includes document content', () => {

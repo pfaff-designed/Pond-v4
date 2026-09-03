@@ -10,6 +10,7 @@
 
 import { fetchPages } from '@/lib/pages/tree'
 import { HOME_TYPE } from '@/lib/pages/home'
+import { ROW_TYPE } from '@/lib/properties/schema'
 
 const mockCreateClient = jest.fn()
 jest.mock('@/lib/supabase/client', () => ({
@@ -46,6 +47,13 @@ it('applies a .neq filter excluding the home type', async () => {
   mockCreateClient.mockReturnValue(client)
   await fetchPages()
   expect(client._neq).toHaveBeenCalledWith('type', HOME_TYPE)
+})
+
+it('applies a .neq filter excluding the row type (#18 — rows never enter the tree)', async () => {
+  const client = makeClient([])
+  mockCreateClient.mockReturnValue(client)
+  await fetchPages()
+  expect(client._neq).toHaveBeenCalledWith('type', ROW_TYPE)
 })
 
 it('returns [] when unauthenticated (no query)', async () => {

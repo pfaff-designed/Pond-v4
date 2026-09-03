@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
+import { aiPropertyDefSchema } from '@/lib/properties/schema'
 
 // The web_search tool (ticket-29) lives in ./web-search so this routing-schema
 // module — imported by lint tests and the eval in a jsdom environment — stays free
@@ -86,6 +87,95 @@ export const createPageTool = {
   description:
     'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether structural (a project, an area) or content (a recipe, a document). This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics. Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block.',
   inputSchema: createPageInput,
+} as const
+
+/**
+ * define_schema input schema (#17 slice 5). The model names an EXISTING page by
+ * id and proposes the ordered list of typed properties that turns it into a
+ * collection. `properties` reuses the AI-facing `aiPropertyDefSchema`, where each
+ * property/option `id` is OPTIONAL — the model never mints the stable ids a
+ * rename relies on; the client mints any missing id on accept (exactly like block
+ * ids in create_page).
+ */
+const defineSchemaInput = z.object({
+  pageId: z
+    .string()
+    .min(1)
+    .describe(
+      'The id of the EXISTING page to give a property schema to, taken verbatim from the [Workspace outline] in context. Never invent an id.'
+    ),
+  properties: z
+    .array(aiPropertyDefSchema)
+    .min(1)
+    .describe(
+      'The ordered typed properties (columns) for this collection — each a { name, type } with type one of text | number | date | select | status | checkbox | relation. Give a select/status property its `options` (each an { label }); do NOT supply ids (the client mints them on accept).'
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe('A short, optional note on what this schema is for (shown on the proposal card).'),
+})
+
+/**
+ * define_schema (#17) — turn an EXISTING page into a collection by giving it a
+ * typed property schema (the #18 primitive). Client-resolved (no execute): the
+ * tool call renders a proposal card, the user reviews the columns and can correct
+ * the target page, and only on accept does the client mint ids and write via the
+ * merge-safe `defineSchema` (existing row values are never clobbered). DISTINCT
+ * from propose_changes (which edits a page's content blocks) — this defines the
+ * page's property columns.
+ */
+export const defineSchemaTool = {
+  description:
+    'Give an EXISTING page a typed property SCHEMA — the set of columns (name + type) that turns it into a collection/database. Use this when the user asks to turn a page into a table/database/tracker, to add properties/columns/fields to a page, or to define what fields its items should have (e.g. "turn my reading list into a database with Status and Rating", "add a due-date and priority to this tracker"). Name the target page by its id from the [Workspace outline]; propose the ordered properties (each a name + one of the 7 types, with options for select/status). This is DISTINCT from propose_changes, which edits a page\'s content blocks — define_schema defines its property columns. Client-resolved (no execute): the user reviews a proposal card and can correct which page it applies to before anything is written; do NOT re-ask for confirmation. Do NOT invent property or option ids — the client mints them on accept. One schema per card.',
+  inputSchema: defineSchemaInput,
+} as const
+
+/**
+ * add_row input schema (#18). The model names an EXISTING collection page by id
+ * and proposes ONE new row (a schema-bound child page). Its `props` are keyed by
+ * property NAME — the model knows the human names it saw in the schema, never the
+ * stable property/option ids — and the accept path resolves each name to its id
+ * and coerces the value (unknown names dropped, #18 decision 9). DISTINCT from
+ * create_page, which mints an ordinary rail-visible sub-page: add_row mints a row.
+ */
+const addRowInput = z.object({
+  collectionId: z
+    .string()
+    .min(1)
+    .describe(
+      'The id of the EXISTING collection page (one that ALREADY has a property schema) to add a row to, taken verbatim from the [Workspace outline] in context. Never invent an id.'
+    ),
+  title: z
+    .string()
+    .optional()
+    .describe(
+      "The new row's title — its page title (e.g. the book name, the task, the person). Strongly preferred; omit only when the row genuinely has no natural name."
+    ),
+  props: z
+    .record(z.string(), z.unknown())
+    .describe(
+      'The row\'s property values, keyed by property NAME exactly as it appears in the collection\'s schema — e.g. { "Status": "Reading", "Rating": 5, "Finished on": "2026-01-04" }. Names not in the schema are ignored; omit a property to leave it empty. Use the human property NAMES, never ids. For a select/status value, use the option label.'
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe('A short, optional note on what this row is (shown on the proposal card).'),
+})
+
+/**
+ * add_row (#18) — add ONE row to an EXISTING collection (a page that already
+ * carries a property schema). Client-resolved (no execute): the tool call renders
+ * a proposal card, the user reviews the row + can correct which collection it goes
+ * into, and only on accept does the client create a `type='row'` child page with
+ * the values coerced against the collection's schema. This is the DISTINCT gesture
+ * for a row (#18 decisions 10 & 21) — use create_page for an ordinary sub-page so
+ * Pond never has to guess row-vs-subpage.
+ */
+export const addRowTool = {
+  description:
+    'Add ONE row (item/entry/record) to an EXISTING collection — a page that ALREADY has a property schema (columns). Use this when the user asks to add an item/entry/row/record to a database, tracker, or collection they already have (e.g. "add Dune to my reading list", "log today\'s workout", "add a task: mill the stock, priority high"). Name the target collection by its id from the [Workspace outline]; give the row a `title` and put its field values in `props` keyed by the schema\'s property NAMES. This is DISTINCT from create_page (which makes an ordinary standalone sub-page, not a schema-bound row) and from define_schema (which defines the columns). Only use add_row when the target already carries a schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card and can correct the target collection before anything is written; do NOT re-ask for confirmation. Use the human property names, never ids. One row per card.',
+  inputSchema: addRowInput,
 } as const
 
 export const proposeChangesTool = {

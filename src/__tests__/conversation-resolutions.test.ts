@@ -136,6 +136,115 @@ describe('applyResolutions', () => {
   })
 })
 
+describe('applyResolutions — define_schema cards (#17 slice 5)', () => {
+  function schemaTranscript(): UIMessage[] {
+    return [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'make my reading list a database' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-define_schema',
+            toolCallId: 'ds1',
+            state: 'input-available',
+            input: {
+              pageId: 'page-reading',
+              properties: [{ name: 'Status', type: 'status' }],
+            },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an accepted define_schema as a tool result so the model stops re-proposing', () => {
+    const out = applyResolutions(schemaTranscript(), {
+      ...emptyResolutions(),
+      schemas: { ds1: 'accepted' },
+    })
+    const part = findPart(out, 'ds1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'accepted' })
+    expect((part.output as { note: string }).note).toMatch(/do not propose it again/i)
+  })
+
+  it('stamps a rejected define_schema with a dismissal note', () => {
+    const out = applyResolutions(schemaTranscript(), {
+      ...emptyResolutions(),
+      schemas: { ds1: 'rejected' },
+    })
+    const part = findPart(out, 'ds1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'rejected' })
+    expect((part.output as { note: string }).note).toMatch(/dismissed/i)
+  })
+
+  it('leaves an undecided define_schema card untouched (still dropped from replay)', () => {
+    const out = applyResolutions(schemaTranscript(), emptyResolutions())
+    expect(findPart(out, 'ds1').state).toBe('input-available')
+  })
+})
+
+describe('applyResolutions — add_row cards (#18)', () => {
+  function rowTranscript(): UIMessage[] {
+    return [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'add Dune to my reading list' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-add_row',
+            toolCallId: 'ar1',
+            state: 'input-available',
+            input: {
+              collectionId: 'coll-reading',
+              title: 'Dune',
+              props: { Author: 'Frank Herbert' },
+            },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an accepted add_row as a tool result so the model stops re-proposing', () => {
+    const out = applyResolutions(rowTranscript(), {
+      ...emptyResolutions(),
+      rows: { ar1: 'accepted' },
+    })
+    const part = findPart(out, 'ar1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'accepted' })
+    expect((part.output as { note: string }).note).toMatch(/do not propose it again/i)
+  })
+
+  it('stamps a rejected add_row with a dismissal note', () => {
+    const out = applyResolutions(rowTranscript(), {
+      ...emptyResolutions(),
+      rows: { ar1: 'rejected' },
+    })
+    const part = findPart(out, 'ar1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'rejected' })
+    expect((part.output as { note: string }).note).toMatch(/dismissed/i)
+  })
+
+  it('leaves an undecided add_row card untouched (still dropped from replay)', () => {
+    const out = applyResolutions(rowTranscript(), emptyResolutions())
+    expect(findPart(out, 'ar1').state).toBe('input-available')
+  })
+})
+
 describe('applyResolutions — question cards (ticket-39)', () => {
   function questionTranscript(): UIMessage[] {
     return [
@@ -178,7 +287,9 @@ describe('applyResolutions — question cards (ticket-39)', () => {
     })
     const model = await toModelMessages(answered)
     expect(model.some((m) => m.role === 'tool')).toBe(true)
-    const unanswered = await toModelMessages(applyResolutions(questionTranscript(), emptyResolutions()))
+    const unanswered = await toModelMessages(
+      applyResolutions(questionTranscript(), emptyResolutions())
+    )
     expect(unanswered.some((m) => m.role === 'tool')).toBe(false)
   })
 })
@@ -213,6 +324,8 @@ describe('parseResolutions', () => {
     const value: ConversationResolutions = {
       changes: { 'pc1:0': 'accepted' },
       creates: { cp1: 'rejected' },
+      schemas: { ds1: 'accepted' }, // #17 slice 5: define_schema decisions
+      rows: { ar1: 'accepted' }, // #18: add_row decisions
       skipped: { pc1: 2 },
       targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: question-card answers ride the same envelope
@@ -241,6 +354,8 @@ describe('parseResolutions', () => {
     expect(parsed).toEqual({
       changes: { a: 'accepted' },
       creates: {},
+      schemas: {}, // #17 slice 5: present-but-empty on a row with no schema cards
+      rows: {}, // #18: present-but-empty on a row with no add_row cards
       skipped: { x: 1 },
       targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: present-but-empty on a row with no question cards

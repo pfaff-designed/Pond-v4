@@ -25,8 +25,18 @@ import type { CreatePageBlock } from '@/lib/modules/ai-composition'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
-import { createPage } from '@/lib/pages/client'
+import { createPage, getPage, defineSchema } from '@/lib/pages/client'
 import { resolveParentId } from '@/lib/nodes/create'
+import {
+  propertyDefSchema,
+  readSchema,
+  coerceValue,
+  ROW_TYPE,
+  type AiPropertyDef,
+  type PropertyDef,
+  type PropertySchema,
+  type PropertyValue,
+} from '@/lib/properties/schema'
 
 /**
  * Hydrate a full proposed block array in order — minting block-level and nested ids
@@ -111,6 +121,163 @@ export async function createPageFromProposal(
     title: proposal.title,
     blocks,
     props,
+    workspace,
+  })
+  return { id: page.id }
+}
+
+// ── define_schema accept path (#17 slice 5) ─────────────────────────────────
+//
+// A `define_schema` tool call is client-resolved (no execute), exactly like
+// create_page: the model proposes turning an EXISTING page into a collection by
+// giving it a property schema (id-less, since the model never mints stable ids),
+// the user reviews it on a proposal card, and ONLY on accept do we write. This
+// mirror owns that write:
+//
+//   1. hydratePropertySchema — mint any missing property AND option ids for the
+//      id-less schema the AI emits, re-validating each def against the strict
+//      `propertyDefSchema` so a malformed property is skipped, never written
+//      (the same gate hydrateProposalBlocks applies to blocks).
+//   2. defineSchemaFromProposal — confirm the target page exists, then persist
+//      through the merge-safe `defineSchema` client fn (which uses `withSchema`,
+//      so existing row values alongside the schema are never clobbered).
+
+/**
+ * Hydrate an id-less AI property schema into a persistable {@link PropertySchema}:
+ * mint an id for every property and every option that lacks one (the AI never
+ * mints ids — a rename must never orphan the rows pointing at an option), then
+ * validate each def against `propertyDefSchema`. A malformed def is skipped, not
+ * written (mirrors block hydration); property order is preserved. The `mintId`
+ * closure is injected so the client supplies `crypto.randomUUID` and tests a
+ * deterministic counter.
+ */
+export function hydratePropertySchema(defs: AiPropertyDef[], mintId: () => string): PropertySchema {
+  const out: PropertyDef[] = []
+  for (const raw of defs) {
+    const candidate = {
+      ...raw,
+      id: raw.id ?? mintId(),
+      ...(raw.options ? { options: raw.options.map((o) => ({ ...o, id: o.id ?? mintId() })) } : {}),
+    }
+    const parsed = propertyDefSchema.safeParse(candidate)
+    if (parsed.success) out.push(parsed.data)
+  }
+  return out
+}
+
+/** A define_schema proposal after the user has (optionally) corrected its target. */
+export interface DefineSchemaProposal {
+  /** The page the schema is applied to — makes it a collection (#18). */
+  pageId: string
+  /** The id-less property schema the AI proposed. */
+  schema: AiPropertyDef[]
+}
+
+/**
+ * Write an accepted define_schema proposal. Confirms the target page exists
+ * (throws otherwise, so the card can revert rather than silently no-op), hydrates
+ * the schema (minting property/option ids), and merges it in via the merge-safe
+ * `defineSchema` — every existing row value alongside the schema is preserved.
+ * Returns the hydrated schema so the caller can seed its page cache optimistically.
+ */
+export async function defineSchemaFromProposal(
+  supabase: SupabaseClient<Database>,
+  proposal: DefineSchemaProposal,
+  mintId: () => string
+): Promise<PropertySchema> {
+  const page = await getPage(supabase, proposal.pageId)
+  if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
+  const schema = hydratePropertySchema(proposal.schema, mintId)
+  await defineSchema(supabase, proposal.pageId, schema)
+  return schema
+}
+
+// ── add_row accept path (#18) ────────────────────────────────────────────────
+//
+// An `add_row` tool call is client-resolved (no execute), exactly like
+// define_schema: the model proposes ONE new row for an EXISTING collection — its
+// values keyed by property NAME (the model never mints the stable property/option
+// ids) — the user reviews it on a proposal card, and ONLY on accept do we write.
+// This mirror owns that write:
+//
+//   1. resolveRowValues — map each proposed { name: value } onto the collection's
+//      schema: match the property by name (case-insensitive), coerce the value to
+//      its type (coerceValue — lenient, a bad value collapses to empty), and key
+//      it by the property's stable id. Names not in the schema are dropped.
+//   2. addRowFromProposal — confirm the target exists AND is a collection, then
+//      create a `type='row'` child page carrying the resolved value map as its
+//      props (NEVER a _schema — a row is not itself a collection).
+
+/**
+ * Resolve an AI-proposed name→value map into a persistable { propertyId: value }
+ * row-value map, against a collection's schema. Matches each proposed key to a
+ * property by name (case-insensitive, first def wins on a duplicate name) and
+ * coerces the value to that property's type. Unknown names are dropped and bad
+ * values collapse to empty — conversational authoring must never hard-fail
+ * (#18 decision 9). The result carries values only, never the reserved _schema.
+ */
+export function resolveRowValues(
+  schema: PropertySchema,
+  proposed: Record<string, unknown>
+): Record<string, PropertyValue> {
+  const byName = new Map<string, PropertyDef>()
+  for (const def of schema) {
+    const key = def.name.trim().toLowerCase()
+    if (!byName.has(key)) byName.set(key, def)
+  }
+  const values: Record<string, PropertyValue> = {}
+  for (const [name, raw] of Object.entries(proposed)) {
+    const def = byName.get(name.trim().toLowerCase())
+    if (!def) continue // property name not in the schema — dropped (lenient)
+    values[def.id] = coerceValue(def, raw)
+  }
+  return values
+}
+
+/** An add_row proposal after the user has (optionally) corrected its target. */
+export interface AddRowProposal {
+  /** The collection the row is added to (a page carrying a `_schema`). */
+  collectionId: string
+  /** The new row's title (its page title). */
+  title?: string
+  /** The proposed values, keyed by property NAME (resolved to ids on accept). */
+  props: Record<string, unknown>
+}
+
+/**
+ * Write an accepted add_row proposal. Confirms the target page exists AND is a
+ * collection (throws otherwise, so the card can revert rather than silently
+ * no-op), resolves the proposed name→value map against the collection's schema,
+ * and creates a `type='row'` child page carrying those coerced values. The row's
+ * props hold ONLY values — never a `_schema` (a row is not itself a collection).
+ */
+export async function addRowFromProposal(
+  supabase: SupabaseClient<Database>,
+  proposal: AddRowProposal,
+  workspace: WorkspaceScope = 'main'
+): Promise<CreatedPage> {
+  const collection = await getPage(supabase, proposal.collectionId)
+  if (!collection) {
+    throw new Error(`Cannot add a row: collection ${proposal.collectionId} was not found`)
+  }
+  const schema = readSchema(collection.props)
+  if (!schema) {
+    throw new Error(
+      `Cannot add a row: page ${proposal.collectionId} is not a collection (it has no schema)`
+    )
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const values = resolveRowValues(schema, proposal.props)
+  const page = await createPage(supabase, user.id, {
+    parentId: proposal.collectionId,
+    type: ROW_TYPE,
+    title: proposal.title ?? '',
+    props: values,
     workspace,
   })
   return { id: page.id }

@@ -6,8 +6,11 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 // A page's type tag in the unified page tree. 'page' is the generic default;
 // the others are carried over from the pre-unification node kinds. 'home' is the
 // reserved Life home page (ticket-44) — one per user, top-level, never a rail
-// child and never counted; it holds the Life root's own blocks.
-export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page' | 'home'
+// child and never counted; it holds the Life root's own blocks. 'row' (#18) is a
+// schema-bound child of a collection — a real, openable page that is filtered out
+// of the ['pages'] tree (rail / overview) and surfaced only through a collection's
+// views (#19).
+export type NodeType = 'area' | 'routine' | 'project' | 'action' | 'page' | 'home' | 'row'
 
 // The workspace scope discriminator (ticket-43). 'main' is the real workspace;
 // 'sandbox' is the isolated orchestrator/user testing scope.
