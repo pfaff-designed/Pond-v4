@@ -99,3 +99,29 @@ export const Rejected: Story = {
     await expect(canvas.getByText('Dismissed')).toBeInTheDocument()
   },
 }
+
+/**
+ * A rollup previews its DEFINITION by name — "sum of Amount via Purchases" (#20) —
+ * next to its `rollup` type chip; a `count` needs no rolled property.
+ */
+export const WithRollup: Story = {
+  args: {
+    properties: [
+      { name: 'Purchases', type: 'relation', target: 'Purchases' },
+      {
+        name: 'Total spent',
+        type: 'rollup',
+        relation: 'Purchases',
+        rollupProperty: 'Amount',
+        aggregate: 'sum',
+      },
+      { name: 'Order count', type: 'rollup', relation: 'Purchases', aggregate: 'count' },
+    ] as AiPropertyDef[],
+    reason: 'Roll each order up onto the customer.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('sum of Amount via Purchases')).toBeInTheDocument()
+    await expect(canvas.getByText('count via Purchases')).toBeInTheDocument()
+  },
+}

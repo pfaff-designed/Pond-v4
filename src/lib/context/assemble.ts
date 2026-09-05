@@ -117,13 +117,23 @@ const TYPE_LABEL: Record<NodeType, string> = {
  * Render a collection's schema as one compact line (#19 slice 5) — the property
  * NAMES + types the model must use to name a group-by / sort / filter (and to
  * author add_row/define_schema by name). Select/status props list their option
- * labels so the model can name a filter value. Returns '' for an empty schema.
+ * labels so the model can name a filter value. A `rollup` serializes its DEFINITION
+ * — aggregate + the relation it rolls over (by name) — never a computed value (#20
+ * D9): rollups are never stored, so the server has no value to embed without a
+ * cross-collection row fetch. Returns '' for an empty schema.
  *
- *   Properties: Status (status: To do | Doing | Done) · Due (date) · Notes (text)
+ *   Properties: Status (status: To do | Doing | Done) · Due (date) · Total (rollup: sum via Purchases)
  */
 export function formatSchemaLine(schema: PropertySchema): string {
   if (schema.length === 0) return ''
   const cols = schema.map((def) => {
+    if (def.type === 'rollup') {
+      // Resolve the relation by id within THIS schema (its sibling) → name; the
+      // rolled property lives on the target collection (out of scope here).
+      const rel = schema.find((d) => d.id === def.relationId)
+      const via = rel ? ` via ${rel.name}` : ''
+      return `${def.name} (rollup: ${def.aggregate ?? 'rollup'}${via})`
+    }
     const opts =
       (def.type === 'select' || def.type === 'status') && def.options?.length
         ? `: ${def.options.map((o) => o.label).join(' | ')}`

@@ -214,6 +214,30 @@ describe('formatSchemaLine', () => {
     expect(formatSchemaLine(schema)).toBe('Properties: Status (status: To do | Doing)')
   })
 
+  it('serializes a rollup by its definition (aggregate + relation name), never a value (#20 D9)', () => {
+    const schema: PropertySchema = [
+      { id: 'p-shelf', name: 'Purchases', type: 'relation', target: 'col-purch' },
+      {
+        id: 'p-total',
+        name: 'Total',
+        type: 'rollup',
+        relationId: 'p-shelf',
+        rollupProperty: 'p-amount',
+        aggregate: 'sum',
+      },
+    ]
+    expect(formatSchemaLine(schema)).toBe(
+      'Properties: Purchases (relation) · Total (rollup: sum via Purchases)'
+    )
+  })
+
+  it('leaves the "via" off a rollup whose relation does not resolve', () => {
+    const schema: PropertySchema = [
+      { id: 'p-count', name: 'Count', type: 'rollup', aggregate: 'count' },
+    ]
+    expect(formatSchemaLine(schema)).toBe('Properties: Count (rollup: count)')
+  })
+
   it('returns an empty string for an empty schema', () => {
     expect(formatSchemaLine([])).toBe('')
   })

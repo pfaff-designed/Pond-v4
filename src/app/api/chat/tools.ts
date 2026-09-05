@@ -109,7 +109,7 @@ const defineSchemaInput = z.object({
     .array(aiPropertyDefSchema)
     .min(1)
     .describe(
-      'The ordered typed properties (columns) for this collection — each a { name, type } with type one of text | number | date | select | status | checkbox | relation. Give a select/status property its `options` (each an { label }); a `relation` property may name an optional `target` collection by its NAME (omit for a link to any page) — never a row id. Do NOT supply ids (the client mints them on accept).'
+      "The ordered typed properties (columns) for this collection — each a { name, type } with type one of text | number | date | select | status | checkbox | relation | rollup. Give a select/status property its `options` (each an { label }); a `relation` property may name an optional `target` collection by its NAME (omit for a link to any page) — never a row id. A `rollup` derives a value by aggregating over a relation: set `relation` to the NAME of a relation property in THIS same schema, `aggregate` to one of count | sum | average | min | max, and — for every aggregate except count — `rollupProperty` to the NAME of a property on the relation's TARGET collection (sum/average need a number; min/max a number or date). A rollup can NOT aggregate another rollup. Do NOT supply ids (the client mints them on accept)."
     ),
   reason: z
     .string()
@@ -128,7 +128,7 @@ const defineSchemaInput = z.object({
  */
 export const defineSchemaTool = {
   description:
-    'Give an EXISTING page a typed property SCHEMA — the set of columns (name + type) that turns it into a collection/database. Use this when the user asks to turn a page into a table/database/tracker, to add properties/columns/fields to a page, or to define what fields its items should have (e.g. "turn my reading list into a database with Status and Rating", "add a due-date and priority to this tracker"). Name the target page by its id from the [Workspace outline]; propose the ordered properties (each a name + one of the 7 types, with options for select/status). This is DISTINCT from propose_changes, which edits a page\'s content blocks — define_schema defines its property columns. Client-resolved (no execute): the user reviews a proposal card and can correct which page it applies to before anything is written; do NOT re-ask for confirmation. Do NOT invent property or option ids — the client mints them on accept. One schema per card.',
+    'Give an EXISTING page a typed property SCHEMA — the set of columns (name + type) that turns it into a collection/database. Use this when the user asks to turn a page into a table/database/tracker, to add properties/columns/fields to a page, or to define what fields its items should have (e.g. "turn my reading list into a database with Status and Rating", "add a due-date and priority to this tracker"). Name the target page by its id from the [Workspace outline]; propose the ordered properties (each a name + one of the 8 types, with options for select/status, and — for a rollup — a relation name + aggregate + rolled property). This is DISTINCT from propose_changes, which edits a page\'s content blocks — define_schema defines its property columns. Client-resolved (no execute): the user reviews a proposal card and can correct which page it applies to before anything is written; do NOT re-ask for confirmation. Do NOT invent property or option ids — the client mints them on accept. One schema per card.',
   inputSchema: defineSchemaInput,
 } as const
 
