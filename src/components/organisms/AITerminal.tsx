@@ -393,6 +393,13 @@ export function AITerminal() {
   // pageId until the user overrides it.
   const [promotionDecisions, setPromotionDecisions] = useState<Record<string, ProposalStatus>>({})
   const [promotionTarget, setPromotionTarget] = useState<Record<string, string>>({})
+  // A promote_table card previews columns READ from the host page's live table —
+  // but accepting REPLACES that table with a view, so the live preview then reads
+  // as null. Freeze the preview at accept time (keyed by toolCallId) so the resolved
+  // card still shows its "Table converted" confirmation instead of vanishing.
+  const [promotionSnapshot, setPromotionSnapshot] = useState<
+    Record<string, { columns: PromotedColumn[]; rowCount: number; tableTitle?: string }>
+  >({})
 
   // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
   // no-execute caveat as the proposal maps: the SDK part stays input-available,
@@ -457,6 +464,7 @@ export function AITerminal() {
     setRowTarget({})
     setPromotionDecisions({})
     setPromotionTarget({})
+    setPromotionSnapshot({})
     setViewDecisions({})
     setViewTarget({})
     setQuestionAnswers({})
@@ -1315,11 +1323,19 @@ export function AITerminal() {
   // proposed pageId; when they switch pages, blockId is dropped so the sole table
   // on the new page is used. Never re-asks confirmation (client-resolved).
   const acceptPromoteTable = useCallback(
-    async (toolCallId: string, part: PromoteTablePart['input'], selectedTargetId: string) => {
+    async (
+      toolCallId: string,
+      part: PromoteTablePart['input'],
+      selectedTargetId: string,
+      preview: { columns: PromotedColumn[]; rowCount: number; tableTitle?: string }
+    ) => {
       if (!selectedTargetId) return
       // The proposed blockId only applies to the AI's proposed page — if the user
       // switched pages, promote that page's sole table instead.
       const blockId = selectedTargetId === part?.pageId ? part?.blockId : undefined
+      // Freeze the preview BEFORE the write drops the live table, so the resolved
+      // card keeps showing its columns + "Table converted" line.
+      setPromotionSnapshot((prev) => ({ ...prev, [toolCallId]: preview }))
       setPromotionDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         await promoteTableFromProposal(
@@ -1666,12 +1682,16 @@ export function AITerminal() {
                 // Preview from the SELECTED page's table (the AI's proposed block id
                 // only applies to its proposed page).
                 const targetPage = allPages.find((p) => p.id === selectedTargetId)
-                const preview = tablePromotionPreview(
+                const livePreview = tablePromotionPreview(
                   targetPage,
                   selectedTargetId === input.pageId ? input.blockId : undefined
                 )
-                // No resolvable table yet (page loading, or a stale/hallucinated id):
-                // hold the card back rather than show an empty conversion.
+                // Accepting replaces the table with a view, so the live preview then
+                // reads null — fall back to the snapshot frozen at accept time so the
+                // resolved card keeps its columns + "Table converted" line.
+                const preview = livePreview ?? promotionSnapshot[part.toolCallId]
+                // No resolvable table AND no snapshot (still loading, or a stale/
+                // hallucinated id): hold the card back rather than show an empty one.
                 if (!preview) return null
                 return (
                   <PromoteTableProposalCard
@@ -1687,7 +1707,9 @@ export function AITerminal() {
                     onTargetChange={(id) =>
                       setPromotionTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
                     }
-                    onAccept={() => acceptPromoteTable(part.toolCallId, input, selectedTargetId)}
+                    onAccept={() =>
+                      acceptPromoteTable(part.toolCallId, input, selectedTargetId, preview)
+                    }
                     onReject={() =>
                       setPromotionDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
