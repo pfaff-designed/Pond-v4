@@ -7,14 +7,18 @@
  * off-schema value from ever blanking or crashing a view.
  */
 import {
+  addDays,
   applyView,
   displayValue,
+  epochDay,
   filterRows,
   groupRows,
   groupRowsByDate,
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
+  pixelsToDays,
+  shiftBar,
   sortRows,
   type CollectionRow,
 } from './apply'
@@ -345,6 +349,119 @@ describe('layoutGanttBars', () => {
     expect(layout.bars).toEqual([])
     expect(layout.rangeStart).toBeNull()
     expect(layout.rangeEnd).toBeNull()
+  })
+})
+
+// ── Gantt reschedule (drag) ────────────────────────────────────────────────
+
+describe('pixelsToDays', () => {
+  it('maps a full-track pixel travel to the whole span', () => {
+    // Dragging the entire track width across a 10-day span = 10 days.
+    expect(pixelsToDays(200, 200, 10)).toBe(10)
+  })
+
+  it('maps a fraction of the track proportionally, rounded to whole days', () => {
+    // 50% of a 200px track over a 10-day span = 5 days.
+    expect(pixelsToDays(100, 200, 10)).toBe(5)
+    // 57% over 10 days = 5.7 → rounds to 6.
+    expect(pixelsToDays(114, 200, 10)).toBe(6)
+  })
+
+  it('carries the sign for a leftward (negative) drag', () => {
+    expect(pixelsToDays(-60, 200, 10)).toBe(-3)
+  })
+
+  it('rounds sub-day travel to zero (a click is not a reschedule)', () => {
+    expect(pixelsToDays(6, 200, 10)).toBe(0)
+  })
+
+  it('returns zero when the track has no measurable width', () => {
+    expect(pixelsToDays(100, 0, 10)).toBe(0)
+  })
+})
+
+describe('shiftBar', () => {
+  const span = { startIso: '2026-09-10', endIso: '2026-09-12', hasEndDef: true }
+  const milestone = { startIso: '2026-09-20', endIso: null, hasEndDef: true }
+  const singleDate = { startIso: '2026-09-10', endIso: null, hasEndDef: false }
+
+  describe('move', () => {
+    it('shifts both start and end by the delta, preserving duration', () => {
+      expect(shiftBar(span, 'move', 2)).toEqual({ startIso: '2026-09-12', endIso: '2026-09-14' })
+      expect(shiftBar(span, 'move', -3)).toEqual({ startIso: '2026-09-07', endIso: '2026-09-09' })
+    })
+
+    it('shifts only the start of a milestone — moving never creates an end', () => {
+      expect(shiftBar(milestone, 'move', 5)).toEqual({ startIso: '2026-09-25' })
+    })
+
+    it('shifts only the start when there is no end property', () => {
+      expect(shiftBar(singleDate, 'move', 5)).toEqual({ startIso: '2026-09-15' })
+    })
+
+    it('is a no-op for a zero delta', () => {
+      expect(shiftBar(span, 'move', 0)).toEqual({})
+    })
+  })
+
+  describe('resize-start', () => {
+    it('moves the start alone', () => {
+      expect(shiftBar(span, 'resize-start', 1)).toEqual({ startIso: '2026-09-11' })
+    })
+
+    it('clamps the start so it cannot cross the end (min one-day span)', () => {
+      // +5 would land on 09-15, past the 09-12 end → pinned to the end day.
+      expect(shiftBar(span, 'resize-start', 5)).toEqual({ startIso: '2026-09-12' })
+    })
+
+    it('is a no-op for a zero delta', () => {
+      expect(shiftBar(span, 'resize-start', 0)).toEqual({})
+    })
+  })
+
+  describe('resize-end', () => {
+    it('moves the end alone', () => {
+      expect(shiftBar(span, 'resize-end', 2)).toEqual({ endIso: '2026-09-14' })
+    })
+
+    it('clamps the end so it cannot precede the start (min one-day span)', () => {
+      // -5 would land on 09-07, before the 09-10 start → pinned to the start day.
+      expect(shiftBar(span, 'resize-end', -5)).toEqual({ endIso: '2026-09-10' })
+    })
+
+    it('creates an end on a milestone, turning a tick into a span', () => {
+      expect(shiftBar(milestone, 'resize-end', 2)).toEqual({ endIso: '2026-09-22' })
+    })
+
+    it('is disabled when there is no end property to store into', () => {
+      expect(shiftBar(singleDate, 'resize-end', 2)).toEqual({})
+    })
+
+    it('is a no-op for a zero delta', () => {
+      expect(shiftBar(span, 'resize-end', 0)).toEqual({})
+    })
+  })
+})
+
+describe('epochDay / addDays', () => {
+  it('increments by exactly one per calendar day, timezone-stable', () => {
+    expect(epochDay('2026-09-11') - epochDay('2026-09-10')).toBe(1)
+    expect(epochDay('2026-09-10')).toBe(Math.floor(Date.UTC(2026, 8, 10) / 86_400_000))
+  })
+
+  it('yields 0 for a malformed day rather than NaN', () => {
+    expect(epochDay('not-a-date')).toBe(0)
+  })
+
+  it('addDays moves forward and backward, crossing month and year boundaries', () => {
+    expect(addDays('2026-09-10', 5)).toBe('2026-09-15')
+    expect(addDays('2026-09-10', -3)).toBe('2026-09-07')
+    expect(addDays('2026-09-30', 1)).toBe('2026-10-01')
+    expect(addDays('2026-01-01', -1)).toBe('2025-12-31')
+  })
+
+  it('addDays returns a malformed input unchanged', () => {
+    expect(addDays('not-a-date', 3)).toBe('not-a-date')
   })
 })
 

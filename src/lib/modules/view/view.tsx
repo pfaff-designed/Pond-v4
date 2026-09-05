@@ -19,23 +19,27 @@
  * reschedule) and gallery (read-only card grid) are slice 4.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { useCollectionRows } from './use-collection-rows'
 import {
+  addDays,
   applyView,
   displayValue,
+  epochDay,
   groupRows,
   groupRowsByDate,
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
+  type BarDates,
   type CollectionRow,
 } from './apply'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
+import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import {
   coerceValue,
   optionForValue,
@@ -145,6 +149,8 @@ export function CollectionView({
           rows={processed}
           startId={config.startDate}
           endId={config.endDate}
+          editable={editable}
+          onEdit={onEdit}
         />
       ) : (
         <CollectionTable schema={schema} rows={processed} editable={editable} onEdit={onEdit} />
@@ -542,49 +548,90 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
 
 // ── Gantt (read-only timeline) ────────────────────────────────────────────────
 
-/** Parse a `YYYY-MM-DD` day to a UTC epoch-day integer (timezone-stable, DST-proof). */
-function epochDay(iso: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!m) return 0
-  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000)
-}
-
 /** A short "Sep 8" tick label for a gridline, built at UTC noon so it never drifts. */
 function formatTick(iso: string): string {
   const d = new Date(`${iso}T12:00:00Z`)
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
-/** Add `n` days to a `YYYY-MM-DD` day, returning a `YYYY-MM-DD` day. */
-function addDays(iso: string, n: number): string {
-  return new Date((epochDay(iso) + n) * 86_400_000).toISOString().slice(0, 10)
-}
+/** The bar rectangle's shared look — the editable wrapper and the read-only bar draw
+ *  the same shape (position + fill), differing only in what they carry (grab zones vs
+ *  an aria label). Kept in one place so the two never drift. */
+const GANTT_BAR_SHELL = 'absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-press-accent/80'
+
+/** Below this RENDERED bar width (px) the edge handles are suppressed and the bar is
+ *  move-only (spec): there isn't room to grab a 6px edge without it swallowing the body. */
+const NARROW_BAR_PX = 18
 
 /**
- * Gantt view (#27) — a read-only timeline. Each row is one bar spanning its Start→End
- * date over a single adaptive axis (min start … max end), sorted by start. A row with
- * a Start but no End is a single-day tick; a row with no Start is omitted. Weekly
- * gridlines mark the axis. The date properties are the ones the view names in
- * `startDate`/`endDate`, else the collection's 1st/2nd date property (pickGanttDefs).
- * No date property at all → a calm notice, like the calendar. Reschedule (drag) is a
- * post-epic fast-follow — bars are inert here.
+ * Gantt view (#27) — a timeline. Each row is one bar spanning its Start→End date over
+ * a single adaptive axis (min start … max end), sorted by start. A row with a Start but
+ * no End is a single-day tick; a row with no Start is omitted. Weekly gridlines mark the
+ * axis. The date properties are the ones the view names in `startDate`/`endDate`, else
+ * the collection's 1st/2nd date property (pickGanttDefs). No date property at all → a
+ * calm notice, like the calendar.
+ *
+ * When `editable`, bars reschedule by drag (`usePointerGanttDrag`): the body MOVES the
+ * bar (start+end together), the right edge resizes the End (and CREATES one on a tick,
+ * turning a milestone into a span), and the left edge resizes the Start (real spans
+ * only — a single-day tick offers move + extend, not shrink). Writes go straight to the
+ * optimistic `onEdit`, bypassing the AI (decision 17), exactly like the calendar. With
+ * no End property the collection is move-only (nowhere to store an end). Drag previews
+ * locally and commits on drop, so the axis holds steady mid-gesture and reflows after.
  */
 function CollectionGantt({
   schema,
   rows,
   startId,
   endId,
+  editable,
+  onEdit,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
   startId?: string
   endId?: string
+  editable?: boolean
+  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
 }) {
   const defs = useMemo(() => pickGanttDefs(schema, startId, endId), [schema, startId, endId])
   const layout = useMemo(
     () => (defs ? layoutGanttBars(rows, defs.startDef, defs.endDef) : null),
     [rows, defs]
   )
+
+  // The frozen span for the px→day ratio. Computed with a safe fallback so the hook
+  // (which must run unconditionally, before the notice guards) always has a value.
+  const totalDays =
+    layout?.rangeStart && layout?.rangeEnd
+      ? Math.max(1, epochDay(layout.rangeEnd) - epochDay(layout.rangeStart) + 1)
+      : 1
+
+  const { drag, onBarPointerDown, containerHandlers } = usePointerGanttDrag({
+    editable: !!editable,
+    totalDays,
+    onCommit: (rowId, shift) => {
+      if (!defs) return
+      if (shift.startIso !== undefined) onEdit?.(rowId, defs.startDef.id, shift.startIso)
+      if (shift.endIso !== undefined && defs.endDef) onEdit?.(rowId, defs.endDef.id, shift.endIso)
+    },
+  })
+
+  // Live pixel width of a track lane — every row shares the same flex-1 track, so we
+  // measure the first and reuse it. A callback ref wires a ResizeObserver as the node
+  // mounts (and re-wires if the first row's identity changes), which lets the render
+  // decide the narrow-bar rule (edges suppressed under NARROW_BAR_PX) against the
+  // ACTUAL rendered width — not just the day count. 0 until measured → edges show.
+  const [trackPx, setTrackPx] = useState(0)
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const measureTrack = useCallback((el: HTMLSpanElement | null) => {
+    observerRef.current?.disconnect()
+    if (!el) return
+    setTrackPx(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver(() => setTrackPx(el.getBoundingClientRect().width))
+    ro.observe(el)
+    observerRef.current = ro
+  }, [])
 
   if (!defs) {
     return <ViewNotice>This gantt needs a date property.</ViewNotice>
@@ -593,10 +640,9 @@ function CollectionGantt({
     return <p className="py-2 text-press-faint">No dated rows to chart</p>
   }
 
-  const { bars, rangeStart, rangeEnd } = layout
+  const { bars, rangeStart } = layout
+  const { endDef } = defs
   const startDay = epochDay(rangeStart)
-  // Inclusive span, and never zero (a single all-same-day chart still divides cleanly).
-  const totalDays = Math.max(1, epochDay(rangeEnd) - startDay + 1)
   const pct = (day: number) => ((day - startDay) / totalDays) * 100
 
   // Weekly gridlines from the first day through the range end (Mon-agnostic — just
@@ -608,8 +654,8 @@ function CollectionGantt({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[28rem]">
+    <div className="overflow-x-auto" {...containerHandlers}>
+      <div className={`min-w-[28rem] ${drag?.active ? 'cursor-grabbing select-none' : ''}`}>
         {/* Axis header — weekly tick labels aligned to their gridlines. */}
         <div className="relative mb-1 ml-40 h-4">
           {ticks.map((t) => (
@@ -625,18 +671,40 @@ function CollectionGantt({
 
         {/* One row per bar: a fixed label column + a proportional track. */}
         <ul role="list" className="space-y-1.5">
-          {bars.map(({ row, startIso, endIso }) => {
-            const left = pct(epochDay(startIso))
+          {bars.map(({ row, startIso, endIso }, i) => {
+            const dragging = drag?.active && drag.rowId === row.id
+            const showStart = dragging ? drag.startIso : startIso
+            const showEnd = dragging ? drag.endIso : endIso
+            const left = pct(epochDay(showStart))
             // +1 so an inclusive single-day span still has visible width.
-            const width = ((epochDay(endIso) - epochDay(startIso) + 1) / totalDays) * 100
-            const single = startIso === endIso
-            const span = single ? startIso : `${startIso} – ${endIso}`
+            const width = ((epochDay(showEnd) - epochDay(showStart) + 1) / totalDays) * 100
+            const span = showStart === showEnd ? showStart : `${showStart} – ${showEnd}`
+            const isTick = startIso === endIso // a milestone / single-day / no-end row
+            // Rendered bar width in px (from the measured track). Under the threshold the
+            // bar is too small to carry grabbable edges, so it's move-only (spec). Until
+            // the track is measured (trackPx 0) edges show — the common, wide case.
+            const narrow = trackPx > 0 && (width / 100) * trackPx < NARROW_BAR_PX
+
+            // The row's stored dates for the drag math: endIso is null unless the row
+            // actually holds an End on/after its Start (a milestone reads as a tick).
+            const rawEnd = endDef ? coerceValue(endDef, row.values[endDef.id]) : null
+            const rawEndDay = typeof rawEnd === 'string' && rawEnd ? rawEnd.slice(0, 10) : null
+            const dates: BarDates = {
+              startIso,
+              endIso: rawEndDay && rawEndDay >= startIso ? rawEndDay : null,
+              hasEndDef: !!endDef,
+            }
+
             return (
               <li key={row.id} className="flex items-center gap-3">
                 <span className="w-40 shrink-0 truncate text-xs font-medium text-press-ink">
                   {row.title || 'Untitled'}
                 </span>
-                <span className="relative h-5 flex-1">
+                <span
+                  data-gantt-track
+                  ref={i === 0 ? measureTrack : undefined}
+                  className="relative h-5 flex-1"
+                >
                   {/* Weekly gridlines behind the bar. */}
                   {ticks.map((t) => (
                     <span
@@ -646,12 +714,45 @@ function CollectionGantt({
                       style={{ left: `${t.left}%` }}
                     />
                   ))}
-                  <span
-                    role="img"
-                    aria-label={`${row.title || 'Untitled'}: ${span}`}
-                    className="absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-press-accent/80"
-                    style={{ left: `${left}%`, width: `${width}%` }}
-                  />
+                  {editable ? (
+                    <span
+                      className={GANTT_BAR_SHELL}
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                    >
+                      {/* Body — drag to MOVE the whole bar. */}
+                      <button
+                        type="button"
+                        aria-label={`Reschedule ${row.title || 'Untitled'}: ${span}`}
+                        onPointerDown={(e) => onBarPointerDown(e, row.id, 'move', dates)}
+                        className="absolute inset-0 h-full w-full cursor-grab touch-none rounded-sm"
+                      />
+                      {/* Left edge — resize the Start (real spans only; hidden when too narrow to grab). */}
+                      {endDef && !isTick && !narrow && (
+                        <button
+                          type="button"
+                          aria-label={`Move start of ${row.title || 'Untitled'}`}
+                          onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-start', dates)}
+                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-sm bg-press-accent"
+                        />
+                      )}
+                      {/* Right edge — resize the End (creates one on a tick → span; hidden when too narrow). */}
+                      {endDef && !narrow && (
+                        <button
+                          type="button"
+                          aria-label={`Move end of ${row.title || 'Untitled'}`}
+                          onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-end', dates)}
+                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-sm bg-press-accent"
+                        />
+                      )}
+                    </span>
+                  ) : (
+                    <span
+                      role="img"
+                      aria-label={`${row.title || 'Untitled'}: ${span}`}
+                      className={GANTT_BAR_SHELL}
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                    />
+                  )}
                 </span>
               </li>
             )

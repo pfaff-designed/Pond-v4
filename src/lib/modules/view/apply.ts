@@ -379,6 +379,105 @@ export function layoutGanttBars(
   return { bars, rangeStart, rangeEnd }
 }
 
+// ── Gantt reschedule (drag) ───────────────────────────────────────────────────
+
+/**
+ * Convert a horizontal pointer travel (px) into a signed whole-day delta over a
+ * gantt's frozen axis. The track spans `totalDays` across `trackWidthPx` pixels, so
+ * one day is `trackWidthPx / totalDays` px; the delta rounds to the nearest whole
+ * day (sub-day travel — a click — rounds to 0). A zero/absent track width yields 0
+ * rather than dividing by zero, so an un-measured track never throws or jumps.
+ */
+export function pixelsToDays(deltaPx: number, trackWidthPx: number, totalDays: number): number {
+  if (trackWidthPx <= 0) return 0
+  return Math.round((deltaPx / trackWidthPx) * totalDays)
+}
+
+/**
+ * Parse a `YYYY-MM-DD` day to a UTC epoch-day integer (timezone-stable, DST-proof) —
+ * the shared unit the renderer positions bars/gridlines by and `addDays` counts in. A
+ * malformed value yields 0 (the Unix epoch) rather than NaN, so a bad date degrades
+ * rather than poisoning arithmetic.
+ */
+export function epochDay(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return 0
+  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000)
+}
+
+/** Add `n` days to a `YYYY-MM-DD` day (UTC-stable, DST-proof), returning `YYYY-MM-DD`.
+ *  A malformed input is returned unchanged. */
+export function addDays(iso: string, n: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return iso
+  return new Date((epochDay(iso) + n) * 86_400_000).toISOString().slice(0, 10)
+}
+
+/** Which part of a gantt bar a drag manipulates. */
+export type ShiftMode = 'move' | 'resize-start' | 'resize-end'
+
+/**
+ * A bar's dates as the row actually stores them: `endIso` is null when the row has no
+ * End value (a milestone), distinct from a genuine single-day span. `hasEndDef` is
+ * whether an End *property* exists at all — false for a single-date collection, where
+ * there is nowhere to store an end and resize is therefore inert.
+ */
+export interface BarDates {
+  startIso: string
+  endIso: string | null
+  hasEndDef: boolean
+}
+
+/** The dates a shift changed — only the fields that actually moved (empty = no-op). */
+export interface BarShift {
+  startIso?: string
+  endIso?: string
+}
+
+/**
+ * Apply a whole-day `dayDelta` to a bar per the drag `mode`, returning only the date
+ * fields that changed (so the caller writes exactly those). Rules (spec):
+ *   - move: shift start and end together (duration preserved); a milestone or a
+ *     single-date row shifts start ONLY — moving never creates an end.
+ *   - resize-start: move start alone, clamped so it can't cross the end (min 1-day).
+ *   - resize-end: move end alone, clamped so it can't precede the start; on a
+ *     milestone this CREATES an end (tick → span); inert when no end property exists.
+ * A field is returned only when it differs from the stored value, so a zero delta —
+ * or a clamp that pins a value where it already sits — is a clean no-op.
+ */
+export function shiftBar(dates: BarDates, mode: ShiftMode, dayDelta: number): BarShift {
+  const { startIso, endIso, hasEndDef } = dates
+  const out: BarShift = {}
+
+  if (mode === 'move') {
+    const nextStart = addDays(startIso, dayDelta)
+    if (nextStart !== startIso) out.startIso = nextStart
+    // Only a row with a stored end shifts its end; milestones/single-date stay ticks.
+    if (endIso !== null) {
+      const nextEnd = addDays(endIso, dayDelta)
+      if (nextEnd !== endIso) out.endIso = nextEnd
+    }
+    return out
+  }
+
+  if (mode === 'resize-start') {
+    // Start can't pass the end; a milestone clamps against its own single day.
+    const boundary = endIso ?? startIso
+    let nextStart = addDays(startIso, dayDelta)
+    if (nextStart > boundary) nextStart = boundary
+    if (nextStart !== startIso) out.startIso = nextStart
+    return out
+  }
+
+  // resize-end
+  if (!hasEndDef) return out // nowhere to store an end → inert
+  const base = endIso ?? startIso // a milestone extends from its own day
+  let nextEnd = addDays(base, dayDelta)
+  if (nextEnd < startIso) nextEnd = startIso // end can't precede start
+  if (nextEnd !== base) out.endIso = nextEnd
+  return out
+}
+
 /** The display string for a value in a cell/chip — the read-side of `comparable`,
  *  but preserving original case (comparable lowercases for ordering). Empty → ''. */
 export function displayValue(def: PropertyDef, raw: unknown): string {

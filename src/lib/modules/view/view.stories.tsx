@@ -111,16 +111,18 @@ const ganttRows: CollectionRow[] = [
 function StatefulView({
   config,
   initialRows,
+  schema: hostSchema = schema,
 }: {
   config: ViewBlock
   initialRows?: CollectionRow[]
+  schema?: PropertySchema
 }) {
   const [data, setData] = useState<CollectionRow[]>(initialRows ?? rows)
   const onEdit = (rowId: string, key: string, value: PropertyValue) =>
     setData((prev) =>
       prev.map((r) => (r.id === rowId ? { ...r, values: { ...r.values, [key]: value } } : r))
     )
-  return <CollectionView config={config} schema={schema} rows={data} editable onEdit={onEdit} />
+  return <CollectionView config={config} schema={hostSchema} rows={data} editable onEdit={onEdit} />
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
@@ -378,6 +380,39 @@ export const GanttReadOnly: Story = {
     ])
     // The start-less row is omitted from the timeline entirely.
     await expect(canvas.queryByText('Someday idea')).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * Editable gantt: bars become draggable reschedule affordances. Every drawn bar gets a
+ * body (move) button; real spans additionally get left (start) + right (end) edge
+ * handles, while a single-day tick (Glaze day) gets the right edge only — move + extend,
+ * never a shrink. The actual pixel drag is proven by live /verify (jsdom has no layout,
+ * so the px→day math is a no-op here); this story guards the affordance shape.
+ */
+export const GanttReschedule: Story = {
+  args: { config: ganttConfig, schema: ganttSchema, rows: ganttRows },
+  render: (args) => (
+    <StatefulView config={args.config} schema={args.schema ?? undefined} initialRows={args.rows} />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Every drawn bar exposes a move (reschedule) button; the start-less row stays omitted.
+    expect(canvas.getByRole('button', { name: /Reschedule Wedge & throw/ })).toBeInTheDocument()
+    expect(canvas.getByRole('button', { name: /Reschedule Bisque fire/ })).toBeInTheDocument()
+    expect(canvas.getByRole('button', { name: /Reschedule Glaze day/ })).toBeInTheDocument()
+    await expect(canvas.queryByText('Someday idea')).not.toBeInTheDocument()
+
+    // Real spans resize from both edges; the single-day tick offers the end edge only.
+    expect(canvas.getByRole('button', { name: 'Move start of Wedge & throw' })).toBeInTheDocument()
+    expect(canvas.getByRole('button', { name: 'Move end of Wedge & throw' })).toBeInTheDocument()
+    expect(
+      canvas.queryByRole('button', { name: 'Move start of Glaze day' })
+    ).not.toBeInTheDocument()
+    expect(canvas.getByRole('button', { name: 'Move end of Glaze day' })).toBeInTheDocument()
+
+    // Editable bars are interactive buttons, not the read-only img treatment.
+    expect(canvas.queryAllByRole('img')).toHaveLength(0)
   },
 }
 
