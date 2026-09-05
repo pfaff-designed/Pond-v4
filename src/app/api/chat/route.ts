@@ -16,6 +16,7 @@ import {
   createPageTool,
   defineSchemaTool,
   addRowTool,
+  promoteTableTool,
   configureViewTool,
   proposeChangesTool,
   fetchContextTool,
@@ -187,6 +188,12 @@ export async function POST(req: Request) {
       // the user's Accept/Reject rides the resolutions envelope, exactly like
       // define_schema. Distinct from create_page (ordinary sub-page).
       add_row: tool(addRowTool),
+      // promote_table (#29): CONVERT an existing freeform table block into a
+      // collection (infer schema from columns, rows→pages, table block→view).
+      // Client-resolved (no execute) — the tool call renders a proposal card and
+      // the user's Accept/Reject rides the resolutions envelope, exactly like
+      // add_row. Distinct from define_schema, which gives an empty page columns.
+      promote_table: tool(promoteTableTool),
       // configure_view (#19 slice 5): SELECT a layout (table/board/calendar/gallery)
       // for an existing collection's rows, optionally grouped/sorted/filtered.
       // Client-resolved (no execute) — the tool call renders a proposal card and the

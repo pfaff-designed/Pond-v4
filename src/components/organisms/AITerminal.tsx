@@ -30,6 +30,7 @@ import {
   addRowFromProposal,
 } from '@/lib/pages/create-page'
 import { configureViewFromProposal } from '@/lib/pages/configure-view'
+import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -69,6 +70,10 @@ import {
 } from '@/components/molecules/CreatePageProposalCard'
 import { DefineSchemaProposalCard } from '@/components/molecules/DefineSchemaProposalCard'
 import { AddRowProposalCard } from '@/components/molecules/AddRowProposalCard'
+import {
+  PromoteTableProposalCard,
+  type PromotedColumn,
+} from '@/components/molecules/PromoteTableProposalCard'
 import { ConfigureViewProposalCard } from '@/components/molecules/ConfigureViewProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
@@ -76,6 +81,7 @@ import {
   unresolvedProposalIds,
   DEFINE_SCHEMA_TYPE,
   ADD_ROW_TYPE,
+  PROMOTE_TABLE_TYPE,
   CONFIGURE_VIEW_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
@@ -231,6 +237,49 @@ function isConfigureViewPart(part: { type: string }): part is ConfigureViewPart 
   return part.type === CONFIGURE_VIEW_TYPE
 }
 
+/** A promote_table tool part — a proposal to convert an EXISTING freeform `table`
+ *  block on a page into a schema-bound collection (#29). Client-resolved (no
+ *  execute); the card below drives accept/reject + which page it applies to. The
+ *  model names only the page + block by id — the terminal reads that table to
+ *  preview the inferred columns. */
+interface PromoteTablePart {
+  type: typeof PROMOTE_TABLE_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    pageId?: string
+    blockId?: string
+    reason?: string
+  }
+}
+
+function isPromoteTablePart(part: { type: string }): part is PromoteTablePart {
+  return part.type === PROMOTE_TABLE_TYPE
+}
+
+/** Preview what a promote_table would produce, read from the host page's blocks:
+ *  the named `table` block (or the page's sole table when unnamed) reduced to its
+ *  inferred columns + row count + caption. Null when the page/table isn't resolved
+ *  yet (still loading, or the id doesn't match), so the card is held back until it
+ *  has a real preview to show. Mirrors the inference the accept path runs. */
+function tablePromotionPreview(
+  page: { blocks: Block[] } | undefined,
+  blockId: string | undefined
+): { columns: PromotedColumn[]; rowCount: number; tableTitle?: string } | null {
+  if (!page) return null
+  const tables = (page.blocks ?? []).filter((b) => (b as { type?: string }).type === 'table')
+  const table =
+    (blockId ? tables.find((b) => (b as { id?: string }).id === blockId) : undefined) ??
+    (tables.length === 1 ? tables[0] : undefined)
+  if (!table) return null
+  const t = table as unknown as { title?: string; columns: string[]; rows: { cells: string[] }[] }
+  const columns: PromotedColumn[] = t.columns.map((name, col) => ({
+    name,
+    type: inferColumnType(t.rows.map((r) => r.cells[col] ?? '')),
+  }))
+  return { columns, rowCount: t.rows.length, tableTitle: t.title }
+}
+
 /** An ask_question tool part — a branch-pause question card (ticket-39). Client-
  *  resolved (no execute); the QuestionCard below drives the answer, which rides
  *  the resolutions envelope. */
@@ -337,6 +386,14 @@ export function AITerminal() {
   const [viewDecisions, setViewDecisions] = useState<Record<string, ProposalStatus>>({})
   const [viewTarget, setViewTarget] = useState<Record<string, string>>({})
 
+  // promote_table decisions + the user-chosen target page, keyed by toolCallId
+  // (#29). Same no-execute caveat as the other proposal maps: the local maps (not
+  // the SDK part) drive each card's resolved state and picked page. `undefined` in
+  // the target map means "not yet touched" — the card falls back to the AI-proposed
+  // pageId until the user overrides it.
+  const [promotionDecisions, setPromotionDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [promotionTarget, setPromotionTarget] = useState<Record<string, string>>({})
+
   // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
   // no-execute caveat as the proposal maps: the SDK part stays input-available,
   // so this local map drives the card's answered/inert state and rides the
@@ -365,6 +422,7 @@ export function AITerminal() {
       creates: settled(createDecisions),
       schemas: settled(schemaDecisions),
       rows: settled(rowDecisions),
+      promotions: settled(promotionDecisions),
       views: settled(viewDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
@@ -378,6 +436,7 @@ export function AITerminal() {
     createDecisions,
     schemaDecisions,
     rowDecisions,
+    promotionDecisions,
     viewDecisions,
     changeSkipped,
     changeTargets,
@@ -396,6 +455,8 @@ export function AITerminal() {
     setSchemaTarget({})
     setRowDecisions({})
     setRowTarget({})
+    setPromotionDecisions({})
+    setPromotionTarget({})
     setViewDecisions({})
     setViewTarget({})
     setQuestionAnswers({})
@@ -479,6 +540,17 @@ export function AITerminal() {
   // coerce it against. Same duplicate-title disambiguation as parentOptions.
   const collectionOptions: ParentOption[] = useMemo(
     () => toParentOptions(allPages.filter((p) => isCollection(p.props))),
+    [allPages]
+  )
+  // The promote_table destination picker (#29) offers ONLY pages that host at
+  // least one freeform `table` block — the only pages there is a table to convert.
+  const tableHostOptions: ParentOption[] = useMemo(
+    () =>
+      toParentOptions(
+        allPages.filter((p) =>
+          (p.blocks ?? []).some((b) => (b as { type?: string }).type === 'table')
+        )
+      ),
     [allPages]
   )
   // Resolve an AI-proposed parent title (or id) to a selectable option id.
@@ -685,6 +757,7 @@ export function AITerminal() {
       setCreateDecisions(conversation.resolutions.creates ?? {})
       setSchemaDecisions(conversation.resolutions.schemas ?? {})
       setRowDecisions(conversation.resolutions.rows ?? {})
+      setPromotionDecisions(conversation.resolutions.promotions ?? {})
       setViewDecisions(conversation.resolutions.views ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
@@ -769,7 +842,8 @@ export function AITerminal() {
         initialMessageIds,
         schemaDecisions,
         rowDecisions,
-        viewDecisions
+        viewDecisions,
+        promotionDecisions
       ),
     [
       messages,
@@ -779,6 +853,7 @@ export function AITerminal() {
       schemaDecisions,
       rowDecisions,
       viewDecisions,
+      promotionDecisions,
     ]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
@@ -1232,6 +1307,42 @@ export function AITerminal() {
     [supabaseClient, queryClient, workspace]
   )
 
+  // ── promote_table resolution (#29) ────────────────────────────────────────
+  // Accept: convert the freeform table block on the chosen page into a collection
+  // (promoteTableFromProposal — infer schema, rows→row pages, table block→view),
+  // then invalidate ['pages'] AND the target's ['page', id] so the rail count and
+  // the now-collection page re-render. The user's chosen page wins over the AI's
+  // proposed pageId; when they switch pages, blockId is dropped so the sole table
+  // on the new page is used. Never re-asks confirmation (client-resolved).
+  const acceptPromoteTable = useCallback(
+    async (toolCallId: string, part: PromoteTablePart['input'], selectedTargetId: string) => {
+      if (!selectedTargetId) return
+      // The proposed blockId only applies to the AI's proposed page — if the user
+      // switched pages, promote that page's sole table instead.
+      const blockId = selectedTargetId === part?.pageId ? part?.blockId : undefined
+      setPromotionDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        await promoteTableFromProposal(
+          supabaseClient,
+          { pageId: selectedTargetId, blockId },
+          () => crypto.randomUUID(),
+          workspace
+        )
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
+      } catch (err) {
+        // Surface the failure by reverting the card to pending so the user can retry.
+        console.error('promote_table failed', err)
+        setPromotionDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, workspace]
+  )
+
   // ── configure_view resolution (#19 slice 5) ───────────────────────────────
   // Accept: resolve the proposed name-keyed config against the chosen collection's
   // schema and upsert THE view block on it (configureViewFromProposal), then
@@ -1334,6 +1445,9 @@ export function AITerminal() {
             isDefineSchemaPart
           )
           const addRowParts = (message.parts as Array<{ type: string }>).filter(isAddRowPart)
+          const promoteTableParts = (message.parts as Array<{ type: string }>).filter(
+            isPromoteTablePart
+          )
           const configureViewParts = (message.parts as Array<{ type: string }>).filter(
             isConfigureViewPart
           )
@@ -1534,6 +1648,48 @@ export function AITerminal() {
                     onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
                       setRowDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
+                  />
+                )
+              })}
+              {/* promote_table proposal cards (#29): CONVERT an existing freeform
+                  table block into a collection. Client-resolved; the preview columns
+                  are inferred from the host page's table (read here, mirroring the
+                  accept path). Accept writes and the decision rides the resolutions
+                  envelope so the card goes inert and the model stops re-proposing. */}
+              {promoteTableParts.map((part) => {
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                if (!input?.pageId) return null
+                const status = promotionDecisions[part.toolCallId] ?? 'pending'
+                const selectedTargetId = promotionTarget[part.toolCallId] ?? input.pageId
+                // Preview from the SELECTED page's table (the AI's proposed block id
+                // only applies to its proposed page).
+                const targetPage = allPages.find((p) => p.id === selectedTargetId)
+                const preview = tablePromotionPreview(
+                  targetPage,
+                  selectedTargetId === input.pageId ? input.blockId : undefined
+                )
+                // No resolvable table yet (page loading, or a stale/hallucinated id):
+                // hold the card back rather than show an empty conversion.
+                if (!preview) return null
+                return (
+                  <PromoteTableProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    tableTitle={preview.tableTitle}
+                    columns={preview.columns}
+                    rowCount={preview.rowCount}
+                    reason={input.reason}
+                    status={status}
+                    selectedTargetId={selectedTargetId}
+                    targetOptions={tableHostOptions}
+                    onTargetChange={(id) =>
+                      setPromotionTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptPromoteTable(part.toolCallId, input, selectedTargetId)}
+                    onReject={() =>
+                      setPromotionDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
                   />
                 )

@@ -180,6 +180,52 @@ export const addRowTool = {
 } as const
 
 /**
+ * promote_table input schema (#29). The model names an EXISTING page and the
+ * freeform `table` block on it to convert into a schema-bound collection. It
+ * references both by id (from the [Workspace outline] and the page's blocks in
+ * context) — it invents nothing: the client reads the table, infers a property
+ * schema from its columns, and carries the rows across. `blockId` is optional so a
+ * page with a single table can be promoted without the model echoing the id.
+ */
+const promoteTableInput = z.object({
+  pageId: z
+    .string()
+    .min(1)
+    .describe(
+      'The id of the page that HOSTS the freeform table block, taken verbatim from the [Workspace outline] in context. Never invent an id.'
+    ),
+  blockId: z
+    .string()
+    .optional()
+    .describe(
+      "The id of the `table` block to convert, taken from that page's blocks in context. Omit ONLY when the page has exactly one table block. Never invent an id."
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe(
+      'A short, optional note on what this collection is for (shown on the proposal card).'
+    ),
+})
+
+/**
+ * promote_table (#29) — CONVERT an existing freeform `table` block into a
+ * collection: infer a typed property schema from its columns, turn each row into a
+ * schema-bound `type='row'` child page, and replace the table block with a
+ * table-mode view. Client-resolved (no execute): the tool call renders a proposal
+ * card, the user reviews the inferred columns + can correct which page it applies
+ * to, and only on accept does the client write. DISTINCT from define_schema (which
+ * gives an EMPTY page columns) — promote_table carries an existing filled table's
+ * rows across; and from add_row/configure_view, which act on collections that
+ * already have a schema.
+ */
+export const promoteTableTool = {
+  description:
+    'Convert an EXISTING freeform `table` block on a page into a database/collection. Use this when the user asks to turn a table they already have into a database/collection/tracker (e.g. "make this table a database", "turn this table into a collection", "promote this table", "convert this table to a tracker"). The table must ALREADY be on the page as a `table` block — this is DISTINCT from define_schema, which gives an empty page columns; promote_table carries the existing table\'s ROWS across, inferring a column\'s type from its cells (all-numeric → number, all-ISO-date → date, else text), turning each row into a schema-bound row page, and replacing the table block with a table-mode view. Name the host page by its id from the [Workspace outline] and the `table` block by its id from that page\'s blocks in context (omit the block id only when the page has exactly one table). Client-resolved (no execute): the user reviews a proposal card and can correct the target page before anything is written; do NOT re-ask for confirmation. One table per card.',
+  inputSchema: promoteTableInput,
+} as const
+
+/**
  * configure_view input schema (#19 slice 5). The model names an EXISTING collection
  * page by id and SELECTS which of the four existing renderers draws its rows, plus
  * an optional single-clause group-by / sort / filter. Every property reference is a
