@@ -21,28 +21,24 @@
   full cache carries `props`, and a relation target IS a collection (spec decision 1). Lenient:
   unmatched → untargeted. Tests in `src/__tests__/define-schema-from-proposal.test.ts`
   (`collectionNameResolver` describe); UI-mock updated in `define-schema-flow-ui.test.tsx`.
-- **Full suite: jest 1042 / 74 suites green.** tsc + eslint clean (pre-commit enforced).
+- **Slice 3 (`4911435`)** — atom `RelationChip` (`src/components/atoms/RelationChip.tsx` + story).
+  Present link → `<button>` (title, `onOpen(id)`); `missing` → faded inert `<span>`. In slice 4 it
+  gained an optional remove `×` (title-open + × are sibling buttons in a container span — no nesting).
+- **Slice 4 (`7390c31`)** — molecule `RelationValue` (`src/components/molecules/RelationValue.tsx` +
+  story) + pure `addLink`/`removeLink` (`src/lib/modules/view/relation-value-ops.ts`, jest-tested).
+  Presentational (`value`/`titles`/`candidates`/`single`/`editable`/`onChange`/`onOpen`); bespoke
+  picker (raw useState/refs/role, not shadcn) filters candidates, excludes already-linked, `single`
+  replaces-on-select. Picker is filter+click+Escape (NO arrow-key nav yet) and an inline absolute
+  panel (not portaled — may clip in a table cell; revisit if slice-6 live-verify shows it).
+- **Slice 5 (`4ac0884`)** — hook `useRelationTitles(ids, targetId?)` → `{ titles, candidates }`
+  (`src/lib/modules/view/use-relation-titles.ts` + `.test.tsx`). Targeted → `['rows', targetId]`
+  (titles + candidates); untargeted → per-id `['page', id]` titles + global `['pages',ws,'full']`
+  list (minus rows) as candidates. Partial map; off-target/unresolved omitted. No `isLoading` flag —
+  during load an unresolved id briefly shows as missing (accepted per leniency; add a flag in slice 6
+  if the flash is bad in live-verify).
+- **Full suite: jest 1055 / 77 suites green.** tsc + eslint clean (pre-commit enforced).
 
 ## Remaining slices (TDD, commit each green: tsc · eslint · jest · stories)
-
-**3 — atom `RelationChip`** — `src/components/atoms/RelationChip.tsx` + story. One chip: page title,
-clickable → open page (`onOpen(id)`); `missing` variant faded. Mirror `QuoteChip`/`CsvAttachmentPill`
-(atoms) + Press aesthetic. Seam = story play (renders title; click fires; missing faded).
-
-**4 — molecule `RelationValue`** — `src/components/molecules/RelationValue.tsx` + story. **Presentational**
-(injected `candidates: {id,title}[]`, `titles: Map<id,title>`, `value: string[]`, `single`, `editable`,
-`onChange`). Renders `RelationChip`s + a **bespoke** picker (mirror `SlashMenu`'s from-scratch pattern —
-raw useState/refs/`role`, NOT a shadcn wrapper): title-filter the candidates, click adds; `single` →
-replace-on-select; chip `×` removes; emit new `string[]`. Missing ids (not in `titles`) → missing chip.
-Story exercises add / remove / single-replace / missing. A thin **connected wrapper** (see slice 6) does
-the fetching. Pure list ops (add/remove/single-replace) can be a tiny tested helper.
-
-**5 — hook `useRelationTitles`** — `src/lib/modules/view/use-relation-titles.ts` + `.test.tsx`
-(`renderHook` + `QueryClientProvider`; precedent `src/__tests__/use-cross-page-metric.test.tsx`).
-`useRelationTitles(ids, targetId?) → Map<id,title>`: targeted reuses `['rows', targetId]` (shape via
-`getCollectionRows` → `PondPage[]`), else per-id `['page', id]`/`getPage`. Partial map; unresolved omitted
-(caller renders missing). Also provides the picker's `candidates` (target collection rows) — connected
-wrapper composes this + `RelationValue`.
 
 **6 — wire the two surfaces.** Replace inert relation render with the connected `RelationValue`:
 
