@@ -19,6 +19,7 @@
 
 import { cn } from '@/lib/utils'
 import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { RelationValueField } from '@/components/organisms/RelationValueField'
 import {
   coerceValue,
   type PropertyDef,
@@ -149,25 +150,17 @@ function PropertyField({
         </select>
       )
 
-    case 'relation': {
-      // Defined but not yet authorable (#20): show current links as inert chips.
-      const ids = Array.isArray(value) ? value : []
+    case 'relation':
+      // The page's own relation property: chips + scoped picker (#20 slice 6).
+      // Writes the fresh id array back through the inspector's (key, value) onChange.
       return (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {ids.map((id) => (
-            <span
-              key={id}
-              className="rounded-sm border border-press-line px-1.5 py-0.5 font-mono text-[0.7rem] text-press-muted"
-            >
-              {id}
-            </span>
-          ))}
-          <span className="font-serif text-xs italic text-press-faint">
-            {ids.length === 0 ? 'No links' : ''} · editable in a later pass
-          </span>
-        </div>
+        <RelationValueField
+          def={def}
+          value={value}
+          editable={editable}
+          onChange={(next) => onChange(def.id, next)}
+        />
       )
-    }
 
     case 'text':
     default:
