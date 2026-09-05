@@ -158,14 +158,41 @@ export async function createPageFromProposal(
  * resolves a group-by name. An unresolvable name (or no resolver) drops the target:
  * the relation stays untargeted (an unscoped "link any page"), never a hard fail.
  * `target` is relation-only — it never rides on another property type.
+ *
+ * `resolveTargetProperty` (#20 rollups) resolves a rollup's rolled property. A rollup
+ * names two things by NAME: its relation sibling (`relation`) and the property to
+ * aggregate on that relation's TARGET collection (`rollupProperty`). Both resolve in
+ * a second pass — the relation NAME → the sibling's minted id (`relationId`), then the
+ * rolled property NAME → its id within the target collection (via `resolveTargetProperty`).
+ * A deferred pass is required because the relation may appear AFTER the rollup in the
+ * array. Any unresolvable link is left UNSET (renders "—") but the def is KEPT (D7),
+ * unlike a relation target (which is dropped). `relationId`/`rollupProperty`/`target`
+ * are each type-scoped — none rides on a property type it doesn't belong to.
  */
 export function hydratePropertySchema(
   defs: AiPropertyDef[],
   mintId: () => string,
-  resolveCollectionName?: (name: string) => string | undefined
+  resolveCollectionName?: (name: string) => string | undefined,
+  resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined
 ): PropertySchema {
   const out: PropertyDef[] = []
+  // Rollups resolve against their relation sibling, which may appear later in the
+  // array — so defer them to a second pass. `relationsByName` maps a relation's
+  // (lowercased) NAME to the data a rollup needs: its minted id + resolved target.
+  const relationsByName = new Map<string, { id: string; target?: string }>()
+  const pendingRollups: { def: PropertyDef; relationName?: string; rollupPropName?: string }[] = []
+
   for (const raw of defs) {
+    // Capture the AI-only NAME fields before the strict parse strips/repurposes them
+    // (`relation` is an unknown key → stripped; `rollupProperty` is kept as the NAME
+    // string, which pass 2 overwrites with the resolved id).
+    const relationName =
+      raw.type === 'rollup' && typeof raw.relation === 'string' ? raw.relation : undefined
+    const rollupPropName =
+      raw.type === 'rollup' && typeof raw.rollupProperty === 'string'
+        ? raw.rollupProperty
+        : undefined
+
     const candidate = {
       ...raw,
       id: raw.id ?? mintId(),
@@ -174,16 +201,55 @@ export function hydratePropertySchema(
     const parsed = propertyDefSchema.safeParse(candidate)
     if (!parsed.success) continue
     const def = parsed.data
+
     if (def.type === 'relation') {
       const resolved =
         def.target && resolveCollectionName ? resolveCollectionName(def.target) : undefined
       if (resolved) def.target = resolved
       else delete def.target
-    } else {
+      delete def.relationId
+      delete def.rollupProperty
+      relationsByName.set(def.name.trim().toLowerCase(), { id: def.id, target: def.target })
+    } else if (def.type === 'rollup') {
+      // Unset both link fields until resolved in pass 2 (an unresolved rollup renders "—").
       delete def.target
+      delete def.relationId
+      delete def.rollupProperty
+      pendingRollups.push({ def, relationName, rollupPropName })
+    } else {
+      // Every type-scoped link field is relation/rollup-only — strip it off the rest.
+      delete def.target
+      delete def.relationId
+      delete def.rollupProperty
     }
     out.push(def)
   }
+
+  // Pass 2 — resolve each rollup now that every relation's id + target is known:
+  // relation NAME → relationId, then the rolled property NAME → its id. Any unresolved
+  // link stays unset (D7).
+  for (const { def, relationName, rollupPropName } of pendingRollups) {
+    const rel = relationName ? relationsByName.get(relationName.trim().toLowerCase()) : undefined
+    if (!rel) continue
+    def.relationId = rel.id
+    if (rollupPropName) {
+      // Same-batch FIRST (#20): when the rolled property is (re)defined in THIS schema —
+      // e.g. a self-referential rollup, whose relation targets the very collection being
+      // defined — its freshly-minted id here is authoritative and isn't yet in (or differs
+      // from) the target collection's persisted schema the external resolver reads. Fall
+      // back to the external resolver for a genuine cross-collection rollup (rolled
+      // property lives in a different, pre-existing collection).
+      const key = rollupPropName.trim().toLowerCase()
+      const local = out.find((d) => d.type !== 'rollup' && d.name.trim().toLowerCase() === key)?.id
+      const propId =
+        local ??
+        (rel.target && resolveTargetProperty
+          ? resolveTargetProperty(rel.target, rollupPropName)
+          : undefined)
+      if (propId) def.rollupProperty = propId
+    }
+  }
+
   return out
 }
 
@@ -206,11 +272,17 @@ export async function defineSchemaFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: DefineSchemaProposal,
   mintId: () => string,
-  resolveCollectionName?: (name: string) => string | undefined
+  resolveCollectionName?: (name: string) => string | undefined,
+  resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined
 ): Promise<PropertySchema> {
   const page = await getPage(supabase, proposal.pageId)
   if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
-  const schema = hydratePropertySchema(proposal.schema, mintId, resolveCollectionName)
+  const schema = hydratePropertySchema(
+    proposal.schema,
+    mintId,
+    resolveCollectionName,
+    resolveTargetProperty
+  )
   await defineSchema(supabase, proposal.pageId, schema)
   return schema
 }
@@ -240,6 +312,29 @@ export function collectionNameResolver(
     const key = name.trim().toLowerCase()
     if (!key) return undefined
     return collections.find((p) => p.title.trim().toLowerCase() === key)?.id
+  }
+}
+
+/**
+ * Build the `resolveTargetProperty` resolver `hydratePropertySchema` takes for
+ * rollups (#20). Given the workspace's pages (same `['pages', workspace, 'full']`
+ * cache that carries `props`), returns a closure mapping a (target collection id,
+ * property NAME) pair to that property's stable id within the target collection's
+ * `_schema`. Case-insensitive; first match wins. Returns undefined when the
+ * collection is unknown / not a collection, or the name matches no property — the
+ * rollup's rolled property stays unset (renders "—"), never a hard fail.
+ */
+export function collectionPropertyResolver(
+  pages: CollectionCandidate[]
+): (collectionId: string, propertyName: string) => string | undefined {
+  const byId = new Map(pages.map((p) => [p.id, p]))
+  return (collectionId: string, propertyName: string) => {
+    const key = propertyName.trim().toLowerCase()
+    if (!key) return undefined
+    const page = byId.get(collectionId)
+    const schema = page ? readSchema(page.props) : null
+    if (!schema) return undefined
+    return schema.find((d) => d.name.trim().toLowerCase() === key)?.id
   }
 }
 

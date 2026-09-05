@@ -12,6 +12,7 @@ import {
   hydratePropertySchema,
   defineSchemaFromProposal,
   collectionNameResolver,
+  collectionPropertyResolver,
 } from '@/lib/pages/create-page'
 import { SCHEMA_KEY } from '@/lib/properties/schema'
 import type { AiPropertyDef } from '@/lib/properties/schema'
@@ -103,6 +104,181 @@ describe('hydratePropertySchema', () => {
   it('never lets a target ride on a non-relation property (relation-only)', () => {
     const defs = [{ name: 'Author', type: 'text', target: 'Books' }] as unknown as AiPropertyDef[]
     expect(hydratePropertySchema(defs, mint, resolve)[0].target).toBeUndefined()
+  })
+
+  // #20 rollups — a rollup names (a) its relation sibling by NAME → resolved to that
+  // relation's minted id (relationId) and (b) the rolled property on the relation's
+  // TARGET collection by NAME → resolved to that property's id (rollupProperty).
+  // Unresolvable links stay UNSET (renders "—") — the def is kept, never dropped (D7).
+  const resolveProp = (collectionId: string, name: string) =>
+    collectionId === 'col-books' && name.toLowerCase() === 'rating' ? 'prop-rating' : undefined
+
+  it('resolves a rollup relation NAME → the sibling relation id (relationId)', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      {
+        name: 'Avg rating',
+        type: 'rollup',
+        relation: 'Shelf',
+        rollupProperty: 'Rating',
+        aggregate: 'average',
+      },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[1]).toMatchObject({
+      name: 'Avg rating',
+      type: 'rollup',
+      relationId: 'rel-1',
+      rollupProperty: 'prop-rating',
+      aggregate: 'average',
+    })
+  })
+
+  it('resolves the relation even when it appears AFTER the rollup in the array', () => {
+    const defs: AiPropertyDef[] = [
+      {
+        name: 'Avg rating',
+        type: 'rollup',
+        relation: 'Shelf',
+        rollupProperty: 'Rating',
+        aggregate: 'average',
+      },
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[0]).toMatchObject({ relationId: 'rel-1', rollupProperty: 'prop-rating' })
+  })
+
+  // #20 self-referential rollup — the rolled property is minted in THIS SAME batch
+  // (the relation targets the very collection being defined), so it isn't yet in the
+  // target collection's persisted schema the external resolver reads. Resolve it from
+  // the same batch first; the external resolver is a fallback for cross-collection.
+  // A self-referential relation: its target is the very collection being defined.
+  const resolveSelf = (name: string) => (name.toLowerCase() === 'self' ? 'col-self' : undefined)
+
+  it('resolves the rolled property against the SAME batch for a self-referential rollup', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Score', type: 'number' },
+      { id: 'rel-1', name: 'Links', type: 'relation', target: 'Self' },
+      {
+        name: 'Total score',
+        type: 'rollup',
+        relation: 'Links',
+        rollupProperty: 'Score',
+        aggregate: 'sum',
+      },
+    ]
+    // External resolver reads the target collection's PERSISTED schema, which doesn't
+    // yet contain the just-minted Score (returns undefined) — pre-fix this left
+    // rollupProperty UNSET and the self-referential rollup rendered "—" forever.
+    const noExternal = () => undefined
+    const out = hydratePropertySchema(defs, mint, resolveSelf, noExternal)
+    const scoreId = out.find((d) => d.name === 'Score')!.id
+    expect(out.find((d) => d.type === 'rollup')).toMatchObject({
+      relationId: 'rel-1',
+      rollupProperty: scoreId,
+      aggregate: 'sum',
+    })
+  })
+
+  it('prefers the same-batch rolled property over a stale external id', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Score', type: 'number' },
+      { id: 'rel-1', name: 'Links', type: 'relation', target: 'Self' },
+      {
+        name: 'Total score',
+        type: 'rollup',
+        relation: 'Links',
+        rollupProperty: 'Score',
+        aggregate: 'sum',
+      },
+    ]
+    // External resolver returns a STALE/legacy id for the same name (the Trip Packing
+    // symptom) — the same-batch id must win so the rollup points at the live property.
+    const staleExternal = () => 'legacy-score-id'
+    const out = hydratePropertySchema(defs, mint, resolveSelf, staleExternal)
+    const scoreId = out.find((d) => d.name === 'Score')!.id
+    expect(out.find((d) => d.type === 'rollup')!.rollupProperty).toBe(scoreId)
+  })
+
+  it('strips the AI-only `relation` key from the persisted def', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      { name: 'Count', type: 'rollup', relation: 'Shelf', aggregate: 'count' },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[1]).not.toHaveProperty('relation')
+    expect(out[1]).toMatchObject({ relationId: 'rel-1', aggregate: 'count' })
+  })
+
+  it('a count rollup needs no rolled property (rollupProperty stays unset)', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      { name: 'Total', type: 'rollup', relation: 'Shelf', aggregate: 'count' },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[1].relationId).toBe('rel-1')
+    expect(out[1].rollupProperty).toBeUndefined()
+  })
+
+  it('keeps the rollup def but leaves relationId unset when the relation name is unknown (D7)', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      {
+        name: 'Broken',
+        type: 'rollup',
+        relation: 'Ghost',
+        rollupProperty: 'Rating',
+        aggregate: 'sum',
+      },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out.map((d) => d.name)).toEqual(['Shelf', 'Broken'])
+    expect(out[1].relationId).toBeUndefined()
+    expect(out[1].rollupProperty).toBeUndefined()
+  })
+
+  it('keeps the rollup def but leaves rollupProperty unset when the rolled prop is unknown (D7)', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      {
+        name: 'Sum pages',
+        type: 'rollup',
+        relation: 'Shelf',
+        rollupProperty: 'Ghost',
+        aggregate: 'sum',
+      },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[1].relationId).toBe('rel-1')
+    expect(out[1].rollupProperty).toBeUndefined()
+  })
+
+  it('leaves rollupProperty unset when the relation is untargeted (no target schema to resolve against)', () => {
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation' },
+      {
+        name: 'Sum',
+        type: 'rollup',
+        relation: 'Shelf',
+        rollupProperty: 'Rating',
+        aggregate: 'sum',
+      },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[1].relationId).toBe('rel-1')
+    expect(out[1].rollupProperty).toBeUndefined()
+  })
+
+  it('never lets relationId/rollupProperty ride on a non-rollup property', () => {
+    const defs = [
+      { name: 'Author', type: 'text', relation: 'Shelf', rollupProperty: 'Rating' },
+    ] as unknown as AiPropertyDef[]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp)
+    expect(out[0]).not.toHaveProperty('relation')
+    expect(out[0].relationId).toBeUndefined()
+    // `rollupProperty` is a schema key; it must not survive on a text prop.
+    expect(out[0].rollupProperty).toBeUndefined()
   })
 })
 
@@ -220,5 +396,41 @@ describe('collectionNameResolver', () => {
     const resolve = collectionNameResolver([collection('c1', 'Tasks')])
     expect(resolve('Nope')).toBeUndefined()
     expect(resolve('   ')).toBeUndefined()
+  })
+})
+
+// ── collectionPropertyResolver — (collectionId, prop NAME) → property id (#20) ──
+//
+// A rollup resolves its rolled property against the relation's TARGET collection
+// schema. Given the workspace's pages, this maps (target collection id, property
+// NAME) to that property's stable id. Lenient: unknown collection, non-collection,
+// or unmatched name → undefined (the rollup stays unresolved, renders "—").
+
+describe('collectionPropertyResolver', () => {
+  const books = {
+    id: 'col-books',
+    title: 'Books',
+    props: {
+      [SCHEMA_KEY]: [
+        { id: 'p-rating', name: 'Rating', type: 'number' },
+        { id: 'p-pages', name: 'Pages', type: 'number' },
+      ],
+    },
+  }
+  const plain = { id: 'p1', title: 'Notes', props: {} }
+
+  it('resolves a property name to its id within the target collection, case-insensitively', () => {
+    const resolve = collectionPropertyResolver([books])
+    expect(resolve('col-books', 'Rating')).toBe('p-rating')
+    expect(resolve('col-books', 'rating')).toBe('p-rating')
+    expect(resolve('col-books', '  Pages  ')).toBe('p-pages')
+  })
+
+  it('returns undefined for an unknown collection id, a non-collection, or an unmatched name', () => {
+    const resolve = collectionPropertyResolver([books, plain])
+    expect(resolve('ghost', 'Rating')).toBeUndefined()
+    expect(resolve('p1', 'Rating')).toBeUndefined()
+    expect(resolve('col-books', 'Nope')).toBeUndefined()
+    expect(resolve('col-books', '   ')).toBeUndefined()
   })
 })

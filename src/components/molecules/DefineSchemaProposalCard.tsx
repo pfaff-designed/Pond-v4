@@ -26,6 +26,14 @@ import { ProposalActions, type ProposalStatus } from '@/components/atoms/Proposa
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 import type { AiPropertyDef } from '@/lib/properties/schema'
 
+/** A rollup's definition previewed by name — "sum of Amount via Purchases" (#20). */
+function rollupSummary(p: AiPropertyDef): string {
+  const via = p.relation ? ` via ${p.relation}` : ''
+  if (p.aggregate === 'count') return `count${via}`
+  const prop = p.rollupProperty ? ` of ${p.rollupProperty}` : ''
+  return `${p.aggregate ?? 'rollup'}${prop}${via}`
+}
+
 interface DefineSchemaProposalCardProps {
   /** The ordered properties (columns) the AI proposed — previewed read-only. */
   properties: AiPropertyDef[]
@@ -91,6 +99,11 @@ export function DefineSchemaProposalCard({
                 {(p.type === 'select' || p.type === 'status') && p.options?.length ? (
                   <span className="font-serif text-xs italic text-press-muted">
                     {p.options.map((o) => o.label).join(' · ')}
+                  </span>
+                ) : null}
+                {p.type === 'rollup' ? (
+                  <span className="font-serif text-xs italic text-press-muted">
+                    {rollupSummary(p)}
                   </span>
                 ) : null}
                 <span className={cn(pressKickerClass, 'text-press-muted')}>{p.type}</span>

@@ -27,6 +27,7 @@ import { writeAcceptedChanges } from '@/lib/pages/accept'
 import {
   createPageFromProposal,
   defineSchemaFromProposal,
+  collectionPropertyResolver,
   addRowFromProposal,
   collectionNameResolver,
 } from '@/lib/pages/create-page'
@@ -1257,14 +1258,16 @@ export function AITerminal() {
       if (!selectedTargetId || properties.length === 0) return
       setSchemaDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
-        // #20 slice 2b: resolve any relation def's proposed target NAME to the
-        // matching collection's id (from the full pages cache in scope). Unmatched
-        // names drop to untargeted inside hydratePropertySchema (lenient).
+        // #20: resolve a relation def's proposed target NAME to the matching
+        // collection's id, and a rollup's rolled property NAME to its id within the
+        // relation's target collection (both from the full pages cache in scope).
+        // Unmatched names stay untargeted/unset inside hydratePropertySchema (lenient).
         const schema = await defineSchemaFromProposal(
           supabaseClient,
           { pageId: selectedTargetId, schema: properties },
           () => crypto.randomUUID(),
-          collectionNameResolver(allPages)
+          collectionNameResolver(allPages),
+          collectionPropertyResolver(allPages)
         )
         // Optimistic seed: merge the freshly-written schema into the target page's
         // cached props (via the reserved-key merge helper, never a raw overwrite),

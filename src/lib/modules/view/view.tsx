@@ -48,6 +48,7 @@ import {
   type PropertyValue,
 } from '@/lib/properties/schema'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
+import { RollupValueField } from '@/components/organisms/RollupValueField'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -208,6 +209,8 @@ function CollectionTable({
                   value={coerceValue(def, row.values[def.id])}
                   editable={!!editable}
                   onChange={(v) => onEdit?.(row.id, def.id, v)}
+                  schema={schema}
+                  rowValues={row.values}
                 />
               </td>
             ))}
@@ -536,6 +539,8 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
                     value={coerceValue(def, row.values[def.id])}
                     editable={false}
                     onChange={() => {}}
+                    schema={schema}
+                    rowValues={row.values}
                   />
                 </dd>
               </div>
@@ -772,13 +777,28 @@ function Cell({
   value,
   editable,
   onChange,
+  schema,
+  rowValues,
 }: {
   def: PropertyDef
   value: PropertyValue
   editable: boolean
   onChange: (value: PropertyValue) => void
+  /** The row's collection schema — a rollup reads its sibling relation def from here. */
+  schema?: PropertySchema
+  /** The row's values — a rollup reads its sibling relation's linked ids from here. */
+  rowValues?: Record<string, unknown>
 }) {
   const label = `${def.name} value`
+
+  // A rollup is derived + never stored (#20): resolve its sibling relation (by
+  // relationId) from the row's schema + values and let the connected field fetch +
+  // compute. Always read-only, regardless of `editable`.
+  if (def.type === 'rollup') {
+    const relationDef = schema?.find((d) => d.id === def.relationId)
+    const relationValue = relationDef ? coerceValue(relationDef, rowValues?.[relationDef.id]) : []
+    return <RollupValueField def={def} relationDef={relationDef} relationValue={relationValue} />
+  }
 
   if (!editable) {
     if (def.type === 'select' || def.type === 'status') {

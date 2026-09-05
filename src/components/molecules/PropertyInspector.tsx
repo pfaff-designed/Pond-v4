@@ -20,6 +20,7 @@
 import { cn } from '@/lib/utils'
 import { pressKickerClass } from '@/components/atoms/press-kicker'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
+import { RollupValueField } from '@/components/organisms/RollupValueField'
 import {
   coerceValue,
   type PropertyDef,
@@ -72,6 +73,8 @@ export function PropertyInspector({
               value={coerceValue(def, values[def.id])}
               editable={editable}
               onChange={onChange}
+              schema={schema}
+              values={values}
             />
           </dd>
         </div>
@@ -85,11 +88,17 @@ function PropertyField({
   value,
   editable,
   onChange,
+  schema,
+  values,
 }: {
   def: PropertyDef
   value: PropertyValue
   editable: boolean
   onChange: (key: string, value: PropertyValue) => void
+  /** The page schema — a rollup reads its sibling relation def from here. */
+  schema?: PropertySchema
+  /** The page values — a rollup reads its sibling relation's linked ids from here. */
+  values?: Record<string, unknown>
 }) {
   const label = `${def.name} value`
 
@@ -161,6 +170,15 @@ function PropertyField({
           onChange={(next) => onChange(def.id, next)}
         />
       )
+
+    case 'rollup': {
+      // Derived + never stored (#20): resolve the sibling relation (by relationId)
+      // from the page schema + values and let the connected field fetch + compute.
+      // Always read-only — a rollup has no input.
+      const relationDef = schema?.find((d) => d.id === def.relationId)
+      const relationValue = relationDef ? coerceValue(relationDef, values?.[relationDef.id]) : []
+      return <RollupValueField def={def} relationDef={relationDef} relationValue={relationValue} />
+    }
 
     case 'text':
     default:
