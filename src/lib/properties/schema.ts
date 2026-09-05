@@ -66,6 +66,10 @@ export const propertyDefSchema = z.object({
   options: z.array(propertyOptionSchema).optional(),
   /** `relation` only: cap the link to a single page (#20). */
   single: z.boolean().optional(),
+  /** `relation` only: the collection page-id this relation points at (#20). Optional —
+   *  unset means an unscoped "link any page". Resolved from a NAME on accept; a stored
+   *  id outside the target is tolerated (leniency), never rejected. */
+  target: z.string().optional(),
 })
 export type PropertyDef = z.infer<typeof propertyDefSchema>
 
@@ -95,6 +99,8 @@ export const aiPropertyDefSchema = z.object({
   type: propertyTypeSchema,
   options: z.array(aiPropertyOptionSchema).optional(),
   single: z.boolean().optional(),
+  /** `relation` only: the target collection named by NAME (resolved to an id on accept). */
+  target: z.string().optional(),
 })
 export type AiPropertyDef = z.infer<typeof aiPropertyDefSchema>
 

@@ -73,6 +73,33 @@ describe('hydratePropertySchema', () => {
     const out = hydratePropertySchema(defs, mint)
     expect(out.map((d) => d.name)).toEqual(['Good'])
   })
+
+  // #20 — a relation's `target` is proposed as a collection NAME and resolved to a
+  // collection id on accept (like configure_view resolves a group-by name).
+  const resolve = (name: string) => (name.toLowerCase() === 'books' ? 'col-books' : undefined)
+
+  it('resolves a relation target NAME to its collection id', () => {
+    const defs: AiPropertyDef[] = [{ name: 'Shelf', type: 'relation', target: 'Books' }]
+    const out = hydratePropertySchema(defs, mint, resolve)
+    expect(out[0]).toMatchObject({ name: 'Shelf', type: 'relation', target: 'col-books' })
+  })
+
+  it('drops an unresolvable target (lenient — the relation stays untargeted)', () => {
+    const defs: AiPropertyDef[] = [{ name: 'Shelf', type: 'relation', target: 'Ghosts' }]
+    const out = hydratePropertySchema(defs, mint, resolve)
+    expect(out[0].target).toBeUndefined()
+    expect(out[0]).toMatchObject({ name: 'Shelf', type: 'relation' })
+  })
+
+  it('leaves a targetless relation untargeted', () => {
+    const defs: AiPropertyDef[] = [{ name: 'Shelf', type: 'relation' }]
+    expect(hydratePropertySchema(defs, mint, resolve)[0].target).toBeUndefined()
+  })
+
+  it('never lets a target ride on a non-relation property (relation-only)', () => {
+    const defs = [{ name: 'Author', type: 'text', target: 'Books' }] as unknown as AiPropertyDef[]
+    expect(hydratePropertySchema(defs, mint, resolve)[0].target).toBeUndefined()
+  })
 })
 
 // ── defineSchemaFromProposal — confirm target + merge-safe write ─────────────

@@ -151,8 +151,18 @@ export async function createPageFromProposal(
  * written (mirrors block hydration); property order is preserved. The `mintId`
  * closure is injected so the client supplies `crypto.randomUUID` and tests a
  * deterministic counter.
+ *
+ * `resolveCollectionName` (#20) turns a relation's proposed `target` — a collection
+ * NAME the model wrote — into the collection's stable id, exactly as configure_view
+ * resolves a group-by name. An unresolvable name (or no resolver) drops the target:
+ * the relation stays untargeted (an unscoped "link any page"), never a hard fail.
+ * `target` is relation-only — it never rides on another property type.
  */
-export function hydratePropertySchema(defs: AiPropertyDef[], mintId: () => string): PropertySchema {
+export function hydratePropertySchema(
+  defs: AiPropertyDef[],
+  mintId: () => string,
+  resolveCollectionName?: (name: string) => string | undefined
+): PropertySchema {
   const out: PropertyDef[] = []
   for (const raw of defs) {
     const candidate = {
@@ -161,7 +171,17 @@ export function hydratePropertySchema(defs: AiPropertyDef[], mintId: () => strin
       ...(raw.options ? { options: raw.options.map((o) => ({ ...o, id: o.id ?? mintId() })) } : {}),
     }
     const parsed = propertyDefSchema.safeParse(candidate)
-    if (parsed.success) out.push(parsed.data)
+    if (!parsed.success) continue
+    const def = parsed.data
+    if (def.type === 'relation') {
+      const resolved =
+        def.target && resolveCollectionName ? resolveCollectionName(def.target) : undefined
+      if (resolved) def.target = resolved
+      else delete def.target
+    } else {
+      delete def.target
+    }
+    out.push(def)
   }
   return out
 }
@@ -184,11 +204,12 @@ export interface DefineSchemaProposal {
 export async function defineSchemaFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: DefineSchemaProposal,
-  mintId: () => string
+  mintId: () => string,
+  resolveCollectionName?: (name: string) => string | undefined
 ): Promise<PropertySchema> {
   const page = await getPage(supabase, proposal.pageId)
   if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
-  const schema = hydratePropertySchema(proposal.schema, mintId)
+  const schema = hydratePropertySchema(proposal.schema, mintId, resolveCollectionName)
   await defineSchema(supabase, proposal.pageId, schema)
   return schema
 }

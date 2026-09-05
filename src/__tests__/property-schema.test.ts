@@ -9,6 +9,7 @@
 import {
   PROPERTY_TYPES,
   SCHEMA_KEY,
+  aiPropertyDefSchema,
   propertyDefSchema,
   propertySchemaSchema,
   valueSchemaFor,
@@ -155,6 +156,35 @@ describe('optionForValue — read-side chip resolution (#19 views)', () => {
     expect(optionForValue(stage, 'Archived')).toBeUndefined()
     expect(optionForValue(def({ type: 'text' }), 'anything')).toBeUndefined()
     expect(optionForValue(stage, '')).toBeUndefined()
+  })
+})
+
+describe('relation target — a relation may name the collection it points at (#20)', () => {
+  it('round-trips an optional target collection id on a relation def', () => {
+    const parsed = propertyDefSchema.safeParse({
+      id: 'links',
+      name: 'Links',
+      type: 'relation',
+      target: 'col-books',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.target).toBe('col-books')
+  })
+
+  it('target is optional — a relation without one is still valid (unscoped link)', () => {
+    const parsed = propertyDefSchema.safeParse({ id: 'l', name: 'L', type: 'relation' })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.target).toBeUndefined()
+  })
+
+  it('the AI-proposed def carries a target too (ids still optional — a NAME at author time)', () => {
+    const parsed = aiPropertyDefSchema.safeParse({
+      name: 'Links',
+      type: 'relation',
+      target: 'Books',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.target).toBe('Books')
   })
 })
 
