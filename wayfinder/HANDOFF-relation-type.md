@@ -1,7 +1,8 @@
 # Handoff — `relation` property type (#20 slice, forward-only)
 
 **Repo:** `/Users/charlespfaff/Documents/Code/Projects/Pond-v4`
-**Branch:** `feat/relation-type` (off `origin/main` `7110eda`). **2 commits, all green, NOT pushed.**
+**Branch:** `feat/relation-type` (off `origin/main` `7110eda`). Slices 1–5 + 2b done; **ahead of
+`origin/feat/relation-type` by 7 local commits, all green, NOT pushed.** Slices 6–7 remain.
 **Spec (authoritative):** `wayfinder/SPEC-relation-type.md` — all 8 decisions + 3 assumptions user-confirmed.
 **Build via `/tdd`**, seams confirmed (presentational `RelationValue` split like `ViewView`/`CollectionView`).
 
