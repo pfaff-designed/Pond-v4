@@ -36,7 +36,12 @@ export interface RelationTitles {
 
 export function useRelationTitles(ids: string[], targetId?: string): RelationTitles {
   const workspace = useWorkspace()
-  const supabase = useMemo(() => createClient(), [])
+  // Lazily created on first fetch, not at render — so seeded/disabled queries
+  // (e.g. Storybook, envless CI) never construct a real client and throw.
+  const getSupabase = useMemo(() => {
+    let client: ReturnType<typeof createClient> | null = null
+    return () => (client ??= createClient())
+  }, [])
   const targeted = !!targetId
 
   // Targeted: the collection's rows (shared with the picker + inline views).
@@ -44,6 +49,7 @@ export function useRelationTitles(ids: string[], targetId?: string): RelationTit
     queryKey: targetId ? (['rows', targetId] as const) : (['rows', 'none'] as const),
     queryFn: async () => {
       if (!targetId) return [] as PondPage[]
+      const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -57,6 +63,7 @@ export function useRelationTitles(ids: string[], targetId?: string): RelationTit
   const { data: allPages } = useQuery({
     queryKey: ['pages', workspace, 'full'] as const,
     queryFn: async () => {
+      const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -69,7 +76,7 @@ export function useRelationTitles(ids: string[], targetId?: string): RelationTit
   const pageQueries = useQueries({
     queries: (targeted ? [] : ids).map((id) => ({
       queryKey: ['page', id] as const,
-      queryFn: () => getPage(supabase, id),
+      queryFn: () => getPage(getSupabase(), id),
     })),
   })
 
