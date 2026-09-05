@@ -53,7 +53,6 @@ export function useRollup(
     return () => (client ??= createClient())
   }, [])
 
-  const linkedIds = Array.isArray(relationValue) ? (relationValue as string[]) : []
   const targetId = relationDef?.target
   // `count` ignores rows + schema, and an untargeted relation has nothing to read —
   // only a value aggregate over a targeted relation needs the fetch.
@@ -82,9 +81,10 @@ export function useRollup(
   return useMemo<UseRollup>(() => {
     // No resolvable relation → nothing to aggregate over (D7): render "—", not 0.
     if (!relationDef) return { result: EMPTY, loading: false }
+    const linkedIds = Array.isArray(relationValue) ? (relationValue as string[]) : []
     const loading = needsRows && (rowsLoading || pageLoading)
     const targetSchema = targetPage ? readSchema(targetPage.props) : null
     const result = computeRollup(def, linkedIds, rows ?? [], targetSchema)
     return { result, loading }
-  }, [def, relationDef, linkedIds, rows, targetPage, needsRows, rowsLoading, pageLoading])
+  }, [def, relationDef, relationValue, rows, targetPage, needsRows, rowsLoading, pageLoading])
 }
