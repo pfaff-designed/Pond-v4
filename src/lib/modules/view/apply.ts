@@ -40,10 +40,12 @@ function defById(schema: PropertySchema, id: string): PropertyDef | undefined {
 
 /**
  * A value reduced to a single comparable primitive for sort/filter, per its type:
- * number → the number; checkbox → 0/1; select/status → the option's label (so
- * ordering/`contains` read naturally, not by opaque id); date/text → the lowercased
- * string. An empty/unset value returns `null` — callers sort those last and treat
- * them as non-matching for value filters.
+ * number → the number; checkbox → 0/1; select/status → the option's *rank* (its
+ * index in the schema's option list) so ordering follows the field's defined order
+ * (Low→Medium→High), not alphabetics; date/text → the lowercased string. An
+ * empty/unset value — or a select/status pointing at an option no longer in the
+ * schema — returns `null`, so callers sort those last and treat them as
+ * non-matching for value filters (the same leniency as grouping's no-value bucket).
  */
 function comparable(def: PropertyDef, raw: unknown): string | number | null {
   const value = coerceValue(def, raw)
@@ -56,7 +58,9 @@ function comparable(def: PropertyDef, raw: unknown): string | number | null {
     case 'select':
     case 'status': {
       const opt = optionForValue(def, value)
-      return (opt?.label ?? String(value)).toLowerCase()
+      if (!opt) return null // off-schema/stale option → sinks last, like an empty
+      // `opt` was resolved out of `def.options`, so its rank there is always found.
+      return (def.options ?? []).findIndex((o) => o.id === opt.id)
     }
     case 'date':
       // ISO date/datetime strings sort chronologically as plain strings.

@@ -131,10 +131,26 @@ describe('sortRows', () => {
     expect(out.map((r) => r.id)).toEqual(['r3', 'r1', 'r2', 'r4'])
   })
 
-  it('sorts a status by its option label, not its id', () => {
-    // labels: Doing, Done, To do → asc: Doing(r1), Done(r2), To do(r3), empty(r4)
+  it('sorts a status by its defined option rank, not its label', () => {
+    // schema order: To do(o-todo,r3), Doing(o-doing,r1), Done(o-done,r2), empty(r4)
     const out = sortRows(rows, schema, { key: 'p-status', dir: 'asc' })
-    expect(out.map((r) => r.id)).toEqual(['r1', 'r2', 'r3', 'r4'])
+    expect(out.map((r) => r.id)).toEqual(['r3', 'r1', 'r2', 'r4'])
+  })
+
+  it('sorts a status by rank descending, empties still last', () => {
+    // reverse of schema order: Done(r2), Doing(r1), To do(r3), then empty(r4)
+    const out = sortRows(rows, schema, { key: 'p-status', dir: 'desc' })
+    expect(out.map((r) => r.id)).toEqual(['r2', 'r1', 'r3', 'r4'])
+  })
+
+  it('sinks a status pointing at a stale option to the bottom', () => {
+    // o-gone is off-schema → treated as no value, sorts last like an empty.
+    const stale: CollectionRow[] = [
+      { id: 'rx', title: 'Stale', values: { 'p-status': 'o-gone' } },
+      { id: 'ry', title: 'Todo', values: { 'p-status': 'o-todo' } },
+    ]
+    const out = sortRows(stale, schema, { key: 'p-status', dir: 'asc' })
+    expect(out.map((r) => r.id)).toEqual(['ry', 'rx'])
   })
 
   it('sorts dates chronologically', () => {
