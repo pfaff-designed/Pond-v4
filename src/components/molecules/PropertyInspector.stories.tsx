@@ -1,8 +1,19 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { PropertyInspector } from './PropertyInspector'
 import type { PropertySchema } from '@/lib/properties/schema'
+
+// The relation row (below) renders the connected RelationValueField, which reads
+// react-query. Seed an empty workspace list so its untargeted candidate query
+// resolves from cache (staleTime Infinity → no network); appDirectory (params)
+// mounts the router the chip onOpen needs. Relation edit/chip behavior itself is
+// covered in Organisms/RelationValueField — here the relation value is empty.
+const storyClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+})
+storyClient.setQueryData(['pages', 'main', 'full'], [])
 
 const schema: PropertySchema = [
   { id: 'title', name: 'Title', type: 'text' },
@@ -25,12 +36,14 @@ const schema: PropertySchema = [
 const meta = {
   title: 'Molecules/PropertyInspector',
   component: PropertyInspector,
-  parameters: { layout: 'centered' },
+  parameters: { layout: 'centered', nextjs: { appDirectory: true } },
   decorators: [
     (Story) => (
-      <div className="w-[28rem] bg-press-paper p-6">
-        <Story />
-      </div>
+      <QueryClientProvider client={storyClient}>
+        <div className="w-[28rem] bg-press-paper p-6">
+          <Story />
+        </div>
+      </QueryClientProvider>
     ),
   ],
   args: {

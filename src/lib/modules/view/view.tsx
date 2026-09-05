@@ -47,6 +47,7 @@ import {
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
+import { RelationValueField } from '@/components/organisms/RelationValueField'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -787,6 +788,10 @@ function Cell({
     if (def.type === 'checkbox') {
       return value === true ? <span aria-label="checked">✓</span> : <Dash />
     }
+    if (def.type === 'relation') {
+      // Read-only host: chips (clickable), no picker (#20 decision 6).
+      return <RelationValueField def={def} value={value} editable={false} onChange={onChange} />
+    }
     const text = displayValue(def, value)
     return text ? <span>{text}</span> : <Dash />
   }
@@ -848,13 +853,9 @@ function Cell({
         </select>
       )
     }
-    case 'relation': {
-      // Defined but not yet authorable (#20): show the link count, inert.
-      const ids = Array.isArray(value) ? value : []
-      return (
-        <span className="text-press-muted">{ids.length === 0 ? '—' : `${ids.length} linked`}</span>
-      )
-    }
+    case 'relation':
+      // Editable host: chips + a scoped picker (#20 slice 6).
+      return <RelationValueField def={def} value={value} editable onChange={onChange} />
     case 'text':
     default:
       return (

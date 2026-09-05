@@ -109,7 +109,7 @@ const defineSchemaInput = z.object({
     .array(aiPropertyDefSchema)
     .min(1)
     .describe(
-      'The ordered typed properties (columns) for this collection — each a { name, type } with type one of text | number | date | select | status | checkbox | relation. Give a select/status property its `options` (each an { label }); do NOT supply ids (the client mints them on accept).'
+      'The ordered typed properties (columns) for this collection — each a { name, type } with type one of text | number | date | select | status | checkbox | relation. Give a select/status property its `options` (each an { label }); a `relation` property may name an optional `target` collection by its NAME (omit for a link to any page) — never a row id. Do NOT supply ids (the client mints them on accept).'
     ),
   reason: z
     .string()
