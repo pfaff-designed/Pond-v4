@@ -15,6 +15,12 @@
  * module. Rejection (not auto-annotation) is the chosen enforcement: it is the only
  * option that yields the STRUCTURED module the registry can render/diff/edit, rather
  * than freezing bad markdown into a text block forever. See ticket-21 Resolution.
+ *
+ * #28 (routing demotion) note: collections are now the DEFAULT for record-like
+ * tabular data, but the pipe-table repair below INTENTIONALLY still targets the
+ * `table` module — a mid-stream pipe table in a text block can't be reliably
+ * schema-inferred into typed columns, so the records→collection steering lives at
+ * the ROUTING layer (prompt), not in this emit-time backstop.
  */
 
 /**
@@ -26,7 +32,7 @@ export const PIPE_TABLE_IN_TEXT_MESSAGE =
   'This text block contains a markdown pipe table. Tabular data must use the `table` module (columns + rows), never pipe syntax inside a text block. Re-emit this as a `table` module: put the header row in `columns` and each data row in `rows`.'
 
 export const TITLE_ECHO_MESSAGE =
-  "The first block repeats the page title as a heading. Do not open a page with a heading that echoes its own title — the title is already shown. Drop that heading block (or replace it with real intro content)."
+  'The first block repeats the page title as a heading. Do not open a page with a heading that echoes its own title — the title is already shown. Drop that heading block (or replace it with real intro content).'
 
 /** Count the `|` characters in a single line. */
 function pipeCount(line: string): number {
