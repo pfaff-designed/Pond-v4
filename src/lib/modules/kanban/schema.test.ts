@@ -9,6 +9,17 @@ import { hydrateBlock } from '../hydrate'
 import { stampDisplayIds } from '../preview'
 import type { ModuleData } from '../ai-composition'
 
+/**
+ * #19 slice 6: kanban is retired from CREATION, so its id-less emit shape is no longer a
+ * member of `ModuleData` (the AI can't mint one). But the deep-path id walkers stay wired
+ * for READ-tolerance — a persisted kanban must still hydrate + stamp — so these tests feed
+ * the walkers a loosely-typed kanban emit and cast at the composition-typed call sites.
+ */
+type KanbanEmit = {
+  type: 'kanban'
+  columns: { title: string; cards: { title: string; note?: string }[] }[]
+}
+
 const board: KanbanBlock = {
   id: 'k1',
   type: 'kanban',
@@ -35,7 +46,7 @@ describe('kanban serialize (honest text)', () => {
 })
 
 describe('deep-path id walkers (columns.cards)', () => {
-  const emitted: ModuleData = {
+  const emitted: KanbanEmit = {
     type: 'kanban',
     columns: [
       { title: 'To do', cards: [{ title: 'Cut' }, { title: 'Sand' }] },
@@ -57,7 +68,9 @@ describe('deep-path id walkers (columns.cards)', () => {
   })
 
   it('stampDisplayIds gives every column and card a deterministic display id', () => {
-    const block = stampDisplayIds(emitted, 'pv') as KanbanBlock
+    // Cast through the composition type: the stamp still handles kanban for read-tolerance,
+    // but the union no longer lists it (retired from creation, #19 slice 6).
+    const block = stampDisplayIds(emitted as unknown as ModuleData, 'pv') as KanbanBlock
     expect(block.columns.map((c) => c.id)).toEqual(['pv-0', 'pv-1'])
     // cards get a fresh per-path counter across all columns → unique keys
     expect(block.columns[0].cards.map((c) => c.id)).toEqual(['pv-0', 'pv-1'])

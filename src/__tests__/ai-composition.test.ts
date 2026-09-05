@@ -42,12 +42,16 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     expect(parsed.type === 'todo' && 'id' in parsed.items[0]).toBe(false)
   })
 
-  it('strips a kanban card pageId — links are manual-only, the AI cannot author them (F27)', () => {
-    const parsed = moduleDataSchema.parse({
-      type: 'kanban',
-      columns: [{ title: 'To do', cards: [{ title: 'Cut boards', pageId: 'page-1' }] }],
-    })
-    expect(parsed.type === 'kanban' && 'pageId' in parsed.columns[0].cards[0]).toBe(false)
+  it('REJECTS a kanban block — retired from creation (#19 slice 6), superseded by view board mode', () => {
+    // Kanban stays renderable/persistable for read-tolerance, but the AI may no longer
+    // MINT one: it's absent from the composition union, so a kanban emit fails the gate
+    // (repairToolCall re-asks). A board of items is now a `view` with mode 'board'.
+    expect(
+      moduleDataSchema.safeParse({
+        type: 'kanban',
+        columns: [{ title: 'To do', cards: [{ title: 'Cut boards' }] }],
+      }).success
+    ).toBe(false)
   })
 
   it('rejects a malformed content block (metric value must be a number)', () => {
@@ -297,6 +301,10 @@ describe('moduleCatalog (prompt teaching)', () => {
 
   it('omits the page container', () => {
     expect(moduleCatalog.split('\n').some((l) => l.startsWith('- page:'))).toBe(false)
+  })
+
+  it('omits kanban — retired from creation (#19 slice 6), so the prompt stops advertising it', () => {
+    expect(moduleCatalog.split('\n').some((l) => l.startsWith('- kanban:'))).toBe(false)
   })
 
   it('teaches the metric binding, incl. same-batch ref binding (ticket-23 + ticket-31)', () => {
