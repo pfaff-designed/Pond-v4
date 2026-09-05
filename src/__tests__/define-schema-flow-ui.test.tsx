@@ -55,6 +55,7 @@ const mockDefineSchemaFromProposal = jest
 jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
   defineSchemaFromProposal: (...args: unknown[]) => mockDefineSchemaFromProposal(...args),
+  collectionNameResolver: () => () => undefined,
 }))
 
 jest.mock('@/lib/pages/tree', () => ({

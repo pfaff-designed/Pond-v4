@@ -28,6 +28,7 @@ import {
   createPageFromProposal,
   defineSchemaFromProposal,
   addRowFromProposal,
+  collectionNameResolver,
 } from '@/lib/pages/create-page'
 import { configureViewFromProposal } from '@/lib/pages/configure-view'
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
@@ -1256,10 +1257,14 @@ export function AITerminal() {
       if (!selectedTargetId || properties.length === 0) return
       setSchemaDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
+        // #20 slice 2b: resolve any relation def's proposed target NAME to the
+        // matching collection's id (from the full pages cache in scope). Unmatched
+        // names drop to untargeted inside hydratePropertySchema (lenient).
         const schema = await defineSchemaFromProposal(
           supabaseClient,
           { pageId: selectedTargetId, schema: properties },
-          () => crypto.randomUUID()
+          () => crypto.randomUUID(),
+          collectionNameResolver(allPages)
         )
         // Optimistic seed: merge the freshly-written schema into the target page's
         // cached props (via the reserved-key merge helper, never a raw overwrite),
@@ -1280,7 +1285,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace]
+    [supabaseClient, queryClient, workspace, allPages]
   )
 
   // ── add_row resolution (#18) ──────────────────────────────────────────────

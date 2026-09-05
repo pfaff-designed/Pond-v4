@@ -8,7 +8,11 @@
  * mocked-chain approach in create-page-from-proposal.test.ts — no live Supabase.
  */
 
-import { hydratePropertySchema, defineSchemaFromProposal } from '@/lib/pages/create-page'
+import {
+  hydratePropertySchema,
+  defineSchemaFromProposal,
+  collectionNameResolver,
+} from '@/lib/pages/create-page'
 import { SCHEMA_KEY } from '@/lib/properties/schema'
 import type { AiPropertyDef } from '@/lib/properties/schema'
 
@@ -170,5 +174,51 @@ describe('defineSchemaFromProposal', () => {
       )
     ).rejects.toThrow(/not found/i)
     expect(sb._chain.update).not.toHaveBeenCalled()
+  })
+})
+
+// ── collectionNameResolver — relation target NAME→collection id (#20 slice 2b) ──
+//
+// The accept site feeds the workspace's pages (the `['pages', workspace, 'full']`
+// cache, which carries `props`) so a relation def's proposed target NAME resolves
+// to the id of the matching COLLECTION. Lenient: a name that matches only a
+// non-collection page, or nothing, resolves to undefined → the relation is left
+// untargeted (hydratePropertySchema drops the target).
+
+describe('collectionNameResolver', () => {
+  // A page carries a well-formed `_schema` iff it is a collection (isCollection).
+  const collection = (id: string, title: string) => ({
+    id,
+    title,
+    props: { [SCHEMA_KEY]: [{ id: `${id}-c`, name: 'Col', type: 'text' }] },
+  })
+  const plain = (id: string, title: string) => ({ id, title, props: {} })
+
+  it('resolves a collection name to its id, case-insensitively', () => {
+    const resolve = collectionNameResolver([collection('c1', 'Tasks')])
+    expect(resolve('tasks')).toBe('c1')
+    expect(resolve('TASKS')).toBe('c1')
+    expect(resolve('  Tasks  ')).toBe('c1')
+  })
+
+  it('returns the first collection when titles collide', () => {
+    const resolve = collectionNameResolver([collection('c1', 'Books'), collection('c2', 'Books')])
+    expect(resolve('books')).toBe('c1')
+  })
+
+  it('ignores a non-collection page that shares the name (lenient → undefined)', () => {
+    const resolve = collectionNameResolver([plain('p1', 'Tasks')])
+    expect(resolve('Tasks')).toBeUndefined()
+  })
+
+  it('prefers a real collection over a same-named non-collection page', () => {
+    const resolve = collectionNameResolver([plain('p1', 'Tasks'), collection('c1', 'Tasks')])
+    expect(resolve('Tasks')).toBe('c1')
+  })
+
+  it('returns undefined for an unknown name and for a blank name', () => {
+    const resolve = collectionNameResolver([collection('c1', 'Tasks')])
+    expect(resolve('Nope')).toBeUndefined()
+    expect(resolve('   ')).toBeUndefined()
   })
 })

@@ -30,6 +30,7 @@ import { resolveParentId } from '@/lib/nodes/create'
 import {
   propertyDefSchema,
   readSchema,
+  isCollection,
   coerceValue,
   resolveOptionValue,
   ROW_TYPE,
@@ -212,6 +213,34 @@ export async function defineSchemaFromProposal(
   const schema = hydratePropertySchema(proposal.schema, mintId, resolveCollectionName)
   await defineSchema(supabase, proposal.pageId, schema)
   return schema
+}
+
+/** A minimal page shape for resolving a relation target NAME→id at the accept site. */
+export interface CollectionCandidate {
+  id: string
+  title: string
+  props?: Record<string, unknown> | null
+}
+
+/**
+ * Build the `resolveCollectionName` resolver `hydratePropertySchema` takes (#20
+ * slice 2b). Given the workspace's pages (the accept site feeds the full
+ * `['pages', workspace, 'full']` cache — the one that carries `props`), returns a
+ * closure mapping a relation's proposed target NAME to the id of the first
+ * COLLECTION whose title matches case-insensitively. A relation target IS a
+ * collection (spec decision 1), so non-collections are excluded — including rows,
+ * which never carry a `_schema`. A blank/unknown name, or one matching only a
+ * non-collection page, returns undefined → the relation stays untargeted (lenient).
+ */
+export function collectionNameResolver(
+  pages: CollectionCandidate[]
+): (name: string) => string | undefined {
+  const collections = pages.filter((p) => isCollection(p.props))
+  return (name: string) => {
+    const key = name.trim().toLowerCase()
+    if (!key) return undefined
+    return collections.find((p) => p.title.trim().toLowerCase() === key)?.id
+  }
 }
 
 // ── add_row accept path (#18) ────────────────────────────────────────────────
