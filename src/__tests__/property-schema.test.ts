@@ -50,7 +50,7 @@ const SCHEMA: PropertySchema = [
 ]
 
 describe('property type set', () => {
-  it('has exactly the 7 grilled types', () => {
+  it('has exactly the 8 grilled types', () => {
     expect([...PROPERTY_TYPES]).toEqual([
       'text',
       'number',
@@ -59,6 +59,7 @@ describe('property type set', () => {
       'status',
       'checkbox',
       'relation',
+      'rollup',
     ])
   })
 
@@ -185,6 +186,64 @@ describe('relation target — a relation may name the collection it points at (#
     })
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.target).toBe('Books')
+  })
+})
+
+describe('rollup — a derived property that aggregates over a relation (#20)', () => {
+  it('round-trips a rollup def: relationId + rollupProperty + aggregate', () => {
+    const parsed = propertyDefSchema.safeParse({
+      id: 'r',
+      name: 'Total spent',
+      type: 'rollup',
+      relationId: 'p-purchases',
+      rollupProperty: 'p-amount',
+      aggregate: 'sum',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.aggregate).toBe('sum')
+  })
+
+  it('a count rollup needs no rollupProperty', () => {
+    const parsed = propertyDefSchema.safeParse({
+      id: 'r',
+      name: 'How many',
+      type: 'rollup',
+      relationId: 'p-purchases',
+      aggregate: 'count',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.rollupProperty).toBeUndefined()
+  })
+
+  it('rejects an unknown aggregate', () => {
+    const parsed = propertyDefSchema.safeParse({
+      id: 'r',
+      name: 'X',
+      type: 'rollup',
+      relationId: 'p',
+      aggregate: 'median',
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  it('the AI-proposed rollup names the relation + rolled property by NAME', () => {
+    const parsed = aiPropertyDefSchema.safeParse({
+      name: 'Total spent',
+      type: 'rollup',
+      relation: 'Purchases',
+      rollupProperty: 'Amount',
+      aggregate: 'sum',
+    })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.relation).toBe('Purchases')
+  })
+
+  it('is never-stored: valueSchemaFor rejects any raw value, coerceValue → null', () => {
+    const d = def({ type: 'rollup' })
+    expect(valueSchemaFor(d).safeParse(5).success).toBe(false)
+    expect(valueSchemaFor(d).safeParse('x').success).toBe(false)
+    expect(coerceValue(d, 42)).toBeNull()
+    expect(emptyValue(d)).toBeNull()
   })
 })
 

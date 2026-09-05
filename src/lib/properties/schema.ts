@@ -30,9 +30,10 @@ export const SCHEMA_KEY = '_schema' as const
 export const ROW_TYPE = 'row' as const
 
 /**
- * The 7 property types (#17 decision 3). `relation` is *defined* here — its value
- * shape (an array of page-ids) round-trips — but its authoring/render surface is
- * built in #20. Deliberately no url/formula/multi-select this pass.
+ * The 8 property types. `relation` links to pages in another collection (#20 first
+ * half); `rollup` is a *derived* property that aggregates a value over a relation
+ * (#20 rollups) — it is never stored, only computed on read (see valueSchemaFor).
+ * Deliberately no url/formula/multi-select this pass.
  */
 export const PROPERTY_TYPES = [
   'text',
@@ -42,10 +43,21 @@ export const PROPERTY_TYPES = [
   'status',
   'checkbox',
   'relation',
+  'rollup',
 ] as const
 
 export const propertyTypeSchema = z.enum(PROPERTY_TYPES)
 export type PropertyType = z.infer<typeof propertyTypeSchema>
+
+/**
+ * The aggregations a `rollup` may apply over its relation's linked rows (#20).
+ * `count` needs no target property; the rest read `rollupProperty` off each linked
+ * row — `sum`/`average` require a number, `min`/`max` a number or date. Applicability
+ * is validated at compute time (a mismatch renders "—"), never a hard fail.
+ */
+export const ROLLUP_AGGREGATES = ['count', 'sum', 'average', 'min', 'max'] as const
+export const rollupAggregateSchema = z.enum(ROLLUP_AGGREGATES)
+export type RollupAggregate = z.infer<typeof rollupAggregateSchema>
 
 /** A single choice for a `select`/`status` property. Carries a stable id so a
  *  rename never orphans the rows already pointing at it. */
@@ -70,6 +82,14 @@ export const propertyDefSchema = z.object({
    *  unset means an unscoped "link any page". Resolved from a NAME on accept; a stored
    *  id outside the target is tolerated (leniency), never rejected. */
   target: z.string().optional(),
+  /** `rollup` only: id of the relation PropertyDef on THIS collection to aggregate over
+   *  (#20). A dangling/untargeted relation renders "—", never throws. */
+  relationId: z.string().optional(),
+  /** `rollup` only: id of the property on the TARGET collection to aggregate. Omitted for
+   *  `count`. Resolved from a NAME on accept; a stale/wrong-type id renders "—". */
+  rollupProperty: z.string().optional(),
+  /** `rollup` only: the aggregation function applied over the linked rows. */
+  aggregate: rollupAggregateSchema.optional(),
 })
 export type PropertyDef = z.infer<typeof propertyDefSchema>
 
@@ -101,6 +121,13 @@ export const aiPropertyDefSchema = z.object({
   single: z.boolean().optional(),
   /** `relation` only: the target collection named by NAME (resolved to an id on accept). */
   target: z.string().optional(),
+  /** `rollup` only: the relation property named by NAME (resolved to relationId on accept). */
+  relation: z.string().optional(),
+  /** `rollup` only: the target-collection property to aggregate, by NAME (resolved to an id
+   *  on accept). Omit for `count`. */
+  rollupProperty: z.string().optional(),
+  /** `rollup` only: the aggregation function. */
+  aggregate: rollupAggregateSchema.optional(),
 })
 export type AiPropertyDef = z.infer<typeof aiPropertyDefSchema>
 
@@ -135,6 +162,11 @@ export function valueSchemaFor(def: PropertyDef): z.ZodTypeAny {
       return z.string()
     case 'relation':
       return z.array(z.string())
+    case 'rollup':
+      // Derived / never-stored (#20): a rollup has no stored value — it is computed on
+      // read. Rejecting every raw value makes coerceValue collapse any stray write to
+      // emptyValue (null), so a rollup key can never masquerade as data.
+      return z.never()
   }
 }
 
