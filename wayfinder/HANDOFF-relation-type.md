@@ -13,17 +13,17 @@
   relation's `target` NAME→collection id on accept; unresolvable/no-resolver drops it (lenient);
   target is relation-only. Threaded through `defineSchemaFromProposal`. Tests in
   `src/__tests__/define-schema-from-proposal.test.ts`.
-- **Full suite: jest 1037 / 74 suites green.** tsc + eslint clean (pre-commit enforced).
+- **Slice 2b (`a8e23ef`)** — accept-site resolver wired. `collectionNameResolver(pages)` (pure, in
+  `src/lib/pages/create-page.ts`) builds the `resolveCollectionName` closure; `acceptDefineSchema`
+  feeds it `allPages` (the `['pages', workspace, 'full']` cache — the one WITH `props`) and passes it
+  as the 4th arg to `defineSchemaFromProposal`. DIVERGED from the original plan: it filters to
+  **collections** (`isCollection`, first title match wins) rather than "all non-row pages" — the
+  full cache carries `props`, and a relation target IS a collection (spec decision 1). Lenient:
+  unmatched → untargeted. Tests in `src/__tests__/define-schema-from-proposal.test.ts`
+  (`collectionNameResolver` describe); UI-mock updated in `define-schema-flow-ui.test.tsx`.
+- **Full suite: jest 1042 / 74 suites green.** tsc + eslint clean (pre-commit enforced).
 
 ## Remaining slices (TDD, commit each green: tsc · eslint · jest · stories)
-
-**2b — accept-site resolver wiring (small, do first).** `AITerminal.acceptDefineSchema`
-(`src/components/organisms/AITerminal.tsx:1259`) calls `defineSchemaFromProposal(..., mint)` with NO
-resolver, so AI-authored relation targets currently drop to untargeted (graceful, but incomplete).
-Build a `resolveCollectionName` from the client pages cache (`queryClient.getQueryData(['pages',
-workspace])`) — match a page by title case-insensitively, return its id (leniency: needn't verify it
-is a collection). Pass it as the 4th arg. NOTE: the lean `['pages']` tree strips `props`, so you
-can't filter to collections there — match by title across all non-row pages, first wins.
 
 **3 — atom `RelationChip`** — `src/components/atoms/RelationChip.tsx` + story. One chip: page title,
 clickable → open page (`onOpen(id)`); `missing` variant faded. Mirror `QuoteChip`/`CsvAttachmentPill`
