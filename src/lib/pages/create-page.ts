@@ -226,14 +226,26 @@ export function hydratePropertySchema(
   }
 
   // Pass 2 — resolve each rollup now that every relation's id + target is known:
-  // relation NAME → relationId, then the rolled property NAME → its id within the
-  // relation's TARGET collection. Any unresolved link stays unset (D7).
+  // relation NAME → relationId, then the rolled property NAME → its id. Any unresolved
+  // link stays unset (D7).
   for (const { def, relationName, rollupPropName } of pendingRollups) {
     const rel = relationName ? relationsByName.get(relationName.trim().toLowerCase()) : undefined
     if (!rel) continue
     def.relationId = rel.id
-    if (rollupPropName && rel.target && resolveTargetProperty) {
-      const propId = resolveTargetProperty(rel.target, rollupPropName)
+    if (rollupPropName) {
+      // Same-batch FIRST (#20): when the rolled property is (re)defined in THIS schema —
+      // e.g. a self-referential rollup, whose relation targets the very collection being
+      // defined — its freshly-minted id here is authoritative and isn't yet in (or differs
+      // from) the target collection's persisted schema the external resolver reads. Fall
+      // back to the external resolver for a genuine cross-collection rollup (rolled
+      // property lives in a different, pre-existing collection).
+      const key = rollupPropName.trim().toLowerCase()
+      const local = out.find((d) => d.type !== 'rollup' && d.name.trim().toLowerCase() === key)?.id
+      const propId =
+        local ??
+        (rel.target && resolveTargetProperty
+          ? resolveTargetProperty(rel.target, rollupPropName)
+          : undefined)
       if (propId) def.rollupProperty = propId
     }
   }

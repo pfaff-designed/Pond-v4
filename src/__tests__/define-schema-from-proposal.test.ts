@@ -149,6 +149,58 @@ describe('hydratePropertySchema', () => {
     expect(out[0]).toMatchObject({ relationId: 'rel-1', rollupProperty: 'prop-rating' })
   })
 
+  // #20 self-referential rollup — the rolled property is minted in THIS SAME batch
+  // (the relation targets the very collection being defined), so it isn't yet in the
+  // target collection's persisted schema the external resolver reads. Resolve it from
+  // the same batch first; the external resolver is a fallback for cross-collection.
+  // A self-referential relation: its target is the very collection being defined.
+  const resolveSelf = (name: string) => (name.toLowerCase() === 'self' ? 'col-self' : undefined)
+
+  it('resolves the rolled property against the SAME batch for a self-referential rollup', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Score', type: 'number' },
+      { id: 'rel-1', name: 'Links', type: 'relation', target: 'Self' },
+      {
+        name: 'Total score',
+        type: 'rollup',
+        relation: 'Links',
+        rollupProperty: 'Score',
+        aggregate: 'sum',
+      },
+    ]
+    // External resolver reads the target collection's PERSISTED schema, which doesn't
+    // yet contain the just-minted Score (returns undefined) — pre-fix this left
+    // rollupProperty UNSET and the self-referential rollup rendered "—" forever.
+    const noExternal = () => undefined
+    const out = hydratePropertySchema(defs, mint, resolveSelf, noExternal)
+    const scoreId = out.find((d) => d.name === 'Score')!.id
+    expect(out.find((d) => d.type === 'rollup')).toMatchObject({
+      relationId: 'rel-1',
+      rollupProperty: scoreId,
+      aggregate: 'sum',
+    })
+  })
+
+  it('prefers the same-batch rolled property over a stale external id', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Score', type: 'number' },
+      { id: 'rel-1', name: 'Links', type: 'relation', target: 'Self' },
+      {
+        name: 'Total score',
+        type: 'rollup',
+        relation: 'Links',
+        rollupProperty: 'Score',
+        aggregate: 'sum',
+      },
+    ]
+    // External resolver returns a STALE/legacy id for the same name (the Trip Packing
+    // symptom) — the same-batch id must win so the rollup points at the live property.
+    const staleExternal = () => 'legacy-score-id'
+    const out = hydratePropertySchema(defs, mint, resolveSelf, staleExternal)
+    const scoreId = out.find((d) => d.name === 'Score')!.id
+    expect(out.find((d) => d.type === 'rollup')!.rollupProperty).toBe(scoreId)
+  })
+
   it('strips the AI-only `relation` key from the persisted def', () => {
     const defs: AiPropertyDef[] = [
       { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
