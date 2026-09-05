@@ -46,6 +46,10 @@ export interface ConfigureViewProposal {
   sort?: { key: string; dir: 'asc' | 'desc' }
   /** Single-clause filter — a property NAME `op` a scalar (label for select/status). */
   filter?: { property: string; op: FilterOp; value: string }
+  /** Gantt (#27): the NAME of the date property bars start at (optional; else inferred). */
+  startDate?: string
+  /** Gantt (#27): the NAME of the date property bars end at (optional; else inferred). */
+  endDate?: string
 }
 
 /** The resolved view config: the ViewBlock's config fields with ids in place. */
@@ -54,6 +58,9 @@ export interface ResolvedViewConfig {
   groupBy?: string
   sort?: ViewSort
   filter?: ViewFilter
+  /** Resolved gantt start/end date property ids (see startDate/endDate names above). */
+  startDate?: string
+  endDate?: string
 }
 
 /** Case-insensitive property lookup by name (first def wins on a duplicate name). */
@@ -101,6 +108,18 @@ export function resolveViewConfig(
     }
   }
 
+  // Gantt start/end — resolve each NAME to its property id (lenient drop when the
+  // name isn't in the schema); an omitted or dropped clause falls back to render-side
+  // positional inference (1st date = start, 2nd = end) in pickGanttDefs.
+  if (proposal.startDate) {
+    const def = byName.get(proposal.startDate.trim().toLowerCase())
+    if (def) config.startDate = def.id
+  }
+  if (proposal.endDate) {
+    const def = byName.get(proposal.endDate.trim().toLowerCase())
+    if (def) config.endDate = def.id
+  }
+
   return config
 }
 
@@ -127,6 +146,8 @@ export function upsertViewBlock(
     ...(config.groupBy ? { groupBy: config.groupBy } : {}),
     ...(config.sort ? { sort: config.sort } : {}),
     ...(config.filter ? { filter: config.filter } : {}),
+    ...(config.startDate ? { startDate: config.startDate } : {}),
+    ...(config.endDate ? { endDate: config.endDate } : {}),
     ...(existing?.collectionId ? { collectionId: existing.collectionId } : {}),
   }
 
@@ -158,6 +179,14 @@ export async function configureViewFromProposal(
   if (!schema) {
     throw new Error(
       `Cannot configure a view: page ${proposal.pageId} is not a collection (it has no schema)`
+    )
+  }
+
+  // A gantt draws bars from date properties (decision: #27 grill). Reject one over a
+  // collection with none, so the card reverts rather than writing an un-drawable view.
+  if (proposal.mode === 'gantt' && !schema.some((d) => d.type === 'date')) {
+    throw new Error(
+      `Cannot configure a gantt: collection ${proposal.pageId} has no date property to place bars on`
     )
   }
 

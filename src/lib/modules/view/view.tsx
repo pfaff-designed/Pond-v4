@@ -30,7 +30,9 @@ import {
   displayValue,
   groupRows,
   groupRowsByDate,
+  layoutGanttBars,
   pickDateDef,
+  pickGanttDefs,
   type CollectionRow,
 } from './apply'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
@@ -137,6 +139,13 @@ export function CollectionView({
         />
       ) : config.mode === 'gallery' ? (
         <CollectionGallery schema={schema} rows={processed} />
+      ) : config.mode === 'gantt' ? (
+        <CollectionGantt
+          schema={schema}
+          rows={processed}
+          startId={config.startDate}
+          endId={config.endDate}
+        />
       ) : (
         <CollectionTable schema={schema} rows={processed} editable={editable} onEdit={onEdit} />
       )}
@@ -527,6 +536,128 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
           </dl>
         </article>
       ))}
+    </div>
+  )
+}
+
+// ── Gantt (read-only timeline) ────────────────────────────────────────────────
+
+/** Parse a `YYYY-MM-DD` day to a UTC epoch-day integer (timezone-stable, DST-proof). */
+function epochDay(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return 0
+  return Math.floor(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000)
+}
+
+/** A short "Sep 8" tick label for a gridline, built at UTC noon so it never drifts. */
+function formatTick(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
+/** Add `n` days to a `YYYY-MM-DD` day, returning a `YYYY-MM-DD` day. */
+function addDays(iso: string, n: number): string {
+  return new Date((epochDay(iso) + n) * 86_400_000).toISOString().slice(0, 10)
+}
+
+/**
+ * Gantt view (#27) — a read-only timeline. Each row is one bar spanning its Start→End
+ * date over a single adaptive axis (min start … max end), sorted by start. A row with
+ * a Start but no End is a single-day tick; a row with no Start is omitted. Weekly
+ * gridlines mark the axis. The date properties are the ones the view names in
+ * `startDate`/`endDate`, else the collection's 1st/2nd date property (pickGanttDefs).
+ * No date property at all → a calm notice, like the calendar. Reschedule (drag) is a
+ * post-epic fast-follow — bars are inert here.
+ */
+function CollectionGantt({
+  schema,
+  rows,
+  startId,
+  endId,
+}: {
+  schema: PropertySchema
+  rows: CollectionRow[]
+  startId?: string
+  endId?: string
+}) {
+  const defs = useMemo(() => pickGanttDefs(schema, startId, endId), [schema, startId, endId])
+  const layout = useMemo(
+    () => (defs ? layoutGanttBars(rows, defs.startDef, defs.endDef) : null),
+    [rows, defs]
+  )
+
+  if (!defs) {
+    return <ViewNotice>This gantt needs a date property.</ViewNotice>
+  }
+  if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
+    return <p className="py-2 text-press-faint">No dated rows to chart</p>
+  }
+
+  const { bars, rangeStart, rangeEnd } = layout
+  const startDay = epochDay(rangeStart)
+  // Inclusive span, and never zero (a single all-same-day chart still divides cleanly).
+  const totalDays = Math.max(1, epochDay(rangeEnd) - startDay + 1)
+  const pct = (day: number) => ((day - startDay) / totalDays) * 100
+
+  // Weekly gridlines from the first day through the range end (Mon-agnostic — just
+  // every 7th day off the start), each labelled with its month/day.
+  const ticks: { iso: string; left: number }[] = []
+  for (let d = 0; d < totalDays; d += 7) {
+    const iso = addDays(rangeStart, d)
+    ticks.push({ iso, left: pct(epochDay(iso)) })
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[28rem]">
+        {/* Axis header — weekly tick labels aligned to their gridlines. */}
+        <div className="relative mb-1 ml-40 h-4">
+          {ticks.map((t) => (
+            <span
+              key={t.iso}
+              className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-press-muted tabular-nums"
+              style={{ left: `${t.left}%` }}
+            >
+              {formatTick(t.iso)}
+            </span>
+          ))}
+        </div>
+
+        {/* One row per bar: a fixed label column + a proportional track. */}
+        <ul role="list" className="space-y-1.5">
+          {bars.map(({ row, startIso, endIso }) => {
+            const left = pct(epochDay(startIso))
+            // +1 so an inclusive single-day span still has visible width.
+            const width = ((epochDay(endIso) - epochDay(startIso) + 1) / totalDays) * 100
+            const single = startIso === endIso
+            const span = single ? startIso : `${startIso} – ${endIso}`
+            return (
+              <li key={row.id} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 truncate text-xs font-medium text-press-ink">
+                  {row.title || 'Untitled'}
+                </span>
+                <span className="relative h-5 flex-1">
+                  {/* Weekly gridlines behind the bar. */}
+                  {ticks.map((t) => (
+                    <span
+                      key={t.iso}
+                      aria-hidden
+                      className="absolute top-0 bottom-0 border-l border-press-hair"
+                      style={{ left: `${t.left}%` }}
+                    />
+                  ))}
+                  <span
+                    role="img"
+                    aria-label={`${row.title || 'Untitled'}: ${span}`}
+                    className="absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-press-accent/80"
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                  />
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </div>
   )
 }

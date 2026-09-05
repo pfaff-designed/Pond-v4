@@ -68,6 +68,7 @@ const MODE_LABEL: Record<ViewMode, string> = {
   board: 'Board',
   calendar: 'Calendar',
   gallery: 'Gallery',
+  gantt: 'Gantt',
 }
 
 /** A short human phrase for a filter operator, for the read-only preview. */

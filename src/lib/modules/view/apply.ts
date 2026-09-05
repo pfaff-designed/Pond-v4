@@ -281,6 +281,104 @@ export function groupRowsByDate(
   return { def, buckets }
 }
 
+// ── Gantt (#27) ─────────────────────────────────────────────────────────────
+
+/** The Start + End date properties a gantt lays bars on. `endDef` is undefined when
+ *  the collection has only one date property — every bar is then a single-day tick. */
+export interface GanttDefs {
+  startDef: PropertyDef
+  endDef?: PropertyDef
+}
+
+/** One laid-out gantt bar: the row plus its resolved `YYYY-MM-DD` start/end days. */
+export interface GanttBar {
+  row: CollectionRow
+  startIso: string
+  endIso: string
+}
+
+/** The gantt layout: bars (sorted by start ascending) over an inclusive [rangeStart,
+ *  rangeEnd] day span. Both bounds are null when no row has a start date. */
+export interface GanttLayout {
+  bars: GanttBar[]
+  rangeStart: string | null
+  rangeEnd: string | null
+}
+
+/**
+ * Which date properties a gantt draws bars from (mirrors `pickDateDef`). Prefers the
+ * ids the view names in `startDate`/`endDate` when they resolve to `date` properties;
+ * otherwise infers positionally — the 1st date property is Start, the 2nd is End.
+ * With a single date property, End is undefined (bars become single-day ticks).
+ * Returns undefined when the collection has no date property at all — the caller
+ * shows a notice rather than an empty frame.
+ */
+export function pickGanttDefs(
+  schema: PropertySchema,
+  startId?: string,
+  endId?: string
+): GanttDefs | undefined {
+  const dates = schema.filter((d) => d.type === 'date')
+  if (dates.length === 0) return undefined
+  const namedDate = (id: string | undefined): PropertyDef | undefined => {
+    if (!id) return undefined
+    const def = defById(schema, id)
+    return def?.type === 'date' ? def : undefined
+  }
+  const startDef = namedDate(startId) ?? dates[0]
+  const endDef = namedDate(endId) ?? dates.find((d) => d.id !== startDef.id)
+  return { startDef, endDef }
+}
+
+/** A date value reduced to its `YYYY-MM-DD` day, or null when empty/non-string. */
+function dayOf(def: PropertyDef, raw: unknown): string | null {
+  const value = coerceValue(def, raw)
+  return typeof value === 'string' && value ? value.slice(0, 10) : null
+}
+
+/**
+ * Lay a collection's rows out as gantt bars over one adaptive timeline. Each row's
+ * bar runs from its Start day to its End day (both `YYYY-MM-DD`); a row with a Start
+ * but no End (or no End property at all) becomes a single-day tick; a row with no
+ * Start is omitted entirely (mirrors calendar's undated handling). An End that falls
+ * before its Start clamps to a single-day tick (a mis-entered range never draws
+ * backwards). Bars are sorted by start ascending, then end. `rangeStart`/`rangeEnd`
+ * are the min start / max end across all bars (null when there are no bars).
+ */
+export function layoutGanttBars(
+  rows: readonly CollectionRow[],
+  startDef: PropertyDef,
+  endDef?: PropertyDef
+): GanttLayout {
+  const bars: GanttBar[] = []
+  for (const row of rows) {
+    const startIso = dayOf(startDef, row.values[startDef.id])
+    if (!startIso) continue // no start → omitted
+    const rawEnd = endDef ? dayOf(endDef, row.values[endDef.id]) : null
+    // Missing end → single-day; an end before the start also collapses to single-day.
+    const endIso = rawEnd && rawEnd >= startIso ? rawEnd : startIso
+    bars.push({ row, startIso, endIso })
+  }
+  bars.sort((a, b) =>
+    a.startIso < b.startIso
+      ? -1
+      : a.startIso > b.startIso
+        ? 1
+        : a.endIso < b.endIso
+          ? -1
+          : a.endIso > b.endIso
+            ? 1
+            : 0
+  )
+  const rangeStart = bars.length
+    ? bars.reduce((m, b) => (b.startIso < m ? b.startIso : m), bars[0].startIso)
+    : null
+  const rangeEnd = bars.length
+    ? bars.reduce((m, b) => (b.endIso > m ? b.endIso : m), bars[0].endIso)
+    : null
+  return { bars, rangeStart, rangeEnd }
+}
+
 /** The display string for a value in a cell/chip — the read-side of `comparable`,
  *  but preserving original case (comparable lowercases for ordering). Empty → ''. */
 export function displayValue(def: PropertyDef, raw: unknown): string {

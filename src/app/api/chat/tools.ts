@@ -200,7 +200,7 @@ const configureViewInput = z
         'The id of the EXISTING collection page (one that ALREADY has a property schema) whose view to configure, taken verbatim from the [Workspace outline] in context. Never invent an id.'
       ),
     mode: viewModeSchema.describe(
-      'Which of the four existing layouts draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), or "gallery" (cards). Pick the one the user asked for.'
+      'Which existing layout draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), "gallery" (cards), or "gantt" (a read-only timeline of bars over Start→End date properties). Pick the one the user asked for.'
     ),
     groupBy: z
       .string()
@@ -227,6 +227,18 @@ const configureViewInput = z
       })
       .optional()
       .describe('An optional single-clause filter (property NAME op value). One clause only.'),
+    startDate: z
+      .string()
+      .optional()
+      .describe(
+        "For a GANTT: the NAME of the date property each bar STARTS at (from [Properties]). Optional — omit to auto-use the collection's first date property. Use the human property NAME, never an id."
+      ),
+    endDate: z
+      .string()
+      .optional()
+      .describe(
+        "For a GANTT: the NAME of the date property each bar ENDS at (from [Properties]). Optional — omit to auto-use the collection's second date property; with only one date property, bars are single-day. Use the human property NAME, never an id."
+      ),
     reason: z
       .string()
       .optional()
@@ -255,7 +267,7 @@ const configureViewInput = z
  */
 export const configureViewTool = {
   description:
-    'Configure how an EXISTING collection\'s items are displayed — SELECT a layout (table, board, calendar, or gallery) for its rows, optionally grouped, sorted, or filtered. Use this when the user asks to show/display/view/format a collection\'s items a certain way (e.g. "show my tasks as a board grouped by status", "view my reading list as a gallery", "sort this table by due date", "show only the books I\'m still reading"). Name the target collection by its id from the [Workspace outline]; name any group-by / sort / filter property by its NAME from the [Properties] line in context (never an id) — for a board you MUST name a select/status property to group by. This does NOT build a new kind of view (the four renderers already exist) and is DISTINCT from propose_changes (edits content blocks), define_schema (defines columns), and add_row (adds an item). Only use it on a page that ALREADY has a property schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card showing the resolved layout and can correct the target before anything is written; do NOT re-ask for confirmation. Use property NAMES, never ids.',
+    'Configure how an EXISTING collection\'s items are displayed — SELECT a layout (table, board, calendar, gallery, or gantt) for its rows, optionally grouped, sorted, or filtered. Use this when the user asks to show/display/view/format a collection\'s items a certain way (e.g. "show my tasks as a board grouped by status", "view my reading list as a gallery", "sort this table by due date", "show only the books I\'m still reading", "show this plan as a gantt timeline"). Name the target collection by its id from the [Workspace outline]; name any group-by / sort / filter property by its NAME from the [Properties] line in context (never an id) — for a board you MUST name a select/status property to group by, and for a gantt you may optionally name startDate/endDate date properties (else the first/second date property is used; a gantt needs at least one date property). This does NOT build a new kind of view (the four renderers already exist) and is DISTINCT from propose_changes (edits content blocks), define_schema (defines columns), and add_row (adds an item). Only use it on a page that ALREADY has a property schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card showing the resolved layout and can correct the target before anything is written; do NOT re-ask for confirmation. Use property NAMES, never ids.',
   inputSchema: configureViewInput,
 } as const
 

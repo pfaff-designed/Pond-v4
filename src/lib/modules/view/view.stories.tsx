@@ -92,6 +92,20 @@ const tableConfig: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
 const boardConfig: ViewBlock = { id: 'v-board', type: 'view', mode: 'board', groupBy: 'p-status' }
 const calendarConfig: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
 const galleryConfig: ViewBlock = { id: 'v-gallery', type: 'view', mode: 'gallery' }
+const ganttConfig: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
+
+// ── Gantt fixture: a plan collection with Start + End date properties ──────────
+const ganttSchema: PropertySchema = [
+  { id: 'g-start', name: 'Start', type: 'date' },
+  { id: 'g-end', name: 'End', type: 'date' },
+  { id: 'g-name', name: 'Phase', type: 'text' },
+]
+const ganttRows: CollectionRow[] = [
+  { id: 'gr1', title: 'Wedge & throw', values: { 'g-start': '2026-09-10', 'g-end': '2026-09-14' } },
+  { id: 'gr2', title: 'Bisque fire', values: { 'g-start': '2026-09-02', 'g-end': '2026-09-08' } },
+  { id: 'gr3', title: 'Glaze day', values: { 'g-start': '2026-09-20' } }, // no end → single-day tick
+  { id: 'gr4', title: 'Someday idea', values: {} }, // no start → omitted from the timeline
+]
 
 /** A stateful host so editable stories exercise real optimistic round-trips. */
 function StatefulView({
@@ -339,6 +353,40 @@ export const GalleryEmpty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('No rows yet')).toBeInTheDocument()
+  },
+}
+
+// ── Gantt (read-only timeline) ────────────────────────────────────────────────
+
+/**
+ * Read-only gantt: one bar per dated row over a single adaptive timeline, ordered by
+ * start ascending. The end-less row (Glaze day) is a single-day tick; the start-less
+ * row (Someday idea) is omitted. Date properties auto-infer (1st=Start, 2nd=End).
+ */
+export const GanttReadOnly: Story = {
+  args: { config: ganttConfig, schema: ganttSchema, rows: ganttRows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Bars carry an aria-label "<title>: <span>"; the start-less row has none.
+    const bars = canvas.getAllByRole('img')
+    const labels = bars.map((b) => b.getAttribute('aria-label'))
+    // Ordered by start: Bisque (Sep 2) before Wedge (Sep 10) before Glaze (Sep 20).
+    expect(labels).toEqual([
+      'Bisque fire: 2026-09-02 – 2026-09-08',
+      'Wedge & throw: 2026-09-10 – 2026-09-14',
+      'Glaze day: 2026-09-20', // single-day tick (no end)
+    ])
+    // The start-less row is omitted from the timeline entirely.
+    await expect(canvas.queryByText('Someday idea')).not.toBeInTheDocument()
+  },
+}
+
+/** A collection with no date property: a calm hint instead of an empty timeline. */
+export const GanttNeedsDate: Story = {
+  args: { config: ganttConfig, schema: noDateSchema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('This gantt needs a date property.')).toBeInTheDocument()
   },
 }
 

@@ -93,6 +93,24 @@ describe('resolveViewConfig', () => {
       })
     ).toEqual({ mode: 'table', filter: { property: 'p-due', op: 'lt', value: '2026-12-31' } })
   })
+
+  it('resolves gantt startDate / endDate names to property ids', () => {
+    const twoDates: PropertySchema = [...schema, { id: 'p-finish', name: 'Finish', type: 'date' }]
+    expect(
+      resolveViewConfig(twoDates, {
+        pageId: 'c',
+        mode: 'gantt',
+        startDate: 'Due',
+        endDate: 'Finish',
+      })
+    ).toEqual({ mode: 'gantt', startDate: 'p-due', endDate: 'p-finish' })
+  })
+
+  it('drops a gantt date name that is not in the schema (falls back to inference)', () => {
+    expect(resolveViewConfig(schema, { pageId: 'c', mode: 'gantt', startDate: 'Nope' })).toEqual({
+      mode: 'gantt',
+    })
+  })
 })
 
 // ── upsertViewBlock — mint vs reconfigure ────────────────────────────────────
@@ -232,5 +250,33 @@ describe('configureViewFromProposal', () => {
       configureViewFromProposal(sb as never, { pageId: 'plain', mode: 'table' }, () => 'x')
     ).rejects.toThrow(/not a collection/i)
     expect(sb._update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a gantt over a collection with no date property (no write)', async () => {
+    const noDates: PropertySchema = [
+      { id: 'p-title', name: 'Title', type: 'text' },
+      {
+        id: 'p-status',
+        name: 'Status',
+        type: 'status',
+        options: [{ id: 'o-todo', label: 'To do' }],
+      },
+    ]
+    const sb = makeSupabase({ id: 'coll-2', props: { [SCHEMA_KEY]: noDates }, blocks: [] })
+    await expect(
+      configureViewFromProposal(sb as never, { pageId: 'coll-2', mode: 'gantt' }, () => 'x')
+    ).rejects.toThrow(/no date property/i)
+    expect(sb._update).not.toHaveBeenCalled()
+  })
+
+  it('writes a gantt with resolved start/end date ids onto a dated collection', async () => {
+    const sb = makeSupabase({ id: 'coll-3', props: { [SCHEMA_KEY]: schema }, blocks: [] })
+    await configureViewFromProposal(
+      sb as never,
+      { pageId: 'coll-3', mode: 'gantt', startDate: 'Due' },
+      () => 'v-g'
+    )
+    const payload = sb._update.mock.calls[0][0]
+    expect(payload.blocks).toEqual([{ id: 'v-g', type: 'view', mode: 'gantt', startDate: 'p-due' }])
   })
 })

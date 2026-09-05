@@ -12,7 +12,9 @@ import {
   filterRows,
   groupRows,
   groupRowsByDate,
+  layoutGanttBars,
   pickDateDef,
+  pickGanttDefs,
   sortRows,
   type CollectionRow,
 } from './apply'
@@ -254,6 +256,95 @@ describe('groupRowsByDate', () => {
     expect(groupRowsByDate(rows, schema, 'p-priority')).toBeNull()
     expect(groupRowsByDate(rows, schema, undefined)).toBeNull()
     expect(groupRowsByDate(rows, schema, 'p-nope')).toBeNull()
+  })
+})
+
+// ── Gantt (#27) ──────────────────────────────────────────────────────────────
+
+const ganttSchema: PropertySchema = [
+  { id: 'p-start', name: 'Start', type: 'date' },
+  { id: 'p-end', name: 'End', type: 'date' },
+  { id: 'p-name', name: 'Name', type: 'text' },
+]
+
+describe('pickGanttDefs', () => {
+  it('infers the 1st date property as start and the 2nd as end', () => {
+    const defs = pickGanttDefs(ganttSchema)
+    expect(defs?.startDef.id).toBe('p-start')
+    expect(defs?.endDef?.id).toBe('p-end')
+  })
+
+  it('honors named start/end ids over positional inference', () => {
+    const defs = pickGanttDefs(ganttSchema, 'p-end', 'p-start')
+    expect(defs?.startDef.id).toBe('p-end')
+    expect(defs?.endDef?.id).toBe('p-start')
+  })
+
+  it('falls back to inference when a named id is not a date property', () => {
+    // p-name is text → ignored; start falls back to the first date property.
+    const defs = pickGanttDefs(ganttSchema, 'p-name')
+    expect(defs?.startDef.id).toBe('p-start')
+    expect(defs?.endDef?.id).toBe('p-end')
+  })
+
+  it('leaves end undefined when the collection has a single date property', () => {
+    const oneDate: PropertySchema = [{ id: 'p-when', name: 'When', type: 'date' }]
+    const defs = pickGanttDefs(oneDate)
+    expect(defs?.startDef.id).toBe('p-when')
+    expect(defs?.endDef).toBeUndefined()
+  })
+
+  it('returns undefined when the collection has no date property', () => {
+    expect(pickGanttDefs(schema.filter((d) => d.type !== 'date'))).toBeUndefined()
+  })
+})
+
+describe('layoutGanttBars', () => {
+  const startDef = ganttSchema[0]
+  const endDef = ganttSchema[1]
+  const ganttRows: CollectionRow[] = [
+    { id: 'r1', title: 'Throw', values: { 'p-start': '2026-09-10', 'p-end': '2026-09-12' } },
+    { id: 'r2', title: 'Glaze', values: { 'p-start': '2026-09-01', 'p-end': '2026-09-05' } },
+    { id: 'r3', title: 'Fire', values: { 'p-start': '2026-09-20' } }, // no end → single day
+    { id: 'r4', title: 'Someday', values: {} }, // no start → omitted
+    { id: 'r5', title: 'Backwards', values: { 'p-start': '2026-09-08', 'p-end': '2026-09-06' } }, // end < start
+  ]
+
+  it('sorts bars by start ascending and omits rows with no start', () => {
+    const { bars } = layoutGanttBars(ganttRows, startDef, endDef)
+    expect(bars.map((b) => b.row.id)).toEqual(['r2', 'r5', 'r1', 'r3'])
+  })
+
+  it('makes a single-day tick when a row has a start but no end', () => {
+    const { bars } = layoutGanttBars(ganttRows, startDef, endDef)
+    const fire = bars.find((b) => b.row.id === 'r3')!
+    expect(fire.startIso).toBe('2026-09-20')
+    expect(fire.endIso).toBe('2026-09-20')
+  })
+
+  it('clamps an end that falls before its start to a single-day tick', () => {
+    const { bars } = layoutGanttBars(ganttRows, startDef, endDef)
+    const back = bars.find((b) => b.row.id === 'r5')!
+    expect(back.startIso).toBe('2026-09-08')
+    expect(back.endIso).toBe('2026-09-08')
+  })
+
+  it('computes the inclusive range from min start to max end', () => {
+    const { rangeStart, rangeEnd } = layoutGanttBars(ganttRows, startDef, endDef)
+    expect(rangeStart).toBe('2026-09-01')
+    expect(rangeEnd).toBe('2026-09-20')
+  })
+
+  it('draws every bar as single-day when there is no end property', () => {
+    const { bars } = layoutGanttBars(ganttRows, startDef, undefined)
+    expect(bars.every((b) => b.startIso === b.endIso)).toBe(true)
+  })
+
+  it('returns an empty layout with null bounds when no row has a start', () => {
+    const layout = layoutGanttBars([{ id: 'x', title: 'x', values: {} }], startDef, endDef)
+    expect(layout.bars).toEqual([])
+    expect(layout.rangeStart).toBeNull()
+    expect(layout.rangeEnd).toBeNull()
   })
 })
 

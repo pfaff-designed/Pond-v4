@@ -221,6 +221,8 @@ interface ConfigureViewPart {
     groupBy?: string
     sort?: { key: string; dir: 'asc' | 'desc' }
     filter?: { property: string; op: FilterOp; value: string }
+    startDate?: string
+    endDate?: string
     reason?: string
   }
 }
@@ -1250,6 +1252,8 @@ export function AITerminal() {
             groupBy: part?.groupBy,
             sort: part?.sort,
             filter: part?.filter,
+            startDate: part?.startDate,
+            endDate: part?.endDate,
           },
           () => crypto.randomUUID()
         )

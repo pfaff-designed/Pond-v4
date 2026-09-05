@@ -19,8 +19,8 @@ import type { ModuleDescriptor } from '../types'
  * `assemble.ts`, surfaced in `serialize`).
  */
 
-/** The four render modes (decision 13). table/board landed in slice 3; calendar (agenda) + gallery in slice 4. */
-export const VIEW_MODES = ['table', 'board', 'calendar', 'gallery'] as const
+/** The render modes (decision 13). table/board landed in slice 3; calendar (agenda) + gallery in slice 4; gantt (read-only timeline) in #27. */
+export const VIEW_MODES = ['table', 'board', 'calendar', 'gallery', 'gantt'] as const
 export const viewModeSchema = z.enum(VIEW_MODES)
 export type ViewMode = z.infer<typeof viewModeSchema>
 
@@ -52,6 +52,10 @@ export const viewSchema = z.object({
   groupBy: z.string().optional(),
   sort: viewSortSchema.optional(),
   filter: viewFilterSchema.optional(),
+  /** Gantt (#27): the id of the `date` property a bar STARTS at. Omitted → inferred (1st date prop). */
+  startDate: z.string().optional(),
+  /** Gantt (#27): the id of the `date` property a bar ENDS at. Omitted → inferred (2nd date prop); none → single-day bars. */
+  endDate: z.string().optional(),
   /** A linked view over ANOTHER collection (decision 12) — round-trips, hydration stubbed this cycle. */
   collectionId: z.string().optional(),
 })
@@ -77,7 +81,7 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   type: 'view',
   schema: viewSchema,
   description:
-    "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, or gallery. Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids. Do not use to lay out ordinary prose — that's a text block.",
+    "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, gallery, or gantt (a read-only timeline over Start→End date properties). Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids; `startDate`/`endDate` (date property ids) place gantt bars. Do not use to lay out ordinary prose — that's a text block.",
   // Serialize the CONFIG in full (the AI re-emits it, so every clause must be
   // visible) plus the hydrated row titles for context fidelity. Rows arrive on the
   // transient HydratedViewBlock the assemble seam builds; absent that injection
