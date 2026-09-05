@@ -17,14 +17,37 @@ export interface RelationChipProps {
   title?: string
   /** Open the linked page. Not called for a missing chip. */
   onOpen: (id: string) => void
+  /** When set (editable host), render a × that unlinks this id. */
+  onRemove?: () => void
   /** The id resolved to no page — render faded and inert. */
   missing?: boolean
   className?: string
 }
 
-export function RelationChip({ id, title, onOpen, missing = false, className }: RelationChipProps) {
+export function RelationChip({
+  id,
+  title,
+  onOpen,
+  onRemove,
+  missing = false,
+  className,
+}: RelationChipProps) {
+  // A container span (never a button) holds the label + an optional ×, so the two
+  // interactive elements never nest (invalid HTML). QuoteChip / CsvAttachmentPill
+  // follow the same shape.
   const base =
-    'inline-flex items-center rounded border px-2 py-0.5 font-mono text-xs max-w-[24ch] truncate'
+    'inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-xs max-w-[24ch]'
+
+  const removeButton = onRemove ? (
+    <button
+      type="button"
+      aria-label={missing ? 'Remove missing link' : `Remove ${title ?? id}`}
+      onClick={onRemove}
+      className="flex-shrink-0 text-press-faint transition-colors hover:text-press-body"
+    >
+      ×
+    </button>
+  ) : null
 
   if (missing) {
     return (
@@ -33,22 +56,22 @@ export function RelationChip({ id, title, onOpen, missing = false, className }: 
         className={cn(base, 'border-dashed border-press-line italic text-press-faint', className)}
       >
         <span className="truncate">Missing page</span>
+        {removeButton}
       </span>
     )
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(id)}
-      title={title}
-      className={cn(
-        base,
-        'border-press-line bg-press-accent-wash text-press-body transition-colors hover:border-press-accent/50',
-        className
-      )}
-    >
-      <span className="truncate">{title ?? id}</span>
-    </button>
+    <span className={cn(base, 'border-press-line bg-press-accent-wash text-press-body', className)}>
+      <button
+        type="button"
+        onClick={() => onOpen(id)}
+        title={title}
+        className="truncate text-left outline-none transition-colors hover:underline"
+      >
+        {title ?? id}
+      </button>
+      {removeButton}
+    </span>
   )
 }

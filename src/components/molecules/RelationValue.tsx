@@ -1,0 +1,145 @@
+'use client'
+
+/**
+ * A relation property's value: the linked pages rendered as RelationChips, plus —
+ * when `editable` — a bespoke title-search picker to add more (#20 slice 4).
+ *
+ * Presentational: the value (`string[]` of page-ids), the id→title map, and the
+ * pickable `candidates` are all injected; a connected wrapper (slice 6) does the
+ * fetching. Edits go out through `onChange` as a fresh `string[]` (addLink /
+ * removeLink). An id with no title renders as a faded "missing" chip. `single`
+ * makes the picker replace-on-select (radio); the read never clamps.
+ *
+ * The picker is built from raw primitives (useState/refs/role), mirroring
+ * SlashMenu — not a shadcn wrapper.
+ */
+
+import { useEffect, useRef, useState } from 'react'
+import { RelationChip } from '@/components/atoms/RelationChip'
+import { addLink, removeLink } from '@/lib/modules/view/relation-value-ops'
+import { cn } from '@/lib/utils'
+
+export interface RelationCandidate {
+  id: string
+  title: string
+}
+
+export interface RelationValueProps {
+  /** The linked page-ids. */
+  value: string[]
+  /** id→title for the linked ids (partial; a missing id renders faded). */
+  titles: Map<string, string>
+  /** The pages the picker offers (target collection rows, or global). */
+  candidates: RelationCandidate[]
+  /** Radio cap — the picker replaces-on-select instead of appending. */
+  single?: boolean
+  /** Read-only hosts pass false: chips render, but no × and no picker. */
+  editable?: boolean
+  /** Emit the next value after an add/remove. */
+  onChange: (next: string[]) => void
+  /** Open a linked page (chip click). */
+  onOpen: (id: string) => void
+  className?: string
+}
+
+export function RelationValue({
+  value,
+  titles,
+  candidates,
+  single = false,
+  editable = false,
+  onChange,
+  onOpen,
+  className,
+}: RelationValueProps) {
+  const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
+
+  function close() {
+    setOpen(false)
+    setFilter('')
+  }
+
+  function select(id: string) {
+    onChange(addLink(value, id, single))
+    close()
+  }
+
+  // Don't offer an already-linked page; then title-filter the rest.
+  const linked = new Set(value)
+  const q = filter.trim().toLowerCase()
+  const options = candidates
+    .filter((c) => !linked.has(c.id))
+    .filter((c) => !q || c.title.toLowerCase().includes(q))
+
+  return (
+    <span className={cn('relative inline-flex flex-wrap items-center gap-1', className)}>
+      {value.map((id) => (
+        <RelationChip
+          key={id}
+          id={id}
+          title={titles.get(id)}
+          missing={!titles.has(id)}
+          onOpen={onOpen}
+          onRemove={editable ? () => onChange(removeLink(value, id)) : undefined}
+        />
+      ))}
+
+      {editable && (
+        <button
+          type="button"
+          aria-label="Link a page"
+          onClick={() => (open ? close() : setOpen(true))}
+          className="rounded border border-dashed border-press-line px-1.5 py-0.5 font-mono text-xs text-press-muted transition-colors hover:border-press-accent/50 hover:text-press-body"
+        >
+          + Link
+        </button>
+      )}
+
+      {editable && open && (
+        <div
+          role="menu"
+          aria-label="Page picker"
+          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-lg border border-press-line bg-press-paper shadow-xl"
+        >
+          <input
+            ref={inputRef}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                close()
+              }
+            }}
+            placeholder="Search pages…"
+            aria-label="Search pages to link"
+            className="w-full border-b border-press-hair bg-transparent px-3 py-2 font-mono text-sm outline-none"
+          />
+          <div className="max-h-64 overflow-y-auto">
+            {options.length === 0 ? (
+              <p className="px-3 py-2 text-sm italic text-press-muted">No pages match</p>
+            ) : (
+              options.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => select(c.id)}
+                  className="block w-full truncate px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-press-accent-wash focus-visible:bg-press-accent-wash"
+                >
+                  {c.title}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </span>
+  )
+}

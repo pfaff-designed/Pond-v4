@@ -37,3 +37,27 @@ export const Missing: Story = {
     await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }
+
+export const Removable: Story = {
+  args: { onRemove: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    // The title still opens the linked page…
+    await userEvent.click(canvas.getByRole('button', { name: 'The Odyssey' }))
+    await expect(args.onOpen).toHaveBeenCalledWith('page-42')
+    // …and the × unlinks it.
+    await userEvent.click(canvas.getByLabelText('Remove The Odyssey'))
+    await expect(args.onRemove).toHaveBeenCalled()
+  },
+}
+
+export const MissingRemovable: Story = {
+  args: { id: 'page-gone', title: undefined, missing: true, onRemove: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Missing page')).toBeInTheDocument()
+    // A missing chip can still be dropped via its ×.
+    await userEvent.click(canvas.getByLabelText('Remove missing link'))
+    await expect(args.onRemove).toHaveBeenCalled()
+  },
+}
