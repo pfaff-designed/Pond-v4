@@ -51,6 +51,8 @@ export interface ConversationResolutions {
   schemas: Record<string, ProposalDecision>
   /** add_row decisions, keyed by toolCallId (#18). */
   rows: Record<string, ProposalDecision>
+  /** promote_table decisions, keyed by toolCallId (#29). */
+  promotions: Record<string, ProposalDecision>
   /** configure_view decisions, keyed by toolCallId (#19 slice 5). */
   views: Record<string, ProposalDecision>
   /** Accepted changes skipped by the accept-time re-validation gate, by toolCallId. */
@@ -70,6 +72,7 @@ export function emptyResolutions(): ConversationResolutions {
     creates: {},
     schemas: {},
     rows: {},
+    promotions: {},
     views: {},
     skipped: {},
     targets: {},
@@ -103,6 +106,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     creates: pick('creates', isDecision),
     schemas: pick('schemas', isDecision),
     rows: pick('rows', isDecision),
+    promotions: pick('promotions', isDecision),
     views: pick('views', isDecision),
     skipped: pick('skipped', isCount),
     targets: pick('targets', isTarget),
@@ -204,6 +208,7 @@ export function applyResolutions(
     Object.keys(resolutions.creates).length === 0 &&
     Object.keys(resolutions.schemas).length === 0 &&
     Object.keys(resolutions.rows).length === 0 &&
+    Object.keys(resolutions.promotions).length === 0 &&
     Object.keys(resolutions.views).length === 0 &&
     Object.keys(resolutions.questions).length === 0
   ) {
@@ -303,6 +308,22 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         note:
           decision === 'accepted'
             ? 'User accepted; the row was added. Do not propose it again.'
+            : 'User dismissed this proposal. Do not propose it again unless asked.',
+      },
+    } as ToolPartLike
+  }
+
+  if (part.type === 'tool-promote_table') {
+    const decision = resolutions.promotions[part.toolCallId]
+    if (!decision) return part
+    return {
+      ...part,
+      state: 'output-available',
+      output: {
+        decision,
+        note:
+          decision === 'accepted'
+            ? 'User accepted; the table was converted to a collection. Do not propose it again.'
             : 'User dismissed this proposal. Do not propose it again unless asked.',
       },
     } as ToolPartLike

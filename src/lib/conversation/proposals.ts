@@ -24,6 +24,7 @@ export const PROPOSE_CHANGES_TYPE = 'tool-propose_changes'
 export const CREATE_PAGE_TYPE = 'tool-create_page'
 export const DEFINE_SCHEMA_TYPE = 'tool-define_schema'
 export const ADD_ROW_TYPE = 'tool-add_row'
+export const PROMOTE_TABLE_TYPE = 'tool-promote_table'
 export const CONFIGURE_VIEW_TYPE = 'tool-configure_view'
 
 /** A single change's decision inside a propose_changes batch ('pending' when undecided). */
@@ -51,7 +52,8 @@ export function unresolvedProposalIds(
   excludeMessageIds: ReadonlySet<string> = new Set(),
   schemaDecisions: Record<string, string> = {},
   rowDecisions: Record<string, string> = {},
-  viewDecisions: Record<string, string> = {}
+  viewDecisions: Record<string, string> = {},
+  promotionDecisions: Record<string, string> = {}
 ): string[] {
   const ids: string[] = []
   for (const message of messages) {
@@ -77,6 +79,10 @@ export function unresolvedProposalIds(
         }
       } else if (part.type === ADD_ROW_TYPE) {
         if ((rowDecisions[part.toolCallId] ?? 'pending') === 'pending') {
+          ids.push(part.toolCallId)
+        }
+      } else if (part.type === PROMOTE_TABLE_TYPE) {
+        if ((promotionDecisions[part.toolCallId] ?? 'pending') === 'pending') {
           ids.push(part.toolCallId)
         }
       } else if (part.type === CONFIGURE_VIEW_TYPE) {

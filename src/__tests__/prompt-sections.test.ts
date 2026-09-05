@@ -42,6 +42,9 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'from memory, not today',
     // #19 slice 5: configure_view routing.
     'call the configure_view tool',
+    // #29: promote_table — convert an existing freeform table block to a collection.
+    'call the promote_table tool',
+    'promote_table CONVERTS an existing filled table',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })

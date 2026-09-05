@@ -245,6 +245,57 @@ describe('applyResolutions — add_row cards (#18)', () => {
   })
 })
 
+describe('applyResolutions — promote_table cards (#29)', () => {
+  function promoteTranscript(): UIMessage[] {
+    return [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'turn this table into a database' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-promote_table',
+            toolCallId: 'pt1',
+            state: 'input-available',
+            input: { pageId: 'page-1', blockId: 'b-table' },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an accepted promote_table as a tool result so the model stops re-proposing', () => {
+    const out = applyResolutions(promoteTranscript(), {
+      ...emptyResolutions(),
+      promotions: { pt1: 'accepted' },
+    })
+    const part = findPart(out, 'pt1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'accepted' })
+    expect((part.output as { note: string }).note).toMatch(/do not propose it again/i)
+  })
+
+  it('stamps a rejected promote_table with a dismissal note', () => {
+    const out = applyResolutions(promoteTranscript(), {
+      ...emptyResolutions(),
+      promotions: { pt1: 'rejected' },
+    })
+    const part = findPart(out, 'pt1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'rejected' })
+    expect((part.output as { note: string }).note).toMatch(/dismissed/i)
+  })
+
+  it('leaves an undecided promote_table card untouched (still dropped from replay)', () => {
+    const out = applyResolutions(promoteTranscript(), emptyResolutions())
+    expect(findPart(out, 'pt1').state).toBe('input-available')
+  })
+})
+
 describe('applyResolutions — configure_view cards (#19 slice 5)', () => {
   function viewTranscript(): UIMessage[] {
     return [
@@ -377,6 +428,7 @@ describe('parseResolutions', () => {
       creates: { cp1: 'rejected' },
       schemas: { ds1: 'accepted' }, // #17 slice 5: define_schema decisions
       rows: { ar1: 'accepted' }, // #18: add_row decisions
+      promotions: { pt1: 'accepted' }, // #29: promote_table decisions
       views: { cv1: 'accepted' }, // #19 slice 5: configure_view decisions
       skipped: { pc1: 2 },
       targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
@@ -408,6 +460,7 @@ describe('parseResolutions', () => {
       creates: {},
       schemas: {}, // #17 slice 5: present-but-empty on a row with no schema cards
       rows: {}, // #18: present-but-empty on a row with no add_row cards
+      promotions: {}, // #29: present-but-empty on a row with no promote_table cards
       views: {}, // #19 slice 5: present-but-empty on a row with no configure_view cards
       skipped: { x: 1 },
       targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
