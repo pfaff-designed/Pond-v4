@@ -16,6 +16,7 @@ import {
   createPageTool,
   defineSchemaTool,
   addRowTool,
+  configureViewTool,
   proposeChangesTool,
   fetchContextTool,
   readPageTool,
@@ -186,6 +187,11 @@ export async function POST(req: Request) {
       // the user's Accept/Reject rides the resolutions envelope, exactly like
       // define_schema. Distinct from create_page (ordinary sub-page).
       add_row: tool(addRowTool),
+      // configure_view (#19 slice 5): SELECT a layout (table/board/calendar/gallery)
+      // for an existing collection's rows, optionally grouped/sorted/filtered.
+      // Client-resolved (no execute) — the tool call renders a proposal card and the
+      // user's Accept/Reject rides the resolutions envelope, exactly like add_row.
+      configure_view: tool(configureViewTool),
       // propose_changes can now target ANY page the model names by id from the
       // workspace outline, not just the open one (ticket-30): it edits the open
       // page by default, or a page named via `targetPageId` after a read_page.

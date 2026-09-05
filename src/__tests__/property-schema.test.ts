@@ -14,6 +14,8 @@ import {
   valueSchemaFor,
   emptyValue,
   coerceValue,
+  resolveOptionValue,
+  optionForValue,
   readSchema,
   isCollection,
   readValues,
@@ -95,6 +97,64 @@ describe('coerceValue is lenient (never throws, collapses non-conforming to empt
     expect(coerceValue(def({ type: 'number' }), 'not a number')).toBeNull()
     expect(coerceValue(def({ type: 'checkbox' }), 'nope')).toBe(false)
     expect(coerceValue(def({ type: 'relation' }), 'a')).toEqual([])
+  })
+})
+
+describe('resolveOptionValue — select/status label→id (the value-is-an-id contract)', () => {
+  const stage = def({
+    type: 'select',
+    options: [
+      { id: 'o-todo', label: 'To Do' },
+      { id: 'o-doing', label: 'Doing' },
+    ],
+  })
+
+  it('resolves a label to its option id, case-insensitively', () => {
+    expect(resolveOptionValue(stage, 'Doing')).toBe('o-doing')
+    expect(resolveOptionValue(stage, 'to do')).toBe('o-todo')
+  })
+
+  it('keeps a value that is already an option id (idempotent re-writes)', () => {
+    expect(resolveOptionValue(stage, 'o-doing')).toBe('o-doing')
+  })
+
+  it('keeps an unmatched value raw (lenient — never silently dropped)', () => {
+    expect(resolveOptionValue(stage, 'Archived')).toBe('Archived')
+  })
+
+  it('empty / blank / nullish → null', () => {
+    expect(resolveOptionValue(stage, '')).toBeNull()
+    expect(resolveOptionValue(stage, '   ')).toBeNull()
+    expect(resolveOptionValue(stage, null)).toBeNull()
+    expect(resolveOptionValue(stage, undefined)).toBeNull()
+  })
+})
+
+describe('optionForValue — read-side chip resolution (#19 views)', () => {
+  const stage = def({
+    type: 'status',
+    options: [
+      { id: 'o-todo', label: 'To Do', color: 'gray' },
+      { id: 'o-doing', label: 'Doing', color: 'blue' },
+    ],
+  })
+
+  it('resolves a stored id to its option (label + color for the chip)', () => {
+    expect(optionForValue(stage, 'o-doing')).toEqual({
+      id: 'o-doing',
+      label: 'Doing',
+      color: 'blue',
+    })
+  })
+
+  it('falls back to a label match so a legacy label-stored row still renders', () => {
+    expect(optionForValue(stage, 'To Do')).toEqual({ id: 'o-todo', label: 'To Do', color: 'gray' })
+  })
+
+  it('returns undefined for an unmatched value or a non-choice property', () => {
+    expect(optionForValue(stage, 'Archived')).toBeUndefined()
+    expect(optionForValue(def({ type: 'text' }), 'anything')).toBeUndefined()
+    expect(optionForValue(stage, '')).toBeUndefined()
   })
 })
 

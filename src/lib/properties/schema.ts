@@ -156,6 +156,47 @@ export function coerceValue(def: PropertyDef, raw: unknown): PropertyValue {
   return parsed.success ? (parsed.data as PropertyValue) : emptyValue(def)
 }
 
+// ── select/status option resolution (the value-is-an-id contract) ─────────────
+// The stored value of a select/status property is the option's *stable id*, never
+// its label (line 51: options carry ids so a rename never orphans a row). But the
+// AI proposes values by label ("High"), exactly as it proposes property keys by
+// name — so the write seam must resolve label→id, mirroring the name→id resolution
+// in resolveRowValues. Resolution is lenient (#18 decision 9): a value already an
+// id is kept idempotently; a label matches its option; anything unmatched is kept
+// raw so an off-schema value is never silently dropped.
+
+/**
+ * Resolve a proposed select/status value to its option **id**. Matches an existing
+ * id first (idempotent re-writes), then a label case-insensitively; an unmatched
+ * value is returned verbatim (lenient raw fallback). Empty/blank → `null`.
+ */
+export function resolveOptionValue(def: PropertyDef, raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null
+  const s = String(raw).trim()
+  if (s === '') return null
+  const opts = def.options ?? []
+  if (opts.some((o) => o.id === s)) return s
+  const byLabel = opts.find((o) => o.label.trim().toLowerCase() === s.toLowerCase())
+  return byLabel ? byLabel.id : s
+}
+
+/**
+ * The read-side inverse: the option a stored select/status value points at, for
+ * chip label + color (#19 views). Resolves by id first, then falls back to a
+ * label match so a legacy row that stored a label (pre-resolution #18 rows) still
+ * renders. Returns `undefined` for non-choice props or an unmatched/empty value —
+ * the caller renders the raw string as a plain chip.
+ */
+export function optionForValue(def: PropertyDef, value: PropertyValue): PropertyOption | undefined {
+  if (def.type !== 'select' && def.type !== 'status') return undefined
+  if (typeof value !== 'string' || value === '') return undefined
+  const opts = def.options ?? []
+  return (
+    opts.find((o) => o.id === value) ??
+    opts.find((o) => o.label.trim().toLowerCase() === value.trim().toLowerCase())
+  )
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>

@@ -29,6 +29,7 @@ import {
   defineSchemaFromProposal,
   addRowFromProposal,
 } from '@/lib/pages/create-page'
+import { configureViewFromProposal } from '@/lib/pages/configure-view'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -68,12 +69,14 @@ import {
 } from '@/components/molecules/CreatePageProposalCard'
 import { DefineSchemaProposalCard } from '@/components/molecules/DefineSchemaProposalCard'
 import { AddRowProposalCard } from '@/components/molecules/AddRowProposalCard'
+import { ConfigureViewProposalCard } from '@/components/molecules/ConfigureViewProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
   changeStatus,
   unresolvedProposalIds,
   DEFINE_SCHEMA_TYPE,
   ADD_ROW_TYPE,
+  CONFIGURE_VIEW_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
 import {
@@ -96,6 +99,7 @@ import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
 import { withSchema, isCollection, type AiPropertyDef } from '@/lib/properties/schema'
+import type { ViewMode, FilterOp } from '@/lib/modules/view/schema'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -203,6 +207,30 @@ function isAddRowPart(part: { type: string }): part is AddRowPart {
   return part.type === ADD_ROW_TYPE
 }
 
+/** A configure_view tool part — a proposed view config (mode + optional group-by /
+ *  sort / filter, keyed by property NAME) for an EXISTING collection (#19 slice 5).
+ *  Client-resolved (no execute); the card below drives accept/reject + which
+ *  collection it applies to. */
+interface ConfigureViewPart {
+  type: typeof CONFIGURE_VIEW_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    pageId?: string
+    mode?: ViewMode
+    groupBy?: string
+    sort?: { key: string; dir: 'asc' | 'desc' }
+    filter?: { property: string; op: FilterOp; value: string }
+    startDate?: string
+    endDate?: string
+    reason?: string
+  }
+}
+
+function isConfigureViewPart(part: { type: string }): part is ConfigureViewPart {
+  return part.type === CONFIGURE_VIEW_TYPE
+}
+
 /** An ask_question tool part — a branch-pause question card (ticket-39). Client-
  *  resolved (no execute); the QuestionCard below drives the answer, which rides
  *  the resolutions envelope. */
@@ -301,6 +329,14 @@ export function AITerminal() {
   const [rowDecisions, setRowDecisions] = useState<Record<string, ProposalStatus>>({})
   const [rowTarget, setRowTarget] = useState<Record<string, string>>({})
 
+  // configure_view decisions + the user-chosen target collection, keyed by
+  // toolCallId (#19 slice 5). Same no-execute caveat as add_row: the local maps
+  // (not the SDK part) drive each card's resolved state and picked collection.
+  // `undefined` in the target map means "not yet touched" — the card falls back to
+  // the AI-proposed pageId until the user overrides it.
+  const [viewDecisions, setViewDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [viewTarget, setViewTarget] = useState<Record<string, string>>({})
+
   // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
   // no-execute caveat as the proposal maps: the SDK part stays input-available,
   // so this local map drives the card's answered/inert state and rides the
@@ -329,6 +365,7 @@ export function AITerminal() {
       creates: settled(createDecisions),
       schemas: settled(schemaDecisions),
       rows: settled(rowDecisions),
+      views: settled(viewDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
       questions: questionAnswers,
@@ -341,6 +378,7 @@ export function AITerminal() {
     createDecisions,
     schemaDecisions,
     rowDecisions,
+    viewDecisions,
     changeSkipped,
     changeTargets,
     questionAnswers,
@@ -358,6 +396,8 @@ export function AITerminal() {
     setSchemaTarget({})
     setRowDecisions({})
     setRowTarget({})
+    setViewDecisions({})
+    setViewTarget({})
     setQuestionAnswers({})
     setLifecycle(idleLifecycle())
   }, [])
@@ -645,6 +685,7 @@ export function AITerminal() {
       setCreateDecisions(conversation.resolutions.creates ?? {})
       setSchemaDecisions(conversation.resolutions.schemas ?? {})
       setRowDecisions(conversation.resolutions.rows ?? {})
+      setViewDecisions(conversation.resolutions.views ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
       setQuestionAnswers(conversation.resolutions.questions ?? {})
@@ -727,9 +768,18 @@ export function AITerminal() {
         createDecisions,
         initialMessageIds,
         schemaDecisions,
-        rowDecisions
+        rowDecisions,
+        viewDecisions
       ),
-    [messages, changeDecisions, createDecisions, initialMessageIds, schemaDecisions, rowDecisions]
+    [
+      messages,
+      changeDecisions,
+      createDecisions,
+      initialMessageIds,
+      schemaDecisions,
+      rowDecisions,
+      viewDecisions,
+    ]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
@@ -1182,6 +1232,46 @@ export function AITerminal() {
     [supabaseClient, queryClient, workspace]
   )
 
+  // ── configure_view resolution (#19 slice 5) ───────────────────────────────
+  // Accept: resolve the proposed name-keyed config against the chosen collection's
+  // schema and upsert THE view block on it (configureViewFromProposal), then
+  // invalidate ['pages'] AND the target's ['page', id] so the reconfigured view
+  // re-renders at once. The user's chosen collection wins over the AI's proposed
+  // pageId. Never touches props — the view block lives in blocks, so _schema is safe.
+  const acceptConfigureView = useCallback(
+    async (toolCallId: string, part: ConfigureViewPart['input'], selectedTargetId: string) => {
+      const mode = part?.mode
+      if (!selectedTargetId || !mode) return
+      setViewDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        await configureViewFromProposal(
+          supabaseClient,
+          {
+            pageId: selectedTargetId,
+            mode,
+            groupBy: part?.groupBy,
+            sort: part?.sort,
+            filter: part?.filter,
+            startDate: part?.startDate,
+            endDate: part?.endDate,
+          },
+          () => crypto.randomUUID()
+        )
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
+      } catch (err) {
+        // Surface the failure by reverting the card to pending so the user can retry.
+        console.error('configure_view failed', err)
+        setViewDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, workspace]
+  )
+
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
   // tool-call parts already in the latest assistant message ("reading Ceramics
@@ -1244,6 +1334,9 @@ export function AITerminal() {
             isDefineSchemaPart
           )
           const addRowParts = (message.parts as Array<{ type: string }>).filter(isAddRowPart)
+          const configureViewParts = (message.parts as Array<{ type: string }>).filter(
+            isConfigureViewPart
+          )
           // Ticket-39: branch-pause question cards + follow-up chips, both client-
           // resolved tool parts on the assistant message.
           const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
@@ -1441,6 +1534,41 @@ export function AITerminal() {
                     onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
                       setRowDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
+                  />
+                )
+              })}
+              {/* configure_view proposal cards (#19 slice 5): SELECT a layout
+                  (table/board/calendar/gallery) for an existing collection's rows,
+                  optionally grouped/sorted/filtered. Client-resolved; Accept upserts
+                  the view block and the decision rides the resolutions envelope so the
+                  card goes inert and the model stops re-proposing. */}
+              {configureViewParts.map((part) => {
+                // Same streaming caveat as the other cards: a partially-parsed input
+                // would render an incomplete preview.
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                if (!input?.pageId || !input?.mode) return null
+                const status = viewDecisions[part.toolCallId] ?? 'pending'
+                const selectedTargetId = viewTarget[part.toolCallId] ?? input.pageId
+                return (
+                  <ConfigureViewProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    mode={input.mode}
+                    groupBy={input.groupBy}
+                    sort={input.sort}
+                    filter={input.filter}
+                    reason={input.reason}
+                    status={status}
+                    selectedTargetId={selectedTargetId}
+                    targetOptions={collectionOptions}
+                    onTargetChange={(id) =>
+                      setViewTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
+                    onReject={() =>
+                      setViewDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
                   />
                 )

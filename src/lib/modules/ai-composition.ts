@@ -18,7 +18,7 @@
  * Handler with no client bundle poison.
  */
 import { z } from 'zod'
-import { moduleDescriptors } from './registry'
+import { moduleDescriptors, RETIRED_FROM_CREATION } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
 import {
@@ -30,10 +30,10 @@ import {
 } from './metric/schema'
 import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
-import { kanbanSchema, kanbanColumnSchema, kanbanCardSchema } from './kanban/schema'
 import { chartLineSchema } from './chart-line/schema'
 import { chartBarSchema } from './chart-bar/schema'
 import { chartAreaSchema } from './chart-area/schema'
+import { viewSchema } from './view/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -98,32 +98,16 @@ const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
   .omit({ id: true })
   .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
-/**
- * Kanban EMIT data (ticket-35): strip ids at BOTH nested levels the descriptor
- * declares (`['columns', 'columns.cards']`) — the block id, each column id, and each
- * card id. The AI emits titles/notes only; `hydrateBlock`'s deep-path walker mints
- * every id on accept. Kept as an explicit nested omit-chain (not registry-derived)
- * per the file's convention; the strip∘hydrate round-trip is fenced in
- * `module-nested-ids.test.ts`.
- *
- * F27: `pageId` is ALSO stripped from cards — card→page links are a manual-only
- * feature this cycle, so the model can neither read nor emit them. (When the AI
- * learns to author links in the database epic, this omit is lifted and the
- * descriptor's serialize starts surfacing linked page titles.)
- */
-const kanbanData = kanbanSchema.omit({ id: true }).extend({
-  columns: z.array(
-    kanbanColumnSchema
-      .omit({ id: true })
-      .extend({ cards: z.array(kanbanCardSchema.omit({ id: true, pageId: true })) })
-  ),
-})
 // ticket-36: Bklit chart promotion. Charts carry no nested id-bearing collections
 // (their `points` are plain `{ x, values }`), so a flat top-level id strip is the
 // whole omit-chain — the module-nested-ids fence pins that.
 const chartLineData = chartLineSchema.omit({ id: true })
 const chartBarData = chartBarSchema.omit({ id: true })
 const chartAreaData = chartAreaSchema.omit({ id: true })
+// #19: a view is config only — no nested id-bearing collections (its rows are
+// child pages, its groupBy/sort/filter reference existing property ids). So the
+// emit shape is a flat top-level id strip, like a chart.
+const viewData = viewSchema.omit({ id: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -131,10 +115,10 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   metricData,
   metricRingData,
   tableData,
-  kanbanData,
   chartLineData,
   chartBarData,
   chartAreaData,
+  viewData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -199,12 +183,14 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   metricData.extend({ bindKey }),
   metricRingData.extend({ bindKey }),
   tableData.extend({ bindKey }),
-  kanbanData.extend({ bindKey }),
   // ticket-36: Bklit chart promotion. No block in a batch binds to a chart, but the
   // union must list every content type so a page can be created WITH a chart.
   chartLineData.extend({ bindKey }),
   chartBarData.extend({ bindKey }),
   chartAreaData.extend({ bindKey }),
+  // #19: a page can be created WITH a view block. No block binds to a view, but
+  // the union lists every content type for parity with the persisted union.
+  viewData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
@@ -267,7 +253,8 @@ export type ProposeChanges = z.infer<typeof proposeChangesSchema>
  * module. Derived from the registry so a new module auto-appears here. Excludes the
  * `page` container (see above): the AI composes flat content until t18.
  */
+const RETIRED = new Set<string>(RETIRED_FROM_CREATION)
 export const moduleCatalog = Object.values(moduleDescriptors)
-  .filter((d) => d.type !== 'page')
+  .filter((d) => d.type !== 'page' && !RETIRED.has(d.type))
   .map((d) => `- ${d.type}: ${d.description}`)
   .join('\n')

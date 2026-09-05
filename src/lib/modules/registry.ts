@@ -18,6 +18,7 @@ import { pageDescriptor } from './page/schema'
 import { chartLineDescriptor } from './chart-line/schema'
 import { chartBarDescriptor } from './chart-bar/schema'
 import { chartAreaDescriptor } from './chart-area/schema'
+import { viewDescriptor } from './view/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -31,9 +32,21 @@ export const moduleDescriptors = {
   'chart-line': chartLineDescriptor,
   'chart-bar': chartBarDescriptor,
   'chart-area': chartAreaDescriptor,
+  // #19: an inline view of a collection's rows (table/board/calendar/gallery).
+  view: viewDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors
+
+/**
+ * Types kept in the registry for read/render/serialize tolerance but retired from
+ * CREATION (#19 slice 6): the standalone `kanban` block is superseded by the `view`
+ * block's board mode over a collection. Persisted kanban blocks still hydrate and
+ * render; neither the human palette nor the AI may mint a new one. `table` is NOT
+ * retired — it remains the freeform-grid primitive (no collection-view equivalent).
+ */
+export const RETIRED_FROM_CREATION = ['kanban'] as const
+export type RetiredType = (typeof RETIRED_FROM_CREATION)[number]
 
 /**
  * Look up a descriptor by persisted `type` string. Undefined only for a stale

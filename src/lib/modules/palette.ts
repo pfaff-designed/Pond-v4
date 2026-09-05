@@ -17,12 +17,19 @@
  */
 
 import { emptyKanban } from '@/lib/modules/kanban/schema'
-import { moduleDescriptors } from '@/lib/modules/registry'
+import { moduleDescriptors, RETIRED_FROM_CREATION } from '@/lib/modules/registry'
 import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 
-// Excludes 'page' (structural, not a content block a user drops into a page).
-const EXCLUDED_FROM_PALETTE = new Set(['page'])
+// Excludes 'page' (structural, not a content block a user drops into a page) and
+// every RETIRED_FROM_CREATION type — currently `kanban` (#19 slice 6): the standalone
+// kanban block is retired from creation (superseded by the `view` block's board mode
+// over a collection), so it is no longer offered here, though its descriptor and
+// renderer stay in the registry for read-tolerance of already-persisted kanban blocks.
+// The `view` block IS offered now (#19 slice 3): a picked view defaults to a table over
+// the host page's rows, so it draws honestly on a collection and shows a calm "needs
+// a collection with properties" notice elsewhere (see `emptyBlockForType`).
+const EXCLUDED_FROM_PALETTE = new Set<string>(['page', ...RETIRED_FROM_CREATION])
 
 export const paletteItems: SlashMenuItem[] = Object.values(moduleDescriptors)
   .filter((d) => !EXCLUDED_FROM_PALETTE.has(d.type))
@@ -65,6 +72,10 @@ export function emptyBlockForType(type: string): Block | null {
     // Wave-2 modules (t35/t36), wired so a palette pick never no-ops.
     case 'kanban':
       return emptyKanban(id, () => crypto.randomUUID())
+    // #19: a view defaults to a table over the host page's own rows (inline). No
+    // groupBy/sort/filter yet — the user configures those (or the AI, slice 5).
+    case 'view':
+      return { id, type: 'view', mode: 'table' }
     case 'chart-line':
     case 'chart-bar':
     case 'chart-area':

@@ -31,6 +31,7 @@ import {
   propertyDefSchema,
   readSchema,
   coerceValue,
+  resolveOptionValue,
   ROW_TYPE,
   type AiPropertyDef,
   type PropertyDef,
@@ -229,7 +230,12 @@ export function resolveRowValues(
   for (const [name, raw] of Object.entries(proposed)) {
     const def = byName.get(name.trim().toLowerCase())
     if (!def) continue // property name not in the schema — dropped (lenient)
-    values[def.id] = coerceValue(def, raw)
+    // select/status store the option *id* (rename-safe); the model proposes the
+    // label, so resolve label→id here — mirroring the name→id resolution above.
+    values[def.id] =
+      def.type === 'select' || def.type === 'status'
+        ? resolveOptionValue(def, raw)
+        : coerceValue(def, raw)
   }
   return values
 }

@@ -89,6 +89,8 @@ const samples: Record<string, Block> = {
       { x: '2026-02', values: { Balance: 1650 } },
     ],
   },
+  // #19: config-only view. Serializes its config (no rows injected here → "no rows").
+  view: { id: 'b1', type: 'view', mode: 'table' },
 }
 
 function serialize(block: Block): string {
@@ -146,6 +148,10 @@ describe('descriptor.serialize (full-fidelity body)', () => {
     expect(
       moduleDescriptors['chart-line'].serialize({ id: 'e1', type: 'chart-line', points: [] })
     ).toBe('Line chart: (no data)')
+  })
+
+  it('view: renders its config; "no rows" until the assemble seam injects them', () => {
+    expect(serialize(samples.view)).toBe('View (table) — no rows')
   })
 })
 

@@ -1,0 +1,136 @@
+'use client'
+
+/**
+ * Pointer-drag for bucketed views (#19) — the machinery a board or an agenda
+ * calendar shares to drag a row card from one lane to another.
+ *
+ * Extracted from the board renderer (originally ported from the kanban view, F4)
+ * the moment a second consumer appeared: the calendar drags cards between date
+ * lanes exactly as the board drags them between option columns. Only the *drop
+ * meaning* differs — the board writes an option id, the calendar writes a date — so
+ * the hook is agnostic: it hit-tests registered buckets by DOM rect and hands the
+ * consumer the dropped `(rowId, bucketKey)`; the consumer maps the key to the value
+ * to persist.
+ *
+ * Drag lives in refs (one pointer-event burst, no re-render between moves); React
+ * state only drives the lift visuals (the dragged card's dimming + the over-lane
+ * highlight). Below a small threshold the gesture is treated as a click, not a drag.
+ */
+
+import { useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
+
+/** Below this pointer travel (px, Manhattan) a press is a click, not a drag. */
+const DRAG_THRESHOLD = 4
+
+export interface BucketDragState {
+  rowId: string
+  /** Current pointer position (for the floating clone). */
+  x: number
+  y: number
+  /** Grab offset within the card, so the clone tracks under the cursor naturally. */
+  dx: number
+  dy: number
+  /** True once travel passes the threshold — before that it's still a candidate click. */
+  active: boolean
+}
+
+export interface PointerBucketDrag {
+  /** The live drag, or null when idle. `active` gates the lift visuals. */
+  drag: BucketDragState | null
+  /** The bucket key currently under the pointer (for the drop-target highlight). */
+  overKey: string | null
+  /** Ref callback registering a bucket element under `key` for hit-testing. */
+  registerBucket: (key: string) => (el: HTMLElement | null) => void
+  /** Attach to each card's drag handle `onPointerDown`. */
+  onCardPointerDown: (e: ReactPointerEvent, rowId: string) => void
+  /** Spread onto the scroll container that wraps all buckets. */
+  containerHandlers: {
+    onPointerMove?: (e: ReactPointerEvent) => void
+    onPointerUp?: () => void
+    onPointerLeave?: () => void
+  }
+}
+
+export function usePointerBucketDrag({
+  editable,
+  onDrop,
+}: {
+  editable: boolean
+  /** Called on a completed drag onto a bucket. The consumer maps `bucketKey` → value. */
+  onDrop: (rowId: string, bucketKey: string) => void
+}): PointerBucketDrag {
+  const [drag, setDrag] = useState<BucketDragState | null>(null)
+  const [overKey, setOverKey] = useState<string | null>(null)
+  const bucketRefs = useRef(new Map<string, HTMLElement>())
+  const dragRef = useRef<BucketDragState | null>(null)
+  const startRef = useRef<{ x: number; y: number } | null>(null)
+  const overKeyRef = useRef<string | null>(null)
+
+  function bucketAt(x: number, y: number): string | null {
+    for (const [key, el] of bucketRefs.current) {
+      const r = el.getBoundingClientRect()
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return key
+    }
+    return null
+  }
+
+  function onCardPointerDown(e: ReactPointerEvent, rowId: string) {
+    if (!editable) return
+    const li = (e.currentTarget as HTMLElement).closest('li') as HTMLElement | null
+    const rect = (li ?? (e.currentTarget as HTMLElement)).getBoundingClientRect()
+    startRef.current = { x: e.clientX, y: e.clientY }
+    const next: BucketDragState = {
+      rowId,
+      x: e.clientX,
+      y: e.clientY,
+      dx: e.clientX - rect.left,
+      dy: e.clientY - rect.top,
+      active: false,
+    }
+    dragRef.current = next
+    setDrag(next)
+  }
+
+  function onPointerMove(e: ReactPointerEvent) {
+    const d = dragRef.current
+    if (!d || !startRef.current) return
+    const moved =
+      Math.abs(e.clientX - startRef.current.x) + Math.abs(e.clientY - startRef.current.y)
+    const active = d.active || moved > DRAG_THRESHOLD
+    const next: BucketDragState = { ...d, x: e.clientX, y: e.clientY, active }
+    dragRef.current = next
+    setDrag(next)
+    if (active) {
+      const over = bucketAt(e.clientX, e.clientY)
+      overKeyRef.current = over
+      setOverKey(over)
+    }
+  }
+
+  function onPointerUp() {
+    const d = dragRef.current
+    const key = overKeyRef.current
+    if (d?.active && key) onDrop(d.rowId, key)
+    dragRef.current = null
+    startRef.current = null
+    overKeyRef.current = null
+    setDrag(null)
+    setOverKey(null)
+  }
+
+  const registerBucket = (key: string) => (el: HTMLElement | null) => {
+    if (el) bucketRefs.current.set(key, el)
+    else bucketRefs.current.delete(key)
+  }
+
+  return {
+    drag,
+    overKey,
+    registerBucket,
+    onCardPointerDown,
+    containerHandlers: editable
+      ? { onPointerMove, onPointerUp, onPointerLeave: drag ? onPointerUp : undefined }
+      : {},
+  }
+}

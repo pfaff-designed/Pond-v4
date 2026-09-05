@@ -25,8 +25,22 @@ jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 // The areas grid reads ['pages'] — top-level areas + content. NO home row (it's
 // stripped by fetchPages upstream), so the composite never double-counts.
 const AREA_ROWS = [
-  { id: 'health', parent_id: null, type: 'area', title: 'Health', order: 0, updated_at: '2026-08-30T09:00:00Z' },
-  { id: 'sleep', parent_id: 'health', type: 'page', title: 'Sleep', order: 0, updated_at: '2026-08-30T09:00:00Z' },
+  {
+    id: 'health',
+    parent_id: null,
+    type: 'area',
+    title: 'Health',
+    order: 0,
+    updated_at: '2026-08-30T09:00:00Z',
+  },
+  {
+    id: 'sleep',
+    parent_id: 'health',
+    type: 'page',
+    title: 'Sleep',
+    order: 0,
+    updated_at: '2026-08-30T09:00:00Z',
+  },
 ]
 const mockFetchPages = jest.fn().mockResolvedValue(AREA_ROWS)
 jest.mock('@/lib/pages/tree', () => ({
@@ -105,14 +119,15 @@ describe('Life composite surface', () => {
     expect((savedBlocks as Block[]).some((b) => b.type === 'table')).toBe(true)
   })
 
-  it('the palette inserts each module’s empty state (text, todo, table, metric, kanban, chart)', async () => {
+  it('the palette inserts each module’s empty state (text, todo, table, metric, chart)', async () => {
     // One render per module keeps each assertion isolated on a fresh empty Life.
+    // Kanban is deliberately absent — retired from creation (#19 slice 6), so it is no
+    // longer offered in the palette (view board mode supersedes it).
     const cases: Array<{ name: string; type: string }> = [
       { name: 'Text', type: 'text' },
       { name: 'Todo', type: 'todo' },
       { name: 'Table', type: 'table' },
       { name: 'Metric', type: 'metric' },
-      { name: 'Kanban', type: 'kanban' },
       { name: 'Chart line', type: 'chart-line' },
     ]
     for (const c of cases) {

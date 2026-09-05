@@ -22,6 +22,9 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
 import { descriptorFor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
+import { ROW_TYPE, readSchema } from '@/lib/properties/schema'
+import type { PropertySchema } from '@/lib/properties/schema'
+import type { ViewRow } from '@/lib/modules/view/schema'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,13 @@ export interface NodeContextData {
   title: string
   documents: { title: string; blocks: Block[] }[]
   children: ChildSummary[]
+  /**
+   * #19 slice 5: the page's property schema when it is a collection — surfaced so
+   * the model can name a group-by / sort / filter property (and add_row/
+   * define_schema by name) against real column names. `null` when the page carries
+   * no `_schema` (an ordinary, non-collection page).
+   */
+  schema?: PropertySchema | null
 }
 
 export interface MentionRef {
@@ -103,6 +113,26 @@ const TYPE_LABEL: Record<NodeType, string> = {
   row: 'Row',
 }
 
+/**
+ * Render a collection's schema as one compact line (#19 slice 5) — the property
+ * NAMES + types the model must use to name a group-by / sort / filter (and to
+ * author add_row/define_schema by name). Select/status props list their option
+ * labels so the model can name a filter value. Returns '' for an empty schema.
+ *
+ *   Properties: Status (status: To do | Doing | Done) · Due (date) · Notes (text)
+ */
+export function formatSchemaLine(schema: PropertySchema): string {
+  if (schema.length === 0) return ''
+  const cols = schema.map((def) => {
+    const opts =
+      (def.type === 'select' || def.type === 'status') && def.options?.length
+        ? `: ${def.options.map((o) => o.label).join(' | ')}`
+        : ''
+    return `${def.name} (${def.type}${opts})`
+  })
+  return `Properties: ${cols.join(' · ')}`
+}
+
 /** One-line preview of a block's content, for the id-addressed listing. */
 function blockPreview(block: Block, siblings: Block[]): string {
   const descriptor = descriptorFor(block.type)
@@ -126,6 +156,12 @@ export function formatNodeContext(
   lines.push(`[${opts.label ?? 'Current node'}]`)
 
   lines.push(`${TYPE_LABEL[data.type]}: ${data.title}`)
+
+  // #19 slice 5: a collection's property columns, so the model can name a
+  // group-by / sort / filter (and add_row / define_schema) against real names.
+  if (data.schema && data.schema.length > 0) {
+    lines.push(formatSchemaLine(data.schema))
+  }
 
   const docText = data.documents
     .map((doc) => {
@@ -216,7 +252,7 @@ export async function fetchNodeContext(
 ): Promise<NodeContextData | null> {
   const { data: own } = await sb
     .from('pages')
-    .select('type, title, blocks')
+    .select('type, title, blocks, props')
     .eq('id', nodeId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -225,7 +261,12 @@ export async function fetchNodeContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = own as any
 
-  const blocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  const rawBlocks: Block[] = Array.isArray(row.blocks) ? (row.blocks as Block[]) : []
+  // #19 read-hydration seam (decision 16): a `view` block draws this page's
+  // `type='row'` children, but serialize is sync and gets page-mates, not children.
+  // Fetch the rows once (only when a view is present) and attach them to each view
+  // block BEFORE it serializes — so blocksToText / blockPreview render the rows.
+  const blocks = await hydrateViewBlocks(sb, userId, nodeId, rawBlocks)
   const documents = blocks.length ? [{ title: row.title as string, blocks }] : []
 
   const children = await fetchChildren(sb, userId, nodeId)
@@ -235,6 +276,8 @@ export async function fetchNodeContext(
     title: row.title as string,
     documents,
     children,
+    // #19 slice 5: a collection's schema, so the model can name its columns.
+    schema: readSchema(row.props as Record<string, unknown> | null),
   }
 }
 
@@ -242,6 +285,35 @@ export async function fetchNodeContext(
 async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<ChildSummary[]> {
   const pages = await getChildPages(sb, userId, nodeId)
   return pages.map((p) => ({ type: p.type, title: p.title }))
+}
+
+/**
+ * #19 read-hydration seam (decision 16). Attach a page's `type='row'` children to
+ * every inline `view` block on it, so the sync `serialize`/`preview` path can
+ * render the rows the view draws. No-op (and no extra query) when the page has no
+ * view block. Inline-only this cycle: rows come from THIS page (nodeId); a linked
+ * view (`collectionId` set) is left un-hydrated — the stub is guarded here and
+ * surfaced in the block's serialize (decision 12). The `rows` field is transient
+ * (never persisted): the persisted view schema is config-only.
+ */
+async function hydrateViewBlocks(
+  sb: Sb,
+  userId: string,
+  nodeId: string,
+  blocks: Block[]
+): Promise<Block[]> {
+  const isInlineView = (b: Block) => b.type === 'view' && !b.collectionId
+  if (!blocks.some(isInlineView)) return blocks
+
+  const children = await getChildPages(sb, userId, nodeId)
+  const rows: ViewRow[] = children
+    .filter((p) => p.type === ROW_TYPE)
+    .map((p) => ({ id: p.id, title: p.title }))
+
+  // `b.type === 'view'` narrows to ViewBlock so the `rows` graft type-checks (a
+  // plain boolean helper wouldn't narrow, and grafting rows onto a table block's
+  // own `rows` would collide).
+  return blocks.map((b) => (b.type === 'view' && !b.collectionId ? { ...b, rows } : b))
 }
 
 /** All of a user's pages as lean title rows for the workspace outline — one

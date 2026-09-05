@@ -23,6 +23,7 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import {
+  ROW_TYPE,
   withSchema,
   withValue,
   type PropertySchema,
@@ -143,6 +144,23 @@ export async function getChildPages(
 
   const rows = (data ?? []) as PageRow[]
   return rows.map(mapRow)
+}
+
+/**
+ * A collection's rows (#19) — its `type='row'` child pages, full props included, in
+ * `order`. The client-side counterpart of the assemble.ts read-hydration seam: a
+ * view block fetches these to draw its table/board. Deliberately full-props (unlike
+ * the lean `fetchPages` tree, which both strips `props` AND excludes `row` types) —
+ * a view needs each row's typed values to render cells and bucket by group.
+ */
+export async function getCollectionRows(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  collectionId: string,
+  workspace: WorkspaceScope = 'main'
+): Promise<PondPage[]> {
+  const children = await getChildPages(supabase, userId, collectionId, workspace)
+  return children.filter((p) => p.type === ROW_TYPE)
 }
 
 /**

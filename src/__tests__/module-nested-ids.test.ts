@@ -13,12 +13,14 @@
 
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { stampDisplayIds } from '@/lib/modules/preview'
-import { moduleDescriptors, descriptorFor } from '@/lib/modules/registry'
+import { moduleDescriptors, descriptorFor, RETIRED_FROM_CREATION } from '@/lib/modules/registry'
 import { moduleDataSchema } from '@/lib/modules/ai-composition'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 
-// One AI-emitted (id-less) sample per content type. The completeness check fails
-// if a registered type has no sample here — add one when you add a module.
+// One AI-emitted (id-less) sample per COMPOSABLE content type. The completeness check
+// fails if a composable type has no sample here — add one when you add a module.
+// Retired-from-creation types (kanban, #19 slice 6) are NOT composable, so they live in
+// `retiredSamples` below and only exercise the read-tolerance (hydrate) path.
 const samples: Record<string, ModuleData> = {
   text: { type: 'text', content: 'Hello world' },
   todo: {
@@ -34,18 +36,6 @@ const samples: Record<string, ModuleData> = {
     type: 'table',
     columns: ['Tool', 'Location'],
     rows: [{ cells: ['Table Saw', 'Centre of shop'] }, { cells: ['Bandsaw', 'Left wall'] }],
-  },
-  // Kanban (ticket-35): two nested id levels — columns AND cards inside them.
-  kanban: {
-    type: 'kanban',
-    columns: [
-      {
-        title: 'To do',
-        cards: [{ title: 'Cut boards' }, { title: 'Sand', note: 'grit 120 then 220' }],
-      },
-      { title: 'Doing', cards: [{ title: 'Glue-up' }] },
-      { title: 'Done', cards: [] },
-    ],
   },
   // ticket-36: Bklit chart promotion. Charts have no nested id-bearing collections
   // (points are plain `{ x, values }`), so these round-trip with a top-level id strip.
@@ -73,6 +63,31 @@ const samples: Record<string, ModuleData> = {
       { x: '2026-02', values: { Balance: 1650 } },
     ],
   },
+  // #19: a view is config only (no nested id-bearing collections), so it round-trips
+  // with a flat top-level id strip — like a chart.
+  view: { type: 'view', mode: 'board', groupBy: 'p-status' },
+}
+
+/**
+ * Retired-from-creation samples (#19 slice 6): kanban is no longer in `moduleDataSchema`,
+ * so its id-less shape isn't a `ModuleData` and can't be strip∘hydrate round-tripped
+ * through the composition union. But a PERSISTED kanban must still hydrate + render, so
+ * we keep an id-less sample here to exercise the read-tolerance hydrate path only.
+ * Typed loosely (not `ModuleData`) precisely because the union no longer admits it.
+ */
+const retiredSamples: Record<string, unknown> = {
+  // Kanban (ticket-35): two nested id levels — columns AND cards inside them.
+  kanban: {
+    type: 'kanban',
+    columns: [
+      {
+        title: 'To do',
+        cards: [{ title: 'Cut boards' }, { title: 'Sand', note: 'grit 120 then 220' }],
+      },
+      { title: 'Doing', cards: [{ title: 'Glue-up' }] },
+      { title: 'Done', cards: [] },
+    ],
+  },
 }
 
 /**
@@ -93,7 +108,12 @@ function elementsAtPath(block: Record<string, unknown>, path: string): Record<st
   )
 }
 
+const retiredTypes = new Set<string>(RETIRED_FROM_CREATION)
 const contentTypes = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
+// Composable = content types the AI/palette may mint (have an id-less `ModuleData`
+// sample). Retired-from-creation types (kanban) still hydrate on read but are not in
+// `moduleDataSchema`, so they're excluded from the composition round-trip + stamp loops.
+const composableTypes = contentTypes.filter((t) => !retiredTypes.has(t))
 
 /**
  * The block's ID-BEARING object-array collections — the ones the descriptor
@@ -113,18 +133,29 @@ function idBearingArrays(type: string, block: object): Record<string, unknown>[]
     )
 }
 
+// Every content type resolves to a sample for the read-tolerance hydrate path:
+// composable types from `samples`, retired-from-creation types from `retiredSamples`.
+const sampleFor = (type: string): unknown => samples[type] ?? retiredSamples[type]
+
 describe('registry completeness', () => {
-  it('every registered content type has an AI-emitted sample here', () => {
-    for (const type of contentTypes) {
+  it('every composable content type has an AI-emitted sample here', () => {
+    for (const type of composableTypes) {
       expect(samples[type]).toBeDefined()
+    }
+  })
+
+  it('every retired-from-creation type has a read-tolerance sample', () => {
+    for (const type of retiredTypes) {
+      expect(retiredSamples[type]).toBeDefined()
     }
   })
 })
 
 describe('hydrateBlock mints every nested id the schema demands', () => {
+  // Covers ALL content types, retired included — a persisted kanban must still hydrate.
   it.each(contentTypes)('%s hydrates to a valid block (no id left unminted)', (type) => {
     let n = 0
-    const block = hydrateBlock(samples[type], 'blk-1', () => `mint-${n++}`)
+    const block = hydrateBlock(sampleFor(type), 'blk-1', () => `mint-${n++}`)
     // null would mean blockSchema rejected the hydrated block — i.e. a nested id
     // the schema requires was not minted.
     expect(block).not.toBeNull()
@@ -152,7 +183,7 @@ describe('moduleDataSchema strips every id nestedIdPaths declares (ai-compositio
   // The strip site in ai-composition.ts hand-encodes each omit-chain; this pins it
   // to the descriptor's declared fact. Parse failure = the type is missing from the
   // union; a surviving id = its omit-chain doesn't cover a declared path.
-  it.each(contentTypes)('%s round-trips: strip(hydrate(sample)) === sample', (type) => {
+  it.each(composableTypes)('%s round-trips: strip(hydrate(sample)) === sample', (type) => {
     let n = 0
     const hydrated = hydrateBlock(samples[type], 'blk-1', () => `mint-${n++}`)
     const parsed = moduleDataSchema.safeParse(hydrated)
@@ -172,7 +203,7 @@ describe('moduleDataSchema strips every id nestedIdPaths declares (ai-compositio
 })
 
 describe('stampDisplayIds stamps the same collections for display', () => {
-  it.each(contentTypes)('%s gets a block id and an id on every nested element', (type) => {
+  it.each(composableTypes)('%s gets a block id and an id on every nested element', (type) => {
     const block = stampDisplayIds(samples[type], 'preview-0')
     expect(block.id).toBe('preview-0')
     for (const arr of idBearingArrays(type, block)) {
