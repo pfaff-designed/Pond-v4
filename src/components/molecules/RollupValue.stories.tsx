@@ -33,11 +33,11 @@ export const Average: Story = {
   },
 }
 
-/** A min/max over dates renders the extreme row's ISO date. */
+/** A min/max over dates renders the extreme row's date, formatted like read-mode cells. */
 export const DateExtreme: Story = {
   args: { result: { kind: 'date', value: '2026-09-05' } },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByText('2026-09-05')).toBeInTheDocument()
+    await expect(within(canvasElement).getByText('Sep 5')).toBeInTheDocument()
   },
 }
 
