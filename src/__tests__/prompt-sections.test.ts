@@ -33,6 +33,10 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     // STRUCTURE (ticket-21) — pipe-table + title-echo bans.
     'NEVER write a markdown pipe table',
     'A title-echo heading will be rejected',
+    // #28 routing demotion — record-like tabular defaults to a collection;
+    // freeform matrix / explicit "a table" stays the table block.
+    'the DEFAULT for record-like tabular data',
+    'RECORD-LIKE TABULAR DATA DEFAULTS HERE',
     // RESEARCH (ticket-29).
     'You have a web_search tool',
     'from memory, not today',

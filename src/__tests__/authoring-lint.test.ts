@@ -10,6 +10,7 @@
 import {
   isMarkdownPipeTable,
   isTitleEchoHeading,
+  PIPE_TABLE_IN_TEXT_MESSAGE,
 } from '@/lib/modules/authoring-lint'
 import { moduleDataSchema } from '@/lib/modules/ai-composition'
 import { createPageTool } from '@/app/api/chat/tools'
@@ -54,9 +55,7 @@ describe('isMarkdownPipeTable — negative (must NOT flag legitimate prose)', ()
   })
 
   it('prose that happens to contain a single pipe character', () => {
-    expect(
-      isMarkdownPipeTable('Run the build | tee the log, then check the output.')
-    ).toBe(false)
+    expect(isMarkdownPipeTable('Run the build | tee the log, then check the output.')).toBe(false)
   })
 
   it('prose with several pipes but no separator rule line', () => {
@@ -133,15 +132,15 @@ describe('isTitleEchoHeading — negative (must NOT flag)', () => {
   })
 
   it('a first block that is prose, not a heading', () => {
-    expect(
-      isTitleEchoHeading('A hearty lasagna that reheats well.', 'Weeknight Lasagna')
-    ).toBe(false)
+    expect(isTitleEchoHeading('A hearty lasagna that reheats well.', 'Weeknight Lasagna')).toBe(
+      false
+    )
   })
 
   it('a heading that merely MENTIONS the title inside a longer line', () => {
-    expect(
-      isTitleEchoHeading('## Why the Fall Reading List matters', 'Fall Reading List')
-    ).toBe(false)
+    expect(isTitleEchoHeading('## Why the Fall Reading List matters', 'Fall Reading List')).toBe(
+      false
+    )
   })
 
   it('an empty title never matches', () => {
@@ -196,6 +195,30 @@ describe('emit-time gate: pipe table in a text-module payload is rejected', () =
   })
 })
 
+// ── #28 routing demotion — regression guard ──────────────────────────────────
+// #28 makes collections the DEFAULT for record-like tabular data, but the
+// pipe-table repair intentionally STILL targets the `table` module: a mid-stream
+// pipe table in a text block can't be reliably schema-inferred, so the records→
+// collection steering lives at the ROUTING layer, not the lint. Guard that the
+// repair keeps pointing at `table` and never redirects a pipe table to a collection.
+describe('#28: pipe-table repair still targets the `table` module (not a collection)', () => {
+  it('the repair message steers to the table module', () => {
+    expect(PIPE_TABLE_IN_TEXT_MESSAGE).toContain('`table` module')
+  })
+
+  it('the repair message does not redirect a pipe table to define_schema / a collection', () => {
+    expect(PIPE_TABLE_IN_TEXT_MESSAGE).not.toMatch(/define_schema|collection/i)
+  })
+
+  it('a pipe table in a text block is still rejected by the emit-time gate (→ repaired to table)', () => {
+    const pipeTableText = {
+      type: 'text' as const,
+      content: ['| Book | Status |', '| --- | --- |', '| Dune | Reading |'].join('\n'),
+    }
+    expect(moduleDataSchema.safeParse(pipeTableText).success).toBe(false)
+  })
+})
+
 describe('emit-time gate: create_page rejects a title-echo first block', () => {
   const schema = createPageTool.inputSchema
 
@@ -215,9 +238,7 @@ describe('emit-time gate: create_page rejects a title-echo first block', () => {
     const input = {
       type: 'page' as const,
       title: 'Fall Reading List',
-      blocks: [
-        { type: 'text' as const, content: 'A running list of what to read this fall.' },
-      ],
+      blocks: [{ type: 'text' as const, content: 'A running list of what to read this fall.' }],
     }
     expect(schema.safeParse(input).success).toBe(true)
   })
