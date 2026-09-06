@@ -14,6 +14,7 @@ import {
   filterRows,
   groupRows,
   groupRowsByDate,
+  layoutBars,
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
@@ -300,6 +301,44 @@ describe('pickGanttDefs', () => {
 
   it('returns undefined when the collection has no date property', () => {
     expect(pickGanttDefs(schema.filter((d) => d.type !== 'date'))).toBeUndefined()
+  })
+})
+
+describe('layoutBars (#11 — the pure core layoutGanttBars and the timeline module share)', () => {
+  const items = [
+    { id: 'a', label: 'Throw', startIso: '2026-09-10', endIso: '2026-09-12' },
+    { id: 'b', label: 'Glaze', startIso: '2026-09-01', endIso: '2026-09-05' },
+    { id: 'c', label: 'Fire', startIso: '2026-09-20' }, // no end → single-day tick
+    { id: 'd', label: 'Someday', startIso: null }, // no start → omitted
+    { id: 'e', label: 'Backwards', startIso: '2026-09-08', endIso: '2026-09-06' }, // end < start
+  ]
+
+  it('sorts bars by start ascending and omits items with no start', () => {
+    const { bars } = layoutBars(items)
+    expect(bars.map((b) => b.id)).toEqual(['b', 'e', 'a', 'c'])
+  })
+
+  it('carries the label through so a rowless caller can draw the gutter', () => {
+    const { bars } = layoutBars(items)
+    expect(bars[0].label).toBe('Glaze')
+  })
+
+  it('makes a single-day tick for a missing end and clamps a backwards end', () => {
+    const { bars } = layoutBars(items)
+    const fire = bars.find((b) => b.id === 'c')!
+    expect(fire.endIso).toBe('2026-09-20')
+    const back = bars.find((b) => b.id === 'e')!
+    expect(back.endIso).toBe('2026-09-08')
+  })
+
+  it('computes the inclusive range from min start to max end', () => {
+    const { rangeStart, rangeEnd } = layoutBars(items)
+    expect(rangeStart).toBe('2026-09-01')
+    expect(rangeEnd).toBe('2026-09-20')
+  })
+
+  it('returns an empty layout with null bounds for no items', () => {
+    expect(layoutBars([])).toEqual({ bars: [], rangeStart: null, rangeEnd: null })
   })
 })
 

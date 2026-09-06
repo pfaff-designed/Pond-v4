@@ -336,28 +336,51 @@ function dayOf(def: PropertyDef, raw: unknown): string | null {
   return typeof value === 'string' && value ? value.slice(0, 10) : null
 }
 
+/** One candidate bar for `layoutBars` (#11): dates already resolved to `YYYY-MM-DD`
+ *  (or null/absent for "no value"). `id` is any caller-stable key; `label` rides
+ *  along so a rowless caller (the timeline module) can draw its gutter. */
+export interface BarInput {
+  id: string
+  label: string
+  startIso: string | null
+  endIso?: string | null
+}
+
+/** One laid-out bar: the input's id + label with resolved inclusive start/end days. */
+export interface LaidOutBar {
+  id: string
+  label: string
+  startIso: string
+  endIso: string
+}
+
+/** The shared bar layout: bars (sorted by start ascending) over an inclusive
+ *  [rangeStart, rangeEnd] day span. Both bounds are null when no item has a start. */
+export interface BarLayout {
+  bars: LaidOutBar[]
+  rangeStart: string | null
+  rangeEnd: string | null
+}
+
 /**
- * Lay a collection's rows out as gantt bars over one adaptive timeline. Each row's
- * bar runs from its Start day to its End day (both `YYYY-MM-DD`); a row with a Start
- * but no End (or no End property at all) becomes a single-day tick; a row with no
- * Start is omitted entirely (mirrors calendar's undated handling). An End that falls
- * before its Start clamps to a single-day tick (a mis-entered range never draws
- * backwards). Bars are sorted by start ascending, then end. `rangeStart`/`rangeEnd`
- * are the min start / max end across all bars (null when there are no bars).
+ * The PURE bar-layout core (#11) — shared by the #27 gantt view mode
+ * (`layoutGanttBars`, which resolves collection rows' date props first) and the
+ * standalone `timeline` module (inline AI-authored items). Each item's bar runs
+ * from its start day to its end day (both `YYYY-MM-DD`); a missing end becomes a
+ * single-day tick; a missing start omits the item entirely; an end before its
+ * start clamps to a single-day tick (a mis-entered range never draws backwards).
+ * Bars sort by start ascending, then end. `rangeStart`/`rangeEnd` are the min
+ * start / max end across all bars (null when there are no bars).
  */
-export function layoutGanttBars(
-  rows: readonly CollectionRow[],
-  startDef: PropertyDef,
-  endDef?: PropertyDef
-): GanttLayout {
-  const bars: GanttBar[] = []
-  for (const row of rows) {
-    const startIso = dayOf(startDef, row.values[startDef.id])
+export function layoutBars(items: readonly BarInput[]): BarLayout {
+  const bars: LaidOutBar[] = []
+  for (const item of items) {
+    const startIso = item.startIso
     if (!startIso) continue // no start → omitted
-    const rawEnd = endDef ? dayOf(endDef, row.values[endDef.id]) : null
+    const rawEnd = item.endIso ?? null
     // Missing end → single-day; an end before the start also collapses to single-day.
     const endIso = rawEnd && rawEnd >= startIso ? rawEnd : startIso
-    bars.push({ row, startIso, endIso })
+    bars.push({ id: item.id, label: item.label, startIso, endIso })
   }
   bars.sort((a, b) =>
     a.startIso < b.startIso
@@ -377,6 +400,36 @@ export function layoutGanttBars(
     ? bars.reduce((m, b) => (b.endIso > m ? b.endIso : m), bars[0].endIso)
     : null
   return { bars, rangeStart, rangeEnd }
+}
+
+/**
+ * Lay a collection's rows out as gantt bars over one adaptive timeline: resolve
+ * each row's Start/End date props to ISO days, delegate the actual layout to the
+ * pure `layoutBars` core, and re-attach the `row` each bar came from (the drag
+ * writeback needs it). All bar semantics — tick for missing/backwards end, omit
+ * on no start, sort, range — live in `layoutBars` so the #27 view mode and the
+ * #11 timeline module can never drift.
+ */
+export function layoutGanttBars(
+  rows: readonly CollectionRow[],
+  startDef: PropertyDef,
+  endDef?: PropertyDef
+): GanttLayout {
+  const rowById = new Map(rows.map((row) => [row.id, row]))
+  const { bars, rangeStart, rangeEnd } = layoutBars(
+    rows.map((row) => ({
+      id: row.id,
+      label: row.title,
+      startIso: dayOf(startDef, row.values[startDef.id]),
+      endIso: endDef ? dayOf(endDef, row.values[endDef.id]) : null,
+    }))
+  )
+  return {
+    // `id` came from the row map one line up, so the lookup can't miss.
+    bars: bars.map((b) => ({ row: rowById.get(b.id)!, startIso: b.startIso, endIso: b.endIso })),
+    rangeStart,
+    rangeEnd,
+  }
 }
 
 // ── Gantt reschedule (drag) ───────────────────────────────────────────────────

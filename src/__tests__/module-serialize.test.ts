@@ -113,6 +113,19 @@ const samples: Record<string, Block> = {
     delta: 0.12,
     caption: 'vs last month',
   },
+  // #11: standalone timeline (Gantt) module. Serializes an honest summary — drawn
+  // bar count + inclusive date range — not a per-item dump.
+  timeline: {
+    id: 'b1',
+    type: 'timeline',
+    title: 'Renovation',
+    caption: 'Fall push',
+    items: [
+      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
+      { label: 'Framing', start: '2026-09-08', end: '2026-09-24' },
+      { label: 'Inspection', start: '2026-09-30' },
+    ],
+  },
 }
 
 function serialize(block: Block): string {
@@ -190,6 +203,18 @@ describe('descriptor.serialize (full-fidelity body)', () => {
 
   it('stat: label, formatted value, signed delta, caption', () => {
     expect(serialize(samples.stat)).toBe('MRR: $12,500 (+12%) — vs last month')
+  })
+
+  it('timeline: title, drawn item count, date range, caption', () => {
+    expect(serialize(samples.timeline)).toBe(
+      'Timeline "Renovation": 3 items, 2026-09-01–2026-09-30 — Fall push'
+    )
+  })
+
+  it('an empty timeline serializes to a calm "(no data)", not a crash', () => {
+    expect(moduleDescriptors.timeline.serialize({ id: 'e1', type: 'timeline', items: [] })).toBe(
+      'Timeline: (no data)'
+    )
   })
 
   it('stat without delta or caption: just label + formatted value', () => {

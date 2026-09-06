@@ -24,6 +24,7 @@ import { chartBarSchema } from './chart-bar/schema'
 import { chartAreaSchema } from './chart-area/schema'
 import { heatmapSchema } from './heatmap/schema'
 import { statSchema } from './stat/schema'
+import { timelineSchema } from './timeline/schema'
 import { viewSchema } from './view/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
@@ -40,6 +41,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
   heatmapSchema,
   statSchema,
+  // #11: standalone timeline (Gantt) with inline AI-authored items.
+  timelineSchema,
   // #19: the inline collection view block (config only; rows are child pages).
   viewSchema,
 ])

@@ -40,6 +40,7 @@ import {
 } from './apply'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
+import { formatTick, GANTT_BAR_SHELL } from './gantt-shared'
 import {
   coerceValue,
   optionForValue,
@@ -556,17 +557,8 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
 }
 
 // ── Gantt (read-only timeline) ────────────────────────────────────────────────
-
-/** A short "Sep 8" tick label for a gridline, built at UTC noon so it never drifts. */
-function formatTick(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
-
-/** The bar rectangle's shared look — the editable wrapper and the read-only bar draw
- *  the same shape (position + fill), differing only in what they carry (grab zones vs
- *  an aria label). Kept in one place so the two never drift. */
-const GANTT_BAR_SHELL = 'absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-press-accent/80'
+// `formatTick` + `GANTT_BAR_SHELL` moved to gantt-shared.ts (#11) — one source for
+// this view mode AND the standalone timeline module, so the two can't drift.
 
 /** Below this RENDERED bar width (px) the edge handles are suppressed and the bar is
  *  move-only (spec): there isn't room to grab a 6px edge without it swallowing the body. */

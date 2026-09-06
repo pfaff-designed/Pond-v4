@@ -78,6 +78,17 @@ const samples: Record<string, ModuleData> = {
     ],
   },
   stat: { type: 'stat', label: 'MRR', value: 12500, format: 'currency', delta: 0.12 },
+  // #11: standalone timeline (Gantt). Its `items` are plain `{ label, start, end? }`
+  // with no ids (like heatmap cells / chart points), so a flat top-level id strip
+  // is the whole omit-chain.
+  timeline: {
+    type: 'timeline',
+    title: 'Renovation',
+    items: [
+      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
+      { label: 'Inspection', start: '2026-09-30' },
+    ],
+  },
 }
 
 /**

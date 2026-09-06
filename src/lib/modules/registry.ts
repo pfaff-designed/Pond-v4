@@ -20,6 +20,7 @@ import { chartBarDescriptor } from './chart-bar/schema'
 import { chartAreaDescriptor } from './chart-area/schema'
 import { heatmapDescriptor } from './heatmap/schema'
 import { statDescriptor } from './stat/schema'
+import { timelineDescriptor } from './timeline/schema'
 import { viewDescriptor } from './view/schema'
 
 export const moduleDescriptors = {
@@ -37,6 +38,9 @@ export const moduleDescriptors = {
   // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
   heatmap: heatmapDescriptor,
   stat: statDescriptor,
+  // #11: standalone AI-composable timeline (Gantt) — read-only inline items, no
+  // collection (distinct from the #27 `view` block's gantt mode).
+  timeline: timelineDescriptor,
   // #19: an inline view of a collection's rows (table/board/calendar/gallery).
   view: viewDescriptor,
 } satisfies Record<string, ModuleDescriptor>
