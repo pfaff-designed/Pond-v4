@@ -86,6 +86,9 @@ export function emptyBlockForType(type: string): Block | null {
       return { id, type: 'heatmap', title: '', cells: [] }
     case 'stat':
       return { id, type: 'stat', label: '', value: 0 }
+    // #11: standalone timeline (Gantt) — a calm-empty start, like the charts.
+    case 'timeline':
+      return { id, type: 'timeline', title: '', items: [] }
     default:
       return null
   }
