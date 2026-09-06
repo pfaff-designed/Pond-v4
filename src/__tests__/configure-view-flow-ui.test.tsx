@@ -76,8 +76,8 @@ jest.mock('@/lib/pages/create-page', () => ({
 }))
 
 // The write path — mocked so we can assert it's called and control resolution.
-// #52 — the write path now returns { id, replaced, previousMode }; the default write
-// mints a fresh view (replaced=false). A per-test override exercises the switch case.
+// #52 — the write path now returns { id, replaced }; the default write mints a fresh
+// view (replaced=false). A per-test override exercises the switch case.
 const mockConfigureViewFromProposal = jest
   .fn()
   .mockResolvedValue({ id: 'coll-tasks', replaced: false })

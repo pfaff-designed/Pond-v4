@@ -429,7 +429,7 @@ describe('configureViewFromProposal', () => {
       { pageId: 'coll-4', mode: 'board', groupBy: 'Status' },
       () => 'v-UNUSED'
     )
-    expect(out).toEqual({ id: 'coll-4', replaced: true, previousMode: 'table' })
+    expect(out).toEqual({ id: 'coll-4', replaced: true })
     // The one view block is reconfigured in place (its id preserved), not duplicated.
     const payload = sb._update.mock.calls[0][0]
     expect(payload.blocks).toEqual([

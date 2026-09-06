@@ -213,7 +213,7 @@ export async function configureViewFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: ConfigureViewProposal,
   mintId: () => string
-): Promise<{ id: string; replaced: boolean; previousMode?: ViewMode }> {
+): Promise<{ id: string; replaced: boolean }> {
   const host = await getPage(supabase, proposal.pageId)
   if (!host) {
     throw new Error(`Cannot configure a view: page ${proposal.pageId} was not found`)
@@ -246,11 +246,11 @@ export async function configureViewFromProposal(
     )
   }
 
-  // #52 fix 2 — capture the mode of the view being replaced (if any) BEFORE the upsert,
-  // so the accept path can name it in the honest "replaced the previous <mode>" receipt.
-  const previous = host.blocks.find((b) => b.type === 'view') as ViewBlock | undefined
+  // #52 fix 2 — surface whether this upsert REPLACED an existing view, so the accept
+  // path can render the honest "switched the active view" receipt (a collection shows
+  // one active view at a time).
   const config = resolveViewConfig(schema, proposal)
   const { blocks, replaced } = upsertViewBlock(host.blocks, config, mintId)
   await saveBlocks(supabase, proposal.pageId, blocks)
-  return { id: proposal.pageId, replaced, previousMode: replaced ? previous?.mode : undefined }
+  return { id: proposal.pageId, replaced }
 }
