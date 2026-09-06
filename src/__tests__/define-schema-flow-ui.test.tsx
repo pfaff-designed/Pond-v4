@@ -60,7 +60,12 @@ jest.mock('@/lib/pages/client', () => ({
 // resolves against the mocked listPages above.
 const mockDefineSchemaFromProposal = jest
   .fn()
-  .mockResolvedValue([{ id: 's-1', name: 'Status', type: 'status' }])
+  // #52 — the accept path now returns { schema, inertRollups }; an all-linked write
+  // reports no inert rollups.
+  .mockResolvedValue({
+    schema: [{ id: 's-1', name: 'Status', type: 'status' }],
+    inertRollups: [],
+  })
 jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
   defineSchemaFromProposal: (...args: unknown[]) => mockDefineSchemaFromProposal(...args),
@@ -71,6 +76,12 @@ jest.mock('@/lib/pages/create-page', () => ({
       collectionTitleResolver: (pages: unknown[]) => (name: string) => string | undefined
     }
   ).collectionTitleResolver,
+  // #52 — the card computes the rollup-resolvability flag with the real (pure) helper.
+  unresolvableRollupNames: (
+    jest.requireActual('@/lib/pages/create-page') as {
+      unresolvableRollupNames: (proposed: unknown[], schema: unknown[]) => Set<string>
+    }
+  ).unresolvableRollupNames,
 }))
 
 jest.mock('@/lib/pages/tree', () => ({

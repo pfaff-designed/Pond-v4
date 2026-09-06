@@ -188,6 +188,21 @@ describe('applyResolutions — define_schema cards (#17 slice 5)', () => {
     const out = applyResolutions(schemaTranscript(), emptyResolutions())
     expect(findPart(out, 'ds1').state).toBe('input-available')
   })
+
+  // #52 fix 1 — an accepted schema with an inert rollup must be stamped honestly, or
+  // the model reads the acceptance as success and claims the rollup computes.
+  it('stamps an honest inert-rollup note when accepted with unresolvable rollups', () => {
+    const out = applyResolutions(schemaTranscript(), {
+      ...emptyResolutions(),
+      schemas: { ds1: 'accepted' },
+      schemaInertRollups: { ds1: ['Book count'] },
+    })
+    const output = findPart(out, 'ds1').output as { note: string; inertRollups?: string[] }
+    expect(output.note).toMatch(/could NOT be linked/i)
+    expect(output.note).toContain('Book count')
+    expect(output.note).toMatch(/do not claim it computes/i)
+    expect(output.inertRollups).toEqual(['Book count'])
+  })
 })
 
 describe('applyResolutions — add_row cards (#18)', () => {
@@ -344,6 +359,20 @@ describe('applyResolutions — configure_view cards (#19 slice 5)', () => {
   it('leaves an undecided configure_view card untouched (still dropped from replay)', () => {
     const out = applyResolutions(viewTranscript(), emptyResolutions())
     expect(findPart(out, 'cv1').state).toBe('input-available')
+  })
+
+  // #52 fix 2 — a second configure_view SWITCHES the one active view; the stamp must say
+  // so, or the model claims the new and old views coexist.
+  it('stamps a "switched active view" note when the accept replaced an existing view', () => {
+    const out = applyResolutions(viewTranscript(), {
+      ...emptyResolutions(),
+      views: { cv1: 'accepted' },
+      viewReplaced: { cv1: true },
+    })
+    const output = findPart(out, 'cv1').output as { note: string; replacedActiveView?: boolean }
+    expect(output.note).toMatch(/switched/i)
+    expect(output.note).toMatch(/do not claim both views now coexist/i)
+    expect(output.replacedActiveView).toBe(true)
   })
 })
 

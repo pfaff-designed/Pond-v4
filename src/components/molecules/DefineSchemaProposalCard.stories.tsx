@@ -153,3 +153,41 @@ export const WithRelationTargets: Story = {
     await expect(canvas.queryByText(/^→ Anything/)).not.toBeInTheDocument()
   },
 }
+
+/**
+ * #52 fix 1 — a rollup whose relation won't resolve to a relation ON this collection (a
+ * reverse/backlink count is unsupported) is flagged inline "· no such relation here", so
+ * the user sees before accept that it can't compute.
+ */
+export const UnresolvableRollupFlagged: Story = {
+  args: {
+    properties: [
+      { name: 'Book count', type: 'rollup', relation: 'Books', aggregate: 'count' },
+    ] as AiPropertyDef[],
+    // The card is told (accept-path test) that "Book count" won't link.
+    unresolvableRollups: new Set(['Book count']),
+    reason: 'Count the books on this shelf.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('count via Books · no such relation here')).toBeInTheDocument()
+  },
+}
+
+/**
+ * #52 fix 1 — the accepted receipt is HONEST about a rollup that couldn't be linked
+ * ("Schema defined · 1 rollup couldn't be linked"), mirroring the propose_changes
+ * skip-count precedent, instead of a flat "Schema defined".
+ */
+export const AcceptedWithInertRollup: Story = {
+  args: {
+    status: 'accepted',
+    resolvedInertRollups: ['Book count'],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText("Schema defined · 1 rollup couldn’t be linked")
+    ).toBeInTheDocument()
+  },
+}

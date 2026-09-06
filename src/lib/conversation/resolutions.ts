@@ -59,6 +59,20 @@ export interface ConversationResolutions {
   links: Record<string, ProposalDecision>
   /** Accepted changes skipped by the accept-time re-validation gate, by toolCallId. */
   skipped: Record<string, number>
+  /**
+   * #52 fix 1 — per accepted define_schema, the NAMES of proposed rollups whose relation
+   * did NOT resolve to a local relation (reverse/backlink count). Additive & optional:
+   * absent ⇒ the old flat "schema was defined" note. The model reads this and states
+   * plainly that those rollups couldn't be linked instead of claiming they compute.
+   */
+  schemaInertRollups?: Record<string, string[]>
+  /**
+   * #52 fix 2 — per accepted configure_view, whether it REPLACED an existing view (a
+   * collection shows one active view). Additive & optional: absent ⇒ the old flat "view
+   * was configured" note. The model reads this and says the active view was switched
+   * rather than claiming the two views coexist.
+   */
+  viewReplaced?: Record<string, boolean>
   /** Proposal-time target page per propose_changes batch, by toolCallId. */
   targets: Record<string, ProposalTarget>
   /** Branch-pause question-card answers, by toolCallId (ticket-39). */
@@ -98,12 +112,19 @@ export function parseResolutions(value: unknown): ConversationResolutions {
   }
   const isDecision = (x: unknown): x is ProposalDecision => x === 'accepted' || x === 'rejected'
   const isCount = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
+  const isStringArray = (x: unknown): x is string[] =>
+    Array.isArray(x) && x.every((s) => typeof s === 'string')
+  const isBool = (x: unknown): x is boolean => typeof x === 'boolean'
   const isTarget = (x: unknown): x is ProposalTarget =>
     typeof x === 'object' &&
     x !== null &&
     typeof (x as ProposalTarget).nodeId === 'string' &&
     typeof (x as ProposalTarget).nodeName === 'string'
   const lifecycle = parseLifecycle(v.lifecycle)
+  // #52 — additive honesty maps; only carried when non-empty (an absent map is the old
+  // flat note, so a legacy transcript stays byte-clean).
+  const schemaInertRollups = pick('schemaInertRollups', isStringArray)
+  const viewReplaced = pick('viewReplaced', isBool)
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
@@ -114,6 +135,8 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     links: pick('links', isDecision),
     skipped: pick('skipped', isCount),
     targets: pick('targets', isTarget),
+    ...(Object.keys(schemaInertRollups).length > 0 ? { schemaInertRollups } : {}),
+    ...(Object.keys(viewReplaced).length > 0 ? { viewReplaced } : {}),
     // Question-card answers + lifecycle ride the same envelope (ticket-39),
     // parsed by their own owning modules so the record shapes stay one home.
     questions: parseQuestionResolutions(v.questions),
@@ -289,6 +312,15 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
   if (part.type === 'tool-define_schema') {
     const decision = resolutions.schemas[part.toolCallId]
     if (!decision) return part
+    // #52 fix 1 — an accepted schema whose rollup(s) couldn't be linked to a local
+    // relation must be reported honestly, mirroring the propose_changes skip-count
+    // precedent: the model reads the acceptance stamp and would otherwise claim the
+    // rollups compute. Name them and say they render "—" until a local relation exists.
+    const inert = resolutions.schemaInertRollups?.[part.toolCallId] ?? []
+    const acceptedNote =
+      inert.length > 0
+        ? `User accepted; the schema was defined. Do not propose it again. IMPORTANT: ${inert.length} rollup${inert.length > 1 ? 's' : ''} (${inert.join(', ')}) could NOT be linked — ${inert.length > 1 ? 'their' : 'its'} relation is not a relation on this collection (a reverse/backlink count is unsupported), so ${inert.length > 1 ? 'they render' : 'it renders'} "—". Do not claim ${inert.length > 1 ? 'they compute' : 'it computes'} a value.`
+        : 'User accepted; the schema was defined. Do not propose it again.'
     return {
       ...part,
       state: 'output-available',
@@ -296,8 +328,9 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         decision,
         note:
           decision === 'accepted'
-            ? 'User accepted; the schema was defined. Do not propose it again.'
+            ? acceptedNote
             : 'User dismissed this proposal. Do not propose it again unless asked.',
+        ...(decision === 'accepted' && inert.length > 0 ? { inertRollups: inert } : {}),
       },
     } as ToolPartLike
   }
@@ -337,6 +370,13 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
   if (part.type === 'tool-configure_view') {
     const decision = resolutions.views[part.toolCallId]
     if (!decision) return part
+    // #52 fix 2 — a collection shows ONE active view, so an accepted configure_view that
+    // REPLACED an existing view SWITCHED the active view. Say so, or the model claims the
+    // new view coexists with the old one.
+    const replaced = resolutions.viewReplaced?.[part.toolCallId] === true
+    const acceptedNote = replaced
+      ? 'User accepted; the active view was SWITCHED — it replaced the previous view (a collection shows one active view at a time). Do not claim both views now coexist. Do not propose it again.'
+      : 'User accepted; the view was configured. Do not propose it again.'
     return {
       ...part,
       state: 'output-available',
@@ -344,8 +384,9 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         decision,
         note:
           decision === 'accepted'
-            ? 'User accepted; the view was configured. Do not propose it again.'
+            ? acceptedNote
             : 'User dismissed this proposal. Do not propose it again unless asked.',
+        ...(decision === 'accepted' && replaced ? { replacedActiveView: true } : {}),
       },
     } as ToolPartLike
   }

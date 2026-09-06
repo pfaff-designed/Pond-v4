@@ -59,6 +59,20 @@ interface DefineSchemaProposalCardProps {
    *  canonical title (#37) — the accept-path rules (collectionTitleResolver);
    *  undefined flags the name as unmatched on the preview. */
   resolveTargetTitle: (name: string) => string | undefined
+  /**
+   * #52 fix 1 — the NAMES of proposed rollups whose relation won't resolve to a relation
+   * on the RESULTING collection (a reverse/backlink count is unsupported). Recomputed for
+   * the SELECTED target as the picker changes (accept-path rules, unresolvableRollupNames)
+   * so the pending preview flags "· no such relation here" on those rollups. Empty ⇒ every
+   * rollup links.
+   */
+  unresolvableRollups?: Set<string>
+  /**
+   * #52 fix 1 — the rollup NAMES that ended up inert, FROZEN at accept time (the write
+   * computes it). Drives the honest resolved receipt ("Schema defined · 1 rollup couldn't
+   * be linked"). Empty/absent ⇒ the flat "Schema defined".
+   */
+  resolvedInertRollups?: string[]
   onTargetChange: (targetId: string) => void
   onAccept: () => void
   onReject: () => void
@@ -72,12 +86,15 @@ export function DefineSchemaProposalCard({
   targetOptions,
   status = 'pending',
   resolveTargetTitle,
+  unresolvableRollups,
+  resolvedInertRollups,
   onTargetChange,
   onAccept,
   onReject,
   className,
 }: DefineSchemaProposalCardProps) {
   const resolved = status !== 'pending'
+  const inertCount = resolvedInertRollups?.length ?? 0
   // Unique per instance — multiple define_schema cards can render in one chat
   // stream, so a hard-coded id would collide and mis-target the label's htmlFor.
   const targetSelectId = useId()
@@ -124,6 +141,7 @@ export function DefineSchemaProposalCard({
                 {p.type === 'rollup' ? (
                   <span className="font-serif text-xs italic text-press-muted">
                     {rollupSummary(p)}
+                    {unresolvableRollups?.has(p.name) ? ' · no such relation here' : ''}
                   </span>
                 ) : null}
                 <span className={cn(pressKickerClass, 'text-press-muted')}>{p.type}</span>
@@ -167,7 +185,11 @@ export function DefineSchemaProposalCard({
           aria-live="polite"
           className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
         >
-          {status === 'accepted' ? 'Schema defined' : 'Dismissed'}
+          {status === 'accepted'
+            ? inertCount > 0
+              ? `Schema defined · ${inertCount} rollup${inertCount > 1 ? 's' : ''} couldn’t be linked`
+              : 'Schema defined'
+            : 'Dismissed'}
         </div>
       ) : (
         <ProposalActions

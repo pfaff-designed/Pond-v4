@@ -90,3 +90,18 @@ export const Rejected: Story = {
     await expect(canvas.getByText('Dismissed')).toBeInTheDocument()
   },
 }
+
+/**
+ * #52 fix 2 — accepting a SECOND configure_view switches the collection's one active
+ * view; the receipt says so honestly ("Switched active view · replaced the previous
+ * view") instead of the flat "View configured".
+ */
+export const AcceptedReplacedActiveView: Story = {
+  args: { status: 'accepted', replacedActiveView: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(
+      canvas.getByText('Switched active view · replaced the previous view')
+    ).toBeInTheDocument()
+  },
+}
