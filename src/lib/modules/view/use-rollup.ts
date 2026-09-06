@@ -25,7 +25,7 @@
  */
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, getPage, type PondPage } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import { readSchema, type PropertyDef } from '@/lib/properties/schema'
@@ -48,10 +48,7 @@ export function useRollup(
   const workspace = useWorkspace()
   // Lazily created on first fetch, not at render — so seeded/disabled queries never
   // construct a real client and throw (envless CI/Storybook).
-  const getSupabase = useMemo(() => {
-    let client: ReturnType<typeof createClient> | null = null
-    return () => (client ??= createClient())
-  }, [])
+  const getSupabase = useLazySupabase()
 
   const targetId = relationDef?.target
   // `count` ignores rows + schema, and an untargeted relation has nothing to read —

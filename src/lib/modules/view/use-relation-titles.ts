@@ -17,7 +17,7 @@
  */
 import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, getPage, listPages, type PondPage } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -38,10 +38,7 @@ export function useRelationTitles(ids: string[], targetId?: string): RelationTit
   const workspace = useWorkspace()
   // Lazily created on first fetch, not at render — so seeded/disabled queries
   // (e.g. Storybook, envless CI) never construct a real client and throw.
-  const getSupabase = useMemo(() => {
-    let client: ReturnType<typeof createClient> | null = null
-    return () => (client ??= createClient())
-  }, [])
+  const getSupabase = useLazySupabase()
   const targeted = !!targetId
 
   // Targeted: the collection's rows (shared with the picker + inline views).

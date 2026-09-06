@@ -23,7 +23,7 @@
  */
 import { useMemo } from 'react'
 import { useQuery, useQueries } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, listPages, type PondPage } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import {
@@ -55,10 +55,7 @@ export function useBacklinks(
   const workspace = useWorkspace()
   // Lazily created on first fetch, not at render — so seeded/disabled queries never
   // construct a real client and throw (envless CI/Storybook).
-  const getSupabase = useMemo(() => {
-    let client: ReturnType<typeof createClient> | null = null
-    return () => (client ??= createClient())
-  }, [])
+  const getSupabase = useLazySupabase()
 
   const enabled = !!targetId
 

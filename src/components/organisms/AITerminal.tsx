@@ -3,7 +3,7 @@
 import { useChat } from '@ai-sdk/react'
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
 import {
   getOrCreateConversation,
@@ -355,7 +355,10 @@ export function AITerminal() {
 
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()
-  const supabaseClient = useMemo(() => createClient(), [])
+  // Lazily created on first use, not at render — so an envless mount (Storybook,
+  // CI) never constructs a real client and throws (#38); queryFns, effects and
+  // the accept handlers below construct it only when they actually run.
+  const getSupabase = useLazySupabase()
   const workspace = useWorkspace()
   const basePath = workspaceBasePath(workspace)
 
@@ -530,7 +533,7 @@ export function AITerminal() {
   // cache with DocumentPanel.
   const { data: currentPage } = useQuery({
     queryKey: ['page', nodeId],
-    queryFn: () => (nodeId ? getPage(supabaseClient, nodeId) : Promise.resolve(null)),
+    queryFn: () => (nodeId ? getPage(getSupabase(), nodeId) : Promise.resolve(null)),
     enabled: !!nodeId,
   })
 
@@ -550,10 +553,11 @@ export function AITerminal() {
   const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
     queryKey: ['pages', workspace, 'full'],
     queryFn: async () => {
+      const supabase = getSupabase()
       const {
         data: { user },
-      } = await supabaseClient.auth.getUser()
-      return user ? listPages(supabaseClient, user.id, workspace) : []
+      } = await supabase.auth.getUser()
+      return user ? listPages(supabase, user.id, workspace) : []
     },
   })
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
@@ -572,7 +576,7 @@ export function AITerminal() {
   const crossPageQueries = useQueries({
     queries: crossPageTargetIds.map((id) => ({
       queryKey: ['page', id],
-      queryFn: () => getPage(supabaseClient, id),
+      queryFn: () => getPage(getSupabase(), id),
     })),
   })
   const blocksForTarget = useMemo(() => {
@@ -798,9 +802,15 @@ export function AITerminal() {
   // proposals that arrive during THIS session.
   const [initialMessageIds, setInitialMessageIds] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
-    supabaseClient.auth.getUser().then(async ({ data: { user } }) => {
+    // Async IIFE so an envless client construction (#38) rejects into the catch
+    // below instead of throwing out of the effect and crashing the mount.
+    ;(async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) return
-      const conversation = await getOrCreateConversation(supabaseClient, user.id, workspace)
+      const conversation = await getOrCreateConversation(supabase, user.id, workspace)
       setConversationId(conversation.id)
       if (conversation.messages.length > 0) {
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
@@ -822,17 +832,17 @@ export function AITerminal() {
       setQuestionAnswers(conversation.resolutions.questions ?? {})
       if (conversation.resolutions.lifecycle) setLifecycle(conversation.resolutions.lifecycle)
       setIsReady(true)
-    })
-  }, [setMessages, supabaseClient, workspace])
+    })().catch(console.error)
+  }, [setMessages, getSupabase, workspace])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
   // persists immediately, not only after the next exchange.
   useEffect(() => {
     if (status === 'ready' && conversationId && messages.length > 0) {
-      saveTranscript(supabaseClient, conversationId, messages, resolutions).catch(console.error)
+      saveTranscript(getSupabase(), conversationId, messages, resolutions).catch(console.error)
     }
-  }, [status, conversationId, messages, resolutions, supabaseClient])
+  }, [status, conversationId, messages, resolutions, getSupabase])
 
   // ── Stamp proposal targets on stream ──────────────────────────────────────
   // The moment a propose_changes part finishes streaming, record which page it
@@ -970,29 +980,31 @@ export function AITerminal() {
   // ── Handle /clear ─────────────────────────────────────────────────────────
   const handleClear = useCallback(async () => {
     if (!conversationId) return
+    const supabase = getSupabase()
     const {
       data: { user },
-    } = await supabaseClient.auth.getUser()
+    } = await supabase.auth.getUser()
     if (!user) return
-    await dissolveConversation(supabaseClient, conversationId)
-    const fresh = await getOrCreateConversation(supabaseClient, user.id, workspace)
+    await dissolveConversation(supabase, conversationId)
+    const fresh = await getOrCreateConversation(supabase, user.id, workspace)
     setConversationId(fresh.id)
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
-  }, [conversationId, setMessages, resetResolutions, supabaseClient, workspace])
+  }, [conversationId, setMessages, resetResolutions, getSupabase, workspace])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
   // Extract entities from the transcript (Quick model), write them all, then
   // dissolve and start a fresh session (build-brief §9).
   const handleHandoff = useCallback(async () => {
     if (!conversationId) return
+    const supabase = getSupabase()
     const {
       data: { user },
-    } = await supabaseClient.auth.getUser()
+    } = await supabase.auth.getUser()
     if (!user) return
     const { freshConversation, written } = await performHandoff(
-      supabaseClient,
+      supabase,
       conversationId,
       user.id,
       messages,
@@ -1005,15 +1017,7 @@ export function AITerminal() {
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [
-    conversationId,
-    messages,
-    queryClient,
-    setMessages,
-    resetResolutions,
-    supabaseClient,
-    workspace,
-  ])
+  }, [conversationId, messages, queryClient, setMessages, resetResolutions, getSupabase, workspace])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -1135,7 +1139,7 @@ export function AITerminal() {
       if (indices.length === 0) return
       decideChanges(toolCallId, indices, 'accepted')
       const result = await writeAcceptedChanges({
-        supabase: supabaseClient,
+        supabase: getSupabase(),
         queryClient,
         resolutions,
         toolCallId,
@@ -1193,7 +1197,7 @@ export function AITerminal() {
     },
     [
       decideChanges,
-      supabaseClient,
+      getSupabase,
       queryClient,
       resolutions,
       nodeId,
@@ -1262,7 +1266,7 @@ export function AITerminal() {
         // through parentTitle is safe.
         const parentRef = selectedParentId === TOP_LEVEL_VALUE ? null : selectedParentId
         const created = await createPageFromProposal(
-          supabaseClient,
+          getSupabase(),
           {
             type: part.type,
             kind: part.kind,
@@ -1293,7 +1297,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, router, workspace, basePath]
+    [getSupabase, queryClient, router, workspace, basePath]
   )
 
   // ── define_schema resolution (#17 slice 5) ────────────────────────────────
@@ -1313,7 +1317,7 @@ export function AITerminal() {
         // relation's target collection (both from the full pages cache in scope).
         // Unmatched names stay untargeted/unset inside hydratePropertySchema (lenient).
         const schema = await defineSchemaFromProposal(
-          supabaseClient,
+          getSupabase(),
           { pageId: selectedTargetId, schema: properties },
           () => crypto.randomUUID(),
           collectionNameResolver(allPages),
@@ -1338,7 +1342,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace, allPages]
+    [getSupabase, queryClient, workspace, allPages]
   )
 
   // ── add_row resolution (#18) ──────────────────────────────────────────────
@@ -1355,7 +1359,7 @@ export function AITerminal() {
       setRowDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         await addRowFromProposal(
-          supabaseClient,
+          getSupabase(),
           { collectionId: selectedCollectionId, title: part?.title, props: rowProps },
           workspace
         )
@@ -1370,7 +1374,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace]
+    [getSupabase, queryClient, workspace]
   )
 
   // ── promote_table resolution (#29) ────────────────────────────────────────
@@ -1397,7 +1401,7 @@ export function AITerminal() {
       setPromotionDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         await promoteTableFromProposal(
-          supabaseClient,
+          getSupabase(),
           { pageId: selectedTargetId, blockId },
           () => crypto.randomUUID(),
           workspace
@@ -1414,7 +1418,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace]
+    [getSupabase, queryClient, workspace]
   )
 
   // ── link_records resolution (#40) ─────────────────────────────────────────
@@ -1440,7 +1444,7 @@ export function AITerminal() {
       setLinkDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         const linked = await linkRecordsFromProposal(
-          supabaseClient,
+          getSupabase(),
           { collectionId: selectedCollectionId, fromRow, relation, toRows },
           workspace
         )
@@ -1464,7 +1468,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace]
+    [getSupabase, queryClient, workspace]
   )
 
   // ── configure_view resolution (#19 slice 5) ───────────────────────────────
@@ -1487,7 +1491,7 @@ export function AITerminal() {
       setViewDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         await configureViewFromProposal(
-          supabaseClient,
+          getSupabase(),
           {
             pageId: host,
             collectionId: linked ? selectedTargetId : undefined,
@@ -1512,7 +1516,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace, nodeId]
+    [getSupabase, queryClient, workspace, nodeId]
   )
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
