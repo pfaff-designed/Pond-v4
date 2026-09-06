@@ -18,6 +18,7 @@ import {
   addRowTool,
   promoteTableTool,
   configureViewTool,
+  linkRecordsTool,
   proposeChangesTool,
   fetchContextTool,
   readPageTool,
@@ -199,6 +200,12 @@ export async function POST(req: Request) {
       // Client-resolved (no execute) — the tool call renders a proposal card and the
       // user's Accept/Reject rides the resolutions envelope, exactly like add_row.
       configure_view: tool(configureViewTool),
+      // link_records (#40): ADD-ONLY linking of EXISTING rows through an existing
+      // relation property, everything named by title. Client-resolved (no execute)
+      // — the tool call renders a proposal card, titles resolve to ids only on
+      // accept, and the user's Accept/Reject rides the resolutions envelope,
+      // exactly like add_row.
+      link_records: tool(linkRecordsTool),
       // propose_changes can now target ANY page the model names by id from the
       // workspace outline, not just the open one (ticket-30): it edits the open
       // page by default, or a page named via `targetPageId` after a read_page.

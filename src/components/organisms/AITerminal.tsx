@@ -33,6 +33,7 @@ import {
 } from '@/lib/pages/create-page'
 import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/configure-view'
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
+import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
@@ -77,6 +78,7 @@ import {
   type PromotedColumn,
 } from '@/components/molecules/PromoteTableProposalCard'
 import { ConfigureViewProposalCard } from '@/components/molecules/ConfigureViewProposalCard'
+import { LinkRecordsProposalCard } from '@/components/molecules/LinkRecordsProposalCard'
 import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
   changeStatus,
@@ -85,6 +87,7 @@ import {
   ADD_ROW_TYPE,
   PROMOTE_TABLE_TYPE,
   CONFIGURE_VIEW_TYPE,
+  LINK_RECORDS_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
 import {
@@ -241,6 +244,28 @@ function isConfigureViewPart(part: { type: string }): part is ConfigureViewPart 
   return part.type === CONFIGURE_VIEW_TYPE
 }
 
+/** A link_records tool part — a proposal to link EXISTING rows through an
+ *  existing relation property (#40). Everything is named by TITLE (the model
+ *  never sees row ids); the accept path resolves titles→ids strictly on accept.
+ *  Client-resolved (no execute); the card below drives accept/reject + which
+ *  collection the source row is in. */
+interface LinkRecordsPart {
+  type: typeof LINK_RECORDS_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    fromRow?: string
+    fromCollection?: string
+    relation?: string
+    toRows?: string[]
+    reason?: string
+  }
+}
+
+function isLinkRecordsPart(part: { type: string }): part is LinkRecordsPart {
+  return part.type === LINK_RECORDS_TYPE
+}
+
 /** A promote_table tool part — a proposal to convert an EXISTING freeform `table`
  *  block on a page into a schema-bound collection (#29). Client-resolved (no
  *  execute); the card below drives accept/reject + which page it applies to. The
@@ -390,6 +415,15 @@ export function AITerminal() {
   const [viewDecisions, setViewDecisions] = useState<Record<string, ProposalStatus>>({})
   const [viewTarget, setViewTarget] = useState<Record<string, string>>({})
 
+  // link_records decisions + the user-chosen source collection, keyed by
+  // toolCallId (#40). Same no-execute caveat as add_row. `linkErrors` carries a
+  // failed accept's message (no such row / duplicate title — resolution is
+  // strict, a dangling id is never written): the card re-arms with the reason.
+  // Session-scoped like changeSkipReasons; only settled decisions persist.
+  const [linkDecisions, setLinkDecisions] = useState<Record<string, ProposalStatus>>({})
+  const [linkTarget, setLinkTarget] = useState<Record<string, string>>({})
+  const [linkErrors, setLinkErrors] = useState<Record<string, string>>({})
+
   // promote_table decisions + the user-chosen target page, keyed by toolCallId
   // (#29). Same no-execute caveat as the other proposal maps: the local maps (not
   // the SDK part) drive each card's resolved state and picked page. `undefined` in
@@ -435,6 +469,7 @@ export function AITerminal() {
       rows: settled(rowDecisions),
       promotions: settled(promotionDecisions),
       views: settled(viewDecisions),
+      links: settled(linkDecisions),
       skipped: changeSkipped,
       targets: changeTargets,
       questions: questionAnswers,
@@ -449,6 +484,7 @@ export function AITerminal() {
     rowDecisions,
     promotionDecisions,
     viewDecisions,
+    linkDecisions,
     changeSkipped,
     changeTargets,
     questionAnswers,
@@ -471,6 +507,9 @@ export function AITerminal() {
     setPromotionSnapshot({})
     setViewDecisions({})
     setViewTarget({})
+    setLinkDecisions({})
+    setLinkTarget({})
+    setLinkErrors({})
     setQuestionAnswers({})
     setLifecycle(idleLifecycle())
   }, [])
@@ -771,6 +810,7 @@ export function AITerminal() {
       setRowDecisions(conversation.resolutions.rows ?? {})
       setPromotionDecisions(conversation.resolutions.promotions ?? {})
       setViewDecisions(conversation.resolutions.views ?? {})
+      setLinkDecisions(conversation.resolutions.links ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
       setQuestionAnswers(conversation.resolutions.questions ?? {})
@@ -855,7 +895,8 @@ export function AITerminal() {
         schemaDecisions,
         rowDecisions,
         viewDecisions,
-        promotionDecisions
+        promotionDecisions,
+        linkDecisions
       ),
     [
       messages,
@@ -866,6 +907,7 @@ export function AITerminal() {
       rowDecisions,
       viewDecisions,
       promotionDecisions,
+      linkDecisions,
     ]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
@@ -1369,6 +1411,56 @@ export function AITerminal() {
     [supabaseClient, queryClient, workspace]
   )
 
+  // ── link_records resolution (#40) ─────────────────────────────────────────
+  // Accept: resolve every proposed TITLE (source row, relation, targets) against
+  // live data and append the links onto the source row's relation value
+  // (linkRecordsFromProposal — strict: any unresolvable/ambiguous title throws
+  // BEFORE any write, so a dangling id is impossible), then invalidate the source
+  // collection's ['rows'] cache like a row edit — rollups and backlinks (#39) are
+  // derived on read, so they recompute from the fresh value — plus the target
+  // collection's rows and the source row's own ['page'] cache. On failure the
+  // card re-arms with the thrown message so the user can retry or dismiss.
+  const acceptLinkRecords = useCallback(
+    async (toolCallId: string, part: LinkRecordsPart['input'], selectedCollectionId: string) => {
+      const fromRow = part?.fromRow
+      const relation = part?.relation
+      const toRows = part?.toRows ?? []
+      if (!selectedCollectionId || !fromRow || !relation || toRows.length === 0) return
+      setLinkErrors((prev) => {
+        const next = { ...prev }
+        delete next[toolCallId]
+        return next
+      })
+      setLinkDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      try {
+        const linked = await linkRecordsFromProposal(
+          supabaseClient,
+          { collectionId: selectedCollectionId, fromRow, relation, toRows },
+          workspace
+        )
+        void queryClient.invalidateQueries({ queryKey: ['rows', selectedCollectionId] })
+        if (linked.targetCollectionId && linked.targetCollectionId !== selectedCollectionId) {
+          void queryClient.invalidateQueries({ queryKey: ['rows', linked.targetCollectionId] })
+        }
+        void queryClient.invalidateQueries({ queryKey: ['page', linked.sourceRowId] })
+      } catch (err) {
+        // Surface the failure ON the card (its message names the unresolvable or
+        // duplicate title) and revert to pending so the user can retry.
+        console.error('link_records failed', err)
+        setLinkErrors((prev) => ({
+          ...prev,
+          [toolCallId]: err instanceof Error ? err.message : 'Could not link those records',
+        }))
+        setLinkDecisions((prev) => {
+          const next = { ...prev }
+          delete next[toolCallId]
+          return next
+        })
+      }
+    },
+    [supabaseClient, queryClient, workspace]
+  )
+
   // ── configure_view resolution (#19 slice 5) ───────────────────────────────
   // Accept: resolve the proposed name-keyed config against the chosen collection's
   // schema and upsert THE view block on it (configureViewFromProposal), then
@@ -1484,6 +1576,9 @@ export function AITerminal() {
           )
           const configureViewParts = (message.parts as Array<{ type: string }>).filter(
             isConfigureViewPart
+          )
+          const linkRecordsParts = (message.parts as Array<{ type: string }>).filter(
+            isLinkRecordsPart
           )
           // Ticket-39: branch-pause question cards + follow-up chips, both client-
           // resolved tool parts on the assistant message.
@@ -1773,6 +1868,47 @@ export function AITerminal() {
                     onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
                       setViewDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                    }
+                  />
+                )
+              })}
+              {/* link_records proposal cards (#40): link EXISTING rows through an
+                  existing relation, everything named by TITLE. Client-resolved;
+                  Accept resolves titles→ids strictly and appends the links, and
+                  the decision rides the resolutions envelope so the card goes
+                  inert and the model stops re-proposing. */}
+              {linkRecordsParts.map((part) => {
+                // Same streaming caveat as the other cards: a partially-parsed
+                // toRows array would render an incomplete preview.
+                if (part.state === 'input-streaming') return null
+                const input = part.input
+                if (!input?.fromRow || !input?.relation || !input?.toRows?.length) return null
+                const status = linkDecisions[part.toolCallId] ?? 'pending'
+                // Pre-resolve the proposed source-collection NAME to its id so
+                // the picker lands on it (and disambiguates a duplicate title),
+                // exactly like a linked view's targetCollection.
+                const preResolvedTarget = input.fromCollection
+                  ? resolveCollectionByName(allPages, input.fromCollection)
+                  : null
+                const selectedTargetId = linkTarget[part.toolCallId] ?? preResolvedTarget ?? ''
+                return (
+                  <LinkRecordsProposalCard
+                    key={part.toolCallId}
+                    className="press-arrive"
+                    fromRow={input.fromRow}
+                    relation={input.relation}
+                    toRows={input.toRows}
+                    reason={input.reason}
+                    error={linkErrors[part.toolCallId]}
+                    status={status}
+                    selectedTargetId={selectedTargetId}
+                    targetOptions={collectionOptions}
+                    onTargetChange={(id) =>
+                      setLinkTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                    }
+                    onAccept={() => acceptLinkRecords(part.toolCallId, input, selectedTargetId)}
+                    onReject={() =>
+                      setLinkDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
                     }
                   />
                 )

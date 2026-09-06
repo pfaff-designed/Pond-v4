@@ -45,6 +45,8 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     // #29: promote_table — convert an existing freeform table block to a collection.
     'call the promote_table tool',
     'promote_table CONVERTS an existing filled table',
+    // #40: link_records — forward-only, add-only linking of existing rows.
+    'call the link_records tool',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })

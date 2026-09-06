@@ -27,6 +27,8 @@ import { hydrateBlock } from '@/lib/modules/hydrate'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 import { createPage, getPage, defineSchema } from '@/lib/pages/client'
 import { resolveParentId } from '@/lib/nodes/create'
+import { resolveRowRef, relationCandidates } from '@/lib/pages/link-records'
+import { addLink } from '@/lib/modules/view/relation-value-ops'
 import {
   propertyDefSchema,
   readSchema,
@@ -474,6 +476,27 @@ export async function addRowFromProposal(
   if (!user) throw new Error('Not authenticated')
 
   const values = resolveRowValues(schema, proposal.props)
+
+  // #40 slice C — relation values arrive as target-row TITLES (the model never
+  // sees row ids), but the z.array(z.string()) coercion above keeps them
+  // verbatim, which would store dangling fake ids. Resolve each entry against
+  // the relation's target candidates (its target collection's rows, or the
+  // workspace's non-row pages when untargeted — shared with link_records):
+  // a resolved title (or an entry that already IS a candidate id) becomes the
+  // row id; an unresolvable or duplicate-titled entry is DROPPED (lenient, #18
+  // decision 9 — but NEVER written raw). The kept ids fold through `addLink` so
+  // dedupe + the `single` radio cap hold here exactly as in the picker.
+  for (const def of schema) {
+    if (def.type !== 'relation') continue
+    const raw = values[def.id]
+    if (!Array.isArray(raw) || raw.length === 0) continue
+    const candidates = await relationCandidates(supabase, user.id, def.target, workspace)
+    values[def.id] = raw
+      .map((ref) => resolveRowRef(candidates, ref))
+      .flatMap((res) => (res.kind === 'resolved' ? [res.id] : []))
+      .reduce((acc, id) => addLink(acc, id, def.single), [] as string[])
+  }
+
   const page = await createPage(supabase, user.id, {
     parentId: proposal.collectionId,
     type: ROW_TYPE,

@@ -347,6 +347,62 @@ describe('applyResolutions — configure_view cards (#19 slice 5)', () => {
   })
 })
 
+describe('applyResolutions — link_records cards (#40)', () => {
+  function linkTranscript(): UIMessage[] {
+    return [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'link the stove to the tent' }],
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-link_records',
+            toolCallId: 'lr1',
+            state: 'input-available',
+            input: {
+              fromRow: 'Stove',
+              fromCollection: 'Trip Packing',
+              relation: 'Packs With',
+              toRows: ['Tent'],
+            },
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+  }
+
+  it('stamps an accepted link_records as a tool result so the model stops re-proposing', () => {
+    const out = applyResolutions(linkTranscript(), {
+      ...emptyResolutions(),
+      links: { lr1: 'accepted' },
+    })
+    const part = findPart(out, 'lr1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'accepted' })
+    expect((part.output as { note: string }).note).toMatch(/do not propose it again/i)
+  })
+
+  it('stamps a rejected link_records with a dismissal note', () => {
+    const out = applyResolutions(linkTranscript(), {
+      ...emptyResolutions(),
+      links: { lr1: 'rejected' },
+    })
+    const part = findPart(out, 'lr1')
+    expect(part.state).toBe('output-available')
+    expect(part.output).toMatchObject({ decision: 'rejected' })
+    expect((part.output as { note: string }).note).toMatch(/dismissed/i)
+  })
+
+  it('leaves an undecided link_records card untouched (still dropped from replay)', () => {
+    const out = applyResolutions(linkTranscript(), emptyResolutions())
+    expect(findPart(out, 'lr1').state).toBe('input-available')
+  })
+})
+
 describe('applyResolutions — question cards (ticket-39)', () => {
   function questionTranscript(): UIMessage[] {
     return [
@@ -430,6 +486,7 @@ describe('parseResolutions', () => {
       rows: { ar1: 'accepted' }, // #18: add_row decisions
       promotions: { pt1: 'accepted' }, // #29: promote_table decisions
       views: { cv1: 'accepted' }, // #19 slice 5: configure_view decisions
+      links: { lr1: 'accepted' }, // #40: link_records decisions
       skipped: { pc1: 2 },
       targets: { pc1: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: question-card answers ride the same envelope
@@ -462,6 +519,7 @@ describe('parseResolutions', () => {
       rows: {}, // #18: present-but-empty on a row with no add_row cards
       promotions: {}, // #29: present-but-empty on a row with no promote_table cards
       views: {}, // #19 slice 5: present-but-empty on a row with no configure_view cards
+      links: {}, // #40: present-but-empty on a row with no link_records cards
       skipped: { x: 1 },
       targets: { good: { nodeId: 'n1', nodeName: 'Garage' } },
       questions: {}, // ticket-39: present-but-empty on a row with no question cards
