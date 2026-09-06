@@ -27,6 +27,10 @@ const meta = {
       { id: 'p-reading', title: 'Reading List' },
       { id: 'p-personal', title: 'Personal' },
     ],
+    // The terminal passes collectionTitleResolver over the workspace's pages;
+    // stories resolve against a fixed two-collection workspace (#37).
+    resolveTargetTitle: (name) =>
+      ({ purchases: 'Purchases', trips: 'Trips' })[name.trim().toLowerCase()],
     onTargetChange: fn(),
     onAccept: fn(),
     onReject: fn(),
@@ -123,5 +127,29 @@ export const WithRollup: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('sum of Amount via Purchases')).toBeInTheDocument()
     await expect(canvas.getByText('count via Purchases')).toBeInTheDocument()
+  },
+}
+
+/**
+ * A relation previews its RESOLVED target collection — "→ Trips" — so the user can
+ * correct it before accept (#37, spec decision 8). An unmatched name is flagged
+ * ("· no match" → accept leaves it untargeted); an untargeted relation shows just
+ * its type chip.
+ */
+export const WithRelationTargets: Story = {
+  args: {
+    properties: [
+      // Proposed lowercase — the preview shows the canonical resolved title.
+      { name: 'Trip', type: 'relation', target: 'trips' },
+      { name: 'Companion', type: 'relation', target: 'People' },
+      { name: 'Anything', type: 'relation' },
+    ] as AiPropertyDef[],
+    reason: 'Link each entry to the trip it happened on.',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('→ Trips')).toBeInTheDocument()
+    await expect(canvas.getByText('→ People · no match')).toBeInTheDocument()
+    await expect(canvas.queryByText(/^→ Anything/)).not.toBeInTheDocument()
   },
 }

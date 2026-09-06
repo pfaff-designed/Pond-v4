@@ -30,6 +30,7 @@ import {
   collectionPropertyResolver,
   addRowFromProposal,
   collectionNameResolver,
+  collectionTitleResolver,
 } from '@/lib/pages/create-page'
 import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/configure-view'
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
@@ -604,6 +605,11 @@ export function AITerminal() {
       ),
     [allPages]
   )
+  // Preview a relation's proposed target NAME as the collection accept would
+  // actually link into (#37, relation spec decision 8) — same resolution rules as
+  // the accept path's collectionNameResolver, but yielding the canonical title
+  // for the define_schema card's per-property preview.
+  const resolveTargetTitle = useMemo(() => collectionTitleResolver(allPages), [allPages])
   // Resolve an AI-proposed parent title (or id) to a selectable option id.
   const resolveProposedParent = useCallback(
     (parentTitle?: string | null): string => {
@@ -1739,6 +1745,7 @@ export function AITerminal() {
                     status={status}
                     selectedTargetId={selectedTargetId}
                     targetOptions={parentOptions}
+                    resolveTargetTitle={resolveTargetTitle}
                     onTargetChange={(id) =>
                       setSchemaTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
                     }

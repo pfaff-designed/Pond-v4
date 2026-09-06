@@ -13,6 +13,7 @@ import {
   defineSchemaFromProposal,
   collectionNameResolver,
   collectionPropertyResolver,
+  collectionTitleResolver,
 } from '@/lib/pages/create-page'
 import { SCHEMA_KEY } from '@/lib/properties/schema'
 import type { AiPropertyDef, PropertySchema } from '@/lib/properties/schema'
@@ -564,5 +565,40 @@ describe('collectionPropertyResolver', () => {
     expect(resolve('p1', 'Rating')).toBeUndefined()
     expect(resolve('col-books', 'Nope')).toBeUndefined()
     expect(resolve('col-books', '   ')).toBeUndefined()
+  })
+})
+
+// ── collectionTitleResolver — relation target NAME → collection TITLE (#37) ─────
+//
+// The define_schema proposal card previews a relation's RESOLVED target collection
+// (spec decision 8) so the user can correct it before accept. Same resolution rules
+// as collectionNameResolver (that's what it delegates to), but it hands back the
+// matched collection's canonical title for display — undefined means "no collection
+// will be linked" and the card flags the name instead.
+
+describe('collectionTitleResolver', () => {
+  const collection = (id: string, title: string) => ({
+    id,
+    title,
+    props: { [SCHEMA_KEY]: [{ id: `${id}-c`, name: 'Col', type: 'text' }] },
+  })
+  const plain = (id: string, title: string) => ({ id, title, props: {} })
+
+  it('resolves a collection name to its canonical title, case-insensitively', () => {
+    const resolve = collectionTitleResolver([collection('c1', 'Trips')])
+    expect(resolve('trips')).toBe('Trips')
+    expect(resolve('TRIPS')).toBe('Trips')
+    expect(resolve('  Trips  ')).toBe('Trips')
+  })
+
+  it('ignores a non-collection page that shares the name (lenient → undefined)', () => {
+    const resolve = collectionTitleResolver([plain('p1', 'Trips')])
+    expect(resolve('Trips')).toBeUndefined()
+  })
+
+  it('returns undefined for an unknown name and for a blank name', () => {
+    const resolve = collectionTitleResolver([collection('c1', 'Trips')])
+    expect(resolve('Ghosts')).toBeUndefined()
+    expect(resolve('   ')).toBeUndefined()
   })
 })

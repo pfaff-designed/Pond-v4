@@ -38,17 +38,26 @@ jest.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
-// The reading-list page is the schema's target; listPages feeds the picker.
+// The reading-list page is the schema's target; listPages feeds the picker. The
+// Trips COLLECTION (it carries a `_schema`) is the resolvable relation target for
+// the card's target-collection preview (#37).
 jest.mock('@/lib/pages/client', () => ({
   getPage: jest.fn().mockResolvedValue(null),
-  listPages: jest
-    .fn()
-    .mockResolvedValue([
-      { id: 'page-reading', parentId: null, type: 'page', title: 'Reading List' },
-    ]),
+  listPages: jest.fn().mockResolvedValue([
+    { id: 'page-reading', parentId: null, type: 'page', title: 'Reading List' },
+    {
+      id: 'col-trips',
+      parentId: null,
+      type: 'page',
+      title: 'Trips',
+      props: { _schema: [{ id: 't-where', name: 'Where', type: 'text' }] },
+    },
+  ]),
 }))
 
 // The write path — mocked so we can assert it's called and control resolution.
+// The pure title resolver stays REAL so the card's relation-target preview (#37)
+// resolves against the mocked listPages above.
 const mockDefineSchemaFromProposal = jest
   .fn()
   .mockResolvedValue([{ id: 's-1', name: 'Status', type: 'status' }])
@@ -57,6 +66,11 @@ jest.mock('@/lib/pages/create-page', () => ({
   defineSchemaFromProposal: (...args: unknown[]) => mockDefineSchemaFromProposal(...args),
   collectionNameResolver: () => () => undefined,
   collectionPropertyResolver: () => () => undefined,
+  collectionTitleResolver: (
+    jest.requireActual('@/lib/pages/create-page') as {
+      collectionTitleResolver: (pages: unknown[]) => (name: string) => string | undefined
+    }
+  ).collectionTitleResolver,
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
@@ -175,6 +189,42 @@ describe('AITerminal — define_schema proposal card', () => {
       ],
     })
     await waitFor(() => expect(screen.getByText('Schema defined')).toBeInTheDocument())
+  })
+
+  it('previews a relation property’s resolved target collection, flagging a no-match (#37)', async () => {
+    mockMessages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-define_schema',
+            toolCallId: 'ds-2',
+            state: 'input-available',
+            input: {
+              pageId: 'page-reading',
+              properties: [
+                // Proposed lowercase — the preview shows the CANONICAL resolved title.
+                { name: 'Trip', type: 'relation', target: 'trips' },
+                // No collection named this exists — flagged so the user can correct it.
+                { name: 'Companion', type: 'relation', target: 'People' },
+                // Untargeted relation (link any page) — no target preview at all.
+                { name: 'Anything', type: 'relation' },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+
+    // Resolved: the Trips collection (from the pages cache) is previewed by title.
+    await waitFor(() => expect(screen.getByText('→ Trips')).toBeInTheDocument())
+    // Unresolved: the proposed name is flagged so the user can correct before accept.
+    expect(screen.getByText('→ People · no match')).toBeInTheDocument()
+    // Untargeted: nothing beyond the `relation` type chip.
+    expect(screen.queryByText(/^→ Anything/)).not.toBeInTheDocument()
   })
 
   it('Reject settles the card inert without writing', async () => {
