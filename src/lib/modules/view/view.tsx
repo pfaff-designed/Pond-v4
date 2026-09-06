@@ -53,10 +53,10 @@ import { RollupValueField } from '@/components/organisms/RollupValueField'
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
 export function ViewView({ data, editable }: ModuleViewProps<ViewBlock>) {
-  // The host page id — the collection whose rows this inline view draws. Provided
-  // by the page host (DocumentPanel) through SiblingBlocks, exactly as a cross-page
-  // metric reads it. A linked view (collectionId set) is deferred to a later cycle;
-  // until then it too draws the host page's rows rather than crashing.
+  // Which collection's rows this view draws: a LINKED view names another collection
+  // (data.collectionId, #41); otherwise it draws its HOST page's own rows, whose id
+  // arrives from the page host (DocumentPanel) through SiblingBlocks — exactly as a
+  // cross-page metric reads it. `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = data.collectionId ?? pageId
   const { schema, rows, isLoading, setValue } = useCollectionRows(collectionId)
@@ -82,7 +82,8 @@ export interface CollectionViewProps {
   rows: CollectionRow[]
   isLoading?: boolean
   editable?: boolean
-  /** True when this is a (not-yet-hydrated) linked view over another collection. */
+  /** True when this is a linked view over another collection (#41) — words the
+   *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
   linked?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
 }
@@ -114,15 +115,17 @@ export function CollectionView({
     return <ViewNotice>Loading rows…</ViewNotice>
   }
 
-  // A linked view over another collection isn't hydrated this cycle (decision 12).
-  if (linked) {
-    return <ViewNotice>A linked view over another collection isn’t available yet.</ViewNotice>
-  }
-
-  // No schema → not really a collection. Rows/columns can't be resolved, so fail
-  // soft rather than showing a bare title list (user decision).
+  // No schema → not really a collection. A LINKED view whose target was deleted (or
+  // was never a collection) resolves to no schema too — word that case for what it is
+  // rather than the generic "add properties" hint. Either way, fail soft (#41).
   if (!schema) {
-    return <ViewNotice>This view needs a collection with properties.</ViewNotice>
+    return (
+      <ViewNotice>
+        {linked
+          ? 'That collection isn’t available.'
+          : 'This view needs a collection with properties.'}
+      </ViewNotice>
+    )
   }
 
   return (

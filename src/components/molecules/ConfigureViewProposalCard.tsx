@@ -54,6 +54,9 @@ interface ConfigureViewProposalCardProps {
   selectedTargetId: string
   /** Candidate collections for the destination picker (only pages with a schema). */
   targetOptions: ParentOption[]
+  /** The picker's label — "Configure on" for an inline view, "Draw rows from" for a
+   *  linked view whose rows come from ANOTHER collection (#41). */
+  destinationLabel?: string
   /** pending → actions + picker shown; accepted/rejected → resolved status line. */
   status?: ProposalStatus
   onTargetChange: (targetId: string) => void
@@ -88,6 +91,7 @@ export function ConfigureViewProposalCard({
   reason,
   selectedTargetId,
   targetOptions,
+  destinationLabel = 'Configure on',
   status = 'pending',
   onTargetChange,
   onAccept,
@@ -148,7 +152,7 @@ export function ConfigureViewProposalCard({
       {/* Destination picker — which collection this view is configured on */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
         <label htmlFor={targetSelectId} className="text-xs text-press-muted">
-          Configure on
+          {destinationLabel}
         </label>
         <select
           id={targetSelectId}

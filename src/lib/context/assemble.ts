@@ -298,32 +298,41 @@ async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<Ch
 }
 
 /**
- * #19 read-hydration seam (decision 16). Attach a page's `type='row'` children to
- * every inline `view` block on it, so the sync `serialize`/`preview` path can
- * render the rows the view draws. No-op (and no extra query) when the page has no
- * view block. Inline-only this cycle: rows come from THIS page (nodeId); a linked
- * view (`collectionId` set) is left un-hydrated — the stub is guarded here and
- * surfaced in the block's serialize (decision 12). The `rows` field is transient
- * (never persisted): the persisted view schema is config-only.
+ * #19 read-hydration seam (decision 16). Attach a view block's rows to it before the
+ * sync `serialize`/`preview` path runs. A view draws its HOST page's `type='row'`
+ * children by default; a LINKED view (`collectionId` set, #41) draws that target
+ * collection's rows instead. Each distinct source's children are fetched once and
+ * grafted onto the matching view blocks. No-op (no query) when the page has no view
+ * block. The `rows` field is transient (never persisted): the view schema is
+ * config-only.
  */
-async function hydrateViewBlocks(
+export async function hydrateViewBlocks(
   sb: Sb,
   userId: string,
   nodeId: string,
   blocks: Block[]
 ): Promise<Block[]> {
-  const isInlineView = (b: Block) => b.type === 'view' && !b.collectionId
-  if (!blocks.some(isInlineView)) return blocks
+  const viewBlocks = blocks.filter((b) => b.type === 'view')
+  if (viewBlocks.length === 0) return blocks
 
-  const children = await getChildPages(sb, userId, nodeId)
-  const rows: ViewRow[] = children
-    .filter((p) => p.type === ROW_TYPE)
-    .map((p) => ({ id: p.id, title: p.title }))
+  // Each view's source: its linked collection, or the host page for an inline view.
+  // Fetch every distinct source's row children once (usually just the host).
+  const sourceIds = new Set(viewBlocks.map((b) => b.collectionId ?? nodeId))
+  const rowsBySource = new Map<string, ViewRow[]>()
+  for (const sourceId of sourceIds) {
+    const children = await getChildPages(sb, userId, sourceId)
+    rowsBySource.set(
+      sourceId,
+      children.filter((p) => p.type === ROW_TYPE).map((p) => ({ id: p.id, title: p.title }))
+    )
+  }
 
   // `b.type === 'view'` narrows to ViewBlock so the `rows` graft type-checks (a
   // plain boolean helper wouldn't narrow, and grafting rows onto a table block's
   // own `rows` would collide).
-  return blocks.map((b) => (b.type === 'view' && !b.collectionId ? { ...b, rows } : b))
+  return blocks.map((b) =>
+    b.type === 'view' ? { ...b, rows: rowsBySource.get(b.collectionId ?? nodeId) ?? [] } : b
+  )
 }
 
 /** All of a user's pages as lean title rows for the workspace outline — one
