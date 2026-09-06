@@ -33,6 +33,8 @@ import { tableSchema, tableRowSchema } from './table/schema'
 import { chartLineSchema } from './chart-line/schema'
 import { chartBarSchema } from './chart-bar/schema'
 import { chartAreaSchema } from './chart-area/schema'
+import { heatmapSchema } from './heatmap/schema'
+import { statSchema } from './stat/schema'
 import { viewSchema } from './view/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
@@ -104,6 +106,11 @@ const tableData = tableSchema
 const chartLineData = chartLineSchema.omit({ id: true })
 const chartBarData = chartBarSchema.omit({ id: true })
 const chartAreaData = chartAreaSchema.omit({ id: true })
+// #12: Bklit promotion, wave 2. Like the charts, neither block carries a nested
+// id-bearing collection (heatmap `cells` are plain `{ date, value }`), so a flat
+// top-level id strip is the whole omit-chain — the module-nested-ids fence pins it.
+const heatmapData = heatmapSchema.omit({ id: true })
+const statData = statSchema.omit({ id: true })
 // #19: a view is config only — no nested id-bearing collections (its rows are
 // child pages, its groupBy/sort/filter reference existing property ids). So the
 // emit shape is a flat top-level id strip, like a chart.
@@ -118,6 +125,8 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   chartLineData,
   chartBarData,
   chartAreaData,
+  heatmapData,
+  statData,
   viewData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
@@ -188,6 +197,10 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   chartLineData.extend({ bindKey }),
   chartBarData.extend({ bindKey }),
   chartAreaData.extend({ bindKey }),
+  // #12: heatmap/stat promotions — nothing binds to them, but a page must be
+  // creatable WITH them, so the union lists every content type (parity fence).
+  heatmapData.extend({ bindKey }),
+  statData.extend({ bindKey }),
   // #19: a page can be created WITH a view block. No block binds to a view, but
   // the union lists every content type for parity with the persisted union.
   viewData.extend({ bindKey }),

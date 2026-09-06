@@ -19,6 +19,10 @@ const config = {
     // sees it) and placed FIRST so it wins over the `^@/` catch-all below.
     'components/charts/(line-chart|bar-chart|area-chart|line|bar|area|grid)$':
       '<rootDir>/src/__mocks__/charts.tsx',
+    // #12: same remedy for the heatmap entry barrel (index → HeatmapChart → @visx +
+    // motion). Anchored on the barrel only — deep imports like `heatmap/heatmap-utils`
+    // (the pure week helpers the binning transform reuses) still resolve for real.
+    'components/charts/heatmap$': '<rootDir>/src/__mocks__/heatmap.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
     // react-markdown (+ its remark plugins) is pure ESM; next/jest doesn't
     // transpile node_modules, so stub them in jsdom. Typeset rendering is covered

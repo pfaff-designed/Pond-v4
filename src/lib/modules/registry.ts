@@ -18,6 +18,8 @@ import { pageDescriptor } from './page/schema'
 import { chartLineDescriptor } from './chart-line/schema'
 import { chartBarDescriptor } from './chart-bar/schema'
 import { chartAreaDescriptor } from './chart-area/schema'
+import { heatmapDescriptor } from './heatmap/schema'
+import { statDescriptor } from './stat/schema'
 import { viewDescriptor } from './view/schema'
 
 export const moduleDescriptors = {
@@ -32,6 +34,9 @@ export const moduleDescriptors = {
   'chart-line': chartLineDescriptor,
   'chart-bar': chartBarDescriptor,
   'chart-area': chartAreaDescriptor,
+  // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
+  heatmap: heatmapDescriptor,
+  stat: statDescriptor,
   // #19: an inline view of a collection's rows (table/board/calendar/gallery).
   view: viewDescriptor,
 } satisfies Record<string, ModuleDescriptor>

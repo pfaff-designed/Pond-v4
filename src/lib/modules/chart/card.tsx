@@ -15,7 +15,9 @@ import { seriesNames } from './data'
  * chrome text; brand-token reconciliation is a later ticket, mirroring metric-ring.
  */
 
-const KICKER = 'text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-400'
+/** The module-card kicker voice — exported (#12) so the promoted heatmap/stat
+ *  modules share the exact chrome instead of restating the classes. */
+export const KICKER = 'text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-400'
 
 export interface ChartCardProps {
   title?: string

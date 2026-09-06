@@ -20,6 +20,8 @@ import { PageView } from './page/view'
 import { ChartLineView } from './chart-line/view'
 import { ChartBarView } from './chart-bar/view'
 import { ChartAreaView } from './chart-area/view'
+import { HeatmapView } from './heatmap/view'
+import { StatView } from './stat/view'
 import { ViewView } from './view/view'
 
 /**
@@ -41,6 +43,9 @@ export const moduleRenderers = {
   'chart-line': { view: ChartLineView },
   'chart-bar': { view: ChartBarView },
   'chart-area': { view: ChartAreaView },
+  // #12: Bklit promotion, wave 2. Read-only views (AI-maintained, like the charts).
+  heatmap: { view: HeatmapView },
+  stat: { view: StatView },
   // #19: collection view. Slice-2 stub renderer; real renderers land in slices 3–4.
   view: { view: ViewView },
 }

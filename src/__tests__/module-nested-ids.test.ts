@@ -66,6 +66,18 @@ const samples: Record<string, ModuleData> = {
   // #19: a view is config only (no nested id-bearing collections), so it round-trips
   // with a flat top-level id strip — like a chart.
   view: { type: 'view', mode: 'board', groupBy: 'p-status' },
+  // #12: heatmap + stat promotions. Like the charts, neither carries a nested
+  // id-bearing collection (heatmap `cells` are plain `{ date, value }`), so a flat
+  // top-level id strip is the whole omit-chain.
+  heatmap: {
+    type: 'heatmap',
+    title: 'Workouts',
+    cells: [
+      { date: '2026-01-05', value: 1 },
+      { date: '2026-01-07', value: 2 },
+    ],
+  },
+  stat: { type: 'stat', label: 'MRR', value: 12500, format: 'currency', delta: 0.12 },
 }
 
 /**
