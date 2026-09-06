@@ -11,6 +11,7 @@
 
 import {
   resolveViewConfig,
+  resolveCollectionByName,
   upsertViewBlock,
   configureViewFromProposal,
 } from '@/lib/pages/configure-view'
@@ -111,6 +112,53 @@ describe('resolveViewConfig', () => {
       mode: 'gantt',
     })
   })
+
+  it('carries a linked-view collectionId through unchanged (#41)', () => {
+    expect(
+      resolveViewConfig(schema, { pageId: 'host', mode: 'table', collectionId: 'coll-src' })
+    ).toEqual({ mode: 'table', collectionId: 'coll-src' })
+  })
+})
+
+// ── resolveCollectionByName — linked-view target (name → collection id) ──────
+
+describe('resolveCollectionByName', () => {
+  const coll = (
+    id: string,
+    title: string
+  ): Parameters<typeof resolveCollectionByName>[0][number] => ({
+    id,
+    title,
+    props: { [SCHEMA_KEY]: schema },
+  })
+  const plain = (
+    id: string,
+    title: string
+  ): Parameters<typeof resolveCollectionByName>[0][number] => ({
+    id,
+    title,
+    props: {},
+  })
+
+  it('resolves a collection by its title', () => {
+    expect(resolveCollectionByName([plain('p1', 'Notes'), coll('c1', 'Tasks')], 'Tasks')).toBe('c1')
+  })
+
+  it('matches case-insensitively', () => {
+    expect(resolveCollectionByName([coll('c1', 'Tasks')], 'tasks')).toBe('c1')
+  })
+
+  it('ignores a non-collection page with the same title', () => {
+    expect(resolveCollectionByName([plain('p1', 'Tasks'), coll('c1', 'Tasks')], 'Tasks')).toBe('c1')
+  })
+
+  it('returns null when no collection matches', () => {
+    expect(resolveCollectionByName([coll('c1', 'Tasks')], 'Reading')).toBeNull()
+  })
+
+  it('returns the FIRST match on a duplicate title (the picker disambiguates)', () => {
+    expect(resolveCollectionByName([coll('c1', 'Tasks'), coll('c2', 'Tasks')], 'Tasks')).toBe('c1')
+  })
 })
 
 // ── upsertViewBlock — mint vs reconfigure ────────────────────────────────────
@@ -174,6 +222,26 @@ describe('upsertViewBlock', () => {
     expect(v?.sort).toBeUndefined()
   })
 
+  it('sets collectionId from config when minting a linked view (#41)', () => {
+    const out = upsertViewBlock([], { mode: 'table', collectionId: 'coll-src' }, () => 'v-new')
+    expect(out).toEqual([{ id: 'v-new', type: 'view', mode: 'table', collectionId: 'coll-src' }])
+  })
+
+  it('config collectionId overrides an existing one on reconfigure (#41)', () => {
+    const existing: Block = {
+      id: 'v-keep',
+      type: 'view',
+      mode: 'table',
+      collectionId: 'old-coll',
+    } as Block
+    const out = upsertViewBlock(
+      [existing],
+      { mode: 'board', groupBy: 'p-status', collectionId: 'new-coll' },
+      () => 'x'
+    )
+    expect(viewOf(out)?.collectionId).toBe('new-coll')
+  })
+
   it('reconfigures the top-most view and leaves any others untouched', () => {
     const v1: Block = { id: 'v1', type: 'view', mode: 'table' } as Block
     const v2: Block = { id: 'v2', type: 'view', mode: 'gallery' } as Block
@@ -220,6 +288,103 @@ function makeSupabase(
     _update: update,
   }
 }
+
+// A mock that can return DIFFERENT pages per id (host vs linked target), and
+// records every saveBlocks write. getPage reads `.eq('id', X).maybeSingle()`;
+// saveBlocks writes `.update(payload).eq('id', X)`. Each `.from('pages')` gets a
+// fresh chain so the captured id never bleeds between queries.
+function makeMultiSupabase(
+  pagesById: Record<string, { id: string; props?: Record<string, unknown>; blocks?: Block[] }>
+) {
+  const writes: { id?: string; payload?: { blocks?: Block[] } }[] = []
+  const from = jest.fn(() => {
+    let capturedId: string | undefined
+    let payload: { blocks?: Block[] } | undefined
+    const chain: Record<string, jest.Mock> = {
+      select: jest.fn().mockReturnThis(),
+      update: jest.fn((p: { blocks?: Block[] }) => {
+        payload = p
+        return chain
+      }),
+      eq: jest.fn((col: string, val: string) => {
+        if (col === 'id') {
+          capturedId = val
+          if (payload) writes.push({ id: val, payload })
+        }
+        return chain
+      }),
+      maybeSingle: jest.fn(() => {
+        const p = capturedId ? pagesById[capturedId] : undefined
+        const row = p
+          ? {
+              id: p.id,
+              parent_id: null,
+              type: 'page',
+              title: p.id,
+              blocks: p.blocks ?? [],
+              props: p.props ?? {},
+              order: 0,
+            }
+          : null
+        return Promise.resolve({ data: row, error: null })
+      }),
+    }
+    return chain
+  })
+  return { from, _writes: writes }
+}
+
+describe('configureViewFromProposal — linked view (#41)', () => {
+  it('resolves config against the TARGET schema and upserts on the HOST with collectionId', async () => {
+    const sb = makeMultiSupabase({
+      host: { id: 'host', props: {}, blocks: [] }, // NOT a collection — just holds the block
+      'coll-src': { id: 'coll-src', props: { [SCHEMA_KEY]: schema }, blocks: [] },
+    })
+    const out = await configureViewFromProposal(
+      sb as never,
+      { pageId: 'host', collectionId: 'coll-src', mode: 'board', groupBy: 'Status' },
+      () => 'v-linked'
+    )
+    expect(out).toEqual({ id: 'host' })
+    const write = sb._writes.find((w) => w.id === 'host')
+    expect(write?.payload?.blocks).toEqual([
+      {
+        id: 'v-linked',
+        type: 'view',
+        mode: 'board',
+        groupBy: 'p-status',
+        collectionId: 'coll-src',
+      },
+    ])
+  })
+
+  it('throws when the linked target collection is missing (dangling — card reverts, no write)', async () => {
+    const sb = makeMultiSupabase({ host: { id: 'host', props: {}, blocks: [] } })
+    await expect(
+      configureViewFromProposal(
+        sb as never,
+        { pageId: 'host', collectionId: 'gone', mode: 'table' },
+        () => 'x'
+      )
+    ).rejects.toThrow(/not found/i)
+    expect(sb._writes).toHaveLength(0)
+  })
+
+  it('throws when the linked target exists but is not a collection', async () => {
+    const sb = makeMultiSupabase({
+      host: { id: 'host', props: {}, blocks: [] },
+      plain: { id: 'plain', props: {}, blocks: [] },
+    })
+    await expect(
+      configureViewFromProposal(
+        sb as never,
+        { pageId: 'host', collectionId: 'plain', mode: 'table' },
+        () => 'x'
+      )
+    ).rejects.toThrow(/not a collection/i)
+    expect(sb._writes).toHaveLength(0)
+  })
+})
 
 describe('configureViewFromProposal', () => {
   it('upserts a view block onto the collection and saves the blocks', async () => {

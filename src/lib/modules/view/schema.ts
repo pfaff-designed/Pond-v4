@@ -13,10 +13,10 @@ import type { ModuleDescriptor } from '../types'
  * are property ids; `collectionId` a page id) already exists, the AI never mints an
  * id here — so there are no `nestedIdPaths` and the emit shape is a flat id strip.
  *
- * Inline-only this cycle (decision 12): a view renders its OWN page's rows. The
- * `collectionId` (a linked view over another collection) round-trips through
- * persistence but its cross-page hydration is explicitly stubbed (guarded in
- * `assemble.ts`, surfaced in `serialize`).
+ * A view renders its OWN page's rows by default; when `collectionId` is set it is a
+ * LINKED view (#41) that draws ANOTHER collection's rows instead. Both are hydrated
+ * the same way — the assemble seam injects the source collection's rows before
+ * `serialize` runs, and the client renderer fetches them via `useCollectionRows`.
  */
 
 /** The render modes (decision 13). table/board landed in slice 3; calendar (agenda) + gallery in slice 4; gantt (read-only timeline) in #27. */
@@ -56,7 +56,7 @@ export const viewSchema = z.object({
   startDate: z.string().optional(),
   /** Gantt (#27): the id of the `date` property a bar ENDS at. Omitted → inferred (2nd date prop); none → single-day bars. */
   endDate: z.string().optional(),
-  /** A linked view over ANOTHER collection (decision 12) — round-trips, hydration stubbed this cycle. */
+  /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
   collectionId: z.string().optional(),
 })
 export type ViewBlock = z.infer<typeof viewSchema>
@@ -93,7 +93,7 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
     if (data.sort) cfg.push(`sorted by ${data.sort.key} ${data.sort.dir}`)
     if (data.filter)
       cfg.push(`filtered ${data.filter.property} ${data.filter.op} ${data.filter.value}`)
-    if (data.collectionId) cfg.push(`linked collection ${data.collectionId} (not yet hydrated)`)
+    if (data.collectionId) cfg.push(`linked collection ${data.collectionId}`)
     const head = `View (${cfg.join(', ')})`
     if (rows.length === 0) return `${head} — no rows`
     const titles = rows.map((r) => r.title || 'Untitled').join(', ')

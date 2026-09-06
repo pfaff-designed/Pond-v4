@@ -77,10 +77,17 @@ describe('viewDescriptor.serialize', () => {
     expect(out).toContain('filtered p-status neq o-done')
   })
 
-  it('marks a linked view as not-yet-hydrated (stub guard, decision 12)', () => {
-    const out = viewDescriptor.serialize({ ...base, collectionId: 'coll-9' })
+  it('hydrates a linked view over another collection (#41 — was stubbed)', () => {
+    // The linked target's rows are injected by the assemble seam before serialize,
+    // exactly like an inline view. The config still names the linked collection so a
+    // re-emit preserves it — but the "(not yet hydrated)" stub is gone.
+    const out = viewDescriptor.serialize(
+      withRows({ ...base, collectionId: 'coll-9' }, ['Dune', 'Hyperion']) as ViewBlock
+    )
     expect(out).toContain('coll-9')
-    expect(out).toContain('not yet hydrated')
+    expect(out).toContain('2 rows')
+    expect(out).toContain('Dune')
+    expect(out).not.toContain('not yet hydrated')
   })
 
   it('says "no rows" when nothing is injected', () => {

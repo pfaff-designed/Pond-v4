@@ -31,7 +31,7 @@ import {
   addRowFromProposal,
   collectionNameResolver,
 } from '@/lib/pages/create-page'
-import { configureViewFromProposal } from '@/lib/pages/configure-view'
+import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/configure-view'
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
@@ -231,6 +231,8 @@ interface ConfigureViewPart {
     filter?: { property: string; op: FilterOp; value: string }
     startDate?: string
     endDate?: string
+    /** Linked view (#41): NAME of ANOTHER collection whose rows this view draws. */
+    targetCollection?: string
     reason?: string
   }
 }
@@ -1377,12 +1379,20 @@ export function AITerminal() {
     async (toolCallId: string, part: ConfigureViewPart['input'], selectedTargetId: string) => {
       const mode = part?.mode
       if (!selectedTargetId || !mode) return
+      // A LINKED view (#41) lives on the CURRENTLY-OPEN page (the host) and draws the
+      // selected collection's rows; the picker resolves/disambiguates that target. An
+      // inline view is configured on the selected collection itself. Host = where the
+      // block (and its ['page'] cache) lives, so that's what we invalidate.
+      const linked = !!part?.targetCollection
+      const host = linked ? nodeId : selectedTargetId
+      if (!host) return
       setViewDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
         await configureViewFromProposal(
           supabaseClient,
           {
-            pageId: selectedTargetId,
+            pageId: host,
+            collectionId: linked ? selectedTargetId : undefined,
             mode,
             groupBy: part?.groupBy,
             sort: part?.sort,
@@ -1393,7 +1403,7 @@ export function AITerminal() {
           () => crypto.randomUUID()
         )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
-        void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
+        void queryClient.invalidateQueries({ queryKey: ['page', host] })
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('configure_view failed', err)
@@ -1404,7 +1414,7 @@ export function AITerminal() {
         })
       }
     },
-    [supabaseClient, queryClient, workspace]
+    [supabaseClient, queryClient, workspace, nodeId]
   )
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
@@ -1736,7 +1746,14 @@ export function AITerminal() {
                 const input = part.input
                 if (!input?.pageId || !input?.mode) return null
                 const status = viewDecisions[part.toolCallId] ?? 'pending'
-                const selectedTargetId = viewTarget[part.toolCallId] ?? input.pageId
+                // A LINKED view (#41) names ANOTHER collection to draw; pre-resolve
+                // that name to its id so the picker lands on it (and disambiguates a
+                // duplicate title). An inline view falls back to the proposed pageId.
+                const preResolvedTarget = input.targetCollection
+                  ? resolveCollectionByName(allPages, input.targetCollection)
+                  : null
+                const selectedTargetId =
+                  viewTarget[part.toolCallId] ?? preResolvedTarget ?? input.pageId
                 return (
                   <ConfigureViewProposalCard
                     key={part.toolCallId}
@@ -1749,6 +1766,7 @@ export function AITerminal() {
                     status={status}
                     selectedTargetId={selectedTargetId}
                     targetOptions={collectionOptions}
+                    destinationLabel={input.targetCollection ? 'Draw rows from' : 'Configure on'}
                     onTargetChange={(id) =>
                       setViewTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
                     }

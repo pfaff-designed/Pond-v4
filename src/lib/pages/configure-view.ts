@@ -30,6 +30,7 @@ import { readSchema, resolveOptionValue } from '@/lib/properties/schema'
 import type { PropertyDef, PropertySchema } from '@/lib/properties/schema'
 import type { ViewBlock, ViewMode, ViewSort, ViewFilter, FilterOp } from '@/lib/modules/view/schema'
 import { getPage, saveBlocks } from '@/lib/pages/client'
+import { collectionNameResolver, type CollectionCandidate } from '@/lib/pages/create-page'
 
 /**
  * A configure_view proposal after the user has (optionally) corrected its target.
@@ -50,6 +51,13 @@ export interface ConfigureViewProposal {
   startDate?: string
   /** Gantt (#27): the NAME of the date property bars end at (optional; else inferred). */
   endDate?: string
+  /**
+   * A linked view over ANOTHER collection (#41 / #20 D6). Already a collection id
+   * (resolved from a NAME by the accept path), NOT a name: the view lives on `pageId`
+   * (the host) but draws THIS collection's rows. Omitted for a view over the host's
+   * own rows.
+   */
+  collectionId?: string
 }
 
 /** The resolved view config: the ViewBlock's config fields with ids in place. */
@@ -61,6 +69,23 @@ export interface ResolvedViewConfig {
   /** Resolved gantt start/end date property ids (see startDate/endDate names above). */
   startDate?: string
   endDate?: string
+  /** The linked-view target collection id, passed through from the proposal (#41). */
+  collectionId?: string
+}
+
+/**
+ * Resolve a linked view's TARGET collection from a NAME (#41 / #20 D6). The model
+ * names another collection to draw here; on accept we match that name against the
+ * user's pages (case-insensitive title, COLLECTIONS only — a linked view must point
+ * at a schema-bearing page) and return its id, or null when nothing matches. On a
+ * duplicate title the FIRST match wins as a pre-selection; the proposal card's
+ * collection picker lets the user disambiguate before writing.
+ */
+export function resolveCollectionByName(pages: CollectionCandidate[], name: string): string | null {
+  // Reuse the shared collection-name→id lookup (create-page.ts, #20) so linked-view
+  // targeting and relation targeting resolve a NAME identically; normalize its
+  // `undefined` "no match" to null for the picker's `?? pageId` pre-selection fallback.
+  return collectionNameResolver(pages)(name) ?? null
 }
 
 /** Case-insensitive property lookup by name (first def wins on a duplicate name). */
@@ -86,6 +111,10 @@ export function resolveViewConfig(
 ): ResolvedViewConfig {
   const byName = byNameLookup(schema)
   const config: ResolvedViewConfig = { mode: proposal.mode }
+
+  // A linked view's target is already a collection id (resolved from a name upstream),
+  // so it passes straight through — no schema lookup, unlike the property clauses.
+  if (proposal.collectionId) config.collectionId = proposal.collectionId
 
   if (proposal.groupBy) {
     const def = byName.get(proposal.groupBy.trim().toLowerCase())
@@ -148,7 +177,11 @@ export function upsertViewBlock(
     ...(config.filter ? { filter: config.filter } : {}),
     ...(config.startDate ? { startDate: config.startDate } : {}),
     ...(config.endDate ? { endDate: config.endDate } : {}),
-    ...(existing?.collectionId ? { collectionId: existing.collectionId } : {}),
+    // A linked-view target from THIS config wins; otherwise preserve any existing
+    // link so an inline reconfigure of a previously-linked view stays linked (#41).
+    ...((config.collectionId ?? existing?.collectionId)
+      ? { collectionId: config.collectionId ?? existing?.collectionId }
+      : {}),
   }
 
   if (idx >= 0) {
@@ -160,25 +193,41 @@ export function upsertViewBlock(
 }
 
 /**
- * Write an accepted configure_view proposal. Confirms the target exists AND is a
- * collection (throws otherwise so the card can revert rather than silently no-op),
- * resolves the proposed name-keyed config against the collection's schema, upserts
- * the view block, and persists the page's blocks. Never touches `props` — the view
- * block is config-only and lives in `blocks`, so `_schema` is untouched by design.
+ * Write an accepted configure_view proposal. The view block LIVES on the host
+ * (`pageId`) and its `mode`/clauses resolve against the collection whose rows it
+ * DRAWS: for an inline view that is the host itself (which must be a collection);
+ * for a LINKED view (#41) it is the named target `collectionId`, and the host need
+ * only hold the block. Confirms the schema source exists AND is a collection (throws
+ * otherwise so the card reverts rather than silently no-op), resolves the name-keyed
+ * config against that schema, upserts the block onto the host's blocks, and persists
+ * them. Never touches `props` — the view block is config-only, so `_schema` is safe.
  */
 export async function configureViewFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: ConfigureViewProposal,
   mintId: () => string
 ): Promise<{ id: string }> {
-  const page = await getPage(supabase, proposal.pageId)
-  if (!page) {
+  const host = await getPage(supabase, proposal.pageId)
+  if (!host) {
     throw new Error(`Cannot configure a view: page ${proposal.pageId} was not found`)
   }
-  const schema = readSchema(page.props)
+
+  // The collection whose schema names resolve against + whose rows the view draws.
+  // Inline: the host. Linked: the named target — must exist and be a collection.
+  let schemaSource = host
+  if (proposal.collectionId) {
+    const target = await getPage(supabase, proposal.collectionId)
+    if (!target) {
+      throw new Error(
+        `Cannot configure a linked view: collection ${proposal.collectionId} was not found`
+      )
+    }
+    schemaSource = target
+  }
+  const schema = readSchema(schemaSource.props)
   if (!schema) {
     throw new Error(
-      `Cannot configure a view: page ${proposal.pageId} is not a collection (it has no schema)`
+      `Cannot configure a view: page ${schemaSource.id} is not a collection (it has no schema)`
     )
   }
 
@@ -186,12 +235,12 @@ export async function configureViewFromProposal(
   // collection with none, so the card reverts rather than writing an un-drawable view.
   if (proposal.mode === 'gantt' && !schema.some((d) => d.type === 'date')) {
     throw new Error(
-      `Cannot configure a gantt: collection ${proposal.pageId} has no date property to place bars on`
+      `Cannot configure a gantt: collection ${schemaSource.id} has no date property to place bars on`
     )
   }
 
   const config = resolveViewConfig(schema, proposal)
-  const blocks = upsertViewBlock(page.blocks, config, mintId)
+  const blocks = upsertViewBlock(host.blocks, config, mintId)
   await saveBlocks(supabase, proposal.pageId, blocks)
   return { id: proposal.pageId }
 }

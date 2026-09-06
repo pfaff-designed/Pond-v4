@@ -248,6 +248,12 @@ const configureViewInput = z
     mode: viewModeSchema.describe(
       'Which existing layout draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), "gallery" (cards), or "gantt" (a read-only timeline of bars over Start→End date properties). Pick the one the user asked for.'
     ),
+    targetCollection: z
+      .string()
+      .optional()
+      .describe(
+        'ONLY for a LINKED view — to show ANOTHER collection\'s rows on the page the user is currently on (e.g. "show my Tasks here", "add my Reading List to this dashboard"). Set this to the NAME of that other collection (from the [Workspace outline]); the view is placed on the CURRENT page but draws the named collection\'s rows. OMIT for the normal case where `pageId` IS the collection whose own rows are shown. Any group-by / sort / filter names then refer to the TARGET collection\'s properties. Use the human NAME, never an id.'
+      ),
     groupBy: z
       .string()
       .optional()
