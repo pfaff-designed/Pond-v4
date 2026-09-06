@@ -22,6 +22,8 @@ import { kanbanSchema } from './kanban/schema'
 import { chartLineSchema } from './chart-line/schema'
 import { chartBarSchema } from './chart-bar/schema'
 import { chartAreaSchema } from './chart-area/schema'
+import { heatmapSchema } from './heatmap/schema'
+import { statSchema } from './stat/schema'
 import { viewSchema } from './view/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
@@ -35,6 +37,9 @@ export const blockSchema = z.discriminatedUnion('type', [
   chartLineSchema,
   chartBarSchema,
   chartAreaSchema,
+  // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
+  heatmapSchema,
+  statSchema,
   // #19: the inline collection view block (config only; rows are child pages).
   viewSchema,
 ])

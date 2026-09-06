@@ -81,6 +81,11 @@ export function emptyBlockForType(type: string): Block | null {
     case 'chart-area':
       // ChartCard renders a calm "No data yet" for an empty points array.
       return { id, type, title: '', points: [] }
+    // #12: Bklit promotion, wave 2 — same calm-empty / zero-value starts.
+    case 'heatmap':
+      return { id, type: 'heatmap', title: '', cells: [] }
+    case 'stat':
+      return { id, type: 'stat', label: '', value: 0 }
     default:
       return null
   }

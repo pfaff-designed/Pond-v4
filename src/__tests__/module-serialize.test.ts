@@ -91,6 +91,28 @@ const samples: Record<string, Block> = {
   },
   // #19: config-only view. Serializes its config (no rows injected here → "no rows").
   view: { id: 'b1', type: 'view', mode: 'table' },
+  // #12: heatmap + stat promotions. Heatmap serializes an honest summary (span,
+  // total, peak) like the charts; stat serializes label + formatted value + delta.
+  heatmap: {
+    id: 'b1',
+    type: 'heatmap',
+    title: 'Workouts',
+    caption: 'This week',
+    cells: [
+      { date: '2026-01-05', value: 1 },
+      { date: '2026-01-06', value: 3 },
+      { date: '2026-01-07', value: 2 },
+    ],
+  },
+  stat: {
+    id: 'b1',
+    type: 'stat',
+    label: 'MRR',
+    value: 12500,
+    format: 'currency',
+    delta: 0.12,
+    caption: 'vs last month',
+  },
 }
 
 function serialize(block: Block): string {
@@ -152,6 +174,28 @@ describe('descriptor.serialize (full-fidelity body)', () => {
 
   it('view: renders its config; "no rows" until the assemble seam injects them', () => {
     expect(serialize(samples.view)).toBe('View (table) — no rows')
+  })
+
+  it('heatmap: title, day count, caption, total, peak value + date', () => {
+    expect(serialize(samples.heatmap)).toBe(
+      'Heatmap "Workouts" over 3 days — This week; total 6, peak 3 on 2026-01-06'
+    )
+  })
+
+  it('an empty heatmap serializes to a calm "(no data)", not a crash', () => {
+    expect(moduleDescriptors.heatmap.serialize({ id: 'e1', type: 'heatmap', cells: [] })).toBe(
+      'Heatmap: (no data)'
+    )
+  })
+
+  it('stat: label, formatted value, signed delta, caption', () => {
+    expect(serialize(samples.stat)).toBe('MRR: $12,500 (+12%) — vs last month')
+  })
+
+  it('stat without delta or caption: just label + formatted value', () => {
+    expect(
+      moduleDescriptors.stat.serialize({ id: 'e1', type: 'stat', label: 'Subscribers', value: 482 })
+    ).toBe('Subscribers: 482')
   })
 })
 
