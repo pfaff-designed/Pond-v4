@@ -22,7 +22,7 @@
  */
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, getPage, setProperty, type PondPage } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import {
@@ -56,12 +56,14 @@ const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
  */
 export function useCollectionRows(collectionId: string | undefined): CollectionData {
   const workspace = useWorkspace()
-  const supabase = useMemo(() => createClient(), [])
+  // Lazily created on first fetch, not at render — so seeded/disabled queries
+  // never construct a real client and throw (envless CI/Storybook, #38).
+  const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
 
   const { data: page, isPending: pagePending } = useQuery({
     queryKey: ['page', collectionId],
-    queryFn: () => (collectionId ? getPage(supabase, collectionId) : Promise.resolve(null)),
+    queryFn: () => (collectionId ? getPage(getSupabase(), collectionId) : Promise.resolve(null)),
     enabled: !!collectionId,
   })
 
@@ -69,6 +71,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     queryKey: collectionId ? ROWS_KEY(collectionId) : ['rows', 'none'],
     queryFn: async () => {
       if (!collectionId) return [] as PondPage[]
+      const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -107,12 +110,12 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       // Persist. On failure, reconcile from server truth (invalidate rather than
       // hand-roll a rollback) so a rejected write can't leave the optimistic cache
       // permanently diverged from the DB.
-      setProperty(supabase, rowId, key, value).catch(() => {
+      setProperty(getSupabase(), rowId, key, value).catch(() => {
         void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
         void queryClient.invalidateQueries({ queryKey: ['page', rowId] })
       })
     },
-    [collectionId, queryClient, supabase]
+    [collectionId, queryClient, getSupabase]
   )
 
   return {

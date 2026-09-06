@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { getOrCreateHomePage } from '@/lib/pages/home'
@@ -336,7 +337,10 @@ export function AreaOverviewPanel({
   const openCard = useOpenCard()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
-  const { data: rows = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
+  const { data: rows = [] } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+  })
   const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
@@ -391,7 +395,10 @@ export function AreaOverviewPanel({
 export function LifeOverviewPanel() {
   const openCard = useOpenCard()
   const workspace = useWorkspace()
-  const { data: rows = [], isLoading } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+  })
   const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => lifeOverview(rows, new Date()), [rows])
@@ -429,9 +436,15 @@ export function LifeOverviewPanel() {
  * reconciled, take them — so a composed Life block appears without a reload.
  */
 function LifeHomeCanvas() {
-  const supabase = useMemo(() => createClient(), [])
+  // Lazily created on first use, not at render — so an envless mount (Storybook,
+  // CI) never constructs a real client and throws (#38); the ['home'] queryFn and
+  // the debounced save construct it only when they actually run.
+  const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
-  const { data: home } = useQuery({ queryKey: ['home'], queryFn: () => getOrCreateHomePage(supabase) })
+  const { data: home } = useQuery({
+    queryKey: ['home'],
+    queryFn: () => getOrCreateHomePage(getSupabase()),
+  })
 
   const [blocks, setBlocks] = useState<Block[]>([])
   // Which home row our local blocks were seeded from (null = not yet). A ref, so
@@ -470,7 +483,7 @@ function LifeHomeCanvas() {
     savedRef.current = false
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
-      await commitBlocks(supabase, queryClient, home.id, next)
+      await commitBlocks(getSupabase(), queryClient, home.id, next)
       serverSig.current = JSON.stringify(next)
       // Keep the ['home'] cache in step so the adopt above only fires for genuinely
       // external writes.

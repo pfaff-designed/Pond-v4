@@ -14,7 +14,7 @@
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { createPage, updateTitle } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { workspaceHref } from '@/lib/pages/nav'
@@ -23,7 +23,10 @@ import { resolvePageFromRows, searchPagesInRows } from './resolve'
 import type { PageLinkCapabilities } from './context'
 
 export function usePageLinkCapabilities(containingPageId: string): PageLinkCapabilities {
-  const supabase = useMemo(() => createClient(), [])
+  // Lazily created on first use, not at render — so an envless mount (Storybook,
+  // CI) never constructs a real client and throws (#38); only the create/rename
+  // handlers below actually talk to Supabase.
+  const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
   const router = useRouter()
@@ -40,6 +43,7 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
       searchPages: (query) => searchPagesInRows(rows, query),
       navigateToPage: (ref) => router.push(workspaceHref(ref)),
       createLinkedPage: async (title) => {
+        const supabase = getSupabase()
         const {
           data: { user },
         } = await supabase.auth.getUser()
@@ -60,11 +64,11 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
         return { id: created.id, title: created.title, type: created.type }
       },
       renamePage: async (pageId, title) => {
-        await updateTitle(supabase, pageId, title.trim() || 'Untitled')
+        await updateTitle(getSupabase(), pageId, title.trim() || 'Untitled')
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', pageId] })
       },
     }),
-    [rows, containingPageId, supabase, queryClient, workspace, router]
+    [rows, containingPageId, getSupabase, queryClient, workspace, router]
   )
 }

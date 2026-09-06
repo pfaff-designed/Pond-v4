@@ -20,7 +20,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
@@ -52,7 +52,10 @@ import type { Block } from '@/lib/documents/types'
 export function DocumentPanel() {
   const searchParams = useSearchParams()
   const nodeId = searchParams.get('nodeId')
-  const supabase = useMemo(() => createClient(), [])
+  // Lazily created on first use, not at render — so an envless mount (Storybook,
+  // CI) never constructs a real client and throws (#38); the page query and the
+  // save/property paths below construct it only when they actually run.
+  const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
   const { flushScope } = useDeletionUndo()
@@ -69,7 +72,7 @@ export function DocumentPanel() {
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', nodeId],
-    queryFn: () => (nodeId ? getPage(supabase, nodeId) : Promise.resolve(null)),
+    queryFn: () => (nodeId ? getPage(getSupabase(), nodeId) : Promise.resolve(null)),
     enabled: !!nodeId,
   })
 
@@ -161,6 +164,7 @@ export function DocumentPanel() {
       // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
       // the ['pages'] invalidation inside commitBlocks lands after the rename,
       // keeping the sidebar rename immediate.
+      const supabase = getSupabase()
       await updateTitle(supabase, id, nextTitle)
       await commitBlocks(supabase, queryClient, id, nextBlocks, workspace)
       // keep the ['page'] cache in step with what we just saved, so the
@@ -187,7 +191,7 @@ export function DocumentPanel() {
     queryClient.setQueryData(['page', id], (prev: typeof page) =>
       prev ? { ...prev, props: withValue(prev.props, key, value) } : prev
     )
-    void setProperty(supabase, id, key, value)
+    void setProperty(getSupabase(), id, key, value)
   }
 
   // Apply an in-editor block change (from BlockCanvas): update local state and
