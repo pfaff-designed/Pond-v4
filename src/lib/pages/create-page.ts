@@ -368,6 +368,26 @@ export function collectionNameResolver(
 }
 
 /**
+ * Preview-side companion to {@link collectionNameResolver} (#37, relation spec
+ * decision 8): resolve a relation's proposed target NAME to the matching
+ * collection's CANONICAL title, so the define_schema proposal card can preview
+ * which collection the relation will actually link into before accept. Same
+ * resolution rules (collections only, case-insensitive, first match wins);
+ * undefined means the accept path would leave the relation untargeted, and the
+ * card flags the unmatched name instead.
+ */
+export function collectionTitleResolver(
+  pages: CollectionCandidate[]
+): (name: string) => string | undefined {
+  const resolve = collectionNameResolver(pages)
+  const titleById = new Map(pages.map((p) => [p.id, p.title]))
+  return (name: string) => {
+    const id = resolve(name)
+    return id ? titleById.get(id) : undefined
+  }
+}
+
+/**
  * Build the `resolveTargetProperty` resolver `hydratePropertySchema` takes for
  * rollups (#20). Given the workspace's pages (same `['pages', workspace, 'full']`
  * cache that carries `props`), returns a closure mapping a (target collection id,

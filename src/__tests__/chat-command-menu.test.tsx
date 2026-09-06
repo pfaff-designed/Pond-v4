@@ -67,6 +67,8 @@ jest.mock('@/lib/pages/accept', () => ({
 
 jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
+  // Called at render for the define_schema card's relation-target preview (#37).
+  collectionTitleResolver: () => () => undefined,
 }))
 
 jest.mock('@/lib/deletion/notify-bridge', () => ({

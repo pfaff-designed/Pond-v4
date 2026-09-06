@@ -34,6 +34,16 @@ function rollupSummary(p: AiPropertyDef): string {
   return `${p.aggregate ?? 'rollup'}${prop}${via}`
 }
 
+/**
+ * A relation's target previewed as the RESOLVED collection — "→ Trips" — or the
+ * proposed name flagged when no collection matches, so the user can correct it
+ * before accept (#37, relation spec decision 8). An unmatched name isn't an
+ * error: accept leaves the relation untargeted (link any page), lenient.
+ */
+function relationTargetSummary(target: string, resolvedTitle: string | undefined): string {
+  return resolvedTitle ? `→ ${resolvedTitle}` : `→ ${target} · no match`
+}
+
 interface DefineSchemaProposalCardProps {
   /** The ordered properties (columns) the AI proposed — previewed read-only. */
   properties: AiPropertyDef[]
@@ -45,6 +55,10 @@ interface DefineSchemaProposalCardProps {
   targetOptions: ParentOption[]
   /** pending → actions + picker shown; accepted/rejected → resolved status line. */
   status?: ProposalStatus
+  /** Resolve a relation's proposed target NAME to the matching collection's
+   *  canonical title (#37) — the accept-path rules (collectionTitleResolver);
+   *  undefined flags the name as unmatched on the preview. */
+  resolveTargetTitle: (name: string) => string | undefined
   onTargetChange: (targetId: string) => void
   onAccept: () => void
   onReject: () => void
@@ -57,6 +71,7 @@ export function DefineSchemaProposalCard({
   selectedTargetId,
   targetOptions,
   status = 'pending',
+  resolveTargetTitle,
   onTargetChange,
   onAccept,
   onReject,
@@ -99,6 +114,11 @@ export function DefineSchemaProposalCard({
                 {(p.type === 'select' || p.type === 'status') && p.options?.length ? (
                   <span className="font-serif text-xs italic text-press-muted">
                     {p.options.map((o) => o.label).join(' · ')}
+                  </span>
+                ) : null}
+                {p.type === 'relation' && p.target ? (
+                  <span className="font-serif text-xs italic text-press-muted">
+                    {relationTargetSummary(p.target, resolveTargetTitle(p.target))}
                   </span>
                 ) : null}
                 {p.type === 'rollup' ? (

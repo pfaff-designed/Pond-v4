@@ -84,6 +84,8 @@ jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
   defineSchemaFromProposal: jest.fn(),
   addRowFromProposal: jest.fn(),
+  // Called at render for the define_schema card's relation-target preview (#37).
+  collectionTitleResolver: () => () => undefined,
 }))
 
 jest.mock('@/lib/pages/tree', () => ({
