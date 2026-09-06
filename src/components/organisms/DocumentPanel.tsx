@@ -24,7 +24,14 @@ import { createClient } from '@/lib/supabase/client'
 import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
-import { readSchema, readValues, withValue, type PropertyValue } from '@/lib/properties/schema'
+import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
+import {
+  readSchema,
+  readValues,
+  withValue,
+  ROW_TYPE,
+  type PropertyValue,
+} from '@/lib/properties/schema'
 import {
   AreaOverviewPanel,
   LifeOverviewPanel,
@@ -297,6 +304,16 @@ export function DocumentPanel() {
             <ChildrenGrid cards={cards} onOpenCard={openCard} />
           </div>
         )}
+
+        {/* Backlinks (#39): the reverse of the one-way relations pointing at this page —
+            derived on read, read-only, hidden when nothing links here. A row's collection
+            is its parent (so targeted relations into that collection match); a plain page
+            has none (only untargeted relations can link it). */}
+        <BacklinksPanel
+          targetId={page.id}
+          targetCollectionId={page.type === ROW_TYPE ? page.parentId : null}
+          className="mt-12 border-t border-press-hair pt-6"
+        />
       </div>
     </div>
   )
