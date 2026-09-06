@@ -59,6 +59,7 @@ describe('parseChatBody', () => {
         rows: {},
         promotions: {},
         views: {},
+        links: {}, // #40: link_records decisions ride the same envelope
         skipped: {},
         targets: {},
         questions: {},
@@ -87,6 +88,7 @@ describe('parseChatBody', () => {
       rows: {},
       promotions: {},
       views: {},
+      links: {}, // #40: present-but-empty on a malformed body
       skipped: {},
       targets: {},
       questions: {},

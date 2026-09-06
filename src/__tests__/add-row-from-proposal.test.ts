@@ -152,3 +152,149 @@ describe('addRowFromProposal', () => {
     expect(sb._insert).not.toHaveBeenCalled()
   })
 })
+
+// ── addRowFromProposal — relation-value TITLE resolution (#40 slice C) ───────
+//
+// The model proposes a relation value as target-row TITLES ("Packs With":
+// ["Tent"]); before this fix the z.array(z.string()) coercion stored those titles
+// verbatim as dangling fake ids. The accept path now resolves each entry against
+// the relation's TARGET collection rows — a resolved title stores the row id; an
+// unresolvable or duplicate-titled entry is DROPPED (lenient, #18 decision 9 —
+// but NEVER written raw). Needs a richer mock than the shared chain above: the
+// resolution reads the target's child rows (select…order).
+
+interface StoredPage {
+  id: string
+  parent_id: string | null
+  type: string
+  title: string
+  blocks: unknown[]
+  props: Record<string, unknown>
+  order: number
+}
+
+function makeStoreSupabase(pages: StoredPage[]) {
+  const inserts: Array<Record<string, unknown>> = []
+  const makeBuilder = () => {
+    const filters: Record<string, unknown> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const builder: any = {
+      select: () => builder,
+      eq: (col: string, val: unknown) => {
+        filters[col] = val
+        return builder
+      },
+      is: (col: string, val: unknown) => {
+        filters[col] = val
+        return builder
+      },
+      order: () => {
+        const data = pages.filter((p) =>
+          'parent_id' in filters ? p.parent_id === filters.parent_id : true
+        )
+        return Promise.resolve({ data, error: null })
+      },
+      maybeSingle: () =>
+        Promise.resolve({ data: pages.find((p) => p.id === filters.id) ?? null, error: null }),
+      insert: (payload: Record<string, unknown>) => {
+        inserts.push(payload)
+        return builder
+      },
+      single: () => Promise.resolve({ data: { id: 'row-new' }, error: null }),
+    }
+    return builder
+  }
+  return {
+    auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+    from: () => makeBuilder(),
+    _inserts: inserts,
+  }
+}
+
+function tripStore(): StoredPage[] {
+  return [
+    {
+      id: 'coll-trip',
+      parent_id: null,
+      type: 'page',
+      title: 'Trip Packing',
+      blocks: [],
+      props: {
+        [SCHEMA_KEY]: [
+          { id: 'p-packs', name: 'Packs With', type: 'relation', target: 'coll-trip' },
+        ],
+      },
+      order: 0,
+    },
+    {
+      id: 'row-tent',
+      parent_id: 'coll-trip',
+      type: 'row',
+      title: 'Tent',
+      blocks: [],
+      props: {},
+      order: 0,
+    },
+    {
+      id: 'row-rope',
+      parent_id: 'coll-trip',
+      type: 'row',
+      title: 'Rope',
+      blocks: [],
+      props: {},
+      order: 1,
+    },
+  ]
+}
+
+describe('addRowFromProposal — relation-value titles resolve to row ids', () => {
+  it('stores the resolved row id for a relation value given as a title, never the raw title', async () => {
+    const sb = makeStoreSupabase(tripStore())
+    await addRowFromProposal(sb as never, {
+      collectionId: 'coll-trip',
+      title: 'Stove',
+      props: { 'Packs With': ['Tent'] },
+    })
+    expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
+  })
+
+  it('keeps an entry that is already a target row id (idempotent) and dedupes', async () => {
+    const sb = makeStoreSupabase(tripStore())
+    await addRowFromProposal(sb as never, {
+      collectionId: 'coll-trip',
+      title: 'Stove',
+      props: { 'Packs With': ['row-tent', 'Tent', 'Rope'] },
+    })
+    expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent', 'row-rope'] })
+  })
+
+  it('drops an unresolvable title rather than writing a dangling id (lenient)', async () => {
+    const sb = makeStoreSupabase(tripStore())
+    await addRowFromProposal(sb as never, {
+      collectionId: 'coll-trip',
+      title: 'Stove',
+      props: { 'Packs With': ['Tent', 'Lantern'] },
+    })
+    expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
+  })
+
+  it('drops a duplicate-titled (ambiguous) entry rather than guessing', async () => {
+    const pages = tripStore()
+    pages.push({
+      id: 'row-tent-2',
+      parent_id: 'coll-trip',
+      type: 'row',
+      title: 'Tent',
+      blocks: [],
+      props: {},
+      order: 2,
+    })
+    const sb = makeStoreSupabase(pages)
+    await addRowFromProposal(sb as never, {
+      collectionId: 'coll-trip',
+      title: 'Stove',
+      props: { 'Packs With': ['Tent', 'Rope'] },
+    })
+    expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-rope'] })
+  })
+})

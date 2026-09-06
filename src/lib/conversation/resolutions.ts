@@ -55,6 +55,8 @@ export interface ConversationResolutions {
   promotions: Record<string, ProposalDecision>
   /** configure_view decisions, keyed by toolCallId (#19 slice 5). */
   views: Record<string, ProposalDecision>
+  /** link_records decisions, keyed by toolCallId (#40). */
+  links: Record<string, ProposalDecision>
   /** Accepted changes skipped by the accept-time re-validation gate, by toolCallId. */
   skipped: Record<string, number>
   /** Proposal-time target page per propose_changes batch, by toolCallId. */
@@ -74,6 +76,7 @@ export function emptyResolutions(): ConversationResolutions {
     rows: {},
     promotions: {},
     views: {},
+    links: {},
     skipped: {},
     targets: {},
     questions: {},
@@ -108,6 +111,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     rows: pick('rows', isDecision),
     promotions: pick('promotions', isDecision),
     views: pick('views', isDecision),
+    links: pick('links', isDecision),
     skipped: pick('skipped', isCount),
     targets: pick('targets', isTarget),
     // Question-card answers + lifecycle ride the same envelope (ticket-39),
@@ -210,6 +214,7 @@ export function applyResolutions(
     Object.keys(resolutions.rows).length === 0 &&
     Object.keys(resolutions.promotions).length === 0 &&
     Object.keys(resolutions.views).length === 0 &&
+    Object.keys(resolutions.links).length === 0 &&
     Object.keys(resolutions.questions).length === 0
   ) {
     return messages
@@ -340,6 +345,22 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         note:
           decision === 'accepted'
             ? 'User accepted; the view was configured. Do not propose it again.'
+            : 'User dismissed this proposal. Do not propose it again unless asked.',
+      },
+    } as ToolPartLike
+  }
+
+  if (part.type === 'tool-link_records') {
+    const decision = resolutions.links[part.toolCallId]
+    if (!decision) return part
+    return {
+      ...part,
+      state: 'output-available',
+      output: {
+        decision,
+        note:
+          decision === 'accepted'
+            ? 'User accepted; the records were linked. Do not propose it again.'
             : 'User dismissed this proposal. Do not propose it again unless asked.',
       },
     } as ToolPartLike

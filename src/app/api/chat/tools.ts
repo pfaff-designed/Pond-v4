@@ -323,6 +323,60 @@ export const configureViewTool = {
   inputSchema: configureViewInput,
 } as const
 
+/**
+ * link_records input schema (#40). The model names EVERYTHING by title/name —
+ * the source row, its collection, the relation property, and the target row(s) —
+ * never an id: row ids never appear in its context, and the accept path resolves
+ * every title against live data ONLY on accept (an unresolvable or duplicate
+ * title surfaces on the card rather than writing a dangling id).
+ */
+const linkRecordsInput = z.object({
+  fromRow: z
+    .string()
+    .min(1)
+    .describe(
+      'The TITLE of the EXISTING source row to link FROM (the row that carries the relation value), exactly as the user named it.'
+    ),
+  fromCollection: z
+    .string()
+    .min(1)
+    .describe(
+      "The NAME of the collection that source row belongs to, from the [Workspace outline] — it disambiguates the row. Use the human name, never an id."
+    ),
+  relation: z
+    .string()
+    .min(1)
+    .describe(
+      "The NAME of the relation property on that collection to link through, from its [Properties] line in context. Use the human name, never an id."
+    ),
+  toRows: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe(
+      'The TITLE(s) of the EXISTING target row(s) to link TO, resolved within the relation\'s target collection. Titles only — never invent ids.'
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe('A short, optional note on why these link (shown on the proposal card).'),
+})
+
+/**
+ * link_records (#40) — link EXISTING rows through an EXISTING relation property.
+ * Forward-only and ADD-ONLY: it appends target rows onto the source row's
+ * relation value (deduped; a single-cap relation replaces) — it never unlinks and
+ * never edits any other field. Client-resolved (no execute): the tool call
+ * renders a proposal card, the user reviews the link + can correct which
+ * collection the source row is in, and only on accept does the client resolve
+ * every title to an id and write. DISTINCT from add_row (which creates a NEW
+ * row) and define_schema (which defines the relation property itself).
+ */
+export const linkRecordsTool = {
+  description:
+    'Link EXISTING rows together through an EXISTING relation property — e.g. "link this task to the Kitchen Reno project", "connect Dune to the Sci-fi shelf", "the stove packs with the tent". Use this when BOTH rows already exist and the source collection already has a relation property to link through. Name the source row by its TITLE, its collection by NAME (from the [Workspace outline]), the relation property by NAME (from the [Properties] line), and the target row(s) by TITLE — always human titles/names, never ids. This is ADD-ONLY: it appends links (a single-value relation replaces its link); it cannot unlink, and it cannot edit other fields. It is DISTINCT from add_row (which creates a NEW row — use it when the thing to link does not exist yet) and from define_schema (which adds the relation property — use it first when the collection has no relation to link through). Client-resolved (no execute): the user reviews a proposal card before anything is written; do NOT re-ask for confirmation. One source row per card.',
+  inputSchema: linkRecordsInput,
+} as const
+
 export const proposeChangesTool = {
   description:
     'Propose a batch of composition changes to an EXISTING page — create new blocks, edit existing ones (including changing a block from one type to another), remove blocks, or several at once. Edits the page the user has open by default; to edit ANOTHER page they named, first read_page that page and set `targetPageId` to its id (from the [Workspace outline]). Use when the user explicitly asks to build or compose content (never to create a brand-new page — that is create_page). The user reviews the proposal (per-change and all-at-once accept/reject) before anything is written. Never propose unprompted. Resolved client-side — no execute. The tool schema is generated from the module registry, so it structurally cannot carry an unknown block type or an id you invented; the emitted data IS the server-side validation gate (t16 branch 7). A repairToolCall pass re-asks you to correct arguments that fail that gate.',
