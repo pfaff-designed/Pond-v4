@@ -65,6 +65,20 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(PROMPT_SECTIONS.PERSONA).toMatch(/orient/i)
   })
 
+  it('persona teaches candor (#13): contextual honesty, no reflexive praise, and anti-cognitive-offloading', () => {
+    const s = PROMPT_SECTIONS.PERSONA
+    // candor sharpens with the stakes — warm in chat, honest when it counts
+    expect(s).toMatch(/SHARPEN with the stakes/i)
+    // the four anti-sycophancy specifics
+    expect(s).toMatch(/reflexive praise/i)
+    expect(s).toMatch(/trade-?offs and the downsides/i)
+    expect(s).toMatch(/challenge weak assumptions/i)
+    expect(s).toMatch(/warn hard/i)
+    // anti-offloading: sharpen the user's thinking, never replace it
+    expect(s).toMatch(/never to do their thinking for them/i)
+    expect(s).toMatch(/a little sharper, never a little duller/i)
+  })
+
   it('teaches the lifecycle arc: grill (adaptive, states its read, escape hatch) → wayfinding → build-out', () => {
     const s = PROMPT_SECTIONS.LIFECYCLE
     expect(s).toMatch(/GRILL/)
