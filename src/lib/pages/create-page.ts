@@ -173,13 +173,40 @@ export function hydratePropertySchema(
   defs: AiPropertyDef[],
   mintId: () => string,
   resolveCollectionName?: (name: string) => string | undefined,
-  resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined
+  resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined,
+  existing: PropertySchema = []
 ): PropertySchema {
-  const out: PropertyDef[] = []
-  // Rollups resolve against their relation sibling, which may appear later in the
-  // array — so defer them to a second pass. `relationsByName` maps a relation's
-  // (lowercased) NAME to the data a rollup needs: its minted id + resolved target.
+  // #36 — additive merge-by-name. A define_schema proposal is a set of properties to
+  // ADD-OR-UPDATE, never a wholesale replacement: a proposed property whose (trimmed,
+  // case-insensitive) NAME matches one already in `existing` REUSES that property's id —
+  // so the rows keyed by it stay attached — and adopts the proposed type/options; a
+  // name with no match is appended as a new property (proposed order); and an existing
+  // property the proposal doesn't mention is left untouched. Reusing the id closes both
+  // #36 symptoms at once: "add a field" no longer drops the other columns, and a
+  // promoted collection's same-named column reconciles instead of splitting into a
+  // duplicate id that strands its values.
+  const norm = (s: string) => s.trim().toLowerCase()
+  const existingIdByName = new Map<string, string>()
+  for (const d of existing) {
+    const key = norm(d.name)
+    if (!existingIdByName.has(key)) existingIdByName.set(key, d.id) // first wins on a dup name
+  }
+
+  // Rollups resolve against their relation sibling, which may appear later in the array
+  // (or already exist on the collection) — so defer them to a second pass.
+  // `relationsByName` maps a relation's (lowercased) NAME to the data a rollup needs: its
+  // id + resolved target. Seed it from EXISTING relations first, so a rollup can point at
+  // a relation the proposal didn't re-declare (existing tier); a re-proposed relation
+  // overrides below (same-batch wins), carrying its reused id.
   const relationsByName = new Map<string, { id: string; target?: string }>()
+  for (const d of existing) {
+    if (d.type === 'relation') relationsByName.set(norm(d.name), { id: d.id, target: d.target })
+  }
+
+  // Hydrate each proposed def, keyed by name for the merge. `newInOrder` collects those
+  // with no existing match, to append after the existing block (ordering decision A).
+  const hydratedByName = new Map<string, PropertyDef>()
+  const newInOrder: PropertyDef[] = []
   const pendingRollups: { def: PropertyDef; relationName?: string; rollupPropName?: string }[] = []
 
   for (const raw of defs) {
@@ -193,14 +220,23 @@ export function hydratePropertySchema(
         ? raw.rollupProperty
         : undefined
 
+    const nameKey = norm(raw.name ?? '')
+    // Reuse the matching existing property's id (unless the model supplied one) — the
+    // crux of #36: the rows keyed by that id stay live and no duplicate column is minted.
+    const reuseId = raw.id ?? existingIdByName.get(nameKey)
+
     const candidate = {
       ...raw,
-      id: raw.id ?? mintId(),
+      id: reuseId ?? mintId(),
       ...(raw.options ? { options: raw.options.map((o) => ({ ...o, id: o.id ?? mintId() })) } : {}),
     }
     const parsed = propertyDefSchema.safeParse(candidate)
     if (!parsed.success) continue
     const def = parsed.data
+
+    // A name repeated within one proposal: first occurrence wins (defensive — a dup would
+    // otherwise mint a second entry for one logical column, the very split #36 fixes).
+    if (nameKey && hydratedByName.has(nameKey)) continue
 
     if (def.type === 'relation') {
       const resolved =
@@ -209,7 +245,7 @@ export function hydratePropertySchema(
       else delete def.target
       delete def.relationId
       delete def.rollupProperty
-      relationsByName.set(def.name.trim().toLowerCase(), { id: def.id, target: def.target })
+      relationsByName.set(norm(def.name), { id: def.id, target: def.target })
     } else if (def.type === 'rollup') {
       // Unset both link fields until resolved in pass 2 (an unresolved rollup renders "—").
       delete def.target
@@ -222,25 +258,31 @@ export function hydratePropertySchema(
       delete def.relationId
       delete def.rollupProperty
     }
-    out.push(def)
+
+    hydratedByName.set(nameKey, def)
+    if (!existingIdByName.has(nameKey)) newInOrder.push(def)
   }
 
-  // Pass 2 — resolve each rollup now that every relation's id + target is known:
-  // relation NAME → relationId, then the rolled property NAME → its id. Any unresolved
-  // link stays unset (D7).
+  // Build the merged schema: existing order preserved, a matched property replaced in
+  // place by its hydrated update; then the brand-new properties appended (ordering A).
+  const out: PropertyDef[] = existing.map((d) => hydratedByName.get(norm(d.name)) ?? { ...d })
+  for (const def of newInOrder) out.push(def)
+
+  // Pass 2 — resolve each proposed rollup now that every relation (existing + same-batch)
+  // is known: relation NAME → relationId, then the rolled property NAME → its id. Any
+  // unresolved link stays unset (D7).
   for (const { def, relationName, rollupPropName } of pendingRollups) {
-    const rel = relationName ? relationsByName.get(relationName.trim().toLowerCase()) : undefined
+    const rel = relationName ? relationsByName.get(norm(relationName)) : undefined
     if (!rel) continue
     def.relationId = rel.id
     if (rollupPropName) {
-      // Same-batch FIRST (#20): when the rolled property is (re)defined in THIS schema —
-      // e.g. a self-referential rollup, whose relation targets the very collection being
-      // defined — its freshly-minted id here is authoritative and isn't yet in (or differs
-      // from) the target collection's persisted schema the external resolver reads. Fall
-      // back to the external resolver for a genuine cross-collection rollup (rolled
-      // property lives in a different, pre-existing collection).
-      const key = rollupPropName.trim().toLowerCase()
-      const local = out.find((d) => d.type !== 'rollup' && d.name.trim().toLowerCase() === key)?.id
+      // `out` now holds the MERGED schema, so this single lookup covers the whole
+      // precedence chain: same-batch (a property (re)defined in this proposal) AND the
+      // existing tier (a property already on the collection the proposal left untouched)
+      // both live in `out`. The external resolver is the final fallback for a genuine
+      // cross-collection rollup (rolled property in a different, pre-existing collection).
+      const key = norm(rollupPropName)
+      const local = out.find((d) => d.type !== 'rollup' && norm(d.name) === key)?.id
       const propId =
         local ??
         (rel.target && resolveTargetProperty
@@ -263,10 +305,13 @@ export interface DefineSchemaProposal {
 
 /**
  * Write an accepted define_schema proposal. Confirms the target page exists
- * (throws otherwise, so the card can revert rather than silently no-op), hydrates
- * the schema (minting property/option ids), and merges it in via the merge-safe
- * `defineSchema` — every existing row value alongside the schema is preserved.
- * Returns the hydrated schema so the caller can seed its page cache optimistically.
+ * (throws otherwise, so the card can revert rather than silently no-op), then
+ * ADDITIVELY merges the proposal into the target's current schema by name (#36):
+ * a matched property reuses its id (rows stay live) and adopts the proposed
+ * type/options, a new name is appended, and unmentioned properties are preserved.
+ * The write goes through the merge-safe `defineSchema`, so row values alongside the
+ * schema are never clobbered. Returns the merged schema so the caller can seed its
+ * page cache optimistically.
  */
 export async function defineSchemaFromProposal(
   supabase: SupabaseClient<Database>,
@@ -277,11 +322,16 @@ export async function defineSchemaFromProposal(
 ): Promise<PropertySchema> {
   const page = await getPage(supabase, proposal.pageId)
   if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
+  // #36 — additive merge: hydrate the proposal against the target's CURRENT schema so a
+  // matched name reuses its property id (rows stay live) and unmentioned properties are
+  // preserved. A page that isn't yet a collection has no schema → merge base is empty.
+  const existing = readSchema(page.props) ?? []
   const schema = hydratePropertySchema(
     proposal.schema,
     mintId,
     resolveCollectionName,
-    resolveTargetProperty
+    resolveTargetProperty,
+    existing
   )
   await defineSchema(supabase, proposal.pageId, schema)
   return schema
