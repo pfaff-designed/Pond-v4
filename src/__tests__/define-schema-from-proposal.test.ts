@@ -15,7 +15,7 @@ import {
   collectionPropertyResolver,
 } from '@/lib/pages/create-page'
 import { SCHEMA_KEY } from '@/lib/properties/schema'
-import type { AiPropertyDef } from '@/lib/properties/schema'
+import type { AiPropertyDef, PropertySchema } from '@/lib/properties/schema'
 
 // ── hydratePropertySchema — id-less AI schema → persistable PropertySchema ───
 
@@ -280,6 +280,116 @@ describe('hydratePropertySchema', () => {
     // `rollupProperty` is a schema key; it must not survive on a text prop.
     expect(out[0].rollupProperty).toBeUndefined()
   })
+
+  // #36 — additive merge-by-name. A proposal ADDS-OR-UPDATES against the existing schema:
+  // a matching name reuses that property's id (rows stay live) and adopts the proposed
+  // type; a new name is appended; an unmentioned property is preserved. Passing no
+  // `existing` (every test above) keeps the old "all fresh" behavior — backward compatible.
+  describe('additive merge against an existing schema (#36)', () => {
+    it('appends a new property while preserving the ones the proposal omits', () => {
+      const existing: PropertySchema = [
+        { id: 'e-author', name: 'Author', type: 'text' },
+        { id: 'e-rating', name: 'Rating', type: 'number' },
+      ]
+      // The classic "add a status field" request — the model sends ONLY the new column.
+      const out = hydratePropertySchema(
+        [{ name: 'Status', type: 'text' }],
+        mint,
+        undefined,
+        undefined,
+        existing
+      )
+      expect(out.map((d) => d.name)).toEqual(['Author', 'Rating', 'Status'])
+      // Untouched properties keep their exact ids (rows stay attached); new one is appended.
+      expect(out[0].id).toBe('e-author')
+      expect(out[1].id).toBe('e-rating')
+      expect(out[2].name).toBe('Status')
+    })
+
+    it('reuses the existing id when a proposed name matches (no duplicate column)', () => {
+      // The promote-to-collection symptom: a same-named property must reconcile to the
+      // existing id, not mint a second id that strands the row values under the old one.
+      const existing: PropertySchema = [{ id: 'e-score', name: 'Score', type: 'number' }]
+      const out = hydratePropertySchema(
+        [{ name: 'Score', type: 'number' }],
+        mint,
+        undefined,
+        undefined,
+        existing
+      )
+      expect(out).toHaveLength(1)
+      expect(out[0].id).toBe('e-score')
+    })
+
+    it('matches by name case-insensitively and trimmed', () => {
+      const existing: PropertySchema = [{ id: 'e-score', name: 'Score', type: 'number' }]
+      const out = hydratePropertySchema(
+        [{ name: '  score  ', type: 'number' }],
+        mint,
+        undefined,
+        undefined,
+        existing
+      )
+      expect(out).toHaveLength(1)
+      expect(out[0].id).toBe('e-score')
+    })
+
+    it('reuses the id but adopts the proposed type/options on a name match', () => {
+      const existing: PropertySchema = [{ id: 'e-prio', name: 'Priority', type: 'text' }]
+      const out = hydratePropertySchema(
+        [{ name: 'Priority', type: 'select', options: [{ label: 'Low' }, { label: 'High' }] }],
+        mint,
+        undefined,
+        undefined,
+        existing
+      )
+      expect(out).toHaveLength(1)
+      expect(out[0].id).toBe('e-prio') // id preserved → row values stay live
+      expect(out[0].type).toBe('select') // type evolves as asked
+      expect(out[0].options?.map((o) => o.label)).toEqual(['Low', 'High'])
+    })
+
+    it('lets the first occurrence win when a proposal repeats a name', () => {
+      const out = hydratePropertySchema(
+        [
+          { name: 'Score', type: 'number' },
+          { name: 'Score', type: 'text' },
+        ],
+        mint
+      )
+      expect(out).toHaveLength(1)
+      expect(out[0].type).toBe('number')
+    })
+
+    it('resolves a rollup against a relation that already exists (not re-proposed)', () => {
+      // Existing self-referential collection: a Links relation + a Score number. The
+      // proposal adds ONLY a rollup — its relation and rolled property both live in the
+      // existing schema (existing tier), not in this call, and no external resolver hits.
+      const existing: PropertySchema = [
+        { id: 'e-links', name: 'Links', type: 'relation', target: 'col-self' },
+        { id: 'e-score', name: 'Score', type: 'number' },
+      ]
+      const noExternal = () => undefined
+      const out = hydratePropertySchema(
+        [
+          {
+            name: 'Total',
+            type: 'rollup',
+            relation: 'Links',
+            rollupProperty: 'Score',
+            aggregate: 'sum',
+          },
+        ],
+        mint,
+        () => undefined,
+        noExternal,
+        existing
+      )
+      const rollup = out.find((d) => d.type === 'rollup')!
+      expect(rollup.relationId).toBe('e-links') // relation resolved from existing schema
+      expect(rollup.rollupProperty).toBe('e-score') // rolled property resolved from existing schema
+    })
+  })
 })
 
 // ── defineSchemaFromProposal — confirm target + merge-safe write ─────────────
@@ -350,6 +460,28 @@ describe('defineSchemaFromProposal', () => {
       )
     ).rejects.toThrow(/not found/i)
     expect(sb._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('additively merges the proposal into the target collection’s current schema (#36)', async () => {
+    // The target is ALREADY a collection: a Score column holding a row value. The model
+    // asks to add a Status field. The write must keep Score (id + value) and append Status.
+    const sb = makeSupabase({
+      id: 'page-1',
+      props: {
+        [SCHEMA_KEY]: [{ id: 'e-score', name: 'Score', type: 'number' }],
+        'e-score': 7, // a row value keyed by the existing property id
+      },
+    })
+    const merged = await defineSchemaFromProposal(
+      sb as never,
+      { pageId: 'page-1', schema: [{ name: 'Status', type: 'text' }] },
+      mint
+    )
+    const payload = sb._chain.update.mock.calls[0][0]
+    expect(payload.props[SCHEMA_KEY]).toEqual(merged)
+    expect(merged.map((d) => d.name)).toEqual(['Score', 'Status'])
+    expect(merged[0].id).toBe('e-score') // existing column reconciled, not replaced
+    expect(payload.props['e-score']).toBe(7) // its row value survives untouched
   })
 })
 
