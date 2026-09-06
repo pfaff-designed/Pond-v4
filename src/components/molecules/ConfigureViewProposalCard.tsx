@@ -59,6 +59,13 @@ interface ConfigureViewProposalCardProps {
   destinationLabel?: string
   /** pending → actions + picker shown; accepted/rejected → resolved status line. */
   status?: ProposalStatus
+  /**
+   * #52 fix 2 — true when accepting SWITCHED the collection's one active view (replaced a
+   * previous view). Frozen at accept time; drives the honest "switched the active view"
+   * receipt so the user (like the model stamp) sees the previous view was replaced, not
+   * that both coexist. Absent/false ⇒ the flat "View configured".
+   */
+  replacedActiveView?: boolean
   onTargetChange: (targetId: string) => void
   onAccept: () => void
   onReject: () => void
@@ -93,6 +100,7 @@ export function ConfigureViewProposalCard({
   targetOptions,
   destinationLabel = 'Configure on',
   status = 'pending',
+  replacedActiveView = false,
   onTargetChange,
   onAccept,
   onReject,
@@ -183,7 +191,11 @@ export function ConfigureViewProposalCard({
           aria-live="polite"
           className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
         >
-          {status === 'accepted' ? 'View configured' : 'Dismissed'}
+          {status === 'accepted'
+            ? replacedActiveView
+              ? 'Switched active view · replaced the previous view'
+              : 'View configured'
+            : 'Dismissed'}
         </div>
       ) : (
         <ProposalActions

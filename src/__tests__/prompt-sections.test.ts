@@ -47,6 +47,12 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'promote_table CONVERTS an existing filled table',
     // #40: link_records — forward-only, add-only linking of existing rows.
     'call the link_records tool',
+    // #52 fix 1: a rollup needs a LOCAL relation; reverse/backlink count unsupported.
+    'a rollup CANNOT count over a reverse/backlink',
+    // #52 fix 3: never add a duplicate Title/Name text property.
+    'Never add a text property named "Title" or "Name"',
+    // #52 fix 2: a collection shows exactly ONE active view.
+    'A collection shows exactly ONE active view at a time',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })

@@ -177,15 +177,15 @@ const viewOf = (blocks: Block[]) =>
 describe('upsertViewBlock', () => {
   it('mints a new view block when the page has none', () => {
     const out = upsertViewBlock([], { mode: 'board', groupBy: 'p-status' }, () => 'v-new')
-    expect(out).toEqual([{ id: 'v-new', type: 'view', mode: 'board', groupBy: 'p-status' }])
+    expect(out.blocks).toEqual([{ id: 'v-new', type: 'view', mode: 'board', groupBy: 'p-status' }])
   })
 
   it('appends the view after existing non-view blocks', () => {
     const text: Block = { id: 't1', type: 'text', content: 'hi' }
     const out = upsertViewBlock([text], { mode: 'table' }, () => 'v-new')
-    expect(out).toHaveLength(2)
-    expect(out[0]).toBe(text)
-    expect(viewOf(out)?.id).toBe('v-new')
+    expect(out.blocks).toHaveLength(2)
+    expect(out.blocks[0]).toBe(text)
+    expect(viewOf(out.blocks)?.id).toBe('v-new')
   })
 
   it('reconfigures the existing view in place, preserving its id and collectionId', () => {
@@ -200,7 +200,7 @@ describe('upsertViewBlock', () => {
       { mode: 'board', groupBy: 'p-status' },
       () => 'v-UNUSED'
     )
-    const v = viewOf(out)
+    const v = viewOf(out.blocks)
     expect(v?.id).toBe('v-keep')
     expect(v?.mode).toBe('board')
     expect(v?.groupBy).toBe('p-status')
@@ -216,7 +216,7 @@ describe('upsertViewBlock', () => {
       sort: { key: 'p-due', dir: 'asc' },
     } as Block
     const out = upsertViewBlock([existing], { mode: 'table' }, () => 'v-UNUSED')
-    const v = viewOf(out)
+    const v = viewOf(out.blocks)
     expect(v?.mode).toBe('table')
     expect(v?.groupBy).toBeUndefined()
     expect(v?.sort).toBeUndefined()
@@ -224,7 +224,9 @@ describe('upsertViewBlock', () => {
 
   it('sets collectionId from config when minting a linked view (#41)', () => {
     const out = upsertViewBlock([], { mode: 'table', collectionId: 'coll-src' }, () => 'v-new')
-    expect(out).toEqual([{ id: 'v-new', type: 'view', mode: 'table', collectionId: 'coll-src' }])
+    expect(out.blocks).toEqual([
+      { id: 'v-new', type: 'view', mode: 'table', collectionId: 'coll-src' },
+    ])
   })
 
   it('config collectionId overrides an existing one on reconfigure (#41)', () => {
@@ -239,16 +241,16 @@ describe('upsertViewBlock', () => {
       { mode: 'board', groupBy: 'p-status', collectionId: 'new-coll' },
       () => 'x'
     )
-    expect(viewOf(out)?.collectionId).toBe('new-coll')
+    expect(viewOf(out.blocks)?.collectionId).toBe('new-coll')
   })
 
   it('reconfigures the top-most view and leaves any others untouched', () => {
     const v1: Block = { id: 'v1', type: 'view', mode: 'table' } as Block
     const v2: Block = { id: 'v2', type: 'view', mode: 'gallery' } as Block
     const out = upsertViewBlock([v1, v2], { mode: 'board', groupBy: 'p-status' }, () => 'v-UNUSED')
-    expect((out[0] as { id: string; mode: string }).mode).toBe('board')
-    expect(out[0]).toMatchObject({ id: 'v1' })
-    expect(out[1]).toBe(v2)
+    expect((out.blocks[0] as { id: string; mode: string }).mode).toBe('board')
+    expect(out.blocks[0]).toMatchObject({ id: 'v1' })
+    expect(out.blocks[1]).toBe(v2)
   })
 
   it('does not mutate the input blocks array', () => {
@@ -256,6 +258,18 @@ describe('upsertViewBlock', () => {
     const snapshot = JSON.parse(JSON.stringify(input))
     upsertViewBlock(input, { mode: 'board', groupBy: 'p-status' }, () => 'x')
     expect(input).toEqual(snapshot)
+  })
+
+  // ── #52 fix 2 — the replaced signal (a collection shows one active view) ─────
+  it('reports replaced=false when it MINTS a fresh view (no existing view)', () => {
+    const out = upsertViewBlock([], { mode: 'table' }, () => 'v-new')
+    expect(out.replaced).toBe(false)
+  })
+
+  it('reports replaced=true when a SECOND configure switches the active view', () => {
+    const existing: Block = { id: 'v-keep', type: 'view', mode: 'table' } as Block
+    const out = upsertViewBlock([existing], { mode: 'board', groupBy: 'p-status' }, () => 'x')
+    expect(out.replaced).toBe(true)
   })
 })
 
@@ -345,7 +359,7 @@ describe('configureViewFromProposal — linked view (#41)', () => {
       { pageId: 'host', collectionId: 'coll-src', mode: 'board', groupBy: 'Status' },
       () => 'v-linked'
     )
-    expect(out).toEqual({ id: 'host' })
+    expect(out).toMatchObject({ id: 'host', replaced: false })
     const write = sb._writes.find((w) => w.id === 'host')
     expect(write?.payload?.blocks).toEqual([
       {
@@ -394,10 +408,32 @@ describe('configureViewFromProposal', () => {
       { pageId: 'coll-1', mode: 'board', groupBy: 'Status' },
       () => 'v-new'
     )
-    expect(out).toEqual({ id: 'coll-1' })
+    expect(out).toMatchObject({ id: 'coll-1', replaced: false })
     const payload = sb._update.mock.calls[0][0]
     expect(payload.blocks).toEqual([
       { id: 'v-new', type: 'view', mode: 'board', groupBy: 'p-status' },
+    ])
+  })
+
+  // #52 fix 2 — a SECOND configure_view over a collection that already has a view
+  // SWITCHES the active view: the write reports replaced=true and the previous mode,
+  // so the accept path can be honest instead of implying the two views coexist.
+  it('reports replaced + the previous mode when it switches an existing active view', async () => {
+    const sb = makeSupabase({
+      id: 'coll-4',
+      props: { [SCHEMA_KEY]: schema },
+      blocks: [{ id: 'v-old', type: 'view', mode: 'table' }],
+    })
+    const out = await configureViewFromProposal(
+      sb as never,
+      { pageId: 'coll-4', mode: 'board', groupBy: 'Status' },
+      () => 'v-UNUSED'
+    )
+    expect(out).toEqual({ id: 'coll-4', replaced: true, previousMode: 'table' })
+    // The one view block is reconfigured in place (its id preserved), not duplicated.
+    const payload = sb._update.mock.calls[0][0]
+    expect(payload.blocks).toEqual([
+      { id: 'v-old', type: 'view', mode: 'board', groupBy: 'p-status' },
     ])
   })
 

@@ -155,16 +155,23 @@ export function resolveViewConfig(
 /**
  * Upsert THE view block on a page's blocks (decision 4): reconfigure the top-most
  * existing view block in place — preserving its stable id and any `collectionId` —
- * or mint a fresh one when the page has no view yet. Returns a NEW blocks array;
- * the input is never mutated. A reconfigure REPLACES the config wholesale (an
- * omitted clause clears the old one — selecting a view is a fresh choice, not a
- * merge).
+ * or mint a fresh one when the page has no view yet. Returns a NEW blocks array
+ * (the input is never mutated) plus `replaced` — true when an existing view block was
+ * reconfigured, false when a fresh one was minted. A reconfigure REPLACES the config
+ * wholesale (an omitted clause clears the old one — selecting a view is a fresh choice,
+ * not a merge).
+ *
+ * #52 fix 2 (multi-view honesty). A collection shows exactly ONE active view, so a
+ * SECOND configure_view SWITCHES the active view rather than adding a coexisting one.
+ * `replaced` surfaces that fact so the accept path can say "switched active view
+ * (replaced the previous table)" on the receipt/stamp — the model must not claim the
+ * two views coexist.
  */
 export function upsertViewBlock(
   blocks: Block[],
   config: ResolvedViewConfig,
   mintId: () => string
-): Block[] {
+): { blocks: Block[]; replaced: boolean } {
   const idx = blocks.findIndex((b) => b.type === 'view')
   const existing = idx >= 0 ? (blocks[idx] as ViewBlock) : null
 
@@ -187,9 +194,9 @@ export function upsertViewBlock(
   if (idx >= 0) {
     const next = [...blocks]
     next[idx] = block
-    return next
+    return { blocks: next, replaced: true }
   }
-  return [...blocks, block]
+  return { blocks: [...blocks, block], replaced: false }
 }
 
 /**
@@ -206,7 +213,7 @@ export async function configureViewFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: ConfigureViewProposal,
   mintId: () => string
-): Promise<{ id: string }> {
+): Promise<{ id: string; replaced: boolean; previousMode?: ViewMode }> {
   const host = await getPage(supabase, proposal.pageId)
   if (!host) {
     throw new Error(`Cannot configure a view: page ${proposal.pageId} was not found`)
@@ -239,8 +246,11 @@ export async function configureViewFromProposal(
     )
   }
 
+  // #52 fix 2 — capture the mode of the view being replaced (if any) BEFORE the upsert,
+  // so the accept path can name it in the honest "replaced the previous <mode>" receipt.
+  const previous = host.blocks.find((b) => b.type === 'view') as ViewBlock | undefined
   const config = resolveViewConfig(schema, proposal)
-  const blocks = upsertViewBlock(host.blocks, config, mintId)
+  const { blocks, replaced } = upsertViewBlock(host.blocks, config, mintId)
   await saveBlocks(supabase, proposal.pageId, blocks)
-  return { id: proposal.pageId }
+  return { id: proposal.pageId, replaced, previousMode: replaced ? previous?.mode : undefined }
 }

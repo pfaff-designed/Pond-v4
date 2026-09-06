@@ -170,13 +170,30 @@ export async function createPageFromProposal(
  * array. Any unresolvable link is left UNSET (renders "—") but the def is KEPT (D7),
  * unlike a relation target (which is dropped). `relationId`/`rollupProperty`/`target`
  * are each type-scoped — none rides on a property type it doesn't belong to.
+ *
+ * #52 fix 1 (rollup-over-backlink honesty). A rollup whose `relation` NAME doesn't
+ * resolve to a relation PHYSICALLY on the resulting collection (the classic "count via
+ * Books" over a reverse/backlink that isn't a local relation property) is left inert —
+ * it renders "—" (D7, unchanged) — but that silent no-op used to read to the user and
+ * the model as success. The optional `inertRollups` collector surfaces the NAMES of
+ * every such rollup out of the pass-2 `if (!rel) continue`, so the accept path can put
+ * an honest note on the card receipt, the model stamp, and the resolutions envelope.
+ * Detection is relation-only: a rollup whose relation DOES resolve but whose
+ * rollupProperty/type mismatches stays lenient and is NOT reported here (out of scope).
+ *
+ * #52 fix 3 (duplicate Name/Title). A proposed TEXT property whose normalized name is
+ * "title" or "name" is silently dropped — the intrinsic page title is already the one
+ * title column, so a second one only mints a redundant column the user must reconcile.
+ * The guard is text-only: a `select`/`status`/etc. named "Status" or "Name" is a real
+ * data column and is preserved.
  */
 export function hydratePropertySchema(
   defs: AiPropertyDef[],
   mintId: () => string,
   resolveCollectionName?: (name: string) => string | undefined,
   resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined,
-  existing: PropertySchema = []
+  existing: PropertySchema = [],
+  inertRollups?: string[]
 ): PropertySchema {
   // #36 — additive merge-by-name. A define_schema proposal is a set of properties to
   // ADD-OR-UPDATE, never a wholesale replacement: a proposed property whose (trimmed,
@@ -236,6 +253,11 @@ export function hydratePropertySchema(
     if (!parsed.success) continue
     const def = parsed.data
 
+    // #52 fix 3 — never mint a duplicate title column. The page title IS the one title
+    // column; a proposed TEXT property named "title"/"name" only splits it. Drop it
+    // (text only — a select/status/etc. named "Status" or "Name" is a real data column).
+    if (def.type === 'text' && (nameKey === 'title' || nameKey === 'name')) continue
+
     // A name repeated within one proposal: first occurrence wins (defensive — a dup would
     // otherwise mint a second entry for one logical column, the very split #36 fixes).
     if (nameKey && hydratedByName.has(nameKey)) continue
@@ -275,7 +297,13 @@ export function hydratePropertySchema(
   // unresolved link stays unset (D7).
   for (const { def, relationName, rollupPropName } of pendingRollups) {
     const rel = relationName ? relationsByName.get(norm(relationName)) : undefined
-    if (!rel) continue
+    if (!rel) {
+      // #52 fix 1 — the rollup's relation doesn't resolve to a relation physically on
+      // this collection (reverse/backlink count, or a typo'd name). It stays inert and
+      // renders "—" (D7), but surface it so the caller can be honest about the no-op.
+      inertRollups?.push(def.name)
+      continue
+    }
     def.relationId = rel.id
     if (rollupPropName) {
       // `out` now holds the MERGED schema, so this single lookup covers the whole
@@ -313,7 +341,10 @@ export interface DefineSchemaProposal {
  * type/options, a new name is appended, and unmentioned properties are preserved.
  * The write goes through the merge-safe `defineSchema`, so row values alongside the
  * schema are never clobbered. Returns the merged schema so the caller can seed its
- * page cache optimistically.
+ * page cache optimistically, plus `inertRollups` (#52 fix 1) — the NAMES of any
+ * proposed rollup whose relation didn't resolve to a local relation, so the accept
+ * path can be honest about the no-op on the card receipt, the model stamp, and the
+ * envelope. An empty array is the ordinary (all-linked) case.
  */
 export async function defineSchemaFromProposal(
   supabase: SupabaseClient<Database>,
@@ -321,22 +352,24 @@ export async function defineSchemaFromProposal(
   mintId: () => string,
   resolveCollectionName?: (name: string) => string | undefined,
   resolveTargetProperty?: (collectionId: string, propertyName: string) => string | undefined
-): Promise<PropertySchema> {
+): Promise<{ schema: PropertySchema; inertRollups: string[] }> {
   const page = await getPage(supabase, proposal.pageId)
   if (!page) throw new Error(`Cannot define a schema: page ${proposal.pageId} was not found`)
   // #36 — additive merge: hydrate the proposal against the target's CURRENT schema so a
   // matched name reuses its property id (rows stay live) and unmentioned properties are
   // preserved. A page that isn't yet a collection has no schema → merge base is empty.
   const existing = readSchema(page.props) ?? []
+  const inertRollups: string[] = []
   const schema = hydratePropertySchema(
     proposal.schema,
     mintId,
     resolveCollectionName,
     resolveTargetProperty,
-    existing
+    existing,
+    inertRollups
   )
   await defineSchema(supabase, proposal.pageId, schema)
-  return schema
+  return { schema, inertRollups }
 }
 
 /** A minimal page shape for resolving a relation target NAME→id at the accept site. */
@@ -408,6 +441,38 @@ export function collectionPropertyResolver(
     if (!schema) return undefined
     return schema.find((d) => d.name.trim().toLowerCase() === key)?.id
   }
+}
+
+/**
+ * #52 fix 1 — preview-side companion to the pass-2 inert detection in
+ * hydratePropertySchema. Given a define_schema proposal's ordered props and the
+ * TARGET collection's CURRENT schema, return the set of rollup NAMES whose `relation`
+ * won't resolve to a relation PHYSICALLY on the resulting collection — the same test
+ * the accept path applies, so the card can flag "count via Books · no such relation
+ * here" BEFORE accept and the two never disagree.
+ *
+ * A rollup's relation resolves when a `relation` property of that (case-insensitive)
+ * NAME exists among the EXISTING schema OR the proposal's own props (the accept path
+ * seeds relationsByName from both). A rollup with no `relation` at all is inert too.
+ * Detection is relation-only — a resolvable relation with a bad rollupProperty/type is
+ * lenient and NOT flagged here (out of scope).
+ */
+export function unresolvableRollupNames(
+  proposed: AiPropertyDef[],
+  targetSchema: PropertySchema
+): Set<string> {
+  const norm = (s: string) => s.trim().toLowerCase()
+  const relationNames = new Set<string>()
+  for (const d of targetSchema) if (d.type === 'relation') relationNames.add(norm(d.name))
+  for (const d of proposed) if (d.type === 'relation' && d.name) relationNames.add(norm(d.name))
+
+  const inert = new Set<string>()
+  for (const d of proposed) {
+    if (d.type !== 'rollup') continue
+    const rel = typeof d.relation === 'string' ? norm(d.relation) : ''
+    if (!rel || !relationNames.has(rel)) inert.add(d.name)
+  }
+  return inert
 }
 
 // ── add_row accept path (#18) ────────────────────────────────────────────────

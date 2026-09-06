@@ -31,6 +31,7 @@ import {
   addRowFromProposal,
   collectionNameResolver,
   collectionTitleResolver,
+  unresolvableRollupNames,
 } from '@/lib/pages/create-page'
 import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/configure-view'
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
@@ -110,7 +111,7 @@ import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
-import { withSchema, isCollection, type AiPropertyDef } from '@/lib/properties/schema'
+import { withSchema, isCollection, readSchema, type AiPropertyDef } from '@/lib/properties/schema'
 import type { ViewMode, FilterOp } from '@/lib/modules/view/schema'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
@@ -402,6 +403,11 @@ export function AITerminal() {
   // AI-proposed pageId until the user overrides it.
   const [schemaDecisions, setSchemaDecisions] = useState<Record<string, ProposalStatus>>({})
   const [schemaTarget, setSchemaTarget] = useState<Record<string, string>>({})
+  // #52 fix 1 — per accepted define_schema, the NAMES of proposed rollups whose relation
+  // did NOT resolve to a local relation. Frozen at accept time (the write computes it),
+  // it drives the card's honest "1 rollup couldn't be linked" receipt and rides the
+  // resolutions envelope so the model stamp carries the same honest note.
+  const [schemaInertRollups, setSchemaInertRollups] = useState<Record<string, string[]>>({})
 
   // add_row decisions + the user-chosen target collection, keyed by toolCallId
   // (#18). Same no-execute caveat as define_schema: the local maps (not the SDK
@@ -418,6 +424,11 @@ export function AITerminal() {
   // the AI-proposed pageId until the user overrides it.
   const [viewDecisions, setViewDecisions] = useState<Record<string, ProposalStatus>>({})
   const [viewTarget, setViewTarget] = useState<Record<string, string>>({})
+  // #52 fix 2 — per accepted configure_view, whether it REPLACED an existing view (a
+  // collection shows one active view). Frozen at accept time (the write returns it), it
+  // drives the card's "switched the active view" receipt and rides the envelope so the
+  // model stamp says the same and doesn't claim the two views coexist.
+  const [viewReplaced, setViewReplaced] = useState<Record<string, boolean>>({})
 
   // link_records decisions + the user-chosen source collection, keyed by
   // toolCallId (#40). Same no-execute caveat as add_row. `linkErrors` carries a
@@ -477,6 +488,10 @@ export function AITerminal() {
       skipped: changeSkipped,
       targets: changeTargets,
       questions: questionAnswers,
+      // #52 — additive honesty maps; carried only when non-empty so a legacy transcript
+      // stays byte-clean (absent ⇒ the old flat notes).
+      ...(Object.keys(schemaInertRollups).length > 0 ? { schemaInertRollups } : {}),
+      ...(Object.keys(viewReplaced).length > 0 ? { viewReplaced } : {}),
       // Only carry the lifecycle when a project is in flight (keeps ordinary-chat
       // transcripts clean); the route defaults an absent phase to idle chat.
       ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
@@ -492,6 +507,8 @@ export function AITerminal() {
     changeSkipped,
     changeTargets,
     questionAnswers,
+    schemaInertRollups,
+    viewReplaced,
     lifecycle,
   ])
 
@@ -504,6 +521,7 @@ export function AITerminal() {
     setCreateParent({})
     setSchemaDecisions({})
     setSchemaTarget({})
+    setSchemaInertRollups({})
     setRowDecisions({})
     setRowTarget({})
     setPromotionDecisions({})
@@ -511,6 +529,7 @@ export function AITerminal() {
     setPromotionSnapshot({})
     setViewDecisions({})
     setViewTarget({})
+    setViewReplaced({})
     setLinkDecisions({})
     setLinkTarget({})
     setLinkErrors({})
@@ -827,6 +846,9 @@ export function AITerminal() {
       setPromotionDecisions(conversation.resolutions.promotions ?? {})
       setViewDecisions(conversation.resolutions.views ?? {})
       setLinkDecisions(conversation.resolutions.links ?? {})
+      // #52 — restore the honesty maps so a reloaded card keeps its honest receipt.
+      setSchemaInertRollups(conversation.resolutions.schemaInertRollups ?? {})
+      setViewReplaced(conversation.resolutions.viewReplaced ?? {})
       // Ticket-39: restore answered question cards + the lifecycle phase so an
       // answered branch stays inert and a returning session resumes mid-arc.
       setQuestionAnswers(conversation.resolutions.questions ?? {})
@@ -1316,13 +1338,18 @@ export function AITerminal() {
         // collection's id, and a rollup's rolled property NAME to its id within the
         // relation's target collection (both from the full pages cache in scope).
         // Unmatched names stay untargeted/unset inside hydratePropertySchema (lenient).
-        const schema = await defineSchemaFromProposal(
+        const { schema, inertRollups } = await defineSchemaFromProposal(
           getSupabase(),
           { pageId: selectedTargetId, schema: properties },
           () => crypto.randomUUID(),
           collectionNameResolver(allPages),
           collectionPropertyResolver(allPages)
         )
+        // #52 fix 1 — freeze which rollups couldn't link to a local relation, so the
+        // card receipt is honest and the model stamp (via the envelope) says the same.
+        if (inertRollups.length > 0) {
+          setSchemaInertRollups((prev) => ({ ...prev, [toolCallId]: inertRollups }))
+        }
         // Optimistic seed: merge the freshly-written schema into the target page's
         // cached props (via the reserved-key merge helper, never a raw overwrite),
         // so DocumentPanel renders the inspector without waiting on a refetch.
@@ -1490,7 +1517,7 @@ export function AITerminal() {
       if (!host) return
       setViewDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
       try {
-        await configureViewFromProposal(
+        const { replaced } = await configureViewFromProposal(
           getSupabase(),
           {
             pageId: host,
@@ -1504,6 +1531,9 @@ export function AITerminal() {
           },
           () => crypto.randomUUID()
         )
+        // #52 fix 2 — a second configure_view SWITCHES the one active view. Freeze that
+        // so the card receipt + model stamp say "switched", never claim they coexist.
+        if (replaced) setViewReplaced((prev) => ({ ...prev, [toolCallId]: true }))
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', host] })
       } catch (err) {
@@ -1740,6 +1770,13 @@ export function AITerminal() {
                 if (!input?.pageId || properties.length === 0) return null
                 const status = schemaDecisions[part.toolCallId] ?? 'pending'
                 const selectedTargetId = schemaTarget[part.toolCallId] ?? input.pageId
+                // #52 fix 1 — flag rollups whose relation won't resolve to a relation on
+                // the RESULTING collection (existing schema of the selected target + the
+                // proposed props), recomputed as the picker changes. Same test the accept
+                // path applies, so preview and receipt never disagree.
+                const targetSchema =
+                  readSchema(allPages.find((p) => p.id === selectedTargetId)?.props) ?? []
+                const unresolvableRollups = unresolvableRollupNames(properties, targetSchema)
                 return (
                   <DefineSchemaProposalCard
                     key={part.toolCallId}
@@ -1750,6 +1787,8 @@ export function AITerminal() {
                     selectedTargetId={selectedTargetId}
                     targetOptions={parentOptions}
                     resolveTargetTitle={resolveTargetTitle}
+                    unresolvableRollups={unresolvableRollups}
+                    resolvedInertRollups={schemaInertRollups[part.toolCallId]}
                     onTargetChange={(id) =>
                       setSchemaTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
                     }
@@ -1870,6 +1909,7 @@ export function AITerminal() {
                     filter={input.filter}
                     reason={input.reason}
                     status={status}
+                    replacedActiveView={viewReplaced[part.toolCallId] === true}
                     selectedTargetId={selectedTargetId}
                     targetOptions={collectionOptions}
                     destinationLabel={input.targetCollection ? 'Draw rows from' : 'Configure on'}

@@ -14,6 +14,7 @@ import {
   collectionNameResolver,
   collectionPropertyResolver,
   collectionTitleResolver,
+  unresolvableRollupNames,
 } from '@/lib/pages/create-page'
 import { SCHEMA_KEY } from '@/lib/properties/schema'
 import type { AiPropertyDef, PropertySchema } from '@/lib/properties/schema'
@@ -222,6 +223,49 @@ describe('hydratePropertySchema', () => {
     expect(out[1].rollupProperty).toBeUndefined()
   })
 
+  // ── #52 fix 1 — surface the inert rollup set (relation didn't resolve locally) ──
+  it('collects the NAME of a rollup whose relation is not a local relation (inert)', () => {
+    const inert: string[] = []
+    const defs: AiPropertyDef[] = [
+      // "count via Books" over a backlink that is NOT a relation property on this schema.
+      { name: 'Book count', type: 'rollup', relation: 'Books', aggregate: 'count' },
+    ]
+    const out = hydratePropertySchema(defs, mint, resolve, resolveProp, [], inert)
+    // Kept (D7) but inert, and surfaced so the accept path can be honest.
+    expect(out.find((d) => d.name === 'Book count')?.relationId).toBeUndefined()
+    expect(inert).toEqual(['Book count'])
+  })
+
+  it('leaves the inert collector empty when every rollup links to a local relation', () => {
+    const inert: string[] = []
+    const defs: AiPropertyDef[] = [
+      { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
+      { name: 'Total', type: 'rollup', relation: 'Shelf', aggregate: 'count' },
+    ]
+    hydratePropertySchema(defs, mint, resolve, resolveProp, [], inert)
+    expect(inert).toEqual([])
+  })
+
+  // ── #52 fix 3 — never mint a duplicate Title/Name text column ─────────────────
+  it('drops a proposed TEXT property named "Title" or "Name" (the intrinsic title is the one)', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Title', type: 'text' },
+      { name: 'name', type: 'text' }, // normalized, case-insensitive
+      { name: 'Author', type: 'text' },
+    ]
+    const out = hydratePropertySchema(defs, mint)
+    expect(out.map((d) => d.name)).toEqual(['Author'])
+  })
+
+  it('preserves a non-text property named "Status" or "Name" (real data column)', () => {
+    const defs: AiPropertyDef[] = [
+      { name: 'Status', type: 'status', options: [{ label: 'Open' }] },
+      { name: 'Name', type: 'select', options: [{ label: 'A' }] },
+    ]
+    const out = hydratePropertySchema(defs, mint)
+    expect(out.map((d) => `${d.name}:${d.type}`)).toEqual(['Status:status', 'Name:select'])
+  })
+
   it('keeps the rollup def but leaves relationId unset when the relation name is unknown (D7)', () => {
     const defs: AiPropertyDef[] = [
       { id: 'rel-1', name: 'Shelf', type: 'relation', target: 'Books' },
@@ -427,7 +471,7 @@ describe('defineSchemaFromProposal', () => {
 
   it('merges the hydrated schema into props at the reserved _schema key', async () => {
     const sb = makeSupabase({ id: 'page-1', props: {} })
-    const schema = await defineSchemaFromProposal(
+    const { schema, inertRollups } = await defineSchemaFromProposal(
       sb as never,
       { pageId: 'page-1', schema: [{ name: 'Author', type: 'text' }] },
       mint
@@ -437,6 +481,8 @@ describe('defineSchemaFromProposal', () => {
     expect(payload.props[SCHEMA_KEY]).toEqual(schema)
     expect(schema[0]).toMatchObject({ name: 'Author', type: 'text' })
     expect(schema[0].id).toBeTruthy()
+    // No rollups proposed → nothing inert.
+    expect(inertRollups).toEqual([])
   })
 
   it('preserves existing row values alongside the new schema (no clobber)', async () => {
@@ -473,7 +519,7 @@ describe('defineSchemaFromProposal', () => {
         'e-score': 7, // a row value keyed by the existing property id
       },
     })
-    const merged = await defineSchemaFromProposal(
+    const { schema: merged } = await defineSchemaFromProposal(
       sb as never,
       { pageId: 'page-1', schema: [{ name: 'Status', type: 'text' }] },
       mint
@@ -600,5 +646,39 @@ describe('collectionTitleResolver', () => {
     const resolve = collectionTitleResolver([collection('c1', 'Trips')])
     expect(resolve('Ghosts')).toBeUndefined()
     expect(resolve('   ')).toBeUndefined()
+  })
+})
+
+// ── unresolvableRollupNames — the card's rollup-resolvability flag (#52 fix 1) ──
+//
+// Preview-side companion to the pass-2 inert detection: given a proposal's props and
+// the target collection's CURRENT schema, which rollups won't link to a local relation?
+// Same test the accept path applies, so the "· no such relation here" chip and the
+// post-accept receipt never disagree.
+
+describe('unresolvableRollupNames', () => {
+  it('flags a rollup whose relation is neither on the target nor in the proposal', () => {
+    // "count via Books" — no relation named Books exists here (a reverse/backlink count).
+    const proposed: AiPropertyDef[] = [
+      { name: 'Book count', type: 'rollup', relation: 'Books', aggregate: 'count' },
+    ]
+    const inert = unresolvableRollupNames(proposed, [])
+    expect(inert.has('Book count')).toBe(true)
+  })
+
+  it('does NOT flag a rollup whose relation is proposed alongside it or already exists', () => {
+    // Same-batch relation resolves it.
+    const sameBatch: AiPropertyDef[] = [
+      { name: 'Shelf', type: 'relation', target: 'Books' },
+      { name: 'Total', type: 'rollup', relation: 'Shelf', aggregate: 'count' },
+    ]
+    expect(unresolvableRollupNames(sameBatch, []).size).toBe(0)
+
+    // An existing relation on the target collection resolves it too (case-insensitive).
+    const existing: PropertySchema = [{ id: 'rel-1', name: 'Shelf', type: 'relation' }]
+    const overExisting: AiPropertyDef[] = [
+      { name: 'Total', type: 'rollup', relation: 'shelf', aggregate: 'count' },
+    ]
+    expect(unresolvableRollupNames(overExisting, existing).size).toBe(0)
   })
 })
