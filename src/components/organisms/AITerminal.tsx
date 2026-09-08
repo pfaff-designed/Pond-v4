@@ -183,6 +183,29 @@ function isCreatePagePart(part: { type: string }): part is CreatePagePart {
   return part.type === 'tool-create_page'
 }
 
+/**
+ * Dev-only diagnostics for the "create-project proposal card doesn't render"
+ * bug (UI-audit Slice 3). Each gate below that returns `null` calls this first,
+ * so the console names which gate fired and dumps the offending part. No-op in
+ * production; never changes the happy path — we catalog a real repro, then fix
+ * to the captured cause rather than guessing. See the decision note in the brief.
+ */
+function warnCreatePageSuppressed(gate: string, detail: unknown) {
+  if (process.env.NODE_ENV === 'production') return
+  console.warn(`[create_page card suppressed → ${gate}]`, detail)
+}
+
+/** Looks like a create-page/create-node tool call under a drifted name (the
+ *  filter only matches the exact `tool-create_page`). Dev-only signal. */
+function isCreatePageNameDrift(type: unknown): boolean {
+  return (
+    typeof type === 'string' &&
+    type.startsWith('tool-') &&
+    type !== 'tool-create_page' &&
+    /create.*(page|node)/i.test(type)
+  )
+}
+
 /** A define_schema tool part — a proposed property schema for an EXISTING page
  *  (#17 slice 5). Client-resolved (no execute); the card below drives
  *  accept/reject + which page it applies to. */
@@ -766,7 +789,7 @@ export function AITerminal() {
   // height tween, not a content pop.
   useEffect(() => {
     const h = readStored(TERMINAL_HEIGHT_KEY)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
+
     if (h) setDrawerHeight(clampTerminalHeight(Number(h)))
     setIsCollapsed(readStored(TERMINAL_COLLAPSED_KEY) === '1')
   }, [])
@@ -900,7 +923,7 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null) stamps[part.toolCallId] = resolved
     }
     if (Object.keys(stamps).length === 0) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- records the arrival of streamed tool parts (an external-system event), not a derived-state computation; guarded to fire once per toolCallId
+
     setChangeTargets((prev) => {
       const next = { ...prev }
       for (const [id, target] of Object.entries(stamps)) {
@@ -1607,6 +1630,13 @@ export function AITerminal() {
           const createPageParts = (message.parts as Array<{ type: string }>).filter(
             isCreatePagePart
           )
+          if (process.env.NODE_ENV !== 'production') {
+            for (const p of message.parts as Array<{ type: string }>) {
+              if (isCreatePageNameDrift(p.type)) {
+                warnCreatePageSuppressed(`name-drift '${p.type}' ≠ 'tool-create_page'`, p)
+              }
+            }
+          }
           const defineSchemaParts = (message.parts as Array<{ type: string }>).filter(
             isDefineSchemaPart
           )
@@ -1729,9 +1759,23 @@ export function AITerminal() {
               {createPageParts.map((part) => {
                 // Same streaming caveat as above: a partially-parsed `blocks` array
                 // crashes the block previews (e.g. TableView on undefined rows).
-                if (part.state === 'input-streaming') return null
+                if (part.state === 'input-streaming') {
+                  warnCreatePageSuppressed('input-streaming (not finalized)', {
+                    state: part.state,
+                    input: part.input,
+                  })
+                  return null
+                }
                 const input = part.input
-                if (!input?.title || !input.type) return null
+                if (!input?.title || !input.type) {
+                  warnCreatePageSuppressed('missing title/type', {
+                    state: part.state,
+                    type: input?.type,
+                    title: input?.title,
+                    input,
+                  })
+                  return null
+                }
                 const status = createDecisions[part.toolCallId] ?? 'pending'
                 const selectedParentId =
                   createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
