@@ -22,7 +22,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock } from './schema'
+import { VIEW_MODES, type ViewBlock, type ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { useCollectionRows } from './use-collection-rows'
 import {
@@ -53,14 +53,21 @@ import { RollupValueField } from '@/components/organisms/RollupValueField'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
-export function ViewView({ data, editable }: ModuleViewProps<ViewBlock>) {
+export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock>) {
   // Which collection's rows this view draws: a LINKED view names another collection
   // (data.collectionId, #41); otherwise it draws its HOST page's own rows, whose id
   // arrives from the page host (DocumentPanel) through SiblingBlocks — exactly as a
   // cross-page metric reads it. `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = data.collectionId ?? pageId
-  const { schema, rows, isLoading, setValue } = useCollectionRows(collectionId)
+  const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow } =
+    useCollectionRows(collectionId)
+
+  // Config edits (mode/group-by) rewrite the persisted view block through the
+  // module's own onChange — the same whole-block save path every editable module uses.
+  const onConfigChange = onChange
+    ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
+    : undefined
 
   return (
     <CollectionView
@@ -71,6 +78,10 @@ export function ViewView({ data, editable }: ModuleViewProps<ViewBlock>) {
       editable={editable}
       linked={!!data.collectionId}
       onEdit={setValue}
+      onAddRow={addRow}
+      onRemoveRow={removeRow}
+      onRenameRow={renameRow}
+      onConfigChange={onConfigChange}
     />
   )
 }
@@ -87,6 +98,14 @@ export interface CollectionViewProps {
    *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
   linked?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
+   *  editable host; Storybook renders static data and omits them. */
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRemoveRow?: (rowId: string) => void
+  onRenameRow?: (rowId: string, title: string) => void
+  /** Rewrite the view block's own config — the mode switcher + group-by picker
+   *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
+  onConfigChange?: (patch: Partial<ViewBlock>) => void
 }
 
 /** A calm Press placeholder — the shared shell for every non-drawing state. */
@@ -106,6 +125,10 @@ export function CollectionView({
   editable,
   linked,
   onEdit,
+  onAddRow,
+  onRemoveRow,
+  onRenameRow,
+  onConfigChange,
 }: CollectionViewProps) {
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
@@ -131,6 +154,9 @@ export function CollectionView({
 
   return (
     <div className="text-sm text-press-ink">
+      {editable && onConfigChange && (
+        <ViewControls config={config} schema={schema} onConfigChange={onConfigChange} />
+      )}
       {config.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
@@ -138,6 +164,9 @@ export function CollectionView({
           groupBy={config.groupBy}
           editable={editable}
           onEdit={onEdit}
+          onAddRow={onAddRow}
+          onRemoveRow={onRemoveRow}
+          onRenameRow={onRenameRow}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
@@ -159,7 +188,88 @@ export function CollectionView({
           onEdit={onEdit}
         />
       ) : (
-        <CollectionTable schema={schema} rows={processed} editable={editable} onEdit={onEdit} />
+        <CollectionTable
+          schema={schema}
+          rows={processed}
+          editable={editable}
+          onEdit={onEdit}
+          onAddRow={onAddRow}
+          onRemoveRow={onRemoveRow}
+          onRenameRow={onRenameRow}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── View controls (mode switcher + group-by) ──────────────────────────────────
+
+const MODE_LABELS: Record<ViewMode, string> = {
+  board: 'Board',
+  table: 'Table',
+  gantt: 'Gantt',
+  calendar: 'Calendar',
+  gallery: 'Gallery',
+}
+
+/**
+ * The editable control row (board-authoring Slice 3): flip the SAME collection
+ * between render modes, and — in board mode — pick which select/status property
+ * buckets the columns. Every change rewrites the view block's config through
+ * `onConfigChange` (the whole-block save path). A mode whose data prerequisite is
+ * missing (gantt/calendar with no date property) still switches — the renderer
+ * shows its own calm "needs a date property" notice.
+ */
+function ViewControls({
+  config,
+  schema,
+  onConfigChange,
+}: {
+  config: ViewBlock
+  schema: PropertySchema
+  onConfigChange: (patch: Partial<ViewBlock>) => void
+}) {
+  const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="inline-flex rounded-md border border-press-hair p-0.5">
+        {VIEW_MODES.map((m) => {
+          const active = config.mode === m
+          return (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onConfigChange({ mode: m })}
+              className={[
+                'rounded px-2 py-0.5 text-xs transition-colors',
+                active
+                  ? 'bg-press-accent-wash text-press-ink'
+                  : 'text-press-muted hover:text-press-ink',
+              ].join(' ')}
+            >
+              {MODE_LABELS[m]}
+            </button>
+          )
+        })}
+      </div>
+
+      {config.mode === 'board' && groupOptions.length > 0 && (
+        <label className="flex items-center gap-1 text-xs text-press-muted">
+          Group by
+          <select
+            aria-label="Group by property"
+            value={config.groupBy ?? ''}
+            onChange={(e) => onConfigChange({ groupBy: e.target.value || undefined })}
+            className="rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+          >
+            {groupOptions.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
     </div>
   )
@@ -172,56 +282,103 @@ function CollectionTable({
   rows,
   editable,
   onEdit,
+  onAddRow,
+  onRemoveRow,
+  onRenameRow,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRemoveRow?: (rowId: string) => void
+  onRenameRow?: (rowId: string, title: string) => void
 }) {
   return (
-    <table className="w-full border-collapse text-left">
-      <thead>
-        <tr>
-          <th className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted">
-            Name
-          </th>
-          {schema.map((def) => (
-            <th
-              key={def.id}
-              className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted"
-            >
-              {def.name}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 && (
+    <div>
+      <table className="w-full border-collapse text-left">
+        <thead>
           <tr>
-            <td colSpan={schema.length + 1} className="py-2 text-press-faint">
-              No rows yet
-            </td>
-          </tr>
-        )}
-        {rows.map((row) => (
-          <tr key={row.id} className="border-b border-press-line last:border-b-0 align-top">
-            <td className="py-1.5 pr-3 font-medium text-press-ink">{row.title || 'Untitled'}</td>
+            <th className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted">
+              Name
+            </th>
             {schema.map((def) => (
-              <td key={def.id} className="py-1.5 pr-3">
-                <Cell
-                  def={def}
-                  value={coerceValue(def, row.values[def.id])}
-                  editable={!!editable}
-                  onChange={(v) => onEdit?.(row.id, def.id, v)}
-                  schema={schema}
-                  rowValues={row.values}
-                />
-              </td>
+              <th
+                key={def.id}
+                className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted"
+              >
+                {def.name}
+              </th>
             ))}
+            {/* Trailing gutter for the per-row delete affordance. */}
+            <th className="w-6 border-b border-press-hair" aria-hidden />
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={schema.length + 2} className="py-2 text-press-faint">
+                No rows yet
+              </td>
+            </tr>
+          )}
+          {rows.map((row) => (
+            <tr
+              key={row.id}
+              className="group/row border-b border-press-line last:border-b-0 align-top"
+            >
+              <td className="py-1.5 pr-3 font-medium text-press-ink">
+                {editable && onRenameRow ? (
+                  <input
+                    aria-label="Row title"
+                    value={row.title}
+                    placeholder="Untitled"
+                    onChange={(e) => onRenameRow(row.id, e.target.value)}
+                    className="w-full border-0 bg-transparent p-0 font-medium text-press-ink outline-none placeholder:text-press-faint"
+                  />
+                ) : (
+                  row.title || 'Untitled'
+                )}
+              </td>
+              {schema.map((def) => (
+                <td key={def.id} className="py-1.5 pr-3">
+                  <Cell
+                    def={def}
+                    value={coerceValue(def, row.values[def.id])}
+                    editable={!!editable}
+                    onChange={(v) => onEdit?.(row.id, def.id, v)}
+                    schema={schema}
+                    rowValues={row.values}
+                  />
+                </td>
+              ))}
+              <td className="py-1.5 text-right align-middle">
+                {editable && onRemoveRow && (
+                  <button
+                    type="button"
+                    aria-label={`Delete row: ${row.title || 'untitled'}`}
+                    onClick={() => onRemoveRow(row.id)}
+                    className="rounded px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                  >
+                    ×
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {editable && onAddRow && (
+        <button
+          type="button"
+          onClick={() => onAddRow()}
+          className="mt-2 rounded-md px-2 py-1 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+        >
+          + Add row
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -237,15 +394,24 @@ function CollectionBoard({
   groupBy,
   editable,
   onEdit,
+  onAddRow,
+  onRemoveRow,
+  onRenameRow,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  onRemoveRow?: (rowId: string) => void
+  onRenameRow?: (rowId: string, title: string) => void
 }) {
   const grouped = useMemo(() => groupRows(rows, schema, groupBy), [rows, schema, groupBy])
   const groupKey = (id: string | null) => id ?? NULL_BUCKET
+  // The row whose title input should take focus — set when a card is just added, so
+  // "+ Add card" drops you straight into typing the new card's name.
+  const [focusRowId, setFocusRowId] = useState<string | null>(null)
 
   // Card drag between columns (finding F4), now shared with the calendar via the
   // hook. Dropping into a bucket writes that option id onto the group-by property;
@@ -266,6 +432,19 @@ function CollectionBoard({
   }
   const { def: groupDef, groups } = grouped
 
+  // "+ Add card": mint a row seeded with this column's status (null → the "No <name>"
+  // bucket), then focus its title so you can name it immediately.
+  const addCard = async (optionId: string | null) => {
+    if (!onAddRow) return
+    const id = await onAddRow(optionId ? { [groupDef.id]: optionId } : {})
+    if (id) setFocusRowId(id)
+  }
+
+  // Hide the trailing "No <name>" bucket while it's empty — a fresh board then reads
+  // as a clean set of just its status columns. It reappears the moment a card lands
+  // there unset (a drag-out or a statusless add).
+  const visibleGroups = groups.filter((g) => g.id !== null || g.rows.length > 0)
+
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
   // The other select/status properties shown as context chips on each card.
   const chipDefs = schema.filter(
@@ -275,7 +454,7 @@ function CollectionBoard({
   return (
     <div {...containerHandlers}>
       <div className="flex gap-4 overflow-x-auto pb-1">
-        {groups.map((group) => {
+        {visibleGroups.map((group) => {
           const key = groupKey(group.id)
           const isOver = editable && drag?.active && overKey === key
           return (
@@ -313,7 +492,7 @@ function CollectionBoard({
                     <li
                       key={row.id}
                       className={[
-                        'relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
+                        'group/card relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
                         'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}
@@ -329,7 +508,21 @@ function CollectionBoard({
                         </button>
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
+                        {editable && onRenameRow ? (
+                          <input
+                            aria-label="Card title"
+                            value={row.title}
+                            placeholder="Untitled"
+                            autoFocus={row.id === focusRowId}
+                            onChange={(e) => onRenameRow(row.id, e.target.value)}
+                            // Leave room for the hover delete × so a long title never slides under it.
+                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-press-ink outline-none placeholder:text-press-faint"
+                          />
+                        ) : (
+                          <div className="font-medium text-press-ink">
+                            {row.title || 'Untitled'}
+                          </div>
+                        )}
                         {chipDefs.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {chipDefs.map((def) => {
@@ -340,10 +533,30 @@ function CollectionBoard({
                           </div>
                         )}
                       </div>
+                      {editable && onRemoveRow && (
+                        <button
+                          type="button"
+                          aria-label={`Delete card: ${row.title || 'untitled'}`}
+                          onClick={() => onRemoveRow(row.id)}
+                          className="absolute top-1 right-1 rounded px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                        >
+                          ×
+                        </button>
+                      )}
                     </li>
                   )
                 })}
               </ul>
+
+              {editable && onAddRow && (
+                <button
+                  type="button"
+                  onClick={() => addCard(group.id)}
+                  className="mt-2 w-full rounded-md px-2 py-1 text-left text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+                >
+                  + Add card
+                </button>
+              )}
             </section>
           )
         })}

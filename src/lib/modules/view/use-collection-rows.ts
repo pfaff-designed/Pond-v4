@@ -23,12 +23,21 @@
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { getCollectionRows, getPage, setProperty, type PondPage } from '@/lib/pages/client'
+import {
+  createPage,
+  deletePage,
+  getCollectionRows,
+  getPage,
+  setProperty,
+  updateTitle,
+  type PondPage,
+} from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import {
   readSchema,
   readValues,
   withValue,
+  ROW_TYPE,
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
@@ -43,6 +52,16 @@ export interface CollectionData {
   isLoading: boolean
   /** Optimistically set one row's property value, then persist (bypasses the AI). */
   setValue: (rowId: string, key: string, value: PropertyValue) => void
+  /**
+   * Create a new row (a `type='row'` child of the collection) with optional initial
+   * property values — e.g. a board's "+ Add card" seeds the group-by status. Resolves
+   * to the new row id (for focusing its title), or null off a collection / when logged out.
+   */
+  addRow: (values?: Record<string, PropertyValue>) => Promise<string | null>
+  /** Optimistically delete a row, then persist. */
+  removeRow: (rowId: string) => void
+  /** Optimistically rename a row (its page title), then persist. */
+  renameRow: (rowId: string, title: string) => void
 }
 
 const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
@@ -118,10 +137,73 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [collectionId, queryClient, getSupabase]
   )
 
+  // Create a row child, seeded with any initial values (e.g. the board column's
+  // status). Awaits the insert for the server id, then appends to the ['rows']
+  // cache so the card appears. Returns the id so the UI can focus its title.
+  const addRow = useMemo(
+    () =>
+      async (values: Record<string, PropertyValue> = {}): Promise<string | null> => {
+        if (!collectionId) return null
+        const supabase = getSupabase()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return null
+        const created = await createPage(supabase, user.id, {
+          parentId: collectionId,
+          type: ROW_TYPE,
+          title: '',
+          props: values,
+          workspace,
+        })
+        queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+          prev ? [...prev, created] : [created]
+        )
+        return created.id
+      },
+    [collectionId, queryClient, getSupabase, workspace]
+  )
+
+  // Optimistically drop the row from the cache, then persist. Reconcile from server
+  // truth on failure (invalidate) rather than hand-rolling a rollback — mirrors setValue.
+  const removeRow = useMemo(
+    () => (rowId: string) => {
+      if (!collectionId) return
+      queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+        prev ? prev.filter((p) => p.id !== rowId) : prev
+      )
+      deletePage(getSupabase(), rowId).catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
+  )
+
+  // Optimistically rename in both the ['rows'] cache and the row's own ['page']
+  // cache (kept coherent if it's ever been opened), then persist.
+  const renameRow = useMemo(
+    () => (rowId: string, title: string) => {
+      if (!collectionId) return
+      queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
+        prev ? prev.map((p) => (p.id === rowId ? { ...p, title } : p)) : prev
+      )
+      queryClient.setQueryData<PondPage | null>(['page', rowId], (prev) =>
+        prev ? { ...prev, title } : prev
+      )
+      updateTitle(getSupabase(), rowId, title).catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
+  )
+
   return {
     schema,
     rows,
     isLoading: !!collectionId && (pagePending || rowsPending),
     setValue,
+    addRow,
+    removeRow,
+    renameRow,
   }
 }

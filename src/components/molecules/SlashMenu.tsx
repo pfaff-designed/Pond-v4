@@ -32,6 +32,7 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const filteredItems = filter
     ? items.filter((item) => item.name.toLowerCase().includes(filter.toLowerCase()))
@@ -62,6 +63,17 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
     inputRef.current?.focus()
   }, [])
 
+  // Dismiss on any pointer-down outside the panel (ticket: the palette must be
+  // escapable without picking). Capture phase so it beats inner handlers; the
+  // opening `/` keystroke isn't a pointer event, so this never self-closes on open.
+  useEffect(() => {
+    function onPointerDownOutside(e: PointerEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDownOutside, true)
+    return () => document.removeEventListener('pointerdown', onPointerDownOutside, true)
+  }, [onClose])
+
   // Scroll active item into view
   useEffect(() => {
     const container = itemsRef.current
@@ -83,12 +95,21 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
       if (selected) onSelect(selected)
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
+      onClose()
+    } else if (e.key === 'Backspace' && filter === '') {
+      // Backspace on an empty filter dismisses the palette (the `/` gesture in
+      // reverse) instead of doing nothing. stopPropagation so it doesn't also
+      // bubble to the host block's own backspace-to-delete.
+      e.preventDefault()
+      e.stopPropagation()
       onClose()
     }
   }
 
   const panel = (
     <div
+      ref={panelRef}
       className={cn(
         // ticket-41: the palette grows from its anchor (quick), rather than
         // rising like a page surface — it reads as summoned in place. The
