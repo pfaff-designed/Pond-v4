@@ -127,6 +127,26 @@ export const VanishOnType: Story = {
   },
 }
 
+/** A long suggestion truncates cleanly while the Tab pill stays pinned and
+ *  fully visible — never clipped by, or overlapping, the text (UI-audit Slice 4). */
+export const LongSuggestion: Story = {
+  render: () => (
+    <Harness
+      suggestion="Summarise everything I worked on this week across all five areas and draft next week's plan"
+      onAccept={fn()}
+      onDismiss={fn()}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // The Tab pill must remain in the DOM and rendered (not clipped away) even
+    // when the suggestion overflows the composer width.
+    const pill = canvas.getByText('Tab')
+    await expect(pill).toBeInTheDocument()
+    await expect(pill.offsetWidth).toBeGreaterThan(0)
+  },
+}
+
 /** When suggestion is null, nothing renders. */
 export const EmptySource: Story = {
   render: () => <Harness suggestion={null} onAccept={fn()} onDismiss={fn()} />,

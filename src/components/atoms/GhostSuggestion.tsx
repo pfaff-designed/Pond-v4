@@ -55,6 +55,10 @@ export function GhostSuggestion({
 
   if (!suggestion || inputValue !== '') return null
 
+  // A flex row so the suggestion text truncates within its own cell while the
+  // Tab pill stays pinned (flex-shrink-0) and can never be clipped by, or
+  // overlap, the truncating text. px-0/py-1.5/font-mono/text-sm mirror the
+  // composer textarea exactly so the ghost sits directly over the empty input.
   return (
     <span
       id={id}
@@ -62,14 +66,13 @@ export function GhostSuggestion({
       aria-live="polite"
       aria-label={`Ghost suggestion: ${suggestion}`}
       className={cn(
-        'press-arrive pointer-events-none absolute inset-x-0 top-0 px-0 py-1.5',
-        'font-mono text-sm text-press-faint/60 select-none truncate',
-        '@media (prefers-reduced-motion: reduce) press-arrive',
+        'press-arrive pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 px-0 py-1.5',
+        'font-mono text-sm text-press-faint/60 select-none',
         className
       )}
     >
-      {suggestion}
-      <span className="ml-2 rounded border border-press-line/50 px-1 text-[10px] text-press-faint/40 align-middle">
+      <span className="truncate">{suggestion}</span>
+      <span className="flex-shrink-0 rounded border border-press-line/50 px-1 text-[10px] text-press-faint/40">
         Tab
       </span>
     </span>
