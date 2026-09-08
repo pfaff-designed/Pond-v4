@@ -23,7 +23,10 @@ import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
-import { paletteItems, emptyBlockForType } from '@/lib/modules/palette'
+import { paletteItems, emptyBlockForType, BOARD_PRESET_ID } from '@/lib/modules/palette'
+import { ensureBoardGroupBy } from '@/lib/modules/view/board-preset'
+import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { useQueryClient } from '@tanstack/react-query'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
@@ -74,6 +77,8 @@ export function BlockCanvas({
   insertedIds,
 }: BlockCanvasProps) {
   const { stageDeletion } = useDeletionUndo()
+  const getSupabase = useLazySupabase()
+  const queryClient = useQueryClient()
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -114,9 +119,35 @@ export function BlockCanvas({
     })
   }
 
+  // Build the `/board` preset block (board-authoring Slice 1): ensure the host page
+  // has a status/select property to group by (seeding a default Status when it
+  // isn't yet a collection), mint a `view` block in board mode grouped by it, and
+  // invalidate the host page's cache so the view re-reads the freshly-seeded schema.
+  // Async (a schema write), so callers await it before splicing into `blocks`.
+  async function buildBoardBlock(): Promise<Block | null> {
+    try {
+      const base = emptyBlockForType('view')
+      if (!base || base.type !== 'view') return null
+      const groupBy = await ensureBoardGroupBy(getSupabase(), pageId)
+      queryClient.invalidateQueries({ queryKey: ['page', pageId] })
+      return { ...base, mode: 'board', groupBy }
+    } catch (err) {
+      console.error('Failed to create board', err)
+      return null
+    }
+  }
+
   // Insert an empty block of the picked palette type at `at` (ticket-37). No-op
-  // for a type with no empty-state factory (unknown module).
-  function insertBlockAt(at: number, item: SlashMenuItem) {
+  // for a type with no empty-state factory (unknown module). The `/board` preset
+  // takes the async collection-seeding path instead.
+  async function insertBlockAt(at: number, item: SlashMenuItem) {
+    if (item.id === BOARD_PRESET_ID) {
+      const nb = await buildBoardBlock()
+      if (!nb) return
+      markInserted(nb.id)
+      onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
+      return
+    }
     const nb = emptyBlockForType(item.id)
     if (!nb) return
     markInserted(nb.id)
@@ -156,11 +187,18 @@ export function BlockCanvas({
                 onMoveDown={() => moveBlockAt(i, 'down')}
                 onSlashKey={() => setSlashMenuOpenAt(i)}
                 slashMenuOpen={slashMenuOpenAt === i}
-                onSlashSelect={(item) => {
+                onSlashSelect={async (item) => {
                   // Replace the empty text block at i with the picked module's
-                  // empty state (the `/` gesture: text block → chosen block).
-                  const nb = emptyBlockForType(item.id)
-                  if (!nb) return
+                  // empty state (the `/` gesture: text block → chosen block). The
+                  // `/board` preset takes the async collection-seeding path.
+                  const nb =
+                    item.id === BOARD_PRESET_ID
+                      ? await buildBoardBlock()
+                      : emptyBlockForType(item.id)
+                  if (!nb) {
+                    setSlashMenuOpenAt(null)
+                    return
+                  }
                   markInserted(nb.id)
                   onChange(blocks.map((b, bi) => (bi === i ? nb : b)))
                   setSlashMenuOpenAt(null)
@@ -255,6 +293,18 @@ function BlockEditor({
       e.preventDefault()
       onMoveDown?.()
     }
+    // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
+    // never fires while the `/` palette is open (that Backspace closes the menu,
+    // which stops propagation) — only a bare empty block deletes.
+    if (
+      e.key === 'Backspace' &&
+      !slashMenuOpen &&
+      block.type === 'text' &&
+      (block as { content: string }).content === ''
+    ) {
+      e.preventDefault()
+      onRemove()
+    }
   }
 
   return (
@@ -275,24 +325,29 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* Drag handle (ticket-37): arms the block's draggable for this gesture. */}
-      <button
-        className="absolute -left-8 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-press-ink text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent cursor-grab"
-        title="Drag to reorder"
-        aria-label="Drag to reorder block"
-        onPointerDown={() => setDragArmed(true)}
-        onPointerUp={() => setDragArmed(false)}
-      >
-        ⠿
-      </button>
-      <button
-        className="absolute -left-5 top-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-press-faint hover:text-destructive focus-visible:text-destructive text-sm rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
-        title="Delete block"
-        aria-label="Delete block"
-        onClick={onRemove}
-      >
-        ×
-      </button>
+      {/* Gutter affordances (ticket-37): drag handle + delete, revealed on hover/
+          focus. Both live in one flex row so the ⠿ and × sit in identical boxes and
+          share a baseline — otherwise the two glyphs' differing optical metrics
+          leave them visibly misaligned. */}
+      <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+        <button
+          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-press-faint hover:text-press-ink outline-none focus-visible:ring-2 focus-visible:ring-press-accent cursor-grab"
+          title="Drag to reorder"
+          aria-label="Drag to reorder block"
+          onPointerDown={() => setDragArmed(true)}
+          onPointerUp={() => setDragArmed(false)}
+        >
+          ⠿
+        </button>
+        <button
+          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-press-faint hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
+          title="Delete block"
+          aria-label="Delete block"
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      </div>
 
       {/* The `/` block palette, anchored under this block (ticket-37). */}
       {slashMenuOpen && (

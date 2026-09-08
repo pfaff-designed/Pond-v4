@@ -31,13 +31,32 @@ import type { Block } from '@/lib/documents/types'
 // a collection with properties" notice elsewhere (see `emptyBlockForType`).
 const EXCLUDED_FROM_PALETTE = new Set<string>(['page', ...RETIRED_FROM_CREATION])
 
-export const paletteItems: SlashMenuItem[] = Object.values(moduleDescriptors)
+/**
+ * The `/board` preset (board-authoring Slice 1). Not a distinct module type — it
+ * mints a `view` block in `board` mode and seeds a Status group-by on the host page
+ * (see `board-preset.ts`). Because minting is async (a schema write) and needs the
+ * host page id, the insert surfaces (BlockCanvas) special-case this id rather than
+ * routing it through the synchronous `emptyBlockForType`.
+ */
+export const BOARD_PRESET_ID = 'board'
+
+const boardPreset: SlashMenuItem = {
+  id: BOARD_PRESET_ID,
+  name: 'Board',
+  description:
+    'A Kanban board — cards grouped into status columns. Add cards and drag them between columns; switch the same tasks to Table, Gantt, or Calendar anytime.',
+}
+
+const derivedItems: SlashMenuItem[] = Object.values(moduleDescriptors)
   .filter((d) => !EXCLUDED_FROM_PALETTE.has(d.type))
   .map((d) => ({
     id: d.type,
     name: d.type.charAt(0).toUpperCase() + d.type.slice(1).replace(/-/g, ' '),
     description: d.description,
   }))
+
+// Board leads the collection-view family, ahead of the raw `view` (table) entry.
+export const paletteItems: SlashMenuItem[] = [boardPreset, ...derivedItems]
 
 /**
  * The manual-authoring empty state per module: todo = one blank item, table =
