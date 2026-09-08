@@ -115,7 +115,7 @@ export function VoiceInputButton({ onTranscript, disabled, className }: VoiceInp
       onClick={toggle}
       disabled={disabled}
       className={cn(
-        'flex items-center justify-center w-6 h-6 rounded-full transition-colors',
+        'flex items-center justify-center w-9 h-9 rounded-full transition-colors',
         isListening ? 'text-rust animate-pulse' : 'text-press-faint hover:text-press-accent',
         'disabled:opacity-40 disabled:pointer-events-none',
         className
@@ -123,7 +123,7 @@ export function VoiceInputButton({ onTranscript, disabled, className }: VoiceInp
       title={isListening ? 'Recording — click to stop' : 'Voice input'}
     >
       {/* Microphone icon (inline SVG — no icon dep required) */}
-      <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
+      <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={18} height={18}>
         <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 8 1Z" />
         <path d="M4 7.5a.5.5 0 0 0-1 0 5 5 0 0 0 4.5 4.975V14H6a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1H8.5v-1.525A5 5 0 0 0 13 7.5a.5.5 0 0 0-1 0 4 4 0 0 1-8 0Z" />
       </svg>
