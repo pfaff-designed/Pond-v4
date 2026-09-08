@@ -44,8 +44,11 @@ import { formatTick, GANTT_BAR_SHELL } from './gantt-shared'
 import {
   coerceValue,
   optionForValue,
+  PROPERTY_TYPES,
   type PropertyDef,
+  type PropertyOption,
   type PropertySchema,
+  type PropertyType,
   type PropertyValue,
 } from '@/lib/properties/schema'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
@@ -60,7 +63,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // cross-page metric reads it. `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = data.collectionId ?? pageId
-  const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow } =
+  const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
 
   // Config edits (mode/group-by) rewrite the persisted view block through the
@@ -82,6 +85,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onRemoveRow={removeRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}
+      onUpdateSchema={editable ? updateSchema : undefined}
     />
   )
 }
@@ -106,6 +110,9 @@ export interface CollectionViewProps {
   /** Rewrite the view block's own config — the mode switcher + group-by picker
    *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
   onConfigChange?: (patch: Partial<ViewBlock>) => void
+  /** Replace the collection's property schema — manual column + property editing
+   *  (board-authoring Slice 4). Absent on read-only / Storybook hosts. */
+  onUpdateSchema?: (next: PropertySchema) => void
 }
 
 /** A calm Press placeholder — the shared shell for every non-drawing state. */
@@ -129,6 +136,7 @@ export function CollectionView({
   onRemoveRow,
   onRenameRow,
   onConfigChange,
+  onUpdateSchema,
 }: CollectionViewProps) {
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
@@ -155,7 +163,12 @@ export function CollectionView({
   return (
     <div className="text-sm text-press-ink">
       {editable && onConfigChange && (
-        <ViewControls config={config} schema={schema} onConfigChange={onConfigChange} />
+        <ViewControls
+          config={config}
+          schema={schema}
+          onConfigChange={onConfigChange}
+          onUpdateSchema={onUpdateSchema}
+        />
       )}
       {config.mode === 'board' ? (
         <CollectionBoard
@@ -167,6 +180,7 @@ export function CollectionView({
           onAddRow={onAddRow}
           onRemoveRow={onRemoveRow}
           onRenameRow={onRenameRow}
+          onUpdateSchema={onUpdateSchema}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
@@ -224,10 +238,12 @@ function ViewControls({
   config,
   schema,
   onConfigChange,
+  onUpdateSchema,
 }: {
   config: ViewBlock
   schema: PropertySchema
   onConfigChange: (patch: Partial<ViewBlock>) => void
+  onUpdateSchema?: (next: PropertySchema) => void
 }) {
   const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
   return (
@@ -271,7 +287,98 @@ function ViewControls({
           </select>
         </label>
       )}
+
+      {onUpdateSchema && <AddPropertyControl onAdd={(def) => onUpdateSchema([...schema, def])} />}
     </div>
+  )
+}
+
+/**
+ * Manual "+ Add property" affordance (board-authoring Slice 4). Reveals a terse
+ * inline form — a name and a type — and appends a new PropertyDef to the schema,
+ * bypassing the AI (decision 3). Adding a `date` property is the honest way to
+ * unlock Gantt/Timeline/Calendar (add Start + End, fill dates, switch to Gantt).
+ * Relation/rollup are omitted — they need a target/aggregate the AI resolves, so
+ * they stay conversational this pass.
+ */
+const ADDABLE_TYPES = PROPERTY_TYPES.filter(
+  (t) => t !== 'relation' && t !== 'rollup'
+) as PropertyType[]
+
+function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [type, setType] = useState<PropertyType>('date')
+
+  const commit = () => {
+    const def: PropertyDef = {
+      id: crypto.randomUUID(),
+      name: name.trim() || 'Untitled',
+      type,
+    }
+    // select/status carry a (initially empty) option list — columns are then added
+    // on the board itself (or cells become a picker in the table).
+    if (type === 'select' || type === 'status') def.options = []
+    onAdd(def)
+    setName('')
+    setType('date')
+    setOpen(false)
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-md px-2 py-0.5 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+      >
+        + Add property
+      </button>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        aria-label="New property name"
+        autoFocus
+        value={name}
+        placeholder="Property name"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') setOpen(false)
+        }}
+        className="w-32 rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none placeholder:text-press-faint"
+      />
+      <select
+        aria-label="New property type"
+        value={type}
+        onChange={(e) => setType(e.target.value as PropertyType)}
+        className="rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+      >
+        {ADDABLE_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={commit}
+        className="rounded-md bg-press-accent-wash px-2 py-0.5 text-xs text-press-ink transition-colors hover:bg-press-accent hover:text-press-paper"
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        aria-label="Cancel adding property"
+        onClick={() => setOpen(false)}
+        className="rounded px-1 py-0.5 text-xs text-press-faint transition-colors hover:text-press-ink"
+      >
+        ×
+      </button>
+    </span>
   )
 }
 
@@ -397,6 +504,7 @@ function CollectionBoard({
   onAddRow,
   onRemoveRow,
   onRenameRow,
+  onUpdateSchema,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
@@ -406,12 +514,16 @@ function CollectionBoard({
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRemoveRow?: (rowId: string) => void
   onRenameRow?: (rowId: string, title: string) => void
+  onUpdateSchema?: (next: PropertySchema) => void
 }) {
   const grouped = useMemo(() => groupRows(rows, schema, groupBy), [rows, schema, groupBy])
   const groupKey = (id: string | null) => id ?? NULL_BUCKET
   // The row whose title input should take focus — set when a card is just added, so
   // "+ Add card" drops you straight into typing the new card's name.
   const [focusRowId, setFocusRowId] = useState<string | null>(null)
+  // The column (option id) whose header input should take focus — set when a column
+  // is just added, so "+ Add column" drops you straight into naming it.
+  const [focusColId, setFocusColId] = useState<string | null>(null)
 
   // Card drag between columns (finding F4), now shared with the calendar via the
   // hook. Dropping into a bucket writes that option id onto the group-by property;
@@ -440,6 +552,33 @@ function CollectionBoard({
     if (id) setFocusRowId(id)
   }
 
+  // Manual column editing (board-authoring Slice 4): a board column IS an option on
+  // the group-by property, so add/rename/reorder are edits to `groupDef.options`
+  // persisted through `onUpdateSchema`. The trailing "No <name>" bucket is not an
+  // option (id === null) and carries no edit affordances. crypto.randomUUID mints the
+  // stable option id manual edits rely on — the same contract the AI accept path uses.
+  const canEditColumns = !!editable && !!onUpdateSchema
+  const writeOptions = (options: PropertyOption[]) => {
+    if (!onUpdateSchema) return
+    onUpdateSchema(schema.map((d) => (d.id === groupDef.id ? { ...d, options } : d)))
+  }
+  const addColumn = () => {
+    const opt: PropertyOption = { id: crypto.randomUUID(), label: 'New column' }
+    writeOptions([...(groupDef.options ?? []), opt])
+    setFocusColId(opt.id)
+  }
+  const renameColumn = (optId: string, label: string) => {
+    writeOptions((groupDef.options ?? []).map((o) => (o.id === optId ? { ...o, label } : o)))
+  }
+  const moveColumn = (optId: string, dir: 'left' | 'right') => {
+    const opts = [...(groupDef.options ?? [])]
+    const i = opts.findIndex((o) => o.id === optId)
+    const j = dir === 'left' ? i - 1 : i + 1
+    if (i < 0 || j < 0 || j >= opts.length) return
+    ;[opts[i], opts[j]] = [opts[j], opts[i]]
+    writeOptions(opts)
+  }
+
   // Hide the trailing "No <name>" bucket while it's empty — a fresh board then reads
   // as a clean set of just its status columns. It reappears the moment a card lands
   // there unset (a drag-out or a statusless add).
@@ -457,24 +596,60 @@ function CollectionBoard({
         {visibleGroups.map((group) => {
           const key = groupKey(group.id)
           const isOver = editable && drag?.active && overKey === key
+          // Column editing applies only to real option columns, never the null bucket.
+          const columnEditable = canEditColumns && group.id !== null
+          const optIndex = groupDef.options?.findIndex((o) => o.id === group.id) ?? -1
+          const optCount = groupDef.options?.length ?? 0
           return (
             <section
               key={key}
               ref={registerBucket(key)}
               className={[
-                'min-w-[13rem] flex-1 rounded-md border px-3 py-2 transition-colors',
+                'group/col min-w-[13rem] flex-1 rounded-md border px-3 py-2 transition-colors',
                 isOver
                   ? 'border-press-accent bg-press-accent-wash'
                   : 'border-press-hair bg-press-card/40',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5">
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <OptionDot color={group.color} />
-                  <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
-                    {group.label}
-                  </span>
+                  {columnEditable ? (
+                    <input
+                      aria-label={`Column name: ${group.label}`}
+                      value={group.label}
+                      autoFocus={group.id === focusColId}
+                      onChange={(e) => renameColumn(group.id as string, e.target.value)}
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase outline-none placeholder:text-press-faint"
+                    />
+                  ) : (
+                    <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
+                      {group.label}
+                    </span>
+                  )}
                 </span>
+                {columnEditable && (
+                  <span className="flex items-center opacity-0 transition-opacity group-hover/col:opacity-100 focus-within:opacity-100">
+                    <button
+                      type="button"
+                      aria-label={`Move column left: ${group.label}`}
+                      disabled={optIndex <= 0}
+                      onClick={() => moveColumn(group.id as string, 'left')}
+                      className="rounded px-0.5 text-press-faint leading-none hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move column right: ${group.label}`}
+                      disabled={optIndex < 0 || optIndex >= optCount - 1}
+                      onClick={() => moveColumn(group.id as string, 'right')}
+                      className="rounded px-0.5 text-press-faint leading-none hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                    >
+                      ›
+                    </button>
+                  </span>
+                )}
                 <span className="text-[0.65rem] text-press-muted tabular-nums">
                   {group.rows.length}
                 </span>
@@ -560,6 +735,18 @@ function CollectionBoard({
             </section>
           )
         })}
+
+        {/* Trailing "+ Add column" — appends a new option to the group-by property
+            and focuses its header for naming (board-authoring Slice 4). */}
+        {canEditColumns && (
+          <button
+            type="button"
+            onClick={addColumn}
+            className="min-w-[9rem] shrink-0 self-start rounded-md border border-dashed border-press-hair px-3 py-2 text-left text-xs text-press-muted transition-colors hover:border-press-accent hover:bg-press-accent-wash hover:text-press-ink"
+          >
+            + Add column
+          </button>
+        )}
       </div>
 
       {/* Floating clone that tracks the pointer — the lift. */}

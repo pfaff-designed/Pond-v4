@@ -25,6 +25,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import {
   createPage,
+  defineSchema,
   deletePage,
   getCollectionRows,
   getPage,
@@ -36,6 +37,7 @@ import { useWorkspace } from '@/lib/workspace/context'
 import {
   readSchema,
   readValues,
+  withSchema,
   withValue,
   ROW_TYPE,
   type PropertySchema,
@@ -62,6 +64,13 @@ export interface CollectionData {
   removeRow: (rowId: string) => void
   /** Optimistically rename a row (its page title), then persist. */
   renameRow: (rowId: string, title: string) => void
+  /**
+   * Optimistically replace the collection's property schema, then persist
+   * (board-authoring Slice 4 — manual column/property editing). Patches the
+   * `['page', collectionId]` cache so new columns / properties reflect at once;
+   * on failure it reconciles from server truth (invalidate), mirroring `setValue`.
+   */
+  updateSchema: (next: PropertySchema) => void
 }
 
 const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
@@ -197,6 +206,22 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [collectionId, queryClient, getSupabase]
   )
 
+  // Optimistically write the new schema into the collection page's ['page'] cache
+  // (from which `schema` is derived, so the board/table re-render immediately), then
+  // persist through the merge-safe `defineSchema`. Reconcile on failure.
+  const updateSchema = useMemo(
+    () => (next: PropertySchema) => {
+      if (!collectionId) return
+      queryClient.setQueryData<PondPage | null>(['page', collectionId], (prev) =>
+        prev ? { ...prev, props: withSchema(prev.props, next) } : prev
+      )
+      defineSchema(getSupabase(), collectionId, next).catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ['page', collectionId] })
+      })
+    },
+    [collectionId, queryClient, getSupabase]
+  )
+
   return {
     schema,
     rows,
@@ -205,5 +230,6 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     addRow,
     removeRow,
     renameRow,
+    updateSchema,
   }
 }
