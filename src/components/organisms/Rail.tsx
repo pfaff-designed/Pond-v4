@@ -140,6 +140,7 @@ export function RailView({
   canDrop,
   onMove,
 }: RailViewProps) {
+  const asideRef = useRef<HTMLElement>(null)
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
     (id: string) => (el: HTMLDivElement | null) => {
@@ -170,9 +171,14 @@ export function RailView({
         : LIFE_ID
 
   // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
-  // keep firing on the newly focused row.
+  // keep firing on the newly focused row. Guard on focus already living inside
+  // the rail (like the fallback effect below): this runs on every page-open /
+  // expand / ['pages'] refetch (visibleIds recomputes), and without the guard it
+  // yanks DOM focus out of the editor whenever the tree re-renders.
   useEffect(() => {
-    if (focusedId && visibleIds.has(focusedId)) rowRefs.current.get(focusedId)?.focus()
+    if (!focusedId || !visibleIds.has(focusedId)) return
+    if (!asideRef.current?.contains(document.activeElement)) return
+    rowRefs.current.get(focusedId)?.focus()
   }, [focusedId, visibleIds])
 
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
@@ -357,7 +363,10 @@ export function RailView({
     )
 
   return (
-    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pb-8 font-sans">
+    <aside
+      ref={asideRef}
+      className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pb-8 font-sans"
+    >
       {/* Pinned to the top-left: the wordmark stays put while the tree scrolls
           beneath it (sticky, with the paper bg so rows pass under cleanly). */}
       <div className="sticky top-0 z-10 flex items-baseline gap-2.5 bg-background px-2 pt-6 pb-4">
