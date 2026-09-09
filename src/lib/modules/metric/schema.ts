@@ -130,6 +130,7 @@ export type MetricBlock = z.infer<typeof metricSchema>
 export const metricDescriptor: ModuleDescriptor<MetricBlock> = {
   type: 'metric',
   schema: metricSchema,
+  paletteDescription: 'A compact labelled number that can update live from a checklist or table.',
   description:
     'A single labelled figure (with optional unit and up/down/flat trend). Use to surface one key number — a total, a balance, a count. ' +
     'A metric can be LIVE: set `source` to derive its value from a sibling block instead of a manual number — ' +

@@ -39,6 +39,8 @@ export type TableBlock = z.infer<typeof tableSchema>
 
 export const tableDescriptor: ModuleDescriptor<TableBlock> = {
   type: 'table',
+  paletteDescription:
+    'A grid of rows and columns for lists with several fields each — inventories, collections, budgets.',
   schema: tableSchema,
   description:
     'A structured table of rows and columns (plain text cells). Use for inventories, collections, and any list of items with several attributes each (name, quantity, location, …). Never write a markdown table inside a text block — use this instead. ' +

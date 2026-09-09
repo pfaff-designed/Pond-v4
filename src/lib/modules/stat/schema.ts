@@ -41,6 +41,7 @@ export type StatBlock = z.infer<typeof statSchema>
 export const statDescriptor: ModuleDescriptor<StatBlock> = {
   type: 'stat',
   schema: statSchema,
+  paletteDescription: 'One big headline number with a label and optional trend.',
   description:
     'A headline KPI figure: one big animated number with a label, optional number/currency/percent formatting, prefix/suffix text, an up/down delta, and a caption. Use for THE number a page leads with — revenue, weight, streak length. ' +
     '`delta` is a FRACTION of change vs the previous period (0.12 = up 12%, -0.05 = down 5%); for `format: "percent"` the `value` is also a fraction (0.62 = 62%). ' +

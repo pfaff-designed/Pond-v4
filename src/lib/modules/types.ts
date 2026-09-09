@@ -41,6 +41,13 @@ export interface ModuleDescriptor<T = unknown, Path extends string = NestedIdPat
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
   description: string
   /**
+   * Short (≤2 sentence) label for the block palette UI (UI-audit Slice 2). The
+   * long `description` above is the AI catalog text and reads too long in the
+   * picker; `palette.ts` prefers this when present and falls back to `description`.
+   * Keep it human, imperative, and terse — no schema/JSON detail.
+   */
+  paletteDescription?: string
+  /**
    * Full-fidelity text rendering of a block — the prompt body and the embedding
    * source. REQUIRED: a block the model cannot read here is silently destroyed on
    * the next wholesale `edit` (the model re-emits what it can see). Must render

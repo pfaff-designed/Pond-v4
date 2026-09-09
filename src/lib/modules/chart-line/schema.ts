@@ -19,6 +19,7 @@ export type ChartLineBlock = z.infer<typeof chartLineSchema>
 export const chartLineDescriptor: ModuleDescriptor<ChartLineBlock> = {
   type: 'chart-line',
   schema: chartLineSchema,
+  paletteDescription: 'A line chart for a value trending over time.',
   description:
     'A line chart: one or more numeric series plotted over an ordered x-axis. Use for a TREND OVER TIME — a value rising or falling across days/weeks/months. ' +
     'Data is a list of `points`, each `{ x: "<label>", values: { "<series>": <number> } }`; the series are the line names (share the same `x` labels across points to compare multiple lines). For time-series make `x` a date-parseable string like "2026-01". ' +
