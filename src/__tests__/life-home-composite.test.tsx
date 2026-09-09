@@ -91,7 +91,7 @@ describe('Life composite surface', () => {
     renderLife()
     // The overview still reads: the areas grid shows the top-level area.
     expect(await screen.findByText('Health')).toBeInTheDocument()
-    // Empty Life shows the add affordance (no blocks yet) — palette-first foot add.
+    // Empty Life shows the add affordance (no blocks yet) — text-default foot add.
     expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
     // No page-title chrome — Life is the overview, not a document editor.
     expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
@@ -105,26 +105,21 @@ describe('Life composite surface', () => {
     expect(await screen.findByText('Health')).toBeInTheDocument()
   })
 
-  it('the always-visible add opens the palette and inserts the picked module, persisting to the home row', async () => {
+  it('the always-visible add drops an empty text block ready to type — no palette (UI-audit Slice 2a)', async () => {
     renderLife()
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-    const filter = await screen.findByLabelText('Filter blocks')
-    fireEvent.change(filter, { target: { value: 'Table' } })
-    fireEvent.click(await screen.findByText('Table'))
-
-    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
-    // Written to the HOME row (id 'home-1'), not any area.
-    const [, , pageId, savedBlocks] = mockCommitBlocks.mock.calls[0]
-    expect(pageId).toBe('home-1')
-    expect((savedBlocks as Block[]).some((b) => b.type === 'table')).toBe(true)
+    // Text-default: an editable text block appears (in edit mode), ready to type…
+    expect(await screen.findByPlaceholderText('Write something…')).toBeInTheDocument()
+    // …and the button itself never opens the palette.
+    expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
   })
 
-  it('the palette inserts each module’s empty state (text, todo, table, metric, chart)', async () => {
-    // One render per module keeps each assertion isolated on a fresh empty Life.
-    // Kanban is deliberately absent — retired from creation (#19 slice 6), so it is no
-    // longer offered in the palette (view board mode supersedes it).
+  it('add → “/” summons the palette and inserts each module’s empty state onto the home row', async () => {
+    // The new flow (UI-audit Slice 2a): the foot add drops a text block; typing `/`
+    // as its first char summons the palette to swap type. One render per module keeps
+    // each assertion isolated on a fresh empty Life. Kanban is deliberately absent —
+    // retired from creation (#19 slice 6), so it is no longer offered in the palette.
     const cases: Array<{ name: string; type: string }> = [
-      { name: 'Text', type: 'text' },
       { name: 'Todo', type: 'todo' },
       { name: 'Table', type: 'table' },
       { name: 'Metric', type: 'metric' },
@@ -135,14 +130,23 @@ describe('Life composite surface', () => {
       mockCommitBlocks.mockClear()
       const { unmount } = renderLife()
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+      // Type `/` in the freshly-dropped text block to summon the palette.
+      const editor = await screen.findByPlaceholderText('Write something…')
+      fireEvent.change(editor, { target: { value: '/' } })
       const filter = await screen.findByLabelText('Filter blocks')
       fireEvent.change(filter, { target: { value: c.name } })
       // Pick the exact palette entry (scoped to the menu to avoid stray matches).
       const menu = screen.getByRole('menu', { name: 'Block picker' })
       fireEvent.click(within(menu).getByText(c.name))
-      await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
-      const saved = mockCommitBlocks.mock.calls[0][3] as Block[]
-      expect(saved.some((b) => b.type === c.type)).toBe(true)
+      // The pick persists to the HOME row (id 'home-1'), not any area.
+      await waitFor(
+        () => {
+          const call = mockCommitBlocks.mock.calls.find(([, , pageId]) => pageId === 'home-1')
+          expect(call).toBeTruthy()
+          expect((call![3] as Block[]).some((b) => b.type === c.type)).toBe(true)
+        },
+        { timeout: 2000 }
+      )
       unmount()
     }
   })
