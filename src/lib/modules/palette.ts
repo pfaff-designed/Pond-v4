@@ -52,7 +52,9 @@ const derivedItems: SlashMenuItem[] = Object.values(moduleDescriptors)
   .map((d) => ({
     id: d.type,
     name: d.type.charAt(0).toUpperCase() + d.type.slice(1).replace(/-/g, ' '),
-    description: d.description,
+    // Prefer the short palette label; fall back to the long AI catalog line
+    // (UI-audit Slice 2 — keeps the picker terse without degrading composition).
+    description: d.paletteDescription ?? d.description,
   }))
 
 // Board leads the collection-view family, ahead of the raw `view` (table) entry.

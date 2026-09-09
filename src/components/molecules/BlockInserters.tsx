@@ -9,8 +9,10 @@
  *   • <InsertBetween> — a quiet hairline BETWEEN blocks; hover reveals a `+` that
  *     inserts THERE (mid-page insertion). Unchanged from ticket-37.
  *   • <AddBlockButton> — a quiet but ALWAYS-VISIBLE "+ Add a block" at the foot of
- *     the page (ticket-44 §3), replacing the old text-only "+ Add text". Palette-
- *     first: it opens the picker directly rather than dropping a text block.
+ *     the page (ticket-44 §3). Text-default (UI-audit Slice 2a): a click drops an
+ *     empty text block ready to type; typing `/` in it summons the palette to swap
+ *     to any other block. No palette on this button itself — the clean
+ *     add→slash→pick flow. `InsertBetween` stays palette-first.
  *
  * One component, one palette, so authoring reads identically everywhere.
  */
@@ -57,41 +59,22 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
 }
 
 /**
- * The always-visible foot affordance (ticket-44 §3). Palette-first: it opens the
- * block picker directly and hands the pick to `onAdd`, which appends that module's
- * empty state. Present at rest (not hover-only) at the end of every editable page,
- * so adding a first block on an empty page is always one click away.
+ * The always-visible foot affordance (ticket-44 §3). Text-default (UI-audit
+ * Slice 2a): a click drops an empty text block ready to type — no palette on this
+ * button. The user types `/` in the new block to swap to any other block type.
+ * Present at rest (not hover-only) at the end of every editable page, so adding a
+ * first block on an empty page is always one click away.
  */
-export function AddBlockButton({ onAdd }: { onAdd: (item: SlashMenuItem) => void }) {
-  const [open, setOpen] = useState(false)
-  // State-backed element ref (not `useRef().current` — reading a ref in render is
-  // disallowed) so the portal-anchored palette can position against the button.
-  const [btnEl, setBtnEl] = useState<HTMLButtonElement | null>(null)
+export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="mt-4">
       <button
-        ref={setBtnEl}
         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
         aria-label="Add a block"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
+        onClick={onAdd}
       >
         + Add a block
       </button>
-      {open && (
-        // Portal-anchored to the button so the palette floats above the areas
-        // overview grid AND the terminal region (escapes their stacking contexts).
-        <SlashMenu
-          items={paletteItems}
-          onSelect={(item) => {
-            onAdd(item)
-            setOpen(false)
-          }}
-          onClose={() => setOpen(false)}
-          anchorEl={btnEl}
-        />
-      )}
     </div>
   )
 }

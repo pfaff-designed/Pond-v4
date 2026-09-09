@@ -154,9 +154,13 @@ export function BlockCanvas({
     onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
   }
 
-  // The foot palette-first add (ticket-44 §3): append the picked module's empty state.
-  function addBlockFromPalette(item: SlashMenuItem) {
-    insertBlockAt(blocks.length, item)
+  // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
+  // to type. Typing `/` in it summons the palette to swap to another block type.
+  function addTextBlock() {
+    const nb = emptyBlockForType('text')
+    if (!nb) return
+    markInserted(nb.id)
+    onChange([...blocks, nb])
   }
 
   function moveBlockAt(index: number, dir: 'up' | 'down') {
@@ -228,9 +232,9 @@ export function BlockCanvas({
         </div>
       </SiblingBlocksProvider>
 
-      {/* The always-visible palette-first foot add (ticket-44 §3) — replaces the
-          old text-only "+ Add text". */}
-      <AddBlockButton onAdd={addBlockFromPalette} />
+      {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
+          in it summons the palette to swap type. */}
+      <AddBlockButton onAdd={addTextBlock} />
     </PageLinkProvider>
   )
 }
