@@ -2,11 +2,12 @@
  * The Life home page is a real, composite page (ticket-44 §1).
  *
  * LifeOverviewPanel now renders Life's OWN blocks (the shared BlockCanvas editor)
- * BETWEEN the focal numeral and the areas grid, with the always-visible palette-
- * first "+ Add a block" foot affordance. Empty Life shows just the overview + that
- * add affordance. A block picked from the palette inserts that module's empty
- * state and persists it to the home row via the normal commitBlocks tail — while
- * the areas grid (the workspace) still reads below.
+ * BETWEEN the focal numeral and the areas grid, with the always-visible text-
+ * default "+ Add a block" foot affordance (UI-audit Slice 2a). Empty Life shows
+ * just the overview + that add affordance. The add drops an empty text block;
+ * typing `/` in it summons the palette to swap type, persisting to the home row
+ * via the normal commitBlocks tail — while the areas grid (the workspace) still
+ * reads below.
  */
 
 import React from 'react'
