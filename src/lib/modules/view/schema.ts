@@ -80,6 +80,8 @@ export type HydratedViewBlock = ViewBlock & { rows?: readonly ViewRow[] }
 export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   type: 'view',
   schema: viewSchema,
+  paletteDescription:
+    "An inline table, board, calendar, gallery, or gantt of a collection's pages.",
   description:
     "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, gallery, or gantt (a read-only timeline over Start→End date properties). Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids; `startDate`/`endDate` (date property ids) place gantt bars. Do not use to lay out ordinary prose — that's a text block.",
   // Serialize the CONFIG in full (the AI re-emits it, so every clause must be

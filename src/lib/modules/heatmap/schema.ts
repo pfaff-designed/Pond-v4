@@ -34,6 +34,7 @@ export type HeatmapBlock = z.infer<typeof heatmapSchema>
 export const heatmapDescriptor: ModuleDescriptor<HeatmapBlock> = {
   type: 'heatmap',
   schema: heatmapSchema,
+  paletteDescription: 'A calendar grid showing daily activity intensity.',
   description:
     'A calendar activity heatmap (GitHub-contributions grid): one cell per day, colour intensity by value, binned into week columns. Use for DAILY habit or activity density over weeks/months — workouts logged, pages read, practice sessions. ' +
     'Data is a list of `cells`, each `{ date: "YYYY-MM-DD", value: <number> }` — one entry per ACTIVE day (omit zero days; the grid fills the gaps). ' +
