@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 
 import { TimelineView } from './view'
 import type { TimelineBlock } from './schema'
@@ -56,6 +56,53 @@ export const Phases: Story = {
     await expect(canvas.getByRole('img', { name: 'Inspection: 2026-09-30' })).toBeInTheDocument()
     // Read-only: no drag bodies, no resize edge handles.
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * #57 regression: a YEAR of phases in a narrow card. The weekly baseline would
+ * be 52 axis labels on top of each other and a clipped right edge; the fix
+ * measures the track and thins the ticks, and the surface stays fully fluid
+ * (no horizontal scroll, nothing cut off).
+ */
+export const CrowdedYearNarrow: Story = {
+  args: {
+    data: {
+      id: 'tl3',
+      type: 'timeline',
+      title: 'Year plan',
+      caption: 'Four quarters',
+      items: [
+        { label: 'Q1 research', start: '2026-01-05', end: '2026-03-29' },
+        { label: 'Q2 build', start: '2026-03-30', end: '2026-06-28' },
+        { label: 'Q3 beta', start: '2026-06-29', end: '2026-09-27' },
+        { label: 'Q4 launch', start: '2026-09-28', end: '2027-01-03' },
+      ],
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 340 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    // The ResizeObserver measurement thins the axis — far fewer than 52 labels.
+    await waitFor(() => {
+      const labels = canvasElement.querySelectorAll('span.tabular-nums')
+      expect(labels.length).toBeGreaterThanOrEqual(2)
+      expect(labels.length).toBeLessThan(10)
+    })
+    // No two neighbouring date labels overlap.
+    const rects = Array.from(canvasElement.querySelectorAll<HTMLElement>('span.tabular-nums'))
+      .map((el) => el.getBoundingClientRect())
+      .sort((a, b) => a.left - b.left)
+    for (let i = 1; i < rects.length; i++) {
+      expect(rects[i].left).toBeGreaterThanOrEqual(rects[i - 1].right)
+    }
+    // And the chart fits its container — nothing to scroll, nothing cut off.
+    expect(canvasElement.scrollWidth).toBeLessThanOrEqual(canvasElement.clientWidth)
   },
 }
 

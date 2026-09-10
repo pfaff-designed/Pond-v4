@@ -26,7 +26,6 @@ import { VIEW_MODES, type ViewBlock, type ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { useCollectionRows } from './use-collection-rows'
 import {
-  addDays,
   applyView,
   displayValue,
   epochDay,
@@ -40,7 +39,7 @@ import {
 } from './apply'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
-import { formatTick, GANTT_BAR_SHELL } from './gantt-shared'
+import { buildTicks, formatTick, GANTT_BAR_SHELL } from './gantt-shared'
 import {
   coerceValue,
   optionForValue,
@@ -1046,17 +1045,14 @@ function CollectionGantt({
   const startDay = epochDay(rangeStart)
   const pct = (day: number) => ((day - startDay) / totalDays) * 100
 
-  // Weekly gridlines from the first day through the range end (Mon-agnostic — just
-  // every 7th day off the start), each labelled with its month/day.
-  const ticks: { iso: string; left: number }[] = []
-  for (let d = 0; d < totalDays; d += 7) {
-    const iso = addDays(rangeStart, d)
-    ticks.push({ iso, left: pct(epochDay(iso)) })
-  }
+  // Weekly-grid ticks from the first day through the range end (Mon-agnostic —
+  // just every 7th day off the start), each labelled with its month/day and
+  // thinned to the measured track width so labels never overlap (#57).
+  const ticks = buildTicks(rangeStart, totalDays, trackPx)
 
   return (
-    <div className="overflow-x-auto" {...containerHandlers}>
-      <div className={`min-w-[28rem] ${drag?.active ? 'cursor-grabbing select-none' : ''}`}>
+    <div {...containerHandlers}>
+      <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
         {/* Axis header — weekly tick labels aligned to their gridlines. */}
         <div className="relative mb-1 ml-40 h-4">
           {ticks.map((t) => (

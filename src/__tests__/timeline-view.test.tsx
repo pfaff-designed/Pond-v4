@@ -78,6 +78,50 @@ describe('TimelineView', () => {
   })
 })
 
+describe('TimelineView responsive axis (#57 — no clipping, no overlapping dates)', () => {
+  it('fits its container: no horizontal-scroll wrapper, no fixed minimum width', () => {
+    const { container } = render(<TimelineView data={block} />)
+    expect(container.querySelector('.overflow-x-auto')).toBeNull()
+    expect(container.innerHTML).not.toContain('min-w-[28rem]')
+  })
+
+  it('thins axis tick labels on a narrow measured track so they cannot overlap', () => {
+    // A year-long block: the weekly baseline would be 52 labels. On a 300px
+    // track that is ~5.8px per label — pure overlap. The measured width must
+    // thin the ticks down to what actually fits (shared buildTicks math).
+    const spy = jest
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 300 } as DOMRect)
+    try {
+      const { container } = render(
+        <TimelineView
+          data={{
+            id: 'tl3',
+            type: 'timeline',
+            title: 'Year plan',
+            items: [
+              { label: 'H1', start: '2026-01-05', end: '2026-06-28' },
+              { label: 'H2', start: '2026-06-29', end: '2027-01-03' },
+            ],
+          }}
+        />
+      )
+      // Tick labels are the tabular-nums spans in the axis header.
+      const labels = container.querySelectorAll('span.tabular-nums')
+      expect(labels.length).toBeGreaterThanOrEqual(2)
+      expect(labels.length).toBeLessThanOrEqual(Math.floor(300 / 44) + 1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('keeps the weekly baseline while the track is unmeasured (jsdom width 0)', () => {
+    const { container } = render(<TimelineView data={block} />)
+    // Range Sep 1 → Sep 30: weekly ticks at Sep 1/8/15/22/29 — all five present.
+    expect(container.querySelectorAll('span.tabular-nums')).toHaveLength(5)
+  })
+})
+
 describe('shared gantt fragments (#11 acceptance 6 — one source, two renderers)', () => {
   it('both the gantt view mode and the timeline module import the SAME formatTick + bar shell', async () => {
     const shared = await import('@/lib/modules/view/gantt-shared')
