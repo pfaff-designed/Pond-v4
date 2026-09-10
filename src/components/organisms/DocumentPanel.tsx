@@ -41,6 +41,8 @@ import {
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
+import { useContentWidth } from '@/lib/layout/content-width'
 import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -59,6 +61,10 @@ export function DocumentPanel() {
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
   const { flushScope } = useDeletionUndo()
+  // #58: the editor column's user-set width — persisted, clamped, adjusted by
+  // the ContentWidthHandle on the column's right edge. Hook lives above the
+  // early returns (rules of hooks); only the editor branch below renders it.
+  const { width: contentWidth, setWidth: setContentWidth, commitWidth } = useContentWidth()
 
   // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
   // Flush pending block toasts (staged by BlockCanvas) when leaving a page — a
@@ -256,7 +262,22 @@ export function DocumentPanel() {
   // ── Editor (+ children grid when the node has sub-pages) ──────────────────────
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-8 py-8">
+      {/* #58: the column's max-width is user-set (was a fixed max-w-2xl) — the
+          handle on the right edge drags/arrow-keys it, useContentWidth clamps
+          and persists it. Everything inside (the #57 timeline's %-positioned
+          bars included) reflows because the width is applied here, at the
+          column wrapper. */}
+      <div
+        className="relative mx-auto px-8 py-8"
+        style={{ maxWidth: contentWidth }}
+        data-testid="page-column"
+      >
+        <ContentWidthHandle
+          className="absolute inset-y-8 right-0"
+          width={contentWidth}
+          onWidthChange={setContentWidth}
+          onWidthCommit={commitWidth}
+        />
         {/* Breadcrumb shows the ancestor path (ticket-25); the title input below
             is the editable tail, so the crumb never duplicates the current name. */}
         <Breadcrumb crumbs={crumbs} onNavigate={navigateCrumb} />
