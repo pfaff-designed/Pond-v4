@@ -26,6 +26,7 @@ import {
   suggestFollowupsTool,
 } from './tools'
 import { stepBudgetForPhase } from './step-budget'
+import { scopingContextNote } from './scoping'
 import { lifecycleContextNote } from '@/lib/conversation/lifecycle'
 import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
@@ -118,6 +119,13 @@ export async function POST(req: Request) {
   // counter rides the envelope, so this fires regardless of model mood.
   const lifecycleNote = resolutions.lifecycle ? lifecycleContextNote(resolutions.lifecycle) : null
   if (lifecycleNote) contextBlocks.push(lifecycleNote)
+  // Scope-before-build gate (#59): a BARE structural-creation request ("create
+  // a project" with no subject) must draw scoping questions, never an invented
+  // project filled in blind. Deterministic — the detector reads the latest user
+  // text, so this fires regardless of model mood; the prompt's SCOPING section
+  // handles the paraphrases the heuristic can't see.
+  const scopingNote = scopingContextNote(userText)
+  if (scopingNote) contextBlocks.push(scopingNote)
   if (contextBlocks.length > 0) {
     system = buildSystemPrompt(contextBlocks.join('\n\n'))
   }
