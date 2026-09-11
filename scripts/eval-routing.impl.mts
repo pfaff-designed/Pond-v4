@@ -286,6 +286,31 @@ const SCENARIOS: Scenario[] = [
     text: 'make me a keyboard shortcuts cheat sheet for VS Code',
     note: '#28: a reference / cheat-sheet grid is freeform → table block, not a collection.',
   },
+
+  // ── #63: the table Pond says it needs must materialize in THIS turn ──
+  // Captured live repro (2026-09-10): both prompts produced a create_page whose
+  // prose referenced the table ("Add a row per task…", "one row per exercise")
+  // but whose blocks carried NO table — a prose-only shell. define_schema has no
+  // target (the page doesn't exist yet) and the turn ends at the client-resolved
+  // create_page call, so the structure must be scaffolded NOW as a table block.
+  {
+    name: '#63 new tracker from Home (no page exists) → create_page WITH a table block',
+    expect: 'create_page',
+    expectBlockType: 'table',
+    expectNoMdTableInText: true,
+    ctx: 'The user is on their Home view. No current page.\n\n[Workspace outline] (existing pages a new page could live under)\n- [a1] Area: Personal\n- [a2] Area: Health\n- [a3] Area: Finances',
+    text: 'set up a tracker for my house maintenance tasks — each one has a status, a cost estimate, and a deadline',
+    note: '#63 repro A: no tracker page exists, so define_schema has no target id — the named fields must land now as table columns, never a shell promising rows later.',
+  },
+  {
+    name: '#63 "start a workout log" → create_page WITH a table block',
+    expect: 'create_page',
+    expectBlockType: 'table',
+    expectNoMdTableInText: true,
+    ctx: 'The user is on their Home view. No current page.',
+    text: 'start a workout log for me — I want to record date, exercise, sets, and weight',
+    note: '#63 repro C: a brand-new log page must be born with its table (date/exercise/sets/weight as columns).',
+  },
 ]
 
 type Result = {
