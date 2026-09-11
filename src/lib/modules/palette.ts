@@ -110,6 +110,10 @@ export function emptyBlockForType(type: string): Block | null {
     // #11: standalone timeline (Gantt) — a calm-empty start, like the charts.
     case 'timeline':
       return { id, type: 'timeline', title: '', items: [] }
+    // #61: empty url = the authoring state; the view renders the upload
+    // affordance until a file lands.
+    case 'image':
+      return { id, type: 'image', url: '' }
     default:
       return null
   }

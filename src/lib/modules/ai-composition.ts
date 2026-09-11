@@ -37,6 +37,7 @@ import { heatmapSchema } from './heatmap/schema'
 import { statSchema } from './stat/schema'
 import { timelineSchema } from './timeline/schema'
 import { viewSchema } from './view/schema'
+import { imageSchema } from './image/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -120,6 +121,11 @@ const timelineData = timelineSchema.omit({ id: true })
 // child pages, its groupBy/sort/filter reference existing property ids). So the
 // emit shape is a flat top-level id strip, like a chart.
 const viewData = viewSchema.omit({ id: true })
+// #61: an image/file block references an already-uploaded attachment by URL —
+// no nested id-bearing collections, so a flat top-level id strip is the whole
+// omit-chain (the module-nested-ids fence pins it). The catalog description
+// tells the model to only use URLs it has actually seen, never invented ones.
+const imageData = imageSchema.omit({ id: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -134,6 +140,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   statData,
   timelineData,
   viewData,
+  imageData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -213,6 +220,9 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   // #19: a page can be created WITH a view block. No block binds to a view, but
   // the union lists every content type for parity with the persisted union.
   viewData.extend({ bindKey }),
+  // #61: a page can be created WITH an image/file block (an attachment the
+  // user already uploaded). Nothing binds to it — parity with the persisted union.
+  imageData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 

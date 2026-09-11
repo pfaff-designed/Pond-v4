@@ -45,6 +45,9 @@ import {
 } from '@/components/molecules/TextSelectionPopover'
 import { VoiceInputButton } from '@/components/atoms/VoiceInputButton'
 import { CsvAttachmentPill } from '@/components/atoms/CsvAttachmentPill'
+import { FileAttachmentChip } from '@/components/atoms/FileAttachmentChip'
+import { useAttachments } from '@/lib/attachments/use-attachments'
+import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { GhostSuggestion, useGhostKeyHandler } from '@/components/atoms/GhostSuggestion'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
@@ -689,25 +692,40 @@ export function AITerminal() {
     reader.readAsText(file)
   }, [])
 
+  // ── File attachments (#61) ────────────────────────────────────────────────
+  // Images + documents upload to Supabase Storage and ride the outgoing message
+  // as FileUIParts (so Pond can see them); a .csv keeps its dedicated inline-
+  // context path above (parsed, never uploaded). Rejections (bad type /
+  // oversize / failed upload) surface through the notify toast.
+  const {
+    attachments,
+    addFile,
+    remove: removeAttachment,
+    clear: clearAttachments,
+    fileParts,
+    isUploading,
+  } = useAttachments({ onReject: (message) => requestNotify({ message }) })
+  const attachInputRef = useRef<HTMLInputElement>(null)
+
+  const handlePickedFiles = useCallback(
+    (files: FileList | null) => {
+      for (const file of Array.from(files ?? [])) {
+        if (file.name.toLowerCase().endsWith('.csv')) processCsvFile(file)
+        else void addFile(file)
+      }
+    },
+    [processCsvFile, addFile]
+  )
+
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
-      const file = Array.from(e.dataTransfer.files).find((f) => f.name.endsWith('.csv'))
-      if (file) processCsvFile(file)
+      handlePickedFiles(e.dataTransfer.files)
     },
-    [processCsvFile]
+    [handlePickedFiles]
   )
 
-  const handleCsvPaperclip = useCallback(() => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.csv,text/csv'
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) processCsvFile(file)
-    }
-    input.click()
-  }, [processCsvFile])
+  const handleAttachClick = useCallback(() => attachInputRef.current?.click(), [])
 
   // ── Ghost suggestion from t39 followup chips (ticket-40 §5) ──────────────
   const ghostSuggestion = useMemo<string | null>(() => {
@@ -1084,18 +1102,41 @@ export function AITerminal() {
 
       // Send the open node so the server can auto-inject its context (Track C),
       // plus the card resolutions so replay carries the user's decisions (t19)
-      // and the route reads this turn's lifecycle phase (t39).
-      sendMessage({ text: finalText }, { body: { nodeId, nodeType, resolutions: outgoing } })
+      // and the route reads this turn's lifecycle phase (t39). Pending file
+      // attachments (#61) ride along as FileUIParts — single-turn, cleared on
+      // send like the CSV/quote context. An attachment-only send omits `text`
+      // entirely so no empty text part reaches the model.
+      const body = { nodeId, nodeType, resolutions: outgoing }
+      if (fileParts.length > 0) {
+        sendMessage(finalText ? { text: finalText, files: fileParts } : { files: fileParts }, {
+          body,
+        })
+        clearAttachments()
+      } else {
+        sendMessage({ text: finalText }, { body })
+      }
       setInput('')
       setGhostDismissed(false)
     },
-    [nextLifecycle, resolutions, sendMessage, nodeId, nodeType, quoteCtx, csvAttachment]
+    [
+      nextLifecycle,
+      resolutions,
+      sendMessage,
+      nodeId,
+      nodeType,
+      quoteCtx,
+      csvAttachment,
+      fileParts,
+      clearAttachments,
+    ]
   )
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isStreaming) return
+    // An attachment can go out without accompanying text (#61); everything
+    // else still requires a message.
+    if ((!text && attachments.length === 0) || isStreaming) return
 
     const command = parseCommand(text)
     if (command === 'clear') {
@@ -1115,7 +1156,7 @@ export function AITerminal() {
     }
 
     sendText(text)
-  }, [input, isStreaming, handleClear, handleHandoff, sendText])
+  }, [input, isStreaming, attachments.length, handleClear, handleHandoff, sendText])
 
   // A follow-up chip / question option click sends its text as the next message
   // (ticket-39). Ignored mid-stream so a click can't interleave a turn.
@@ -1601,6 +1642,16 @@ export function AITerminal() {
             .filter((p) => p.type === 'text')
             .map((p) => (p as { type: 'text'; text: string }).text)
             .join('')
+          // Sent file attachments (#61): a user message's file parts render as
+          // inert chips (no remove — the message is already out).
+          const attachmentParts = (
+            message.parts as Array<{
+              type: string
+              url?: string
+              mediaType?: string
+              filename?: string
+            }>
+          ).filter((p) => p.type === 'file' && typeof p.url === 'string')
           const changeBatches = (message.parts as Array<{ type: string }>).filter(
             isProposeChangesPart
           )
@@ -1645,6 +1696,18 @@ export function AITerminal() {
 
           return (
             <div key={message.id} className="space-y-3">
+              {message.role === 'user' && attachmentParts.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {attachmentParts.map((p, i) => (
+                    <FileAttachmentChip
+                      key={`${message.id}-file-${i}`}
+                      filename={p.filename ?? 'attachment'}
+                      url={p.url!}
+                      mediaType={p.mediaType ?? ''}
+                    />
+                  ))}
+                </div>
+              )}
               {text &&
                 (message.role === 'user' ? (
                   // The user's line is a quiet aside — left-aligned on the shared reading edge,
@@ -2056,6 +2119,20 @@ export function AITerminal() {
               />
             </div>
           )}
+          {/* Uploaded file attachments (#61) — removable before send */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {attachments.map((a) => (
+                <FileAttachmentChip
+                  key={a.path}
+                  filename={a.filename}
+                  url={a.url}
+                  mediaType={a.mediaType}
+                  onRemove={() => removeAttachment(a.path)}
+                />
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-4 py-3">
             {/* ticket-41: the threshold. The sage baseline DRAWS in left→right on
                 focus (motion-focus-draw's ::after) rather than the border flipping
@@ -2126,12 +2203,27 @@ export function AITerminal() {
               disabled={isStreaming || !isReady}
               className="self-end mb-2"
             />
-            {/* CSV paperclip (ticket-40 F16) */}
+            {/* Attachment paperclip (#61, generalized from the ticket-40 F16
+                CSV-only clip): images/pdf/txt/md upload to storage and ride the
+                message; .csv keeps its inline-context path. The input is a
+                persistent hidden element (not a transient createElement) so the
+                picker is testable and re-picking the same file re-fires. */}
+            <input
+              ref={attachInputRef}
+              type="file"
+              multiple
+              accept={`.csv,text/csv,${ATTACHMENT_ACCEPT}`}
+              className="hidden"
+              onChange={(e) => {
+                handlePickedFiles(e.target.files)
+                e.target.value = ''
+              }}
+            />
             <button
               type="button"
-              aria-label="Attach CSV file"
-              title="Attach CSV file"
-              onClick={handleCsvPaperclip}
+              aria-label="Attach a file"
+              title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
+              onClick={handleAttachClick}
               disabled={isStreaming || !isReady}
               className="self-end mb-2 text-press-faint hover:text-press-accent transition-colors disabled:opacity-40"
             >
@@ -2141,7 +2233,12 @@ export function AITerminal() {
             </button>
             <button
               onClick={handleSend}
-              disabled={isStreaming || !input.trim() || !isReady}
+              disabled={
+                isStreaming ||
+                (!input.trim() && attachments.length === 0) ||
+                isUploading ||
+                !isReady
+              }
               className={cn(
                 pressKickerClass,
                 'self-end pb-2 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent'

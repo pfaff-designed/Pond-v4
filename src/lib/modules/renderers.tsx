@@ -24,6 +24,7 @@ import { HeatmapView } from './heatmap/view'
 import { StatView } from './stat/view'
 import { TimelineView } from './timeline/view'
 import { ViewView } from './view/view'
+import { ImageView } from './image/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -51,6 +52,9 @@ export const moduleRenderers = {
   timeline: { view: TimelineView },
   // #19: collection view. Slice-2 stub renderer; real renderers land in slices 3–4.
   view: { view: ViewView },
+  // #61: uploaded image / file attachment. Editing folds into the view (the
+  // empty state IS the upload affordance), so no separate editor facet.
+  image: { view: ImageView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

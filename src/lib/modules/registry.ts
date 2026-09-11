@@ -22,6 +22,7 @@ import { heatmapDescriptor } from './heatmap/schema'
 import { statDescriptor } from './stat/schema'
 import { timelineDescriptor } from './timeline/schema'
 import { viewDescriptor } from './view/schema'
+import { imageDescriptor } from './image/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -43,6 +44,8 @@ export const moduleDescriptors = {
   timeline: timelineDescriptor,
   // #19: an inline view of a collection's rows (table/board/calendar/gallery).
   view: viewDescriptor,
+  // #61: an uploaded image / file attachment, referenced by storage URL.
+  image: imageDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors
