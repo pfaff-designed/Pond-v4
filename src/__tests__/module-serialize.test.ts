@@ -126,6 +126,17 @@ const samples: Record<string, Block> = {
       { label: 'Inspection', start: '2026-09-30' },
     ],
   },
+  // #61: image/file attachment — serialize carries filename, caption AND url
+  // (full fidelity: the model must be able to re-emit the block on a wholesale
+  // edit without losing the stored file reference).
+  image: {
+    id: 'b1',
+    type: 'image',
+    url: 'https://cdn.example/user-1/board.png',
+    filename: 'board.png',
+    mediaType: 'image/png',
+    caption: 'The workbench',
+  },
 }
 
 function serialize(block: Block): string {

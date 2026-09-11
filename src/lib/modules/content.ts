@@ -26,6 +26,7 @@ import { heatmapSchema } from './heatmap/schema'
 import { statSchema } from './stat/schema'
 import { timelineSchema } from './timeline/schema'
 import { viewSchema } from './view/schema'
+import { imageSchema } from './image/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -45,6 +46,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   timelineSchema,
   // #19: the inline collection view block (config only; rows are child pages).
   viewSchema,
+  // #61: an uploaded image / file attachment, referenced by storage URL.
+  imageSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

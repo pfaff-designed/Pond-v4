@@ -89,6 +89,16 @@ const samples: Record<string, ModuleData> = {
       { label: 'Inspection', start: '2026-09-30' },
     ],
   },
+  // #61: an image/file attachment carries no nested id-bearing collections —
+  // just the storage URL + display metadata, so a flat top-level id strip is
+  // the whole omit-chain.
+  image: {
+    type: 'image',
+    url: 'https://cdn.example/user-1/board.png',
+    filename: 'board.png',
+    mediaType: 'image/png',
+    caption: 'The workbench',
+  },
 }
 
 /**
