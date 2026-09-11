@@ -52,6 +52,11 @@ import {
 } from '@/lib/properties/schema'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
+// Deliberate cycle with renderers.tsx (via the modal's read-only ModuleView
+// dispatch) — same shape as page/view.tsx's, and safe for the same reason: the
+// component is only *invoked* at React render time, never at module eval.
+import { CardPreviewModal } from '@/components/organisms/CardPreviewModal'
+import { shouldOpenCardFromClick } from './card-click'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -71,21 +76,43 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
     : undefined
 
+  // Card → page preview (#64). A row IS a page, so the clicked card's row id is
+  // the page to preview; the modal fetches its blocks and offers "Open page".
+  // `preview` survives close so the exit transition keeps its content.
+  const [preview, setPreview] = useState<{ id: string; title: string } | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const openCard = useCallback(
+    (rowId: string) => {
+      setPreview({ id: rowId, title: rows.find((r) => r.id === rowId)?.title ?? '' })
+      setPreviewOpen(true)
+    },
+    [rows]
+  )
+
   return (
-    <CollectionView
-      config={data}
-      schema={schema}
-      rows={rows}
-      isLoading={isLoading}
-      editable={editable}
-      linked={!!data.collectionId}
-      onEdit={setValue}
-      onAddRow={addRow}
-      onRemoveRow={removeRow}
-      onRenameRow={renameRow}
-      onConfigChange={onConfigChange}
-      onUpdateSchema={editable ? updateSchema : undefined}
-    />
+    <>
+      <CollectionView
+        config={data}
+        schema={schema}
+        rows={rows}
+        isLoading={isLoading}
+        editable={editable}
+        linked={!!data.collectionId}
+        onEdit={setValue}
+        onAddRow={addRow}
+        onRemoveRow={removeRow}
+        onRenameRow={renameRow}
+        onConfigChange={onConfigChange}
+        onUpdateSchema={editable ? updateSchema : undefined}
+        onOpenCard={openCard}
+      />
+      <CardPreviewModal
+        rowId={preview?.id ?? null}
+        fallbackTitle={preview?.title}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
+    </>
   )
 }
 
@@ -112,6 +139,10 @@ export interface CollectionViewProps {
   /** Replace the collection's property schema — manual column + property editing
    *  (board-authoring Slice 4). Absent on read-only / Storybook hosts. */
   onUpdateSchema?: (next: PropertySchema) => void
+  /** Open a card's page preview (#64) — a row IS a page, so this receives the
+   *  row id. Present on the live host (ViewView mounts the modal); absent on
+   *  Storybook/static renders, where cards stay plain (no dead affordance). */
+  onOpenCard?: (rowId: string) => void
 }
 
 /** A calm Press placeholder — the shared shell for every non-drawing state. */
@@ -136,6 +167,7 @@ export function CollectionView({
   onRenameRow,
   onConfigChange,
   onUpdateSchema,
+  onOpenCard,
 }: CollectionViewProps) {
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
@@ -180,6 +212,7 @@ export function CollectionView({
           onRemoveRow={onRemoveRow}
           onRenameRow={onRenameRow}
           onUpdateSchema={onUpdateSchema}
+          onOpenCard={onOpenCard}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
@@ -504,6 +537,7 @@ function CollectionBoard({
   onRemoveRow,
   onRenameRow,
   onUpdateSchema,
+  onOpenCard,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
@@ -514,6 +548,7 @@ function CollectionBoard({
   onRemoveRow?: (rowId: string) => void
   onRenameRow?: (rowId: string, title: string) => void
   onUpdateSchema?: (next: PropertySchema) => void
+  onOpenCard?: (rowId: string) => void
 }) {
   const grouped = useMemo(() => groupRows(rows, schema, groupBy), [rows, schema, groupBy])
   const groupKey = (id: string | null) => id ?? NULL_BUCKET
@@ -665,10 +700,22 @@ function CollectionBoard({
                   return (
                     <li
                       key={row.id}
+                      // Click-to-preview (#64): a click on the card's passive body
+                      // opens its page preview; clicks on the card's own controls
+                      // (drag handle, title input, ×, ↗) stay theirs — the pure
+                      // filter decides. Keyboard access rides the ↗ button below.
+                      onClick={
+                        onOpenCard
+                          ? (e) => {
+                              if (shouldOpenCardFromClick(e.target)) onOpenCard(row.id)
+                            }
+                          : undefined
+                      }
                       className={[
                         'group/card relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
                         'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
+                        onOpenCard ? 'cursor-pointer' : '',
                       ].join(' ')}
                     >
                       {editable && (
@@ -707,6 +754,19 @@ function CollectionBoard({
                           </div>
                         )}
                       </div>
+                      {onOpenCard && (
+                        // The keyboard-reachable twin of the card-body click — the
+                        // quiet ↗ the F27 linked cards taught. Hover/focus reveals it.
+                        <button
+                          type="button"
+                          aria-label={`Open card: ${row.title || 'untitled'}`}
+                          title="Preview page"
+                          onClick={() => onOpenCard(row.id)}
+                          className="mt-0.5 shrink-0 leading-none text-press-accent/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-press-accent focus-visible:opacity-100"
+                        >
+                          ↗
+                        </button>
+                      )}
                       {editable && onRemoveRow && (
                         <button
                           type="button"
