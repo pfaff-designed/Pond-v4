@@ -88,9 +88,12 @@ export function SavePickerModal({ isOpen, messages, onClose }: SavePickerModalPr
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 bg-zinc-50">
           <span className="text-sm font-semibold text-zinc-800">Save as…</span>
+          {/* Fixed square + grid centering so the ✕ glyph sits optically centered
+              on both axes (#60) — a bare inline button leaves the glyph's line box
+              floating off-center. Same pattern as TreeRow CRUD / BlockCanvas ×. */}
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-700 text-sm leading-none"
+            className="grid h-5 w-5 place-items-center rounded text-zinc-400 hover:text-zinc-700 text-sm leading-none"
             aria-label="Close"
           >
             ✕

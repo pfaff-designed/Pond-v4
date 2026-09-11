@@ -252,6 +252,22 @@ describe('SavePickerModal', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('centers the close (✕) glyph on both axes in a fixed square (#60)', async () => {
+    // jsdom does no layout, so this pins the centering CONTRACT instead: the
+    // house pattern for glyph buttons (TreeRow CRUD, BlockCanvas delete) is a
+    // fixed square box with both-axis grid/flex centering. A bare inline
+    // button leaves the ✕ line box floating off-center vertically (#60).
+    mockFetchResponse = { extractions: [] }
+    wrap(<SavePickerModal isOpen={true} messages={[]} onClose={jest.fn()} />)
+    await waitFor(() => screen.getByText(/nothing to save/i))
+
+    const closeBtn = screen.getByRole('button', { name: /close/i })
+    // Fixed square hit box…
+    expect(closeBtn).toHaveClass('h-5', 'w-5')
+    // …with both-axis centering and no line-box slack under the glyph.
+    expect(closeBtn).toHaveClass('grid', 'place-items-center', 'leading-none')
+  })
+
   it('can save multiple items independently', async () => {
     mockFetchResponse = {
       extractions: [
