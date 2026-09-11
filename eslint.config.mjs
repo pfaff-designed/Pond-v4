@@ -8,6 +8,19 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // Keep source files small and AI-navigable: warn when a file exceeds 250
+    // lines of code (blank lines and comments don't count). Warn, not error,
+    // because a number of files predate this rule — flip to "error" once those
+    // offenders are refactored below the cap. Tests, stories, and throwaway
+    // prototypes are exempted in the override block at the end of this config.
+    rules: {
+      "max-lines": [
+        "warn",
+        { max: 250, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -34,7 +47,21 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "off",
     },
   },
-  ...storybook.configs["flat/recommended"]
+  ...storybook.configs["flat/recommended"],
+  {
+    // The 250-LOC cap targets shippable source. Tests and stories are
+    // legitimately long (fixtures, play sequences), and src/app/proto/** is
+    // throwaway visual-prototype code — exempt all three. Placed last so it
+    // wins over the enforce block and the storybook preset above.
+    files: [
+      "**/*.test.{ts,tsx}",
+      "**/*.stories.{ts,tsx}",
+      "src/app/proto/**/*.{ts,tsx}",
+    ],
+    rules: {
+      "max-lines": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
