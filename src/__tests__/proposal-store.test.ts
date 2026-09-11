@@ -185,14 +185,14 @@ describe('resolve — settles a decision per proposal type', () => {
 })
 
 describe('resolve — per-type aux placement', () => {
-  it('changes: accumulates skipped, appends skipReasons, merges refIds', () => {
+  it('changes: accumulates skipped, appends skipReasons', () => {
     let s = proposalReducer(initialProposalState(), {
       kind: 'resolve',
       type: 'changes',
       id: 'pc1',
       index: 0,
       decision: 'accepted',
-      aux: { skipped: 1, skipReasons: ['no page open'], refIds: { m: 'id-1' } },
+      aux: { skipped: 1, skipReasons: ['no page open'] },
     })
     // A second partial-accept click on the same batch adds to the count/reasons.
     s = proposalReducer(s, {
@@ -200,11 +200,10 @@ describe('resolve — per-type aux placement', () => {
       type: 'changes',
       id: 'pc1',
       decision: 'accepted',
-      aux: { skipped: 2, skipReasons: ['blocked by schema'], refIds: { c: 'id-2' } },
+      aux: { skipped: 2, skipReasons: ['blocked by schema'] },
     })
     expect(projectResolutions(s).skipped).toEqual({ pc1: 3 })
     expect(s.skipReasons).toEqual({ pc1: ['no page open', 'blocked by schema'] })
-    expect(s.proposalRefIds).toEqual({ pc1: { m: 'id-1', c: 'id-2' } })
   })
 
   it('schemas: inertRollups projects only when non-empty', () => {
@@ -238,26 +237,16 @@ describe('resolve — per-type aux placement', () => {
     expect(projectResolutions(s).viewReplaced).toEqual({ cv1: true })
   })
 
-  it('promotions snapshot + links error are session-scoped (never projected)', () => {
-    let s = proposalReducer(initialProposalState(), {
+  it('promotions snapshot is session-scoped (never projected)', () => {
+    const s = proposalReducer(initialProposalState(), {
       kind: 'resolve',
       type: 'promotions',
       id: 'pt1',
       decision: 'accepted',
       aux: { snapshot: { columns: ['A', 'B'], rowCount: 3, tableTitle: 'Gear' } },
     })
-    s = proposalReducer(s, {
-      kind: 'resolve',
-      type: 'links',
-      id: 'lr1',
-      decision: 'rejected',
-      aux: { error: 'no such row' },
-    })
     expect(s.promotionSnapshot.pt1).toEqual({ columns: ['A', 'B'], rowCount: 3, tableTitle: 'Gear' })
-    expect(s.linkErrors).toEqual({ lr1: 'no such row' })
-    const projected = projectResolutions(s)
-    expect(projected).not.toHaveProperty('promotionSnapshot')
-    expect(projected).not.toHaveProperty('linkErrors')
+    expect(projectResolutions(s)).not.toHaveProperty('promotionSnapshot')
   })
 
   it('changes with aux but no index applies batch aux without writing a decision', () => {
@@ -270,6 +259,58 @@ describe('resolve — per-type aux placement', () => {
     })
     expect(projectResolutions(s).changes).toEqual({})
     expect(projectResolutions(s).skipped).toEqual({ pc1: 2 })
+  })
+})
+
+describe('revert — undo an optimistic decision after a failed write', () => {
+  it('deletes a single-key decision (create/schema/row/promotion/view/link)', () => {
+    let s = proposalReducer(initialProposalState(), {
+      kind: 'resolve',
+      type: 'creates',
+      id: 'cp1',
+      decision: 'accepted',
+    })
+    expect(projectResolutions(s).creates).toEqual({ cp1: 'accepted' })
+    s = proposalReducer(s, { kind: 'revert', type: 'creates', id: 'cp1' })
+    expect(projectResolutions(s).creates).toEqual({})
+  })
+
+  it('deletes one propose_changes key by index, leaving siblings settled', () => {
+    let s = proposalReducer(initialProposalState(), {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'accepted',
+    })
+    s = proposalReducer(s, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 1,
+      decision: 'accepted',
+    })
+    s = proposalReducer(s, { kind: 'revert', type: 'changes', id: 'pc1', index: 0 })
+    expect(projectResolutions(s).changes).toEqual({ 'pc1:1': 'accepted' })
+  })
+
+  it('is a no-op for an absent key', () => {
+    const s = initialProposalState()
+    expect(proposalReducer(s, { kind: 'revert', type: 'schemas', id: 'nope' })).toBe(s)
+  })
+})
+
+describe('noteLinkError — session-scoped link_records failure reason', () => {
+  it('sets an error and clears it when error is omitted (never projected)', () => {
+    let s = proposalReducer(initialProposalState(), {
+      kind: 'noteLinkError',
+      id: 'lr1',
+      error: 'no such row',
+    })
+    expect(s.linkErrors).toEqual({ lr1: 'no such row' })
+    expect(projectResolutions(s)).not.toHaveProperty('linkErrors')
+    s = proposalReducer(s, { kind: 'noteLinkError', id: 'lr1' })
+    expect(s.linkErrors).toEqual({})
   })
 })
 
@@ -425,6 +466,5 @@ describe('reseed', () => {
     expect(s.linkErrors).toEqual({})
     expect(s.promotionSnapshot).toEqual({})
     expect(s.createParent).toEqual({})
-    expect(s.proposalRefIds).toEqual({})
   })
 })

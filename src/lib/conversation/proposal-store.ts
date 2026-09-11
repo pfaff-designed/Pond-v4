@@ -78,10 +78,6 @@ export interface ResolveAux {
   /** propose_changes: the per-skip human reasons, APPENDED (session-scoped;
    *  after reload only the count survives via `skipped`). */
   skipReasons?: string[]
-  /** propose_changes: bindKey→minted-id memory for same-batch refs (ticket-31),
-   *  MERGED per proposal so metric+checklist bind across separate Accept clicks.
-   *  Session-scoped; never projected. */
-  refIds?: Record<string, string>
   /** define_schema: NAMES of proposed rollups that couldn't link to a local
    *  relation (#52 fix 1). SET only when non-empty. Projected via
    *  `schemaInertRollups` (carried only when the map is non-empty). */
@@ -92,9 +88,6 @@ export interface ResolveAux {
   /** promote_table: the preview frozen at accept time, so the resolved card
    *  keeps its confirmation after the live table is replaced. Session-scoped. */
   snapshot?: PromotionSnapshot
-  /** link_records: a failed-accept reason (no such row / duplicate title). The
-   *  card re-arms with it. Session-scoped; never projected. */
-  error?: string
 }
 
 /**
@@ -102,7 +95,9 @@ export interface ResolveAux {
  * `ConversationResolutions` logical groups so projection stays a near-identity;
  * the rest is session-scoped aux the envelope does NOT persist (destination
  * pickers, skip reasons, link errors, promotion snapshots, ref-id memory) —
- * these must never leak into the projected envelope.
+ * these must never leak into the projected envelope. (Same-batch ref-id memory
+ * stays a terminal `useRef` — it is mutated in place mid-write across accept
+ * clicks and is never rendered/projected/reseeded, so it does not belong here.)
  */
 export interface ProposalState {
   // ── persisted-derived (projected) ──────────────────────────────────────────
@@ -152,8 +147,6 @@ export interface ProposalState {
   linkTarget: Record<string, string>
   /** promote_table chosen target page, by toolCallId. */
   promotionTarget: Record<string, string>
-  /** Same-batch bindKey→minted-id memory per proposal (ticket-31). */
-  proposalRefIds: Record<string, Record<string, string>>
 }
 
 /**
@@ -175,6 +168,13 @@ export type ProposalAction =
       decision: ProposalDecision
       aux?: ResolveAux
     }
+  /** Undo an optimistic decision after its async write failed — deletes the
+   *  decision key so the card re-arms (mirrors the accept handlers' catch-block
+   *  `delete next[id]`). `index` targets one propose_changes key. */
+  | { kind: 'revert'; type: ProposalType; id: string; index?: number }
+  /** Set (or, with `error` omitted, clear) a link_records failed-accept reason —
+   *  the card re-arms with the message. Session-scoped; never projected. */
+  | { kind: 'noteLinkError'; id: string; error?: string }
   | { kind: 'answerQuestion'; id: string; answer: string; via: QuestionResolution['via'] }
   | { kind: 'stampTarget'; id: string; target: ProposalTarget }
   | { kind: 'pickDestination'; type: ProposalType; id: string; destinationId: string }
@@ -208,7 +208,6 @@ export function initialProposalState(): ProposalState {
     viewTarget: {},
     linkTarget: {},
     promotionTarget: {},
-    proposalRefIds: {},
   }
 }
 
@@ -262,12 +261,6 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
               [id]: [...(state.skipReasons[id] ?? []), ...aux.skipReasons],
             }
           }
-          if (aux.refIds) {
-            next.proposalRefIds = {
-              ...state.proposalRefIds,
-              [id]: { ...(state.proposalRefIds[id] ?? {}), ...aux.refIds },
-            }
-          }
         } else if (type === 'schemas') {
           // Carried only when non-empty (an absent map is the old flat note, so a
           // legacy transcript stays byte-clean).
@@ -282,13 +275,35 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
           if (aux.snapshot) {
             next.promotionSnapshot = { ...state.promotionSnapshot, [id]: aux.snapshot }
           }
-        } else if (type === 'links') {
-          if (aux.error !== undefined) {
-            next.linkErrors = { ...state.linkErrors, [id]: aux.error }
-          }
         }
       }
       return next
+    }
+
+    case 'revert': {
+      const { type, id } = action
+      if (type === 'changes') {
+        if (action.index === undefined) return state
+        const key = `${id}:${action.index}`
+        if (!(key in state.changes)) return state
+        const changes = { ...state.changes }
+        delete changes[key]
+        return { ...state, changes }
+      }
+      if (!(id in decisionMap(state, type))) return state
+      const nextMap = { ...decisionMap(state, type) }
+      delete nextMap[id]
+      return { ...state, [type]: nextMap }
+    }
+
+    case 'noteLinkError': {
+      if (action.error === undefined) {
+        if (!(action.id in state.linkErrors)) return state
+        const linkErrors = { ...state.linkErrors }
+        delete linkErrors[action.id]
+        return { ...state, linkErrors }
+      }
+      return { ...state, linkErrors: { ...state.linkErrors, [action.id]: action.error } }
     }
 
     case 'answerQuestion': {
