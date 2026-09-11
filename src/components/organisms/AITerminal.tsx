@@ -1,7 +1,7 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
-import { useRef, useEffect, useMemo, useState, useCallback } from 'react'
+import { useRef, useEffect, useMemo, useState, useReducer, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
@@ -81,7 +81,6 @@ import {
 } from '@/components/molecules/PromoteTableProposalCard'
 import { ConfigureViewProposalCard } from '@/components/molecules/ConfigureViewProposalCard'
 import { LinkRecordsProposalCard } from '@/components/molecules/LinkRecordsProposalCard'
-import type { ProposalStatus } from '@/components/atoms/ProposalActions'
 import {
   changeStatus,
   unresolvedProposalIds,
@@ -92,13 +91,8 @@ import {
   LINK_RECORDS_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
+import { ASK_QUESTION_TYPE, SUGGEST_FOLLOWUPS_TYPE } from '@/lib/conversation/parts'
 import {
-  ASK_QUESTION_TYPE,
-  SUGGEST_FOLLOWUPS_TYPE,
-  type QuestionResolutions,
-} from '@/lib/conversation/parts'
-import {
-  idleLifecycle,
   detectLifecycleIntent,
   detectLifecycleSignal,
   applyLifecycleSignal,
@@ -107,6 +101,11 @@ import {
   isLifecycleActive,
   type LifecycleState,
 } from '@/lib/conversation/lifecycle'
+import {
+  proposalReducer,
+  initialProposalState,
+  projectResolutions,
+} from '@/lib/conversation/proposal-store'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -367,174 +366,51 @@ export function AITerminal() {
   // so we can't drive the card's resolved state off the SDK part — the local maps
   // below track the user's decision instead.
   //
-  // propose_changes decisions, keyed `${toolCallId}:${changeIndex}` so each card in a
-  // batch resolves independently (partial accept). Same no-execute caveat as above —
-  // this local map, not the SDK part, drives each card's status. `changeSkipped`
-  // records how many accepted changes failed the accept-time re-validation gate.
-  const [changeDecisions, setChangeDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [changeSkipped, setChangeSkipped] = useState<Record<string, number>>({})
-  // Fix-1 (F1a): the per-skip human reasons for each batch, shown on the card as
-  // "couldn't place — <reason>". Session-scoped (not persisted in the resolutions
-  // envelope): after reload the count survives via `changeSkipped` and the card
-  // degrades to the generic notice.
-  const [changeSkipReasons, setChangeSkipReasons] = useState<Record<string, string[]>>({})
-  // Proposal-time target page per batch (BUG 1/2 fix): recorded the moment the
-  // part streams in, so Accept commits there even after the user navigates away.
-  const [changeTargets, setChangeTargets] = useState<Record<string, ProposalTarget>>({})
-  // Same-batch binding memory (ticket-31): bindKey→minted-id per proposal, shared
-  // across per-change Accept clicks so a metric and its keyed checklist bind even
-  // when accepted separately, in either order. A ref (not state): consumed inside
-  // the accept write only, never rendered. Session-scoped by design — lost on
-  // reload, where a later ref degrades to the clean manual fallback.
+  // All proposal client-state now lives in ONE deep, pure, jest-pinned reducer
+  // (Deep Proposal Store, Candidate 1) — see lib/conversation/proposal-store. The
+  // ~20 flat useState maps this replaced are destructured back into their old local
+  // names below, so every READER downstream is unchanged; only WRITES dispatch.
+  const [proposals, dispatch] = useReducer(proposalReducer, undefined, initialProposalState)
+  // Same-batch bindKey→minted-id memory (ticket-31) stays a ref, not reducer state:
+  // writeAcceptedChanges mutates it in place across accept clicks; never rendered/projected/reseeded.
   const proposalRefIds = useRef<Record<string, Record<string, string>>>({})
-
-  // create_page decisions + the user-chosen destination, keyed by toolCallId. Same
-  // no-execute caveat as propose_changes: the local maps (not the SDK part) drive
-  // each card's resolved state and picked parent. `undefined` in the parent map means
-  // "not yet touched" — the card falls back to the AI-proposed parent (pre-resolved
-  // against the pages list) until the user overrides it.
-  const [createDecisions, setCreateDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [createParent, setCreateParent] = useState<Record<string, string>>({})
-
-  // define_schema decisions + the user-chosen target page, keyed by toolCallId
-  // (#17 slice 5). Same no-execute caveat as create_page: the local maps (not the
-  // SDK part) drive each card's resolved state and picked target. `undefined` in
-  // the target map means "not yet touched" — the card falls back to the
-  // AI-proposed pageId until the user overrides it.
-  const [schemaDecisions, setSchemaDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [schemaTarget, setSchemaTarget] = useState<Record<string, string>>({})
-  // #52 fix 1 — per accepted define_schema, the NAMES of proposed rollups whose relation
-  // did NOT resolve to a local relation. Frozen at accept time (the write computes it),
-  // it drives the card's honest "1 rollup couldn't be linked" receipt and rides the
-  // resolutions envelope so the model stamp carries the same honest note.
-  const [schemaInertRollups, setSchemaInertRollups] = useState<Record<string, string[]>>({})
-
-  // add_row decisions + the user-chosen target collection, keyed by toolCallId
-  // (#18). Same no-execute caveat as define_schema: the local maps (not the SDK
-  // part) drive each card's resolved state and picked collection. `undefined` in
-  // the target map means "not yet touched" — the card falls back to the
-  // AI-proposed collectionId until the user overrides it.
-  const [rowDecisions, setRowDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [rowTarget, setRowTarget] = useState<Record<string, string>>({})
-
-  // configure_view decisions + the user-chosen target collection, keyed by
-  // toolCallId (#19 slice 5). Same no-execute caveat as add_row: the local maps
-  // (not the SDK part) drive each card's resolved state and picked collection.
-  // `undefined` in the target map means "not yet touched" — the card falls back to
-  // the AI-proposed pageId until the user overrides it.
-  const [viewDecisions, setViewDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [viewTarget, setViewTarget] = useState<Record<string, string>>({})
-  // #52 fix 2 — per accepted configure_view, whether it REPLACED an existing view (a
-  // collection shows one active view). Frozen at accept time (the write returns it), it
-  // drives the card's "switched the active view" receipt and rides the envelope so the
-  // model stamp says the same and doesn't claim the two views coexist.
-  const [viewReplaced, setViewReplaced] = useState<Record<string, boolean>>({})
-
-  // link_records decisions + the user-chosen source collection, keyed by
-  // toolCallId (#40). Same no-execute caveat as add_row. `linkErrors` carries a
-  // failed accept's message (no such row / duplicate title — resolution is
-  // strict, a dangling id is never written): the card re-arms with the reason.
-  // Session-scoped like changeSkipReasons; only settled decisions persist.
-  const [linkDecisions, setLinkDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [linkTarget, setLinkTarget] = useState<Record<string, string>>({})
-  const [linkErrors, setLinkErrors] = useState<Record<string, string>>({})
-
-  // promote_table decisions + the user-chosen target page, keyed by toolCallId
-  // (#29). Same no-execute caveat as the other proposal maps: the local maps (not
-  // the SDK part) drive each card's resolved state and picked page. `undefined` in
-  // the target map means "not yet touched" — the card falls back to the AI-proposed
-  // pageId until the user overrides it.
-  const [promotionDecisions, setPromotionDecisions] = useState<Record<string, ProposalStatus>>({})
-  const [promotionTarget, setPromotionTarget] = useState<Record<string, string>>({})
-  // A promote_table card previews columns READ from the host page's live table —
-  // but accepting REPLACES that table with a view, so the live preview then reads
-  // as null. Freeze the preview at accept time (keyed by toolCallId) so the resolved
-  // card still shows its "Table converted" confirmation instead of vanishing.
-  const [promotionSnapshot, setPromotionSnapshot] = useState<
-    Record<string, { columns: PromotedColumn[]; rowCount: number; tableTitle?: string }>
-  >({})
-
-  // Branch-pause question-card answers, keyed by toolCallId (ticket-39). Same
-  // no-execute caveat as the proposal maps: the SDK part stays input-available,
-  // so this local map drives the card's answered/inert state and rides the
-  // resolutions envelope so an answered card stays inert across reloads.
-  const [questionAnswers, setQuestionAnswers] = useState<QuestionResolutions>({})
-
-  // The project lifecycle phase (ticket-39). Drives the context-bar phase word
-  // and the per-turn step budget; persists in the same envelope so a returning
-  // session resumes mid-arc. Advanced deterministically from the user's messages
-  // (the user calls the shot) — the model does the adaptive-grill reasoning.
-  const [lifecycle, setLifecycle] = useState<LifecycleState>(idleLifecycle)
+  const {
+    changes: changeDecisions,
+    creates: createDecisions,
+    schemas: schemaDecisions,
+    rows: rowDecisions,
+    promotions: promotionDecisions,
+    views: viewDecisions,
+    links: linkDecisions,
+    skipped: changeSkipped,
+    targets: changeTargets,
+    questions: questionAnswers,
+    schemaInertRollups,
+    viewReplaced,
+    lifecycle,
+    skipReasons: changeSkipReasons,
+    linkErrors,
+    promotionSnapshot,
+    createParent,
+    schemaTarget,
+    rowTarget,
+    viewTarget,
+    linkTarget,
+    promotionTarget,
+  } = proposals
 
   // The persistable projection of the decision maps (ticket-19): saved with the
   // transcript so cards stay resolved across reloads, and sent with each chat
   // request so the model sees which proposals were actioned. 'pending' is never
   // stored, only settled decisions. Ticket-39 folds question answers + the
   // lifecycle phase into the SAME envelope.
-  const resolutions: ConversationResolutions = useMemo(() => {
-    const settled = (map: Record<string, ProposalStatus>) =>
-      Object.fromEntries(Object.entries(map).filter(([, v]) => v !== 'pending')) as Record<
-        string,
-        ProposalDecision
-      >
-    return {
-      changes: settled(changeDecisions),
-      creates: settled(createDecisions),
-      schemas: settled(schemaDecisions),
-      rows: settled(rowDecisions),
-      promotions: settled(promotionDecisions),
-      views: settled(viewDecisions),
-      links: settled(linkDecisions),
-      skipped: changeSkipped,
-      targets: changeTargets,
-      questions: questionAnswers,
-      // #52 — additive honesty maps; carried only when non-empty so a legacy transcript
-      // stays byte-clean (absent ⇒ the old flat notes).
-      ...(Object.keys(schemaInertRollups).length > 0 ? { schemaInertRollups } : {}),
-      ...(Object.keys(viewReplaced).length > 0 ? { viewReplaced } : {}),
-      // Only carry the lifecycle when a project is in flight (keeps ordinary-chat
-      // transcripts clean); the route defaults an absent phase to idle chat.
-      ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
-    }
-  }, [
-    changeDecisions,
-    createDecisions,
-    schemaDecisions,
-    rowDecisions,
-    promotionDecisions,
-    viewDecisions,
-    linkDecisions,
-    changeSkipped,
-    changeTargets,
-    questionAnswers,
-    schemaInertRollups,
-    viewReplaced,
-    lifecycle,
-  ])
+  const resolutions: ConversationResolutions = useMemo(
+    () => projectResolutions(proposals),
+    [proposals]
+  )
 
   const resetResolutions = useCallback(() => {
-    setChangeDecisions({})
-    setChangeSkipped({})
-    setChangeSkipReasons({})
-    setChangeTargets({})
-    setCreateDecisions({})
-    setCreateParent({})
-    setSchemaDecisions({})
-    setSchemaTarget({})
-    setSchemaInertRollups({})
-    setRowDecisions({})
-    setRowTarget({})
-    setPromotionDecisions({})
-    setPromotionTarget({})
-    setPromotionSnapshot({})
-    setViewDecisions({})
-    setViewTarget({})
-    setViewReplaced({})
-    setLinkDecisions({})
-    setLinkTarget({})
-    setLinkErrors({})
-    setQuestionAnswers({})
-    setLifecycle(idleLifecycle())
+    dispatch({ kind: 'reset' })
   }, [])
 
   // Record a question-card answer (ticket-39): stamps the local map, which rides
@@ -542,7 +418,7 @@ export function AITerminal() {
   // turn (applyResolutions stamps it as a synthetic tool result).
   const answerQuestion = useCallback(
     (toolCallId: string, answer: string, via: QuestionAnswerVia) => {
-      setQuestionAnswers((prev) => ({ ...prev, [toolCallId]: { answer, via } }))
+      dispatch({ kind: 'answerQuestion', id: toolCallId, answer, via })
     },
     []
   )
@@ -836,23 +712,11 @@ export function AITerminal() {
         setMessages(conversation.messages)
       }
       // Restore card decisions so historical proposal cards render resolved
-      // (inert) instead of re-arming with live buttons (ticket-19).
-      setChangeDecisions(conversation.resolutions.changes ?? {})
-      setChangeSkipped(conversation.resolutions.skipped ?? {})
-      setChangeTargets(conversation.resolutions.targets ?? {})
-      setCreateDecisions(conversation.resolutions.creates ?? {})
-      setSchemaDecisions(conversation.resolutions.schemas ?? {})
-      setRowDecisions(conversation.resolutions.rows ?? {})
-      setPromotionDecisions(conversation.resolutions.promotions ?? {})
-      setViewDecisions(conversation.resolutions.views ?? {})
-      setLinkDecisions(conversation.resolutions.links ?? {})
-      // #52 — restore the honesty maps so a reloaded card keeps its honest receipt.
-      setSchemaInertRollups(conversation.resolutions.schemaInertRollups ?? {})
-      setViewReplaced(conversation.resolutions.viewReplaced ?? {})
-      // Ticket-39: restore answered question cards + the lifecycle phase so an
-      // answered branch stays inert and a returning session resumes mid-arc.
-      setQuestionAnswers(conversation.resolutions.questions ?? {})
-      if (conversation.resolutions.lifecycle) setLifecycle(conversation.resolutions.lifecycle)
+      // (inert) instead of re-arming with live buttons (ticket-19), plus the #52
+      // honesty maps and the ticket-39 question answers + lifecycle phase, so a
+      // returning session resumes mid-arc. One dispatch; the reducer restores only
+      // the persisted-derived fields and leaves session-scoped aux empty.
+      dispatch({ kind: 'reseed', resolutions: conversation.resolutions })
       setIsReady(true)
     })().catch(console.error)
   }, [setMessages, getSupabase, workspace])
@@ -886,7 +750,6 @@ export function AITerminal() {
       .filter(isProposeChangesPart)
       .filter((p) => p.state === 'input-available' && !changeTargets[p.toolCallId])
     if (unstamped.length === 0) return
-    const stamps: Record<string, ProposalTarget> = {}
     for (const part of unstamped) {
       const resolved = resolveStampTarget({
         targetPageId: part.input?.targetPageId,
@@ -896,18 +759,11 @@ export function AITerminal() {
         openNodeName: nodeName,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
-      // unstamped (no safe target; accept skips).
-      if (resolved !== 'defer' && resolved !== null) stamps[part.toolCallId] = resolved
+      // unstamped (no safe target; accept skips). The reducer's stampTarget is
+      // write-once, so a later run never overwrites an earlier stamp.
+      if (resolved !== 'defer' && resolved !== null)
+        dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-    if (Object.keys(stamps).length === 0) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- records the arrival of streamed tool parts (an external-system event), not a derived-state computation; guarded to fire once per toolCallId
-    setChangeTargets((prev) => {
-      const next = { ...prev }
-      for (const [id, target] of Object.entries(stamps)) {
-        if (!next[id]) next[id] = target
-      }
-      return next
-    })
   }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
@@ -1064,7 +920,7 @@ export function AITerminal() {
   const sendText = useCallback(
     (text: string) => {
       const advanced = nextLifecycle(text)
-      setLifecycle(advanced)
+      dispatch({ kind: 'advanceLifecycle', lifecycle: advanced })
       const outgoing: ConversationResolutions = isLifecycleActive(advanced)
         ? { ...resolutions, lifecycle: advanced }
         : { ...resolutions, lifecycle: undefined }
@@ -1146,12 +1002,9 @@ export function AITerminal() {
   // applyProposedChanges skips anything that fails blockSchema, so the returned
   // `skipped` count surfaces a "couldn't apply" notice rather than a corrupt write.
   const decideChanges = useCallback(
-    (toolCallId: string, indices: number[], decision: ProposalStatus) => {
-      setChangeDecisions((prev) => {
-        const next = { ...prev }
-        for (const i of indices) next[`${toolCallId}:${i}`] = decision
-        return next
-      })
+    (toolCallId: string, indices: number[], decision: ProposalDecision) => {
+      for (const i of indices)
+        dispatch({ kind: 'resolve', type: 'changes', id: toolCallId, index: i, decision })
     },
     []
   )
@@ -1173,14 +1026,13 @@ export function AITerminal() {
         refIds: (proposalRefIds.current[toolCallId] ??= {}),
       })
       if (result.skipped > 0) {
-        setChangeSkipped((prev) => ({
-          ...prev,
-          [toolCallId]: (prev[toolCallId] ?? 0) + result.skipped,
-        }))
-        setChangeSkipReasons((prev) => ({
-          ...prev,
-          [toolCallId]: [...(prev[toolCallId] ?? []), ...result.skippedReasons],
-        }))
+        dispatch({
+          kind: 'resolve',
+          type: 'changes',
+          id: toolCallId,
+          decision: 'accepted',
+          aux: { skipped: result.skipped, skipReasons: result.skippedReasons },
+        })
       }
       // Fix-1 (F12): a toast receipt for every accept — honest about applied AND
       // skipped counts, with an Open action to the page the batch landed on. The
@@ -1281,7 +1133,7 @@ export function AITerminal() {
   const acceptCreatePage = useCallback(
     async (toolCallId: string, part: CreatePagePart['input'], selectedParentId: string) => {
       if (!part?.title || !part.type) return
-      setCreateDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({ kind: 'resolve', type: 'creates', id: toolCallId, decision: 'accepted' })
       try {
         // A selected option id is a real page id (UUID); TOP_LEVEL_VALUE = no parent.
         // createPageFromProposal resolves either a UUID or a title, so passing the id
@@ -1312,11 +1164,7 @@ export function AITerminal() {
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('create_page failed', err)
-        setCreateDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
-        })
+        dispatch({ kind: 'revert', type: 'creates', id: toolCallId })
       }
     },
     [getSupabase, queryClient, router, workspace, basePath]
@@ -1332,7 +1180,7 @@ export function AITerminal() {
     async (toolCallId: string, part: DefineSchemaPart['input'], selectedTargetId: string) => {
       const properties = part?.properties ?? []
       if (!selectedTargetId || properties.length === 0) return
-      setSchemaDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({ kind: 'resolve', type: 'schemas', id: toolCallId, decision: 'accepted' })
       try {
         // #20: resolve a relation def's proposed target NAME to the matching
         // collection's id, and a rollup's rolled property NAME to its id within the
@@ -1348,7 +1196,13 @@ export function AITerminal() {
         // #52 fix 1 — freeze which rollups couldn't link to a local relation, so the
         // card receipt is honest and the model stamp (via the envelope) says the same.
         if (inertRollups.length > 0) {
-          setSchemaInertRollups((prev) => ({ ...prev, [toolCallId]: inertRollups }))
+          dispatch({
+            kind: 'resolve',
+            type: 'schemas',
+            id: toolCallId,
+            decision: 'accepted',
+            aux: { inertRollups },
+          })
         }
         // Optimistic seed: merge the freshly-written schema into the target page's
         // cached props (via the reserved-key merge helper, never a raw overwrite),
@@ -1362,11 +1216,7 @@ export function AITerminal() {
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('define_schema failed', err)
-        setSchemaDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
-        })
+        dispatch({ kind: 'revert', type: 'schemas', id: toolCallId })
       }
     },
     [getSupabase, queryClient, workspace, allPages]
@@ -1383,7 +1233,7 @@ export function AITerminal() {
     async (toolCallId: string, part: AddRowPart['input'], selectedCollectionId: string) => {
       const rowProps = part?.props ?? {}
       if (!selectedCollectionId) return
-      setRowDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({ kind: 'resolve', type: 'rows', id: toolCallId, decision: 'accepted' })
       try {
         await addRowFromProposal(
           getSupabase(),
@@ -1394,11 +1244,7 @@ export function AITerminal() {
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('add_row failed', err)
-        setRowDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
-        })
+        dispatch({ kind: 'revert', type: 'rows', id: toolCallId })
       }
     },
     [getSupabase, queryClient, workspace]
@@ -1424,8 +1270,13 @@ export function AITerminal() {
       const blockId = selectedTargetId === part?.pageId ? part?.blockId : undefined
       // Freeze the preview BEFORE the write drops the live table, so the resolved
       // card keeps showing its columns + "Table converted" line.
-      setPromotionSnapshot((prev) => ({ ...prev, [toolCallId]: preview }))
-      setPromotionDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({
+        kind: 'resolve',
+        type: 'promotions',
+        id: toolCallId,
+        decision: 'accepted',
+        aux: { snapshot: preview },
+      })
       try {
         await promoteTableFromProposal(
           getSupabase(),
@@ -1438,11 +1289,7 @@ export function AITerminal() {
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('promote_table failed', err)
-        setPromotionDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
-        })
+        dispatch({ kind: 'revert', type: 'promotions', id: toolCallId })
       }
     },
     [getSupabase, queryClient, workspace]
@@ -1463,12 +1310,8 @@ export function AITerminal() {
       const relation = part?.relation
       const toRows = part?.toRows ?? []
       if (!selectedCollectionId || !fromRow || !relation || toRows.length === 0) return
-      setLinkErrors((prev) => {
-        const next = { ...prev }
-        delete next[toolCallId]
-        return next
-      })
-      setLinkDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({ kind: 'noteLinkError', id: toolCallId })
+      dispatch({ kind: 'resolve', type: 'links', id: toolCallId, decision: 'accepted' })
       try {
         const linked = await linkRecordsFromProposal(
           getSupabase(),
@@ -1484,15 +1327,12 @@ export function AITerminal() {
         // Surface the failure ON the card (its message names the unresolvable or
         // duplicate title) and revert to pending so the user can retry.
         console.error('link_records failed', err)
-        setLinkErrors((prev) => ({
-          ...prev,
-          [toolCallId]: err instanceof Error ? err.message : 'Could not link those records',
-        }))
-        setLinkDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
+        dispatch({
+          kind: 'noteLinkError',
+          id: toolCallId,
+          error: err instanceof Error ? err.message : 'Could not link those records',
         })
+        dispatch({ kind: 'revert', type: 'links', id: toolCallId })
       }
     },
     [getSupabase, queryClient, workspace]
@@ -1515,7 +1355,7 @@ export function AITerminal() {
       const linked = !!part?.targetCollection
       const host = linked ? nodeId : selectedTargetId
       if (!host) return
-      setViewDecisions((prev) => ({ ...prev, [toolCallId]: 'accepted' }))
+      dispatch({ kind: 'resolve', type: 'views', id: toolCallId, decision: 'accepted' })
       try {
         const { replaced } = await configureViewFromProposal(
           getSupabase(),
@@ -1533,17 +1373,20 @@ export function AITerminal() {
         )
         // #52 fix 2 — a second configure_view SWITCHES the one active view. Freeze that
         // so the card receipt + model stamp say "switched", never claim they coexist.
-        if (replaced) setViewReplaced((prev) => ({ ...prev, [toolCallId]: true }))
+        if (replaced)
+          dispatch({
+            kind: 'resolve',
+            type: 'views',
+            id: toolCallId,
+            decision: 'accepted',
+            aux: { replaced: true },
+          })
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', host] })
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('configure_view failed', err)
-        setViewDecisions((prev) => {
-          const next = { ...prev }
-          delete next[toolCallId]
-          return next
-        })
+        dispatch({ kind: 'revert', type: 'views', id: toolCallId })
       }
     },
     [getSupabase, queryClient, workspace, nodeId]
@@ -1748,11 +1591,21 @@ export function AITerminal() {
                     selectedParentId={selectedParentId}
                     parentOptions={parentOptions}
                     onParentChange={(id) =>
-                      setCreateParent((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'creates',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
                     onReject={() =>
-                      setCreateDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'creates',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
@@ -1790,11 +1643,21 @@ export function AITerminal() {
                     unresolvableRollups={unresolvableRollups}
                     resolvedInertRollups={schemaInertRollups[part.toolCallId]}
                     onTargetChange={(id) =>
-                      setSchemaTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'schemas',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
-                      setSchemaDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'schemas',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
@@ -1822,11 +1685,21 @@ export function AITerminal() {
                     selectedTargetId={selectedTargetId}
                     targetOptions={collectionOptions}
                     onTargetChange={(id) =>
-                      setRowTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'rows',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
-                      setRowDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'rows',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
@@ -1852,7 +1725,14 @@ export function AITerminal() {
                 // Accepting replaces the table with a view, so the live preview then
                 // reads null — fall back to the snapshot frozen at accept time so the
                 // resolved card keeps its columns + "Table converted" line.
-                const preview = livePreview ?? promotionSnapshot[part.toolCallId]
+                // The store keeps the frozen snapshot structurally (columns:
+                // readonly unknown[]) to stay React-free; it never inspects columns,
+                // so reading them back as the terminal's PromotedColumn[] is safe.
+                const preview =
+                  livePreview ??
+                  (promotionSnapshot[part.toolCallId] as
+                    | { columns: PromotedColumn[]; rowCount: number; tableTitle?: string }
+                    | undefined)
                 // No resolvable table AND no snapshot (still loading, or a stale/
                 // hallucinated id): hold the card back rather than show an empty one.
                 if (!preview) return null
@@ -1868,13 +1748,23 @@ export function AITerminal() {
                     selectedTargetId={selectedTargetId}
                     targetOptions={tableHostOptions}
                     onTargetChange={(id) =>
-                      setPromotionTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'promotions',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() =>
                       acceptPromoteTable(part.toolCallId, input, selectedTargetId, preview)
                     }
                     onReject={() =>
-                      setPromotionDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'promotions',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
@@ -1914,11 +1804,21 @@ export function AITerminal() {
                     targetOptions={collectionOptions}
                     destinationLabel={input.targetCollection ? 'Draw rows from' : 'Configure on'}
                     onTargetChange={(id) =>
-                      setViewTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'views',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
-                      setViewDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'views',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
@@ -1955,11 +1855,21 @@ export function AITerminal() {
                     selectedTargetId={selectedTargetId}
                     targetOptions={collectionOptions}
                     onTargetChange={(id) =>
-                      setLinkTarget((prev) => ({ ...prev, [part.toolCallId]: id }))
+                      dispatch({
+                        kind: 'pickDestination',
+                        type: 'links',
+                        id: part.toolCallId,
+                        destinationId: id,
+                      })
                     }
                     onAccept={() => acceptLinkRecords(part.toolCallId, input, selectedTargetId)}
                     onReject={() =>
-                      setLinkDecisions((prev) => ({ ...prev, [part.toolCallId]: 'rejected' }))
+                      dispatch({
+                        kind: 'resolve',
+                        type: 'links',
+                        id: part.toolCallId,
+                        decision: 'rejected',
+                      })
                     }
                   />
                 )
