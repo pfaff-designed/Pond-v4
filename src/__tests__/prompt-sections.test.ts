@@ -93,7 +93,10 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(s).toMatch(/WAYFINDING/)
     expect(s).toMatch(/agrees? to.*BEFORE anything is scaffolded/i)
     expect(s).toMatch(/BUILD-OUT/)
-    expect(s).toMatch(/separate tool batches/i)
+    // #59: build-out lands the whole structure in one reply — client-resolved
+    // proposal cards end the turn, so "separate batches" stalled mid-scaffold.
+    expect(s).toMatch(/one continuous pass/i)
+    expect(s).toMatch(/never stop after the first card/i)
     expect(s).toMatch(/ask_question/)
   })
 
@@ -127,6 +130,21 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(s).toMatch(/append-only/i)
     expect(s).toMatch(/normal propose_changes gate|NORMAL propose_changes/i)
     expect(s).toMatch(/never invent/i)
+  })
+
+  it('scopes before building (#59): bare creation requests draw questions, clear ones build, and the build lands in one pass', () => {
+    const s = PROMPT_SECTIONS.SCOPING
+    // AC1: a bare "create a project" draws scoping questions and creates nothing.
+    expect(s).toMatch(/names NO subject/i)
+    expect(s).toMatch(/do NOT call any tool/i)
+    expect(s).toMatch(/NEVER invent a subject/i)
+    expect(s).toMatch(/scoping questions/i)
+    // AC2: once answered, the whole structure lands in one continuous pass.
+    expect(s).toMatch(/one continuous pass/i)
+    expect(s).toMatch(/never pausing/i)
+    // AC3: a clear request builds without needless interrogation.
+    expect(s).toMatch(/already scoped/i)
+    expect(s).toMatch(/never adds questions to a clear request/i)
   })
 
   it('every section appears in the composed whole', () => {
