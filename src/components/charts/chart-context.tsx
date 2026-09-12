@@ -211,12 +211,28 @@ export interface ChartContextValue extends ChartHoverContextValue {
   composedStackGap?: number
 }
 
+/** The volatile hover keys — the ONE canonical list behind the stable/hover split. */
+type HoverKey = keyof ChartHoverContextValue
+
 /**
  * Stable slice of the chart context — everything that doesn't change on hover
  * (data, scales, dimensions, animation state, layout config). Consumers that
  * subscribe via `useChartStable()` skip re-renders on every mouse move.
  */
-export type ChartStableContextValue = Omit<ChartContextValue, keyof ChartHoverContextValue>
+export type ChartStableContextValue = Omit<ChartContextValue, HoverKey>
+
+/**
+ * Exhaustiveness guard for `ChartProvider`'s stable memo: every non-hover key
+ * of `ChartContextValue`, with the `?` modifiers stripped (the mapped type is
+ * non-homomorphic, so optionality is not preserved). The memo body must
+ * `satisfies` this, forcing OPTIONAL keys to be listed too — typing the memo
+ * as `ChartStableContextValue` alone is not enough, because TS never errors
+ * on a missing optional property (which is exactly how `squareSnap` compiled
+ * while being silently dropped). A future missing key is a tsc failure here.
+ */
+type RequiredStableSlice = {
+  [K in Exclude<keyof ChartContextValue, HoverKey>]: ChartContextValue[K]
+}
 
 const ChartStableContext = createContext<ChartStableContextValue | null>(null)
 const ChartHoverContext = createContext<ChartHoverContextValue | null>(null)
@@ -235,51 +251,53 @@ export function ChartProvider({
   value: ChartContextValue
 }) {
   const stable = useMemo<ChartStableContextValue>(
-    () => ({
-      data: value.data,
-      renderData: value.renderData,
-      xScale: value.xScale,
-      yScale: value.yScale,
-      yScales: value.yScales,
-      width: value.width,
-      height: value.height,
-      innerWidth: value.innerWidth,
-      innerHeight: value.innerHeight,
-      margin: value.margin,
-      columnWidth: value.columnWidth,
-      containerRef: value.containerRef,
-      lines: value.lines,
-      referenceAreas: value.referenceAreas,
-      chartPhase: value.chartPhase,
-      chartStatus: value.chartStatus,
-      loadingLabel: value.loadingLabel,
-      yDomainTweenDuration: value.yDomainTweenDuration,
-      yDomainSkeletonByAxis: value.yDomainSkeletonByAxis,
-      yDomainTargetByAxis: value.yDomainTargetByAxis,
-      isLoaded: value.isLoaded,
-      animationDuration: value.animationDuration,
-      animationEasing: value.animationEasing,
-      enterTransition: value.enterTransition,
-      revealEpoch: value.revealEpoch,
-      notifyLoadingPulseComplete: value.notifyLoadingPulseComplete,
-      xAccessor: value.xAccessor,
-      dateLabels: value.dateLabels,
-      xDomain: value.xDomain,
-      xDomainSlotCount: value.xDomainSlotCount,
-      barScale: value.barScale,
-      bandWidth: value.bandWidth,
-      barXAccessor: value.barXAccessor,
-      orientation: value.orientation,
-      stacked: value.stacked,
-      stackOffsets: value.stackOffsets,
-      composedBarDataKeys: value.composedBarDataKeys,
-      composedBarSize: value.composedBarSize,
-      composedMaxBarSize: value.composedMaxBarSize,
-      composedBarGap: value.composedBarGap,
-      composedStacked: value.composedStacked,
-      composedStackOffsets: value.composedStackOffsets,
-      composedStackGap: value.composedStackGap,
-    }),
+    () =>
+      ({
+        data: value.data,
+        renderData: value.renderData,
+        xScale: value.xScale,
+        yScale: value.yScale,
+        yScales: value.yScales,
+        width: value.width,
+        height: value.height,
+        innerWidth: value.innerWidth,
+        innerHeight: value.innerHeight,
+        margin: value.margin,
+        columnWidth: value.columnWidth,
+        containerRef: value.containerRef,
+        lines: value.lines,
+        referenceAreas: value.referenceAreas,
+        chartPhase: value.chartPhase,
+        chartStatus: value.chartStatus,
+        loadingLabel: value.loadingLabel,
+        yDomainTweenDuration: value.yDomainTweenDuration,
+        yDomainSkeletonByAxis: value.yDomainSkeletonByAxis,
+        yDomainTargetByAxis: value.yDomainTargetByAxis,
+        isLoaded: value.isLoaded,
+        animationDuration: value.animationDuration,
+        animationEasing: value.animationEasing,
+        enterTransition: value.enterTransition,
+        revealEpoch: value.revealEpoch,
+        notifyLoadingPulseComplete: value.notifyLoadingPulseComplete,
+        xAccessor: value.xAccessor,
+        dateLabels: value.dateLabels,
+        xDomain: value.xDomain,
+        xDomainSlotCount: value.xDomainSlotCount,
+        barScale: value.barScale,
+        bandWidth: value.bandWidth,
+        barXAccessor: value.barXAccessor,
+        orientation: value.orientation,
+        stacked: value.stacked,
+        stackOffsets: value.stackOffsets,
+        squareSnap: value.squareSnap,
+        composedBarDataKeys: value.composedBarDataKeys,
+        composedBarSize: value.composedBarSize,
+        composedMaxBarSize: value.composedMaxBarSize,
+        composedBarGap: value.composedBarGap,
+        composedStacked: value.composedStacked,
+        composedStackOffsets: value.composedStackOffsets,
+        composedStackGap: value.composedStackGap,
+      }) satisfies RequiredStableSlice,
     [
       value.data,
       value.renderData,
@@ -317,6 +335,7 @@ export function ChartProvider({
       value.orientation,
       value.stacked,
       value.stackOffsets,
+      value.squareSnap,
       value.composedBarDataKeys,
       value.composedBarSize,
       value.composedMaxBarSize,
