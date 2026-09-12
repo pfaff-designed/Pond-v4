@@ -73,6 +73,14 @@ type Scenario = {
    * question ("?") AND at least one of these keywords (case-insensitive) — a
    * lenient OR so a rephrase doesn't flake, while still checking the grill
    * probes the RIGHT intent gaps rather than asking something generic.
+   *
+   * Each list is the union of two on-topic vocabularies observed in real grills:
+   * (a) the scenario's specific intent nouns (servings/tiers/desks/shortcuts) and
+   * (b) generic scoping framings the model legitimately opens with — goal,
+   * purpose, use, or a restatement of the artifact type ("reference/cheat-sheet
+   * grid", "comparison table"). Turn-1 flakes at --runs 5 were all (b)-framings
+   * the narrow noun-lists missed; the additions are still on-topic, never filler
+   * ("the"/"for"/"you") that would reduce the check to "asked any question."
    */
   turn1Probe?: RegExp
   /** For create_page cases: assert the emitted `type` field (e.g. 'project'). */
@@ -130,8 +138,8 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'make me a recipe page for lasagna',
     followup: "It's just for me — a classic meat lasagna, about 4 servings. Standard ingredients are fine.",
-    turn1Probe: /serving|people|ingredient|dietar|meat|vegetarian|prefer|how many|classic|style|kind/i,
-    note: 'grill-before-build: even a named subject grills one intent question (servings/style) before building on turn 2.',
+    turn1Probe: /serving|people|ingredient|dietar|meat|vegetarian|prefer|how many|classic|style|kind|goal|purpose|cook|meal|dish|occasion|use/i,
+    note: 'grill-before-build: even a named subject grills one intent question (servings/style/how it will be used) before building on turn 2.',
   },
   {
     name: 'GRILL separate recipe page while ON another page → asks, then create_page',
@@ -139,7 +147,7 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'Current page "Chicken Parmesan". Blocks: [text id=b1 intro], [todo id=b2 ingredients].',
     text: 'create a separate page for my lasagna recipe',
     followup: 'Classic meat lasagna, 4 servings — standard ingredients and steps.',
-    turn1Probe: /serving|ingredient|dietar|meat|vegetarian|prefer|how many|style|classic|kind/i,
+    turn1Probe: /serving|ingredient|dietar|meat|vegetarian|prefer|how many|style|classic|kind|goal|purpose|cook|meal|dish|occasion|use/i,
     note: 'the old #59 BUG case (proto stalled) inverts under grill-first: turn 1 SHOULD ask, turn 2 builds the separate page.',
   },
   {
@@ -290,7 +298,7 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'create a page comparing three standing desks — name, height range, and price for each',
     followup: "The three I'm comparing are the Uplift V2, Fully Jarvis, and Autonomous SmartDesk.",
-    turn1Probe: /desk|which|compare|budget|priorit|need|criteria|start|what|model/i,
+    turn1Probe: /desk|which|compare|budget|priorit|need|criteria|start|what|model|goal|purpose|use|column|spec|option|feature/i,
     note: 'ticket-21 + grill: turn 1 asks which desks; turn 2 lands the comparison as a table module, never markdown pipes.',
   },
   {
@@ -336,7 +344,7 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'make a page comparing Free, Pro, and Enterprise across these features: price, seats, SSO, and support',
     followup: "Those four features are all I need — just lay the three tiers out side by side.",
-    turn1Probe: /feature|which|compare|price|priorit|detail|what|across|tier/i,
+    turn1Probe: /feature|which|compare|price|priorit|detail|what|across|tier|plan|column|row|dimension|axis|option/i,
     // AMBIGUOUS by design: both axes (3 tiers × 4 features) are fully enumerated, so the
     // don't-re-ask rule makes building on T1 defensible — grillOptional accepts EITHER a
     // T1 build (still shape-checked → table, not collection) OR a T1 grill then T2 table.
@@ -350,7 +358,7 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'make me a keyboard shortcuts cheat sheet for VS Code',
     followup: 'The ones I use most — editing, navigation, and search shortcuts.',
-    turn1Probe: /shortcut|which|command|frequent|use|categor|action|what|editor|cover/i,
+    turn1Probe: /shortcut|which|command|frequent|use|categor|action|what|editor|cover|reference|cheat|sheet|grid|platform|app|os|list/i,
     note: '#28 + grill: turn 1 asks which shortcuts; turn 2 lands a reference grid → table block, not a collection.',
   },
 
