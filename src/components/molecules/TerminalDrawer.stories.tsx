@@ -136,22 +136,24 @@ export const GripVisible: Story = {
   },
 }
 
-/** ticket-42: the outer section carries no background (paper shows through outside
- *  the column); the header chrome sits inside the column-scoped wrapper. */
+/** ticket-42 + transparent chat: the outer section carries no background, and the
+ *  chat panel itself is fully see-through — no fill, border, or shadow, and the
+ *  header wash is dropped — so the paper shows through the whole terminal. */
 export const ColumnConfined: Story = {
   play: async ({ canvasElement }) => {
     const section = canvasElement.querySelector('section')!
     // Outer section must be transparent — no bg-card or border-t.
     await expect(section).not.toHaveClass('bg-card')
     await expect(section).not.toHaveClass('border-t')
-    // The chat is ONE rounded, bordered card within the column (the bg lives here,
-    // not on the section) — a floating panel over the paper, not a full-width dock.
-    const card = section.querySelector('.rounded-2xl.border')
+    // The chat is ONE rounded panel within the column, now fully transparent:
+    // no fill, border, or shadow — the page shows straight through.
+    const card = section.querySelector('.rounded-2xl')
     await expect(card).toBeTruthy()
-    await expect(card).toHaveClass('bg-card')
-    // The header sits inside that card and carries its own wash + divider.
-    const headerInner = section.querySelector('[class*="bg-press-accent-wash"]')
-    await expect(headerInner).toBeTruthy()
+    await expect(card).not.toHaveClass('bg-card')
+    await expect(card).not.toHaveClass('border')
+    await expect(card).not.toHaveClass('shadow-sm')
+    // The header no longer carries the accent wash.
+    await expect(section.querySelector('[class*="bg-press-accent-wash"]')).toBeNull()
     // Context label is still readable.
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Life')).toBeInTheDocument()
