@@ -144,6 +144,11 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     // Read the stakes — adaptive, one question at a time.
     expect(s).toMatch(/READ THE STAKES/i)
     expect(s).toMatch(/ONE question at a time/i)
+    // Placement is part of scoping — infer + soft-confirm the new page's home in the
+    // grill (SPEC-grill-asks-where): state it when confident, ask only when ambiguous,
+    // carry it into parentTitle on build.
+    expect(s).toMatch(/SAY WHERE IT WILL LIVE/i)
+    expect(s).toMatch(/parentTitle/)
     // Escape hatch preserved.
     expect(s).toMatch(/just build it/i)
     // Once answered, the whole structure lands in one continuous pass.
