@@ -202,17 +202,19 @@ export function TerminalDrawer({
 
       {/* The whole chat is ONE rounded, bordered card confined to the center
           column (a floating panel over the paper, matching the v85 proto) — not a
-          full-width dock. The single outer wrapper below carries the border,
-          rounding and background; header / body / footer live inside it as
-          sections, so the inner column wrappers (AITerminal) no longer re-center.
+          full-width dock. The single outer wrapper below carries only the
+          rounding + layout — it's fully transparent (no border/background/shadow,
+          and the header wash is dropped) so the page shows through the chat;
+          header / body / footer live inside it as sections, so the inner column
+          wrappers (AITerminal) no longer re-center.
           The terminal now lives in the column to the RIGHT of the full-height
           rail (WorkspaceShell), so `mx-auto max-w-2xl` centers the card in that
           column directly — no rail offset needed. */}
       <div className="flex-1 min-h-0 flex px-4 pb-3">
-        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-2xl border border-press-hair bg-card shadow-sm">
+        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-2xl">
           {/* Header: context + visible controls (collapse toggle, clear).
               ticket-32: the context label carries the correspondence serif. */}
-          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 border-b border-press-hair bg-press-accent-wash text-xs text-press-muted">
+          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 text-xs text-press-muted">
             <button
               type="button"
               onClick={onToggleCollapsed}
