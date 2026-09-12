@@ -255,6 +255,19 @@ const ALL_SCENARIOS: Scenario[] = [
     note: 'from Home the outline is the only placement signal; turn 2 must use it (→ Woodworking) after the intent answer.',
   },
   {
+    name: 'GRILL states WHERE: create → turn 1 names the inferred home, then parentTitle',
+    expect: 'create_page',
+    expectParent: 'personal',
+    ctx: 'The user is on their Home view. No current page.\n\n[Workspace outline] (existing pages a new page could live under)\n- Area: Personal\n- Area: Health\n- Area: Finances',
+    text: 'create a reading list',
+    followup: 'Just books I want to read — keep it simple.',
+    // SPEC-grill-asks-where: the T1 grill must RAISE placement — either STATE the inferred
+    // home ("I'll put this under Personal…") or ask where — not decide it silently. The
+    // probe is placement-only on purpose (the intent "?" is what makes it a question).
+    turn1Probe: /personal|where|live|under|area|top.?level|put|place|home|belong/i,
+    note: 'SPEC-grill-asks-where: scoping a new page includes its home — turn 1 states the inferred placement (reading list → Personal) or asks when unsure; turn 2 carries it into parentTitle.',
+  },
+  {
     name: 'GRILL guard: explicit top-level request → asks, then NO parentTitle',
     expect: 'create_page',
     expectNoParent: true,
