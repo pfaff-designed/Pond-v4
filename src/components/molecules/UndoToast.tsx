@@ -67,11 +67,15 @@ export function UndoToast({
           {actionLabel}
         </button>
       )}
+      {/* Fixed square + grid centering so the ✕ glyph sits optically centered on
+          both axes (#60) — a bare inline button leaves the glyph's line box
+          floating off-center. Same house pattern as SavePickerModal / TreeRow
+          CRUD / BlockCanvas ×. */}
       <button
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="flex-shrink-0 rounded-md px-1 leading-none text-press-paper/50 outline-none hover:text-press-paper focus-visible:ring-2 focus-visible:ring-press-paper/60"
+        className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md leading-none text-press-paper/50 outline-none hover:text-press-paper focus-visible:ring-2 focus-visible:ring-press-paper/60"
       >
         ✕
       </button>
