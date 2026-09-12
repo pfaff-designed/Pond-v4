@@ -6,24 +6,20 @@ import { AreaClosed, LinePath } from '@visx/shape'
 // (ticket-36 lint cleanup — replaces a local `type CurveFactory = any`).
 import type { CurveFactory } from '@visx/vendor/d3-shape'
 
-import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { useId, useRef } from 'react'
 import { AreaGradientDefs } from './area-gradient-defs'
-import { chartCssVars, useChartStable, useYScale } from './chart-context'
-import type { ChartPhase, LoadingStyle } from './chart-phase'
+import { chartCssVars } from './chart-context'
+import type { LoadingStyle } from './chart-phase'
 import { type FadeEdges, resolveFadeSides } from './fade-edges'
-import {
-  type LineLoadingPulseMode,
-  LineLoadingPulseStroke,
-  resolveLineLoadingPulseMode,
-} from './line-loading-pulse'
-import { LINE_LOADING_LOOP_PAUSE_MS } from './line-loading-timing'
+import { type LineLoadingPulseMode, LineLoadingPulseStroke } from './line-loading-pulse'
 import { LineLoadingSweep } from './loading-sweep'
-import { resolveDashTailBounds, usePathStrokeMetrics } from './path-stroke-utils'
+import { usePathStrokeMetrics } from './path-stroke-utils'
 import { SeriesDashTailOverlay } from './series-dash-tail-overlay'
 import { SeriesHighlightLayer } from './series-highlight-layer'
 import { SeriesHoverDim } from './series-hover-dim'
 import { SeriesMarkers } from './series-markers'
 import type { SeriesPointMarkerStyle } from './series-point-marker'
+import { useSeriesRendering } from './use-series-rendering'
 
 export interface AreaProps {
   /** Key in data to use for y values */
@@ -91,39 +87,6 @@ export interface AreaProps {
   loadingStyle?: LoadingStyle
 }
 
-function useAreaLoadingPulseState(
-  chartPhase: ChartPhase,
-  loading: boolean | undefined,
-  loadingPulseMode: LineLoadingPulseMode | undefined,
-  notifyLoadingPulseComplete?: () => void
-) {
-  const phasePulseMode = resolveLineLoadingPulseMode(chartPhase)
-  const pulseMode =
-    loading === false ? null : (loadingPulseMode ?? (loading === true ? 'loop' : phasePulseMode))
-  const showLoadingPulse = pulseMode != null
-  const showSeriesContent =
-    chartPhase === 'revealing' || chartPhase === 'ready' || chartPhase === 'exitingReady'
-  const [pulseEpoch, setPulseEpoch] = useState(0)
-
-  const handleLoadingPulseComplete = useCallback(() => {
-    if (pulseMode === 'loop') {
-      window.setTimeout(() => {
-        setPulseEpoch((epoch) => epoch + 1)
-      }, LINE_LOADING_LOOP_PAUSE_MS)
-      return
-    }
-    notifyLoadingPulseComplete?.()
-  }, [notifyLoadingPulseComplete, pulseMode])
-
-  return {
-    handleLoadingPulseComplete,
-    pulseMode,
-    pulseEpoch,
-    showLoadingPulse,
-    showSeriesContent,
-  }
-}
-
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mirrors Line series layout (fill, stroke, dash, markers, pulse)
 export function Area({
   dataKey,
@@ -162,18 +125,16 @@ export function Area({
     innerHeight,
     innerWidth,
     xAccessor,
-    lines,
-    chartPhase,
-    notifyLoadingPulseComplete,
-  } = useChartStable()
-  const yScale = useYScale(yAxisId)
-  const { handleLoadingPulseComplete, pulseMode, pulseEpoch, showLoadingPulse, showSeriesContent } =
-    useAreaLoadingPulseState(chartPhase, loading, loadingPulseMode, notifyLoadingPulseComplete)
-
-  const seriesIndex = useMemo(() => {
-    const index = lines.findIndex((line) => line.dataKey === dataKey)
-    return index >= 0 ? index : 0
-  }, [lines, dataKey])
+    yScale,
+    seriesIndex,
+    getY,
+    hasDashTail,
+    pulseMode,
+    pulseEpoch,
+    showLoadingPulse,
+    handleLoadingPulseComplete,
+    showSeriesContent,
+  } = useSeriesRendering({ dataKey, yAxisId, dashFromIndex, loading, loadingPulseMode })
 
   const pathRef = useRef<SVGPathElement>(null)
   const { pathLength, pathD } = usePathStrokeMetrics(pathRef, [
@@ -199,15 +160,6 @@ export function Area({
   // Resolved stroke color (defaults to fill; pattern URLs need a real color)
   const resolvedStroke = stroke || (isPatternFill ? chartCssVars.linePrimary : fill)
 
-  const getY = useCallback(
-    (d: Record<string, unknown>) => {
-      const value = d[dataKey]
-      return typeof value === 'number' ? (yScale(value) ?? 0) : 0
-    },
-    [dataKey, yScale]
-  )
-
-  const hasDashTail = resolveDashTailBounds(dashFromIndex, data.length)
   // The stroke gradient is only emitted when at least one edge fades, so fall
   // back to the resolved solid color otherwise — avoids an invalid url(#...).
   const fadeSides = resolveFadeSides(fadeEdges)
