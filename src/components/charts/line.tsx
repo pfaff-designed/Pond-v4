@@ -4,8 +4,8 @@ import { curveNatural } from '@visx/curve'
 import { LinePath } from '@visx/shape'
 import type { CurveFactory } from '@visx/vendor/d3-shape'
 
-import { type RefObject, useCallback, useId, useMemo, useRef, useState } from 'react'
-import { chartCssVars, useChartStable, useYScale } from './chart-context'
+import { type RefObject, useId, useRef } from 'react'
+import { chartCssVars } from './chart-context'
 import type { LoadingStyle } from './chart-phase'
 import {
   type FadeEdges,
@@ -13,20 +13,16 @@ import {
   resolveFadeSides,
   viewportFadeGradientAttrs,
 } from './fade-edges'
-import {
-  type LineLoadingPulseMode,
-  LineLoadingPulseStroke,
-  resolveLineLoadingPulseMode,
-} from './line-loading-pulse'
-import { LINE_LOADING_LOOP_PAUSE_MS } from './line-loading-timing'
+import { type LineLoadingPulseMode, LineLoadingPulseStroke } from './line-loading-pulse'
 import { LineLoadingSweep } from './loading-sweep'
-import { resolveDashTailBounds, usePathStrokeMetrics } from './path-stroke-utils'
+import { usePathStrokeMetrics } from './path-stroke-utils'
 import { SeriesDashTailOverlay } from './series-dash-tail-overlay'
 import { SeriesHighlightLayer } from './series-highlight-layer'
 import { SeriesHoverDim } from './series-hover-dim'
 import { SeriesMarkers } from './series-markers'
 import type { SeriesPointMarkerStyle } from './series-point-marker'
 import { useAnimatedSeriesPath } from './use-animated-series-path'
+import { useSeriesRendering } from './use-series-rendering'
 
 export interface LineProps {
   /** Key in data to use for y values */
@@ -222,12 +218,25 @@ export function Line({
     innerHeight,
     innerWidth,
     xAccessor,
-    lines,
     chartPhase,
-    notifyLoadingPulseComplete,
     yDomainTweenDuration,
-  } = useChartStable()
-  const yScale = useYScale(yAxisId)
+    yScale,
+    seriesIndex,
+    getY,
+    hasDashTail,
+    pulseMode,
+    pulseEpoch,
+    showLoadingPulse,
+    handleLoadingPulseComplete,
+    showSeriesContent,
+  } = useSeriesRendering({
+    dataKey,
+    yAxisId,
+    dashFromIndex,
+    loading,
+    loadingPulseMode,
+    onCycleComplete: onLoadingPulseCycleComplete,
+  })
   const useDataTransitionPath = animate && chartPhase === 'ready'
   const { pathD: animatedPathD } = useAnimatedSeriesPath({
     chartPhase,
@@ -242,28 +251,7 @@ export function Line({
     yScale,
   })
 
-  const phasePulseMode = resolveLineLoadingPulseMode(chartPhase)
-  const pulseMode =
-    loading === false ? null : (loadingPulseMode ?? (loading === true ? 'loop' : phasePulseMode))
-  const showLoadingPulse = pulseMode != null
-  const [pulseEpoch, setPulseEpoch] = useState(0)
   const effectiveShowHighlight = showHighlight && !showLoadingPulse
-
-  const handleLoadingPulseComplete = useCallback(() => {
-    onLoadingPulseCycleComplete?.()
-    if (pulseMode === 'loop') {
-      window.setTimeout(() => {
-        setPulseEpoch((epoch) => epoch + 1)
-      }, LINE_LOADING_LOOP_PAUSE_MS)
-      return
-    }
-    notifyLoadingPulseComplete?.()
-  }, [notifyLoadingPulseComplete, onLoadingPulseCycleComplete, pulseMode])
-
-  const seriesIndex = useMemo(() => {
-    const index = lines.findIndex((line) => line.dataKey === dataKey)
-    return index >= 0 ? index : 0
-  }, [lines, dataKey])
 
   const pathRef = useRef<SVGPathElement>(null)
   const { pathLength, pathD } = usePathStrokeMetrics(pathRef, [
@@ -277,22 +265,11 @@ export function Line({
   const reactId = useId()
   const gradientId = `line-gradient-${dataKey}-${reactId}`
 
-  const getY = useCallback(
-    (d: Record<string, unknown>) => {
-      const value = d[dataKey]
-      return typeof value === 'number' ? (yScale(value) ?? 0) : 0
-    },
-    [dataKey, yScale]
-  )
-
-  const hasDashTail = resolveDashTailBounds(dashFromIndex, data.length)
   const fadeSides = resolveFadeSides(fadeEdges)
   const lineStroke = fadeSides.any ? `url(#${gradientId})` : stroke
   const fadeStops = fadeSides.any ? fadeGradientStops(fadeSides) : null
-  const showSeriesStroke =
-    chartPhase === 'revealing' || chartPhase === 'ready' || chartPhase === 'exitingReady'
   let visibleStroke = 'transparent'
-  if (showSeriesStroke && !hasDashTail) {
+  if (showSeriesContent && !hasDashTail) {
     visibleStroke = lineStroke
   }
 
