@@ -16,7 +16,7 @@
  */
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange, ModuleData } from './ai-composition'
-import { descriptorFor } from './registry'
+import { resolveDescriptor } from './registry'
 import { mintNestedIds } from './hydrate'
 
 /** Display-only id on a proposed block. Replaced by a real minted id on accept. */
@@ -44,9 +44,8 @@ export interface ChangePreview {
  * diff card (here) and the create-page proposal card.
  */
 export function stampDisplayIds(data: ModuleData, base: string): Block {
-  const descriptor = descriptorFor(data.type)
   const withIds: Record<string, unknown> = { ...data, id: base }
-  for (const path of descriptor?.nestedIdPaths ?? []) {
+  for (const path of resolveDescriptor(data.type).nestedIdPaths) {
     // Per-path counter: `${base}-0, ${base}-1, …` in walk order. For a deep path
     // (`columns.cards`) the counter runs across ALL columns so every card gets a
     // unique React key, not one that collides with the same index in another column.
