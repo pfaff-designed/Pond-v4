@@ -10,7 +10,16 @@ const config = {
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   // Never run tests from local-only worktree/session copies.
-  testPathIgnorePatterns: ['/node_modules/', '/.claude/', '/.claude-worktrees/'],
+  // The PGLite schema-invariant suite is a separate `node`-env jest project
+  // (jest.config.pglite.mjs); exclude its test + harness from the jsdom suite
+  // so they aren't collected here (they can't run under jsdom).
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/.claude/',
+    '/.claude-worktrees/',
+    '\\.pglite\\.test\\.ts$',
+    '/__tests__/helpers/',
+  ],
   moduleNameMapper: {
     // ticket-36: the Bklit chart entry modules the promoted chart views import pull
     // in @visx → d3-shape (pure ESM) which next/jest won't transpile. Stub them in

@@ -35,6 +35,9 @@ jobs:
       - name: Test (jest)
         run: npm test
 
+      - name: Test (PGLite schema invariants)
+        run: npm run test:pglite
+
       - name: Build
         run: npm run build
         env:

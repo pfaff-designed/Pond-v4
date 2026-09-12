@@ -1,0 +1,179 @@
+// Schema-invariant tests (issue #74) — run the REAL supabase/migrations against
+// an in-process Postgres (PGLite) and assert cascade + workspace semantics that
+// live in the schema, not application code, via raw SQL.
+//
+// Seam under test: the Postgres schema itself. These deliberately bypass the
+// supabase-js builder (mocked everywhere else) so they observe genuine DB
+// behavior — deleting a page really removes its subtree, the workspace column
+// really defaults and isolates.
+
+import type { PGlite } from '@electric-sql/pglite'
+import { makeDb, migrationFiles, seedUser } from './helpers/pglite-harness'
+
+const USER = '11111111-1111-1111-1111-111111111111'
+
+/** Insert a page, returning its generated id. */
+async function addPage(
+  db: PGlite,
+  opts: {
+    userId?: string
+    parentId?: string | null
+    type?: string
+    title?: string
+    workspace?: string
+  } = {}
+): Promise<string> {
+  const { userId = USER, parentId = null, type = 'page', title = 'Untitled' } = opts
+  // Only pass `workspace` when explicitly set, so C3 can exercise the DEFAULT.
+  const cols = ['user_id', 'parent_id', 'type', 'title']
+  const vals: unknown[] = [userId, parentId, type, title]
+  if (opts.workspace !== undefined) {
+    cols.push('workspace')
+    vals.push(opts.workspace)
+  }
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+  const res = await db.query<{ id: string }>(
+    `insert into public.pages (${cols.map((c) => `"${c}"`).join(', ')})
+     values (${placeholders}) returning id`,
+    vals
+  )
+  return res.rows[0].id
+}
+
+async function pageExists(db: PGlite, id: string): Promise<boolean> {
+  const res = await db.query('select 1 from public.pages where id = $1', [id])
+  return res.rows.length > 0
+}
+
+describe('PGLite schema invariants', () => {
+  // Harness self-check: the migrations must load clean end-to-end. This is the
+  // known-risk step (auth shim + vector ext + trigger), so it gets its own test.
+  it('applies every real migration from disk clean, ending on the unified pages tree', async () => {
+    const db = await makeDb()
+
+    // Migrations are read from disk (not fixtures) so new ones are auto-covered.
+    // Anchor on lexical ordering + the migrations that own the invariants under
+    // test, rather than a frozen filename list that goes stale as migrations grow.
+    const migNames = migrationFiles().map((m) => m.name)
+    expect(migNames.length).toBeGreaterThanOrEqual(7)
+    expect(migNames).toEqual([...migNames].sort()) // applied in lexical order
+    expect(migNames[0]).toBe('0001_initial_schema.sql')
+    expect(migNames).toContain('0003_unified_pages.sql') // cascade FK (C1/C2)
+    expect(migNames).toContain('0005_add_workspace_discriminator.sql') // workspace (C3/C4)
+
+    // 0004 dropped the legacy node tables; the unified `pages` tree remains.
+    const tables = await db.query<{ table_name: string }>(
+      `select table_name from information_schema.tables where table_schema = 'public' order by table_name`
+    )
+    const tableNames = tables.rows.map((r) => r.table_name)
+    expect(tableNames).toContain('pages')
+    expect(tableNames).toContain('users')
+    expect(tableNames).toContain('conversations')
+    expect(tableNames).not.toContain('areas')
+    expect(tableNames).not.toContain('documents')
+
+    await db.close()
+  })
+
+  // C1 — multi-level cascade. Deleting a top area removes its entire ≥3-level
+  // subtree, and leaves an unrelated tree fully intact.
+  it('C1: cascades a delete through a 3-level subtree, sparing unrelated trees', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+
+    const area = await addPage(db, { type: 'area', title: 'Target area' })
+    const project = await addPage(db, { parentId: area, type: 'project', title: 'Project' })
+    const action = await addPage(db, { parentId: project, type: 'action', title: 'Action' })
+
+    const otherArea = await addPage(db, { type: 'area', title: 'Bystander area' })
+    const otherChild = await addPage(db, {
+      parentId: otherArea,
+      type: 'project',
+      title: 'Bystander child',
+    })
+
+    await db.query('delete from public.pages where id = $1', [area])
+
+    // Whole 3-level chain gone (grandchild too, not just the direct child).
+    expect(await pageExists(db, area)).toBe(false)
+    expect(await pageExists(db, project)).toBe(false)
+    expect(await pageExists(db, action)).toBe(false)
+    // Unrelated tree untouched.
+    expect(await pageExists(db, otherArea)).toBe(true)
+    expect(await pageExists(db, otherChild)).toBe(true)
+
+    await db.close()
+  })
+
+  // C2 — mid-tree delete. Deleting the middle node removes it + descendants,
+  // but the ancestor above it and a sibling branch survive.
+  it('C2: deleting a mid-tree node removes its subtree but spares ancestor and siblings', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+
+    const area = await addPage(db, { type: 'area', title: 'Area' })
+    const middle = await addPage(db, { parentId: area, type: 'project', title: 'Middle' })
+    const leaf = await addPage(db, { parentId: middle, type: 'action', title: 'Leaf' })
+    const sibling = await addPage(db, { parentId: area, type: 'project', title: 'Sibling' })
+
+    await db.query('delete from public.pages where id = $1', [middle])
+
+    expect(await pageExists(db, middle)).toBe(false)
+    expect(await pageExists(db, leaf)).toBe(false)
+    expect(await pageExists(db, area)).toBe(true) // ancestor survives
+    expect(await pageExists(db, sibling)).toBe(true) // sibling branch survives
+
+    await db.close()
+  })
+
+  // C3 — workspace DEFAULT. A page inserted without a workspace reads back 'main'.
+  it("C3: workspace defaults to 'main' when unspecified", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+
+    const id = await addPage(db, { type: 'area', title: 'No workspace given' })
+
+    const res = await db.query<{ workspace: string }>(
+      'select workspace from public.pages where id = $1',
+      [id]
+    )
+    expect(res.rows[0].workspace).toBe('main')
+
+    await db.close()
+  })
+
+  // C4 — workspace isolation. A workspace-scoped SELECT returns only that
+  // scope's rows, with no bleed in either direction.
+  it('C4: workspace-scoped selects isolate main and sandbox in both directions', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+
+    const mainPage = await addPage(db, { type: 'area', title: 'Main row', workspace: 'main' })
+    const sandboxPage = await addPage(db, {
+      type: 'area',
+      title: 'Sandbox row',
+      workspace: 'sandbox',
+    })
+
+    const mainRows = await db.query<{ id: string }>(
+      "select id from public.pages where user_id = $1 and workspace = 'main'",
+      [USER]
+    )
+    const sandboxRows = await db.query<{ id: string }>(
+      "select id from public.pages where user_id = $1 and workspace = 'sandbox'",
+      [USER]
+    )
+
+    const mainIds = mainRows.rows.map((r) => r.id)
+    const sandboxIds = sandboxRows.rows.map((r) => r.id)
+
+    // main scope sees the main row, never the sandbox row.
+    expect(mainIds).toContain(mainPage)
+    expect(mainIds).not.toContain(sandboxPage)
+    // sandbox scope sees the sandbox row, never the main row.
+    expect(sandboxIds).toContain(sandboxPage)
+    expect(sandboxIds).not.toContain(mainPage)
+
+    await db.close()
+  })
+})

@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "jest",
+    "test:pglite": "NODE_OPTIONS=--experimental-vm-modules jest --config jest.config.pglite.mjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test-storybook": "vitest --project=storybook run",
@@ -67,6 +68,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-pgvector": "^0.0.9",
     "@storybook/addon-a11y": "^10.5.7",
     "@storybook/addon-docs": "^10.5.7",
     "@storybook/addon-vitest": "^10.5.7",
