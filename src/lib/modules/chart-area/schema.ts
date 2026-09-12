@@ -21,6 +21,7 @@ export type ChartAreaBlock = z.infer<typeof chartAreaSchema>
 export const chartAreaDescriptor: ModuleDescriptor<ChartAreaBlock> = {
   type: 'chart-area',
   schema: chartAreaSchema,
+  paletteDescription: 'An area chart for magnitude or volume over time.',
   description:
     'An area chart: a numeric series over an ordered x-axis with the region under the curve filled. Use like a line chart when you want to emphasise MAGNITUDE or VOLUME over time — cumulative total, amount held, coverage — rather than the exact trend line. ' +
     'Data is a list of `points`, each `{ x: "<label>", values: { "<series>": <number> } }`; for time-series make `x` a date-parseable string like "2026-01". ' +

@@ -40,6 +40,7 @@ export type TimelineBlock = z.infer<typeof timelineSchema>
 export const timelineDescriptor: ModuleDescriptor<TimelineBlock> = {
   type: 'timeline',
   schema: timelineSchema,
+  paletteDescription: 'A Gantt timeline of phases and milestones over dates.',
   description:
     'A project timeline (Gantt): one horizontal bar per item over a shared date axis with weekly gridlines. Use for the PHASES, milestones, or scheduled stretches of a project, plan, or trip — e.g. "Demo → Framing → Finish" with dates. ' +
     'Data is inline `items`, each `{ label, start: "YYYY-MM-DD", end?: "YYYY-MM-DD" }` — omit `end` for a single-day milestone. ' +
