@@ -7,7 +7,7 @@
  * pulling any client view component into the server bundle. The client half lives in
  * `renderers.ts`, joined to this by the `type` string.
  */
-import type { ModuleDescriptor } from './types'
+import type { ModuleDescriptor, ResolvedDescriptor } from './types'
 import { textDescriptor } from './text/schema'
 import { todoDescriptor } from './todo/schema'
 import { metricDescriptor } from './metric/schema'
@@ -68,6 +68,36 @@ export type RetiredType = (typeof RETIRED_FROM_CREATION)[number]
  */
 export function descriptorFor(type: string): ModuleDescriptor | undefined {
   return (moduleDescriptors as Record<string, ModuleDescriptor>)[type]
+}
+
+/**
+ * Unknown/unregistered type -> a callable no-op. `serialize`/`preview` yield the
+ * empty string (which assemble already filters out) and there are no id paths to
+ * walk (the same no-op as skipping). The missing-type policy (t12 §2: tolerate,
+ * never hard-fail on read) lives here so no caller writes `?.`/`??`.
+ */
+const NULL_DESCRIPTOR: ResolvedDescriptor = {
+  serialize: () => '',
+  preview: () => '',
+  nestedIdPaths: [],
+}
+
+/**
+ * Resolve a persisted `type` to a TOTAL descriptor: optional facets defaulted
+ * (`preview ?? serialize`, `nestedIdPaths ?? []`), unknown type -> NULL_DESCRIPTOR.
+ * Never returns undefined. The one place those defaults + the missing-type policy
+ * live, so the two id-stampers (hydrate + preview) can no longer drift.
+ */
+export function resolveDescriptor(type: string): ResolvedDescriptor {
+  const d = descriptorFor(type)
+  if (!d) return NULL_DESCRIPTOR
+  return {
+    // Forward via arrows (not raw method refs) so a descriptor that reads `this`
+    // keeps working; none do today, but this keeps the accessor honest.
+    serialize: (data, siblings) => d.serialize(data, siblings),
+    preview: (data, siblings) => (d.preview ?? d.serialize)(data, siblings),
+    nestedIdPaths: d.nestedIdPaths ?? [],
+  }
 }
 
 // Re-export the content union so consumers have one server-safe entry point.

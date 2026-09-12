@@ -82,6 +82,20 @@ export interface ModuleDescriptor<T = unknown, Path extends string = NestedIdPat
 }
 
 /**
+ * A `ModuleDescriptor` with its optional facets resolved to total ones: `preview`
+ * falls back to `serialize`, `nestedIdPaths` to `[]`. Produced by
+ * `resolveDescriptor` (registry.ts), which also absorbs the unknown-type case (a
+ * callable no-op descriptor) — so no server-side reader coalesces. Only the three
+ * facets the server half reads are surfaced; reach for `descriptorFor` when you
+ * need existence, the `schema`, or the AI-catalog `description`.
+ */
+export interface ResolvedDescriptor {
+  serialize(data: unknown, siblings?: readonly unknown[]): string
+  preview(data: unknown, siblings?: readonly unknown[]): string
+  nestedIdPaths: readonly string[]
+}
+
+/**
  * Props every module `view` receives. `editable` is passed by the *host/slot*, not
  * declared on the descriptor: the same module is interactive in the document panel
  * and read-only when the AI terminal shows it as reference. When `editable`, the

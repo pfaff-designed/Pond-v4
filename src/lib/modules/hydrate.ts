@@ -16,14 +16,13 @@
  */
 import type { Block } from '@/lib/documents/types'
 import { blockSchema } from '@/lib/modules/content'
-import { descriptorFor } from '@/lib/modules/registry'
+import { resolveDescriptor } from '@/lib/modules/registry'
 
 /** Hydrate one id-less block: stamp its id, mint any nested ids, and validate. */
 export function hydrateBlock(data: unknown, id: string, mintId: () => string): Block | null {
   const d = data as Record<string, unknown>
-  const descriptor = descriptorFor(d.type as string)
   const withIds: Record<string, unknown> = { ...d, id }
-  for (const path of descriptor?.nestedIdPaths ?? []) {
+  for (const path of resolveDescriptor(d.type as string).nestedIdPaths) {
     mintNestedIds(withIds, path, () => mintId())
   }
   const parsed = blockSchema.safeParse(withIds)

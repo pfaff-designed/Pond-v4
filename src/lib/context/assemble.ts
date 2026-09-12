@@ -20,7 +20,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
-import { descriptorFor } from '@/lib/modules/registry'
+import { resolveDescriptor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
 import { ROW_TYPE, readSchema } from '@/lib/properties/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -91,7 +91,7 @@ export function blocksToText(blocks: Block[]): string {
     blocks
       // Pass the block's page-mates so a sibling-deriving module (bound metric,
       // ticket-23) serializes the same number the UI shows.
-      .map((block) => descriptorFor(block.type)?.serialize(block, blocks) ?? '')
+      .map((block) => resolveDescriptor(block.type).serialize(block, blocks))
       .filter((line) => line.length > 0)
       .join('\n')
   )
@@ -145,9 +145,7 @@ export function formatSchemaLine(schema: PropertySchema): string {
 
 /** One-line preview of a block's content, for the id-addressed listing. */
 function blockPreview(block: Block, siblings: Block[]): string {
-  const descriptor = descriptorFor(block.type)
-  if (!descriptor) return ''
-  return (descriptor.preview ?? descriptor.serialize)(block, siblings)
+  return resolveDescriptor(block.type).preview(block, siblings)
 }
 
 /**
