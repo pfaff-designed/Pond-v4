@@ -132,19 +132,25 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(s).toMatch(/never invent/i)
   })
 
-  it('scopes before building (#59): bare creation requests draw questions, clear ones build, and the build lands in one pass', () => {
+  it('grills before building: every creation request draws an adaptive grill, edits stay contextual, then the build lands in one pass', () => {
     const s = PROMPT_SECTIONS.SCOPING
-    // AC1: a bare "create a project" draws scoping questions and creates nothing.
-    expect(s).toMatch(/names NO subject/i)
-    expect(s).toMatch(/do NOT call any tool/i)
-    expect(s).toMatch(/NEVER invent a subject/i)
-    expect(s).toMatch(/scoping questions/i)
-    // AC2: once answered, the whole structure lands in one continuous pass.
+    // Grill-first: any from-scratch build interrogates intent before any tool call.
+    expect(s).toMatch(/CREATION REQUEST → GRILL FIRST/)
+    expect(s).toMatch(/do NOT call a creation tool this turn/i)
+    expect(s).toMatch(/NEVER invent a topic, title, columns/i)
+    // Don't-re-ask rule (preserved from #59): scope only the gaps.
+    expect(s).toMatch(/DON'T RE-ASK WHAT'S GIVEN/i)
+    expect(s).toMatch(/scope ONLY the remaining gaps/i)
+    // Read the stakes — adaptive, one question at a time.
+    expect(s).toMatch(/READ THE STAKES/i)
+    expect(s).toMatch(/ONE question at a time/i)
+    // Escape hatch preserved.
+    expect(s).toMatch(/just build it/i)
+    // Once answered, the whole structure lands in one continuous pass.
     expect(s).toMatch(/one continuous pass/i)
     expect(s).toMatch(/never pausing/i)
-    // AC3: a clear request builds without needless interrogation.
-    expect(s).toMatch(/already scoped/i)
-    expect(s).toMatch(/never adds questions to a clear request/i)
+    // Edits are explicitly NOT gated here (spec §2.1).
+    expect(s).toMatch(/Editing existing content is different/i)
   })
 
   it('every section appears in the composed whole', () => {
