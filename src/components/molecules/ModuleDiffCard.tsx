@@ -57,10 +57,11 @@ interface ModuleDiffCardProps {
 
 type BlockDiffer = ComponentType<{ before: Block | null; after: Block }>
 
-/** A block rendered read-only through the registry, dimmed to read as the "before" side. */
-function Faded({ block }: { block: Block }) {
+/** The "before" side of a diff — the content being removed/replaced. Make Noise
+ *  spends red on removals ONLY, so this reads in the diff-removal red, struck. */
+function Removed({ block }: { block: Block }) {
   return (
-    <div className="opacity-50">
+    <div className="line-through decoration-mn-signal-removal/60 [&_*]:!text-mn-signal-removal">
       <ModuleView type={block.type} data={block} />
     </div>
   )
@@ -71,8 +72,10 @@ function ChangeBody({ op, before, after }: Pick<ModuleDiffCardProps, 'op' | 'bef
     if (!before) return null
     return (
       <div className="space-y-1.5">
-        <span className="block font-serif text-xs italic text-press-faint">Will be removed</span>
-        <Faded block={before} />
+        <span className="block font-serif text-xs italic text-mn-signal-removal">
+          Will be removed
+        </span>
+        <Removed block={before} />
       </div>
     )
   }
@@ -90,11 +93,13 @@ function ChangeBody({ op, before, after }: Pick<ModuleDiffCardProps, 'op' | 'bef
     return <Differ before={op === 'edit' ? (before ?? null) : null} after={after} />
   }
 
-  // Fallback (and the type-morph case): render each side through ModuleView.
+  // Fallback (and the type-morph case): render each side through ModuleView. The
+  // before side is a removal (struck, red); the after is an addition (ink on the
+  // card's faint ground — never red).
   return (
     <div className="space-y-2">
       {op === 'edit' && before ? (
-        <Faded block={before} />
+        <Removed block={before} />
       ) : (
         <span className="block font-serif text-xs italic text-press-faint">New {after.type}</span>
       )}
@@ -126,7 +131,7 @@ export function ModuleDiffCard({
         // ticket-41: on resolve the card SETTLES to inert — eases opacity down
         // and a hair of scale (motion-resolve transition) instead of snapping
         // grey, so accept/reject reads as the card coming to rest. Guarded.
-        'press-letter motion-resolve overflow-hidden rounded-lg text-left',
+        'press-letter motion-resolve overflow-hidden rounded-mn-inner text-left',
         resolved && 'scale-[0.99] opacity-70',
         className
       )}
@@ -137,8 +142,8 @@ export function ModuleDiffCard({
           Proposed {OP_LABEL[op]} · {type}
         </span>
         {inferred && (
-          <span className="rounded-full bg-press-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-press-accent">
-            Inferred
+          <span className="rounded-mn-pill bg-press-accent-soft px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-[10px] text-press-accent">
+            inferred
           </span>
         )}
       </div>

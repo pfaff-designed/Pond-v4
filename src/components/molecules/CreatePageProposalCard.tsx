@@ -96,7 +96,7 @@ export function CreatePageProposalCard({
       role="group"
       aria-label={`Proposed new page: ${title}`}
       className={cn(
-        'press-letter overflow-hidden rounded-lg text-left',
+        'press-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
@@ -117,7 +117,7 @@ export function CreatePageProposalCard({
           and Create/Dismiss out of the auto-grown drawer — title + preview + picker
           + actions always fit together; only the preview itself scrolls. */}
       {previewBlocks.length > 0 && (
-        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-md border border-press-hair bg-press-accent-wash px-3 py-2 text-sm">
+        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 py-2 text-sm">
           {previewBlocks.map((b) => (
             <ModuleView key={b.id} type={b.type} data={b} />
           ))}
@@ -135,7 +135,7 @@ export function CreatePageProposalCard({
           value={selectedParentId}
           disabled={resolved}
           onChange={(e) => onParentChange(e.target.value)}
-          className="flex-1 rounded-md border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
         >
           <option value={TOP_LEVEL_VALUE}>Top level</option>
           {parentOptions.map((p) => (

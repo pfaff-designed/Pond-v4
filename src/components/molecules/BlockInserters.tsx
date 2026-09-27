@@ -69,11 +69,11 @@ export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="mt-4">
       <button
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="font-mono lowercase tracking-[0.1em] text-xs text-press-muted hover:text-press-body transition-colors"
         aria-label="Add a block"
         onClick={onAdd}
       >
-        + Add a block
+        + add a block
       </button>
     </div>
   )

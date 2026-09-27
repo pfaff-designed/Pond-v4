@@ -117,13 +117,13 @@ export function TextSelectionPopover({ containerRef, onAsk, disabled }: TextSele
     >
       <span
         className="
-          rounded-md border border-press-line bg-press-paper
-          px-2.5 py-1 text-xs font-mono text-press-muted
-          shadow-md hover:text-press-accent hover:border-press-accent
+          rounded-mn-pill bg-press-paper
+          px-3 py-1 text-xs font-mono lowercase tracking-[0.1em] text-press-muted
+          shadow-mn-md ring-1 ring-press-line hover:text-press-accent hover:ring-press-accent
           transition-colors select-none whitespace-nowrap
         "
       >
-        Ask Pond
+        ask pond
       </span>
     </button>
   )

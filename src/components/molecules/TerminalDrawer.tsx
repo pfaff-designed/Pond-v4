@@ -211,10 +211,12 @@ export function TerminalDrawer({
           rail (WorkspaceShell), so `mx-auto max-w-2xl` centers the card in that
           column directly — no rail offset needed. */}
       <div className="flex-1 min-h-0 flex px-4 pb-3">
-        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-2xl">
+        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-mn-card">
           {/* Header: context + visible controls (collapse toggle, clear).
-              ticket-32: the context label carries the correspondence serif. */}
-          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 text-xs text-press-muted">
+              MN: the composer is a machine surface, so its chrome speaks the mono
+              machine voice (lowercase, tracking-wider) — not the correspondence
+              serif. The context VALUE stays as-is (it's a page/area name). */}
+          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-[0.1em] text-[11px] text-press-muted">
             <button
               type="button"
               onClick={onToggleCollapsed}
@@ -230,9 +232,9 @@ export function TerminalDrawer({
               >
                 ▾
               </span>
-              <span className="font-serif italic">
-                Context:{' '}
-                <span className="not-italic font-medium text-foreground">{contextLabel}</span>
+              <span>
+                context:{' '}
+                <span className="font-medium normal-case text-foreground">{contextLabel}</span>
               </span>
             </button>
             <button
@@ -241,9 +243,9 @@ export function TerminalDrawer({
               disabled={!canClear}
               aria-label="Clear conversation"
               title="Clear conversation (/clear)"
-              className="font-serif italic text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
+              className="text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
             >
-              Clear
+              clear
             </button>
           </div>
 

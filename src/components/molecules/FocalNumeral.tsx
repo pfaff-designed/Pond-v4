@@ -12,7 +12,7 @@ export function FocalNumeral({ value, caption }: { value: string; caption: strin
       >
         {value}
       </span>
-      <span className="font-serif text-xl leading-[1.35] text-press-body max-w-[260px] pb-1.5">
+      <span className="font-serif font-extralight text-xl leading-[1.35] text-press-body max-w-[260px] pb-1.5">
         {caption}
       </span>
     </div>

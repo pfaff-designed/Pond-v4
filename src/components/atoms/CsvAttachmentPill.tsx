@@ -21,8 +21,8 @@ export function CsvAttachmentPill({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded border border-press-line bg-press-accent-wash',
-        'px-2 py-0.5 font-mono text-xs text-press-body max-w-[20ch] truncate',
+        'inline-flex items-center gap-1.5 rounded-mn-pill bg-press-accent-wash',
+        'px-2.5 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-body max-w-[20ch] truncate',
         className
       )}
     >

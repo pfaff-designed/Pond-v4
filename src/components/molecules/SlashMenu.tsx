@@ -115,7 +115,10 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
         // rising like a page surface — it reads as summoned in place. The
         // caller positions it; transform-origin follows via --motion-menu-origin
         // when the anchor isn't top-left.
-        'motion-menu bg-press-paper border border-press-line rounded-lg shadow-xl overflow-hidden',
+        // MN PondPicker: the picker is a card-level floating surface — outer
+        // radius 20 (rounded-mn-card), separated by shadow not a hard frame
+        // ("paper-not-frames"), with the sans-row list inset by p-1 padding.
+        'motion-menu bg-press-paper rounded-mn-card shadow-mn-lg overflow-hidden',
         // Portal mode owns its own fixed box (w-72, high z); inline mode takes
         // the caller's positioning className.
         anchorEl ? 'fixed z-[100] w-72' : className
@@ -132,13 +135,14 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
           setActiveIndex(0)
         }}
         onKeyDown={handleKeyDown}
-        placeholder="Filter…"
-        className="w-full border-b border-press-hair bg-transparent font-mono text-sm px-3 py-2 outline-none"
+        placeholder="filter…"
+        className="w-full border-b border-press-hair bg-transparent font-mono lowercase tracking-[0.1em] text-sm px-3 pt-2.5 pb-3 outline-none placeholder:text-press-faint"
         aria-label="Filter blocks"
       />
-      <div ref={itemsRef} className="overflow-y-auto max-h-64">
+      <div ref={itemsRef} className="overflow-y-auto max-h-64 p-1.5 flex flex-col gap-0.5">
         {filteredItems.length === 0 ? (
-          <p className="px-3 py-2 text-sm italic text-press-muted">No blocks match</p>
+          // MN note voice: machine-surface message is mono lowercase, muted tier.
+          <p className="px-3 py-2 font-mono lowercase tracking-[0.1em] text-xs text-press-muted">No blocks match</p>
         ) : (
           filteredItems.map((item, i) => {
             const isActive = i === clampedIndex
@@ -146,7 +150,9 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
               <button
                 key={item.id}
                 className={cn(
-                  'w-full text-left px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-press-accent',
+                  // MN sans-row voice: rounded-mn-inner (14) rows, sans UI type
+                  // for name + description, accent-wash on the active/hover row.
+                  'w-full text-left rounded-mn-inner px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-press-accent',
                   isActive ? 'bg-press-accent-wash' : 'hover:bg-press-accent-wash'
                 )}
                 data-active={isActive ? 'true' : undefined}

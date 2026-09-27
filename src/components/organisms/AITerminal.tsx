@@ -57,7 +57,6 @@ import {
   TERMINAL_MAX_HEIGHT,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
-import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/atoms/Markdown'
 import { StageText } from '@/components/atoms/StageText'
 import { pressKickerClass } from '@/components/atoms/press-kicker'
@@ -2096,14 +2095,22 @@ export function AITerminal() {
                 // When a ghost suggestion is showing on the empty input, it IS the
                 // empty-state hint — suppress the static placeholder so the two
                 // don't render on top of each other.
+                // MN: the composer's placeholder shifts once the thread has a turn —
+                // "reply, or ask something else" — matching the mockup's two-state hint.
                 placeholder={
-                  activeSuggestion && !input ? '' : 'Talk to Pond… (/clear · /handoff · /save)'
+                  activeSuggestion && !input
+                    ? ''
+                    : messages.length > 0
+                      ? 'reply, or ask something else'
+                      : 'ask pond, or / for blocks'
                 }
                 rows={inputRows}
                 // relative z-10 (ticket-40) keeps the textarea above the ghost
                 // suggestion behind it; the focus signal is ticket-41's draw-in
                 // baseline (motion-focus-draw), so no border-color flip here.
-                className="relative z-10 w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm text-press-body outline-none placeholder:text-press-faint disabled:opacity-60"
+                // MN: the composer is a machine surface — mono, lowercase, tight
+                // tracking (--voice-mono). Typed intent reads as machine input.
+                className="relative z-10 w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-sm text-press-body outline-none placeholder:text-press-faint disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>
@@ -2149,12 +2156,11 @@ export function AITerminal() {
                 isUploading ||
                 !isReady
               }
-              className={cn(
-                pressKickerClass,
-                'self-end pb-2 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent'
-              )}
+              // MN: the composer is a machine surface — its Send control speaks the
+              // mono machine voice (lowercase, tracking-wider), not the serif kicker.
+              className="self-end pb-2 font-mono lowercase tracking-[0.1em] text-xs text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent"
             >
-              Send
+              send
             </button>
           </div>
         </div>

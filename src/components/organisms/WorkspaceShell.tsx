@@ -44,7 +44,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                   <DocumentPanel />
                 </Suspense>
               </main>
-              <Suspense fallback={<div className="h-72 border-t border-border bg-card" />}>
+              <Suspense fallback={<div className="h-72 bg-card shadow-mn-lg" />}>
                 <AITerminal />
               </Suspense>
             </div>

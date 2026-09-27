@@ -29,13 +29,13 @@ export interface BreadcrumbProps {
   rootLabel?: string
 }
 
-const sep = <span className="text-press-faint/60 px-1.5 select-none">›</span>
+const sep = <span className="text-press-body/80 px-1.5 select-none">›</span>
 
 export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center flex-wrap font-mono text-[11px] tracking-[0.14em] uppercase text-press-faint min-w-0"
+      className="flex items-center flex-wrap font-mono text-[11px] tracking-[0.1em] lowercase text-press-faint min-w-0"
     >
       <button
         onClick={() => onNavigate(null)}
@@ -60,7 +60,7 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
           {sep}
           <span
             aria-current="page"
-            className="text-press-body truncate max-w-[220px]"
+            className="text-foreground truncate max-w-[220px]"
             title={current}
           >
             {current}

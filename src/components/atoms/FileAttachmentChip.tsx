@@ -28,8 +28,8 @@ export function FileAttachmentChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded border border-press-line bg-press-accent-wash',
-        'px-2 py-0.5 font-mono text-xs text-press-body max-w-[28ch]',
+        'inline-flex items-center gap-1.5 rounded-mn-pill bg-press-accent-wash',
+        'px-2.5 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-body max-w-[28ch]',
         className
       )}
     >
@@ -41,7 +41,7 @@ export function FileAttachmentChip({
           src={url}
           alt=""
           aria-hidden
-          className="h-5 w-5 flex-shrink-0 rounded-[2px] border border-press-line object-cover"
+          className="h-5 w-5 flex-shrink-0 rounded-mn-hair object-cover shadow-mn-sm"
         />
       ) : (
         <svg

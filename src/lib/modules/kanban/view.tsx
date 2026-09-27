@@ -188,7 +188,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                 else columnRefs.current.delete(col.id)
               }}
               className={[
-                'min-w-[13rem] flex-1 rounded-md border px-3 py-2 transition-colors',
+                'min-w-[13rem] flex-1 rounded-mn-inner border px-3 py-2 transition-colors',
                 isOver
                   ? 'border-press-accent bg-press-accent-wash'
                   : 'border-press-hair bg-press-card/40',
@@ -225,7 +225,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                     <li
                       key={card.id}
                       className={[
-                        'relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
+                        'relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
                         // ticket-41: a quiet hover raise (shadow only — the card is
                         // a drag object, not a click target, so it lifts rather than
                         // presses). Token-timed, reduced-motion drops the travel.
@@ -299,7 +299,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
         {editable && (
           <button
             type="button"
-            className="min-w-[8rem] shrink-0 self-start rounded-md border border-dashed border-press-hair px-3 py-2 text-xs text-press-muted hover:text-press-ink"
+            className="min-w-[8rem] shrink-0 self-start rounded-mn-inner border border-dashed border-press-hair px-3 py-2 text-xs text-press-muted hover:text-press-ink"
             onClick={() => emit(addColumn(data, 'New column', crypto.randomUUID()))}
           >
             + Column
@@ -310,7 +310,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
       {/* Floating clone that follows the pointer — the "lift" (soft shadow + tilt). */}
       {draggingCard && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-md border border-press-line bg-press-card px-2.5 py-2 shadow-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
@@ -506,7 +506,7 @@ function CardLinkMenu({
     <div
       ref={ref}
       role="menu"
-      className="press-arrive absolute top-7 right-1 z-50 w-52 rounded-md border border-press-line bg-press-paper py-1 text-xs shadow-md"
+      className="press-arrive absolute top-7 right-1 z-50 w-52 rounded-mn-row bg-press-paper py-1 text-xs shadow-mn-md"
     >
       {mode === 'menu' ? (
         <ul>
@@ -526,7 +526,7 @@ function CardLinkMenu({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search pages…"
             aria-label="Search pages to link"
-            className="mb-1 w-full rounded-sm bg-press-card/60 px-2 py-1 outline-none placeholder:text-press-muted/60"
+            className="mb-1 w-full rounded-mn-chrome bg-press-card/60 px-2 py-1 outline-none placeholder:text-press-muted/60"
           />
           <ul className="max-h-40 overflow-y-auto">
             {results.length === 0 && <li className="px-2 py-1.5 text-press-muted/70">No pages</li>}
@@ -536,7 +536,7 @@ function CardLinkMenu({
                   type="button"
                   role="menuitem"
                   onClick={() => onPick(r)}
-                  className="block w-full truncate rounded-sm px-2 py-1.5 text-left hover:bg-press-accent-wash"
+                  className="block w-full truncate rounded-mn-chrome px-2 py-1.5 text-left hover:bg-press-accent-wash"
                 >
                   {r.title}
                 </button>
@@ -586,7 +586,7 @@ function AddCardFoot({ onAdd }: { onAdd: (title: string) => void }) {
   }
   return (
     <input
-      className="mt-2 w-full rounded-md bg-transparent px-2.5 py-1.5 text-xs text-press-muted outline-none placeholder:text-press-muted/60 hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-ink"
+      className="mt-2 w-full rounded-mn-row bg-transparent px-2.5 py-1.5 text-xs text-press-muted outline-none placeholder:text-press-muted/60 hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-ink"
       value={value}
       placeholder="+ Add card"
       aria-label="Add a card"

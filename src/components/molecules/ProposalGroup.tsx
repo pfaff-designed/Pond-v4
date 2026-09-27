@@ -105,7 +105,7 @@ export function ProposalGroup({
         )
       )}
       {showGroupBar && (
-        <div className="flex items-center justify-between rounded-md border border-press-line bg-press-accent-wash px-3 py-1.5">
+        <div className="flex items-center justify-between rounded-mn-inner bg-press-accent-wash px-3 py-1.5">
           <span className="text-xs font-medium text-press-muted">
             {changes.length} proposed changes
           </span>

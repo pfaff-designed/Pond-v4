@@ -102,8 +102,8 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
   const shownValue = derived.state === 'pending' ? null : derived.value
 
   return (
-    <div className="flex items-baseline gap-2 text-sm text-zinc-800">
-      <span className="text-zinc-500">{data.label}</span>
+    <div className="flex items-baseline gap-2 text-sm text-press-ink">
+      <span className="text-press-muted">{data.label}</span>
       {/* aria-label carries the plain value so assistive tech (and story tests) read
           one stable string even while NumberFlow visually animates split digits. */}
       <span
@@ -115,19 +115,19 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
       >
         {shownValue === null ? (
           // Quiet placeholder while cross-page data loads — an em-dash, not a number.
-          <span className="text-zinc-300">—</span>
+          <span className="text-press-faint">—</span>
         ) : animate ? (
           <NumberFlow value={shownValue} suffix={unit} willChange isolate />
         ) : (
           `${shownValue}${unit}`
         )}
       </span>
-      {data.trend && <span className="text-zinc-400">{TREND_GLYPH[data.trend]}</span>}
+      {data.trend && <span className="text-press-faint">{TREND_GLYPH[data.trend]}</span>}
 
       {/* Aggregate rollups show their scope quietly in a caption (w2-design-brief:
           "across N milestone pages"); no `→` (there's no single source to jump to). */}
       {derived.state === 'aggregate' && (
-        <span className="text-[11px] text-zinc-400">
+        <span className="font-mono text-[11px] lowercase tracking-[0.1em] text-press-faint">
           across {derived.pageCount} {derived.pageCount === 1 ? 'page' : 'pages'}
         </span>
       )}
@@ -135,7 +135,7 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
       {derived.state === 'derived' && (
         <button
           type="button"
-          className="text-zinc-400 hover:text-zinc-700"
+          className="text-press-faint hover:text-press-body"
           title="Go to source"
           aria-label="Go to source block"
           onClick={() => scrollToBlock?.(derived.sourceId)}
@@ -146,7 +146,7 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
 
       {derived.state === 'stale' && (
         <span
-          className="text-[11px] text-zinc-400 italic"
+          className="font-mono text-[11px] lowercase tracking-[0.1em] text-press-faint italic"
           // Covers stale shapes: the source block (or its whole page) was deleted, OR it
           // still exists but type-morphed into something the binding can't count.
           title="Source block or page missing or no longer countable"

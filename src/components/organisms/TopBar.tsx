@@ -53,7 +53,7 @@ export function writeRecent(entry: RecentEntry) {
 }
 
 const iconBtn =
-  'press-glass rounded-full px-3.5 py-[9px] leading-none text-foreground cursor-pointer hover:text-press-accent transition-colors disabled:opacity-40'
+  'press-glass rounded-mn-pill px-3.5 py-[9px] leading-none text-foreground cursor-pointer hover:text-press-accent transition-colors disabled:opacity-40'
 
 export function TopBarView({
   onCreate,
@@ -78,8 +78,8 @@ export function TopBarView({
         aria-label="Command palette (⌘K)"
         onClick={onCommandK}
       >
-        <span className="font-mono text-[11px] px-[7px] py-0.5 rounded-md border border-border bg-press-ink/[0.03] text-press-body">
-          ⌘K
+        <span className="font-mono lowercase tracking-[0.1em] text-[11px] px-[7px] py-0.5 rounded-mn-hair bg-press-ink/[0.03] text-press-body">
+          ⌘k
         </span>
       </button>
     </div>

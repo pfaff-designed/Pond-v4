@@ -23,7 +23,7 @@ export function QuoteChip({ text, onRemove, className }: QuoteChipProps) {
     <div
       className={cn(
         'flex items-start gap-2 border-l-2 border-press-accent/40 bg-press-accent-wash',
-        'pl-3 pr-2 py-1.5 rounded-r text-xs font-serif italic text-press-muted',
+        'pl-3 pr-2 py-1.5 rounded-r-mn-row text-xs font-serif font-extralight italic text-press-muted',
         className
       )}
     >

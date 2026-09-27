@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { dialogBackdropClass } from '@/components/atoms/dialog-chrome'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
 
 export interface PaletteItem {
   id: string
@@ -114,12 +113,15 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
     >
       {/* Panel — stop click-propagation so clicks inside don't close */}
       <div
-        className="press-arrive w-full max-w-lg rounded-xl border border-press-line bg-press-paper shadow-2xl overflow-hidden"
+        className="press-arrive w-full max-w-lg rounded-mn-card bg-press-paper shadow-mn-lg overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
         <div className="border-b border-press-hair px-4 py-3 flex items-center gap-3">
-          <span className="text-press-faint text-sm select-none" aria-hidden>
+          <span
+            className="rounded-mn-chrome bg-press-accent-wash px-1.5 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-faint select-none"
+            aria-hidden
+          >
             ⌘K
           </span>
           <input
@@ -130,8 +132,8 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
               setActiveIndex(0)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search pages or actions…"
-            className="flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-press-faint text-press-body"
+            placeholder="search pages or actions…"
+            className="flex-1 bg-transparent font-mono lowercase tracking-[0.1em] text-sm outline-none placeholder:text-press-faint text-press-body"
             aria-label="Search pages or actions"
             aria-autocomplete="list"
             role="combobox"
@@ -139,24 +141,26 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
           />
           <button
             onClick={onClose}
-            className="text-press-faint text-xs hover:text-press-body transition-colors"
+            className="font-mono lowercase tracking-[0.1em] text-xs text-press-faint hover:text-press-body transition-colors"
             aria-label="Close palette"
           >
-            Esc
+            esc
           </button>
         </div>
 
         {/* Results */}
         <div ref={listRef} className="overflow-y-auto max-h-80" role="listbox">
           {flatFiltered.length === 0 ? (
-            <p className="px-4 py-3 text-sm italic text-press-muted">No results</p>
+            <p className="px-4 py-3 font-mono lowercase tracking-[0.1em] text-sm text-press-muted">
+              no results
+            </p>
           ) : (
             groups.map(({ group, items: groupItems }) => {
               const startIndex = runningIndex
               runningIndex += groupItems.length
               return (
                 <div key={group}>
-                  <div className={cn(pressKickerClass, 'px-4 pt-3 pb-1 text-press-faint/70')}>
+                  <div className="px-4 pt-3 pb-1 font-mono lowercase tracking-[0.1em] text-[0.65rem] text-press-faint">
                     {GROUP_LABELS[group]}
                   </div>
                   {groupItems.map((item, localI) => {
@@ -166,7 +170,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
                       <button
                         key={item.id}
                         className={cn(
-                          'w-full text-left px-4 py-2 transition-colors outline-none',
+                          'w-full text-left rounded-mn-row px-3 py-2 transition-colors outline-none',
                           isActive ? 'bg-press-accent-wash' : 'hover:bg-press-accent-wash'
                         )}
                         data-active={isActive ? 'true' : undefined}
@@ -175,11 +179,11 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
                         onMouseEnter={() => setActiveIndex(globalI)}
                         onClick={() => onSelect(item)}
                       >
-                        <div className="text-sm font-medium text-press-body truncate">
+                        <div className="font-mono lowercase tracking-[0.1em] text-sm text-press-body truncate">
                           {item.label}
                         </div>
                         {item.subtitle && (
-                          <div className="text-xs text-press-muted truncate mt-0.5">
+                          <div className="font-mono lowercase tracking-[0.1em] text-[0.65rem] text-press-muted truncate mt-0.5">
                             {item.subtitle}
                           </div>
                         )}
@@ -193,10 +197,10 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
         </div>
 
         {/* Footer hint */}
-        <div className="border-t border-press-hair px-4 py-2 flex gap-4 text-xs text-press-faint">
+        <div className="border-t border-press-hair px-4 py-2 flex gap-4 font-mono lowercase tracking-[0.1em] text-xs text-press-faint">
           <span>↑↓ navigate</span>
           <span>↵ select</span>
-          <span>Esc close</span>
+          <span>esc close</span>
         </div>
       </div>
     </div>

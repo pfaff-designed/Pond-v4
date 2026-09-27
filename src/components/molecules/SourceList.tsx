@@ -61,7 +61,7 @@ export function SourceList({ sources: rawSources }: SourceListProps) {
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="truncate text-press-accent underline-offset-2 hover:underline"
+              className="truncate font-mono lowercase tracking-[0.1em] text-press-accent underline-offset-2 hover:underline"
               title={source.url}
             >
               {sourceLabel(source)}
