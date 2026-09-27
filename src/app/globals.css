@@ -634,18 +634,13 @@
     transform: scaleX(1);
   }
 
-  /* Letterpress authored card (ticket-32): the AI reply and every proposal object in
-     the terminal share this "impressed ink" treatment so the transcript reads as one
-     coherent object — a warm near-paper surface, a sage-inked left margin like a
-     ruled correspondence, and a soft debossed shadow rather than a floating card. */
+  /* Authored card (Make Noise: paper-not-frames): the AI reply and every proposal
+     object in the terminal share one treatment so the transcript reads as a coherent
+     object — a paper surface lifted by a soft shadow, NOT a bordered or accent-ruled
+     frame. No hard borders, no sage left margin (area colours are marks only). */
   .press-letter {
-    background:
-      linear-gradient(to right, var(--press-accent-wash), transparent 40%), var(--press-card);
-    border: 1px solid var(--press-line);
-    border-left: 2px solid var(--press-accent);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.55) inset,
-      0 1px 2px rgba(33, 31, 27, 0.05);
+    background: var(--press-card);
+    box-shadow: var(--mn-shadow-card);
   }
 
   /* Liquid glass — floating Press chrome ONLY (top bar cluster, palettes). */

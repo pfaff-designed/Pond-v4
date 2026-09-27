@@ -153,7 +153,7 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
                   // MN sans-row voice: rounded-mn-inner (14) rows, sans UI type
                   // for name + description, accent-wash on the active/hover row.
                   'w-full text-left rounded-mn-inner px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-press-accent',
-                  isActive ? 'bg-press-accent-wash' : 'hover:bg-press-accent-wash'
+                  isActive ? 'bg-press-accent-soft' : 'hover:bg-press-accent-wash'
                 )}
                 data-active={isActive ? 'true' : undefined}
                 onMouseEnter={() => setActiveIndex(i)}

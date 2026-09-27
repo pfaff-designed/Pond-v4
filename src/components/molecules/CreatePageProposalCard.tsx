@@ -117,7 +117,7 @@ export function CreatePageProposalCard({
           and Create/Dismiss out of the auto-grown drawer — title + preview + picker
           + actions always fit together; only the preview itself scrolls. */}
       {previewBlocks.length > 0 && (
-        <div className="mx-3 mt-2 max-h-[200px] space-y-2 overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 py-2 text-sm">
+        <div className="mx-3 mt-2 max-h-[300px] space-y-2 overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 py-2 text-sm">
           {previewBlocks.map((b) => (
             <ModuleView key={b.id} type={b.type} data={b} />
           ))}

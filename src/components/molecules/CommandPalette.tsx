@@ -171,7 +171,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
                         key={item.id}
                         className={cn(
                           'w-full text-left rounded-mn-row px-3 py-2 transition-colors outline-none',
-                          isActive ? 'bg-press-accent-wash' : 'hover:bg-press-accent-wash'
+                          isActive ? 'bg-press-accent-soft' : 'hover:bg-press-accent-wash'
                         )}
                         data-active={isActive ? 'true' : undefined}
                         role="option"

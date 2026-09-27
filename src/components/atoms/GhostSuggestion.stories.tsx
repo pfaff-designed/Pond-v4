@@ -41,7 +41,10 @@ function Harness({
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleGhostKey}
-        placeholder="Talk to Pond…"
+        // Mirror the real composer (AITerminal): when a ghost suggestion shows on
+        // the empty input it IS the empty-state hint, so the static placeholder is
+        // suppressed — otherwise the placeholder and the ghost overlap.
+        placeholder={suggestion && input === '' ? '' : 'Talk to Pond…'}
         rows={2}
         aria-describedby="ghost-hint"
         aria-label="Composer input"
