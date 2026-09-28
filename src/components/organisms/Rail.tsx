@@ -116,8 +116,8 @@ export interface RailViewProps {
 function LifeMark() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden className="flex-shrink-0">
-      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--press-accent)" strokeWidth="1.4" />
-      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--press-accent)" opacity="0.85" />
+      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--mn-area-a)" strokeWidth="1.4" />
+      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--mn-area-a)" opacity="0.85" />
     </svg>
   )
 }

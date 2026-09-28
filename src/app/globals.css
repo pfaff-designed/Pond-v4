@@ -202,8 +202,10 @@
      landing — no bounce). --ease-out decelerates into rest (entries, draws);
      --ease-in accelerates away (exits/dismissals). */
   --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* MN law: one house curve, nothing overshoots. --ease-out/-in kept as aliases
+     for call-site readability (entries vs exits) but resolve to the same curve. */
+  --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.22, 0.8, 0.2, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -322,9 +324,12 @@
   --press-line: rgb(27 29 20 / 0.09);
   --press-hair: rgb(27 29 20 / 0.055);
   --press-card: var(--raw-paper); /* paper-not-frames: cards ARE paper, lifted by shadow */
-  --press-accent: var(--raw-sage); /* sage — ambient tint */
-  --press-accent-soft: rgb(100 143 123 / 0.12);
-  --press-accent-wash: rgb(100 143 123 / 0.06);
+  /* MN law: sage is an AREA colour (marks only). These roles are FUNCTIONAL
+     (focus rings, hover/active fills, links, drag handles, chips) so they carry
+     ink, not sage. Genuine area marks use --mn-area-a directly. */
+  --press-accent: var(--raw-ink);
+  --press-accent-soft: rgb(27 29 20 / 0.12);
+  --press-accent-wash: rgb(27 29 20 / 0.06);
   --press-lime: var(--raw-ink); /* primary CTA = ink-on-paper (MN); was lime */
   --press-lime-ink: var(--raw-paper);
   --press-rust: var(--raw-red); /* destructive → MN accent red */
@@ -405,9 +410,9 @@
   --press-line: rgb(250 249 239 / 0.12);
   --press-hair: rgb(250 249 239 / 0.07);
   --press-card: var(--raw-card-dark);
-  --press-accent: var(--raw-sage);
-  --press-accent-soft: rgb(100 143 123 / 0.2);
-  --press-accent-wash: rgb(100 143 123 / 0.1);
+  --press-accent: var(--raw-paper); /* ink flips to paper on the dark ground */
+  --press-accent-soft: rgb(250 249 239 / 0.2);
+  --press-accent-wash: rgb(250 249 239 / 0.1);
   --press-lime: var(--raw-paper); /* dark primary CTA = paper-on-ink */
   --press-lime-ink: var(--raw-ink);
   --press-rust: var(--raw-red);

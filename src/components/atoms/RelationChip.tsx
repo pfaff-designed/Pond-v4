@@ -45,7 +45,9 @@ export function RelationChip({
       onClick={onRemove}
       className="flex-shrink-0 text-press-faint transition-colors hover:text-press-body"
     >
-      ×
+      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
     </button>
   ) : null
 

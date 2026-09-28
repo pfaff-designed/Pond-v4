@@ -49,7 +49,9 @@ export function CsvAttachmentPill({
         onClick={onRemove}
         className="flex-shrink-0 text-press-faint hover:text-press-body transition-colors ml-0.5"
       >
-        ×
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
       </button>
     </span>
   )

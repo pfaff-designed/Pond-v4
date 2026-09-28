@@ -117,7 +117,7 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
     hr: () => <hr className="border-0 border-t border-press-line my-6" />,
     table: ({ children }) => (
       <div className="my-4 overflow-x-auto">
-        <table className="w-full border-collapse text-left font-serif text-[0.95rem]">
+        <table className="w-full border-collapse text-left font-sans text-[0.95rem]">
           {children}
         </table>
       </div>
@@ -191,7 +191,7 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
     hr: () => <hr className="border-0 border-t border-press-line my-3" />,
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
-        <table className="w-full border-collapse text-left font-serif text-[0.875rem]">
+        <table className="w-full border-collapse text-left font-sans text-[0.875rem]">
           {children}
         </table>
       </div>
