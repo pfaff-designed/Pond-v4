@@ -35,7 +35,7 @@ export interface LineChartProps {
   margin?: Partial<Margin>;
   /** Animation duration in milliseconds. Default: 560 */
   animationDuration?: number;
-  /** CSS easing for clip-reveal. Default: cubic-bezier(0.22, 0.8, 0.2, 1) */
+  /** CSS easing for clip-reveal. Default: the house settle curve (`--ease-press` / `DEFAULT_ANIMATION_EASING`). */
   animationEasing?: string;
   enterTransition?: Transition;
   revealSignature?: string;

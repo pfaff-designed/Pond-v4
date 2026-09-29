@@ -4,6 +4,7 @@ import type { scaleBand } from "@visx/scale";
 import type { Transition } from "motion/react";
 import { motion } from "motion/react";
 import { memo, useId, useMemo } from "react";
+import { FADE_OPACITY_TRANSITION } from "./animation";
 import { computeSquareColumn } from "./bar-squares-layout";
 import {
   chartCssVars,
@@ -471,7 +472,7 @@ const BarColumnTrackInner = memo(function BarColumnTrackInner({
   return (
     <g
       className={`bar-column-track-${uniqueId}`}
-      style={{ transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)" }}
+      style={{ transition: FADE_OPACITY_TRANSITION }}
     >
       {data.map((d, i) => {
         const categoryValue = barXAccessor(d);
