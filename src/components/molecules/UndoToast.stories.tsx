@@ -49,7 +49,7 @@ export const Dismiss: Story = {
     const canvas = within(canvasElement)
     const dismiss = canvas.getByRole('button', { name: 'Dismiss' })
     // #60: the ✕ sits in a fixed square with both-axis grid centering (the house
-    // glyph-button pattern — SavePickerModal / TreeRow CRUD / BlockCanvas ×), so
+    // glyph-button pattern — SavePickerModal / rail-row CRUD / BlockCanvas ×), so
     // the glyph's line box can't float off-center.
     await expect(dismiss).toHaveClass('grid', 'h-5', 'w-5', 'place-items-center', 'leading-none')
     await userEvent.click(dismiss)

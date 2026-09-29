@@ -2,9 +2,10 @@
 
 /**
  * The left rail — a true VS Code-grade recursive file tree, rooted at Life
- * (ticket-28). Elevated to the Press aesthetic: hairline indentation guides,
- * a calm authored chevron, breathing row rhythm, and the muted sage dot
- * language.
+ * (ticket-28), on the Make Noise language: hairline indentation guides, a calm
+ * authored chevron, breathing row rhythm, and the muted dot language. Each row
+ * is a `RailRow` — the interactive treeitem host around a presentational
+ * `PondMolecule list-row` (#95, the TreeRow absorption).
  *
  * ONE continuous tree. Life is the root folder at depth 0 — not a separate
  * header button, but the first `treeitem`. Everything nests under it:
@@ -35,6 +36,7 @@
  */
 
 import {
+  forwardRef,
   useCallback,
   useEffect,
   useMemo,
@@ -42,6 +44,7 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -78,11 +81,305 @@ import {
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
-import { TreeRow } from '@/components/molecules/TreeRow'
+import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode } from '@/lib/rail/tree'
 export type { RailNode, FlatRow } from '@/lib/rail/tree'
+
+// ── The rail's tree row (the TreeRow absorption, #95) ────────────────────────
+//
+// The interactive treeitem HOST around a presentational `PondMolecule
+// list-row`. The molecule renders the row's body (dot · label · state washes)
+// off the Make Noise role tokens; this host owns everything behavioural — the
+// WAI-ARIA treeitem contract (aria-level/posinset/setsize, the roving tab
+// stop), drag-to-reparent, the indentation guides, the caret, and the
+// hover-CRUD — and docks its affordances through the molecule's `leading` /
+// `trailing` slots. Focus / keydown fire only for the row itself (guarded on
+// event target) so inner controls never double-drive the tree (ticket-27/28).
+
+/** Px of extra left-pad per depth level — the guides land on these gridlines. */
+const INDENT_STEP = 16
+/** Fixed left offset of the whole tree content (past the paper margin). */
+const INDENT_BASE = 6
+
+/** A calm authored chevron — rotates on expand, no glyph substitution. */
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 10 10"
+      fill="none"
+      aria-hidden
+      className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-press)] ${
+        open ? 'rotate-90' : ''
+      }`}
+    >
+      <path
+        d="M3.5 2 L7 5 L3.5 8"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+interface RailRowProps {
+  id: string
+  title: string
+  depth: number
+  isFolder: boolean
+  isExpanded: boolean
+  isSelected: boolean
+  /** An ancestor of the selection — the trail reads at a raised tone (t25). */
+  isOnPath: boolean
+  /** The single roving tab stop lands here; arrow keys move it (APG tree). */
+  isFocused: boolean
+  isBusy: boolean
+  /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
+  isRoot?: boolean
+  /** An area row — the raised label voice + its accent dot. */
+  isArea?: boolean
+  posInSet?: number
+  setSize?: number
+  /** Muted accent for the area dot; omit to render no dot (leaves). */
+  accent?: string
+  /** Settle-in entrance for rows revealed on expand (ticket-41). */
+  settleOnMount?: boolean
+  /** A leading mark slot (the Life root's half-disc) — replaces the dot. */
+  leading?: ReactNode
+  /** Trailing meta slot (the root's "all" caption). */
+  trailing?: ReactNode
+
+  onSelect: (id: string) => void
+  onToggle: (id: string) => void
+  onAddChild?: (id: string) => void
+  onDelete?: (id: string) => void
+  onFocus: (id: string) => void
+  onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
+
+  // ── Drag-to-reparent/reorder (F25) ────────────────────────────────────────
+  draggable?: boolean
+  /** This row is the one being dragged — dims to ~50% (the drag image carries
+   *  the molecule's lift; the source row just quiets). */
+  isDragging?: boolean
+  dropZone?: DropZone | null
+  isDropRejected?: boolean
+  onDragStart?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragOver?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragLeave?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDrop?: (id: string, e: DragEvent<HTMLDivElement>) => void
+  onDragEnd?: (id: string, e: DragEvent<HTMLDivElement>) => void
+}
+
+const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
+  {
+    id,
+    title,
+    depth,
+    isFolder,
+    isExpanded,
+    isSelected,
+    isOnPath,
+    isFocused,
+    isBusy,
+    isRoot = false,
+    isArea = false,
+    posInSet,
+    setSize,
+    accent,
+    settleOnMount = false,
+    leading,
+    trailing,
+    onSelect,
+    onToggle,
+    onAddChild,
+    onDelete,
+    onFocus,
+    onKeyDown,
+    draggable = false,
+    isDragging = false,
+    dropZone = null,
+    isDropRejected = false,
+    onDragStart,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    onDragEnd,
+  },
+  ref
+) {
+  // Hover is host state (the molecule is presentational and takes ONE state);
+  // CRUD reveal additionally rides group-hover/focus-within CSS so it still
+  // opens for a keyboard user tabbing into the row's controls.
+  const [hovered, setHovered] = useState(false)
+  const label = title || 'Untitled'
+  const padLeft = INDENT_BASE + depth * INDENT_STEP
+  const state: PondMoleculeState = isSelected ? 'selected' : hovered ? 'hover' : 'rest'
+
+  return (
+    <div
+      ref={ref}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-selected={isSelected}
+      aria-expanded={isFolder ? isExpanded : undefined}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
+      tabIndex={isFocused ? 0 : -1}
+      data-tree-row={id}
+      data-on-path={isOnPath || undefined}
+      draggable={draggable}
+      onDragStart={onDragStart ? (e) => onDragStart(id, e) : undefined}
+      onDragOver={onDragOver ? (e) => onDragOver(id, e) : undefined}
+      onDragLeave={onDragLeave ? (e) => onDragLeave(id, e) : undefined}
+      onDrop={onDrop ? (e) => onDrop(id, e) : undefined}
+      onDragEnd={onDragEnd ? (e) => onDragEnd(id, e) : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      // The whole row opens the page (the caret and ＋/× stop propagation) —
+      // strictly navigation; expansion belongs to the caret alone.
+      onClick={() => onSelect(id)}
+      onFocus={(e) => {
+        // Only the row itself — focusing an inner control (＋/×) must not yank
+        // the roving focus back to the row.
+        if (e.target === e.currentTarget) onFocus(id)
+      }}
+      onKeyDown={(e) => {
+        // Only keys pressed on the row itself — Enter on an inner ＋/× button
+        // already clicks it; it must not also bubble into an "open" command.
+        if (e.target === e.currentTarget) onKeyDown(id, e)
+      }}
+      className={`group relative flex items-center rounded-mn-row outline-none
+        focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
+        ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
+        ${isDragging ? 'opacity-50' : ''}
+        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount ? 'motion-settle-in ' : ''}`}
+      style={{ paddingLeft: padLeft }}
+    >
+      {/* Drop-line for a before/after reorder — a calm rule at the row's
+          top/bottom edge; pointer-events-none so it never eats a drag event.
+          The into-highlight is the ring on the row itself (above). */}
+      {dropZone === 'before' && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 right-2 -top-px h-0.5 rounded-full bg-mn-text"
+        />
+      )}
+      {dropZone === 'after' && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-mn-text"
+        />
+      )}
+
+      {/* Indentation guides — one hairline per ancestor level, brightened a
+          touch on the selected/on-path trail so the eye follows depth home. */}
+      {Array.from({ length: depth }).map((_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className={`absolute top-0 bottom-0 w-px ${
+            isSelected || isOnPath ? 'bg-mn-line' : 'bg-mn-hair'
+          }`}
+          style={{ left: INDENT_BASE + i * INDENT_STEP + 10 }}
+        />
+      ))}
+
+      {/* caret — toggles the folder without navigating and without taking
+          focus (the row keeps the roving tab stop); leaf gets a spacer */}
+      {isFolder ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden
+          className="grid h-[34px] w-[20px] flex-shrink-0 place-items-center text-mn-text/30 transition-colors hover:text-mn-text"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggle(id)
+          }}
+        >
+          <Chevron open={isExpanded} />
+        </button>
+      ) : (
+        <span className="w-[20px] flex-shrink-0" aria-hidden />
+      )}
+
+      <PondMolecule
+        kind="list-row"
+        state={state}
+        title={label}
+        meta=""
+        handle={false}
+        dot={!isRoot && isArea && accent !== undefined}
+        accent={accent}
+        emphasis={isRoot || isArea}
+        leading={leading}
+        trailing={
+          <>
+            {trailing}
+            {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and
+                REAL tab stops so keyboard/AT users reach them without a pointer
+                (t27). The root (Life) is the workspace, not a row: no add/delete. */}
+            {!isRoot && (onAddChild || onDelete) && (
+              <span className="flex items-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                {onAddChild && (
+                  <button
+                    type="button"
+                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    title="Add sub-page"
+                    aria-label={`Add sub-page to ${label}`}
+                    disabled={isBusy}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onAddChild(id)
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                      <path
+                        d="M6 2.4v7.2M2.4 6h7.2"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-signal-removal/10 hover:text-mn-signal-removal focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    title="Delete page"
+                    aria-label={`Delete ${label}`}
+                    disabled={isBusy}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete(id)
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                      <path
+                        d="M3 3l6 6M9 3l-6 6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </span>
+            )}
+          </>
+        }
+        className="h-[34px] min-h-0 w-full flex-1 pl-1 pr-1.5"
+      />
+    </div>
+  )
+})
 
 // ── Presentational rail ──────────────────────────────────────────────────────
 
@@ -286,7 +583,7 @@ export function RailView({
 
   const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) =>
     id === LIFE_ID ? (
-      <TreeRow
+      <RailRow
         ref={setRowRef(id)}
         key={id}
         id={id}
@@ -303,7 +600,7 @@ export function RailView({
         setSize={setSize}
         leading={<LifeMark />}
         trailing={
-          <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-press-faint pr-1 select-none">
+          <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30 pr-1 select-none">
             all
           </span>
         }
@@ -319,7 +616,7 @@ export function RailView({
         onDragEnd={handleDragEnd}
       />
     ) : (
-      <TreeRow
+      <RailRow
         ref={setRowRef(id)}
         key={id}
         id={id}
@@ -377,7 +674,7 @@ export function RailView({
           children (WAI-ARIA); a <p> inside it would be an illegal child. */}
       {isLoading && (
         <p
-          className="px-2.5 py-2 font-mono text-[10px] tracking-[0.1em] lowercase text-press-faint"
+          className="px-2.5 py-2 font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30"
           role="status"
         >
           loading…
@@ -385,7 +682,7 @@ export function RailView({
       )}
       {!isLoading && isEmpty && (
         <p
-          className="px-2.5 py-2 text-[12.5px] leading-relaxed text-press-muted"
+          className="px-2.5 py-2 text-[12.5px] leading-relaxed text-mn-text-secondary"
           role="status"
         >
           No pages yet. ＋ a page, or ask the pond to start one.
