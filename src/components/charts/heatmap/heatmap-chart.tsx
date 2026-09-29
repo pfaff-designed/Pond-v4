@@ -96,7 +96,7 @@ export interface HeatmapChartProps {
   status?: ChartStatus;
   /** Centered label while loading. */
   loadingLabel?: string;
-  /** Enter animation duration in milliseconds. Default: 1600 */
+  /** Enter animation duration in milliseconds. Default: 560 */
   animationDuration?: number;
   /** Motion enter transition (spring or cubic-bezier tween). */
   enterTransition?: Transition;
