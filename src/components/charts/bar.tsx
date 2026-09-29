@@ -4,6 +4,7 @@ import type { scaleBand } from "@visx/scale";
 import type { Transition } from "motion/react";
 import { motion } from "motion/react";
 import { memo, useId, useMemo } from "react";
+import { FADE_OPACITY_TRANSITION } from "./animation";
 import { barDepthAndRise, barDepthMaxDepth } from "./bar-depth-geometry";
 import {
   chartCssVars,
@@ -161,7 +162,7 @@ function AnimatedBar({
   return (
     <g
       opacity={isFaded ? fadedOpacity : 1}
-      style={{ transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)" }}
+      style={{ transition: FADE_OPACITY_TRANSITION }}
     >
       <motion.rect
         animate={target}
@@ -431,7 +432,7 @@ const BarInner = memo(function BarInner({
             ry={effectiveRy}
             style={{
               cursor: "default",
-              transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)",
+              transition: FADE_OPACITY_TRANSITION,
             }}
             width={barW}
             x={x}
