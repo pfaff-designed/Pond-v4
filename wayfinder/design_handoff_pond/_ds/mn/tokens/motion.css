@@ -1,0 +1,13 @@
+/* ============================================
+   MOTION — snappy exits, weighted entrances.
+   UI interactions are duration-based. Display moments are spring-based.
+   ============================================ */
+:root {
+  --duration-fast: 150ms /* @kind other */; /* micro-interactions: button press, toggle */
+  --duration-base: 250ms /* @kind other */; /* standard: panel open, tab switch */
+  --duration-slow: 400ms /* @kind other */; /* larger reveals: modal, drawer */
+  --duration-slower: 600ms /* @kind other */;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1) /* @kind other */;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1) /* @kind other */;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1) /* @kind other */;
+}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<sc-if value="{{ isTab }}"><div style="{{ tabWrap }}"><span style="{{ tabPill }}"><sc-if value="{{ landed }}"><span style="{{ landedDot }}"></span><span>pond answered</span></sc-if><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 5 3.5l3 3"></path></svg></span><span style="{{ tabKey }}">⌘J</span></div></sc-if>
+<sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}"><div style="{{ glass }}">
+<sc-if value="{{ isThread }}"><div style="{{ threadHead }}"><span style="{{ fgc }}">thread · life</span><span style="{{ muted }}">3 turns</span><div style="flex:1"></div><span>new thread</span><span style="{{ iconBtnSm }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l6 6M9 3l-6 6"></path></svg></span></div><div style="{{ folded }}"><span style="display:flex;transform:rotate(-90deg)"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2 7 5 3.5 8"></path></svg></span>2 earlier turns</div></sc-if>
+<sc-if value="{{ hasTurn }}"><div style="{{ turn }}">
+<div style="{{ youRow }}"><span style="font-weight:500">you</span><span style="{{ youText }}">{{ question }}</span><span style="{{ time }}">{{ askedAt }}</span></div>
+<sc-if value="{{ hasAnswer }}"><div style="{{ answerCol }}"><span style="{{ eyebrow }}">pond</span><p style="{{ answer }}">{{ answerText }}<sc-if value="{{ streaming }}"><span style="{{ streamCaret }}"></span></sc-if></p></div></sc-if>
+<sc-if value="{{ isError }}"><div style="{{ errRow }}"><span>pond couldn’t finish this answer. nothing was kept.</span><span style="{{ chip }}">ask again</span></div></sc-if>
+<sc-if value="{{ isProposing }}"><div style="{{ diffCard }}"><div style="{{ diffHead }}"><span style="{{ fgc }}">proposed edit — schedule</span><div style="flex:1"></div><span style="{{ muted }}">2 changes</span></div><div style="display:flex;flex-direction:column;gap:3px"><sc-for list="{{ diff }}" as="d" hint-placeholder-count="3"><dc-import name="PondMolecule" kind="diff-line" variant="{{ d.v }}" title="{{ d.t }}" theme="{{ theme }}" size="{{ size }}" hint-size="100%,32px"></dc-import></sc-for></div><div style="{{ diffActions }}"><dc-import name="PondControl" kind="button" variant="primary" label="accept" theme="{{ theme }}" size="{{ size }}" hint-size="auto,30px"></dc-import><span style="{{ keyHint }}">⌘↵</span><dc-import name="PondControl" kind="button" variant="ghost" label="request changes" theme="{{ theme }}" size="{{ size }}" hint-size="auto,30px"></dc-import><dc-import name="PondControl" kind="button" variant="ghost" label="reject" theme="{{ theme }}" size="{{ size }}" hint-size="auto,30px"></dc-import><div style="flex:1"></div><span style="{{ muted }}">kitchen renovation</span></div></div></sc-if>
+<sc-if value="{{ hasRead }}"><div style="{{ readRow }}"><span>read</span><sc-for list="{{ read }}" as="r" hint-placeholder-count="2"><span style="{{ readChip }}">{{ r }}</span></sc-for></div></sc-if>
+</div></sc-if>
+<sc-if value="{{ hasActions }}"><div style="{{ actionsRow }}"><span style="{{ chip }}">make this a page</span><span style="{{ chip }}">ask again</span></div></sc-if>
+<div style="{{ line }}"><sc-if value="{{ isAsking }}"><span>what is actually blocking </span><span style="{{ mention }}">@kitchen renovation</span><span>?</span><span style="{{ caret }}"></span></sc-if><sc-if value="{{ showPlaceholder }}"><span>{{ placeholder }}</span></sc-if></div>
+<div style="{{ toolbar }}"><span style="{{ plusBtn }}">＋</span><span style="{{ researchBtn }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.2" cy="6.2" r="4"></circle><path d="M9.2 9.2 12.2 12.2"></path></svg>research</span><div style="flex:1"></div><span style="{{ send }}"><sc-if value="{{ streaming }}"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor"></rect></svg></sc-if><sc-if value="{{ notStreaming }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V3"></path><path d="M3.6 6.4 7 3l3.4 3.4"></path></svg></sc-if></span></div>
+</div></sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:620,&quot;height&quot;:420},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;asking&quot;,&quot;streaming&quot;,&quot;answered&quot;,&quot;proposing&quot;,&quot;thread&quot;,&quot;error&quot;,&quot;collapsed&quot;,&quot;landed&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const state = p.state ?? 'rest', theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const glassBg = ink
+      ? { background: 'linear-gradient(160deg,rgba(48,49,42,.92),rgba(48,49,42,.78))', border: '1px solid rgba(250,249,239,.09)', boxShadow: 'inset 0 1px 0 rgba(250,249,239,.06),0 20px 54px rgba(0,0,0,.42)' }
+      : { background: 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', border: '1px solid rgba(255,255,255,.9)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.14)' };
+    const S = x => state === x;
+    const isTab = S('collapsed') || S('landed');
+    const streaming = S('streaming'), proposing = S('proposing'), thread = S('thread'), err = S('error');
+    const hasTurn = streaming || S('answered') || proposing || thread || err;
+    const T = {
+      streaming: ['what is actually blocking the renovation?', '07:12', 'One thing: the cabinet quote. The worktop template cannot be booked until the carcasses are measured'],
+      answered: ['what is actually blocking the renovation?', '07:12', 'One thing: the cabinet quote. The worktop template cannot be booked until the carcasses are measured, and the electrician wants a date before he holds the week.'],
+      error: ['what is actually blocking the renovation?', '07:12', ''],
+      proposing: ['move the electrician to the week of the 6th.', '07:14', 'Both dates assume the cabinets are measured in the last week of September.'],
+      thread: ['and if the quote comes in at 4k?', '07:20', 'At £4,000 the cabinets take the whole of the Q4 discretionary budget. Nothing else has to be cut, but nothing else can be added either.']
+    }[state] || ['', '', ''];
+    const W = mob ? 360 : 560, lineFs = mob ? 16 : 14, btn = mob ? 40 : 32, small = mob ? 36 : 28;
+    const sendOn = S('asking') || streaming;
+    const pill = { display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 14px', borderRadius: 999, ...glassBg, boxShadow: ink ? 'inset 0 1px 0 rgba(250,249,239,.06),0 -8px 28px rgba(0,0,0,.3)' : 'inset 0 1px 0 rgba(255,255,255,.7),0 -8px 28px rgba(40,34,24,.12)', color: fg, fontFamily: mono, fontSize: 11 };
+    return {
+      theme, size, isTab, landed: S('landed'), isOpen: !isTab, isThread: thread, hasTurn,
+      question: T[0], askedAt: T[1], answerText: T[2], hasAnswer: hasTurn && !err, streaming, notStreaming: !streaming, isError: err, isProposing: proposing,
+      hasRead: S('answered') || thread, read: thread ? ['budget'] : ['kitchen renovation', 'budget'],
+      hasActions: S('answered'), isAsking: S('asking'), showPlaceholder: !S('asking'),
+      placeholder: hasTurn ? 'reply, or ask something else' : 'ask pond, or / for blocks',
+      diff: [{ v: 'remove', t: 'electrician — provisional, w/c 29 sep' }, { v: 'add', t: 'electrician — confirmed, w/c 6 oct' }, { v: 'add', t: 'worktop template — w/c 13 oct' }],
+      tabWrap: { position: 'relative', width: W, height: 30, boxSizing: 'border-box', borderRadius: '14px 16px 0 0', ...glassBg, borderBottom: 'none', boxShadow: pill.boxShadow, display: 'flex', justifyContent: 'center' },
+      tabPill: { ...pill, position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' },
+      landedDot: { width: 6, height: 6, borderRadius: 999, background: fg },
+      tabKey: { marginTop: 12, fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      glass: { width: W, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14, padding: 14, ...glassBg, borderRadius: 20, fontFamily: mono, color: fg },
+      fgc: { color: fg }, muted: { color: a(.68) },
+      threadHead: { display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 10px', borderBottom: `1px solid ${a(.09)}`, fontSize: 11, color: a(.8) },
+      iconBtnSm: { display: 'flex', width: mob ? 32 : 18, height: mob ? 32 : 18, alignItems: 'center', justifyContent: 'center' },
+      folded: { padding: '0 6px', fontSize: 11, color: a(.68), display: 'flex', alignItems: 'center', gap: 6 },
+      turn: { display: 'flex', flexDirection: 'column', gap: 12, padding: '6px 6px 14px', borderBottom: `1px solid ${a(.09)}` },
+      youRow: { display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13, letterSpacing: '.02em', color: a(.8) },
+      youText: { flex: 1, color: fg }, time: { fontSize: 10.5 },
+      answerCol: { display: 'flex', flexDirection: 'column', gap: 7 },
+      eyebrow: { fontFamily: sans, fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      answer: { margin: 0, fontFamily: sans, fontWeight: 400, fontSize: mob ? 16 : 15, lineHeight: 1.6, color: fg, textWrap: 'pretty' },
+      streamCaret: { display: 'inline-block', width: 9, height: 17, background: a(.22), transform: 'translateY(3px)', marginLeft: 3 },
+      errRow: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: a(.8) },
+      diffCard: { display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 14, background: ink ? '#30312A' : '#FAF9EF', boxShadow: ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)' },
+      diffHead: { display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 11 },
+      diffActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 10.5 },
+      keyHint: { fontFamily: mono, fontSize: 10.5, color: a(.68), marginLeft: -2, marginRight: 4 },
+      readRow: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 10.5, color: a(.68) },
+      readChip: { padding: mob ? '6px 10px' : '2px 7px', borderRadius: 6, boxShadow: `inset 0 0 0 1px ${a(.14)}`, color: a(.8) },
+      actionsRow: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, letterSpacing: '.02em' },
+      chip: { padding: mob ? '10px 14px' : '6px 11px', borderRadius: 999, background: a(.07), color: a(.8), whiteSpace: 'nowrap' },
+      line: { padding: '2px 6px', fontSize: lineFs, lineHeight: 1.5, letterSpacing: '.02em', color: S('asking') ? fg : a(.68) },
+      mention: { padding: '1px 6px', borderRadius: 6, background: a(.07) },
+      caret: { display: 'inline-block', width: 1.5, height: 15, background: fg, transform: 'translateY(3px)', marginLeft: 1 },
+      toolbar: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, letterSpacing: '.02em' },
+      plusBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: small, height: small, borderRadius: 999, background: a(.07), color: a(.8), fontSize: 13 },
+      researchBtn: { display: 'flex', alignItems: 'center', gap: 7, padding: mob ? '11px 12px' : '7px 12px', borderRadius: 999, color: a(.8) },
+      send: { width: btn, height: btn, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', background: sendOn ? fg : a(.12), color: sendOn ? (ink ? '#1B1D14' : '#FAF9EF') : a(.8), boxShadow: sendOn && !ink ? '0 4px 12px rgba(27,29,20,.22)' : 'none' }
+    };
+  }
+}
+</script>
+</body>
+</html>

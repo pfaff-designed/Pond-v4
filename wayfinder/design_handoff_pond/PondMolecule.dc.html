@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<div style="{{ wrap }}">
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}"><div style="{{ row }}"><span style="{{ handle }}">⋮⋮</span><span style="{{ dot }}"></span><span style="{{ grow }}">{{ title }}</span><dc-import name="PondAtom" kind="date" value="{{ meta }}" due="{{ due }}" theme="{{ theme }}" size="{{ size }}" state="{{ atomState }}" hint-size="auto,26px"></dc-import></div></sc-if>
+<sc-if value="{{ isCheck }}"><div style="{{ row }}"><span style="{{ handle }}">⋮⋮</span><dc-import name="PondAtom" kind="checkbox" on="{{ done }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,26px"></dc-import><span style="{{ checkText }}">{{ title }}</span></div></sc-if>
+<sc-if value="{{ isTable }}"><div style="{{ tableRow }}"><span style="{{ cellMeta }}">{{ meta }}</span><span style="min-width:0;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr)"><dc-import name="PondAtom" style="min-width:0;max-width:100%" kind="relation" value="{{ title }}" state="{{ relState }}" note="false" theme="{{ theme }}" size="{{ size }}" hint-size="auto,26px"></dc-import></span><span style="{{ cell }}">{{ qty }}</span><span style="{{ numWrap }}"><span style="{{ cellNum }}">{{ value }}</span><sc-if value="{{ isKept }}"><span style="{{ cellMeta }}">kept</span></sc-if></span></div></sc-if>
+<sc-if value="{{ isCard }}"><div style="{{ card }}"><dc-import name="PondAtom" kind="image" state="{{ imgState }}" theme="{{ theme }}" size="{{ size }}" hint-size="150px,99px"></dc-import><div style="{{ cardBody }}"><span style="{{ cardTitle }}">{{ title }}</span><div style="{{ cardMetaRow }}"><dc-import name="PondAtom" kind="tag" value="{{ tagText }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,26px"></dc-import><span style="{{ cellMeta }}">{{ meta }}</span></div></div></div></sc-if>
+<sc-if value="{{ isEntry }}"><div style="{{ entry }}"><span style="{{ entryDate }}">{{ meta }}</span><span style="{{ entryText }}">{{ title }}</span></div></sc-if>
+<sc-if value="{{ isField }}"><div style="{{ fieldRow }}"><span style="{{ fieldLabel }}">{{ label }}</span><dc-import name="PondAtom" kind="{{ valueKind }}" value="{{ value }}" state="{{ atomState }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,26px"></dc-import></div></sc-if>
+<sc-if value="{{ isNotice }}"><div style="{{ notice }}"><span style="{{ noticeText }}">{{ title }}</span><sc-if value="{{ hasAction }}"><dc-import name="PondControl" kind="button" variant="secondary" label="{{ action }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import></sc-if></div></sc-if>
+<sc-if value="{{ isProv }}"><span style="{{ prov }}"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M4.5 7.5 7.5 4.5"></path><path d="M5.5 3 6.6 1.9a2.2 2.2 0 0 1 3.1 3.1L8.6 6.1"></path><path d="M6.5 9 5.4 10.1a2.2 2.2 0 0 1-3.1-3.1L3.4 5.9"></path></svg>{{ title }}</span></sc-if>
+<sc-if value="{{ isDiff }}"><div style="{{ diff }}"><span style="{{ diffSign }}">{{ sign }}</span><span style="{{ diffText }}">{{ title }}</span><sc-if value="{{ hasMeta }}"><span style="{{ cellMeta }}">{{ meta }}</span></sc-if></div></sc-if>
+<sc-if value="{{ isTask }}"><div style="{{ task }}"><div style="{{ taskTop }}"><span style="{{ taskDot }}"></span><span style="{{ taskTitle }}">{{ title }}</span></div><sc-if value="{{ taskHasMeta }}"><div style="{{ taskMeta }}"><sc-if value="{{ taskHasDue }}"><dc-import name="PondAtom" kind="date" value="{{ meta }}" due="{{ due }}" theme="{{ theme }}" size="{{ size }}" state="{{ atomState }}" hint-size="auto,22px"></dc-import></sc-if><sc-if value="{{ taskHasSteps }}"><span style="{{ cellMeta }}">{{ steps }}</span></sc-if></div></sc-if></div></sc-if>
+<sc-if value="{{ isReminder }}"><div style="{{ reminder }}"><span style="{{ dueDot }}"></span><div style="{{ remBody }}"><span style="{{ remTitle }}">{{ title }}</span><span style="{{ cellMeta }}">{{ meta }}</span></div><dc-import name="PondControl" kind="button" variant="ghost" label="open" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:480,&quot;height&quot;:140},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;list-row&quot;,&quot;check-row&quot;,&quot;table-row&quot;,&quot;record-card&quot;,&quot;entry&quot;,&quot;field-row&quot;,&quot;notice&quot;,&quot;provenance&quot;,&quot;diff-line&quot;,&quot;reminder&quot;,&quot;task-card&quot;],&quot;default&quot;:&quot;list-row&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;selected&quot;,&quot;focus&quot;,&quot;editing&quot;,&quot;dragging&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;error&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;add&quot;,&quot;remove&quot;],&quot;default&quot;:&quot;add&quot;,&quot;tsType&quot;:&quot;'add'|'remove'&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;meta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;value&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;valueKind&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;number&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tag&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;recipe&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;action&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;review&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;color&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ink&quot;,&quot;sage&quot;,&quot;mist&quot;,&quot;navy&quot;],&quot;default&quot;:&quot;ink&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;on&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'list-row', state = p.state ?? 'rest';
+    const theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const card = ink ? '#30312A' : '#FAF9EF';
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace", serif = "'PP Editorial New',Georgia,serif";
+    const S = x => state === x;
+    const hover = S('hover'), sel = S('selected'), edit = S('editing'), empty = S('empty'), load = S('loading'), err = S('error'), dis = S('disabled'), drag = S('dragging');
+    const D = {
+      'list-row': ['cabinet quote', 'today'], 'check-row': ['stir through harissa', ''], 'table-row': ['chickpeas, harissa', '19 sep'],
+      'record-card': ['chickpeas, harissa, yoghurt', '25m'], 'entry': ['Cooked for four. Needs more salt than you think.', '19 sep'],
+      'field-row': ['', ''], 'notice': ['cacio e pepe was deleted · 1 row still points at it', ''], 'provenance': ['google sheets › kitchen quotes', ''],
+      'diff-line': ['what to drink with it', ''], 'task-card': ['pack the kitchen', '10 nov'], 'reminder': ['cabinet quote is due today', 'kitchen renovation · 09:00']
+    }[kind] || ['', ''];
+    const title = empty ? ({ 'list-row': 'add an item', 'check-row': 'add a step', 'entry': 'write the first entry', 'record-card': 'untitled', 'task-card': 'new task' }[kind] || p.title || D[0]) : (p.title ?? D[0]);
+    const meta = p.meta ?? D[1];
+    const fs = mob ? 15 : 13.5;
+    const areaC = { sage: '#648F7B', mist: '#A5C8D1', navy: ink ? '#A5C8D1' : '#12354E' }[p.color] || null;
+    const ring = S('focus') ? { outline: '2px solid #A5C8D1', outlineOffset: 2 } : {};
+    const wrap = { display: 'block', color: fg, fontFamily: sans, ...(dis ? { opacity: .4, pointerEvents: 'none' } : {}), ...(load ? { opacity: .6 } : {}) };
+    const lift = drag ? { background: card, boxShadow: ink ? '0 12px 32px rgba(0,0,0,.4)' : '0 12px 32px rgba(27,29,20,.14)', transform: 'rotate(-.6deg)' } : {};
+    const row = { display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box', width: mob ? 330 : 360, minHeight: mob ? 48 : 36, padding: '0 10px 0 4px', borderRadius: 10, fontSize: fs, background: sel ? a(.07) : hover ? a(.05) : 'transparent', boxShadow: edit ? `inset 0 0 0 1.4px ${fg}` : 'none', ...lift, ...ring };
+    const handle = { width: 12, flex: 'none', fontSize: 10, letterSpacing: '-2px', color: a(.68), opacity: hover || drag || sel ? 1 : 0, cursor: 'grab', fontFamily: mono };
+    const done = kind === 'check-row' && (p.on === true || p.on === 'true' || sel) ? 'true' : 'false';
+    const tableRow = { display: 'grid', gridTemplateColumns: mob ? '54px minmax(0,1fr) 44px 58px' : '62px minmax(0,1fr) 64px 80px', columnGap: 14, alignItems: 'center', boxSizing: 'border-box', width: mob ? 340 : 460, minHeight: mob ? 48 : 38, padding: '0 8px', borderBottom: `1px solid ${a(.055)}`, borderRadius: sel || hover || edit ? 8 : 0, background: sel ? a(.07) : hover ? a(.05) : 'transparent', boxShadow: edit ? `inset 0 0 0 1.4px ${fg}` : 'none', fontSize: fs, ...lift };
+    const cellMeta = { fontFamily: mono, fontSize: mob ? 11.5 : 10.5, color: a(.68), whiteSpace: 'nowrap' };
+    const card2 = { display: 'flex', flexDirection: 'column', gap: 10, boxSizing: 'border-box', width: mob ? 176 : 170, padding: 10, borderRadius: 20, background: card, boxShadow: sel ? `0 0 0 2px ${fg},${cardShadow}` : hover ? (ink ? '0 2px 4px rgba(0,0,0,.3),0 12px 28px rgba(0,0,0,.4)' : '0 2px 4px rgba(40,34,24,.06),0 12px 28px rgba(40,34,24,.1)') : cardShadow, transform: hover ? 'translateY(-1px)' : 'none', ...lift, ...ring };
+    const entry = { display: 'grid', gridTemplateColumns: '56px minmax(0,1fr)', gap: 14, alignItems: 'baseline', boxSizing: 'border-box', width: mob ? 330 : 420, padding: '10px 8px', borderRadius: 10, background: sel ? a(.07) : hover ? a(.05) : 'transparent', boxShadow: edit ? `inset 0 0 0 1.4px ${fg}` : 'none' };
+    const entryText = { fontFamily: serif, fontWeight: 200, fontSize: mob ? 17 : 16.5, lineHeight: 1.6, color: empty ? a(.68) : fg, textWrap: 'pretty' };
+    const vk = p.valueKind ?? 'number';
+    const fieldRow = { display: 'grid', gridTemplateColumns: mob ? '120px minmax(0,1fr)' : '140px minmax(0,1fr)', gap: 12, alignItems: 'center', boxSizing: 'border-box', width: mob ? 330 : 360, minHeight: mob ? 48 : 34, padding: '0 8px', borderRadius: 8, background: hover ? a(.05) : 'transparent' };
+    const notice = { display: 'flex', alignItems: 'center', gap: 12, boxSizing: 'border-box', width: mob ? 330 : 440, padding: '9px 10px 9px 14px', borderRadius: 14, background: a(.04), ...ring };
+    const noticeText = { flex: 1, minWidth: 0, fontFamily: mono, fontSize: mob ? 12 : 11, lineHeight: 1.5, color: a(.8) };
+    const prov = { display: 'inline-flex', alignItems: 'center', gap: 6, boxSizing: 'border-box', minHeight: mob ? 32 : 22, padding: mob ? '0 11px' : '0 9px', borderRadius: 999, boxShadow: `inset 0 0 0 1px ${a(sel || hover ? .3 : .2)}`, background: sel ? a(.07) : 'transparent', fontFamily: mono, fontSize: mob ? 12 : 10.5, color: err ? a(.68) : a(.8), textDecoration: err ? 'line-through' : 'none', whiteSpace: 'nowrap', ...ring };
+    const removal = p.variant === 'remove';
+    const diff = { display: 'flex', alignItems: 'baseline', gap: 10, boxSizing: 'border-box', width: mob ? 330 : 380, padding: '4px 10px', borderRadius: 8, background: sel ? a(.07) : 'transparent', fontFamily: mono, fontSize: mob ? 12.5 : 11.5, lineHeight: 1.6 };
+    const diffText = removal ? { color: a(.68), textDecoration: 'line-through', textDecorationColor: '#C55347' } : { color: fg };
+    const reminder = { display: 'flex', alignItems: 'center', gap: 12, boxSizing: 'border-box', width: mob ? 330 : 380, padding: '12px 12px 12px 16px', borderRadius: 20, background: ink ? 'rgba(48,49,42,.86)' : 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', backdropFilter: 'blur(24px) saturate(1.3)', border: ink ? '1px solid rgba(250,249,239,.09)' : '1px solid rgba(255,255,255,.9)', boxShadow: ink ? '0 20px 54px rgba(0,0,0,.4)' : 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.14)' };
+    return {
+      theme, size, wrap, title, meta, value: p.value ?? (kind === 'table-row' ? '1,040' : kind === 'field-row' ? '520' : ''), label: p.label ?? 'kcal per serving', qty: p.qty ?? '2',
+      isList: kind === 'list-row', isCheck: kind === 'check-row', isTable: kind === 'table-row', isCard: kind === 'record-card', isEntry: kind === 'entry', isField: kind === 'field-row', isNotice: kind === 'notice', isProv: kind === 'provenance', isDiff: kind === 'diff-line', isReminder: kind === 'reminder', isTask: kind === 'task-card',
+      row, handle, dot: { width: 7, height: 7, borderRadius: 2, flex: 'none', background: areaC || (sel ? fg : a(.5)) }, grow: { flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: empty ? a(.68) : fg },
+      due: (p.due ?? (kind === 'list-row' && meta === 'today')) ? 'true' : 'false', atomState: edit ? 'editing' : err ? 'error' : empty ? 'empty' : 'rest',
+      done, checkText: { flex: 1, minWidth: 0, fontSize: fs, color: done === 'true' || empty ? a(.68) : fg, textDecoration: done === 'true' ? 'line-through' : 'none', textDecorationColor: a(.4) },
+      numWrap: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }, isKept: err, tableRow, relState: err ? 'error' : empty ? 'empty' : 'rest', cell: { fontSize: fs }, cellNum: { fontSize: mob ? 13.5 : 12.5, fontWeight: 500, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: fg }, cellMeta,
+      card: card2, imgState: empty ? 'empty' : load ? 'loading' : err ? 'error' : 'rest', cardBody: { display: 'flex', flexDirection: 'column', gap: 6, padding: '0 2px 2px' }, cardTitle: { fontSize: mob ? 14 : 13, fontWeight: 500, lineHeight: 1.35, color: empty ? a(.68) : fg }, cardMetaRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }, tagText: p.tag ?? 'recipe',
+      entry, entryDate: cellMeta, entryText,
+      fieldRow, fieldLabel: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) }, valueKind: vk,
+      notice, noticeText, hasAction: !!(p.action ?? 'review'), action: p.action ?? 'review',
+      prov,
+      diff, sign: removal ? '−' : '+', diffSign: { width: 10, flex: 'none', color: removal ? '#C55347' : fg }, diffText, hasMeta: !!meta,
+      task: { display: 'flex', flexDirection: 'column', gap: 7, boxSizing: 'border-box', width: p.width ? Number(p.width) : (mob ? 300 : 200), padding: mob ? '12px 12px' : '9px 10px', borderRadius: 12, background: ink ? '#4A4940' : '#FFFFFF', boxShadow: sel ? '0 0 0 2px ' + fg + ',0 1px 2px rgba(40,34,24,.08)' : hover ? (ink ? '0 6px 16px rgba(0,0,0,.35)' : '0 2px 4px rgba(40,34,24,.08),0 8px 20px rgba(40,34,24,.1)') : (ink ? 'none' : '0 1px 2px rgba(40,34,24,.08)'), transform: hover ? 'translateY(-1px)' : 'none', ...(edit ? { boxShadow: 'inset 0 0 0 1.4px ' + fg } : {}), ...(empty ? { background: 'transparent', boxShadow: 'inset 0 0 0 1.4px ' + a(.2) } : {}), ...(p.on === true || p.on === 'true' ? { opacity: .6 } : {}), ...lift, ...ring },
+      taskTop: { display: 'flex', alignItems: 'baseline', gap: 7 },
+      taskDot: { width: 6, height: 6, borderRadius: 2, flex: 'none', transform: 'translateY(-1px)', background: areaC || a(.5), display: areaC ? 'block' : 'none' },
+      taskTitle: { flex: 1, minWidth: 0, fontSize: mob ? 14.5 : 12.5, lineHeight: 1.35, color: empty ? a(.68) : fg, textDecoration: p.on === true || p.on === 'true' ? 'line-through' : 'none', textDecorationColor: a(.4) },
+      taskMeta: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+      taskHasMeta: !empty && (!!meta || !!p.value), taskHasDue: !!meta, taskHasSteps: !!p.value, steps: p.value ?? '',
+      reminder, dueDot: { width: 7, height: 7, borderRadius: 2, flex: 'none', background: '#D96629' }, remBody: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }, remTitle: { fontSize: fs, fontWeight: 500 }
+    };
+  }
+}
+</script>
+</body>
+</html>

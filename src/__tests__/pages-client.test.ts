@@ -26,6 +26,7 @@ import {
   setProperty,
   defineSchema,
 } from '@/lib/pages/client'
+import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
 import type { Block } from '@/lib/documents/types'
 import { SCHEMA_KEY, type PropertySchema } from '@/lib/properties/schema'
 
@@ -251,6 +252,27 @@ describe('createPage', () => {
     const sb = makeSupabase(chain)
     await expect(createPage(sb as never, 'user-1', {})).rejects.toThrow(/boom/)
   })
+
+  it('auto-suffixes and retries when the first insert hits a sibling-name collision (#84)', async () => {
+    // First insert violates the unique index (23505); the retry reads siblings
+    // (`data` on the chain) and inserts the suffixed title.
+    const chain = makeChain({
+      single: jest
+        .fn()
+        .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'duplicate' } })
+        .mockResolvedValueOnce({ data: { id: 'page-new' }, error: null }),
+      data: [{ id: 'x', title: 'Personal' }],
+    })
+    const sb = makeSupabase(chain)
+
+    const result = await createPage(sb as never, 'user-1', { title: 'Personal' })
+
+    // Inserted twice: original attempt, then the suffixed retry. (The insert
+    // payload is mutated in place, so assert the count + the final resolved title
+    // rather than per-call snapshots.)
+    expect(chain.insert).toHaveBeenCalledTimes(2)
+    expect(result.title).toBe('Personal 2')
+  })
 })
 
 // ── saveBlocks / updateTitle ─────────────────────────────────────────────────
@@ -280,7 +302,12 @@ describe('saveBlocks', () => {
 
 describe('updateTitle', () => {
   it('updates the title for a page', async () => {
-    const chain = makeChain({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) })
+    // updateTitle pre-checks siblings (#84): the self-lookup returns null here
+    // (maybeSingle default) so the pre-check is skipped; the thenable chain lets
+    // the update's `await …eq('id', id)` resolve to a success.
+    const chain = makeChain({
+      then: (resolve: (v: unknown) => void) => resolve({ data: null, error: null }),
+    })
     const sb = makeSupabase(chain)
 
     await updateTitle(sb as never, 'page-1', 'Renamed')
@@ -288,6 +315,47 @@ describe('updateTitle', () => {
     const updated = chain.update.mock.calls[0][0]
     expect(updated.title).toBe('Renamed')
     expect(chain.eq).toHaveBeenCalledWith('id', 'page-1')
+  })
+
+  it('rejects a colliding rename via the pre-check, before any write (#84)', async () => {
+    // Self-lookup resolves to a real row; siblingRows (await on the thenable
+    // chain) returns a case-insensitively clashing sibling. The pre-check must
+    // throw WITHOUT ever calling .update() — proving it works even on a DB where
+    // the unique index isn't present.
+    const chain = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({
+        data: { user_id: 'u1', workspace: 'main', parent_id: 'root-1' },
+        error: null,
+      }),
+      then: (resolve: (v: unknown) => void) =>
+        resolve({
+          data: [
+            { id: 'page-1', title: 'Health' }, // self — excluded
+            { id: 'page-2', title: 'personal' }, // clashes with "Personal"
+          ],
+          error: null,
+        }),
+    })
+    const sb = makeSupabase(chain)
+
+    await expect(updateTitle(sb as never, 'page-1', 'Personal')).rejects.toBeInstanceOf(
+      DuplicateTitleError
+    )
+    expect(chain.update).not.toHaveBeenCalled()
+  })
+
+  it('maps a sibling-name unique violation (23505) to DuplicateTitleError as a backstop (#84)', async () => {
+    // No self row (pre-check skipped); the update itself hits the index race and
+    // the 23505 mapping surfaces DuplicateTitleError.
+    const chain = makeChain({
+      then: (resolve: (v: unknown) => void) =>
+        resolve({ data: null, error: { code: '23505', message: 'dup' } }),
+    })
+    const sb = makeSupabase(chain)
+
+    await expect(updateTitle(sb as never, 'page-1', 'Personal')).rejects.toBeInstanceOf(
+      DuplicateTitleError
+    )
   })
 })
 

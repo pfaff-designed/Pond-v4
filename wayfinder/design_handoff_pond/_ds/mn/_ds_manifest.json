@@ -1,0 +1,1858 @@
+{
+  "namespace": "MakeNoiseDesignSystem_e9e6de",
+  "components": [
+    { "name": "Icon", "sourcePath": "components/icon/Icon.jsx" },
+    { "name": "ICONS", "sourcePath": "components/icon/icons.js" },
+    { "name": "NAMED_ICONS", "sourcePath": "components/icon/icons.js" },
+    { "name": "Card", "sourcePath": "components/layout/Card.jsx" },
+    { "name": "CardHeader", "sourcePath": "components/layout/Card.jsx" },
+    { "name": "CardBody", "sourcePath": "components/layout/Card.jsx" },
+    { "name": "CardFooter", "sourcePath": "components/layout/Card.jsx" },
+    { "name": "Image", "sourcePath": "components/layout/Image.jsx" },
+    { "name": "Avatar", "sourcePath": "components/primitives/Avatar.jsx" },
+    { "name": "Badge", "sourcePath": "components/primitives/Badge.jsx" },
+    { "name": "Button", "sourcePath": "components/primitives/Button.jsx" },
+    { "name": "Input", "sourcePath": "components/primitives/Input.jsx" },
+    { "name": "Label", "sourcePath": "components/primitives/Label.jsx" },
+    { "name": "Separator", "sourcePath": "components/primitives/Separator.jsx" },
+    { "name": "Eyebrow", "sourcePath": "components/typography/Eyebrow.jsx" },
+    { "name": "Link", "sourcePath": "components/typography/Link.jsx" },
+    { "name": "Text", "sourcePath": "components/typography/Text.jsx" }
+  ],
+  "startingPoints": [
+    {
+      "name": "Icon",
+      "path": "components/icon/Icon.jsx",
+      "previewPath": "components/icon/icon.card.html",
+      "kind": "component",
+      "section": "Brand",
+      "subtitle": "182 solid geometric glyphs, colored by currentColor",
+      "viewport": "700x300"
+    },
+    {
+      "name": "Card",
+      "path": "components/layout/Card.jsx",
+      "previewPath": "components/layout/layout.card.html",
+      "kind": "component",
+      "section": "Layout",
+      "subtitle": "Hairline surface with header / body / footer slots",
+      "viewport": "700x260"
+    },
+    {
+      "name": "Button",
+      "path": "components/primitives/Button.jsx",
+      "previewPath": "components/primitives/primitives.card.html",
+      "kind": "component",
+      "section": "Primitives",
+      "subtitle": "Ink-on-paper CTA, calm secondary, border-only ghost",
+      "viewport": "700x150"
+    },
+    {
+      "name": "Text",
+      "path": "components/typography/Text.jsx",
+      "previewPath": "components/typography/typography.card.html",
+      "kind": "component",
+      "section": "Typography",
+      "subtitle": "The eight-voice system: body, label, mono, whisper, punch",
+      "viewport": "700x260"
+    }
+  ],
+  "cards": [
+    {
+      "path": "guidelines/brand-icon-index.html",
+      "group": "Brand",
+      "viewport": "700x1300",
+      "subtitle": "All 182 glyphs with their names. 42 are described; the rest are numbered library shapes.",
+      "name": "Glyph index"
+    },
+    {
+      "path": "guidelines/brand-icon-set.html",
+      "group": "Brand",
+      "viewport": "700x200",
+      "subtitle": "182 solid marks, masked to currentColor. Expressive, not functional.",
+      "name": "Glyph set"
+    },
+    {
+      "path": "guidelines/brand-iconography.html",
+      "group": "Brand",
+      "viewport": "700x200",
+      "subtitle": "Three registers: the glyph library, hand-drawn UI marks, unicode and colored geometry.",
+      "name": "Iconography"
+    },
+    {
+      "path": "guidelines/brand-radius-shadow.html",
+      "group": "Brand",
+      "viewport": "700x145",
+      "subtitle": "2/4/8/full · three ink-tinted shadow steps, opt-in",
+      "name": "Radius & shadow"
+    },
+    {
+      "path": "guidelines/brand-surfaces.html",
+      "group": "Brand",
+      "viewport": "700x178",
+      "subtitle": "Letterpress and liquid glass — the two composite treatments",
+      "name": "Pond surfaces"
+    },
+    {
+      "path": "guidelines/brand-wordmark.html",
+      "group": "Brand",
+      "viewport": "700x296",
+      "subtitle": "The only mark that exists. currentColor, full-bleed, no monogram variant.",
+      "name": "Wordmark"
+    },
+    {
+      "path": "guidelines/motion-durations.html",
+      "group": "Brand",
+      "viewport": "700x326",
+      "subtitle": "Snappy exits, weighted entrances. Duration-based UI, spring-based display.",
+      "name": "Motion ladder"
+    },
+    {
+      "path": "guidelines/color-blue.html",
+      "group": "Colors",
+      "viewport": "700x155",
+      "subtitle": "Navy on both sides of the house — a deep sea-ink against warm ground.",
+      "name": "The cool note"
+    },
+    {
+      "path": "guidelines/color-core.html",
+      "group": "Colors",
+      "viewport": "700x162",
+      "subtitle": "Ink · Paper · Burnt orange · Red · Wheat · Mist · Sage · Navy",
+      "name": "Core roles"
+    },
+    {
+      "path": "guidelines/color-cta.html",
+      "group": "Colors",
+      "viewport": "700x150",
+      "subtitle": "Primary is always ink on paper, or paper on ink. Never accent.",
+      "name": "CTA relationship"
+    },
+    {
+      "path": "guidelines/color-house.html",
+      "group": "Colors",
+      "viewport": "700x204",
+      "subtitle": "Make Noise sits on ink in daylight; Pond sits one ramp step down with paper cards",
+      "name": "Exterior & interior"
+    },
+    {
+      "path": "guidelines/color-neutrals.html",
+      "group": "Colors",
+      "viewport": "700x148",
+      "subtitle": "Olive-tinted, 50→900. Never pure gray.",
+      "name": "Neutral ramp"
+    },
+    {
+      "path": "guidelines/color-semantic.html",
+      "group": "Colors",
+      "viewport": "700x148",
+      "subtitle": "Success · Warning · Error · Info — each grounded on a palette hue, all 5:1 or better",
+      "name": "Semantic utility"
+    },
+    {
+      "path": "guidelines/color-spine.html",
+      "group": "Colors",
+      "viewport": "700x384",
+      "subtitle": "Eight values for the whole house. Products select from it; none of them add to it.",
+      "name": "The palette"
+    },
+    {
+      "path": "guidelines/color-theme-press.html",
+      "group": "Colors",
+      "viewport": "700x230",
+      "subtitle": "Interior picks seven: sage ambient, navy rings and links, wheat action, red punctuation.",
+      "name": "Selection — Pond (Press)"
+    },
+    {
+      "path": "guidelines/color-theme-studio.html",
+      "group": "Colors",
+      "viewport": "700x216",
+      "subtitle": "Exterior picks five: ink, paper, burnt orange, wheat, navy. Red, mist and sage stay on the shelf.",
+      "name": "Selection — make-noise.studio"
+    },
+    {
+      "path": "components/icon/icon.card.html",
+      "group": "Components",
+      "viewport": "700x213",
+      "subtitle": "182 masked glyphs — sizes, colour inheritance, in-context use",
+      "name": "Icon"
+    },
+    {
+      "path": "components/layout/layout.card.html",
+      "group": "Components",
+      "viewport": "700x258",
+      "subtitle": "Card with header / body / footer, Image ratios",
+      "name": "Layout"
+    },
+    {
+      "path": "components/primitives/primitives.card.html",
+      "group": "Components",
+      "viewport": "700x342",
+      "subtitle": "Button, Input, Label, Badge, Avatar, Separator",
+      "name": "Primitives"
+    },
+    {
+      "path": "components/typography/typography.card.html",
+      "group": "Components",
+      "viewport": "700x441",
+      "subtitle": "Text voices, Eyebrow, Link",
+      "name": "Typography"
+    },
+    {
+      "path": "ui_kits/make-noise-studio/index.html",
+      "group": "make-noise.studio",
+      "viewport": "1280x760",
+      "subtitle": "ASCII intro stage → composer → conversation surface with slash commands",
+      "name": "Studio site"
+    },
+    {
+      "path": "ui_kits/pond/index.html",
+      "group": "Pond",
+      "viewport": "1280x760",
+      "subtitle": "Rail file tree · document editor · AI terminal with accept/reject proposal cards",
+      "name": "Pond workspace"
+    },
+    {
+      "path": "guidelines/spacing-component.html",
+      "group": "Spacing",
+      "viewport": "700x142",
+      "subtitle": "4pt base, 4→32px. Lives INSIDE components.",
+      "name": "Component scale"
+    },
+    {
+      "path": "guidelines/spacing-in-use.html",
+      "group": "Spacing",
+      "viewport": "700x171",
+      "subtitle": "Component padding inside the card; layout gap between cards",
+      "name": "Boundary in use"
+    },
+    {
+      "path": "guidelines/spacing-layout.html",
+      "group": "Spacing",
+      "viewport": "700x182",
+      "subtitle": "48→320px. Lives BETWEEN components. Crossing the boundary is always wrong.",
+      "name": "Layout scale"
+    },
+    {
+      "path": "guidelines/type-body.html",
+      "group": "Type",
+      "viewport": "700x176",
+      "subtitle": "PP Neue Montreal — body, label, label-bold",
+      "name": "Body & UI voices"
+    },
+    {
+      "path": "guidelines/type-display.html",
+      "group": "Type",
+      "viewport": "700x232",
+      "subtitle": "PP Editorial New (subbed: Bodoni Moda) — punch, punch-italic, whisper, whisper-italic",
+      "name": "Display voices"
+    },
+    {
+      "path": "guidelines/type-leading-tracking.html",
+      "group": "Type",
+      "viewport": "700x154",
+      "subtitle": "1.1 display · 1.3 subhead · 1.5 body · 1.7 long-form",
+      "name": "Leading & tracking"
+    },
+    {
+      "path": "guidelines/type-mono.html",
+      "group": "Type",
+      "viewport": "700x163",
+      "subtitle": "PP Neue Montreal Mono — data, technical detail, deliberate zine energy",
+      "name": "Mono voice"
+    },
+    {
+      "path": "guidelines/type-scale-display.html",
+      "group": "Type",
+      "viewport": "700x139",
+      "subtitle": "Fluid clamp() — punch, whisper, hero. Display only.",
+      "name": "Display scale"
+    },
+    {
+      "path": "guidelines/type-scale-ui.html",
+      "group": "Type",
+      "viewport": "700x319",
+      "subtitle": "Stepped, fixed. 11 → 46px. Never clamp() for UI type.",
+      "name": "UI scale"
+    }
+  ],
+  "templates": [],
+  "hasThumbnailHtml": true,
+  "globalCssPaths": [
+    "tokens/fonts.css",
+    "tokens/colors.css",
+    "tokens/typography.css",
+    "tokens/spacing.css",
+    "tokens/radius-shadow.css",
+    "tokens/motion.css",
+    "tokens/themes.css",
+    "tokens/base.css",
+    "styles.css"
+  ],
+  "tokens": [
+    { "name": "--raw-ink", "value": "#1B1D14", "kind": "color", "definedIn": "tokens/colors.css" },
+    {
+      "name": "--raw-paper",
+      "value": "#FAF9EF",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-burnt-orange",
+      "value": "#D96629",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    { "name": "--raw-red", "value": "#C55347", "kind": "color", "definedIn": "tokens/colors.css" },
+    {
+      "name": "--raw-wheat",
+      "value": "#FFEFAE",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    { "name": "--raw-mist", "value": "#A5C8D1", "kind": "color", "definedIn": "tokens/colors.css" },
+    { "name": "--raw-sage", "value": "#648F7B", "kind": "color", "definedIn": "tokens/colors.css" },
+    { "name": "--raw-navy", "value": "#12354E", "kind": "color", "definedIn": "tokens/colors.css" },
+    {
+      "name": "--raw-accent",
+      "value": "var(--raw-red)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-highlight",
+      "value": "var(--raw-wheat)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-calm",
+      "value": "var(--raw-mist)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-50",
+      "value": "#FAF9EF",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-100",
+      "value": "#EDECD8",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-200",
+      "value": "#D9D8C4",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-300",
+      "value": "#BFBDAC",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-400",
+      "value": "#A3A294",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-500",
+      "value": "#6E6D61",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-600",
+      "value": "#4A4940",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-700",
+      "value": "#30312A",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-neutral-900",
+      "value": "#1B1D14",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-success-bg",
+      "value": "#E2EDE8",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-success",
+      "value": "#3F6A58",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-success-text",
+      "value": "#27443A",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-warning-bg",
+      "value": "#F7EAD9",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-warning",
+      "value": "#8A4A10",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-warning-text",
+      "value": "#5C3009",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-error-bg",
+      "value": "#F2E4E3",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-error",
+      "value": "#A63228",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-error-text",
+      "value": "#6B1F18",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--raw-info-bg",
+      "value": "#DDE6EC",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    { "name": "--raw-info", "value": "#12354E", "kind": "color", "definedIn": "tokens/colors.css" },
+    {
+      "name": "--raw-info-text",
+      "value": "#0B222F",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-ink",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-paper",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-accent",
+      "value": "var(--raw-accent)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-calm",
+      "value": "var(--raw-calm)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-highlight",
+      "value": "var(--raw-highlight)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-burnt-orange",
+      "value": "var(--raw-burnt-orange)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-red",
+      "value": "var(--raw-red)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-wheat",
+      "value": "var(--raw-wheat)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-mist",
+      "value": "var(--raw-mist)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-sage",
+      "value": "var(--raw-sage)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-navy",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-link",
+      "value": "var(--raw-accent)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-bg-page",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-bg-subtle",
+      "value": "var(--raw-neutral-100)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-bg-elevated-dark",
+      "value": "var(--raw-neutral-700)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-border-subtle",
+      "value": "var(--raw-neutral-200)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-border-default",
+      "value": "var(--raw-neutral-300)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-text-primary",
+      "value": "var(--raw-ink)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-text-secondary",
+      "value": "var(--raw-neutral-500)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-text-tertiary",
+      "value": "var(--raw-neutral-600)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-text-placeholder",
+      "value": "var(--raw-neutral-400)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-cta-bg",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-cta-text",
+      "value": "var(--raw-paper)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-cta-secondary-bg",
+      "value": "var(--raw-calm)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-cta-secondary-text",
+      "value": "var(--raw-ink)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-success-bg",
+      "value": "var(--raw-success-bg)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-success",
+      "value": "var(--raw-success)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-success-text",
+      "value": "var(--raw-success-text)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-warning-bg",
+      "value": "var(--raw-warning-bg)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-warning",
+      "value": "var(--raw-warning)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-warning-text",
+      "value": "var(--raw-warning-text)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-error-bg",
+      "value": "var(--raw-error-bg)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-error",
+      "value": "var(--raw-error)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-error-text",
+      "value": "var(--raw-error-text)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-info-bg",
+      "value": "var(--raw-info-bg)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-info",
+      "value": "var(--raw-info)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-info-text",
+      "value": "var(--raw-info-text)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css"
+    },
+    {
+      "name": "--color-bg-page",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-bg-subtle",
+      "value": "var(--raw-neutral-700)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-border-subtle",
+      "value": "var(--raw-neutral-700)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-border-default",
+      "value": "var(--raw-neutral-600)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-text-primary",
+      "value": "var(--raw-paper)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-text-secondary",
+      "value": "var(--raw-neutral-400)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-text-tertiary",
+      "value": "var(--raw-neutral-500)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-text-placeholder",
+      "value": "var(--raw-neutral-600)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-cta-bg",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--color-cta-text",
+      "value": "var(--raw-ink)",
+      "kind": "font",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--shadow-sm",
+      "value": "0 1px 2px 0 rgb(0 0 0 / 0.20)",
+      "kind": "shadow",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--shadow-md",
+      "value": "0 4px 12px 0 rgb(0 0 0 / 0.30)",
+      "kind": "shadow",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--shadow-lg",
+      "value": "0 12px 32px 0 rgb(0 0 0 / 0.40)",
+      "kind": "shadow",
+      "definedIn": "tokens/colors.css",
+      "scope": ".dark"
+    },
+    {
+      "name": "--font-sans",
+      "value": "'PP Neue Montreal', system-ui, sans-serif",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--font-mono",
+      "value": "'PP Neue Montreal Mono', monospace",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--font-display",
+      "value": "'Bodoni Moda', 'PP Editorial New', Georgia, serif",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-body-family",
+      "value": "var(--font-sans)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-body-weight",
+      "value": "400",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-body-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-body-transform",
+      "value": "none",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-body-tracking",
+      "value": "var(--tracking-normal)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-label-family",
+      "value": "var(--font-sans)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-label-weight",
+      "value": "500",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-label-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-label-transform",
+      "value": "uppercase",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-label-tracking",
+      "value": "var(--tracking-wide)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-label-bold-family",
+      "value": "var(--font-sans)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-label-bold-weight",
+      "value": "700",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-label-bold-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-label-bold-transform",
+      "value": "uppercase",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-label-bold-tracking",
+      "value": "var(--tracking-wider)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-mono-family",
+      "value": "var(--font-mono)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-mono-weight",
+      "value": "400",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-mono-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-mono-transform",
+      "value": "none",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-mono-tracking",
+      "value": "var(--tracking-normal)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-whisper-family",
+      "value": "var(--font-display)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-whisper-weight",
+      "value": "200",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-whisper-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-whisper-tracking",
+      "value": "var(--tracking-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-whisper-italic-family",
+      "value": "var(--font-display)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-whisper-italic-weight",
+      "value": "200",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-whisper-italic-style",
+      "value": "italic",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-whisper-italic-tracking",
+      "value": "var(--tracking-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-punch-family",
+      "value": "var(--font-display)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-punch-weight",
+      "value": "800",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-punch-style",
+      "value": "normal",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-punch-tracking",
+      "value": "var(--tracking-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-punch-italic-family",
+      "value": "var(--font-display)",
+      "kind": "color",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--voice-punch-italic-weight",
+      "value": "800",
+      "kind": "font",
+      "definedIn": "tokens/typography.css",
+      "annotation": "font"
+    },
+    {
+      "name": "--voice-punch-italic-style",
+      "value": "italic",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--voice-punch-italic-tracking",
+      "value": "var(--tracking-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-xs",
+      "value": "0.6875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-sm",
+      "value": "0.8125rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-base",
+      "value": "1rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-lg",
+      "value": "1.125rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-xl",
+      "value": "1.375rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-2xl",
+      "value": "1.75rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-3xl",
+      "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-4xl",
+      "value": "2.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-display-punch",
+      "value": "clamp(2rem, 5vw, 4rem)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-display-whisper",
+      "value": "clamp(3.5rem, 8vw, 8rem)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-display-hero",
+      "value": "clamp(5rem, 12vw, 14rem)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--leading-tight",
+      "value": "1.1",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--leading-snug",
+      "value": "1.3",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--leading-normal",
+      "value": "1.5",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--leading-relaxed",
+      "value": "1.7",
+      "kind": "other",
+      "definedIn": "tokens/typography.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--tracking-tight",
+      "value": "-0.03em",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--tracking-normal",
+      "value": "0em",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--tracking-wide",
+      "value": "0.06em",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--tracking-wider",
+      "value": "0.1em",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    { "name": "--space-1", "value": "4px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--space-2", "value": "8px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--space-3", "value": "12px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--space-4", "value": "16px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--space-5", "value": "24px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--space-6", "value": "32px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--layout-1", "value": "48px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    { "name": "--layout-2", "value": "80px", "kind": "spacing", "definedIn": "tokens/spacing.css" },
+    {
+      "name": "--layout-3",
+      "value": "120px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--layout-4",
+      "value": "160px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--layout-5",
+      "value": "240px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--layout-6",
+      "value": "320px",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--radius-sm",
+      "value": "2px",
+      "kind": "radius",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--radius-md",
+      "value": "4px",
+      "kind": "radius",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--radius-lg",
+      "value": "8px",
+      "kind": "radius",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--radius-full",
+      "value": "9999px",
+      "kind": "radius",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--shadow-sm",
+      "value": "0 1px 2px 0 rgb(27 29 20 / 0.06)",
+      "kind": "shadow",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--shadow-md",
+      "value": "0 4px 12px 0 rgb(27 29 20 / 0.10)",
+      "kind": "shadow",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--shadow-lg",
+      "value": "0 12px 32px 0 rgb(27 29 20 / 0.14)",
+      "kind": "shadow",
+      "definedIn": "tokens/radius-shadow.css"
+    },
+    {
+      "name": "--duration-fast",
+      "value": "150ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--duration-base",
+      "value": "250ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--duration-slow",
+      "value": "400ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--duration-slower",
+      "value": "600ms",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--ease-out",
+      "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--ease-in",
+      "value": "cubic-bezier(0.4, 0, 1, 1)",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--ease-in-out",
+      "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "kind": "other",
+      "definedIn": "tokens/motion.css",
+      "annotation": "other"
+    },
+    {
+      "name": "--studio-yellow",
+      "value": "var(--raw-wheat)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--studio-blue",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--studio-black",
+      "value": "#000000",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-ink",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-paper",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-accent",
+      "value": "var(--raw-burnt-orange)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-navy",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-link",
+      "value": "var(--raw-burnt-orange)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-bg-page",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-bg-subtle",
+      "value": "var(--raw-neutral-700)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-text-primary",
+      "value": "var(--raw-paper)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-text-secondary",
+      "value": "rgba(250, 249, 239, 0.62)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-text-tertiary",
+      "value": "rgba(250, 249, 239, 0.48)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-text-placeholder",
+      "value": "rgba(250, 249, 239, 0.38)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-border-subtle",
+      "value": "rgba(250, 249, 239, 0.14)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-border-default",
+      "value": "rgba(250, 249, 239, 0.26)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-cta-bg",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-cta-text",
+      "value": "var(--raw-ink)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-cta-secondary-bg",
+      "value": "var(--raw-wheat)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-cta-secondary-text",
+      "value": "var(--raw-ink)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--color-error",
+      "value": "#A63228",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-studio"
+    },
+    {
+      "name": "--press-ink",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-paper",
+      "value": "var(--raw-neutral-100)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-card",
+      "value": "var(--raw-paper)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-body",
+      "value": "rgba(27, 29, 20, 0.80)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-muted",
+      "value": "rgba(27, 29, 20, 0.52)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-faint",
+      "value": "rgba(27, 29, 20, 0.30)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-line",
+      "value": "rgba(27, 29, 20, 0.09)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-hair",
+      "value": "rgba(27, 29, 20, 0.055)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-accent",
+      "value": "var(--raw-sage)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-accent-soft",
+      "value": "rgba(100, 143, 123, 0.14)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-accent-wash",
+      "value": "rgba(100, 143, 123, 0.07)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-navy",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-red",
+      "value": "var(--raw-red)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-mist",
+      "value": "var(--raw-mist)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-action",
+      "value": "var(--raw-wheat)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--press-action-ink",
+      "value": "var(--raw-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-ink",
+      "value": "var(--press-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-paper",
+      "value": "var(--press-card)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-accent",
+      "value": "var(--press-accent)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-calm",
+      "value": "var(--press-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-highlight",
+      "value": "var(--press-action)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-red",
+      "value": "var(--raw-red)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-mist",
+      "value": "var(--raw-mist)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-sage",
+      "value": "var(--raw-sage)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-navy",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-link",
+      "value": "var(--raw-navy)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-bg-page",
+      "value": "var(--press-paper)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-bg-subtle",
+      "value": "var(--press-card)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-bg-elevated-dark",
+      "value": "var(--press-ink)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-text-primary",
+      "value": "var(--press-ink)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-text-secondary",
+      "value": "var(--press-muted)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-text-tertiary",
+      "value": "var(--press-body)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-text-placeholder",
+      "value": "var(--press-faint)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-border-subtle",
+      "value": "var(--press-hair)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-border-default",
+      "value": "var(--press-line)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-cta-bg",
+      "value": "var(--press-action)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-cta-text",
+      "value": "var(--press-action-ink)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-cta-secondary-bg",
+      "value": "var(--press-mist)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-cta-secondary-text",
+      "value": "var(--press-ink)",
+      "kind": "font",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--color-error",
+      "value": "var(--press-red)",
+      "kind": "color",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    },
+    {
+      "name": "--motion-instant",
+      "value": "90ms",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--motion-quick",
+      "value": "150ms",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--motion-settle",
+      "value": "280ms",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--motion-calm",
+      "value": "460ms",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--motion-slow",
+      "value": "560ms",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--ease-press",
+      "value": "cubic-bezier(0.22, 0.8, 0.2, 1)",
+      "kind": "other",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press",
+      "annotation": "other"
+    },
+    {
+      "name": "--radius-lg",
+      "value": "10px",
+      "kind": "radius",
+      "definedIn": "tokens/themes.css",
+      "scope": ".theme-press"
+    }
+  ],
+  "themes": [
+    { "selector": ".dark", "label": "Dark" },
+    { "selector": ".theme-studio", "label": "Studio" },
+    { "selector": ".theme-press", "label": "Press" }
+  ],
+  "fonts": [
+    {
+      "family": "PP Neue Montreal",
+      "weight": "100",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Thin.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "100",
+      "style": "italic",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-ThinItalic.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "300",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Light.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "350",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Book.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "400",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Regular.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "500",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Medium.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "700",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-Bold.otf"]
+    },
+    {
+      "family": "PP Neue Montreal",
+      "weight": "700",
+      "style": "italic",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontreal-BoldItalic.otf"]
+    },
+    {
+      "family": "PP Neue Montreal Mono",
+      "weight": "350",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontrealMono-Book.otf"]
+    },
+    {
+      "family": "PP Neue Montreal Mono",
+      "weight": "400",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontrealMono-Regular.otf"]
+    },
+    {
+      "family": "PP Neue Montreal Mono",
+      "weight": "500",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontrealMono-Medium.otf"]
+    },
+    {
+      "family": "PP Neue Montreal Mono",
+      "weight": "700",
+      "style": "normal",
+      "cssPath": "tokens/fonts.css",
+      "files": ["assets/fonts/PPNeueMontrealMono-Bold.otf"]
+    }
+  ],
+  "brandFonts": [
+    {
+      "family": "PP Neue Montreal",
+      "status": "ok",
+      "tokens": ["--font-sans"],
+      "path": "tokens/fonts.css"
+    },
+    {
+      "family": "PP Neue Montreal Mono",
+      "status": "ok",
+      "tokens": ["--font-mono"],
+      "path": "tokens/fonts.css"
+    },
+    {
+      "family": "Bodoni Moda",
+      "status": "ok",
+      "tokens": ["--font-display"],
+      "path": "tokens/typography.css"
+    }
+  ],
+  "source": "spa"
+}

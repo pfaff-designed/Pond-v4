@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<sc-if value="{{ isButton }}" hint-placeholder-val="{{ true }}"><span style="{{ btn }}">{{ labelText }}</span></sc-if>
+<sc-if value="{{ isField }}"><span style="{{ fieldWrap }}"><span style="{{ field }}"><span style="{{ fieldText }}">{{ fieldValue }}</span><sc-if value="{{ caret }}"><span style="{{ caretStyle }}"></span></sc-if></span><sc-if value="{{ hasHint }}"><span style="{{ hintStyle }}">{{ hintText }}</span></sc-if></span></sc-if>
+<sc-if value="{{ isToggle }}"><span style="{{ rowWrap }}"><span style="{{ track }}"><span style="{{ knob }}"></span></span><span>{{ labelText }}</span></span></sc-if>
+<sc-if value="{{ isCheck }}"><span style="{{ rowWrap }}"><span style="{{ box }}"><sc-if value="{{ on }}"><svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.8 3.7 6.6 7.2 2.4"></path></svg></sc-if></span><span>{{ labelText }}</span></span></sc-if>
+<sc-if value="{{ isMenu }}"><span style="{{ menuRow }}"><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ labelText }}</span><sc-if value="{{ hasHint }}"><span style="{{ menuHint }}">{{ hintText }}</span></sc-if><sc-if value="{{ on }}"><span style="{{ menuEnter }}">↵</span></sc-if></span></sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:320,&quot;height&quot;:120},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;button&quot;,&quot;field&quot;,&quot;toggle&quot;,&quot;checkbox&quot;,&quot;menu&quot;],&quot;default&quot;:&quot;button&quot;,&quot;tsType&quot;:&quot;'button'|'field'|'toggle'|'checkbox'|'menu'&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;primary&quot;,&quot;secondary&quot;,&quot;ghost&quot;,&quot;quiet&quot;],&quot;default&quot;:&quot;primary&quot;,&quot;tsType&quot;:&quot;'primary'|'secondary'|'ghost'|'quiet'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;focus&quot;,&quot;selected&quot;,&quot;editing&quot;,&quot;disabled&quot;,&quot;loading&quot;,&quot;error&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;keep page&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;value&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;hint&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;on&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'button', variant = p.variant ?? 'primary', state = p.state ?? 'rest';
+    const ink = (p.theme ?? 'paper') === 'ink', mob = (p.size ?? 'desktop') === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', inv = ink ? '#1B1D14' : '#FAF9EF', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`, card = ink ? '#30312A' : '#FAF9EF';
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const hover = state === 'hover', focus = state === 'focus', dis = state === 'disabled', load = state === 'loading', err = state === 'error', edit = state === 'editing', sel = state === 'selected';
+    const ring = focus ? { outline: '2px solid #A5C8D1', outlineOffset: 2 } : {};
+    const off = dis ? { opacity: .4, pointerEvents: 'none' } : {};
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const label = p.label ?? (kind === 'field' ? 'email' : 'keep page');
+    // button
+    const vb = {
+      primary: { background: fg, color: inv, opacity: hover ? .9 : 1 },
+      secondary: { background: a(hover || sel ? .12 : .07), color: a(.8) },
+      ghost: { background: hover || sel ? a(.07) : 'transparent', boxShadow: `inset 0 0 0 1px ${a(.2)}`, color: fg },
+      quiet: { background: hover ? a(.07) : 'transparent', boxShadow: `inset 0 0 0 1px ${a(.4)}`, color: fg }
+    }[variant] || {};
+    const btn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxSizing: 'border-box', height: mob ? 44 : 32, padding: mob ? '0 20px' : '0 14px', borderRadius: 999, fontFamily: sans, fontWeight: 500, fontSize: mob ? 14 : 12, whiteSpace: 'nowrap', ...vb, ...ring, ...off };
+    // field
+    const val = p.value ?? '';
+    const shown = edit || val ? (val || 'hi@make-noise') : (load ? 'checking…' : label);
+    const field = { display: 'flex', alignItems: 'center', gap: 2, boxSizing: 'border-box', width: mob ? 280 : 240, height: mob ? 48 : 38, padding: '0 14px', borderRadius: 14, background: card, boxShadow: err ? `inset 0 0 0 1.4px ${fg},${cardShadow}` : cardShadow, fontFamily: sans, fontSize: mob ? 15 : 13.5, color: fg, ...ring, ...off };
+    const fieldText = { color: edit || val ? fg : a(.68), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+    const hintText = p.hint ?? (err ? 'that isn’t an email address' : '');
+    // toggle / checkbox
+    const on = sel || p.on === true || p.on === 'true';
+    const rowWrap = { display: 'inline-flex', alignItems: 'center', gap: 10, fontFamily: sans, fontSize: mob ? 15 : 13.5, color: fg, minHeight: mob ? 44 : 24, ...off };
+    const tw = mob ? 38 : 30, th = mob ? 22 : 18;
+    const track = { position: 'relative', width: tw, height: th, borderRadius: 999, flex: 'none', background: on ? fg : a(hover ? .28 : .2), ...ring };
+    const knob = { position: 'absolute', top: 2, left: on ? tw - th + 2 : 2, width: th - 4, height: th - 4, borderRadius: 999, background: on ? inv : card, boxShadow: '0 1px 2px rgba(0,0,0,.18)' };
+    const bs = mob ? 20 : 14;
+    const box = { width: bs, height: bs, borderRadius: 4, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: inv, background: on ? fg : (hover ? a(.07) : 'transparent'), boxShadow: on ? 'none' : `inset 0 0 0 1.4px ${a(.68)}`, ...ring };
+    // menu row
+    const menuRow = { display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box', width: mob ? 320 : 320, minHeight: mob ? 44 : 30, padding: '0 10px', borderRadius: 10, fontFamily: mono, fontSize: mob ? 14 : 12, color: fg, background: sel ? a(.07) : hover ? a(.05) : 'transparent', ...ring, ...off };
+    return {
+      isButton: kind === 'button', isField: kind === 'field', isToggle: kind === 'toggle', isCheck: kind === 'checkbox', isMenu: kind === 'menu',
+      btn, labelText: load && kind === 'button' ? 'saving…' : label,
+      fieldWrap: { display: 'inline-flex', flexDirection: 'column', gap: 6 }, field, fieldText, fieldValue: shown,
+      caret: edit || focus, caretStyle: { display: 'inline-block', width: 1.5, height: mob ? 17 : 15, background: fg, flex: 'none' },
+      hasHint: !!hintText, hintText, hintStyle: { fontFamily: mono, fontSize: 10.5, color: a(.8), paddingLeft: 4 },
+      rowWrap, track, knob, box, on,
+      menuRow, menuHint: { fontSize: 10.5, color: a(.68), whiteSpace: 'nowrap' }, menuEnter: { fontSize: 10, color: a(.8) }
+    };
+  }
+}
+</script>
+</body>
+</html>

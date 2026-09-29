@@ -1,0 +1,127 @@
+/* ============================================
+   COLOR — the shared palette → semantic tokens
+   Source: make-noise-design-system packages/ui/src/tokens/index.css
+
+   ONE PALETTE. Every colour in the house lives here, named by what it IS.
+   Make Noise and Pond are each a SELECTION from it — a theme reassigns
+   semantic `--color-*` roles and never redefines a `--raw-*` value.
+   Adding a colour means adding it here, not inside a theme.
+
+   Rule: components reference semantic tokens, never raw values.
+   ============================================ */
+:root {
+  /* ── GROUND — the two values every surface is built from ── */
+  --raw-ink: #1b1d14;
+  --raw-paper: #faf9ef;
+
+  /* ── WARM — a loud one and a deep one ── */
+  --raw-burnt-orange: #d96629; /* the loud signal: direction, energy. Carries INK, never paper. */
+  --raw-red: #c55347; /* the accent red: badges, tags, text accents, punctuation. */
+
+  /* ── PALE ATTENTION — atmospheric; carries ink, never white ── */
+  --raw-wheat: #ffefae; /* warm pale yellow. Markers, callouts, Pond's one action. */
+
+  /* ── COOL — a three-step ladder: pale, mid, deep ── */
+  --raw-mist: #a5c8d1; /* pale cyan. Recedes: secondary actions, selected states. */
+  --raw-sage: #648f7b; /* mid sea-green. The quiet ambient tint — washes, margins, dots. */
+  --raw-navy: #12354e; /* deep sea-ink. Hover flips, links, focus rings, info. */
+
+  /* Role aliases kept for the brand-guideline names. */
+  --raw-accent: var(--raw-red);
+  --raw-highlight: var(--raw-wheat);
+  --raw-calm: var(--raw-mist);
+
+  /* ── NEUTRAL RAMP — olive tinted. Never pure gray. ── */
+  --raw-neutral-50: #faf9ef;
+  --raw-neutral-100: #edecd8;
+  --raw-neutral-200: #d9d8c4;
+  --raw-neutral-300: #bfbdac;
+  --raw-neutral-400: #a3a294;
+  --raw-neutral-500: #6e6d61;
+  --raw-neutral-600: #4a4940;
+  --raw-neutral-700: #30312a;
+  --raw-neutral-900: #1b1d14;
+
+  /* Utility raws — tinted to palette warmth */
+  /* Success re-grounded on the palette sage so the house has one green */
+  --raw-success-bg: #e2ede8;
+  --raw-success: #3f6a58;
+  --raw-success-text: #27443a;
+  /* Warning derived from burnt orange, the way success derives from sage */
+  --raw-warning-bg: #f7ead9;
+  --raw-warning: #8a4a10;
+  --raw-warning-text: #5c3009;
+  --raw-error-bg: #f2e4e3;
+  --raw-error: #a63228;
+  --raw-error-text: #6b1f18;
+  /* Info re-grounded on the palette navy so the house has one cool family */
+  --raw-info-bg: #dde6ec;
+  --raw-info: #12354e;
+  --raw-info-text: #0b222f;
+
+  /* Core semantics */
+  --color-ink: var(--raw-ink);
+  --color-paper: var(--raw-paper);
+  --color-accent: var(--raw-accent); /* badges, tags, text accents, links — NEVER primary CTAs */
+  --color-calm: var(--raw-calm); /* secondary actions, focus rings, selected states */
+  --color-highlight: var(--raw-highlight); /* identical in light and dark */
+  --color-burnt-orange: var(--raw-burnt-orange); /* palette — the loud warm signal */
+  --color-red: var(--raw-red); /* palette — the accent red */
+  --color-wheat: var(--raw-wheat); /* palette — pale attention */
+  --color-mist: var(--raw-mist); /* palette — the shallow cool */
+  --color-sage: var(--raw-sage); /* palette — the mid cool. Ambient tints and washes. */
+  --color-navy: var(--raw-navy); /* palette — the deep cool. One or two per page. */
+  --color-link: var(--raw-accent); /* inline text links. Selections may reassign. */
+
+  /* Backgrounds */
+  --color-bg-page: var(--raw-paper);
+  --color-bg-subtle: var(--raw-neutral-100);
+  --color-bg-elevated-dark: var(--raw-neutral-700);
+
+  /* Borders */
+  --color-border-subtle: var(--raw-neutral-200);
+  --color-border-default: var(--raw-neutral-300);
+
+  /* Text */
+  --color-text-primary: var(--raw-ink);
+  --color-text-secondary: var(--raw-neutral-500);
+  --color-text-tertiary: var(--raw-neutral-600);
+  --color-text-placeholder: var(--raw-neutral-400);
+
+  /* CTA — ink on paper (light) / paper on ink (dark). No accent on primary. */
+  --color-cta-bg: var(--raw-ink);
+  --color-cta-text: var(--raw-paper);
+  --color-cta-secondary-bg: var(--raw-calm);
+  --color-cta-secondary-text: var(--raw-ink);
+
+  /* Utility */
+  --color-success-bg: var(--raw-success-bg);
+  --color-success: var(--raw-success);
+  --color-success-text: var(--raw-success-text);
+  --color-warning-bg: var(--raw-warning-bg);
+  --color-warning: var(--raw-warning);
+  --color-warning-text: var(--raw-warning-text);
+  --color-error-bg: var(--raw-error-bg);
+  --color-error: var(--raw-error);
+  --color-error-text: var(--raw-error-text);
+  --color-info-bg: var(--raw-info-bg);
+  --color-info: var(--raw-info);
+  --color-info-text: var(--raw-info-text);
+}
+
+/* Dark mode — only semantic roles reassign. Raw values never move. */
+.dark {
+  --color-bg-page: var(--raw-ink);
+  --color-bg-subtle: var(--raw-neutral-700);
+  --color-border-subtle: var(--raw-neutral-700);
+  --color-border-default: var(--raw-neutral-600);
+  --color-text-primary: var(--raw-paper);
+  --color-text-secondary: var(--raw-neutral-400);
+  --color-text-tertiary: var(--raw-neutral-500);
+  --color-text-placeholder: var(--raw-neutral-600);
+  --color-cta-bg: var(--raw-paper);
+  --color-cta-text: var(--raw-ink);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);
+}

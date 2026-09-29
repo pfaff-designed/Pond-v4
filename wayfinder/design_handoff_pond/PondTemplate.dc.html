@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<div style="{{ page }}">
+<div style="{{ head }}"><span style="{{ title }}">{{ titleText }}</span><span style="{{ meta }}">{{ metaText }}</span></div>
+<sc-for list="{{ blocks }}" as="b" hint-placeholder-count="3">
+<div style="{{ b.card }}">
+<sc-if value="{{ b.hasEyebrow }}"><div style="{{ bhead }}"><span style="{{ eyebrow }}">{{ b.label }}</span><span style="{{ note }}">{{ b.note }}</span></div></sc-if>
+<sc-if value="{{ b.isText }}"><p style="{{ b.textStyle }}">{{ b.text }}</p></sc-if>
+<sc-if value="{{ b.isRows }}"><div style="{{ stack }}"><sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="3"><div style="{{ row }}"><sc-if value="{{ r.hasBox }}"><span style="{{ r.box }}"><sc-if value="{{ r.done }}"><svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.8 3.7 6.6 7.2 2.4"></path></svg></sc-if></span></sc-if><sc-if value="{{ r.hasDot }}"><span style="{{ dot }}"></span></sc-if><span style="{{ r.aStyle }}">{{ r.a }}</span><span style="{{ r.bStyle }}">{{ r.b }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isTable }}"><div style="{{ stack0 }}"><div style="{{ b.grid }}"><sc-for list="{{ b.cols }}" as="c" hint-placeholder-count="3"><span style="{{ th }}">{{ c }}</span></sc-for></div><sc-for list="{{ b.trows }}" as="r" hint-placeholder-count="3"><div style="{{ b.gridRow }}"><sc-for list="{{ r }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}">{{ c.v }}</span></sc-for></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isGallery }}"><div style="{{ gallery }}"><sc-for list="{{ b.cards }}" as="c" hint-placeholder-count="3"><div style="{{ gcard }}"><span style="{{ c.img }}"></span><span style="{{ c.tStyle }}">{{ c.t }}</span><span style="{{ c.mStyle }}">{{ c.m }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isNumber }}"><div style="{{ numWrap }}"><span style="{{ b.bigStyle }}">{{ b.big }}</span><span style="{{ sub }}">{{ b.sub }}</span></div></sc-if>
+<sc-if value="{{ b.isBars }}"><div style="{{ bars }}"><sc-for list="{{ b.bars }}" as="h" hint-placeholder-count="12"><span style="{{ h }}"></span></sc-for></div></sc-if>
+<sc-if value="{{ b.isHeat }}"><div style="{{ heat }}"><sc-for list="{{ b.cells }}" as="h" hint-placeholder-count="28"><span style="{{ h }}"></span></sc-for></div></sc-if>
+<sc-if value="{{ b.isVoid }}"><div style="{{ voidBox }}">{{ b.voidText }}</div></sc-if>
+<sc-if value="{{ b.isEntries }}"><div style="{{ stack }}"><sc-for list="{{ b.entries }}" as="e" hint-placeholder-count="3"><div style="{{ entry }}"><span style="{{ edate }}">{{ e.d }}</span><span style="{{ e.style }}">{{ e.t }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isKanban }}"><div style="{{ kanban }}"><sc-for list="{{ b.lanes }}" as="l" hint-placeholder-count="3"><div style="{{ lane }}"><div style="{{ laneHead }}"><span>{{ l.name }}</span><span style="{{ laneN }}">{{ l.n }}</span></div><sc-for list="{{ l.cards }}" as="c" hint-placeholder-count="2"><dc-import name="PondMolecule" kind="task-card" title="{{ c.t }}" meta="{{ c.m }}" value="{{ c.s }}" on="{{ c.on }}" state="{{ c.state }}" width="{{ c.w }}" theme="{{ c.theme }}" size="desktop" hint-size="100%,52px"></dc-import></sc-for></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isGantt }}"><div style="{{ stack0 }}"><div style="{{ gHead }}"><span></span><div style="{{ gTicks }}"><sc-for list="{{ b.ticks }}" as="k" hint-placeholder-count="4"><span style="{{ gTick }}">{{ k }}</span></sc-for></div></div><sc-for list="{{ b.tasks }}" as="g" hint-placeholder-count="4"><div style="{{ gRow }}"><span style="{{ g.lStyle }}">{{ g.t }}</span><div style="{{ gTrack }}"><span style="{{ g.bar }}"></span></div></div></sc-for></div></sc-if>
+<sc-if value="{{ b.isHighlight }}"><div style="{{ b.hlStyle }}">{{ b.text }}</div></sc-if>
+</div>
+</sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:560,&quot;height&quot;:720},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;page&quot;,&quot;notes&quot;,&quot;list&quot;,&quot;project&quot;,&quot;tracker&quot;,&quot;journal&quot;,&quot;collection&quot;,&quot;database&quot;,&quot;dashboard&quot;,&quot;meeting&quot;,&quot;reading&quot;,&quot;habit&quot;],&quot;default&quot;:&quot;project&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;filled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;}}">
+const T = {
+  page: { e: ['untitled', [['text', '', { e: 'type, or / for blocks and templates' }]]], f: ['on moving', [['text', '', { f: 'Every flat so far has taught one thing. This one: the light matters more than the size of the kitchen. The next place should face south.' }]]] },
+  notes: { e: ['notes', [['text', '', { e: 'anything, in any order' }]]], f: ['ideas', [['text', '', { f: 'A shelf above the desk for the radio. Ask about the allotment waiting list.' }], ['text', '', { f: 'The café on the corner does a good flat white on Tuesdays, when the other barista is in.' }]]] },
+  list: { e: ['list', [['list', 'items', { e: [['first item']] }]]], f: ['groceries', [['list', 'items', { note: '5', f: [['oat milk'], ['lemons'], ['rice'], ['coffee beans'], ['bin bags']] }]]] },
+  project: { e: ['project name', [['props', 'details', { e: [['status', '—'], ['due', '—']] }], ['text', 'goal', { e: 'what done looks like' }], ['kanban', 'tasks — board', { e: [['to do', [['first task']]], ['doing', []], ['done', []]] }], ['gantt', 'tasks — timeline', { e: 'tasks with a start and a due date draw here' }], ['entries', 'updates', { e: [['today', 'first update']] }]]],
+    f: ['move house', [['props', 'details', { f: [['status', 'in progress'], ['due', '14 nov']] }], ['text', 'goal', { f: 'Out of the flat by the 14th, with every box labelled by room.' }], ['kanban', 'tasks — board', { note: '5 tasks', f: [['to do', [['pack the kitchen', '10 nov', '0 of 4'], ['meter readings', '14 nov']]], ['doing', [['sort the loft', '', '2 of 5']]], ['done', [['book the van', ''], ['cancel broadband', '']]]] }], ['gantt', 'tasks — timeline', { note: 'same tasks', ticks: ['20 oct', '27 oct', '3 nov', '10 nov'], f: [['book the van', 0, 8, 1], ['cancel broadband', 6, 12, 1], ['sort the loft', 18, 52, 0], ['pack the kitchen', 45, 80, 0], ['meter readings', 88, 96, 0]] }], ['entries', 'updates', { f: [['28 oct', 'Van booked for the morning of the 14th.'], ['24 oct', 'Landlord confirmed the inventory date.']] }]]] },
+  tracker: { e: ['tracker', [['number', 'this week', { e: ['—', 'nothing logged yet'] }], ['bars', 'by week', { e: 'the chart draws itself from the log' }], ['table', 'log', { cols: ['date', 'value'], e: [['today', '—']] }]]],
+    f: ['running', [['number', 'this week', { f: ['18.4 km', '3 runs'] }], ['bars', 'by week', { note: '12 weeks', f: [9, 12, 10, 14, 13, 8, 15, 16, 12, 17, 15, 18] }], ['table', 'log', { cols: ['date', 'distance'], f: [['24 oct', '5.2 km'], ['22 oct', '6.0 km'], ['20 oct', '7.2 km']] }]]] },
+  journal: { e: ['journal', [['entries', 'entries', { e: [['today', 'write the first entry']] }]]], f: ['journal', [['entries', 'entries', { note: 'newest first', serif: 1, f: [['25 oct', 'Slept badly, walked it off. The light on the canal was worth getting up for.'], ['24 oct', 'Quiet day. Finished the chapter and started the next.'], ['23 oct', 'Long call with Mum. She has decided on the trip after all.']] }]]] },
+  collection: { e: ['collection', [['gallery', 'records', { e: 3 }]]], f: ['plants', [['gallery', 'records', { note: '3', f: [['monstera', 'water weekly'], ['snake plant', 'every 3 weeks'], ['fiddle leaf', 'no draughts']] }]]] },
+  database: { e: ['database', [['table', 'records', { cols: ['name', 'field'], e: [['first record', '—']] }]]], f: ['contacts', [['table', 'records', { note: '3 records', cols: ['name', 'from', 'last spoke'], f: [['Ana Ruiz', 'work', '12 oct'], ['Sam Okafor', 'climbing', '3 oct'], ['Lee Park', 'school', '18 sep']] }]]] },
+  dashboard: { e: ['dashboard', [['number', 'figure', { e: ['—', 'pick a field'] }], ['bars', 'chart', { e: 'pick a source' }], ['list', 'pages', { e: [['link a page']] }]]],
+    f: ['this month', [['number', 'spent', { f: ['£1,284', '62% of budget'] }], ['bars', 'by week', { f: [6, 9, 7, 11] }], ['list', 'pages', { links: 1, f: [['running', '18.4 km this week'], ['move house', '2 of 4 tasks'], ['reading list', '3 in progress']] }]]] },
+  meeting: { e: ['meeting', [['props', 'details', { e: [['date', '—'], ['with', '—']] }], ['text', 'notes', { e: 'what was said' }], ['check', 'actions', { e: [['first action']] }]]],
+    f: ['weekly sync', [['props', 'details', { f: [['date', '23 oct'], ['with', 'Ana, Sam']] }], ['text', 'notes', { f: 'Launch moves a week. Copy is the last thing blocking it.' }], ['check', 'actions', { note: '1 of 2', f: [['Sam — final copy', '27 oct', 0], ['Ana — book the room', '', 1]] }]]] },
+  reading: { e: ['reading list', [['table', 'books', { cols: ['title', 'author', 'status'], e: [['first book', '—', '—']] }], ['highlight', 'kept', { e: 'a line worth keeping' }]]],
+    f: ['reading list', [['table', 'books', { note: '3', cols: ['title', 'author', 'status'], f: [['The Overstory', 'Richard Powers', 'reading'], ['Braiding Sweetgrass', 'Robin Wall Kimmerer', 'next'], ['Piranesi', 'Susanna Clarke', 'finished']] }], ['highlight', 'kept', { f: 'Three books at once is one too many.' }]]] },
+  habit: { e: ['habit', [['number', 'streak', { e: ['0 days', 'starts with the first tick'] }], ['heat', 'every day', { e: 1 }], ['check', 'today', { e: [['done today']] }]]],
+    f: ['walk every day', [['number', 'streak', { f: ['12 days', 'best 31'] }], ['heat', 'every day', { note: '12 weeks', f: 1 }], ['check', 'today', { f: [['walked today', '', 1]] }]]] }
+};
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'project', filled = p.filled === true || p.filled === 'true';
+    const ink = (p.theme ?? 'paper') === 'ink', mob = (p.size ?? 'desktop') === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace", serif = "'PP Editorial New',Georgia,serif";
+    const card = ink ? '#30312A' : '#FAF9EF';
+    const shadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const def = (T[kind] || T.project)[filled ? 'f' : 'e'];
+    const muted = { color: a(.68) };
+    const blocks = def[1].map(([k, label, d]) => {
+      const v = filled ? d.f : d.e, bare = k === 'text' && !label;
+      const b = { label, note: filled ? (d.note || '') : 'empty', hasEyebrow: !!label, card: bare ? { padding: '2px 4px' } : { background: card, borderRadius: 20, boxShadow: shadow, padding: mob ? '14px 14px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 } };
+      if (k === 'text') Object.assign(b, { isText: true, text: v, textStyle: { margin: 0, fontFamily: serif, fontWeight: 200, fontSize: mob ? 17 : 16.5, lineHeight: 1.6, color: filled ? fg : a(.68), textWrap: 'pretty' } });
+      if (k === 'list' || k === 'check' || k === 'props') b.isRows = true, b.rows = v.map(([x, y, done]) => ({
+        a: x, b: y || '', hasBox: k === 'check', done: !!done, hasDot: k === 'list' && !d.links,
+        box: { width: 13, height: 13, flex: 'none', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: done ? 'none' : `inset 0 0 0 1.4px ${a(.4)}`, background: done ? fg : 'transparent', color: ink ? '#1B1D14' : '#FAF9EF' },
+        aStyle: k === 'props' ? { width: 70, flex: 'none', color: a(.68), fontSize: 12.5 } : { flex: 1, minWidth: 0, color: filled && !done ? fg : a(.68), textDecoration: done ? 'line-through' : 'none', textDecorationColor: a(.4), fontWeight: d.links ? 500 : 400 },
+        bStyle: k === 'props' ? { color: filled ? fg : a(.68) } : { fontFamily: mono, fontSize: 10.5, color: a(.68), whiteSpace: 'nowrap' }
+      }));
+      if (k === 'table') { const n = d.cols.length; const cols = `minmax(0,1.5fr) repeat(${n - 1},minmax(0,1fr))`; Object.assign(b, { isTable: true, cols: d.cols, grid: { display: 'grid', gridTemplateColumns: cols, columnGap: 12, padding: '0 2px 7px', borderBottom: `1px solid ${a(.09)}` }, gridRow: { display: 'grid', gridTemplateColumns: cols, columnGap: 12, padding: '8px 2px', borderBottom: `1px solid ${a(.055)}`, fontSize: mob ? 14 : 13 }, trows: v.map(r => r.map((c, i) => ({ v: c, style: { color: filled ? (i ? a(.8) : fg) : a(.68), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: i && /\d/.test(c) ? mono : sans, fontSize: i && /\d/.test(c) ? 11.5 : 'inherit' } }))) }); }
+      if (k === 'gallery') { const list = filled ? v : Array.from({ length: v }, () => ['', '']); Object.assign(b, { isGallery: true, cards: list.slice(0, mob ? 2 : 3).map(([t, m]) => ({ t: t || 'untitled', m: m || '—', img: { display: 'block', height: mob ? 70 : 64, borderRadius: 12, background: filled ? a(.07) : 'transparent', boxShadow: filled ? 'none' : `inset 0 0 0 1.4px ${a(.14)}` }, tStyle: { fontSize: 13.5, fontWeight: 500, color: filled ? fg : a(.68) }, mStyle: { fontFamily: mono, fontSize: 10.5, color: a(.68) } })) }); }
+      if (k === 'number') Object.assign(b, { isNumber: true, big: v[0], sub: v[1], bigStyle: { fontSize: mob ? 44 : 52, fontWeight: 700, letterSpacing: '-.03em', lineHeight: .95, color: filled ? fg : a(.68), fontVariantNumeric: 'tabular-nums' } });
+      if (k === 'bars') { if (filled) { const mx = Math.max(...v); Object.assign(b, { isBars: true, bars: v.map((h, i) => ({ flex: 1, height: `${Math.round(h / mx * 100)}%`, borderRadius: 3, background: i === v.length - 1 ? fg : a(.28) })) }); } else Object.assign(b, { isVoid: true, voidText: v }); }
+      if (k === 'heat') { const cells = Array.from({ length: 84 }, (_, i) => { const on = filled && (i > 71 || ((i * 37) % 11) > 3); return { width: '100%', aspectRatio: '1', borderRadius: 2, background: on ? (i > 71 ? fg : a(.45)) : a(.07) }; }); Object.assign(b, { isHeat: true, cells }); }
+      if (k === 'entries') Object.assign(b, { isEntries: true, entries: v.map(([x, y]) => ({ d: x, t: y, style: d.serif && filled ? { fontFamily: serif, fontWeight: 200, fontSize: 16, lineHeight: 1.55, color: fg, textWrap: 'pretty' } : { fontSize: 13.5, lineHeight: 1.5, color: filled ? fg : a(.68), textWrap: 'pretty' } })) });
+      if (k === 'kanban') Object.assign(b, { isKanban: true, lanes: v.map(([name, cards]) => ({ name, n: String(cards.length), cards: cards.map(([t, m, s]) => ({ t, m: m || '', s: s || '', on: name === 'done' && filled ? 'true' : 'false', state: filled ? 'rest' : 'empty', w: mob ? 104 : 148, theme: ink ? 'ink' : 'paper', hasM: !!m, style: { display: 'flex', flexDirection: 'column', gap: 3, padding: '8px 9px', borderRadius: 10, background: ink ? '#4A4940' : '#FFFFFF', boxShadow: ink ? 'none' : '0 1px 2px rgba(40,34,24,.08)', opacity: name === 'done' && filled ? .6 : 1 }, tStyle: { fontSize: 12.5, lineHeight: 1.35, color: filled ? fg : a(.68), textDecoration: name === 'done' && filled ? 'line-through' : 'none', textDecorationColor: a(.4) }, mStyle: { fontFamily: mono, fontSize: 10, color: a(.68) } })) })) });
+      if (k === 'gantt') { if (filled) Object.assign(b, { isGantt: true, ticks: d.ticks, tasks: v.map(([t, s, e, done]) => ({ t, lStyle: { fontSize: 12, color: done ? a(.68) : fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, bar: { position: 'absolute', top: 4, bottom: 4, left: s + '%', width: (e - s) + '%', borderRadius: 4, background: done ? a(.22) : fg } })) }); else Object.assign(b, { isVoid: true, voidText: v }); }
+      if (k === 'highlight') Object.assign(b, { isHighlight: true, text: v, hlStyle: filled ? { alignSelf: 'flex-start', padding: '4px 8px', background: '#FFEFAE', color: '#1B1D14', fontFamily: serif, fontWeight: 200, fontSize: 16, lineHeight: 1.5 } : { fontFamily: serif, fontWeight: 200, fontSize: 16, color: a(.68) } });
+      return b;
+    });
+    return {
+      titleText: def[0], metaText: filled ? kind === 'reading' ? 'reading list' : kind === 'meeting' ? 'meeting notes' : kind : 'from template · ' + (kind === 'reading' ? 'reading list' : kind === 'meeting' ? 'meeting notes' : kind), blocks,
+      page: { width: mob ? 360 : 520, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14, padding: mob ? '20px 14px' : '24px 20px', borderRadius: 20, background: ink ? '#1B1D14' : '#FAF9EF', color: fg, fontFamily: sans, fontSize: mob ? 15 : 13.5 },
+      head: { display: 'flex', flexDirection: 'column', gap: 6, padding: '0 4px 4px' },
+      title: { fontFamily: serif, fontWeight: 200, fontSize: mob ? 32 : 36, lineHeight: 1.05, letterSpacing: '-.01em', color: filled ? fg : a(.68) },
+      meta: { fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      bhead: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+      eyebrow: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      note: { fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      stack: { display: 'flex', flexDirection: 'column', gap: 8 }, stack0: { display: 'flex', flexDirection: 'column' },
+      row: { display: 'flex', alignItems: 'center', gap: 10, minHeight: mob ? 32 : 22 },
+      dot: { width: 4, height: 4, borderRadius: 999, background: a(.5), flex: 'none' },
+      th: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      gallery: { display: 'grid', gridTemplateColumns: `repeat(${mob ? 2 : 3},minmax(0,1fr))`, gap: 10 },
+      gcard: { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 },
+      numWrap: { display: 'flex', flexDirection: 'column', gap: 6 },
+      sub: { fontFamily: mono, fontSize: 11, color: a(.68) },
+      bars: { display: 'flex', alignItems: 'flex-end', gap: 5, height: 72 },
+      heat: { display: 'grid', gridTemplateColumns: 'repeat(12,minmax(0,1fr))', gridAutoFlow: 'column', gridTemplateRows: 'repeat(7,auto)', gap: 3 },
+      voidBox: { height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, boxShadow: `inset 0 0 0 1.4px ${a(.14)}`, fontFamily: mono, fontSize: 11, color: a(.68) },
+      entry: { display: 'grid', gridTemplateColumns: '52px minmax(0,1fr)', gap: 12, alignItems: 'baseline' },
+      edate: { fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      kanban: { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 },
+      lane: { display: 'flex', flexDirection: 'column', gap: 6, padding: 6, borderRadius: 12, background: a(.04), minHeight: 90 },
+      laneHead: { display: 'flex', justifyContent: 'space-between', padding: '2px 3px 2px', fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      laneN: { fontFamily: mono, letterSpacing: 0 },
+      gHead: { display: 'grid', gridTemplateColumns: (mob ? '96px' : '120px') + ' minmax(0,1fr)', gap: 10, paddingBottom: 6, borderBottom: '1px solid ' + a(.09) },
+      gTicks: { display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))' },
+      gTick: { fontFamily: mono, fontSize: 10, color: a(.68) },
+      gRow: { display: 'grid', gridTemplateColumns: (mob ? '96px' : '120px') + ' minmax(0,1fr)', gap: 10, alignItems: 'center', padding: '4px 0', borderBottom: '1px solid ' + a(.055) },
+      gTrack: { position: 'relative', height: 18, backgroundImage: 'linear-gradient(90deg,' + a(.06) + ' 1px,transparent 1px)', backgroundSize: '25% 100%' }
+    };
+  }
+}
+</script>
+</body>
+</html>

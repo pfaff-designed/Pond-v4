@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+<script src="_ds/mn/assets/icons/icon-mask.js"></script>
+</helmet>
+<div style="{{ rail }}">
+<div style="{{ head }}"><span style="{{ switcher }}"><span data-icon="{{ pondGlyph }}" style="{{ pondMark }}"></span><span style="{{ word }}">{{ pondName }}</span><svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="{{ swChev }}"><path d="M3.5 2 L7 5 L3.5 8"></path></svg></span><span style="{{ headRight }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;align-self:center"><path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z"></path><path d="M5.8 12.4h2.4"></path></svg></span></div>
+<sc-if value="{{ isSharedView }}"><div style="{{ sharedTag }}">{{ tagText }}</div></sc-if>
+<div style="{{ body }}">
+<sc-if value="{{ hasPinned }}"><div style="{{ pinned }}"><sc-for list="{{ pinnedRows }}" as="r" hint-placeholder-count="3"><div style="{{ r.style }}"><span style="{{ guides }}"><sc-for list="{{ r.guides }}" as="g" hint-placeholder-count="1"><span style="{{ guide }}"></span></sc-for></span><sc-if value="{{ r.hasChev }}"><svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="{{ r.chev }}"><path d="M3.5 2 L7 5 L3.5 8"></path></svg></sc-if><sc-if value="{{ r.noChev }}"><span style="{{ chevGap }}"></span></sc-if><sc-if value="{{ r.isGlyph }}"><span data-icon="{{ r.glyph }}" style="{{ r.mark }}"></span></sc-if><sc-if value="{{ r.isDot }}"><span style="{{ r.mark }}"></span></sc-if><span style="{{ label }}">{{ r.label }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ isLoading }}"><div style="{{ skelWrap }}"><sc-for list="{{ skel }}" as="s" hint-placeholder-count="8"><span style="{{ s }}"></span></sc-for></div></sc-if>
+<div style="{{ list }}"><sc-for list="{{ rows }}" as="r" hint-placeholder-count="12">
+<sc-if value="{{ r.dropBefore }}"><div style="{{ dropLine }}"></div></sc-if>
+<div style="{{ r.style }}"><span style="{{ guides }}"><sc-for list="{{ r.guides }}" as="g" hint-placeholder-count="1"><span style="{{ guide }}"></span></sc-for></span><sc-if value="{{ r.hasChev }}"><svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="{{ r.chev }}"><path d="M3.5 2 L7 5 L3.5 8"></path></svg></sc-if><sc-if value="{{ r.noChev }}"><span style="{{ chevGap }}"></span></sc-if><sc-if value="{{ r.isGlyph }}"><span data-icon="{{ r.glyph }}" style="{{ r.mark }}"></span></sc-if><sc-if value="{{ r.isDot }}"><span style="{{ r.mark }}"></span></sc-if><sc-if value="{{ r.isField }}"><span style="{{ field }}"><span>{{ r.label }}</span><span style="{{ caret }}"></span></span></sc-if><sc-if value="{{ r.isText }}"><span style="{{ label }}">{{ r.label }}</span></sc-if><sc-if value="{{ r.hasNote }}"><span style="{{ rowNote }}">{{ r.note }}</span></sc-if><sc-if value="{{ r.hasTools }}"><span style="{{ tools }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 2.4v7.2M2.4 6h7.2"></path></svg><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"></path></svg></span></sc-if></div>
+<sc-if value="{{ r.hasHint }}"><div style="{{ hint }}">{{ r.hint }}</div></sc-if>
+</sc-for></div>
+<sc-if value="{{ isDragging }}"><div style="{{ ghost }}"><span style="{{ ghostDot }}"></span><span>electrics</span></div></sc-if>
+</div>
+<div style="{{ foot }}"><div style="{{ dbRow }}"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><ellipse cx="7" cy="3.4" rx="4.6" ry="1.6"></ellipse><path d="M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6"></path></svg><span>databases</span></div><div style="{{ newRow }}">＋ new page</div></div>
+<sc-if value="{{ isSwitching }}"><div style="{{ menu }}"><div style="{{ menuHead }}">ponds</div><sc-for list="{{ ponds }}" as="q" hint-placeholder-count="3"><div style="{{ q.style }}"><span data-icon="{{ q.glyph }}" style="{{ pondMark }}"></span><span style="{{ grow }}">{{ q.name }}</span><span style="{{ q.keyStyle }}">{{ q.key }}</span></div></sc-for><div style="{{ menuHead }}">shared ponds</div><sc-for list="{{ sharedPonds }}" as="q" hint-placeholder-count="1"><div style="{{ q.style }}"><span data-icon="{{ q.glyph }}" style="{{ pondMark }}"></span><span style="{{ grow }}">{{ q.name }}</span><span style="{{ q.keyStyle }}">{{ q.key }}</span></div></sc-for><div style="{{ menuHead }}">shared with me</div><sc-for list="{{ sharedRows }}" as="q" hint-placeholder-count="4"><div style="{{ q.style }}"><sc-if value="{{ q.isPond }}"><span data-icon="{{ q.glyph }}" style="{{ pondMark }}"></span></sc-if><sc-if value="{{ q.isPage }}"><span style="{{ q.dot }}"></span></sc-if><span style="{{ grow }}">{{ q.name }}</span><span style="{{ q.noteStyle }}">{{ q.note }}</span></div></sc-for><div style="{{ menuRule }}"></div><div style="{{ menuRow }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 2.4v7.2M2.4 6h7.2"></path></svg><span style="{{ grow }}">new pond</span></div><div style="{{ menuRow }}"><span style="{{ gap12 }}"></span><span style="{{ grow }}">manage ponds</span></div></div></sc-if>
+<sc-if value="{{ isWide }}"><div style="{{ edge }}"></div><span style="{{ edgeTag }}">310px</span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:680},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;renaming&quot;,&quot;dragging&quot;,&quot;deep&quot;,&quot;wide&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;switcher&quot;,&quot;new&quot;,&quot;shared&quot;,&quot;org&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;pondName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;height&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;number&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;member&quot;,&quot;moderator&quot;,&quot;admin&quot;],&quot;default&quot;:&quot;member&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;areaColours&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this.up(); }
+  componentDidUpdate() { this.up(); }
+  up() { setTimeout(() => window.MNIcons && window.MNIcons.upgrade(), 0); }
+  renderVals() {
+    const p = this.props;
+    const state = p.state ?? 'rest', theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const tint = p.areaColours ?? false;
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const S = x => state === x;
+    const pondName = p.pondName ?? (S('new') ? 'make noise' : S('shared') ? 'launch plan' : S('org') ? 'studio collective' : 'life'), pondGlyph = p.pondGlyph ?? (S('new') ? 'lightning-03' : S('shared') ? 'star-01' : S('org') ? 'ring' : 'waves-02');
+    const PONDS = [['life', 'waves-02', '⌘1'], ['make noise', 'lightning-03', '⌘2'], ['red door guys', 'house', '⌘3']];
+    const colour = { health: '#648F7B', money: ink ? '#A5C8D1' : '#12354E' };
+    // [depth, label, open(true/false/null), glyph|null, area]
+    const REST = [[0, 'life', true, 'waves-02'], [1, 'personal', false, 'house'], [1, 'professional', false, 'ramp'], [1, 'health', true, 'heart'], [2, 'workouts', null, null, 'health'], [2, 'calories', null, null, 'health'], [2, 'sleep', null, null, 'health'], [1, 'money', true, 'ring'], [2, 'budget', false, null, 'money'], [2, 'subscriptions', null, null, 'money'], [1, 'creativity', true, 'star-01'], [2, 'kitchen renovation', false, null], [2, 'books', false, null], [2, 'recipes', true, null], [3, 'sourdough, 78%', null, null], [3, 'chickpeas, harissa', null, null]];
+    const DEEP_PIN = [[1, 'creativity', true, 'star-01'], [2, 'kitchen renovation', true, null], [3, 'floorplan', true, null]];
+    const DEEP = [[4, 'ground floor', true, null], [5, 'electrics', null, null], [5, 'plumbing', false, null], [5, 'lighting', null, null], [4, 'first floor', false, null], [4, 'loft', null, null], [3, 'suppliers', false, null], [3, 'budget', null, null], [2, 'books', false, null], [2, 'recipes', false, null]];
+    let rows = REST, pinned = [], sel = 'recipes';
+    if (S('deep')) { rows = DEEP; pinned = DEEP_PIN; sel = 'ground floor'; }
+    if (S('wide')) { rows = [...DEEP_PIN, [4, 'ground floor', true, null], [5, 'electrics and new circuits', null, null], [5, 'plumbing and the sink move', false, null], [5, 'lighting', null, null], [3, 'suppliers and quotes', false, null], [2, 'books', false, null], [2, 'recipes', false, null]]; sel = 'ground floor'; }
+    if (S('empty')) { rows = [[0, 'life', true, 'waves-02']]; sel = 'life'; }
+    if (S('loading')) rows = [];
+    if (mob) rows = rows.slice(0, 12);
+    const indent = 14, rowPad = mob ? '11px 10px 11px 4px' : '5px 8px 5px 4px';
+    const mk = (r, i, list) => {
+      const [d, label, open, glyph, area, note] = r;
+      const isSel = label === sel && !S('empty');
+      const hov = S('hover') && label === 'kitchen renovation';
+      const renaming = S('renaming') && label === 'books';
+      const dragging = S('dragging') && label === 'books';
+      const areaRow = d <= 1;
+      const col = tint && (colour[label] || colour[area]);
+      return {
+        guides: Array.from({ length: d }, (_, k) => k),
+        hasChev: open !== null, noChev: open === null,
+        chev: { flex: 'none', color: a(.68), transform: open ? 'rotate(90deg)' : 'none' },
+        isGlyph: !!glyph, isDot: !glyph, glyph: glyph || '',
+        mark: glyph ? { display: 'inline-block', width: 13, height: 13, flex: 'none', background: 'currentColor', color: col || fg } : { width: 7, height: 7, borderRadius: 2, flex: 'none', background: isSel ? (col || fg) : (col || a(.5)) },
+        label, isField: renaming, isText: !renaming, hasTools: hov, hasNote: !!note, note: note || '',
+        dropBefore: dragging,
+        hasHint: S('empty'), hint: 'no pages yet. ＋ new page, or ask pond to start one.',
+        style: { position: 'relative', display: 'flex', alignItems: 'center', gap: 7, margin: '0 8px', padding: rowPad, minHeight: mob ? 44 : 0, boxSizing: 'border-box', fontSize: mob ? 15 : (areaRow ? 13.5 : 13), fontWeight: areaRow || isSel ? 500 : 400, color: areaRow || isSel || hov ? fg : a(.68), borderRadius: 10, background: isSel ? a(.07) : hov ? (ink ? 'rgba(100,143,123,.14)' : 'rgba(100,143,123,.07)') : 'transparent', opacity: dragging ? .35 : 1, marginTop: d === 1 && i > 0 && !pinned.length ? 4 : 0 }
+      };
+    };
+    const SHARED = [[0, 'launch plan', true, 'star-01'], [1, 'copy', null, null], [1, 'timeline', null, null], [1, 'weekly sync', false, null]];
+    const NEW = [[0, p.pondName ?? 'make noise', null, p.pondGlyph ?? 'lightning-03'], [1, 'clients', null, 'house'], [1, 'projects', null, 'ramp'], [1, 'studio', null, 'star-01'], [1, 'notes', null, 'ring']];
+    if (S('new')) { rows = NEW; sel = NEW[0][1]; }
+    if (S('shared')) { rows = SHARED; sel = 'launch plan'; }
+    const ORG = [[0, 'studio collective', true, 'ring'], [1, 'projects', true, 'ramp'], [2, 'launch plan', true, null], [3, 'copy', null, null], [3, 'timeline', null, null], [3, 'weekly sync', null, null], [2, 'pitch notes', null, null, null, 'only you'], [1, 'clients', true, 'house'], [2, 'north mill brewery', null, null], [1, 'handbook', null, 'star-01']];
+    if (S('org')) { rows = ORG; sel = p.selected ?? 'launch plan'; }
+    const role = p.role ?? 'member';
+    const W = S('wide') ? 310 : mob ? 320 : 206;
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const skel = [40, 62, 54, 70, 48, 66, 58, 44].map((w, i) => ({ display: 'block', height: 9, width: `${w}%`, marginLeft: (i % 3) * 14, borderRadius: 5, background: a(.08) }));
+    return {
+      rows: rows.map(mk), pinnedRows: pinned.map(mk), hasPinned: pinned.length > 0,
+      isLoading: S('loading'), skel, isDragging: S('dragging'), isWide: S('wide'),
+      isSwitching: S('switcher'), pondName, pondGlyph, isSharedView: S('shared') || S('org'), tagText: S('org') ? `shared pond · ${role}` : 'shared by ana ruiz · can edit',
+      rowNote: { flex: 'none', fontFamily: mono, fontSize: mob ? 11 : 10, color: a(.68) },
+      sharedPonds: [['studio collective', 'ring', mob ? '5 people' : '5']].map(([name, glyph, key]) => ({ name, glyph, key: name === pondName ? '✓' : key, keyStyle: { fontFamily: mono, fontSize: 10.5, color: name === pondName ? fg : a(.68) }, style: { display: 'flex', alignItems: 'center', gap: 9, padding: mob ? '12px 10px' : '7px 10px', borderRadius: 10, fontSize: mob ? 15 : 13, fontWeight: name === pondName ? 500 : 400, background: name === pondName ? a(.07) : 'transparent' } })),
+      sharedRows: [['jo moss', 'group'], ['garden plan', 'page', mob ? 'can edit' : 'edit'], ['lee park', 'group'], ['reading list', 'page', mob ? 'can view' : 'view']].map(([name, k, note, glyph]) => k === 'group' ? { name, isPond: false, isPage: false, note: '', noteStyle: {}, style: { padding: mob ? '10px 10px 2px' : '6px 10px 1px', fontSize: mob ? 13 : 11.5, color: a(.68) } } : { name, glyph: glyph || '', isPond: k === 'pond', isPage: k === 'page', note, noteStyle: { fontFamily: mono, fontSize: 10, color: a(.68), whiteSpace: 'nowrap' }, dot: { width: 7, height: 7, borderRadius: 2, flex: 'none', background: a(.5), marginLeft: 3, marginRight: 3 }, style: { display: 'flex', alignItems: 'center', gap: 9, padding: mob ? '12px 10px' : '6px 10px', paddingLeft: k === 'page' ? 18 : 10, borderRadius: 10, fontSize: mob ? 15 : 13, background: name === pondName ? a(.07) : 'transparent', fontWeight: name === pondName ? 500 : 400 } }),
+      ponds: PONDS.map(([name, glyph, key]) => ({ name, glyph, key: name === pondName ? '✓' : key, keyStyle: { fontFamily: mono, fontSize: 10.5, color: name === pondName ? fg : a(.68) }, style: { display: 'flex', alignItems: 'center', gap: 9, padding: mob ? '12px 10px' : '7px 10px', borderRadius: 10, fontSize: mob ? 15 : 13, fontWeight: name === pondName ? 500 : 400, background: name === pondName ? a(.07) : 'transparent' } })),
+      switcher: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, padding: '4px 6px', margin: '-4px -6px', borderRadius: 8, background: S('switcher') ? a(.07) : 'transparent' },
+      pondMark: { display: 'inline-block', width: 13, height: 13, flex: 'none', background: 'currentColor' },
+      swChev: { flex: 'none', color: a(.68), transform: S('switcher') ? 'rotate(-90deg)' : 'rotate(90deg)' },
+      menu: { position: 'absolute', top: 44, left: 10, right: 10, zIndex: 5, display: 'flex', flexDirection: 'column', gap: 1, padding: 6, borderRadius: 16, background: ink ? 'linear-gradient(160deg,rgba(74,73,64,.96),rgba(74,73,64,.86))' : 'linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))', backdropFilter: 'blur(24px) saturate(1.3)', border: ink ? '1px solid rgba(250,249,239,.09)' : '1px solid rgba(255,255,255,.9)', boxShadow: ink ? '0 20px 54px rgba(0,0,0,.45)' : 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.16)' },
+      menuHead: { padding: '6px 10px 4px', fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      menuRule: { height: 1, margin: '4px 8px', background: a(.09) },
+      menuRow: { display: 'flex', alignItems: 'center', gap: 9, padding: mob ? '12px 10px' : '7px 10px', borderRadius: 10, fontSize: mob ? 15 : 13, color: a(.8) },
+      gap12: { width: 12, flex: 'none' },
+      sharedTag: { margin: '0 16px 10px', padding: '6px 9px', borderRadius: 8, background: a(.05), fontFamily: mono, fontSize: 10, color: a(.8), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, grow: { flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      rail: { position: 'relative', width: W, height: p.height ? Number(p.height) : (mob ? 640 : 600), boxSizing: 'border-box', display: 'flex', flexDirection: 'column', padding: '18px 0 14px', background: ink ? '#30312A' : '#FAF9EF', borderRadius: 20, boxShadow: cardShadow, fontFamily: sans, color: fg, overflow: S('switcher') ? 'visible' : 'hidden' },
+      head: { padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+      word: { fontWeight: 500, fontSize: mob ? 15 : 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      headRight: { display: 'flex', alignItems: 'center', gap: 10, color: a(.8) },
+      place: { fontWeight: 500, fontSize: 10.5 },
+      body: { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+      pinned: { display: 'flex', flexDirection: 'column', paddingBottom: 4, position: 'relative', zIndex: 1, background: ink ? '#30312A' : '#FAF9EF', boxShadow: `0 1px 0 ${a(.09)},0 6px 10px -6px ${ink ? 'rgba(0,0,0,.4)' : 'rgba(40,34,24,.12)'}` },
+      list: { display: 'flex', flexDirection: 'column', paddingTop: pinned.length ? 4 : 0 },
+      guides: { display: 'flex', flex: 'none', alignSelf: 'stretch', marginRight: -7 },
+      guide: { flex: 'none', alignSelf: 'stretch', margin: mob ? '-11px 0 -11px 4px' : '-5px 0 -5px 4px', width: indent - 5, borderLeft: `1px solid ${a(.09)}` },
+      chevGap: { width: 9, flex: 'none' },
+      label: { minWidth: 0, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      field: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', padding: '1px 6px', margin: '-2px 0', borderRadius: 6, boxShadow: `inset 0 0 0 1px ${a(.2)}`, background: ink ? '#1B1D14' : '#FFFFFF', color: fg, fontWeight: 400 },
+      caret: { display: 'inline-block', width: 1.5, height: 14, background: fg, marginLeft: 1 },
+      tools: { display: 'flex', gap: 8, color: a(.8), flex: 'none' },
+      hint: { margin: '8px 16px 0 34px', fontSize: 12.5, lineHeight: 1.5, color: a(.68), textWrap: 'pretty' },
+      dropLine: { height: 2, margin: '0 16px 0 58px', borderRadius: 2, background: fg },
+      ghost: { position: 'absolute', left: 58, top: 318, display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 10, fontSize: 13, background: ink ? '#4A4940' : '#FAF9EF', color: fg, boxShadow: ink ? '0 8px 24px rgba(0,0,0,.45)' : '0 4px 12px rgb(27 29 20 / .10),0 12px 32px rgb(27 29 20 / .14)', transform: 'rotate(-1.5deg)' },
+      ghostDot: { width: 7, height: 7, borderRadius: 2, background: fg },
+      skelWrap: { display: 'flex', flexDirection: 'column', gap: 14, padding: '8px 20px' },
+      foot: { display: 'flex', flexDirection: 'column', gap: 2, padding: '10px 8px 0', margin: '0 0', borderTop: `1px solid ${a(.09)}` },
+      dbRow: { display: 'flex', alignItems: 'center', gap: 9, padding: mob ? '12px 8px' : '6px 8px', fontSize: mob ? 15 : 13.5, fontWeight: 500, borderRadius: 10 },
+      newRow: { padding: mob ? '12px 8px' : '6px 8px', fontSize: mob ? 14 : 12.5, color: a(.68) },
+      edge: { position: 'absolute', top: 16, bottom: 16, right: 0, width: 2, borderRadius: 2, background: fg },
+      edgeTag: { position: 'absolute', right: 8, bottom: 70, fontFamily: mono, fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: a(.07), color: a(.8) }
+    };
+  }
+}
+</script>
+</body>
+</html>

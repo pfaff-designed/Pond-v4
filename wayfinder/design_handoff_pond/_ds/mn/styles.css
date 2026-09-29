@@ -1,0 +1,10 @@
+/* Make Noise Design System — global entry point.
+   Consumers link this one file. Imports only; never declare rules here. */
+@import './tokens/fonts.css';
+@import './tokens/colors.css';
+@import './tokens/typography.css';
+@import './tokens/spacing.css';
+@import './tokens/radius-shadow.css';
+@import './tokens/motion.css';
+@import './tokens/themes.css';
+@import './tokens/base.css';

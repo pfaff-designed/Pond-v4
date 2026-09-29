@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+<script src="pond-charts.js"></script>
+</helmet>
+<div style="{{ card }}">
+<div style="{{ headRow }}"><span style="{{ title }}">{{ titleText }}</span><span style="{{ typeTag }}">{{ typeText }}</span></div>
+<div style="{{ subStyle }}">{{ subText }}</div>
+<div style="{{ plotBox }}">
+<sc-if value="{{ showPlot }}">{{ plot }}</sc-if>
+<sc-if value="{{ hasTip }}"><div style="{{ tip }}"><span style="{{ tipMuted }}">{{ tipA }}</span><span>{{ tipB }}</span></div></sc-if>
+<sc-if value="{{ isLoading }}"><div style="{{ skelWrap }}"><sc-for list="{{ skel }}" as="s" hint-placeholder-count="5"><span style="{{ s }}"></span></sc-for></div></sc-if>
+<sc-if value="{{ isEmpty }}"><div style="{{ emptyBox }}"><span style="{{ emptyText }}">no rows in {{ source }} yet</span><dc-import name="PondControl" kind="button" variant="secondary" label="add a row" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import></div></sc-if>
+</div>
+<sc-if value="{{ isError }}"><dc-import name="PondMolecule" kind="notice" title="can’t reach {{ source }} · showing the last copy" action="reconnect" theme="{{ theme }}" size="{{ size }}" hint-size="100%,50px"></dc-import></sc-if>
+<div style="{{ foot }}"><div style="{{ footRow }}"><span style="{{ footLabel }}">on</span><span style="{{ footVal }}">{{ onText }}</span></div><div style="{{ footRow }}"><span style="{{ footLabel }}">reads</span><span style="{{ footMono }}">{{ readsText }}</span></div></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:400,&quot;height&quot;:340},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;line&quot;,&quot;area&quot;,&quot;bar&quot;,&quot;composed&quot;,&quot;net&quot;,&quot;heatmap&quot;,&quot;ring&quot;,&quot;gauge&quot;,&quot;radar&quot;,&quot;scatter&quot;,&quot;sankey&quot;,&quot;sunburst&quot;,&quot;funnel&quot;],&quot;default&quot;:&quot;line&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;selected&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;error&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;heading&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { if (!window.PondCharts) this._i = setInterval(() => { if (window.PondCharts) { clearInterval(this._i); this.forceUpdate(); } }, 60); }
+  componentWillUnmount() { clearInterval(this._i); }
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'line', state = p.state ?? 'rest', theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const C = (window.PondCharts || {})[kind] || { type: kind, title: '', sub: '', on: '', reads: '', plot: '' };
+    let html = C.plot;
+    if (ink) html = html.replace(/#FAF9EF/g, '§').replace(/#1B1D14/g, '#FAF9EF').replace(/§/g, '#30312A').replace(/27,29,20/g, '250,249,239');
+    const S = x => state === x;
+    const load = S('loading'), empty = S('empty'), err = S('error'), hover = S('hover'), sel = S('selected');
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const hoverShadow = ink ? '0 2px 4px rgba(0,0,0,.34),0 14px 32px rgba(0,0,0,.4)' : '0 2px 4px rgba(40,34,24,.06),0 14px 32px rgba(40,34,24,.1)';
+    const TIP = { line: ['12 sep', '80.4 kg'], area: ['19 sep', '2,560 kcal'], bar: ['adobe', '£56.98 / mo'], composed: ['aug', '£3,120 spent'], net: ['jul', '−£240'], heatmap: ['18 sep', '45 min'], ring: ['food', '£420'], gauge: ['read', '14 of 24'], radar: ['legs', '22 sets'], scatter: ['16 sep', '5.9 h · energy 2'], sankey: ['rent', '£1,150'], sunburst: ['work', '46%'], funnel: ['cooked twice', '9'] }[kind] || ['', ''];
+    const source = (C.reads || '').split(' · ')[0] || 'this table';
+    const skel = [['70%', 10], ['100%', 90], ['85%', 10], ['60%', 10]].map(([w, h]) => ({ display: 'block', width: w, height: h, borderRadius: 6, background: a(.08) }));
+    return {
+      theme, size, source,
+      titleText: p.heading ?? C.title, typeText: C.type, subText: C.sub, onText: C.on, readsText: C.reads,
+      showPlot: !load && !empty, plot: React.createElement('div', { style: { opacity: err ? .45 : 1 }, dangerouslySetInnerHTML: { __html: html } }),
+      hasTip: hover, tipA: TIP[0], tipB: TIP[1], isLoading: load, skel, isEmpty: empty, isError: err,
+      card: { position: 'relative', width: mob ? 360 : 350, boxSizing: 'border-box', background: ink ? '#30312A' : '#FAF9EF', color: fg, fontFamily: sans, borderRadius: 20, padding: '16px 16px 14px', display: 'flex', flexDirection: 'column', gap: 12, boxShadow: sel ? `0 0 0 2px ${fg},${cardShadow}` : hover ? hoverShadow : cardShadow, transform: hover ? 'translateY(-1px)' : 'none', ...(S('disabled') ? { opacity: .4 } : {}) },
+      headRow: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+      title: { fontSize: mob ? 16 : 15, fontWeight: 500 },
+      typeTag: { fontFamily: mono, fontSize: 10.5, color: a(.8), whiteSpace: 'nowrap' },
+      subStyle: { fontSize: mob ? 13.5 : 12.5, color: a(.68), marginTop: -6 },
+      plotBox: { position: 'relative', padding: '6px 0 2px', minHeight: 150, overflow: 'visible' },
+      tip: { position: 'absolute', top: 2, right: 34, display: 'flex', flexDirection: 'column', gap: 3, padding: '8px 11px', borderRadius: 14, background: ink ? 'linear-gradient(160deg,rgba(74,73,64,.95),rgba(74,73,64,.82))' : 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', border: ink ? '1px solid rgba(250,249,239,.09)' : '1px solid rgba(255,255,255,.9)', boxShadow: ink ? '0 8px 24px rgba(0,0,0,.4)' : '0 8px 24px rgba(40,34,24,.12)', fontFamily: mono, fontSize: 11, color: fg, pointerEvents: 'none' },
+      tipMuted: { color: a(.68) },
+      skelWrap: { display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 10 },
+      emptyBox: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 12, height: 150, padding: '0 14px', boxSizing: 'border-box', borderRadius: 14, background: a(.035) },
+      emptyText: { fontSize: mob ? 15 : 13.5, color: a(.68) },
+      foot: { display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 10, borderTop: `1px solid ${a(.055)}`, fontSize: mob ? 12 : 11 },
+      footRow: { display: 'flex', gap: 10 }, footLabel: { width: 38, color: a(.68) }, footVal: { color: a(.8) },
+      footMono: { fontFamily: mono, fontSize: mob ? 11.5 : 10.5, color: a(.8) }
+    };
+  }
+}
+</script>
+</body>
+</html>

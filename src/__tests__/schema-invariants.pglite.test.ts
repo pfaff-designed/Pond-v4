@@ -177,3 +177,104 @@ describe('PGLite schema invariants', () => {
     await db.close()
   })
 })
+
+// ── #84 — sibling-name uniqueness (migration 0009) ────────────────────────────
+// The unique index pages_sibling_title_uniq enforces "no two siblings share a
+// name" per (user_id, workspace, parent-or-root, lower(btrim(title))), and the
+// migration's dedupe step collapses the historical duplicates first.
+describe('sibling-name uniqueness (0009)', () => {
+  it('rejects two siblings with the same normalized title under the same parent', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const area = await addPage(db, { type: 'area', title: 'Area', workspace: 'main' })
+    await addPage(db, { parentId: area, title: 'Notes', workspace: 'main' })
+    // case-insensitive + trimmed → same key → rejected.
+    await expect(
+      addPage(db, { parentId: area, title: '  notes ', workspace: 'main' })
+    ).rejects.toThrow()
+    await db.close()
+  })
+
+  it('rejects duplicate ROOT (null-parent) siblings — proves the COALESCE guard', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addPage(db, { type: 'area', title: 'Personal', workspace: 'main' })
+    // Without COALESCE(parent_id, sentinel) a plain unique index would treat the
+    // two NULL parents as distinct and let this through — the original bug.
+    await expect(
+      addPage(db, { type: 'area', title: 'Personal', workspace: 'main' })
+    ).rejects.toThrow()
+    await db.close()
+  })
+
+  it('allows the same title under two different parents', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const a = await addPage(db, { type: 'area', title: 'A', workspace: 'main' })
+    const b = await addPage(db, { type: 'area', title: 'B', workspace: 'main' })
+    await addPage(db, { parentId: a, title: 'Notes', workspace: 'main' })
+    const second = await addPage(db, { parentId: b, title: 'Notes', workspace: 'main' })
+    expect(await pageExists(db, second)).toBe(true)
+    await db.close()
+  })
+
+  it('allows multiple blank-titled siblings (placeholders are exempt from the index)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const area = await addPage(db, { type: 'area', title: 'Area', workspace: 'main' })
+    // New pages / collection rows start blank; several under one parent is normal.
+    const a = await addPage(db, { parentId: area, title: '', workspace: 'main' })
+    const b = await addPage(db, { parentId: area, title: '', workspace: 'main' })
+    expect(await pageExists(db, a)).toBe(true)
+    expect(await pageExists(db, b)).toBe(true)
+    await db.close()
+  })
+
+  it('allows the same title in different workspaces', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addPage(db, { type: 'area', title: 'Shared', workspace: 'main' })
+    const sandbox = await addPage(db, { type: 'area', title: 'Shared', workspace: 'sandbox' })
+    expect(await pageExists(db, sandbox)).toBe(true)
+    await db.close()
+  })
+
+  it('dedupe collapses duplicate siblings onto one keeper, preserving children', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    // Drop the index so we can seed the very duplicates 0009 is meant to clean.
+    await db.exec('drop index if exists pages_sibling_title_uniq')
+
+    // Keeper: a root 'Health' with 2 children. One empty twin. One twin w/ 1 child.
+    const keeper = await addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+    await addPage(db, { parentId: keeper, title: 'Weight', workspace: 'main' })
+    await addPage(db, { parentId: keeper, title: 'Sleep', workspace: 'main' })
+    await addPage(db, { type: 'area', title: 'Health', workspace: 'main' }) // empty twin
+    const twin = await addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+    await addPage(db, { parentId: twin, title: 'Lose 40 lbs', workspace: 'main' })
+
+    // Re-run the full 0009 migration: dedupe + recreate the index.
+    const mig = migrationFiles().find((m) => m.name.startsWith('0009'))!
+    await db.exec(mig.sql)
+
+    // Exactly one root 'Health' survives, and it's the keeper (most children).
+    const roots = await db.query<{ id: string }>(
+      "select id from public.pages where parent_id is null and lower(btrim(title)) = 'health' and workspace = 'main'"
+    )
+    expect(roots.rows).toHaveLength(1)
+    expect(roots.rows[0].id).toBe(keeper)
+
+    // It now holds all three children (2 original + the reparented 'Lose 40 lbs').
+    const kids = await db.query<{ title: string }>(
+      'select title from public.pages where parent_id = $1',
+      [keeper]
+    )
+    expect(kids.rows.map((r) => r.title).sort()).toEqual(['Lose 40 lbs', 'Sleep', 'Weight'])
+
+    // And the index is back: a fresh duplicate is rejected again.
+    await expect(
+      addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+    ).rejects.toThrow()
+    await db.close()
+  })
+})
