@@ -50,8 +50,6 @@ export interface RingChartProps {
   ringGap?: number;
   /** Inner radius of the innermost ring. Default: 60 */
   baseInnerRadius?: number;
-  /** Animation duration in milliseconds. Default: 1100 */
-  animationDuration?: number;
   /** Additional class name for the container */
   className?: string;
   /** Controlled hover state - index of hovered ring */
