@@ -7,13 +7,158 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Press type set (loaded in the root layout); fallbacks cover contexts that
-     don't render the root layout, e.g. Storybook. */
-  --font-sans: var(--font-press-sans, Inter, ui-sans-serif, system-ui, sans-serif);
-  --font-serif: var(--font-press-serif, Fraunces, Georgia, serif);
-  --font-mono: var(--font-press-mono, 'JetBrains Mono', ui-monospace, monospace);
-  --font-display: var(--font-press-display, 'Instrument Serif', Georgia, serif);
+  /* Make Noise type set — three licensed PP faces, self-hosted (issue #88).
+     The --font-press-* vars are set by next/font/local in the root layout; the
+     fallbacks cover contexts that don't render the root layout (e.g. Storybook)
+     and are kept per #88 so those surfaces still resolve a sensible face. */
+  --font-sans: var(--font-press-sans, 'PP Neue Montreal', ui-sans-serif, system-ui, sans-serif);
+  --font-serif: var(--font-press-serif, 'PP Editorial New', Georgia, serif);
+  --font-mono: var(--font-press-mono, 'PP Neue Montreal Mono', ui-monospace, monospace);
+  --font-display: var(--font-press-serif, 'PP Editorial New', Georgia, serif);
   --font-heading: var(--font-sans);
+
+  /* ── Make Noise VOICES (issue #87) — 8 named registers ────────────────────
+     Components reference a voice, never raw font values. Each voice is a
+     (family, weight, style, transform, tracking) tuple exposed as tokens.
+     The serif voices (whisper/punch) only ever resolve 200/800 — the 400 face
+     is never loaded (#88), so "serif-never-400" holds structurally.
+       body        reading sans, the default
+       label       500 uppercase, .06em — the workhorse UI label
+       label-bold  700 uppercase, .1em — section eyebrows
+       mono        machine surface (composer, palette, @-picker, diff, chips)
+       whisper     Editorial 200 — a quiet statement
+       whisper-i   Editorial 200 italic
+       punch       Editorial 800 — THE signature move, hero scale only
+       punch-i     Editorial 800 italic */
+  --voice-body-family: var(--font-sans);
+  --voice-body-weight: 400;
+  --voice-body-style: normal;
+  --voice-body-transform: none;
+  --voice-body-tracking: var(--tracking-normal);
+
+  --voice-label-family: var(--font-sans);
+  --voice-label-weight: 500;
+  --voice-label-style: normal;
+  --voice-label-transform: uppercase;
+  --voice-label-tracking: var(--tracking-wide);
+
+  --voice-label-bold-family: var(--font-sans);
+  --voice-label-bold-weight: 700;
+  --voice-label-bold-style: normal;
+  --voice-label-bold-transform: uppercase;
+  --voice-label-bold-tracking: var(--tracking-wider);
+
+  --voice-mono-family: var(--font-mono);
+  --voice-mono-weight: 400;
+  --voice-mono-style: normal;
+  --voice-mono-transform: lowercase;
+  --voice-mono-tracking: var(--tracking-wider);
+
+  --voice-whisper-family: var(--font-display);
+  --voice-whisper-weight: 200;
+  --voice-whisper-style: normal;
+  --voice-whisper-tracking: var(--tracking-tight);
+
+  --voice-whisper-italic-family: var(--font-display);
+  --voice-whisper-italic-weight: 200;
+  --voice-whisper-italic-style: italic;
+  --voice-whisper-italic-tracking: var(--tracking-tight);
+
+  --voice-punch-family: var(--font-display);
+  --voice-punch-weight: 800;
+  --voice-punch-style: normal;
+  --voice-punch-tracking: var(--tracking-tight);
+
+  --voice-punch-italic-family: var(--font-display);
+  --voice-punch-italic-weight: 800;
+  --voice-punch-italic-style: italic;
+  --voice-punch-italic-tracking: var(--tracking-tight);
+
+  /* ── Make Noise type scale (issue #87) — the 8 UI steps; NEVER clamp() ──
+     Exposed as text-* utilities: text-mn-11 … text-mn-46. */
+  --text-mn-11: 11px;
+  --text-mn-13: 13px;
+  --text-mn-16: 16px;
+  --text-mn-18: 18px;
+  --text-mn-22: 22px;
+  --text-mn-28: 28px;
+  --text-mn-36: 36px;
+  --text-mn-46: 46px;
+
+  /* ── Make Noise type LEADING + TRACKING (issue #87) ──────────────────────
+     The house's four leadings and four trackings. Voices below compose from
+     these; components reference voices, not raw values. */
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+  --tracking-tight: -0.03em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.06em; /* label */
+  --tracking-wider: 0.1em; /* label-bold + machine surface */
+
+  /* ── Make Noise component spacing (issue #90) — spacing-mn-* utilities ──
+     The tight ramp for chrome/cards; never blurs into the layout scale. */
+  --spacing-mn-1: 4px;
+  --spacing-mn-2: 8px;
+  --spacing-mn-3: 12px;
+  --spacing-mn-4: 16px;
+  --spacing-mn-6: 24px;
+  --spacing-mn-8: 32px;
+  /* Layout spacing (issue #90) — spacing-mnl-* utilities. Deliberately a
+     separate namespace so page rhythm never reads off the component ramp. */
+  --spacing-mnl-1: 48px;
+  --spacing-mnl-2: 80px;
+  --spacing-mnl-3: 120px;
+  --spacing-mnl-4: 160px;
+  --spacing-mnl-5: 240px;
+  --spacing-mnl-6: 320px;
+
+  /* ── Make Noise radii (issue #89) — rounded-mn-* utilities ──
+     Real card radius (20) rather than deriving all from one base. */
+  --radius-mn-card: var(--mn-radius-card);
+  --radius-mn-inner: var(--mn-radius-inner);
+  --radius-mn-row: var(--mn-radius-row);
+  --radius-mn-chrome: var(--mn-radius-chrome);
+  --radius-mn-hair: var(--mn-radius-hair);
+  --radius-mn-pill: var(--mn-radius-pill);
+
+  /* ── Make Noise SURFACE shadows (issue #89) — shadow-mn-card etc. ─────────
+     Paper-not-frames: surfaces separate by shadow, not borders. */
+  --shadow-mn-card: var(--mn-shadow-card);
+  --shadow-mn-sm: var(--mn-shadow-sm);
+  --shadow-mn-md: var(--mn-shadow-md);
+  --shadow-mn-lg: var(--mn-shadow-lg);
+
+  /* ── Make Noise raw palette exposed as bg-raw-* / text-raw-* etc. ──
+     (per issue #85 the semantic layer is preferred; raws exposed for marks.) */
+  --color-raw-paper: var(--raw-paper);
+  --color-raw-ink: var(--raw-ink);
+  --color-raw-burnt-orange: var(--raw-burnt-orange);
+  --color-raw-wheat: var(--raw-wheat);
+  --color-raw-red: var(--raw-red);
+  --color-raw-sage: var(--raw-sage);
+  --color-raw-mist: var(--raw-mist);
+  --color-raw-navy: var(--raw-navy);
+  --color-raw-olive-light: var(--raw-olive-light);
+  --color-raw-olive-mid: var(--raw-olive-mid);
+  --color-raw-card-dark: var(--raw-card-dark);
+
+  /* ── Make Noise semantic colour roles (issues #85/#86) as utilities ── */
+  --color-mn-text: var(--mn-text);
+  --color-mn-text-meta: var(--mn-text-meta);
+  --color-mn-text-secondary: var(--mn-text-secondary);
+  --color-mn-line: var(--mn-line);
+  --color-mn-hair: var(--mn-hair);
+  --color-mn-hover-fill: var(--mn-hover-fill);
+  --color-mn-signal-dated: var(--mn-signal-dated);
+  --color-mn-signal-highlight: var(--mn-signal-highlight);
+  --color-mn-signal-highlight-ink: var(--mn-signal-highlight-ink);
+  --color-mn-signal-removal: var(--mn-signal-removal);
+  --color-mn-area-a: var(--mn-area-a);
+  --color-mn-area-b: var(--mn-area-b);
+  --color-mn-area-c: var(--mn-area-c);
+
   /* Press chrome tokens — bg-press-paper, text-press-ink, border-press-line, … */
   --color-press-paper: var(--press-paper);
   --color-press-ink: var(--press-ink);
@@ -57,8 +202,10 @@
      landing — no bounce). --ease-out decelerates into rest (entries, draws);
      --ease-in accelerates away (exits/dismissals). */
   --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* MN law: one house curve, nothing overshoots. --ease-out/-in kept as aliases
+     for call-site readability (entries vs exits) but resolve to the same curve. */
+  --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.22, 0.8, 0.2, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -95,45 +242,98 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --color-chart-scale-pattern-color: var(----chart-scale-pattern-color);
-  --color-chart-scale-05: var(----chart-scale-05);
-  --color-chart-scale-04: var(----chart-scale-04);
-  --color-chart-scale-03: var(----chart-scale-03);
-  --color-chart-scale-02: var(----chart-scale-02);
-  --color-chart-scale-01: var(----chart-scale-01);
-  --color-chart-label: var(----chart-label);
-  --color-chart-marker-foreground: var(----chart-marker-foreground);
-  --color-chart-marker-border: var(----chart-marker-border);
-  --color-chart-marker-background: var(----chart-marker-background);
-  --color-chart-tooltip-muted: var(----chart-tooltip-muted);
-  --color-chart-tooltip-foreground: var(----chart-tooltip-foreground);
-  --color-chart-tooltip-background: var(----chart-tooltip-background);
-  --chart-brush-border: var(----chart-brush-border);
-  --color-chart-grid: var(----chart-grid);
-  --color-chart-crosshair: var(----chart-crosshair);
-  --chart-line-secondary: var(----chart-line-secondary);
-  --chart-line-primary: var(----chart-line-primary);
-  --color-chart-foreground-muted: var(----chart-foreground-muted);
-  --color-chart-foreground: var(----chart-foreground);
-  --color-chart-background: var(----chart-background);
+  --color-chart-scale-pattern-color: var(--chart-scale-pattern-color);
+  --color-chart-scale-05: var(--chart-scale-05);
+  --color-chart-scale-04: var(--chart-scale-04);
+  --color-chart-scale-03: var(--chart-scale-03);
+  --color-chart-scale-02: var(--chart-scale-02);
+  --color-chart-scale-01: var(--chart-scale-01);
+  --color-chart-label: var(--chart-label);
+  --color-chart-marker-foreground: var(--chart-marker-foreground);
+  --color-chart-marker-border: var(--chart-marker-border);
+  --color-chart-marker-background: var(--chart-marker-background);
+  --color-chart-tooltip-muted: var(--chart-tooltip-muted);
+  --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
+  --color-chart-tooltip-background: var(--chart-tooltip-background);
+  --chart-brush-border: var(--chart-brush-border);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-crosshair: var(--chart-crosshair);
+  --chart-line-secondary: var(--chart-line-secondary);
+  --chart-line-primary: var(--chart-line-primary);
+  --color-chart-foreground-muted: var(--chart-foreground-muted);
+  --color-chart-foreground: var(--chart-foreground);
+  --color-chart-background: var(--chart-background);
 }
 
 :root {
-  /* ── Press palette (R6, locked) — the source values every token maps from ── */
-  --press-paper: #efeae0; /* warm paper base */
-  --press-ink: #211f1b; /* richest ink */
-  --press-body: rgba(33, 31, 27, 0.8);
-  --press-muted: rgba(33, 31, 27, 0.52);
-  --press-faint: rgba(33, 31, 27, 0.3);
-  --press-line: rgba(33, 31, 27, 0.09);
-  --press-hair: rgba(33, 31, 27, 0.055); /* even fainter — the calm divider */
-  --press-card: #faf8f2; /* near-white module surface */
-  --press-accent: #5f7355; /* sage — ambient tint */
-  --press-accent-soft: rgba(95, 115, 85, 0.12);
-  --press-accent-wash: rgba(95, 115, 85, 0.06);
-  --press-lime: #c4e08a; /* the single primary-action color */
-  --press-lime-ink: #2c3a17;
-  --press-rust: #c2632f; /* rare punctuation only */
+  /* ══ Make Noise RAW palette (issues #85/#86) — the one house palette ════════
+     Source of truth: wayfinder/design_handoff_pond/_ds/mn/tokens/colors.css.
+     Every colour in the app maps from here, named by what it IS. A theme
+     reassigns semantic roles below; a --raw-* value NEVER moves (light↔dark). */
+  --raw-paper: #faf9ef; /* ground — every surface is built from these two */
+  --raw-ink: #1b1d14;
+  --raw-burnt-orange: #d96629; /* loud signal: the one dated thing. Carries INK. */
+  --raw-wheat: #ffefae; /* pale attention: highlighted passages. Carries INK. */
+  --raw-red: #c55347; /* accent red: diff removals only */
+  --raw-rose: #c48a94; /* dusty rose: option-dot swatch only (pink), softer than rust */
+  --raw-sage: #648f7b; /* mid cool: ambient tint — washes, margins, area mark */
+  --raw-mist: #a5c8d1; /* pale cool: recedes; area mark; navy flips here on dark */
+  --raw-navy: #12354e; /* deep cool: area mark, links, focus */
+  --raw-olive-light: #edecd8; /* neutral-100 — subtle tinted surface */
+  --raw-olive-mid: #a3a294; /* neutral-400 — placeholder / faint mark */
+  --raw-card-dark: #30312a; /* neutral-700 — the dark-mode card surface */
+
+  /* ── Make Noise SEMANTIC roles (issues #85/#86) — components read THESE ──
+     Ink carries everything in exactly 3 tiers: 100 / 80 (small meta) / 68. */
+  --mn-text: var(--raw-ink);
+  --mn-text-meta: rgb(27 29 20 / 0.8); /* small meta — higher opacity to hold at size */
+  --mn-text-secondary: rgb(27 29 20 / 0.68);
+  --mn-line: rgb(27 29 20 / 0.09);
+  --mn-hair: rgb(27 29 20 / 0.055);
+  --mn-hover-fill: rgb(27 29 20 / 0.07);
+  --mn-signal-dated: var(--raw-burnt-orange); /* the ONE dated thing per screen */
+  --mn-signal-highlight: var(--raw-wheat); /* highlighted passages only */
+  --mn-signal-highlight-ink: var(--raw-ink); /* wheat always carries ink text */
+  --mn-signal-removal: var(--raw-red); /* diff removals only */
+  --mn-area-a: var(--raw-sage);
+  --mn-area-b: var(--raw-mist);
+  --mn-area-c: var(--raw-navy);
+
+  /* ── Make Noise radii (issue #89) — real per-role values, not one base ── */
+  --mn-radius-card: 20px;
+  --mn-radius-inner: 14px;
+  --mn-radius-row: 10px;
+  --mn-radius-chrome: 6px;
+  --mn-radius-hair: 2px;
+  --mn-radius-pill: 9999px;
+
+  /* ── Make Noise shadows (issue #89) — paper-not-frames: surfaces lift, not box ── */
+  --mn-shadow-card: 0 1px 2px rgb(40 34 24 / 0.04), 0 8px 24px rgb(40 34 24 / 0.06);
+  --mn-shadow-sm: 0 1px 2px 0 rgb(27 29 20 / 0.06);
+  --mn-shadow-md: 0 4px 12px 0 rgb(27 29 20 / 0.1);
+  --mn-shadow-lg: 0 12px 32px 0 rgb(27 29 20 / 0.14);
+
+  /* ── Press aliases → Make Noise (issue #92 will rename press-* → color-*) ──
+     KEPT as value-correct aliases so the ~existing components that still say
+     bg-press-paper / text-press-ink adopt MN colours without a mass rename.
+     Each maps to its closest MN role; the names go away in the #92 pass. */
+  --press-paper: var(--raw-paper);
+  --press-ink: var(--raw-ink);
+  --press-body: rgb(27 29 20 / 0.8); /* → meta tier */
+  --press-muted: rgb(27 29 20 / 0.68); /* snapped 52%→68% to hit MN's secondary tier */
+  --press-faint: rgb(27 29 20 / 0.3); /* no MN tier this faint — bridge value, opacity preserved */
+  --press-line: rgb(27 29 20 / 0.09);
+  --press-hair: rgb(27 29 20 / 0.055);
+  --press-card: var(--raw-paper); /* paper-not-frames: cards ARE paper, lifted by shadow */
+  /* MN law: sage is an AREA colour (marks only). These roles are FUNCTIONAL
+     (focus rings, hover/active fills, links, drag handles, chips) so they carry
+     ink, not sage. Genuine area marks use --mn-area-a directly. */
+  --press-accent: var(--raw-ink);
+  --press-accent-soft: rgb(27 29 20 / 0.12);
+  --press-accent-wash: rgb(27 29 20 / 0.06);
+  --press-lime: var(--raw-ink); /* primary CTA = ink-on-paper (MN); was lime */
+  --press-lime-ink: var(--raw-paper);
+  --press-rust: var(--raw-red); /* destructive → MN accent red */
 
   /* ── shadcn semantic tokens, mapped onto Press ── */
   --background: var(--press-paper);
@@ -154,11 +354,16 @@
   --border: var(--press-line);
   --input: var(--press-line);
   --ring: var(--press-accent);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* ══ Make Noise chart series — monochrome INK ramp (#94 chart pass) ══════════
+     PondChart is single-hue: series read as ink strokes / translucent ink area
+     fills over paper, NOT a rainbow. --chart-1 is the strongest ink; each step
+     lightens toward the paper ground. Where a chart truly needs to separate
+     stacked areas, the MN area marks (--mn-area-a/b/c: sage/mist/navy) apply. */
+  --chart-1: var(--raw-ink); /* strong ink stroke */
+  --chart-2: rgb(27 29 20 / 0.72);
+  --chart-3: rgb(27 29 20 / 0.5);
+  --chart-4: rgb(27 29 20 / 0.32);
+  --chart-5: rgb(27 29 20 / 0.18);
   --radius: 0.625rem;
   --sidebar: var(--press-paper);
   --sidebar-foreground: var(--press-ink);
@@ -168,77 +373,99 @@
   --sidebar-accent-foreground: var(--press-ink);
   --sidebar-border: var(--press-line);
   --sidebar-ring: var(--press-accent);
-  --chart-background: oklch(1 0 0);
-  --chart-foreground: oklch(0.145 0.004 285);
-  --chart-foreground-muted: oklch(0.55 0.014 260);
+  /* Chart chrome — paper ground + ink tiers (matches MN text/line scale) */
+  --chart-background: var(--raw-paper);
+  --chart-foreground: var(--raw-ink);
+  --chart-foreground-muted: rgb(27 29 20 / 0.68); /* --mn-text-secondary */
   --chart-line-primary: var(--chart-1);
   --chart-line-secondary: var(--chart-2);
-  --chart-crosshair: oklch(0.4 0.1828 274.34);
-  --chart-grid: oklch(0.9 0 0);
+  --chart-crosshair: rgb(27 29 20 / 0.4); /* ink hairline, not blue */
+  --chart-grid: rgb(27 29 20 / 0.09); /* --mn-line */
   --chart-brush-border: var(--chart-grid);
-  --chart-tooltip-background: oklch(0.21 0.006 285 / 0.8);
-  --chart-tooltip-foreground: oklch(0.985 0 0);
-  --chart-tooltip-muted: oklch(0.65 0.01 260);
-  --chart-marker-background: oklch(0.97 0.005 260);
-  --chart-marker-border: oklch(0.85 0.01 260);
-  --chart-marker-foreground: oklch(0.3 0.01 260);
-  --chart-label: oklch(0.45 0.01 260);
-  --chart-scale-01: oklch(0.98 0.003 106);
-  --chart-scale-02: oklch(0.92 0.008 106);
-  --chart-scale-03: oklch(0.82 0.015 106);
-  --chart-scale-04: oklch(0.68 0.02 106);
-  --chart-scale-05: oklch(0.55 0.025 106);
-  --chart-scale-pattern-color: oklch(0.96 0.005 106);
+  --chart-tooltip-background: rgb(27 29 20 / 0.9); /* ink glass */
+  --chart-tooltip-foreground: var(--raw-paper);
+  --chart-tooltip-muted: rgb(250 249 239 / 0.68);
+  --chart-marker-background: var(--raw-paper);
+  --chart-marker-border: rgb(27 29 20 / 0.12);
+  --chart-marker-foreground: var(--raw-ink);
+  --chart-label: rgb(27 29 20 / 0.68); /* --mn-text-secondary */
+  /* Sequential ramp for heatmap / scale fills — ink over paper */
+  --chart-scale-01: rgb(27 29 20 / 0.05);
+  --chart-scale-02: rgb(27 29 20 / 0.16);
+  --chart-scale-03: rgb(27 29 20 / 0.32);
+  --chart-scale-04: rgb(27 29 20 / 0.52);
+  --chart-scale-05: rgb(27 29 20 / 0.78);
+  --chart-scale-pattern-color: rgb(27 29 20 / 0.04);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  --chart-background: oklch(0.145 0 0);
-  --chart-foreground: oklch(0.45 0 0);
-  --chart-foreground-muted: oklch(0.65 0.01 260);
-  --chart-crosshair: oklch(0.45 0 0);
-  --chart-grid: oklch(0.25 0 0);
+  /* ══ Make Noise DARK — only roles reassign; a --raw-* value NEVER moves ══════
+     Ground = ink, cards = dark card. Every shadcn/sidebar token in :root
+     derives from the --press- and --mn- roles, so overriding them here re-themes the
+     whole app. Paper carries text in the same 3 tiers (100 / 80 / 68). */
+  --press-paper: var(--raw-ink); /* ground */
+  --press-ink: var(--raw-paper); /* text/ink flips to paper */
+  --press-body: rgb(250 249 239 / 0.8);
+  --press-muted: rgb(250 249 239 / 0.68);
+  --press-faint: rgb(250 249 239 / 0.3);
+  --press-line: rgb(250 249 239 / 0.12);
+  --press-hair: rgb(250 249 239 / 0.07);
+  --press-card: var(--raw-card-dark);
+  --press-accent: var(--raw-paper); /* ink flips to paper on the dark ground */
+  --press-accent-soft: rgb(250 249 239 / 0.2);
+  --press-accent-wash: rgb(250 249 239 / 0.1);
+  --press-lime: var(--raw-paper); /* dark primary CTA = paper-on-ink */
+  --press-lime-ink: var(--raw-ink);
+  --press-rust: var(--raw-red);
+
+  /* MN semantic roles — paper tiers on the dark ground */
+  --mn-text: var(--raw-paper);
+  --mn-text-meta: rgb(250 249 239 / 0.8);
+  --mn-text-secondary: rgb(250 249 239 / 0.68);
+  --mn-line: rgb(250 249 239 / 0.12);
+  --mn-hair: rgb(250 249 239 / 0.07);
+  --mn-hover-fill: rgb(250 249 239 / 0.07);
+  --mn-signal-dated: var(--raw-burnt-orange);
+  --mn-signal-highlight: var(--raw-wheat);
+  --mn-signal-highlight-ink: var(--raw-ink);
+  --mn-signal-removal: var(--raw-red);
+  --mn-area-a: var(--raw-sage);
+  --mn-area-b: var(--raw-mist);
+  --mn-area-c: var(--raw-mist); /* navy → mist on dark */
+
+  /* Heavier MN shadows on the dark ground */
+  --mn-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.4);
+  --mn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --mn-shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
+  --mn-shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);
+
+  /* ══ Make Noise chart series DARK — monochrome PAPER ramp (#94 chart pass) ════
+     On the dark card ground, ink flips to paper: series read as paper strokes /
+     translucent paper area fills. --chart-1 strongest paper, stepping down. */
+  --chart-1: var(--raw-paper); /* strong paper stroke */
+  --chart-2: rgb(250 249 239 / 0.72);
+  --chart-3: rgb(250 249 239 / 0.5);
+  --chart-4: rgb(250 249 239 / 0.32);
+  --chart-5: rgb(250 249 239 / 0.18);
+  --chart-background: var(--raw-card-dark);
+  --chart-foreground: var(--raw-paper);
+  --chart-foreground-muted: rgb(250 249 239 / 0.68);
+  --chart-crosshair: rgb(250 249 239 / 0.4);
+  --chart-grid: rgb(250 249 239 / 0.12); /* --mn-line dark */
   --chart-brush-border: var(--chart-grid);
-  --chart-marker-background: oklch(0.25 0.01 260);
-  --chart-marker-border: oklch(0.4 0.01 260);
-  --chart-marker-foreground: oklch(0.9 0 0);
-  --chart-label: oklch(0.75 0.01 260);
-  --chart-scale-01: oklch(0.28 0.03 270);
-  --chart-scale-02: oklch(0.38 0.04 270);
-  --chart-scale-03: oklch(0.48 0.05 270);
-  --chart-scale-04: oklch(0.58 0.06 270);
-  --chart-scale-05: oklch(0.68 0.07 270);
-  --chart-scale-pattern-color: oklch(0.145 0 0);
+  --chart-tooltip-background: rgb(74 73 64 / 0.9); /* MN dark glass tint */
+  --chart-tooltip-foreground: var(--raw-paper);
+  --chart-tooltip-muted: rgb(250 249 239 / 0.68);
+  --chart-marker-background: var(--raw-card-dark);
+  --chart-marker-border: rgb(250 249 239 / 0.12);
+  --chart-marker-foreground: var(--raw-paper);
+  --chart-label: rgb(250 249 239 / 0.68);
+  --chart-scale-01: rgb(250 249 239 / 0.05);
+  --chart-scale-02: rgb(250 249 239 / 0.16);
+  --chart-scale-03: rgb(250 249 239 / 0.32);
+  --chart-scale-04: rgb(250 249 239 / 0.52);
+  --chart-scale-05: rgb(250 249 239 / 0.78);
+  --chart-scale-pattern-color: rgb(250 249 239 / 0.04);
 }
 
 @keyframes press-rise {
@@ -413,18 +640,13 @@
     transform: scaleX(1);
   }
 
-  /* Letterpress authored card (ticket-32): the AI reply and every proposal object in
-     the terminal share this "impressed ink" treatment so the transcript reads as one
-     coherent object — a warm near-paper surface, a sage-inked left margin like a
-     ruled correspondence, and a soft debossed shadow rather than a floating card. */
+  /* Authored card (Make Noise: paper-not-frames): the AI reply and every proposal
+     object in the terminal share one treatment so the transcript reads as a coherent
+     object — a paper surface lifted by a soft shadow, NOT a bordered or accent-ruled
+     frame. No hard borders, no sage left margin (area colours are marks only). */
   .press-letter {
-    background:
-      linear-gradient(to right, var(--press-accent-wash), transparent 40%), var(--press-card);
-    border: 1px solid var(--press-line);
-    border-left: 2px solid var(--press-accent);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.55) inset,
-      0 1px 2px rgba(33, 31, 27, 0.05);
+    background: var(--press-card);
+    box-shadow: var(--mn-shadow-card);
   }
 
   /* Liquid glass — floating Press chrome ONLY (top bar cluster, palettes). */

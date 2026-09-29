@@ -9,4 +9,4 @@ export const LOADING_LABEL_EXIT_S = 0.45;
 /** Loading label drops this many pixels while exiting. */
 export const LOADING_LABEL_EXIT_Y_PX = 30;
 
-export const LINE_LOADING_PULSE_EASE = [0.85, 0, 0.15, 1] as const;
+export const LINE_LOADING_PULSE_EASE = [0.22, 0.8, 0.2, 1] as const;

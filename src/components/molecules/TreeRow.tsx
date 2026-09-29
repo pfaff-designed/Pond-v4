@@ -72,7 +72,7 @@ export function KindDot({ color }: { color: string }) {
   return (
     <span
       aria-hidden
-      className="w-[7px] h-[7px] rounded-[2px] flex-shrink-0"
+      className="w-[7px] h-[7px] rounded-mn-hair flex-shrink-0"
       style={{ background: color }}
     />
   )
@@ -212,7 +212,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center h-[34px] rounded-[10px] pr-1.5 outline-none transition-colors
+      className={`group relative flex items-center h-[34px] rounded-mn-row pr-1.5 outline-none transition-colors
         focus-visible:ring-2 focus-visible:ring-press-accent focus-visible:ring-offset-0
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-50' : ''}
@@ -283,14 +283,14 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
         tabIndex={-1}
         className={`flex-1 min-w-0 flex items-center gap-2 text-left leading-none ${
           isRoot
-            ? `text-[14px] ${isSelected ? 'font-bold text-foreground' : 'font-semibold text-press-body group-hover:text-foreground'}`
+            ? `text-[13.5px] font-medium ${isSelected ? 'text-foreground' : 'text-press-body group-hover:text-foreground'}`
             : isArea
-              ? `text-[13px] font-semibold ${
+              ? `text-[13.5px] font-medium ${
                   isSelected || isOnPath
                     ? 'text-foreground'
                     : 'text-press-body group-hover:text-foreground'
                 }`
-              : `text-[12.5px] ${
+              : `text-[13px] ${
                   isSelected
                     ? 'font-medium text-foreground'
                     : isOnPath
@@ -318,7 +318,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
           {onAddChild && (
             <button
               type="button"
-              className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-foreground hover:bg-press-ink/[0.04] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
+              className="grid place-items-center w-[22px] h-[22px] rounded-mn-chrome text-press-faint hover:text-foreground hover:bg-press-ink/[0.04] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
               title="Add sub-page"
               aria-label={`Add sub-page to ${label}`}
               disabled={isBusy}
@@ -340,7 +340,7 @@ export const TreeRow = forwardRef<HTMLDivElement, TreeRowProps>(function TreeRow
           {onDelete && (
             <button
               type="button"
-              className="grid place-items-center w-[22px] h-[22px] rounded-md text-press-faint hover:text-destructive hover:bg-press-rust/[0.06] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
+              className="grid place-items-center w-[22px] h-[22px] rounded-mn-chrome text-press-faint hover:text-destructive hover:bg-press-rust/[0.06] outline-none focus-visible:ring-2 focus-visible:ring-press-accent disabled:opacity-30 transition-colors"
               title="Delete page"
               aria-label={`Delete ${label}`}
               disabled={isBusy}

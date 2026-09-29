@@ -54,7 +54,7 @@ export function QuestionCard({
       role="group"
       aria-label={`Question: ${question}`}
       className={cn(
-        'press-arrive rounded-md border border-press-line bg-press-accent-wash/60 px-4 py-3',
+        'press-arrive rounded-mn-inner bg-press-accent-wash/60 px-4 py-3 shadow-mn-sm',
         className
       )}
     >

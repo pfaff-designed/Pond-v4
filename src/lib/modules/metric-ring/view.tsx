@@ -16,7 +16,7 @@ function ProgressRing({ label, sub, pct }: { label: string; sub?: string; pct: n
   const clamped = Math.max(0, Math.min(1, pct))
 
   return (
-    <div className="relative flex-shrink-0 text-zinc-800" style={{ width: SIZE, height: SIZE }}>
+    <div className="relative flex-shrink-0 text-press-ink" style={{ width: SIZE, height: SIZE }}>
       <svg width={SIZE} height={SIZE} className="-rotate-90">
         <circle
           cx={SIZE / 2}
@@ -41,7 +41,11 @@ function ProgressRing({ label, sub, pct }: { label: string; sub?: string; pct: n
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center leading-none">
         <span className="text-2xl tabular-nums tracking-tight">{label}</span>
-        {sub && <span className="text-[10px] uppercase tracking-widest text-zinc-400">{sub}</span>}
+        {sub && (
+          <span className="font-mono text-[10px] lowercase tracking-[0.1em] text-press-muted">
+            {sub}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -62,10 +66,12 @@ export function MetricRingView({ data }: ModuleViewProps<MetricRingBlock>) {
   return (
     <div className="flex flex-col items-center gap-2 py-2 text-center">
       {/* Title — wraps on long text instead of collapsing the ring */}
-      <span className="max-w-xs text-sm font-medium leading-snug text-zinc-700">{data.label}</span>
+      <span className="max-w-xs text-sm font-medium leading-snug text-press-body">
+        {data.label}
+      </span>
       <ProgressRing label={pctLabel} sub={data.sub} pct={pct} />
       {/* Percentage caption below the ring for at-a-glance reading */}
-      <span className="text-xs text-zinc-400">{pctLabel} complete</span>
+      <span className="text-xs text-press-muted">{pctLabel} complete</span>
     </div>
   )
 }

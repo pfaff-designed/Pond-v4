@@ -60,11 +60,11 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
   // ── No file yet ────────────────────────────────────────────────────────────
   if (!data.url) {
     if (!editable) {
-      return <p className="py-1 text-sm text-zinc-400">No file uploaded yet.</p>
+      return <p className="py-1 text-sm text-press-faint">No file uploaded yet.</p>
     }
     return (
       <div className="py-1">
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-700">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-mn-inner bg-press-accent-wash px-3 py-2 text-sm text-press-muted transition-colors hover:bg-press-accent-soft hover:text-press-ink">
           <PaperclipIcon />
           <span>{busy ? 'Uploading…' : 'Upload a file — images, pdf, txt, md · up to 10MB'}</span>
           <input
@@ -100,10 +100,10 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
         <img
           src={data.url}
           alt={data.caption ?? name}
-          className="max-h-[480px] max-w-full rounded border border-zinc-200"
+          className="max-h-[480px] max-w-full rounded-mn-row shadow-mn-sm"
         />
         {data.caption && (
-          <figcaption className="mt-1.5 text-xs text-zinc-400">{data.caption}</figcaption>
+          <figcaption className="mt-1.5 text-xs text-press-faint">{data.caption}</figcaption>
         )}
       </figure>
     )
@@ -115,12 +115,12 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
         href={data.url}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-2 rounded border border-zinc-200 px-3 py-2 text-sm text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-800"
+        className="inline-flex items-center gap-2 rounded-mn-row bg-press-card px-3 py-2 text-sm text-press-body shadow-mn-sm transition-colors hover:text-press-ink"
       >
         <PaperclipIcon />
         <span>{name}</span>
       </a>
-      {data.caption && <p className="mt-1.5 text-xs text-zinc-400">{data.caption}</p>}
+      {data.caption && <p className="mt-1.5 text-xs text-press-faint">{data.caption}</p>}
     </div>
   )
 }

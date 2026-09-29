@@ -20,7 +20,6 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import type { ModuleViewProps } from '../types'
 import { VIEW_MODES, type ViewBlock, type ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -148,7 +147,7 @@ export interface CollectionViewProps {
 /** A calm Press placeholder — the shared shell for every non-drawing state. */
 function ViewNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-press-hair px-4 py-6 text-center text-sm text-press-muted">
+    <div className="rounded-mn-inner bg-press-accent-wash px-4 py-6 text-center text-sm text-press-muted">
       {children}
     </div>
   )
@@ -280,7 +279,7 @@ function ViewControls({
   const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-md border border-press-hair p-0.5">
+      <div className="inline-flex rounded-mn-chrome shadow-mn-sm p-0.5">
         {VIEW_MODES.map((m) => {
           const active = config.mode === m
           return (
@@ -290,7 +289,7 @@ function ViewControls({
               aria-pressed={active}
               onClick={() => onConfigChange({ mode: m })}
               className={[
-                'rounded px-2 py-0.5 text-xs transition-colors',
+                'rounded-mn-chrome px-2 py-0.5 text-xs transition-colors',
                 active
                   ? 'bg-press-accent-wash text-press-ink'
                   : 'text-press-muted hover:text-press-ink',
@@ -309,7 +308,7 @@ function ViewControls({
             aria-label="Group by property"
             value={config.groupBy ?? ''}
             onChange={(e) => onConfigChange({ groupBy: e.target.value || undefined })}
-            className="rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+            className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
           >
             {groupOptions.map((d) => (
               <option key={d.id} value={d.id}>
@@ -362,7 +361,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md px-2 py-0.5 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+        className="rounded-mn-chrome px-2 py-0.5 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
       >
         + Add property
       </button>
@@ -381,13 +380,13 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') setOpen(false)
         }}
-        className="w-32 rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none placeholder:text-press-faint"
+        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none placeholder:text-press-faint"
       />
       <select
         aria-label="New property type"
         value={type}
         onChange={(e) => setType(e.target.value as PropertyType)}
-        className="rounded border border-press-hair bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
       >
         {ADDABLE_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -398,7 +397,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
       <button
         type="button"
         onClick={commit}
-        className="rounded-md bg-press-accent-wash px-2 py-0.5 text-xs text-press-ink transition-colors hover:bg-press-accent hover:text-press-paper"
+        className="rounded-mn-chrome bg-press-accent-wash px-2 py-0.5 text-xs text-press-ink transition-colors hover:bg-press-accent hover:text-press-paper"
       >
         Add
       </button>
@@ -406,7 +405,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
         type="button"
         aria-label="Cancel adding property"
         onClick={() => setOpen(false)}
-        className="rounded px-1 py-0.5 text-xs text-press-faint transition-colors hover:text-press-ink"
+        className="rounded-mn-chrome px-1 py-0.5 text-xs text-press-faint transition-colors hover:text-press-ink"
       >
         ×
       </button>
@@ -497,7 +496,7 @@ function CollectionTable({
                     type="button"
                     aria-label={`Delete row: ${row.title || 'untitled'}`}
                     onClick={() => onRemoveRow(row.id)}
-                    className="rounded px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                    className="rounded-mn-chrome px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
                   >
                     ×
                   </button>
@@ -512,7 +511,7 @@ function CollectionTable({
         <button
           type="button"
           onClick={() => onAddRow()}
-          className="mt-2 rounded-md px-2 py-1 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+          className="mt-2 rounded-mn-chrome px-2 py-1 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
         >
           + Add row
         </button>
@@ -639,10 +638,10 @@ function CollectionBoard({
               key={key}
               ref={registerBucket(key)}
               className={[
-                'group/col min-w-[13rem] flex-1 rounded-md border px-3 py-2 transition-colors',
+                'group/col min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'border-press-accent bg-press-accent-wash'
-                  : 'border-press-hair bg-press-card/40',
+                  ? 'bg-press-accent-wash shadow-mn-md'
+                  : 'bg-press-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -669,18 +668,34 @@ function CollectionBoard({
                       aria-label={`Move column left: ${group.label}`}
                       disabled={optIndex <= 0}
                       onClick={() => moveColumn(group.id as string, 'left')}
-                      className="rounded px-0.5 text-press-faint leading-none hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-press-faint hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
                     >
-                      ‹
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M7.5 3L4.5 6l3 3"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </button>
                     <button
                       type="button"
                       aria-label={`Move column right: ${group.label}`}
                       disabled={optIndex < 0 || optIndex >= optCount - 1}
                       onClick={() => moveColumn(group.id as string, 'right')}
-                      className="rounded px-0.5 text-press-faint leading-none hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-press-faint hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
                     >
-                      ›
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M4.5 3l3 3-3 3"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </button>
                   </span>
                 )}
@@ -712,8 +727,8 @@ function CollectionBoard({
                           : undefined
                       }
                       className={[
-                        'group/card relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
+                        'group/card relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
                         onOpenCard ? 'cursor-pointer' : '',
                       ].join(' ')}
@@ -772,7 +787,7 @@ function CollectionBoard({
                           type="button"
                           aria-label={`Delete card: ${row.title || 'untitled'}`}
                           onClick={() => onRemoveRow(row.id)}
-                          className="absolute top-1 right-1 rounded px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
                         >
                           ×
                         </button>
@@ -786,7 +801,7 @@ function CollectionBoard({
                 <button
                   type="button"
                   onClick={() => addCard(group.id)}
-                  className="mt-2 w-full rounded-md px-2 py-1 text-left text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+                  className="mt-2 w-full rounded-mn-row px-2 py-1 text-left text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
                 >
                   + Add card
                 </button>
@@ -801,7 +816,7 @@ function CollectionBoard({
           <button
             type="button"
             onClick={addColumn}
-            className="min-w-[9rem] shrink-0 self-start rounded-md border border-dashed border-press-hair px-3 py-2 text-left text-xs text-press-muted transition-colors hover:border-press-accent hover:bg-press-accent-wash hover:text-press-ink"
+            className="min-w-[9rem] shrink-0 self-start rounded-mn-inner border border-dashed border-press-hair px-3 py-2 text-left text-xs text-press-muted transition-colors hover:border-press-accent hover:bg-press-accent-wash hover:text-press-ink"
           >
             + Add column
           </button>
@@ -811,7 +826,7 @@ function CollectionBoard({
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-md border border-press-line bg-press-card px-2.5 py-2 shadow-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
@@ -890,10 +905,10 @@ function CollectionCalendar({
               key={key}
               ref={registerBucket(key)}
               className={[
-                'rounded-md border px-3 py-2 transition-colors',
+                'rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'border-press-accent bg-press-accent-wash'
-                  : 'border-press-hair bg-press-card/40',
+                  ? 'bg-press-accent-wash shadow-mn-md'
+                  : 'bg-press-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -912,8 +927,8 @@ function CollectionCalendar({
                     <li
                       key={row.id}
                       className={[
-                        'relative flex items-start gap-1.5 rounded-md border border-press-line bg-press-card px-2 py-2 shadow-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
+                        'relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}
                     >
@@ -961,7 +976,7 @@ function CollectionCalendar({
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-md border border-press-line bg-press-card px-2.5 py-2 shadow-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
@@ -989,7 +1004,7 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
       {rows.map((row) => (
         <article
           key={row.id}
-          className="rounded-md border border-press-line bg-press-card px-3 py-2.5 shadow-sm"
+          className="rounded-mn-row bg-press-card px-3 py-2.5 shadow-mn-sm"
         >
           <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
           <dl className="mt-2 space-y-1">
@@ -1257,7 +1272,21 @@ function Cell({
       return opt ? <OptionChip label={opt.label} color={opt.color} /> : <Dash />
     }
     if (def.type === 'checkbox') {
-      return value === true ? <span aria-label="checked">✓</span> : <Dash />
+      return value === true ? (
+        <span aria-label="checked" className="inline-grid place-items-center">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+            <path
+              d="M2.5 6.5l2.5 2.5 4.5-6"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      ) : (
+        <Dash />
+      )
     }
     if (def.type === 'relation') {
       // Read-only host: chips (clickable), no picker (#20 decision 6).
@@ -1349,51 +1378,61 @@ function Dash() {
 /** A select/status value chip: a colored dot + the option label. */
 function OptionChip({ label, color }: { label: string; color?: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-sm border border-press-line bg-press-paper px-1.5 py-0.5 text-xs text-press-body">
+    <span className="inline-flex items-center gap-1 rounded-mn-chrome border border-press-line bg-press-paper px-1.5 py-0.5 text-xs text-press-body">
       <OptionDot color={color} />
       {label}
     </span>
   )
 }
 
-// A small set of token → dot classes; a hex/rgb color renders inline; anything else
-// falls back to a neutral swatch (matching the schema doc: renderer falls back).
+// Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
+// the Make Noise system). Map each to its nearest MN house hue so option dots stay
+// distinguishable but on-brand — ~8 hues, all --raw-* tokens (issue: MN reskin #1).
+// A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
 const TOKEN_DOT: Record<string, string> = {
-  zinc: 'bg-zinc-400',
-  gray: 'bg-zinc-400',
-  slate: 'bg-slate-400',
-  stone: 'bg-stone-400',
-  red: 'bg-red-400',
-  rust: 'bg-press-rust',
-  orange: 'bg-orange-400',
-  amber: 'bg-amber-400',
-  yellow: 'bg-yellow-400',
-  lime: 'bg-lime-500',
-  green: 'bg-green-500',
-  emerald: 'bg-emerald-500',
-  teal: 'bg-teal-500',
-  cyan: 'bg-cyan-500',
-  sky: 'bg-sky-500',
-  blue: 'bg-blue-500',
-  indigo: 'bg-indigo-500',
-  violet: 'bg-violet-500',
-  purple: 'bg-purple-500',
-  pink: 'bg-pink-500',
-  accent: 'bg-press-accent',
+  // neutrals → the house neutral-400
+  zinc: 'var(--raw-olive-mid)',
+  gray: 'var(--raw-olive-mid)',
+  slate: 'var(--raw-olive-mid)',
+  stone: 'var(--raw-olive-mid)',
+  // reds → rust; pink → the dusty-rose swatch (kept distinct from rust)
+  red: 'var(--raw-red)',
+  rose: 'var(--raw-red)',
+  rust: 'var(--raw-red)',
+  pink: 'var(--raw-rose)',
+  // warms → burnt-orange
+  orange: 'var(--raw-burnt-orange)',
+  amber: 'var(--raw-burnt-orange)',
+  // yellows → wheat
+  yellow: 'var(--raw-wheat)',
+  lime: 'var(--raw-wheat)',
+  // greens → sage
+  green: 'var(--raw-sage)',
+  emerald: 'var(--raw-sage)',
+  teal: 'var(--raw-sage)',
+  // pale cools → mist
+  cyan: 'var(--raw-mist)',
+  sky: 'var(--raw-mist)',
+  blue: 'var(--raw-mist)',
+  // deep cools → navy
+  indigo: 'var(--raw-navy)',
+  violet: 'var(--raw-navy)',
+  purple: 'var(--raw-navy)',
+  // the sanctioned accent role
+  accent: 'var(--press-accent)',
 }
 
 function OptionDot({ color }: { color?: string }) {
-  let className = 'bg-press-line'
-  let style: CSSProperties | undefined
+  let background = 'var(--press-line)'
   if (color) {
-    if (/^(#|rgb|hsl)/i.test(color)) style = { backgroundColor: color }
-    else className = TOKEN_DOT[color.toLowerCase()] ?? 'bg-press-line'
+    if (/^(#|rgb|hsl)/i.test(color)) background = color
+    else background = TOKEN_DOT[color.toLowerCase()] ?? 'var(--press-line)'
   }
   return (
     <span
       aria-hidden
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${style ? '' : className}`}
-      style={style}
+      className="inline-block h-2 w-2 shrink-0 rounded-full"
+      style={{ backgroundColor: background }}
     />
   )
 }

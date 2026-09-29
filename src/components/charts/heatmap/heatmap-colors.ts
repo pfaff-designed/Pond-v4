@@ -79,7 +79,7 @@ export function isHeatmapLevelPattern(style: HeatmapLevelStyle): boolean {
 }
 
 export function heatmapPatternStrokeFallback(color: string): string {
-  return `color-mix(in oklch, ${color} 45%, white)`;
+  return `color-mix(in oklch, ${color} 45%, var(--chart-background))`;
 }
 
 export function heatmapLevelPatternRenderOptions(style: HeatmapLevelStyle) {
@@ -93,7 +93,7 @@ export function heatmapLevelPatternRenderOptions(style: HeatmapLevelStyle) {
     color:
       style.patternColor?.trim() ||
       (preset === "accent"
-        ? "#e879f9"
+        ? "var(--chart-scale-05)"
         : heatmapPatternStrokeFallback(style.color)),
     tileBackground: style.patternTileBackground?.trim() || style.color,
     scale: style.patternScale ?? defaultScale,

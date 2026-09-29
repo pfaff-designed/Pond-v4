@@ -116,8 +116,8 @@ export interface RailViewProps {
 function LifeMark() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden className="flex-shrink-0">
-      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--press-accent)" strokeWidth="1.2" />
-      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--press-accent)" opacity="0.85" />
+      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--mn-area-a)" strokeWidth="1.4" />
+      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--mn-area-a)" opacity="0.85" />
     </svg>
   )
 }
@@ -303,7 +303,7 @@ export function RailView({
         setSize={setSize}
         leading={<LifeMark />}
         trailing={
-          <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint pr-1 select-none">
+          <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-press-faint pr-1 select-none">
             all
           </span>
         }
@@ -357,11 +357,16 @@ export function RailView({
     )
 
   return (
-    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-4 pb-8 font-sans">
+    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-3 pb-[14px] font-sans">
       {/* Pinned to the top-left: the wordmark stays put while the tree scrolls
-          beneath it (sticky, with the paper bg so rows pass under cleanly). */}
-      <div className="sticky top-0 z-10 flex items-baseline gap-2.5 bg-background px-2 pt-6 pb-4">
-        <span className="font-display text-[26px] text-foreground">Pond</span>
+          beneath it (sticky, with the paper bg so rows pass under cleanly). The
+          wordmark is the calm sans title voice (PP Neue Montreal, weight 500,
+          13.5px, natural tracking) — the mockup `word` style. The serif display
+          face is reserved for reading prose (Make Noise voices), never chrome. */}
+      <div className="sticky top-0 z-10 flex items-center gap-2.5 bg-background px-2.5 pt-[18px] pb-3">
+        <span className="font-sans font-medium text-[13.5px] text-foreground select-none">
+          Pond
+        </span>
       </div>
 
       <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
@@ -371,13 +376,19 @@ export function RailView({
       {/* Status text lives OUTSIDE the tree — role="tree" only allows treeitem
           children (WAI-ARIA); a <p> inside it would be an illegal child. */}
       {isLoading && (
-        <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
-          Loading…
+        <p
+          className="px-2.5 py-2 font-mono text-[10px] tracking-[0.1em] lowercase text-press-faint"
+          role="status"
+        >
+          loading…
         </p>
       )}
       {!isLoading && isEmpty && (
-        <p className="px-2.5 py-2 text-xs text-press-faint" role="status">
-          Setting up your workspace…
+        <p
+          className="px-2.5 py-2 text-[12.5px] leading-relaxed text-press-muted"
+          role="status"
+        >
+          No pages yet. ＋ a page, or ask the pond to start one.
         </p>
       )}
     </aside>

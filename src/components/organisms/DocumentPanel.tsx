@@ -283,14 +283,17 @@ export function DocumentPanel() {
         <Breadcrumb crumbs={crumbs} onNavigate={navigateCrumb} />
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
-            className="flex-1 text-2xl font-semibold text-foreground outline-none bg-transparent placeholder:text-press-faint"
+            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-press-faint"
             value={viewTitle}
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
           />
-          <span className="text-xs text-muted-foreground flex-shrink-0" aria-live="polite">
-            {saved ? 'Saved' : 'Saving…'}
+          <span
+            className="font-mono lowercase tracking-[0.1em] text-[11px] text-press-faint flex-shrink-0"
+            aria-live="polite"
+          >
+            {saved ? 'saved' : 'saving…'}
           </span>
         </div>
 

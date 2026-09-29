@@ -29,7 +29,11 @@ export function PageView({ data, editable, onChange }: ModuleViewProps<PageModul
     // (ticket-38).
     <SiblingBlocksProvider value={{ blocks: data.blocks, scrollToBlock, pageId: data.id }}>
       <div className="space-y-4">
-        {data.title && <h1 className="text-xl font-semibold text-zinc-900">{data.title}</h1>}
+        {data.title && (
+          <h1 className="font-sans text-xl font-semibold tracking-tight text-press-ink">
+            {data.title}
+          </h1>
+        )}
         {data.blocks.map((block, i) => (
           <div key={block.id} id={blockDomId(block.id)}>
             <ModuleView

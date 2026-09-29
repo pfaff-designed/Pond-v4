@@ -349,7 +349,9 @@ function BlockEditor({
           aria-label="Delete block"
           onClick={onRemove}
         >
-          ×
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+            <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
         </button>
       </div>
 

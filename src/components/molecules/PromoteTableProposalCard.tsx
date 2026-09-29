@@ -75,7 +75,7 @@ export function PromoteTableProposalCard({
       role="group"
       aria-label="Proposed table conversion"
       className={cn(
-        'press-letter overflow-hidden rounded-lg text-left',
+        'press-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
@@ -105,7 +105,7 @@ export function PromoteTableProposalCard({
           Height-bounded with internal scroll so a wide table can't push the picker +
           actions out of the auto-grown drawer. */}
       {columns.length > 0 && (
-        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-md border border-press-hair bg-press-accent-wash px-3 text-sm">
+        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 text-sm">
           {columns.map((c, i) => (
             <div key={i} className="flex items-baseline justify-between gap-3 py-1.5">
               <dt className="font-serif text-press-body">{c.name}</dt>
@@ -126,7 +126,7 @@ export function PromoteTableProposalCard({
           value={selectedTargetId}
           disabled={resolved}
           onChange={(e) => onTargetChange(e.target.value)}
-          className="flex-1 rounded-md border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
         >
           {/* No page resolved yet (target not in the list): a disabled hint. */}
           {!targetOptions.some((o) => o.id === selectedTargetId) && (

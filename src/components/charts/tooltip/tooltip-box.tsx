@@ -176,7 +176,7 @@ function TooltipBoxInner({
   const transformOrigin = isFlipped ? "right top" : "left top";
 
   const panelClassName = cn(
-    "min-w-[140px] overflow-hidden rounded-lg text-chart-tooltip-foreground shadow-lg",
+    "min-w-[140px] overflow-hidden rounded-mn-inner text-chart-tooltip-foreground shadow-mn-md",
     panelStyle?.backgroundColor === undefined &&
       backgroundColor === chartCssVars.tooltipBackground &&
       "bg-chart-tooltip-background",
@@ -213,7 +213,7 @@ function TooltipBoxInner({
       initial={{ opacity: 0 }}
       ref={tooltipRef}
       style={{ left: finalLeft, top: finalTop }}
-      transition={{ duration: 0.1 }}
+      transition={{ duration: 0.09 }}
     >
       <motion.div
         animate={{ scale: 1, opacity: 1, x: 0 }}

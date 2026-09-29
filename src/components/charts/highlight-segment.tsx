@@ -60,7 +60,7 @@ export function HighlightSegment({
         stroke={stroke}
         strokeLinecap="round"
         strokeWidth={strokeWidth}
-        transition={{ duration: 0.4, ease: 'easeInOut' }}
+        transition={{ duration: 0.46, ease: [0.22, 0.8, 0.2, 1] }}
       />
     </>
   )

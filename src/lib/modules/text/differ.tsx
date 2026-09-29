@@ -9,20 +9,22 @@ import type { TextBlock } from './schema'
  * `terminal` variant) with strike/ins highlighting so the user sees formatted content
  * rather than raw markdown source.
  *
- * Before (if any) is struck through and dimmed; the proposed `after` is rendered
- * in normal ink. A null `before` (create op) shows a "New content" marker instead.
+ * Before (if any) is struck through in the diff-removal red — the ONE place red is
+ * spent (Make Noise rule: only removals are red); the proposed `after` is rendered
+ * in normal ink on the card's faint ground (additions are never red). A null `before`
+ * (create op) shows a "New content" marker instead.
  */
 export function TextDiffer({ before, after }: { before: TextBlock | null; after: TextBlock }) {
   return (
     <div className="space-y-1.5">
       {before ? (
-        <div className="opacity-50 line-through decoration-zinc-400">
+        <div className="line-through decoration-mn-signal-removal/60 [&_*]:!text-mn-signal-removal">
           <Markdown variant="terminal">{before.content}</Markdown>
         </div>
       ) : (
-        <span className="block text-xs italic text-zinc-400">New content</span>
+        <span className="block font-serif text-xs italic text-press-faint">New content</span>
       )}
-      <div className="text-zinc-900">
+      <div className="text-press-body">
         <Markdown variant="terminal">{after.content}</Markdown>
       </div>
     </div>

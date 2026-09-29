@@ -20,7 +20,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
   return (
     <ul className="space-y-1">
       {data.items.map((item, j) => (
-        <li key={item.id} className="flex items-center gap-2 text-sm text-zinc-800">
+        <li key={item.id} className="flex items-center gap-2 text-sm text-press-ink">
           <input
             type="checkbox"
             checked={item.checked}
@@ -50,7 +50,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
             // Read-only: inline markdown rendering (Fix-4 / F8) — bold/italic/code/links
             // without block elements, so "**item**" shows as bold text, not raw asterisks.
             <MarkdownInline
-              className={item.checked ? 'flex-1 text-zinc-400 line-through' : 'flex-1'}
+              className={item.checked ? 'flex-1 text-press-faint line-through' : 'flex-1'}
             >
               {item.label}
             </MarkdownInline>

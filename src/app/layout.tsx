@@ -1,31 +1,51 @@
 import type { Metadata } from 'next'
-import { Inter, Fraunces, JetBrains_Mono, Instrument_Serif } from 'next/font/google'
+import localFont from 'next/font/local'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
-// The Press type set (R6, locked): Inter body · Fraunces serif · JetBrains Mono
-// labels/metrics · Instrument Serif display numerals. Exposed as CSS variables
-// that globals.css maps onto the Tailwind font-* utilities.
-const sans = Inter({
+// The Make Noise type set: three licensed PP faces, self-hosted via
+// next/font/local (issue #88). Serif ships ONLY 200/800 (+italics) so the
+// browser can never synthesize a 400 weight — "serif-never-400" is enforced
+// structurally by never loading the face at that weight.
+//
+// PP Neue Montreal — sans: titles, labels, rail, tables, numbers, answers.
+const sans = localFont({
   variable: '--font-press-sans',
-  subsets: ['latin'],
+  display: 'swap',
+  src: [
+    { path: './fonts/PPNeueMontreal-Regular.otf', weight: '400', style: 'normal' },
+    { path: './fonts/PPNeueMontreal-Medium.otf', weight: '500', style: 'normal' },
+    { path: './fonts/PPNeueMontreal-Bold.otf', weight: '700', style: 'normal' },
+    { path: './fonts/PPNeueMontreal-BoldItalic.otf', weight: '700', style: 'italic' },
+  ],
 })
 
-const serif = Fraunces({
+// PP Editorial New — serif: prose + display. ONLY 200 (Ultralight) and 800
+// (Ultrabold), each with an italic. No 400 face exists to fall back on.
+const serif = localFont({
   variable: '--font-press-serif',
-  subsets: ['latin'],
+  display: 'swap',
+  src: [
+    { path: './fonts/PPEditorialNew-Ultralight.otf', weight: '200', style: 'normal' },
+    { path: './fonts/PPEditorialNew-UltralightItalic.otf', weight: '200', style: 'italic' },
+    { path: './fonts/PPEditorialNew-Ultrabold.otf', weight: '800', style: 'normal' },
+    { path: './fonts/PPEditorialNew-UltraboldItalic.otf', weight: '800', style: 'italic' },
+  ],
 })
 
-const mono = JetBrains_Mono({
+// PP Neue Montreal Mono — the machine surface: composer, palette, @-picker,
+// diff cards, provenance chips. Set lowercase with tight letterspacing.
+const mono = localFont({
   variable: '--font-press-mono',
-  subsets: ['latin'],
+  display: 'swap',
+  src: [
+    { path: './fonts/PPNeueMontrealMono-Regular.otf', weight: '400', style: 'normal' },
+    { path: './fonts/PPNeueMontrealMono-Medium.otf', weight: '500', style: 'normal' },
+  ],
 })
 
-const display = Instrument_Serif({
-  variable: '--font-press-display',
-  subsets: ['latin'],
-  weight: '400',
-})
+// Display voice reuses the Editorial serif face (the "punch" register).
+const display = serif
 
 export const metadata: Metadata = {
   title: 'Pond',

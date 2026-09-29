@@ -21,7 +21,7 @@ export const HEATMAP_LEGEND_LEVELS = [0, 1, 2, 3, 4] as const;
 const HEATMAP_INACTIVE_OPACITY = 0.3;
 /** Smooth tween for inactive opacity + scale on hover. */
 const HEATMAP_INACTIVE_TRANSITION = {
-  duration: 0.22,
+  duration: 0.28,
   ease: [0.4, 0, 0.2, 1] as const,
 };
 

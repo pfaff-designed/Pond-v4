@@ -49,8 +49,9 @@ export const SingleSeries: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Weekly mileage')).toBeInTheDocument()
     await expect(canvas.getByText('Across the training block')).toBeInTheDocument()
-    await expect(canvas.getByText('↔ Week')).toBeInTheDocument()
-    await expect(canvas.getByText('↕ Miles')).toBeInTheDocument()
+    // Axis glyphs are now aria-hidden SVGs (MN reskin), so the label is plain text.
+    await expect(canvas.getByText('Week')).toBeInTheDocument()
+    await expect(canvas.getByText('Miles')).toBeInTheDocument()
   },
 }
 

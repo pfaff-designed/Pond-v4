@@ -63,13 +63,13 @@ export function GhostSuggestion({
       aria-label={`Ghost suggestion: ${suggestion}`}
       className={cn(
         'press-arrive pointer-events-none absolute inset-x-0 top-0 px-0 py-1.5',
-        'font-mono text-sm text-press-faint/60 select-none truncate',
+        'font-mono lowercase tracking-[0.1em] text-sm text-press-faint/60 select-none truncate',
         '@media (prefers-reduced-motion: reduce) press-arrive',
         className
       )}
     >
       {suggestion}
-      <span className="ml-2 rounded border border-press-line/50 px-1 text-[10px] text-press-faint/40 align-middle">
+      <span className="ml-2 rounded-mn-chrome px-1 text-[10px] text-press-faint/40 align-middle shadow-[inset_0_0_0_1px_var(--press-hair)]">
         Tab
       </span>
     </span>

@@ -21,8 +21,8 @@ export function CsvAttachmentPill({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded border border-press-line bg-press-accent-wash',
-        'px-2 py-0.5 font-mono text-xs text-press-body max-w-[20ch] truncate',
+        'inline-flex items-center gap-1.5 rounded-mn-pill bg-press-accent-wash',
+        'px-2.5 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-body max-w-[20ch] truncate',
         className
       )}
     >
@@ -49,7 +49,9 @@ export function CsvAttachmentPill({
         onClick={onRemove}
         className="flex-shrink-0 text-press-faint hover:text-press-body transition-colors ml-0.5"
       >
-        ×
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
       </button>
     </span>
   )

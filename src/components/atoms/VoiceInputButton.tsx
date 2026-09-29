@@ -116,7 +116,7 @@ export function VoiceInputButton({ onTranscript, disabled, className }: VoiceInp
       disabled={disabled}
       className={cn(
         'flex items-center justify-center w-6 h-6 rounded-full transition-colors',
-        isListening ? 'text-rust animate-pulse' : 'text-press-faint hover:text-press-accent',
+        isListening ? 'text-press-rust animate-pulse' : 'text-press-faint hover:text-press-accent',
         'disabled:opacity-40 disabled:pointer-events-none',
         className
       )}

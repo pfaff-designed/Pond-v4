@@ -44,7 +44,7 @@ export function FollowupChips({
       className={cn('press-rise flex flex-wrap items-center gap-2', className)}
     >
       {label && (
-        <span className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-faint">
+        <span className="font-sans text-[0.65rem] font-medium uppercase tracking-[0.06em] text-press-faint">
           {label}
         </span>
       )}
@@ -55,7 +55,9 @@ export function FollowupChips({
           disabled={disabled}
           onClick={() => onPick(chip)}
           className={cn(
-            'rounded-full border border-press-line bg-transparent px-3 py-1 font-serif text-[0.82rem] leading-none text-press-body',
+            // Machine surface (composer follow-ups + question-card options): mono,
+            // lowercase, tight tracking — a hairline pill, paper-not-frames.
+            'rounded-mn-pill border border-press-line bg-transparent px-3 py-1 font-mono lowercase tracking-[0.1em] text-[0.72rem] leading-none text-press-body',
             'transition-colors hover:border-press-accent hover:text-press-ink',
             'focus:outline-none focus-visible:border-press-accent focus-visible:ring-1 focus-visible:ring-press-accent',
             'disabled:opacity-40 disabled:hover:border-press-line disabled:hover:text-press-body'

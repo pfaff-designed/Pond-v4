@@ -3,10 +3,10 @@ import type { HeatmapColumn } from "./heatmap-context";
 import { getHeatmapContributionLevel } from "./heatmap-utils";
 
 /** Default enter duration when no motion props are passed (ms). */
-export const HEATMAP_DEFAULT_ENTER_DURATION_MS = 1600;
+export const HEATMAP_DEFAULT_ENTER_DURATION_MS = 560;
 
 /** Default cubic-bezier for heatmap cell enter / loading transitions. */
-export const HEATMAP_DEFAULT_ENTER_EASE = [0.85, 0, 0.916, 0.282] as const;
+export const HEATMAP_DEFAULT_ENTER_EASE = [0.22, 0.8, 0.2, 1] as const;
 
 /** Default enter transition for {@link HeatmapChart}. */
 export const HEATMAP_DEFAULT_ENTER_TRANSITION: Transition = {

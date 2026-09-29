@@ -95,9 +95,9 @@ export function RelationValue({
           type="button"
           aria-label="Link a page"
           onClick={() => (open ? close() : setOpen(true))}
-          className="rounded border border-dashed border-press-line px-1.5 py-0.5 font-mono text-xs text-press-muted transition-colors hover:border-press-accent/50 hover:text-press-body"
+          className="rounded-mn-pill border border-dashed border-press-line px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-muted transition-colors hover:border-press-accent/50 hover:text-press-body"
         >
-          + Link
+          + link
         </button>
       )}
 
@@ -105,7 +105,7 @@ export function RelationValue({
         <div
           role="menu"
           aria-label="Page picker"
-          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-lg border border-press-line bg-press-paper shadow-xl"
+          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-mn-inner bg-press-paper shadow-mn-lg"
         >
           <input
             ref={inputRef}
@@ -117,11 +117,11 @@ export function RelationValue({
                 close()
               }
             }}
-            placeholder="Search pages…"
+            placeholder="search pages…"
             aria-label="Search pages to link"
-            className="w-full border-b border-press-hair bg-transparent px-3 py-2 font-mono text-sm outline-none"
+            className="w-full border-b border-press-hair bg-transparent px-3 py-2 font-mono lowercase tracking-[0.1em] text-sm outline-none placeholder:text-press-faint"
           />
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto p-1">
             {options.length === 0 ? (
               <p className="px-3 py-2 text-sm italic text-press-muted">No pages match</p>
             ) : (
@@ -131,7 +131,7 @@ export function RelationValue({
                   type="button"
                   role="menuitem"
                   onClick={() => select(c.id)}
-                  className="block w-full truncate px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-press-accent-wash focus-visible:bg-press-accent-wash"
+                  className="block w-full truncate rounded-mn-row px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-press-accent-wash focus-visible:bg-press-accent-wash"
                 >
                   {c.title}
                 </button>

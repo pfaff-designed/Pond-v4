@@ -69,7 +69,7 @@ export function LinkRecordsProposalCard({
       role="group"
       aria-label="Proposed link"
       className={cn(
-        'press-letter overflow-hidden rounded-lg text-left',
+        'press-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
@@ -87,7 +87,7 @@ export function LinkRecordsProposalCard({
       {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-press-muted">{reason}</p>}
 
       {/* Link preview — the relation name and the target row(s) it gains. */}
-      <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-md border border-press-hair bg-press-accent-wash px-3 text-sm">
+      <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 text-sm">
         <div className="flex items-baseline justify-between gap-3 py-1.5">
           <dt className={cn(pressKickerClass, 'text-press-muted')}>{relation}</dt>
           <dd className="text-right font-serif text-press-body">{toRows.join(', ')}</dd>
@@ -113,7 +113,7 @@ export function LinkRecordsProposalCard({
           value={selectedTargetId}
           disabled={resolved}
           onChange={(e) => onTargetChange(e.target.value)}
-          className="flex-1 rounded-md border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
         >
           {/* No collection resolved yet (name matched nothing): a disabled hint. */}
           {!targetOptions.some((o) => o.id === selectedTargetId) && (

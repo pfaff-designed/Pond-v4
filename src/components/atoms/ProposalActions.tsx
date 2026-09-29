@@ -47,7 +47,8 @@ export function ProposalActions({
       <div
         aria-live="polite"
         className={cn(
-          'font-serif text-xs italic text-press-muted',
+          // Audit-trail line: machine surface → mono voice (lowercase, tracked).
+          'font-mono text-xs lowercase tracking-wider text-mn-text-meta',
           divider && 'border-t border-press-hair px-3 py-1.5',
           className
         )}

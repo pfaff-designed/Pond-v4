@@ -51,32 +51,32 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   }
 
   return (
-    <div className="text-sm text-zinc-800">
-      {data.title && <div className="mb-1 text-zinc-500">{data.title}</div>}
+    <div className="text-sm text-press-ink">
+      {data.title && <div className="mb-1 text-press-muted">{data.title}</div>}
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
             {columns.map((col, i) => (
               <th
                 key={i}
-                className="border-b border-zinc-200 py-1 pr-3 text-xs font-medium text-zinc-500"
+                className="border-b border-press-line py-1 pr-3 text-[10.5px] font-medium tracking-[0.1em] text-press-muted uppercase"
               >
                 {col}
               </th>
             ))}
-            {editable && <th className="w-6 border-b border-zinc-200" aria-hidden />}
+            {editable && <th className="w-6 border-b border-press-line" aria-hidden />}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && !editable && (
             <tr>
-              <td colSpan={columns.length} className="py-2 text-zinc-400">
+              <td colSpan={columns.length} className="py-2 text-press-faint">
                 No entries yet
               </td>
             </tr>
           )}
           {rows.map((row, ri) => (
-            <tr key={row.id} className="border-b border-zinc-100 last:border-b-0">
+            <tr key={row.id} className="border-b border-press-hair last:border-b-0">
               {columns.map((_, ci) => (
                 <td key={ci} className={ci === 0 ? 'py-1 pr-3 font-medium' : 'py-1 pr-3'}>
                   {editable ? (
@@ -99,7 +99,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                   <button
                     type="button"
                     aria-label={`Remove row ${ri + 1}`}
-                    className="text-zinc-300 hover:text-zinc-600"
+                    className="text-press-faint hover:text-press-body"
                     onClick={() => removeRow(ri)}
                   >
                     ×
@@ -111,13 +111,13 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
         </tbody>
         {footer && (
           <tfoot>
-            <tr className="border-t-2 border-zinc-300">
+            <tr className="border-t border-press-line">
               {columns.map((_, ci) => {
                 if (ci === 0) {
                   return (
                     <td
                       key={ci}
-                      className="py-1.5 pr-3 text-[11px] font-medium tracking-[0.08em] text-zinc-400 uppercase"
+                      className="py-1.5 pr-3 text-[10.5px] font-medium tracking-[0.1em] text-press-muted uppercase"
                     >
                       Total
                     </td>
@@ -125,7 +125,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                 }
                 if (ci === sumIndex) {
                   return (
-                    <td key={ci} className="py-1.5 pr-3 font-semibold text-zinc-900 tabular-nums">
+                    <td key={ci} className="py-1.5 pr-3 font-semibold text-press-ink tabular-nums">
                       {footer.display}
                     </td>
                   )
@@ -140,7 +140,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
       {editable && (
         <button
           type="button"
-          className="mt-1 text-xs text-zinc-400 hover:text-zinc-600"
+          className="mt-1 text-xs text-press-muted hover:text-press-ink"
           onClick={addRow}
         >
           + Add row

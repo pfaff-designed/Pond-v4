@@ -35,16 +35,16 @@ export function SandboxBanner({ onReset }: SandboxBannerProps = {}) {
     <div
       role="status"
       aria-label="Sandbox workspace"
-      className="flex items-center justify-between px-3 py-1.5 text-xs bg-amber-50 border-b border-amber-200 text-amber-700"
+      className="flex items-center justify-between px-3 py-1.5 bg-raw-wheat text-raw-ink"
     >
-      <span className="font-medium tracking-wide uppercase text-[10px]">Sandbox</span>
+      <span className="font-mono lowercase tracking-[0.14em] text-[10px]">sandbox</span>
       <button
         onClick={handleReset}
         disabled={resetting}
-        className="text-amber-600 hover:text-amber-800 disabled:opacity-50 transition-colors"
+        className="font-mono lowercase tracking-[0.1em] text-xs text-raw-ink/80 hover:text-raw-ink disabled:opacity-50 transition-colors"
         aria-label="Reset sandbox workspace"
       >
-        {resetting ? 'Resetting…' : 'Reset sandbox'}
+        {resetting ? 'resetting…' : 'reset sandbox'}
       </button>
     </div>
   )

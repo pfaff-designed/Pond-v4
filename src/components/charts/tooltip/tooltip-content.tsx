@@ -48,7 +48,7 @@ export function TooltipContent({ title, rows, children }: TooltipContentProps) {
         </div>
 
         {children && (
-          <div className="mt-2 transition-opacity duration-200 ease-out">
+          <div className="mt-2 transition-opacity duration-[var(--motion-quick)] ease-[var(--ease-press)]">
             {children}
           </div>
         )}

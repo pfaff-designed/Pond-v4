@@ -31,7 +31,7 @@ export type MarkdownVariant = 'reading' | 'terminal'
 
 /** The shared Press serif voice both prose treatments are built from — one base,
  *  two scales, so the two variants cannot drift into different type worlds. */
-const PROSE_BASE_CLASS = 'font-serif text-press-body'
+const PROSE_BASE_CLASS = 'font-serif font-extralight text-press-body'
 
 /**
  * The Press reading-prose text treatment, shared by every flow element of the
@@ -49,7 +49,7 @@ export const TERMINAL_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[0.95rem] leading-
 
 /** Elements identical across variants (inline emphasis carries no size of its own). */
 const SHARED_COMPONENTS: Components = {
-  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  strong: ({ children }) => <strong className="font-extrabold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
 }
 
@@ -59,17 +59,17 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
   reading: {
     ...SHARED_COMPONENTS,
     h1: ({ children }) => (
-      <h1 className="font-display text-3xl leading-[1.1] tracking-[-0.01em] text-foreground mt-6 mb-3 first:mt-0">
+      <h1 className="font-display font-extrabold text-3xl leading-[1.1] tracking-[-0.01em] text-foreground mt-6 mb-3 first:mt-0">
         {children}
       </h1>
     ),
     h2: ({ children }) => (
-      <h2 className="font-display text-2xl leading-[1.15] tracking-[-0.01em] text-foreground mt-6 mb-2.5 first:mt-0">
+      <h2 className="font-display font-extrabold text-2xl leading-[1.15] tracking-[-0.01em] text-foreground mt-6 mb-2.5 first:mt-0">
         {children}
       </h2>
     ),
     h3: ({ children }) => (
-      <h3 className="font-serif text-lg font-medium leading-snug text-foreground mt-5 mb-2 first:mt-0">
+      <h3 className="font-serif text-lg font-extrabold leading-snug text-foreground mt-5 mb-2 first:mt-0">
         {children}
       </h3>
     ),
@@ -100,24 +100,24 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       </a>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="font-serif italic text-press-muted border-l-2 border-press-line pl-4 my-4">
+      <blockquote className="font-serif font-extralight italic text-press-muted border-l-2 border-press-line pl-4 my-4">
         {children}
       </blockquote>
     ),
     code: ({ children }) => (
-      <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded px-1 py-0.5">
+      <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
         {children}
       </code>
     ),
     pre: ({ children }) => (
-      <pre className="font-mono text-sm bg-press-accent-wash text-foreground rounded-md p-3 my-4 overflow-x-auto">
+      <pre className="font-mono text-sm bg-press-accent-wash text-foreground rounded-mn-row p-3 my-4 overflow-x-auto">
         {children}
       </pre>
     ),
     hr: () => <hr className="border-0 border-t border-press-line my-6" />,
     table: ({ children }) => (
       <div className="my-4 overflow-x-auto">
-        <table className="w-full border-collapse text-left font-serif text-[0.95rem]">
+        <table className="w-full border-collapse text-left font-sans text-[0.95rem]">
           {children}
         </table>
       </div>
@@ -139,17 +139,17 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
   terminal: {
     ...SHARED_COMPONENTS,
     h1: ({ children }) => (
-      <h1 className="font-display text-xl leading-[1.15] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
+      <h1 className="font-display font-extrabold text-xl leading-[1.15] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
         {children}
       </h1>
     ),
     h2: ({ children }) => (
-      <h2 className="font-display text-lg leading-[1.2] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
+      <h2 className="font-display font-extrabold text-lg leading-[1.2] tracking-[-0.01em] text-foreground mt-3 mb-1.5 first:mt-0">
         {children}
       </h2>
     ),
     h3: ({ children }) => (
-      <h3 className="font-serif text-base font-medium leading-snug text-foreground mt-2.5 mb-1 first:mt-0">
+      <h3 className="font-serif text-base font-extrabold leading-snug text-foreground mt-2.5 mb-1 first:mt-0">
         {children}
       </h3>
     ),
@@ -174,24 +174,24 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       </a>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="font-serif italic text-press-muted border-l-2 border-press-line pl-3 my-2">
+      <blockquote className="font-serif font-extralight italic text-press-muted border-l-2 border-press-line pl-3 my-2">
         {children}
       </blockquote>
     ),
     code: ({ children }) => (
-      <code className="font-mono text-[0.8em] bg-press-accent-wash text-foreground rounded px-1 py-0.5">
+      <code className="font-mono text-[0.8em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
         {children}
       </code>
     ),
     pre: ({ children }) => (
-      <pre className="font-mono text-xs bg-press-accent-wash text-foreground rounded-md p-2.5 my-2 overflow-x-auto">
+      <pre className="font-mono text-xs bg-press-accent-wash text-foreground rounded-mn-row p-2.5 my-2 overflow-x-auto">
         {children}
       </pre>
     ),
     hr: () => <hr className="border-0 border-t border-press-line my-3" />,
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
-        <table className="w-full border-collapse text-left font-serif text-[0.875rem]">
+        <table className="w-full border-collapse text-left font-sans text-[0.875rem]">
           {children}
         </table>
       </div>
@@ -261,10 +261,10 @@ const INLINE_COMPONENTS: Components = {
   hr: () => null,
   pre: ({ children }) => <>{children}</>,
   // Keep inline emphasis as styled spans.
-  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  strong: ({ children }) => <strong className="font-extrabold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   code: ({ children }) => (
-    <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded px-1 py-0.5">
+    <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
       {children}
     </code>
   ),

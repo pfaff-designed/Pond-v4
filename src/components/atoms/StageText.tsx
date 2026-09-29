@@ -28,7 +28,7 @@ export function StageText({ label }: StageTextProps) {
         aria-hidden
         className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-press-accent motion-safe:animate-pulse"
       />
-      <span className="font-serif text-sm italic text-press-muted">{label}</span>
+      <span className="font-serif font-extralight text-sm italic text-press-muted">{label}</span>
     </div>
   )
 }

@@ -48,7 +48,7 @@ export function SeriesHoverDim({
     <motion.g
       animate={{ opacity }}
       initial={{ opacity: 1 }}
-      transition={{ duration: durationSec, ease: "easeInOut" }}
+      transition={{ duration: durationSec, ease: [0.22, 0.8, 0.2, 1] }}
     >
       {children}
     </motion.g>

@@ -16,8 +16,11 @@ import { seriesNames } from './data'
  */
 
 /** The module-card kicker voice — exported (#12) so the promoted heatmap/stat
- *  modules share the exact chrome instead of restating the classes. */
-export const KICKER = 'text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-400'
+ *  modules share the exact chrome instead of restating the classes. Make Noise:
+ *  the block eyebrow is the mono machine-surface voice (lowercase, tight
+ *  tracking) in muted ink — the label over a data block. */
+export const KICKER =
+  'font-mono text-[11px] lowercase tracking-[0.1em] text-press-muted'
 
 export interface ChartCardProps {
   title?: string
@@ -53,12 +56,12 @@ export function ChartCard({
   const empty = isEmpty(points)
 
   return (
-    <div className="text-sm text-zinc-800">
+    <div className="text-sm text-press-ink">
       {title && <div className={KICKER}>{title}</div>}
-      {caption && <div className="mt-0.5 text-xs text-zinc-500">{caption}</div>}
+      {caption && <div className="mt-0.5 text-xs text-press-muted">{caption}</div>}
 
       {empty ? (
-        <div className="mt-2 rounded-sm border border-dashed border-zinc-200 py-6 text-center text-xs text-zinc-400">
+        <div className="mt-2 rounded-mn-inner bg-press-accent-wash py-6 text-center text-xs text-press-muted">
           No data yet
         </div>
       ) : (
@@ -73,7 +76,7 @@ export function ChartCard({
                   names.map((name, i) => (
                     <span
                       key={name}
-                      className="flex items-center gap-1.5 text-[11px] text-zinc-500"
+                      className="flex items-center gap-1.5 text-[11px] text-press-muted"
                     >
                       <span
                         aria-hidden
@@ -86,8 +89,34 @@ export function ChartCard({
               </div>
               {(xLabel || yLabel) && (
                 <div className={`${KICKER} flex gap-3`}>
-                  {yLabel && <span>↕ {yLabel}</span>}
-                  {xLabel && <span>↔ {xLabel}</span>}
+                  {yLabel && (
+                    <span className="inline-flex items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M6 2.5v7M4 4.5 6 2.5 8 4.5M4 7.5 6 9.5 8 7.5"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {yLabel}
+                    </span>
+                  )}
+                  {xLabel && (
+                    <span className="inline-flex items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M2.5 6h7M4.5 4 2.5 6 4.5 8M7.5 4 9.5 6 7.5 8"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {xLabel}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

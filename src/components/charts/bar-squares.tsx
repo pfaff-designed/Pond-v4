@@ -330,7 +330,7 @@ const BarSquaresInner = memo(function BarSquaresInner({
     return (bandWidth - effectiveGroupGap * (seriesCount - 1)) / seriesCount;
   }, [bandWidth, seriesCount, groupGap]);
 
-  const totalAnimDuration = animationDuration || 1100;
+  const totalAnimDuration = animationDuration || 560;
   const staggerSpread = totalAnimDuration * 0.4;
   const calculatedStaggerDelay =
     staggerDelay ?? (data.length > 1 ? staggerSpread / 1000 / data.length : 0);
@@ -370,7 +370,7 @@ const BarSquaresInner = memo(function BarSquaresInner({
         return (
           <SquareColumn
             animate={animate}
-            animationDuration={animationDuration || 1100}
+            animationDuration={animationDuration || 560}
             barLengthPx={barLengthPx}
             baselineY={baselineY}
             enterTransition={enterTransition}
@@ -456,7 +456,7 @@ const BarColumnTrackInner = memo(function BarColumnTrackInner({
     return (bandWidth - effectiveGroupGap * (seriesCount - 1)) / seriesCount;
   }, [bandWidth, seriesCount, groupGap]);
 
-  const totalAnimDuration = animationDuration || 1100;
+  const totalAnimDuration = animationDuration || 560;
   const staggerSpread = totalAnimDuration * 0.4;
   const calculatedStaggerDelay =
     staggerDelay ?? (data.length > 1 ? staggerSpread / 1000 / data.length : 0);
@@ -471,7 +471,7 @@ const BarColumnTrackInner = memo(function BarColumnTrackInner({
   return (
     <g
       className={`bar-column-track-${uniqueId}`}
-      style={{ transition: "opacity 0.15s ease-in-out" }}
+      style={{ transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)" }}
     >
       {data.map((d, i) => {
         const categoryValue = barXAccessor(d);
@@ -569,7 +569,7 @@ function TrackColumn({
   const x = bandPos + seriesIndex * (squareSize + effectiveGroupGap);
   const enterAnim = cascadeColumnTransition(
     enterTransition,
-    chartAnimationDuration || 1100,
+    chartAnimationDuration || 560,
     index,
     staggerDelay,
     layout.count

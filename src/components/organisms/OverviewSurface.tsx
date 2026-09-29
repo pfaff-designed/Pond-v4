@@ -69,7 +69,7 @@ function EditableKicker({
   value: string
   onRename?: (title: string) => void
 }) {
-  const kickerClass = 'font-mono text-[11px] tracking-[0.2em] uppercase text-press-faint'
+  const kickerClass = 'font-mono text-[11px] tracking-[0.1em] uppercase text-press-faint'
   const [draft, setDraft] = useState(value)
   // Escape blurs to end the edit, and blur normally commits — but an Escape
   // blur must NOT commit (the whole point is to revert). The blur event fires
@@ -280,7 +280,9 @@ export function OverviewSurface({
         {/* ── Closing serif exhale ────────────────────────────────────────── */}
         <Rise i={ri++} className="mt-12">
           <div className="border-t border-press-hair pt-5">
-            <span className="font-serif text-sm italic text-press-faint">{closing}</span>
+            <span className="font-serif font-extralight italic text-[16.5px] leading-[1.75] text-press-faint">
+              {closing}
+            </span>
           </div>
         </Rise>
       </div>
