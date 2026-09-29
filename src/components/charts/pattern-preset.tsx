@@ -176,7 +176,7 @@ export function renderPatternPreset(
         <PatternLines
           {...common}
           orientation={["diagonal"]}
-          stroke="var(--mn-area-a)"
+          stroke="var(--chart-scale-05)"
           strokeWidth={strokeWidth}
         />
       );

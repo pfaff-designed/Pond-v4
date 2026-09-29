@@ -89,8 +89,34 @@ export function ChartCard({
               </div>
               {(xLabel || yLabel) && (
                 <div className={`${KICKER} flex gap-3`}>
-                  {yLabel && <span>↕ {yLabel}</span>}
-                  {xLabel && <span>↔ {xLabel}</span>}
+                  {yLabel && (
+                    <span className="inline-flex items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M6 2.5v7M4 4.5 6 2.5 8 4.5M4 7.5 6 9.5 8 7.5"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {yLabel}
+                    </span>
+                  )}
+                  {xLabel && (
+                    <span className="inline-flex items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M2.5 6h7M4.5 4 2.5 6 4.5 8M7.5 4 9.5 6 7.5 8"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      {xLabel}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

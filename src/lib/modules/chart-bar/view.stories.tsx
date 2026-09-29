@@ -48,8 +48,9 @@ export const SingleSeries: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Spend by category')).toBeInTheDocument()
     await expect(canvas.getByText('This month')).toBeInTheDocument()
-    await expect(canvas.getByText('↔ Category')).toBeInTheDocument()
-    await expect(canvas.getByText('↕ Amount ($)')).toBeInTheDocument()
+    // Axis glyphs are now aria-hidden SVGs (MN reskin), so the label is plain text.
+    await expect(canvas.getByText('Category')).toBeInTheDocument()
+    await expect(canvas.getByText('Amount ($)')).toBeInTheDocument()
   },
 }
 

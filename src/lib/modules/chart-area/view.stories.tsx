@@ -48,8 +48,9 @@ export const SingleSeries: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Account balance')).toBeInTheDocument()
     await expect(canvas.getByText('Rolling six months')).toBeInTheDocument()
-    await expect(canvas.getByText('↔ Month')).toBeInTheDocument()
-    await expect(canvas.getByText('↕ Balance ($)')).toBeInTheDocument()
+    // Axis glyphs are now aria-hidden SVGs (MN reskin), so the label is plain text.
+    await expect(canvas.getByText('Month')).toBeInTheDocument()
+    await expect(canvas.getByText('Balance ($)')).toBeInTheDocument()
   },
 }
 

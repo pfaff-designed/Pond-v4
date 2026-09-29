@@ -188,10 +188,10 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                 else columnRefs.current.delete(col.id)
               }}
               className={[
-                'min-w-[13rem] flex-1 rounded-mn-inner border px-3 py-2 transition-colors',
+                'min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'border-press-accent bg-press-accent-wash'
-                  : 'border-press-hair bg-press-card/40',
+                  ? 'bg-press-accent-wash shadow-mn-md'
+                  : 'bg-press-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-baseline justify-between gap-2">
@@ -229,7 +229,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                         // ticket-41: a quiet hover raise (shadow only — the card is
                         // a drag object, not a click target, so it lifts rather than
                         // presses). Token-timed, reduced-motion drops the travel.
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-md motion-reduce:transition-none',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
                         // The lifted source card fades to a placeholder ghost.
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}
