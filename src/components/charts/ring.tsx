@@ -182,7 +182,7 @@ export const Ring = memo(function Ring({
         onMouseLeave={handleMouseLeave}
         style={groupStyle}
         transition={{
-          scale: { type: "spring", stiffness: 400, damping: 25 },
+          scale: { duration: 0.15, ease: [0.22, 0.8, 0.2, 1] },
           opacity: { duration: 0.15 },
         }}
       >
@@ -215,7 +215,7 @@ export const Ring = memo(function Ring({
       onMouseLeave={handleMouseLeave}
       style={groupStyle}
       transition={{
-        scale: { type: "spring", stiffness: 400, damping: 25 },
+        scale: { duration: 0.15, ease: [0.22, 0.8, 0.2, 1] },
         opacity: { duration: 0.15 },
       }}
     >

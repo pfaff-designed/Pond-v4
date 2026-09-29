@@ -213,7 +213,7 @@ function TooltipBoxInner({
       initial={{ opacity: 0 }}
       ref={tooltipRef}
       style={{ left: finalLeft, top: finalTop }}
-      transition={{ duration: 0.1 }}
+      transition={{ duration: 0.09 }}
     >
       <motion.div
         animate={{ scale: 1, opacity: 1, x: 0 }}

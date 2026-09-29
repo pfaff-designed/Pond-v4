@@ -161,7 +161,7 @@ function AnimatedBar({
   return (
     <g
       opacity={isFaded ? fadedOpacity : 1}
-      style={{ transition: "opacity 0.15s ease-in-out" }}
+      style={{ transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)" }}
     >
       <motion.rect
         animate={target}
@@ -211,7 +211,7 @@ const BarInner = memo(function BarInner({
 
   // Calculate stagger delay automatically if not provided
   // Total animation duration is ~1200ms, with 40% for stagger spread and 60% for bar animation
-  const totalAnimDuration = animationDuration || 1100;
+  const totalAnimDuration = animationDuration || 560;
   const staggerSpread = totalAnimDuration * 0.4; // 40% of time for stagger spread
   const calculatedStaggerDelay =
     staggerDelay ?? (data.length > 1 ? staggerSpread / 1000 / data.length : 0);
@@ -431,7 +431,7 @@ const BarInner = memo(function BarInner({
             ry={effectiveRy}
             style={{
               cursor: "default",
-              transition: "opacity 0.15s ease-in-out",
+              transition: "opacity 0.15s cubic-bezier(0.22, 0.8, 0.2, 1)",
             }}
             width={barW}
             x={x}

@@ -33,9 +33,9 @@ export interface AreaChartProps {
   xDataKey?: string;
   /** Chart margins */
   margin?: Partial<Margin>;
-  /** Animation duration in milliseconds. Default: 1100 */
+  /** Animation duration in milliseconds. Default: 560 */
   animationDuration?: number;
-  /** CSS easing for clip-reveal. Default: cubic-bezier(0.85, 0, 0.15, 1) */
+  /** CSS easing for clip-reveal. Default: cubic-bezier(0.22, 0.8, 0.2, 1) */
   animationEasing?: string;
   /** Motion enter transition (spring or cubic-bezier tween). */
   enterTransition?: Transition;
@@ -187,7 +187,7 @@ export function AreaChart({
   data,
   xDataKey = "date",
   margin: marginProp,
-  animationDuration = 1100,
+  animationDuration = 560,
   animationEasing,
   enterTransition,
   revealSignature,

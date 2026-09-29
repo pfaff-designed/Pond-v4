@@ -9,7 +9,7 @@ import {
 } from "./heatmap-utils";
 
 const HEATMAP_INACTIVE_TRANSITION = {
-  duration: 0.22,
+  duration: 0.28,
   ease: [0.4, 0, 0.2, 1] as const,
 };
 

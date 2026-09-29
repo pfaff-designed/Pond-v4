@@ -120,7 +120,7 @@ export function Background({
   const enterFade =
     enterTransition && typeof enterTransition === "object"
       ? enterTransition
-      : { duration: BACKGROUND_ENTER_FADE_MS / 1000, ease: "easeOut" as const };
+      : { duration: BACKGROUND_ENTER_FADE_MS / 1000, ease: [0.22, 0.8, 0.2, 1] as const };
 
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: decorative plot-area pattern layer
