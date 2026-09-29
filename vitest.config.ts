@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -16,6 +17,16 @@ export default defineConfig({
   // doesn't re-optimize (and reload) mid-run — that reload flakes the first run.
   optimizeDeps: {
     include: ['@ai-sdk/react', '@supabase/ssr', '@tanstack/react-query', 'ai', 'zod'],
+  },
+  // Builder worktrees (.claude-worktrees/*) symlink node_modules to the primary
+  // checkout, so resolved dep realpaths land OUTSIDE this vite root and every
+  // story fails at import ("Failed to fetch dynamically imported module").
+  // Allow the resolved node_modules realpath explicitly; in the primary
+  // checkout this is the default allow-list entry, so it changes nothing there.
+  server: {
+    fs: {
+      allow: ['.', fs.realpathSync(path.join(dirname, 'node_modules'))],
+    },
   },
   test: {
     projects: [
