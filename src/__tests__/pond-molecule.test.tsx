@@ -484,6 +484,32 @@ describe('AC7 — RailView through PondMolecule', () => {
     expect(container.querySelectorAll('[data-kind="list-row"]')).toHaveLength(4)
   })
 
+  it('drives a three-tier label voice so the "you are here" trail reads', () => {
+    // A page nested under a *page* (not an area) isolates the on-path raise from
+    // the area/root raise: selecting the leaf must lift its plain-page ancestor
+    // above a plain off-path row. Guards the regression where the TreeRow→
+    // PondMolecule absorption flattened every row to one tone (#95 review).
+    const trail: RailNode[] = [
+      node('proj', 'page', 'Project', [
+        node('phase', 'page', 'Phase', [node('task', 'page', 'Task', [], 0, 'phase')], 0, 'proj'),
+      ]),
+      node('other', 'page', 'Other', [], 1),
+    ]
+    const { getByRole } = renderRail({
+      tree: trail,
+      selectedId: 'task',
+      expanded: new Set(['proj', 'phase']),
+      pathIds: new Set(['proj', 'phase']),
+    })
+    const voice = (name: RegExp) => getByRole('treeitem', { name }).getAttribute('data-voice')
+    expect(voice(/Task/)).toBe('full') // selected
+    expect(voice(/Phase/)).toBe('raised') // on-path ancestor (a plain page, not an area)
+    expect(voice(/Project/)).toBe('raised') // on-path ancestor
+    expect(voice(/Other/)).toBe('muted') // plain, off the selection path
+    // the regression guard: an on-path ancestor must NOT read like a plain row
+    expect(voice(/Phase/)).not.toBe(voice(/Other/))
+  })
+
   it('label click opens; caret click toggles without opening', () => {
     const { getByRole, handlers } = renderRail()
     const health = getByRole('treeitem', { name: /Health/ })

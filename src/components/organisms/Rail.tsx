@@ -219,6 +219,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
   const state: PondMoleculeState = isSelected ? 'selected' : hovered ? 'hover' : 'rest'
+  // The rail's "you are here" trail: three ink tiers on the row label. The
+  // list-row molecule renders one tone (mockup default), so the rail docks its
+  // own voice onto the title via data-voice → CSS (see globals.css). full =
+  // the selected row (ink-100); raised = an area/root row or an ancestor of the
+  // selection (ink-80 meta); muted = a plain child row (ink-68).
+  const labelVoice: 'full' | 'raised' | 'muted' = isSelected
+    ? 'full'
+    : isOnPath || isRoot || isArea
+      ? 'raised'
+      : 'muted'
 
   return (
     <div
@@ -232,6 +242,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
       data-on-path={isOnPath || undefined}
+      data-voice={labelVoice}
       draggable={draggable}
       onDragStart={onDragStart ? (e) => onDragStart(id, e) : undefined}
       onDragOver={onDragOver ? (e) => onDragOver(id, e) : undefined}
