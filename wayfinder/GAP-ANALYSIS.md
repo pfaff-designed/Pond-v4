@@ -118,23 +118,23 @@ Two cross-cutting forces dominate the work:
 
 **Headline:** Only a single-field magic-link sign-in + callback exist. The shell itself is mature (Rail/TopBar/DocumentPanel/AITerminal/⌘K, seed-on-first-login) but Press-skinned and hard-seeded, not onboarding-driven. The wizard, cover, settings, 12 templates, and dark theme are net-new.
 
-| Item                   | Status                                 | Current code                                          | Gap / conflict                                                          | Size |
-| ---------------------- | -------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- | ---- |
-| Magic-link sign-in     | Partial                                | `sign-in/page.tsx`, `auth/callback/route.ts`          | works, but generic-styled; callback bypasses any onboarding gate        | S    |
-| Name-pond step         | Net-new                                | —                                                     | no naming UI; pond name not surfaced in shell                           | M    |
-| Pick-areas step        | Net-new                                | seeding hard-coded (`Rail.tsx:613`)                   | onboarding must drive which areas seed; **reconcile Money vs Finances** | M    |
-| Connect-sources step   | Net-new                                | —                                                     | no OAuth/integration layer at all                                       | L    |
-| Three-keys teach       | Net-new (screen) / Partial (mechanics) | `CommandPalette`, `SlashMenu`, deletion-undo          | teach screen new; real ⌘Z undo is deletion-only today                   | M    |
-| First run              | Partial                                | `DocumentPanel`, `OverviewSurface`                    | areas seeded structurally, but guided first-run flow net-new            | M    |
-| Shell layout           | Exists                                 | `WorkspaceShell/Rail/TopBar/DocumentPanel/AITerminal` | solid; needs Make Noise reskin + pond-switcher header                   | M    |
-| Cover                  | Net-new                                | —                                                     | ASCII-pond cover + ink/dark flip                                        | M    |
-| Empty states           | Partial                                | `Rail.tsx:521`, `emptyBlockForType`                   | missing "Pond offers to start it" + empty-collection shape              | M    |
-| 12 premade templates   | Net-new                                | registry has module kinds only                        | full template system (see §03)                                          | L    |
-| Machine surface        | Partial                                | mono in composer                                      | not codified as a token/role                                            | S    |
-| Settings               | Net-new                                | —                                                     | no settings surface; must host sources/templates/ponds/people           | L    |
-| Mobile                 | Partial                                | some responsive bits                                  | onboarding/first-run/keyboard-bar/settings mobile net-new               | M    |
-| Dark theme             | Net-new                                | 6× scattered `dark:`                                  | no theme system; dark is first-class + per-pond themes                  | L    |
-| Create additional pond | Net-new                                | —                                                     | no switcher/wizard/multi-pond model                                     | L    |
+| Item                   | Status                                 | Current code                                          | Gap / conflict                                                                   | Size |
+| ---------------------- | -------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- | ---- |
+| Magic-link sign-in     | Partial                                | `sign-in/page.tsx`, `auth/callback/route.ts`          | works, but generic-styled; callback bypasses any onboarding gate                 | S    |
+| Name-pond step         | Net-new                                | —                                                     | no naming UI; pond name not surfaced in shell                                    | M    |
+| Pick-areas step        | Net-new                                | seeding hard-coded (`Rail.tsx:613`)                   | onboarding must drive which areas seed; area word = **Finances** (resolved #107) | M    |
+| Connect-sources step   | Net-new                                | —                                                     | no OAuth/integration layer at all                                                | L    |
+| Three-keys teach       | Net-new (screen) / Partial (mechanics) | `CommandPalette`, `SlashMenu`, deletion-undo          | teach screen new; real ⌘Z undo is deletion-only today                            | M    |
+| First run              | Partial                                | `DocumentPanel`, `OverviewSurface`                    | areas seeded structurally, but guided first-run flow net-new                     | M    |
+| Shell layout           | Exists                                 | `WorkspaceShell/Rail/TopBar/DocumentPanel/AITerminal` | solid; needs Make Noise reskin + pond-switcher header                            | M    |
+| Cover                  | Net-new                                | —                                                     | ASCII-pond cover + ink/dark flip                                                 | M    |
+| Empty states           | Partial                                | `Rail.tsx:521`, `emptyBlockForType`                   | missing "Pond offers to start it" + empty-collection shape                       | M    |
+| 12 premade templates   | Net-new                                | registry has module kinds only                        | full template system (see §03)                                                   | L    |
+| Machine surface        | Partial                                | mono in composer                                      | not codified as a token/role                                                     | S    |
+| Settings               | Net-new                                | —                                                     | no settings surface; must host sources/templates/ponds/people                    | L    |
+| Mobile                 | Partial                                | some responsive bits                                  | onboarding/first-run/keyboard-bar/settings mobile net-new                        | M    |
+| Dark theme             | Net-new                                | 6× scattered `dark:`                                  | no theme system; dark is first-class + per-pond themes                           | L    |
+| Create additional pond | Net-new                                | —                                                     | no switcher/wizard/multi-pond model                                              | L    |
 
 ---
 
@@ -207,7 +207,7 @@ Two cross-cutting forces dominate the work:
 
 These are contradictions to resolve before/at build time, not pure gaps:
 
-1. **Area names:** spec onboarding says **Money**; current code seeds **Finances** (per project memory). Pick one.
+1. ~~**Area names:** spec onboarding says Money; current code seeds Finances.~~ **RESOLVED 2026-09-29 (#107): keep `Finances`** — adopt the shipped code word (Option B); onboarding pick-areas seeds `Finances`, and any spec/onboarding copy naming "Money" defers to this. The `.dc.html` mockups are illustrative here; this decision wins per AGENTS.md.
 2. **Area as a type vs a page:** spec says an area is just a page with children (a glyph/colour convention); code hard-codes `type='area'`. Reconcile toward the spec model.
 3. **Undo scope:** spec C1 = session undo then revert-from-log; some current copy/code implies "until next edit" and undo is deletion-only. Rebuild toward C1.
 4. **Diff durability:** spec = a growing change-log DB; code = ephemeral transcript envelope (ticket-19/24). Migrating to durable diffs is the pivotal architecture change.
