@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+<script src="_ds/mn/assets/icons/icon-mask.js"></script>
+</helmet>
+<div style="{{ glass }}">
+<sc-if value="{{ hasHead }}"><div style="{{ head }}"><sc-if value="{{ headGlyph }}"><span data-icon="waves-02" style="{{ glyph }}"></span></sc-if><sc-if value="{{ hasScope }}"><span style="{{ scope }}">{{ scopeText }}</span></sc-if><span style="{{ headText }}">{{ query }}</span><sc-if value="{{ caretOn }}"><span style="{{ caret }}"></span></sc-if><div style="flex:1"></div><span style="{{ headKey }}">{{ headRight }}</span></div></sc-if>
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+<sc-if value="{{ r.isGroup }}"><div style="{{ r.groupStyle }}">{{ r.label }}</div></sc-if>
+<sc-if value="{{ r.isNote }}"><div style="{{ note }}">{{ r.label }}</div></sc-if>
+<sc-if value="{{ r.isItem }}"><div style="{{ r.style }}"><sc-if value="{{ r.hasSvg }}"><span style="{{ iconWrap }}"><svg width="13" height="13" viewBox="0 0 14 14" fill="{{ r.fill }}" stroke="{{ r.stroke }}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="{{ r.d }}"></path></svg></span></sc-if><sc-if value="{{ r.hasGlyph }}"><span data-icon="{{ r.glyph }}" style="{{ glyph }}"></span></sc-if><sc-if value="{{ r.isAction }}"><span style="{{ actMark }}">&gt;</span></sc-if><span style="{{ r.labelStyle }}"><span>{{ r.pre }}</span><span style="{{ match }}">{{ r.hit }}</span><span>{{ r.post }}</span></span><sc-if value="{{ r.hasSub }}"><span style="{{ r.subStyle }}">{{ r.sub }}</span></sc-if><div style="flex:1"></div><sc-if value="{{ r.hasHint }}"><span style="{{ hint }}">{{ r.hint }}</span></sc-if><sc-if value="{{ r.sel }}"><span style="{{ enter }}">↵</span></sc-if></div></sc-if>
+<sc-if value="{{ r.isSeg }}"><div style="{{ seg }}"><sc-for list="{{ r.opts }}" as="o" hint-placeholder-count="2"><span style="{{ o.style }}">{{ o.label }}</span></sc-for></div></sc-if>
+</sc-for>
+<sc-if value="{{ hasFoot }}"><div style="{{ footStyle }}"><sc-for list="{{ footItems }}" as="f" hint-placeholder-count="3"><span>{{ f }}</span></sc-for></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:600,&quot;height&quot;:560},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;slash&quot;,&quot;source&quot;,&quot;palette&quot;],&quot;default&quot;:&quot;slash&quot;,&quot;tsType&quot;:&quot;'slash'|'source'|'palette'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;open&quot;,&quot;filtered&quot;,&quot;templates&quot;,&quot;empty&quot;,&quot;source&quot;,&quot;type&quot;,&quot;new&quot;,&quot;opened&quot;,&quot;typing&quot;,&quot;actions&quot;,&quot;record&quot;,&quot;scoped&quot;,&quot;ponds&quot;],&quot;default&quot;:&quot;open&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this.up(); }
+  componentDidUpdate() { this.up(); }
+  up() { setTimeout(() => window.MNIcons && window.MNIcons.upgrade(), 0); }
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'slash', theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const D = { slash: 'open', source: 'source', palette: 'opened' }[kind];
+    const state = p.state ?? D;
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const glassBg = ink
+      ? { background: 'linear-gradient(160deg,rgba(48,49,42,.92),rgba(48,49,42,.78))', border: '1px solid rgba(250,249,239,.09)', boxShadow: 'inset 0 1px 0 rgba(250,249,239,.06),0 20px 54px rgba(0,0,0,.42)' }
+      : { background: 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', border: '1px solid rgba(255,255,255,.9)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.14)' };
+    const I = {
+      text: 'M3 3.5h8M7 3.5v7.5', heading: 'M3.5 3v8M10 3v8M3.5 7H10',
+      link: 'M6 8l2-2M5.4 6.4 4 7.8a1.9 1.9 0 0 0 2.7 2.7L8 9.2M8.6 7.6 10 6.2a1.9 1.9 0 0 0-2.7-2.7L6 4.8',
+      file: 'M4 2h4l3 3v7H4zM8 2v3h3', quote: 'M5.6 3.4C4 4 3 5.2 3 7v3.2h2.8V7.4H4M11 3.4C9.4 4 8.4 5.2 8.4 7v3.2h2.8V7.4H9.4',
+      number: 'M5.4 2.5 4.4 11.5M9.6 2.5l-1 9M2.6 5.4h9M2.2 8.6h9', pond: 'M7 7 L12.74 5.25 A6 6 0 1 1 8.75 1.26 Z',
+      list: 'M6 4h5.5M6 7h5.5M6 10h5.5M3.2 4h.01M3.2 7h.01M3.2 10h.01', check: 'M2.4 4.2l1 1 1.8-2M7 4.2h4.6M2.4 9.8l1 1 1.8-2M7 9.8h4.6',
+      table: 'M3.2 2.5h7.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 10.3V3.7a1.2 1.2 0 0 1 1.2-1.2zM2 6h10M6 2.5v9',
+      gallery: 'M2 2.5h4.2v4.2H2zM7.8 2.5H12v4.2H7.8zM2 8h4.2v4.2H2zM7.8 8H12v4.2H7.8z', chart: 'M2.5 11.5h9M4.2 11.5V7.5M7 11.5V3.5M9.8 11.5V8.8',
+      log: 'M2 7a5 5 0 1 0 10 0a5 5 0 1 0-10 0M7 4.4V7l1.9 1.2', tpl: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z',
+      page: 'M3.5 2h5l2.5 2.5V12h-7.5zM8.5 2v2.5H11', plus: 'M7 3v8M3 7h8',
+      db: 'M2.4 3.4a4.6 1.6 0 1 0 9.2 0a4.6 1.6 0 1 0-9.2 0M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6',
+      line: 'M2 10.5l3-3 2.5 2L12 4', area: 'M2 11.5V8.5l3-2.5 2.5 2L12 4.5v7z', heat: 'M2.5 2.5h2v2h-2zM6 2.5h2v2H6zM9.5 2.5h2v2h-2zM2.5 6h2v2h-2zM6 6h2v2H6zM9.5 6h2v2h-2zM2.5 9.5h2v2h-2zM6 9.5h2v2H6z'
+    };
+    const G = label => ({ t: 'group', label });
+    const N = label => ({ t: 'note', label });
+    const it = (label, o = {}) => ({ t: 'item', label, ...o });
+    const act = (label, o = {}) => ({ t: 'item', label, action: true, ...o });
+    let W = 300, head = null, rows = [], foot = [], sansRows = false;
+    if (kind === 'slash') {
+      W = mob ? 340 : 300;
+      const all = [G('text'), it('text', { icon: 'text' }), it('heading', { icon: 'heading', hint: '#' }), it('highlight', { icon: 'quote', hint: '"' }), it('page link', { icon: 'link', hint: '@' }), it('embed / file', { icon: 'file' }),
+        G('blocks'), it('list', { icon: 'list', hint: '-' }), it('checklist', { icon: 'check', hint: '[]' }), it('table', { icon: 'table' }), it('gallery', { icon: 'gallery' }), it('chart', { icon: 'chart' }), it('big number', { icon: 'number' }), it('entry log', { icon: 'log' }), it('pond — update', { icon: 'pond', filled: true, hint: 'proposes' }),
+        G('templates'), it('page from template', { icon: 'tpl' }), G('pages'), it('page', { icon: 'page' }), it('nested page', { icon: 'page' })];
+      if (state === 'open') { rows = all; rows[1].sel = true; if (mob) rows = rows.slice(0, 12); foot = ['↑↓ move', '↵ insert', 'esc keep as text']; }
+      else if (state === 'filtered') { rows = [it('table', { icon: 'table', hit: 'ta', sel: true }), it('entry log', { icon: 'log', hint: 'dated table' }), it('page from template', { icon: 'tpl', hit: 'ta', at: 13 })]; foot = ['/ ta — 3 matches']; }
+      else if (state === 'templates') { head = { text: 'page from template', right: '' }; rows = [G('premade'), ...['page', 'notes', 'list', 'project', 'tracker', 'journal', 'collection', 'database', 'dashboard', 'meeting notes', 'reading list', 'habit'].slice(0, mob ? 8 : 12).map((l, i) => it(l, { icon: i ? 'tpl' : 'page', sel: i === 3 })), G('yours'), it('weeknight recipe', { icon: 'tpl', hint: 'from chickpeas…' })]; foot = ['↵ new nested page', '→ preview']; }
+      else if (state === 'empty') { rows = [N('nothing called “zz”. esc to keep it as text, or ask pond in the composer.')]; }
+    } else if (kind === 'source') {
+      W = mob ? 360 : 340;
+      if (state === 'source') { head = { text: '/table', right: '' }; rows = [G('new'), it('new database — recipes', { icon: 'plus', sel: true }), G('or view an existing one'), it('recipes', { icon: 'db', hint: '18 records' }), it('calories', { icon: 'db', hint: '412 rows' }), it('transactions', { icon: 'db', hint: '1,380 rows' }), it('subscriptions', { icon: 'db', hint: '6 records' }), it('sleep nights', { icon: 'db', hint: '241 rows' })]; foot = ['named after this page', '↵ create']; }
+      else if (state === 'type') { head = { text: '/chart › calories', right: '' }; rows = [G('fits date + number'), it('line', { icon: 'line', sub: 'kcal by day', sel: true }), it('area + target', { icon: 'area', sub: 'kcal against 2,000–2,400' }), it('heatmap', { icon: 'heat', sub: 'one cell a day' }), G(' '), it('all charts', { icon: 'chart', hint: '13' })]; foot = ['suggested from the source’s fields']; }
+      else if (state === 'new') { head = { text: 'new database — recipes', right: '' }; rows = [G('fields'), it('title', { hint: 'text' }), it('time', { hint: 'number · minutes' }), it('tag', { hint: 'text' }), it('cooked', { hint: 'entry log' }), it('field', { icon: 'plus', faint: true }), G('records are'), { t: 'seg', opts: [['pages', true], ['rows only', false]] }]; foot = ['filed in databases', 'this page gets a table view']; }
+    } else {
+      W = mob ? 360 : 520; sansRows = true;
+      const pg = (label, area, o = {}) => it(label, { glyph: o.glyph || 'star-01', sub: area, ...o });
+      const keys = ['↑↓ move', '↵ open', '> actions only', 'esc close'];
+      foot = mob ? ['↵ open', '> actions only'] : keys;
+      if (state === 'opened') { head = { text: 'jump to a page, or > for actions', ph: true }; rows = [G('recent'), pg('kitchen renovation', 'creativity', { sel: true }), pg('budget', 'money', { glyph: 'ring' }), pg('journal', 'personal', { glyph: 'house' }), G('suggested'), act('chase the cabinet quote'), act('log a workout')]; }
+      else if (state === 'typing') { head = { text: 'cab', caret: true }; rows = [G('pages'), pg('kitchen renovation', 'creativity · mentions cabinets', { sel: true }), G('records'), it('cabinet quote', { icon: 'db', hit: 'cab', sub: 'tasks' }), G('actions'), act('chase the cabinet quote', { hit: 'cab', at: 10 }), act('ask pond about “cab”')]; }
+      else if (state === 'actions') { head = { text: '> log', caret: true }; rows = [act('log a workout', { hit: 'log', sel: true }), act('log a meal', { hit: 'log' }), act('log sleep', { hit: 'log' }), act('new page under health')]; }
+      else if (state === 'record') { head = { text: 'adobe', caret: true }; rows = [G('records'), it('adobe creative cloud', { icon: 'db', hit: 'adobe', sub: 'subscriptions · renews 28 sep', sel: true }), G('pages'), pg('subscriptions', 'money', { glyph: 'ring' }), G('actions'), act('ask pond about “adobe”')]; }
+      else if (state === 'empty') { head = { text: 'cabnet', caret: true }; rows = [N('no page or record called “cabnet”'), act('ask pond about “cabnet”', { sel: true }), act('new page “cabnet” under life'), G('did you mean'), pg('kitchen renovation', 'cabinets')]; }
+      else if (state === 'scoped') { head = { text: '', scope: 'in money:', caret: true }; rows = [pg('budget', 'page', { glyph: 'ring', sel: true }), pg('subscriptions', 'page', { glyph: 'ring' }), it('transactions', { icon: 'db', sub: 'database' })]; }
+      else if (state === 'ponds') { head = { text: 'make', caret: true }; rows = [G('ponds'), pg('make noise', 'pond · switch', { glyph: 'lightning-03', hit: 'make', sel: true, hint: '⌘2' }), G('pages in life'), pg('make this a page', 'journal · mentions make noise', { glyph: 'house', hit: 'make' }), G('actions'), act('new pond “make”'), act('ask pond about “make”')]; }
+      if (head) head.glyph = true;
+    }
+    const rowPad = mob ? (sansRows ? '13px 12px' : '11px 10px') : (sansRows ? '9px 12px' : '7px 10px');
+    const out = rows.map(r => {
+      if (r.t === 'group') return { isGroup: true, label: r.label, groupStyle: sansRows ? { padding: '8px 12px 4px', fontFamily: sans, fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) } : { padding: r.label === ' ' ? '2px 10px' : '8px 10px 5px', fontSize: 10.5, letterSpacing: '.04em', color: a(.68), ...(r.label === ' ' ? { borderTop: `1px solid ${a(.09)}`, margin: '4px 10px 0', padding: 0, height: 4 } : {}) } };
+      if (r.t === 'note') return { isNote: true, label: r.label };
+      if (r.t === 'seg') return { isSeg: true, opts: r.opts.map(([label, on]) => ({ label, style: { flex: 1, textAlign: 'center', padding: mob ? '11px 0' : '7px 0', borderRadius: 8, fontSize: 12, background: on ? (ink ? '#FAF9EF' : '#1B1D14') : 'transparent', color: on ? (ink ? '#1B1D14' : '#FAF9EF') : a(.8) } })) };
+      const hit = r.hit || '', at = r.at ?? (hit ? r.label.indexOf(hit) : r.label.length);
+      const pageRow = sansRows && !r.action;
+      return {
+        isItem: true, sel: !!r.sel, isAction: !!r.action,
+        hasSvg: !!r.icon, d: I[r.icon] || '', fill: r.filled ? 'currentColor' : 'none', stroke: r.filled ? 'none' : 'currentColor',
+        hasGlyph: !!r.glyph, glyph: r.glyph || '',
+        pre: r.label.slice(0, at), hit: r.label.slice(at, at + hit.length), post: r.label.slice(at + hit.length),
+        hasSub: !!r.sub, sub: r.sub || '', hasHint: !!r.hint && !r.sel, hint: r.hint || '',
+        style: { display: 'flex', alignItems: 'center', gap: 10, padding: rowPad, borderRadius: sansRows ? 14 : 10, fontFamily: sansRows && !r.action ? sans : (sansRows ? sans : mono), fontSize: sansRows ? (mob ? 15 : 13.5) : (mob ? 14 : 12.5), letterSpacing: sansRows ? 0 : '.01em', color: r.action || r.faint ? a(.8) : fg, background: r.sel ? a(.07) : 'transparent' },
+        labelStyle: { fontWeight: pageRow && r.glyph ? 500 : 400, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+        subStyle: { color: a(.68), fontSize: sansRows ? (mob ? 13 : 12.5) : 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }
+      };
+    });
+    return {
+      rows: out, hasHead: !!head, headGlyph: !!(head && head.glyph), query: head ? head.text : '', headRight: head ? (head.right ?? 'esc') : '',
+      hasScope: !!(head && head.scope), scopeText: head ? head.scope : '', caretOn: !!(head && head.caret),
+      hasFoot: foot.length > 0, footItems: foot,
+      glass: { width: W, boxSizing: 'border-box', padding: sansRows ? 10 : 8, ...glassBg, borderRadius: 20, fontFamily: mono, color: fg, display: 'flex', flexDirection: 'column', gap: sansRows ? 2 : 1 },
+      head: { display: 'flex', alignItems: 'center', gap: 10, padding: sansRows ? '10px 12px 14px' : '8px 10px 10px', marginBottom: 4, borderBottom: `1px solid ${a(.09)}`, fontFamily: mono, fontSize: sansRows ? (mob ? 16 : 14) : (mob ? 13 : 12) },
+      headText: { color: head && head.ph ? a(.68) : fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+      scope: { padding: '1px 6px', borderRadius: 6, background: a(.07), color: a(.8) },
+      caret: { display: 'inline-block', width: 1.5, height: 15, background: fg, marginLeft: -9 },
+      headKey: { fontSize: 10.5, color: a(.8) },
+      iconWrap: { color: a(.8), display: 'flex' },
+      glyph: { display: 'inline-block', width: 13, height: 13, flex: 'none', background: 'currentColor' },
+      actMark: { fontFamily: mono, fontSize: 12.5 },
+      match: { textDecoration: 'underline', textUnderlineOffset: 3, textDecorationThickness: 1 },
+      hint: { flex: '0 1 auto', minWidth: 0, maxWidth: '45%', fontFamily: mono, fontSize: 10.5, color: a(.68), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      enter: { fontFamily: mono, fontSize: 10.5, color: a(.8) },
+      note: { padding: sansRows ? '10px 12px' : '10px 10px', fontFamily: mono, fontSize: mob ? 13 : 12, lineHeight: 1.55, color: a(.8), textWrap: 'pretty' },
+      seg: { display: 'flex', gap: 4, padding: 3, margin: '2px 10px 4px', borderRadius: 10, background: a(.06), fontFamily: mono },
+      footStyle: { display: 'flex', flexWrap: 'wrap', gap: 14, padding: sansRows ? '10px 12px 4px' : '9px 10px 4px', marginTop: 4, borderTop: `1px solid ${a(.09)}`, fontSize: 10.5, color: a(.68) }
+    };
+  }
+}
+</script>
+</body>
+</html>

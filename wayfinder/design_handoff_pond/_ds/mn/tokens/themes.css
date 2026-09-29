@@ -1,0 +1,131 @@
+/* ============================================
+   PRODUCT SELECTIONS — Layer 2.
+   No component code changes; no new colours either.
+
+   ONE PALETTE, TWO SELECTIONS. Every colour lives in tokens/colors.css:
+   ink · paper · burnt-orange · red · wheat · mist · sage · navy, plus the olive
+   neutral ramp. Make Noise is the exterior of the house, Pond is the interior.
+   Each one picks values off the shared palette and assigns them to roles.
+
+   THE RULE: a selection reassigns semantic `--color-*` (and its own private
+   `--studio-*` / `--press-*` handles). It NEVER redefines a `--raw-*`. If a
+   product needs a colour the palette does not have, the colour goes in the
+   palette first.
+
+   WHY IT IS WRITTEN OUT: CSS substitutes `--color-ink: var(--raw-ink)` where it
+   is DECLARED (:root), so a scoped override never reaches an alias it did not
+   restate. Each selection therefore lists every role it changes, explicitly.
+   ============================================ */
+
+/* ── EXTERIOR — make-noise.studio.
+   Picks: ink (page) · paper (type, CTA, chrome frame) · burnt-orange (signal)
+          wheat (interactive markers) · navy (their hover flip)
+   Leaves on the shelf: red, mist, sage.
+   Source: make-noise-site app/globals.css — structure kept, palette re-picked. ── */
+.theme-studio {
+  /* Private handles — named for the role they play on the site */
+  --studio-yellow: var(--raw-wheat); /* the marker chips */
+  --studio-blue: var(--raw-navy); /* their hover flip */
+  --studio-black: #000000;
+
+  /* The selection */
+  --color-ink: var(--raw-ink);
+  --color-paper: var(--raw-paper);
+  --color-accent: var(--raw-burnt-orange); /* the exterior signals loud */
+  --color-navy: var(--raw-navy);
+  --color-link: var(
+    --raw-burnt-orange
+  ); /* outside, links are burnt orange; navy is the hover flip */
+
+  /* Ink-dominant page: the exterior inverts the resting relationship */
+  --color-bg-page: var(--raw-ink);
+  --color-bg-subtle: var(--raw-neutral-700);
+  --color-text-primary: var(--raw-paper);
+  --color-text-secondary: rgba(250, 249, 239, 0.62);
+  --color-text-tertiary: rgba(250, 249, 239, 0.48);
+  --color-text-placeholder: rgba(250, 249, 239, 0.38);
+  --color-border-subtle: rgba(250, 249, 239, 0.14);
+  --color-border-default: rgba(250, 249, 239, 0.26);
+  --color-cta-bg: var(--raw-paper);
+  --color-cta-text: var(--raw-ink);
+  --color-cta-secondary-bg: var(--raw-wheat);
+  --color-cta-secondary-text: var(--raw-ink);
+  --color-error: #a63228; /* stays distinct from the exterior's burnt orange */
+}
+
+/* ── INTERIOR — Pond "Press".
+   Picks: ink (type) · neutral-100 (walls) · paper (module cards)
+          sage (ambient tint — washes, letterpress margin, dots)
+          navy (focus ring, links, info) · wheat (the one action)
+          red (punctuation, destructive) · mist (selected / secondary states)
+   Leaves on the shelf: burnt orange — the interior never shouts.
+   Source: Pond-v4 src/app/globals.css (R6) — structure kept, palette re-picked. ── */
+.theme-press {
+  /* Surfaces — drawn from the shared ramp, not invented */
+  --press-ink: var(--raw-ink);
+  --press-paper: var(--raw-neutral-100); /* interior walls: one step below daylight */
+  --press-card: var(--raw-paper); /* module surface: the exterior's paper */
+
+  /* Ink tiers — alphas of the shared ink (27,29,20) */
+  --press-body: rgba(27, 29, 20, 0.8);
+  --press-muted: rgba(27, 29, 20, 0.52);
+  --press-faint: rgba(27, 29, 20, 0.3);
+  --press-line: rgba(27, 29, 20, 0.09);
+  --press-hair: rgba(27, 29, 20, 0.055);
+
+  /* Signals — every one of them off the shared palette. Sage carries the
+     ambient tint (it is mid-value, so it washes well); navy does the work that
+     needs contrast — focus ring, links, info. */
+  --press-accent: var(--raw-sage);
+  --press-accent-soft: rgba(100, 143, 123, 0.14); /* sage — a fill, never a ring */
+  --press-accent-wash: rgba(100, 143, 123, 0.07);
+  --press-navy: var(--raw-navy);
+  --press-red: var(--raw-red);
+  --press-mist: var(--raw-mist);
+  --press-action: var(--raw-wheat); /* the single primary action */
+  --press-action-ink: var(--raw-ink); /* full-strength ink reads on wheat */
+
+  /* The selection */
+  --color-ink: var(--press-ink);
+  --color-paper: var(--press-card);
+  --color-accent: var(--press-accent);
+  --color-calm: var(--press-navy); /* Pond's --ring — navy clears 3:1 on the wall; sage does not */
+  --color-highlight: var(--press-action);
+  --color-red: var(--raw-red);
+  --color-mist: var(--raw-mist);
+  --color-sage: var(--raw-sage);
+  --color-navy: var(--raw-navy);
+  --color-link: var(--raw-navy);
+
+  --color-bg-page: var(--press-paper);
+  --color-bg-subtle: var(--press-card);
+  --color-bg-elevated-dark: var(--press-ink);
+  --color-text-primary: var(--press-ink);
+  --color-text-secondary: var(--press-muted);
+  --color-text-tertiary: var(--press-body);
+  --color-text-placeholder: var(--press-faint);
+  --color-border-subtle: var(--press-hair);
+  --color-border-default: var(--press-line);
+  --color-cta-bg: var(--press-action);
+  --color-cta-text: var(--press-action-ink);
+  --color-cta-secondary-bg: var(--press-mist);
+  --color-cta-secondary-text: var(--press-ink);
+  --color-error: var(--press-red);
+
+  /* Press motion ladder — a second, calmer register for the product surface */
+  --motion-instant: 90ms /* @kind other */;
+  --motion-quick: 150ms /* @kind other */;
+  --motion-settle: 280ms /* @kind other */;
+  --motion-calm: 460ms /* @kind other */;
+  --motion-slow: 560ms /* @kind other */;
+  --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1) /* @kind other */;
+
+  --radius-lg: 10px;
+}
+
+/* Selection inside the interior stays a FILL, not a ring: the sage wash behind
+   full-strength ink. The focus ring above is solid navy. */
+.theme-press ::selection {
+  background-color: var(--press-accent-soft);
+  color: var(--press-ink);
+}

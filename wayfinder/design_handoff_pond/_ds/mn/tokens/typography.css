@@ -1,0 +1,75 @@
+/* ============================================
+   TYPOGRAPHY — families, the 8-voice system, scale, leading, tracking
+   Source: make-noise-design-system packages/ui/src/tokens/index.css
+   ============================================ */
+:root {
+  --font-sans: 'PP Neue Montreal', system-ui, sans-serif;
+  --font-mono: 'PP Neue Montreal Mono', monospace;
+  /* PP Editorial New ships 200 + 800 only; prose sets at 200. */
+  --font-display: 'PP Editorial New', Georgia, serif;
+
+  /* ── Voices — 8 named tokens. Components reference voices, not raw font values. ── */
+  --voice-body-family: var(--font-sans);
+  --voice-body-weight: 400 /* @kind font */;
+  --voice-body-style: normal /* @kind other */;
+  --voice-body-transform: none /* @kind other */;
+  --voice-body-tracking: var(--tracking-normal);
+  --voice-label-family: var(--font-sans);
+  --voice-label-weight: 500 /* @kind font */;
+  --voice-label-style: normal /* @kind other */;
+  --voice-label-transform: uppercase /* @kind other */;
+  --voice-label-tracking: var(--tracking-wide);
+  --voice-label-bold-family: var(--font-sans);
+  --voice-label-bold-weight: 700 /* @kind font */;
+  --voice-label-bold-style: normal /* @kind other */;
+  --voice-label-bold-transform: uppercase /* @kind other */;
+  --voice-label-bold-tracking: var(--tracking-wider);
+  --voice-mono-family: var(--font-mono);
+  --voice-mono-weight: 400 /* @kind font */;
+  --voice-mono-style: normal /* @kind other */;
+  --voice-mono-transform: none /* @kind other */;
+  --voice-mono-tracking: var(--tracking-normal);
+
+  /* Display voices — statement only, never functional UI */
+  --voice-whisper-family: var(--font-display);
+  --voice-whisper-weight: 200 /* @kind font */;
+  --voice-whisper-style: normal /* @kind other */;
+  --voice-whisper-tracking: var(--tracking-tight);
+  --voice-whisper-italic-family: var(--font-display);
+  --voice-whisper-italic-weight: 200 /* @kind font */;
+  --voice-whisper-italic-style: italic /* @kind other */;
+  --voice-whisper-italic-tracking: var(--tracking-tight);
+  --voice-punch-family: var(--font-display);
+  --voice-punch-weight: 800 /* @kind font */;
+  --voice-punch-style: normal /* @kind other */;
+  --voice-punch-tracking: var(--tracking-tight);
+  /* THE signature move — one per page, hero scale only */
+  --voice-punch-italic-family: var(--font-display);
+  --voice-punch-italic-weight: 800 /* @kind font */;
+  --voice-punch-italic-style: italic /* @kind other */;
+  --voice-punch-italic-tracking: var(--tracking-tight);
+
+  /* UI scale — PP Neue Montreal. Never clamp() here; fluid is display-only. */
+  --text-xs: 0.6875rem; /* 11px — tight labels, badges */
+  --text-sm: 0.8125rem; /* 13px — secondary UI, captions */
+  --text-base: 1rem; /* 16px — body copy */
+  --text-lg: 1.125rem; /* 18px — lead text */
+  --text-xl: 1.375rem; /* 22px — h4, h5 */
+  --text-2xl: 1.75rem; /* 28px — h3 */
+  --text-3xl: 2.25rem; /* 36px — h2 */
+  --text-4xl: 2.875rem; /* 46px — h1 */
+
+  /* Display scale — fluid, paired with the display face */
+  --text-display-punch: clamp(2rem, 5vw, 4rem);
+  --text-display-whisper: clamp(3.5rem, 8vw, 8rem);
+  --text-display-hero: clamp(5rem, 12vw, 14rem);
+
+  --leading-tight: 1.1 /* @kind other */;
+  --leading-snug: 1.3 /* @kind other */;
+  --leading-normal: 1.5 /* @kind other */;
+  --leading-relaxed: 1.7 /* @kind other */;
+  --tracking-tight: -0.03em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.06em;
+  --tracking-wider: 0.1em;
+}

@@ -1,0 +1,22 @@
+/* ============================================
+   SPACING — two scales, hard boundary between them.
+   Component scale lives INSIDE components. Layout scale lives BETWEEN them.
+   Crossing the boundary is always wrong.
+   ============================================ */
+:root {
+  /* Component scale — 4pt base */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Layout scale — editorial and bold */
+  --layout-1: 48px;
+  --layout-2: 80px;
+  --layout-3: 120px;
+  --layout-4: 160px;
+  --layout-5: 240px;
+  --layout-6: 320px;
+}

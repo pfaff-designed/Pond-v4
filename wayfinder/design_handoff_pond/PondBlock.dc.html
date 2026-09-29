@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<div style="{{ block }}">
+<div style="{{ head }}"><span style="{{ eyebrow }}">{{ heading }}</span><span style="{{ headMeta }}">{{ headNote }}</span></div>
+<sc-if value="{{ isEmpty }}"><div style="{{ emptyBox }}"><span style="{{ emptyText }}">{{ emptyLine }}</span><dc-import name="PondControl" kind="button" variant="secondary" label="{{ emptyAction }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import></div></sc-if>
+<sc-if value="{{ isLoading }}"><div style="{{ stack }}"><sc-for list="{{ skel }}" as="w" hint-placeholder-count="3"><span style="{{ w.style }}"></span></sc-for></div></sc-if>
+<sc-if value="{{ showRows }}"><div style="{{ stack }}"><sc-if value="{{ isTable }}"><div style="{{ thead }}"><span style="{{ th }}">date</span><span style="{{ th }}">recipe</span><span style="{{ th }}">servings</span><span style="{{ thR }}">kcal</span></div></sc-if><sc-for list="{{ rows }}" as="r" hint-placeholder-count="3"><dc-import name="PondMolecule" kind="{{ r.kind }}" title="{{ r.title }}" meta="{{ r.meta }}" value="{{ r.value }}" qty="{{ r.qty }}" label="{{ r.label }}" value-kind="{{ r.vk }}" tag="{{ r.tag }}" on="{{ r.on }}" state="{{ r.state }}" theme="{{ theme }}" size="{{ size }}" hint-size="{{ r.hint }}"></dc-import></sc-for></div></sc-if>
+<sc-if value="{{ isGallery }}"><div style="{{ gallery }}"><sc-for list="{{ cards }}" as="c" hint-placeholder-count="3"><dc-import name="PondMolecule" kind="record-card" title="{{ c.title }}" meta="{{ c.meta }}" tag="{{ c.tag }}" state="{{ c.state }}" theme="{{ theme }}" size="{{ size }}" hint-size="170px,190px"></dc-import></sc-for></div></sc-if>
+<sc-if value="{{ isNumber }}"><div style="{{ bigWrap }}"><span style="{{ big }}">{{ bigValue }}</span><span style="{{ bigSub }}">{{ bigNote }}</span></div></sc-if>
+<sc-if value="{{ isTomb }}"><div style="{{ tomb }}"><span style="{{ tombText }}">{{ tombLine }}</span><div style="{{ tombActions }}"><dc-import name="PondControl" kind="button" variant="secondary" label="restore" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import><dc-import name="PondControl" kind="button" variant="ghost" label="remove block" theme="{{ theme }}" size="{{ size }}" hint-size="auto,32px"></dc-import></div></div></sc-if>
+<sc-if value="{{ isError }}"><dc-import name="PondMolecule" kind="notice" title="{{ errLine }}" action="reconnect" theme="{{ theme }}" size="{{ size }}" hint-size="440px,50px"></dc-import></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:620,&quot;height&quot;:320},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;list&quot;,&quot;checklist&quot;,&quot;table&quot;,&quot;gallery&quot;,&quot;number&quot;,&quot;log&quot;,&quot;properties&quot;],&quot;default&quot;:&quot;list&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;selected&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;error&quot;,&quot;deleted&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;heading&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;value&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'list', state = p.state ?? 'rest';
+    const theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
+    const ink = theme === 'ink', mob = size === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const card = ink ? '#30312A' : '#FAF9EF';
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace";
+    const S = x => state === x;
+    const tombed = state === 'deleted';
+    const sel = S('selected'), hover = S('hover'), empty = S('empty'), load = S('loading'), err = S('error');
+    const W = tombed ? 460 : ({ list: 400, checklist: 400, table: 500, gallery: 580, number: 400, log: 460, properties: 400 }[kind] || 400);
+    const width = mob ? 360 : W;
+    const block = { position: 'relative', display: 'flex', flexDirection: 'column', gap: 12, boxSizing: 'border-box', width, padding: mob ? '16px 14px' : '16px 18px', borderRadius: 20, fontFamily: sans, color: fg, background: tombed ? 'transparent' : card, boxShadow: tombed ? `inset 0 0 0 1.4px ${a(.2)}` : sel ? `0 0 0 2px ${fg},${cardShadow}` : cardShadow, ...(S('disabled') ? { opacity: .4 } : {}) };
+    const H0 = { list: ['notifications', '3'], checklist: ['method', '1 of 3'], table: ['calories', 'rows only'], gallery: ['recipes', '18 records'], number: ['kcal this week', ''], log: ['entry log', 'cooked 3 times'], properties: ['record', 'recipes'], }[kind] || ['', ''];
+    const H = tombed ? [H0[0], 'database deleted'] : H0;
+    const sk = (w, h = 10) => ({ style: { display: 'block', height: h, width: w, borderRadius: 5, background: a(.08) } });
+    const R = {
+      list: [['list-row', 'cabinet quote', 'today'], ['list-row', 'renew insurance', '28 sep'], ['list-row', 'standup', '30 sep']].map(([k, t, m], i) => ({ kind: k, title: t, meta: m, state: hover && i === 1 ? 'hover' : 'rest', hint: '360px,36px' })),
+      checklist: [['soak overnight', 'true'], ['simmer 25 min with bay', 'false'], ['stir through harissa', 'false']].map(([t, o], i) => ({ kind: 'check-row', title: t, on: i === 0 ? 'true' : o, state: hover && i === 1 ? 'hover' : 'rest', hint: '360px,36px' })),
+      table: [['19 sep', 'chickpeas, harissa', '2', '1,040', 'rest'], ['17 sep', 'cacio e pepe', '1', '710', 'error'], ['14 sep', 'chickpeas, harissa', '1', '520', 'rest']].map(([m, t, q, v, st], i) => ({ kind: 'table-row', meta: m, title: t, qty: q, value: v, state: hover && i === 0 ? 'hover' : st, hint: '460px,38px' })),
+      log: [['19 sep', 'Cooked for four. Needs more salt than you think.'], ['14 sep', 'Half batch. Breadcrumbs next time.'], ['2 sep', 'First go, from the Ottolenghi book.']].map(([m, t], i) => ({ kind: 'entry', meta: m, title: t, state: hover && i === 0 ? 'hover' : 'rest', hint: '420px,50px' })),
+      properties: [['kcal per serving', '520', 'number'], ['time', '25m', 'duration'], ['cooked', '19 sep', 'date'], ['source', 'Ottolenghi, Simple', 'text']].map(([l, v, k], i) => ({ kind: 'field-row', label: l, value: v, vk: k, state: hover && i === 0 ? 'hover' : 'rest', hint: '360px,34px' }))
+    }[kind] || [];
+    const skel = kind === 'number' ? [sk('60%', 52), sk('40%')] : kind === 'gallery' ? [sk('100%', 120), sk('50%')] : [sk('82%'), sk('64%'), sk('74%')];
+    const EL = { list: ['nothing due', 'add an item'], checklist: ['no steps yet', 'add a step'], table: ['no rows yet', 'add a row'], gallery: ['no recipes yet', 'add a record'], number: ['no values this week', 'pick a field'], log: ['no entries yet', 'write one'], properties: ['no fields yet', 'add a field'] }[kind] || ['', ''];
+    const special = tombed || ['gallery', 'number'].includes(kind);
+    return {
+      theme, size, block, heading: p.heading ?? H[0], headNote: load ? 'loading…' : H[1],
+      head: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
+      eyebrow: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      headMeta: { fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      isEmpty: empty, emptyLine: EL[0], emptyAction: EL[1],
+      emptyBox: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 14px', borderRadius: 14, background: a(.035) },
+      emptyText: { fontSize: mob ? 15 : 13.5, color: a(.68) },
+      isLoading: load, skel, stack: { display: 'flex', flexDirection: 'column', gap: kind === 'table' ? 0 : 2 },
+      showRows: !empty && !load && !err && !special, rows: R, isTable: kind === 'table',
+      thead: { display: 'grid', gridTemplateColumns: mob ? '54px minmax(0,1fr) 44px 58px' : '62px minmax(0,1fr) 64px 80px', columnGap: 14, padding: '0 8px 8px', borderBottom: `1px solid ${a(.09)}` },
+      th: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) }, thR: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68), textAlign: 'right' },
+      isGallery: kind === 'gallery' && !empty && !load && !err && !tombed, gallery: { display: 'flex', gap: 12, flexWrap: 'wrap' },
+      cards: [['chickpeas, harissa, yoghurt', '25m'], ['cacio e pepe', '15m'], ['sourdough, 78%', '18h']].slice(0, mob ? 2 : 3).map(([t, m], i) => ({ title: t, meta: m, tag: 'recipe', state: hover && i === 0 ? 'hover' : sel && i === 1 ? 'selected' : 'rest' })),
+      isNumber: kind === 'number' && !empty && !load && !err && !tombed, bigWrap: { display: 'flex', flexDirection: 'column', gap: 6 },
+      big: { fontSize: mob ? 56 : 76, fontWeight: 700, letterSpacing: '-.03em', lineHeight: .9, fontVariantNumeric: 'tabular-nums' }, bigValue: p.value ?? '11,240', bigNote: 'kcal · 6 of 7 days logged', bigSub: { fontFamily: mono, fontSize: 11, color: a(.68) },
+      isTomb: tombed, tomb: { display: 'flex', flexDirection: 'column', gap: 12 }, tombLine: `This view showed ${H0[0]}, which was deleted on 22 sep. It can be restored for 30 days.`, tombText: { fontFamily: mono, fontSize: mob ? 12 : 11, lineHeight: 1.55, color: a(.8) }, tombActions: { display: 'flex', gap: 8 },
+      isError: err, errLine: kind === 'table' || kind === 'gallery' || kind === 'number' ? 'pond can’t reach this sheet any more · showing the last copy' : 'this block couldn’t load'
+    };
+  }
+}
+</script>
+</body>
+</html>

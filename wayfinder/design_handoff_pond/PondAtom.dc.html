@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<sc-if value="{{ isInline }}" hint-placeholder-val="{{ true }}"><span style="{{ wrap }}"><sc-if value="{{ isDue }}"><span style="{{ dueDot }}"></span></sc-if><sc-if value="{{ isAvatar }}"><span style="{{ avatar }}">{{ initials }}</span></sc-if><sc-if value="{{ isFile }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M3 1.5h4l2.5 2.5v6.5H3z"></path><path d="M7 1.5V4h2.5"></path></svg></sc-if><sc-if value="{{ isBox }}"><span style="{{ box }}"><sc-if value="{{ checked }}"><svg width="8" height="8" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 4.8 3.7 6.6 7.2 2.4"></path></svg></sc-if></span></sc-if><sc-if value="{{ isGlyph }}"><span data-icon="{{ glyph }}" style="{{ glyphStyle }}"></span></sc-if><sc-if value="{{ isDot }}"><span style="{{ kindDot }}"></span></sc-if><sc-if value="{{ showText }}"><span style="{{ text }}">{{ display }}</span></sc-if><sc-if value="{{ caret }}"><span style="{{ caretStyle }}"></span></sc-if><sc-if value="{{ hasNote }}"><span style="{{ note }}">{{ noteText }}</span></sc-if></span></sc-if>
+<sc-if value="{{ isMedia }}"><span style="{{ media }}"><sc-if value="{{ isVideo }}"><span style="{{ play }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" stroke="none"><path d="M3.5 2.2v7.6L9.8 6z"></path></svg></span></sc-if><span style="{{ mediaCap }}">{{ mediaText }}</span><sc-if value="{{ hasMediaTag }}"><span style="{{ mediaTag }}">{{ mediaTagText }}</span></sc-if></span></sc-if>
+<sc-if value="{{ isRule }}"><span style="{{ rule }}"></span></sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:320,&quot;height&quot;:120},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;heading&quot;,&quot;eyebrow&quot;,&quot;prose&quot;,&quot;highlight&quot;,&quot;quote&quot;,&quot;code&quot;,&quot;link&quot;,&quot;text&quot;,&quot;number&quot;,&quot;money&quot;,&quot;percent&quot;,&quot;date&quot;,&quot;time&quot;,&quot;duration&quot;,&quot;tag&quot;,&quot;checkbox&quot;,&quot;relation&quot;,&quot;person&quot;,&quot;file&quot;,&quot;image&quot;,&quot;video&quot;,&quot;icon&quot;,&quot;dot&quot;,&quot;divider&quot;],&quot;default&quot;:&quot;text&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;,&quot;selected&quot;,&quot;focus&quot;,&quot;editing&quot;,&quot;empty&quot;,&quot;loading&quot;,&quot;error&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;level&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;1&quot;,&quot;2&quot;,&quot;3&quot;,&quot;4&quot;,&quot;5&quot;,&quot;6&quot;],&quot;default&quot;:&quot;1&quot;,&quot;tsType&quot;:&quot;'1'|'2'|'3'|'4'|'5'|'6'&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;value&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;glyph&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;heart&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;color&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ink&quot;,&quot;sage&quot;,&quot;mist&quot;,&quot;navy&quot;],&quot;default&quot;:&quot;ink&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;due&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;on&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;note&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const kind = p.kind ?? 'text', state = p.state ?? 'rest';
+    const ink = (p.theme ?? 'paper') === 'ink', mob = (p.size ?? 'desktop') === 'mobile';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', inv = ink ? '#1B1D14' : '#FAF9EF', base = ink ? '250,249,239' : '27,29,20';
+    const a = x => `rgba(${base},${x})`;
+    const sans = "'PP Neue Montreal',system-ui,sans-serif", mono = "'PP Neue Montreal Mono',monospace", serif = "'PP Editorial New',Georgia,serif";
+    const D = { heading: 'kitchen renovation', eyebrow: 'ingredients', prose: 'Three quotes in. The worktop can wait.', highlight: 'the worktop can wait', quote: 'Needs more salt than you think.', code: 'recipe.kcal', link: 'open in sheets', text: 'chickpeas, soaked', number: '1,040', money: '£4,280', percent: '78%', date: '19 sep', time: '07:12', duration: '25m', tag: 'recipe', checkbox: '', relation: 'chickpeas, harissa', person: 'Charles Pfaff', file: 'quote-hartley.pdf', image: 'image', video: 'video', icon: '', dot: '', divider: '' };
+    const v = p.value ?? D[kind] ?? '';
+    const S = x => state === x;
+    const hover = S('hover'), sel = S('selected'), edit = S('editing'), empty = S('empty'), err = S('error'), dis = S('disabled'), load = S('loading'), focus = S('focus');
+    const lvl = +(p.level ?? 1);
+    const fs = mob ? 15 : 13.5;
+    const isChip = kind === 'relation' || kind === 'tag';
+    const numeric = ['number', 'money', 'percent', 'duration', 'time'].includes(kind);
+    const EMPTY = { relation: 'link a record', person: 'assign someone', heading: 'untitled', prose: 'write something', link: 'add a link', file: 'attach a file' };
+    let display = empty ? (EMPTY[kind] || 'empty') : load ? '…' : v;
+    if (kind === 'relation' && !empty && !load && !err) display = v + ' ›';
+    if (kind === 'link' && !empty && !load) display = v + ' ↗';
+    if (kind === 'file' && !empty && !load) display = v + '  ·  212 kb';
+    const T = {
+      heading: lvl === 1 ? { fontSize: mob ? 30 : 38, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '-.01em', lineHeight: 1 } : lvl === 2 ? { fontSize: mob ? 20 : 22, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '-.01em', lineHeight: 1.1 } : lvl === 3 ? { fontSize: mob ? 16 : 18, fontWeight: 500, lineHeight: 1.3 } : lvl === 4 ? { fontSize: mob ? 15 : 16, fontWeight: 500, lineHeight: 1.3 } : lvl === 5 ? { fontSize: 13.5, fontWeight: 500, lineHeight: 1.4 } : { fontSize: 11, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', lineHeight: 1.4 },
+      eyebrow: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      prose: { fontFamily: serif, fontWeight: 200, fontSize: mob ? 17 : 17.5, lineHeight: 1.6 },
+      highlight: { fontFamily: serif, fontWeight: 200, fontSize: mob ? 17 : 17.5, background: '#FFEFAE', color: '#1B1D14', padding: '0 3px' },
+      quote: { fontFamily: serif, fontWeight: 200, fontStyle: 'italic', fontSize: mob ? 18 : 19, letterSpacing: '-.01em' },
+      code: { fontFamily: mono, fontSize: mob ? 13 : 12, background: a(.05), padding: '2px 6px', borderRadius: 6, color: fg },
+      link: { textDecoration: 'underline', textDecorationColor: a(.3), textUnderlineOffset: 3, opacity: hover ? .75 : 1 },
+      person: { fontSize: fs }, file: { fontFamily: mono, fontSize: mob ? 12 : 11, color: a(.8) }
+    }[kind] || {};
+    const text = {
+      fontFamily: isChip ? mono : sans, fontSize: isChip ? (mob ? 12 : 10.5) : fs, fontWeight: numeric ? 500 : 400, fontVariantNumeric: 'tabular-nums',
+      color: isChip ? a(.8) : fg, whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box', display: 'block', minWidth: 0,
+      ...(isChip ? { padding: mob ? '5px 11px' : '3px 9px', borderRadius: 999, background: empty || err ? 'transparent' : a(.07), boxShadow: empty || err ? `inset 0 0 0 1px ${a(.2)}` : 'none' } : {}),
+      ...T,
+      ...(empty || load ? { color: a(.68), background: kind === 'highlight' ? 'transparent' : T.background } : {}),
+      ...(err && kind === 'relation' ? { color: a(.68), textDecoration: 'line-through' } : {})
+    };
+    const checked = kind === 'checkbox' && (p.on === true || p.on === 'true' || sel);
+    const bs = mob ? 18 : 12;
+    const box = { width: bs, height: bs, borderRadius: 3, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: inv, background: checked ? fg : 'transparent', boxShadow: checked ? 'none' : `inset 0 0 0 1.4px ${a(.68)}` };
+    const ring = focus ? { outline: '2px solid #A5C8D1', outlineOffset: 2 } : {};
+    const wrap = { display: 'inline-flex', alignItems: 'center', gap: 6, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, minHeight: mob ? 44 : 26, padding: isChip ? '0 2px' : '0 6px', borderRadius: 6, color: fg, background: sel ? a(.07) : hover && kind !== 'link' ? a(.05) : 'transparent', boxShadow: edit ? `inset 0 0 0 1.4px ${fg}` : 'none', ...ring, ...(dis ? { opacity: .4 } : {}) };
+    const NOTE = { relation: 'deleted · kept 710', date: 'not a date', time: 'not a time', link: 'can’t reach this', file: 'upload failed', person: 'no longer in this space' };
+    const noteText = err && p.note !== 'false' && p.note !== false ? (NOTE[kind] || (numeric ? 'not a number' : 'too long')) : '';
+    const areaC = { sage: '#648F7B', mist: '#A5C8D1', navy: ink ? '#A5C8D1' : '#12354E' }[p.color] || null;
+    const isMedia = kind === 'image' || kind === 'video';
+    const mw = mob ? 160 : 150, mh = Math.round(mw * .66);
+    const media = { position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, width: mw, height: mh, boxSizing: 'border-box', borderRadius: 14, background: empty ? 'transparent' : a(.07), boxShadow: empty ? `inset 0 0 0 1.4px ${a(.2)}` : sel || edit ? `0 0 0 2px ${fg}` : 'none', color: a(.8), ...ring, ...(dis ? { opacity: .4 } : {}) };
+    const MT = { rest: kind === 'video' ? 'video · 0:42' : 'image · 4:3', hover: 'replace', selected: kind === 'video' ? 'video · 0:42' : 'image · 4:3', editing: 'crop', empty: kind === 'video' ? 'drop a video' : 'drop an image', loading: 'uploading 62%', error: 'couldn’t load', disabled: 'image · 4:3', focus: 'image · 4:3' };
+    return {
+      isInline: !isMedia && kind !== 'divider', isMedia, isVideo: kind === 'video', isRule: kind === 'divider',
+      wrap, text, display, showText: !['checkbox', 'icon', 'dot'].includes(kind),
+      isBox: kind === 'checkbox', box, checked,
+      isAvatar: kind === 'person' && !empty, avatar: { width: mob ? 26 : 20, height: mob ? 26 : 20, borderRadius: 999, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: fg, color: inv, fontFamily: sans, fontSize: mob ? 11 : 9, fontWeight: 500 }, initials: v.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+      isFile: kind === 'file',
+      isGlyph: kind === 'icon', glyph: p.glyph ?? 'heart', glyphStyle: { display: 'inline-block', width: mob ? 20 : 16, height: mob ? 20 : 16, flex: 'none', background: 'currentColor', color: areaC || (empty ? a(.3) : fg) },
+      isDot: kind === 'dot', kindDot: { width: 7, height: 7, borderRadius: 2, flex: 'none', background: areaC || (sel ? fg : a(.5)) },
+      caret: edit, caretStyle: { display: 'inline-block', width: 1.5, height: (T.fontSize || fs) + 1, background: fg, marginLeft: -4, flex: 'none' },
+      hasNote: !!noteText, noteText, note: { fontFamily: mono, fontSize: 10.5, color: a(.68), whiteSpace: 'nowrap' },
+      isDue: (p.due === true || p.due === 'true') && kind === 'date', dueDot: { width: 7, height: 7, borderRadius: 2, background: '#D96629', flex: 'none' },
+      media, mediaText: MT[state] || MT.rest, mediaCap: { fontFamily: mono, fontSize: 10.5, color: a(.68) },
+      play: { width: 30, height: 30, borderRadius: 999, background: fg, color: inv, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingLeft: 2, boxSizing: 'border-box' },
+      hasMediaTag: false, mediaTag: {}, mediaTagText: '',
+      rule: { display: 'block', width: mob ? 280 : 200, height: 0, borderTop: `1px solid ${a(.09)}`, margin: '12px 0' }
+    };
+  }
+}
+</script>
+</body>
+</html>
