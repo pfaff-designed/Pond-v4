@@ -29,6 +29,7 @@ import {
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
+import { nextAvailableTitle, normalizeTitle, DuplicateTitleError } from './dedupe-title'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -189,36 +190,84 @@ export async function listPages(
 
 // ── Writes ───────────────────────────────────────────────────────────────────
 
+/**
+ * The `{id, title}` of every sibling under `parentId` (root when null) in a
+ * workspace — the scope the `pages_sibling_title_uniq` index guards (#84). Used
+ * to auto-suffix new titles and to detect rename collisions.
+ */
+async function siblingRows(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  workspace: string,
+  parentId: string | null
+): Promise<{ id: string; title: string }[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
+    .from('pages')
+    .select('id, title')
+    .eq('user_id', userId)
+    .eq('workspace', workspace)
+  q = parentId === null ? q.is('parent_id', null) : q.eq('parent_id', parentId)
+  const { data } = await q
+  return (data ?? []) as { id: string; title: string }[]
+}
+
 /** Create a page under a parent (or top-level when parentId is null/omitted). */
 export async function createPage(
   supabase: SupabaseClient<Database>,
   userId: string,
   input: CreatePageInput
 ): Promise<PondPage> {
+  const parentId = input.parentId ?? null
+  const workspace = input.workspace ?? 'main'
+  const desired = input.title ?? ''
   const insert = {
     user_id: userId,
-    parent_id: input.parentId ?? null,
+    parent_id: parentId,
     type: input.type ?? 'page',
-    title: input.title ?? '',
+    title: desired,
     blocks: input.blocks ?? [],
     props: input.props ?? {},
-    workspace: input.workspace ?? 'main',
+    workspace,
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).from('pages').insert(insert).select('id').single()
+  // Insert first with the caller's title — the common case has no collision, so
+  // the happy path stays a single write (blank/placeholder titles are exempt
+  // from the unique index entirely, #84). ONLY on a sibling-name violation
+  // (23505) do we read the siblings and auto-suffix (" 2", " 3", …) and retry,
+  // so programmatic creators (manual add, AI create_page, seeds) never fail on a
+  // duplicate name.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
+      .from('pages')
+      .insert(insert)
+      .select('id')
+      .single()
 
-  if (error || !data) throw new Error(error?.message ?? 'Failed to create page')
-
-  return {
-    id: data.id as string,
-    parentId: insert.parent_id,
-    type: insert.type,
-    title: insert.title,
-    blocks: insert.blocks as Block[],
-    props: toProps(insert.props),
-    order: 0,
+    if (!error && data) {
+      return {
+        id: data.id as string,
+        parentId: insert.parent_id,
+        type: insert.type,
+        title: insert.title,
+        blocks: insert.blocks as Block[],
+        props: toProps(insert.props),
+        order: 0,
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((error as any)?.code !== '23505' || attempt === 1) {
+      throw new Error(error?.message ?? 'Failed to create page')
+    }
+    const siblings = await siblingRows(supabase, userId, workspace, parentId)
+    insert.title = nextAvailableTitle(
+      desired || 'Untitled',
+      siblings.map((s) => s.title)
+    )
   }
+  /* c8 ignore next */
+  throw new Error('Failed to create page')
 }
 
 /**
@@ -239,19 +288,52 @@ export async function saveBlocks(
   if (error) throw new Error(error.message)
 }
 
-/** Rename a page. */
+/**
+ * Rename a page. A manual rename REJECTS a collision with an existing sibling
+ * (rather than silently suffixing the way {@link createPage} does, #84), throwing
+ * {@link DuplicateTitleError} for the caller to show inline. Two guards, in order:
+ *
+ *   1. A pre-check reads the target's sibling scope and throws on a case-
+ *      insensitive title clash (excluding the page itself) BEFORE the write — so
+ *      the rename is rejected even on a DB where the `pages_sibling_title_uniq`
+ *      index isn't present (e.g. migration 0009 not yet applied).
+ *   2. The 23505 mapping stays as the backstop for a race that slips between the
+ *      pre-check read and the update.
+ *
+ * Blank titles are exempt from the index, so clearing a title never collides —
+ * the pre-check is skipped for them.
+ */
 export async function updateTitle(
   supabase: SupabaseClient<Database>,
   id: string,
   title: string
 ): Promise<void> {
+  const normalized = normalizeTitle(title)
+  if (normalized !== '') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: self } = await (supabase as any)
+      .from('pages')
+      .select('user_id, workspace, parent_id')
+      .eq('id', id)
+      .maybeSingle()
+    if (self) {
+      const siblings = await siblingRows(supabase, self.user_id, self.workspace, self.parent_id)
+      const clashes = siblings.some((s) => s.id !== id && normalizeTitle(s.title) === normalized)
+      if (clashes) throw new DuplicateTitleError(title.trim())
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('pages')
     .update({ title, updated_at: new Date().toISOString() })
     .eq('id', id)
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((error as any).code === '23505') throw new DuplicateTitleError(title.trim() || 'Untitled')
+    throw new Error(error.message)
+  }
 }
 
 /**
