@@ -4,6 +4,14 @@
  * A relation property's value: the linked pages rendered as RelationChips, plus —
  * when `editable` — a bespoke title-search picker to add more (#20 slice 4).
  *
+ * NOT absorbed into PondMolecule (#95, decision documented per the spec): the
+ * molecule's `field-row` kind is one uppercase label + exactly ONE value atom —
+ * a bad fit for a relation value, which is a *list* of chips plus a functional
+ * search picker (state, refs, a menu). That puts this with the functional
+ * molecules (CommandPalette, SlashMenu), out of PondMolecule's presentational
+ * scope; it stays a thin delegator composing PondAtom through RelationChip.
+ * Its visual coverage lives in RelationValueField.stories (the organism host).
+ *
  * Presentational: the value (`string[]` of page-ids), the id→title map, and the
  * pickable `candidates` are all injected; a connected wrapper (slice 6) does the
  * fetching. Edits go out through `onChange` as a fresh `string[]` (addLink /

@@ -12,7 +12,7 @@
  */
 
 import { Fragment } from 'react'
-import { OverviewCard } from '@/components/molecules/OverviewCard'
+import { PondMolecule } from '@/components/molecules/PondMolecule'
 import type { OverviewCardModel } from '@/lib/pages/overview'
 
 /**
@@ -25,9 +25,36 @@ export function ChildrenGridLabel({
   children?: React.ReactNode
 }) {
   return (
-    <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint mb-3.5">
+    <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-mn-text/30 mb-3.5">
       {children}
     </div>
+  )
+}
+
+/**
+ * The interactive host around a `record-card` PondMolecule in stat mode (#95,
+ * the OverviewCard absorption): the whole card is one calm click target.
+ * ticket-41: hover lift + press-down settle, token-timed — the active state
+ * presses the card back to rest (a physical "click") so the tap reads as
+ * cause, not just a hover flourish. Reduced-motion still gets the visual
+ * change instantly (no travel is perceptible at the token durations).
+ */
+function OverviewCardButton({ card, onOpen }: { card: OverviewCardModel; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group block w-full cursor-pointer rounded-mn-card text-left outline-none transition-transform duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:-translate-y-px active:translate-y-0 active:scale-[0.994] active:duration-[var(--motion-instant)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b motion-reduce:transition-none"
+    >
+      <PondMolecule
+        kind="record-card"
+        title={card.title}
+        stat={card.stat}
+        sub={card.sub}
+        accent={card.accent}
+        className="transition-shadow duration-[var(--motion-settle)] group-hover:shadow-mn-md"
+      />
+    </button>
   )
 }
 
@@ -60,16 +87,7 @@ export function ChildrenGrid({
       <div className="grid grid-cols-2 gap-3.5">
         {cards.map((card) => (
           <Fragment key={card.id}>
-            {cell(
-              card,
-              <OverviewCard
-                title={card.title}
-                stat={card.stat}
-                sub={card.sub}
-                accent={card.accent}
-                onOpen={() => onOpenCard(card)}
-              />
-            )}
+            {cell(card, <OverviewCardButton card={card} onOpen={() => onOpenCard(card)} />)}
           </Fragment>
         ))}
       </div>

@@ -90,7 +90,7 @@ export function SavePickerModal({ isOpen, messages, onClose }: SavePickerModalPr
           <span className="text-sm font-semibold text-zinc-800">Save as…</span>
           {/* Fixed square + grid centering so the ✕ glyph sits optically centered
               on both axes (#60) — a bare inline button leaves the glyph's line box
-              floating off-center. Same pattern as TreeRow CRUD / BlockCanvas ×. */}
+              floating off-center. Same pattern as the rail-row CRUD / BlockCanvas ×. */}
           <button
             onClick={onClose}
             className="grid h-5 w-5 place-items-center rounded text-zinc-400 hover:text-zinc-700 text-sm leading-none"
