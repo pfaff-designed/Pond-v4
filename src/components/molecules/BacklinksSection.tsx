@@ -13,7 +13,7 @@
  */
 
 import { RelationChip } from '@/components/atoms/RelationChip'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import type { BacklinkGroup } from '@/lib/modules/view/compute-backlinks'
 
@@ -30,11 +30,11 @@ export function BacklinksSection({ groups, onOpen, className }: BacklinksSection
 
   return (
     <section aria-label="Linked from" className={className}>
-      <h2 className={cn(pressKickerClass, 'mb-3 text-press-muted')}>Linked from</h2>
+      <h2 className={cn(kickerClass, 'mb-3 text-mn-text-secondary')}>Linked from</h2>
       <div className="space-y-3">
         {groups.map((group) => (
           <div key={`${group.sourceCollectionId}:${group.propertyId}`}>
-            <p className="mb-1 font-mono text-xs text-press-faint">
+            <p className="mb-1 font-mono text-xs text-mn-text-faint">
               {group.sourceCollectionTitle} · {group.propertyName}
             </p>
             <div className="flex flex-wrap gap-1">

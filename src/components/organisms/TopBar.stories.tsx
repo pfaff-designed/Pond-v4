@@ -9,7 +9,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   decorators: [
     (Story) => (
-      <div className="h-40 bg-press-paper">
+      <div className="h-40 bg-mn-surface">
         <Story />
       </div>
     ),

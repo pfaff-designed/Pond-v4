@@ -27,7 +27,7 @@ import { useId, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { ModuleView } from '@/lib/modules/renderers'
 import { stampDisplayIds } from '@/lib/modules/preview'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
@@ -96,20 +96,20 @@ export function CreatePageProposalCard({
       role="group"
       aria-label={`Proposed new page: ${title}`}
       className={cn(
-        'press-letter overflow-hidden rounded-mn-inner text-left',
+        'mn-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
     >
       {/* Header — "New page" kicker + type/kind tag */}
-      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className={pressKickerClass}>New page · {label}</span>
+      <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
+        <span className={kickerClass}>New page · {label}</span>
       </div>
 
       {/* Title + optional note — the title set in the display serif, like a page head */}
       <div className="px-3 pt-2.5">
         <div className="font-display text-lg leading-tight text-foreground">{title}</div>
-        {reason && <p className="mt-0.5 font-serif text-xs italic text-press-muted">{reason}</p>}
+        {reason && <p className="mt-0.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
       </div>
 
       {/* Scaffolded block preview. Height-bounded with internal scroll (ticket-24):
@@ -117,7 +117,7 @@ export function CreatePageProposalCard({
           and Create/Dismiss out of the auto-grown drawer — title + preview + picker
           + actions always fit together; only the preview itself scrolls. */}
       {previewBlocks.length > 0 && (
-        <div className="mx-3 mt-2 max-h-[300px] space-y-2 overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 py-2 text-sm">
+        <div className="mx-3 mt-2 max-h-[300px] space-y-2 overflow-y-auto rounded-mn-row bg-mn-wash px-3 py-2 text-sm">
           {previewBlocks.map((b) => (
             <ModuleView key={b.id} type={b.type} data={b} />
           ))}
@@ -126,7 +126,7 @@ export function CreatePageProposalCard({
 
       {/* Destination picker — the user can correct the inferred placement */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
-        <label htmlFor={parentSelectId} className="text-xs text-press-muted">
+        <label htmlFor={parentSelectId} className="text-xs text-mn-text-secondary">
           Save to
         </label>
         <select
@@ -135,7 +135,7 @@ export function CreatePageProposalCard({
           value={selectedParentId}
           disabled={resolved}
           onChange={(e) => onParentChange(e.target.value)}
-          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-mn-line bg-mn-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-mn-text disabled:opacity-60"
         >
           <option value={TOP_LEVEL_VALUE}>Top level</option>
           {parentOptions.map((p) => (
@@ -151,7 +151,7 @@ export function CreatePageProposalCard({
       {resolved ? (
         <div
           aria-live="polite"
-          className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
+          className="mt-2.5 border-t border-mn-hair px-3 py-1.5 font-serif text-xs italic text-mn-text-secondary"
         >
           {status === 'accepted' ? 'Page created' : 'Dismissed'}
         </div>

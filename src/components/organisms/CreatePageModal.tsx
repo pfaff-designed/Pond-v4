@@ -85,7 +85,7 @@ export function CreatePageModalView({
           className={`${dialogPopupClass} w-[min(26rem,calc(100vw-2rem))]`}
         >
           <Dialog.Title className="text-base font-semibold text-foreground">New page</Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-press-muted">
+          <Dialog.Description className="mt-1 text-sm text-mn-text-secondary">
             Give it a name and choose where it lives.
           </Dialog.Description>
 
@@ -102,18 +102,18 @@ export function CreatePageModalView({
               onChange={(e) => onTitleChange(e.target.value)}
               placeholder="Untitled"
               aria-label="Page title"
-              className="w-full text-lg font-semibold text-foreground outline-none bg-transparent border-b border-press-line pb-1.5 placeholder:text-press-faint focus:border-press-accent transition-colors"
+              className="w-full text-lg font-semibold text-foreground outline-none bg-transparent border-b border-mn-line pb-1.5 placeholder:text-mn-text-faint focus:border-mn-text transition-colors"
             />
 
             <label className="flex flex-col gap-1.5">
-              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-press-faint">
+              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-mn-text-faint">
                 Save to
               </span>
               <select
                 value={parentValue}
                 onChange={(e) => onParentChange(e.target.value)}
                 aria-label="Destination"
-                className="w-full rounded-lg border border-press-line bg-press-paper px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-press-accent transition-colors"
+                className="w-full rounded-lg border border-mn-line bg-mn-surface px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-mn-text transition-colors"
               >
                 <option value={TOP_LEVEL_VALUE}>Life · top level</option>
                 {parentOptions.map((p) => (

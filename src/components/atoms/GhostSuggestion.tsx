@@ -11,7 +11,7 @@
  * The suggestion text is sourced from the same suggest_followups set as the chip
  * row (t39) — no second suggestion channel.
  *
- * Reduced-motion safe: press-arrive is guarded by the project's global CSS
+ * Reduced-motion safe: mn-arrive is guarded by the project's global CSS
  * `@media (prefers-reduced-motion: reduce)` override, so no extra checks needed.
  */
 
@@ -62,14 +62,14 @@ export function GhostSuggestion({
       aria-live="polite"
       aria-label={`Ghost suggestion: ${suggestion}`}
       className={cn(
-        'press-arrive pointer-events-none absolute inset-x-0 top-0 px-0 py-1.5',
-        'font-mono lowercase tracking-[0.1em] text-sm text-press-faint/60 select-none truncate',
-        '@media (prefers-reduced-motion: reduce) press-arrive',
+        'mn-arrive pointer-events-none absolute inset-x-0 top-0 px-0 py-1.5',
+        'font-mono lowercase tracking-[0.1em] text-sm text-mn-text-faint/60 select-none truncate',
+        '@media (prefers-reduced-motion: reduce) mn-arrive',
         className
       )}
     >
       {suggestion}
-      <span className="ml-2 rounded-mn-chrome px-1 text-[10px] text-press-faint/40 align-middle shadow-[inset_0_0_0_1px_var(--press-hair)]">
+      <span className="ml-2 rounded-mn-chrome px-1 text-[10px] text-mn-text-faint/40 align-middle shadow-[inset_0_0_0_1px_var(--mn-hair)]">
         Tab
       </span>
     </span>

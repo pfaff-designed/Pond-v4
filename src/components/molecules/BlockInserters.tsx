@@ -33,7 +33,7 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
     <div className="group relative h-4 flex items-center" role="separator">
       <button
         ref={setBtnEl}
-        className="absolute left-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-press-muted hover:text-press-accent text-sm w-4 h-4 flex items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
+        className="absolute left-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-mn-text-secondary hover:text-mn-text text-sm w-4 h-4 flex items-center justify-center rounded outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
         aria-label="Insert block"
         onClick={() => setOpen(true)}
       >
@@ -41,7 +41,7 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
       </button>
       <span
         aria-hidden
-        className="w-full h-px bg-press-hair opacity-0 group-hover:opacity-50 transition-opacity"
+        className="w-full h-px bg-mn-hair opacity-0 group-hover:opacity-50 transition-opacity"
       />
       {open && (
         <SlashMenu
@@ -69,7 +69,7 @@ export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="mt-4">
       <button
-        className="font-mono lowercase tracking-[0.1em] text-xs text-press-muted hover:text-press-body transition-colors"
+        className="font-mono lowercase tracking-[0.1em] text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
         aria-label="Add a block"
         onClick={onAdd}
       >

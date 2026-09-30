@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { FollowupChips } from './FollowupChips'
 
 export type QuestionAnswerVia = 'option' | 'free'
@@ -54,20 +54,20 @@ export function QuestionCard({
       role="group"
       aria-label={`Question: ${question}`}
       className={cn(
-        'press-arrive rounded-mn-inner bg-press-accent-wash/60 px-4 py-3 shadow-mn-sm',
+        'mn-arrive rounded-mn-inner bg-mn-wash/60 px-4 py-3 shadow-mn-sm',
         className
       )}
     >
       <div className="mb-1.5 flex items-center gap-2">
-        <span className={pressKickerClass}>{branch ? `Decision · ${branch}` : 'Decision'}</span>
-        <span aria-hidden className="h-px flex-1 bg-press-hair" />
+        <span className={kickerClass}>{branch ? `Decision · ${branch}` : 'Decision'}</span>
+        <span aria-hidden className="h-px flex-1 bg-mn-hair" />
       </div>
 
-      <p className="font-serif text-[0.95rem] leading-[1.5] text-press-body">{question}</p>
+      <p className="font-serif text-[0.95rem] leading-[1.5] text-mn-text-meta">{question}</p>
 
       {resolved ? (
         // Inert once answered — the branch is closed; keep the audit line.
-        <p className="mt-2 font-serif text-xs italic text-press-muted">You answered: {answer}</p>
+        <p className="mt-2 font-serif text-xs italic text-mn-text-secondary">You answered: {answer}</p>
       ) : (
         <div className="mt-2.5 space-y-2.5">
           <FollowupChips
@@ -89,14 +89,14 @@ export function QuestionCard({
               onChange={(e) => setFree(e.target.value)}
               placeholder="…or answer in your own words"
               aria-label="Free answer"
-              className="flex-1 border-0 border-b border-press-line bg-transparent px-0 py-1 font-serif text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent"
+              className="flex-1 border-0 border-b border-mn-line bg-transparent px-0 py-1 font-serif text-sm text-mn-text-meta outline-none transition-colors placeholder:text-mn-text-faint focus:border-mn-text"
             />
             <button
               type="submit"
               disabled={!free.trim()}
               className={cn(
-                pressKickerClass,
-                'pb-1 text-press-accent transition-colors hover:text-press-ink disabled:opacity-40'
+                kickerClass,
+                'pb-1 text-mn-text transition-colors hover:text-mn-text disabled:opacity-40'
               )}
             >
               Answer

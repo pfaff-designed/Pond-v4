@@ -20,7 +20,7 @@ import { seriesNames } from './data'
  *  the block eyebrow is the mono machine-surface voice (lowercase, tight
  *  tracking) in muted ink — the label over a data block. */
 export const KICKER =
-  'font-mono text-[11px] lowercase tracking-[0.1em] text-press-muted'
+  'font-mono text-[11px] lowercase tracking-[0.1em] text-mn-text-secondary'
 
 export interface ChartCardProps {
   title?: string
@@ -56,12 +56,12 @@ export function ChartCard({
   const empty = isEmpty(points)
 
   return (
-    <div className="text-sm text-press-ink">
+    <div className="text-sm text-mn-text">
       {title && <div className={KICKER}>{title}</div>}
-      {caption && <div className="mt-0.5 text-xs text-press-muted">{caption}</div>}
+      {caption && <div className="mt-0.5 text-xs text-mn-text-secondary">{caption}</div>}
 
       {empty ? (
-        <div className="mt-2 rounded-mn-inner bg-press-accent-wash py-6 text-center text-xs text-press-muted">
+        <div className="mt-2 rounded-mn-inner bg-mn-wash py-6 text-center text-xs text-mn-text-secondary">
           No data yet
         </div>
       ) : (
@@ -76,7 +76,7 @@ export function ChartCard({
                   names.map((name, i) => (
                     <span
                       key={name}
-                      className="flex items-center gap-1.5 text-[11px] text-press-muted"
+                      className="flex items-center gap-1.5 text-[11px] text-mn-text-secondary"
                     >
                       <span
                         aria-hidden

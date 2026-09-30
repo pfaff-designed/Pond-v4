@@ -22,9 +22,9 @@ export function TextDiffer({ before, after }: { before: TextBlock | null; after:
           <Markdown variant="terminal">{before.content}</Markdown>
         </div>
       ) : (
-        <span className="block font-serif text-xs italic text-press-faint">New content</span>
+        <span className="block font-serif text-xs italic text-mn-text-faint">New content</span>
       )}
-      <div className="text-press-body">
+      <div className="text-mn-text-meta">
         <Markdown variant="terminal">{after.content}</Markdown>
       </div>
     </div>

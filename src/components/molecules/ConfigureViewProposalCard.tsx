@@ -21,7 +21,7 @@
 
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 import type { ViewMode, ViewSort, FilterOp } from '@/lib/modules/view/schema'
@@ -130,28 +130,28 @@ export function ConfigureViewProposalCard({
       role="group"
       aria-label="Proposed view"
       className={cn(
-        'press-letter overflow-hidden rounded-mn-inner text-left',
+        'mn-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
     >
       {/* Header — "New view" kicker + the chosen mode */}
-      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className={pressKickerClass}>New view · {MODE_LABEL[mode]}</span>
+      <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
+        <span className={kickerClass}>New view · {MODE_LABEL[mode]}</span>
       </div>
 
       {/* The mode, set as the display-serif line. */}
-      <p className="px-3 pt-2.5 font-serif text-sm text-press-body">{MODE_LABEL[mode]}</p>
+      <p className="px-3 pt-2.5 font-serif text-sm text-mn-text-meta">{MODE_LABEL[mode]}</p>
 
-      {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-press-muted">{reason}</p>}
+      {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
 
       {/* Config preview — one hairline row per proposed clause: label + value. */}
       {clauses.length > 0 && (
-        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 text-sm">
+        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-mn-hair overflow-y-auto rounded-mn-row bg-mn-wash px-3 text-sm">
           {clauses.map((c) => (
             <div key={c.label} className="flex items-baseline justify-between gap-3 py-1.5">
-              <dt className={cn(pressKickerClass, 'text-press-muted')}>{c.label}</dt>
-              <dd className="text-right font-serif text-press-body">{c.value}</dd>
+              <dt className={cn(kickerClass, 'text-mn-text-secondary')}>{c.label}</dt>
+              <dd className="text-right font-serif text-mn-text-meta">{c.value}</dd>
             </div>
           ))}
         </dl>
@@ -159,7 +159,7 @@ export function ConfigureViewProposalCard({
 
       {/* Destination picker — which collection this view is configured on */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
-        <label htmlFor={targetSelectId} className="text-xs text-press-muted">
+        <label htmlFor={targetSelectId} className="text-xs text-mn-text-secondary">
           {destinationLabel}
         </label>
         <select
@@ -168,7 +168,7 @@ export function ConfigureViewProposalCard({
           value={selectedTargetId}
           disabled={resolved}
           onChange={(e) => onTargetChange(e.target.value)}
-          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-mn-line bg-mn-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-mn-text disabled:opacity-60"
         >
           {/* No collection resolved yet (target not in the list): a disabled hint. */}
           {!targetOptions.some((o) => o.id === selectedTargetId) && (
@@ -189,7 +189,7 @@ export function ConfigureViewProposalCard({
       {resolved ? (
         <div
           aria-live="polite"
-          className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
+          className="mt-2.5 border-t border-mn-hair px-3 py-1.5 font-serif text-xs italic text-mn-text-secondary"
         >
           {status === 'accepted'
             ? replacedActiveView

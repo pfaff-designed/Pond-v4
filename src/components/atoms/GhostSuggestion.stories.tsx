@@ -48,7 +48,7 @@ function Harness({
         rows={2}
         aria-describedby="ghost-hint"
         aria-label="Composer input"
-        className="relative z-10 w-full resize-none bg-transparent font-mono text-sm outline-none border-b border-press-line py-1.5"
+        className="relative z-10 w-full resize-none bg-transparent font-mono text-sm outline-none border-b border-mn-line py-1.5"
       />
     </div>
   )
@@ -158,7 +158,7 @@ export const HiddenWhenInputFilled: Story = {
           onChange={(e) => setInput(e.target.value)}
           rows={2}
           aria-label="Composer input"
-          className="relative z-10 w-full resize-none bg-transparent font-mono text-sm outline-none border-b border-press-line py-1.5"
+          className="relative z-10 w-full resize-none bg-transparent font-mono text-sm outline-none border-b border-mn-line py-1.5"
         />
       </div>
     )

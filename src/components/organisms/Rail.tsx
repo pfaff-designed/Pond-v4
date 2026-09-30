@@ -112,7 +112,7 @@ function Chevron({ open }: { open: boolean }) {
       viewBox="0 0 10 10"
       fill="none"
       aria-hidden
-      className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-press)] ${
+      className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
         open ? 'rotate-90' : ''
       }`}
     >

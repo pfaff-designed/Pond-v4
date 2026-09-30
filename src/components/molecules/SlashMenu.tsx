@@ -118,7 +118,7 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
         // MN PondPicker: the picker is a card-level floating surface — outer
         // radius 20 (rounded-mn-card), separated by shadow not a hard frame
         // ("paper-not-frames"), with the sans-row list inset by p-1 padding.
-        'motion-menu bg-press-paper rounded-mn-card shadow-mn-lg overflow-hidden',
+        'motion-menu bg-mn-surface rounded-mn-card shadow-mn-lg overflow-hidden',
         // Portal mode owns its own fixed box (w-72, high z); inline mode takes
         // the caller's positioning className.
         anchorEl ? 'fixed z-[100] w-72' : className
@@ -136,13 +136,13 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
         }}
         onKeyDown={handleKeyDown}
         placeholder="filter…"
-        className="w-full border-b border-press-hair bg-transparent font-mono lowercase tracking-[0.1em] text-sm px-3 pt-2.5 pb-3 outline-none placeholder:text-press-faint"
+        className="w-full border-b border-mn-hair bg-transparent font-mono lowercase tracking-[0.1em] text-sm px-3 pt-2.5 pb-3 outline-none placeholder:text-mn-text-faint"
         aria-label="Filter blocks"
       />
       <div ref={itemsRef} className="overflow-y-auto max-h-64 p-1.5 flex flex-col gap-0.5">
         {filteredItems.length === 0 ? (
           // MN note voice: machine-surface message is mono lowercase, muted tier.
-          <p className="px-3 py-2 font-mono lowercase tracking-[0.1em] text-xs text-press-muted">No blocks match</p>
+          <p className="px-3 py-2 font-mono lowercase tracking-[0.1em] text-xs text-mn-text-secondary">No blocks match</p>
         ) : (
           filteredItems.map((item, i) => {
             const isActive = i === clampedIndex
@@ -152,15 +152,15 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
                 className={cn(
                   // MN sans-row voice: rounded-mn-inner (14) rows, sans UI type
                   // for name + description, accent-wash on the active/hover row.
-                  'w-full text-left rounded-mn-inner px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-press-accent',
-                  isActive ? 'bg-press-accent-soft' : 'hover:bg-press-accent-wash'
+                  'w-full text-left rounded-mn-inner px-3 py-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                  isActive ? 'bg-mn-selected-fill' : 'hover:bg-mn-wash'
                 )}
                 data-active={isActive ? 'true' : undefined}
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => onSelect(item)}
               >
                 <div className="text-sm font-medium">{item.name}</div>
-                <div className="text-xs text-press-muted mt-0.5">{item.description}</div>
+                <div className="text-xs text-mn-text-secondary mt-0.5">{item.description}</div>
               </button>
             )
           })

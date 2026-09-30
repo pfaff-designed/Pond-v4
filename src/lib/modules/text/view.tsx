@@ -81,7 +81,7 @@ export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock
       }}
     >
       {isEmpty ? (
-        <span className={`${READING_PROSE_CLASS} text-press-faint`}>Write something…</span>
+        <span className={`${READING_PROSE_CLASS} text-mn-text-faint`}>Write something…</span>
       ) : (
         <Markdown variant="reading">{data.content}</Markdown>
       )}

@@ -85,18 +85,18 @@ export function ProposalGroup({
       className={cn('space-y-2', className)}
     >
       {targetMissing ? (
-        <div className="font-serif text-xs font-medium italic text-press-rust">
+        <div className="font-serif text-xs font-medium italic text-raw-red">
           Target page not found — this proposal can’t be applied.
         </div>
       ) : (
         targetName && (
-          <div className="flex items-center gap-2 text-xs font-medium text-press-muted">
+          <div className="flex items-center gap-2 text-xs font-medium text-mn-text-secondary">
             <span>→ {targetName}</span>
             {onOpenTarget && (
               <button
                 type="button"
                 onClick={onOpenTarget}
-                className="text-press-accent underline underline-offset-2 hover:decoration-press-accent"
+                className="text-mn-text underline underline-offset-2 hover:decoration-mn-text"
               >
                 open page
               </button>
@@ -105,8 +105,8 @@ export function ProposalGroup({
         )
       )}
       {showGroupBar && (
-        <div className="flex items-center justify-between gap-4 rounded-mn-inner bg-press-accent-wash px-3 py-1.5">
-          <span className="whitespace-nowrap text-xs font-medium text-press-muted">
+        <div className="flex items-center justify-between gap-4 rounded-mn-inner bg-mn-wash px-3 py-1.5">
+          <span className="whitespace-nowrap text-xs font-medium text-mn-text-secondary">
             {changes.length} proposed changes
           </span>
           <ProposalActions
@@ -143,7 +143,7 @@ export function ProposalGroup({
       {/* Fix-1 (F1a): honest skip notice. An accepted change that failed the
           accept-time gate is called out with its reason — never a silent no-op. */}
       {skippedCount > 0 && (
-        <div role="note" className="space-y-0.5 font-serif text-xs italic text-press-rust">
+        <div role="note" className="space-y-0.5 font-serif text-xs italic text-raw-red">
           {skippedReasons.length > 0 ? (
             skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
           ) : (

@@ -11,7 +11,7 @@ const meta = {
     // `relative` because the viewport is absolutely positioned within its
     // nearest positioned ancestor (the app's content row; here, this frame).
     (Story) => (
-      <div className="relative h-screen bg-press-paper">
+      <div className="relative h-screen bg-mn-surface">
         <UndoToastViewport>
           <Story />
         </UndoToastViewport>

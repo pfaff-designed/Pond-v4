@@ -103,7 +103,7 @@ export function RelationValue({
           type="button"
           aria-label="Link a page"
           onClick={() => (open ? close() : setOpen(true))}
-          className="rounded-mn-pill border border-dashed border-press-line px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-press-muted transition-colors hover:border-press-accent/50 hover:text-press-body"
+          className="rounded-mn-pill border border-dashed border-mn-line px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-mn-text-secondary transition-colors hover:border-mn-text/50 hover:text-mn-text-meta"
         >
           + link
         </button>
@@ -113,7 +113,7 @@ export function RelationValue({
         <div
           role="menu"
           aria-label="Page picker"
-          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-mn-inner bg-press-paper shadow-mn-lg"
+          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-mn-inner bg-mn-surface shadow-mn-lg"
         >
           <input
             ref={inputRef}
@@ -127,11 +127,11 @@ export function RelationValue({
             }}
             placeholder="search pages…"
             aria-label="Search pages to link"
-            className="w-full border-b border-press-hair bg-transparent px-3 py-2 font-mono lowercase tracking-[0.1em] text-sm outline-none placeholder:text-press-faint"
+            className="w-full border-b border-mn-hair bg-transparent px-3 py-2 font-mono lowercase tracking-[0.1em] text-sm outline-none placeholder:text-mn-text-faint"
           />
           <div className="max-h-64 overflow-y-auto p-1">
             {options.length === 0 ? (
-              <p className="px-3 py-2 text-sm italic text-press-muted">No pages match</p>
+              <p className="px-3 py-2 text-sm italic text-mn-text-secondary">No pages match</p>
             ) : (
               options.map((c) => (
                 <button
@@ -139,7 +139,7 @@ export function RelationValue({
                   type="button"
                   role="menuitem"
                   onClick={() => select(c.id)}
-                  className="block w-full truncate rounded-mn-row px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-press-accent-wash focus-visible:bg-press-accent-wash"
+                  className="block w-full truncate rounded-mn-row px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-mn-wash focus-visible:bg-mn-wash"
                 >
                   {c.title}
                 </button>

@@ -26,12 +26,12 @@ export function HeatmapView({ data }: ModuleViewProps<HeatmapBlock>) {
   const grid = useMemo(() => toHeatmapGrid(data.cells ?? []), [data.cells])
 
   return (
-    <div className="text-sm text-press-ink">
+    <div className="text-sm text-mn-text">
       {data.title && <div className={KICKER}>{data.title}</div>}
-      {data.caption && <div className="mt-0.5 text-xs text-press-muted">{data.caption}</div>}
+      {data.caption && <div className="mt-0.5 text-xs text-mn-text-secondary">{data.caption}</div>}
 
       {grid === null ? (
-        <div className="mt-2 rounded-mn-inner bg-press-accent-wash py-6 text-center text-xs text-press-muted">
+        <div className="mt-2 rounded-mn-inner bg-mn-wash py-6 text-center text-xs text-mn-text-secondary">
           No data yet
         </div>
       ) : (

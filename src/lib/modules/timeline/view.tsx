@@ -51,12 +51,12 @@ export function TimelineView({ data }: ModuleViewProps<TimelineBlock>) {
   const ticks = empty ? [] : buildTicks(rangeStart!, totalDays, trackPx)
 
   return (
-    <div className="text-sm text-press-ink">
+    <div className="text-sm text-mn-text">
       {data.title && <div className={KICKER}>{data.title}</div>}
-      {data.caption && <div className="mt-0.5 text-xs text-press-muted">{data.caption}</div>}
+      {data.caption && <div className="mt-0.5 text-xs text-mn-text-secondary">{data.caption}</div>}
 
       {empty ? (
-        <div className="mt-2 rounded-mn-inner bg-press-accent-wash py-6 text-center text-xs text-press-muted">
+        <div className="mt-2 rounded-mn-inner bg-mn-wash py-6 text-center text-xs text-mn-text-secondary">
           No data yet
         </div>
       ) : (
@@ -66,7 +66,7 @@ export function TimelineView({ data }: ModuleViewProps<TimelineBlock>) {
             {ticks.map((t) => (
               <span
                 key={t.iso}
-                className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-press-muted tabular-nums"
+                className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-mn-text-secondary tabular-nums"
                 style={{ left: `${t.left}%` }}
               >
                 {formatTick(t.iso)}
@@ -83,7 +83,7 @@ export function TimelineView({ data }: ModuleViewProps<TimelineBlock>) {
               const span = startIso === endIso ? startIso : `${startIso} – ${endIso}`
               return (
                 <li key={id} className="flex items-center gap-3">
-                  <span className="w-40 shrink-0 truncate text-xs font-medium text-press-ink">
+                  <span className="w-40 shrink-0 truncate text-xs font-medium text-mn-text">
                     {label || 'Untitled'}
                   </span>
                   <span ref={i === 0 ? measureTrack : undefined} className="relative h-5 flex-1">
@@ -92,7 +92,7 @@ export function TimelineView({ data }: ModuleViewProps<TimelineBlock>) {
                       <span
                         key={t.iso}
                         aria-hidden
-                        className="absolute top-0 bottom-0 border-l border-press-hair"
+                        className="absolute top-0 bottom-0 border-l border-mn-hair"
                         style={{ left: `${t.left}%` }}
                       />
                     ))}

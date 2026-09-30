@@ -14,14 +14,14 @@ import {
 const sampleFooter = (
   <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
     <div className="mx-auto w-full max-w-2xl px-8">
-      <div className="border-t border-press-hair">
+      <div className="border-t border-mn-hair">
         <div className="flex items-end gap-4 py-3">
           <textarea
             placeholder="Talk to Pond…"
             rows={2}
-            className="flex-1 resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono text-sm"
+            className="flex-1 resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono text-sm"
           />
-          <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-accent">
+          <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-mn-text">
             Send
           </button>
         </div>
@@ -35,7 +35,7 @@ const sampleFooter = (
 const sampleBody = (
   <div className="flex-1 overflow-y-auto py-4" style={{ paddingLeft: RAIL_WIDTH_PX }}>
     <div className="mx-auto w-full max-w-2xl px-8">
-      <p className="font-serif text-sm italic text-press-faint">Start a conversation…</p>
+      <p className="font-serif text-sm italic text-mn-text-faint">Start a conversation…</p>
     </div>
   </div>
 )
@@ -153,7 +153,7 @@ export const ColumnConfined: Story = {
     await expect(card).not.toHaveClass('border')
     await expect(card).not.toHaveClass('shadow-sm')
     // The header no longer carries the accent wash.
-    await expect(section.querySelector('[class*="bg-press-accent-wash"]')).toBeNull()
+    await expect(section.querySelector('[class*="bg-mn-wash"]')).toBeNull()
     // Context label is still readable.
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Life')).toBeInTheDocument()

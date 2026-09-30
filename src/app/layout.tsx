@@ -10,7 +10,7 @@ import './globals.css'
 //
 // PP Neue Montreal — sans: titles, labels, rail, tables, numbers, answers.
 const sans = localFont({
-  variable: '--font-press-sans',
+  variable: '--font-mn-sans',
   display: 'swap',
   src: [
     { path: './fonts/PPNeueMontreal-Regular.otf', weight: '400', style: 'normal' },
@@ -23,7 +23,7 @@ const sans = localFont({
 // PP Editorial New — serif: prose + display. ONLY 200 (Ultralight) and 800
 // (Ultrabold), each with an italic. No 400 face exists to fall back on.
 const serif = localFont({
-  variable: '--font-press-serif',
+  variable: '--font-mn-serif',
   display: 'swap',
   src: [
     { path: './fonts/PPEditorialNew-Ultralight.otf', weight: '200', style: 'normal' },
@@ -36,7 +36,7 @@ const serif = localFont({
 // PP Neue Montreal Mono — the machine surface: composer, palette, @-picker,
 // diff cards, provenance chips. Set lowercase with tight letterspacing.
 const mono = localFont({
-  variable: '--font-press-mono',
+  variable: '--font-mn-mono',
   display: 'swap',
   src: [
     { path: './fonts/PPNeueMontrealMono-Regular.otf', weight: '400', style: 'normal' },

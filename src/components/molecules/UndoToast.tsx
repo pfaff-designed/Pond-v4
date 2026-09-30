@@ -46,14 +46,14 @@ export function UndoToast({
     <div
       role="status"
       aria-live="polite"
-      className="motion-toast pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-mn-card bg-press-ink px-4 py-2.5 text-sm text-press-paper shadow-mn-lg"
+      className="motion-toast pointer-events-auto relative flex items-center gap-3 overflow-hidden rounded-mn-card bg-mn-text px-4 py-2.5 text-sm text-mn-surface shadow-mn-lg"
     >
       <span className="truncate">{message}</span>
       {onUndo && (
         <button
           type="button"
           onClick={onUndo}
-          className="ml-1 flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
+          className="ml-1 flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
         >
           Undo
         </button>
@@ -62,7 +62,7 @@ export function UndoToast({
         <button
           type="button"
           onClick={onAction}
-          className="flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-press-paper underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-press-paper/60"
+          className="flex-shrink-0 rounded-mn-chrome px-2 py-0.5 font-medium text-mn-surface underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-mn-surface/60"
         >
           {actionLabel}
         </button>
@@ -75,7 +75,7 @@ export function UndoToast({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-mn-chrome leading-none text-press-paper/50 outline-none hover:text-press-paper focus-visible:ring-2 focus-visible:ring-press-paper/60"
+        className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-mn-chrome leading-none text-mn-surface/50 outline-none hover:text-mn-surface focus-visible:ring-2 focus-visible:ring-mn-surface/60"
       >
         ✕
       </button>
@@ -83,7 +83,7 @@ export function UndoToast({
       {durationMs !== undefined && (
         <span
           aria-hidden
-          className="absolute bottom-0 left-0 h-0.5 bg-press-paper/40"
+          className="absolute bottom-0 left-0 h-0.5 bg-mn-surface/40"
           style={{
             animation: `undo-toast-countdown ${durationMs}ms linear forwards`,
           }}

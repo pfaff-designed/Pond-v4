@@ -153,7 +153,7 @@ export function ContentWidthHandle({
       {/* The grip pill — the terminal drawer's affordance rotated vertical.
           Sticky so it stays in view while a long page scrolls under it; quiet
           until hover/focus, then the Press accent. */}
-      <span className="sticky top-[45%] h-10 w-1 rounded-full bg-press-muted/40 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
+      <span className="sticky top-[45%] h-10 w-1 rounded-full bg-mn-text-secondary/40 group-hover:bg-mn-text group-focus:bg-mn-text transition-colors" />
     </div>
   )
 }

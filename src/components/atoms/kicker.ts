@@ -6,5 +6,5 @@
  * tracking can be tuned in one place.
  */
 
-export const pressKickerClass =
-  'text-[0.65rem] font-medium uppercase tracking-[0.14em] text-press-muted'
+export const kickerClass =
+  'text-[0.65rem] font-medium uppercase tracking-[0.14em] text-mn-text-secondary'

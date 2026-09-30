@@ -237,7 +237,7 @@ export function DocumentPanel() {
   }
   if (isLoading || !page) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-press-faint">
+      <div className="h-full flex items-center justify-center text-sm text-mn-text-faint">
         Loading…
       </div>
     )
@@ -283,14 +283,14 @@ export function DocumentPanel() {
         <Breadcrumb crumbs={crumbs} onNavigate={navigateCrumb} />
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
-            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-press-faint"
+            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-faint"
             value={viewTitle}
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
           />
           <span
-            className="font-mono lowercase tracking-[0.1em] text-[11px] text-press-faint flex-shrink-0"
+            className="font-mono lowercase tracking-[0.1em] text-[11px] text-mn-text-faint flex-shrink-0"
             aria-live="polite"
           >
             {saved ? 'saved' : 'saving…'}
@@ -302,7 +302,7 @@ export function DocumentPanel() {
         {(() => {
           const propSchema = readSchema(page.props)
           return propSchema ? (
-            <div className="mb-6 border-b border-press-hair pb-6">
+            <div className="mb-6 border-b border-mn-hair pb-6">
               <PropertyInspector
                 schema={propSchema}
                 values={readValues(page.props)}
@@ -328,7 +328,7 @@ export function DocumentPanel() {
             sub-pages read as a quiet index beneath them (ticket-22). Collapses to
             nothing when the node has no children. */}
         {cards.length > 0 && (
-          <div className="mt-12 border-t border-press-hair pt-6">
+          <div className="mt-12 border-t border-mn-hair pt-6">
             <ChildrenGrid cards={cards} onOpenCard={openCard} />
           </div>
         )}
@@ -340,7 +340,7 @@ export function DocumentPanel() {
         <BacklinksPanel
           targetId={page.id}
           targetCollectionId={page.type === ROW_TYPE ? page.parentId : null}
-          className="mt-12 border-t border-press-hair pt-6"
+          className="mt-12 border-t border-mn-hair pt-6"
         />
       </div>
     </div>

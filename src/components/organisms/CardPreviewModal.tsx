@@ -24,7 +24,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Dialog } from '@base-ui/react/dialog'
 import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog-chrome'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { ModuleView } from '@/lib/modules/renderers'
 import { usePageLinks } from '@/lib/modules/page-link/context'
@@ -67,18 +67,18 @@ export function CardPreviewModalView({
           aria-modal="true"
           className={`${dialogPopupClass} w-[min(34rem,calc(100vw-2rem))]`}
         >
-          <span className={pressKickerClass}>Card preview</span>
+          <span className={kickerClass}>Card preview</span>
           <Dialog.Title className="mt-1 text-base font-semibold text-foreground">
             {title || 'Untitled'}
           </Dialog.Title>
 
           <div className="mt-4">
             {isLoading ? (
-              <p className="text-sm text-press-muted">Loading preview…</p>
+              <p className="text-sm text-mn-text-secondary">Loading preview…</p>
             ) : missing ? (
-              <p className="text-sm text-press-muted">This card doesn’t have a page to preview.</p>
+              <p className="text-sm text-mn-text-secondary">This card doesn’t have a page to preview.</p>
             ) : blocks && blocks.length === 0 ? (
-              <p className="text-sm text-press-muted">This page has no content yet.</p>
+              <p className="text-sm text-mn-text-secondary">This page has no content yet.</p>
             ) : blocks ? (
               // Read-preview of the page's blocks through the registry — the same
               // read-only dispatch the diff cards and the page module use. No

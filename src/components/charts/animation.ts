@@ -5,12 +5,12 @@ export const DEFAULT_ANIMATION_EASING = "cubic-bezier(0.22, 0.8, 0.2, 1)";
 
 /**
  * Inline-style transition for hover/fade opacity changes on chart elements.
- * References the design tokens (`--motion-quick`, `--ease-press`) so a curve or
+ * References the design tokens (`--motion-quick`, `--ease-mn`) so a curve or
  * duration change in `globals.css` cascades here — CSS custom properties resolve
  * inside inline-style transition strings.
  */
 export const FADE_OPACITY_TRANSITION =
-  "opacity var(--motion-quick) var(--ease-press)";
+  "opacity var(--motion-quick) var(--ease-mn)";
 
 export const DEFAULT_ANIMATION_DURATION_MS = 560;
 

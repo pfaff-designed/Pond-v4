@@ -49,7 +49,7 @@ export function ConfirmDialog({
           <AlertDialog.Title className="text-base font-semibold text-foreground">
             {title}
           </AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-sm text-press-muted">
+          <AlertDialog.Description className="mt-2 text-sm text-mn-text-secondary">
             {blastRadius ? (
               <>
                 <span className="font-medium text-destructive">{blastRadius}</span> This can&apos;t

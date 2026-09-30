@@ -247,7 +247,7 @@ function SeriesMarkersDimWrapper({
       opacity={dimBase ? inactiveOpacity : 1}
       style={{
         transition:
-          "opacity var(--motion-quick) var(--ease-press), filter var(--motion-quick) var(--ease-press)",
+          "opacity var(--motion-quick) var(--ease-mn), filter var(--motion-quick) var(--ease-mn)",
         filter:
           dimBase && inactiveBlur > 0 ? `blur(${inactiveBlur}px)` : "none",
       }}

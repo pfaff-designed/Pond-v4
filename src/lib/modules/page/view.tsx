@@ -30,7 +30,7 @@ export function PageView({ data, editable, onChange }: ModuleViewProps<PageModul
     <SiblingBlocksProvider value={{ blocks: data.blocks, scrollToBlock, pageId: data.id }}>
       <div className="space-y-4">
         {data.title && (
-          <h1 className="font-sans text-xl font-semibold tracking-tight text-press-ink">
+          <h1 className="font-sans text-xl font-semibold tracking-tight text-mn-text">
             {data.title}
           </h1>
         )}

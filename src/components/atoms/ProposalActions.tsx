@@ -49,7 +49,7 @@ export function ProposalActions({
         className={cn(
           // Audit-trail line: machine surface → mono voice (lowercase, tracked).
           'font-mono text-xs lowercase tracking-wider text-mn-text-meta',
-          divider && 'border-t border-press-hair px-3 py-1.5',
+          divider && 'border-t border-mn-hair px-3 py-1.5',
           className
         )}
       >
@@ -62,7 +62,7 @@ export function ProposalActions({
     <div
       className={cn(
         'flex items-center gap-1.5',
-        divider && 'border-t border-press-hair px-3 py-2',
+        divider && 'border-t border-mn-hair px-3 py-2',
         className
       )}
     >

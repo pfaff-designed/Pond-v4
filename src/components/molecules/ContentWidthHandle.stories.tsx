@@ -20,10 +20,10 @@ function ColumnFrame({
   children: React.ReactNode
 }) {
   return (
-    <div className="h-[420px] overflow-y-auto bg-press-paper font-sans">
+    <div className="h-[420px] overflow-y-auto bg-mn-surface font-sans">
       <div className="relative mx-auto px-8 py-8" style={{ maxWidth: width }}>
-        <h1 className="font-serif text-2xl font-semibold text-press-ink">Workshop notes</h1>
-        <p className="mt-4 text-sm text-press-body">
+        <h1 className="font-serif text-2xl font-semibold text-mn-text">Workshop notes</h1>
+        <p className="mt-4 text-sm text-mn-text-meta">
           The bench height question again: 34&quot; suits handwork, 36&quot; suits machines.
           Split the difference and regret both, or build the low bench first and let the
           assembly table be tall.

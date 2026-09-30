@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 
 export type ChangeOp = 'create' | 'edit' | 'remove'
@@ -101,7 +101,7 @@ function ChangeBody({ op, before, after }: Pick<ModuleDiffCardProps, 'op' | 'bef
       {op === 'edit' && before ? (
         <Removed block={before} />
       ) : (
-        <span className="block font-serif text-xs italic text-press-faint">New {after.type}</span>
+        <span className="block font-serif text-xs italic text-mn-text-faint">New {after.type}</span>
       )}
       <ModuleView type={after.type} data={after} />
     </div>
@@ -131,18 +131,18 @@ export function ModuleDiffCard({
         // ticket-41: on resolve the card SETTLES to inert — eases opacity down
         // and a hair of scale (motion-resolve transition) instead of snapping
         // grey, so accept/reject reads as the card coming to rest. Guarded.
-        'press-letter motion-resolve overflow-hidden rounded-mn-inner text-left',
+        'mn-letter motion-resolve overflow-hidden rounded-mn-inner text-left',
         resolved && 'scale-[0.99] opacity-70',
         className
       )}
     >
       {/* Header — a letterpress kicker in the correspondence serif */}
-      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className={pressKickerClass}>
+      <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
+        <span className={kickerClass}>
           Proposed {OP_LABEL[op]} · {type}
         </span>
         {inferred && (
-          <span className="rounded-mn-pill bg-press-accent-soft px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-[10px] text-press-accent">
+          <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-[10px] text-mn-text">
             inferred
           </span>
         )}
@@ -153,7 +153,7 @@ export function ModuleDiffCard({
         <ChangeBody op={op} before={before} after={after} />
       </div>
 
-      {reason && <p className="px-3 pb-2 font-serif text-xs italic text-press-muted">{reason}</p>}
+      {reason && <p className="px-3 pb-2 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
 
       <ProposalActions status={status} onAccept={onAccept} onReject={onReject} onEdit={onEdit} />
     </div>
