@@ -112,9 +112,15 @@ export const StructuralProject: Story = {
           { label: 'Draft new IA', checked: false },
         ],
       },
-      // #111: progress comes from the records, so a scaffolded project carries a view
-      // of its own tasks rather than a hand-set ring that immediately goes stale.
-      { type: 'view', mode: 'big-number', bigNumber: { agg: 'count' } },
+      // #111: progress comes from the records, so a scaffolded project carries the
+      // records themselves rather than a hand-set ring that goes stale immediately.
+      // (A `view` block can't preview here — its renderer needs the live collection.)
+      {
+        type: 'table',
+        title: 'Phases',
+        columns: ['Phase', 'Status'],
+        rows: [{ cells: ['Discovery', 'In progress'] }],
+      },
     ],
   },
   play: async ({ canvasElement }) => {

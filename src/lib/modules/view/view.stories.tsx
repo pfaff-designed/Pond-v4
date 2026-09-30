@@ -438,6 +438,171 @@ export const NoSchema: Story = {
   },
 }
 
+// ── Chart + big-number modes (#111) ───────────────────────────────────────────
+// The same fixture collection, drawn as a chart and as one oversized figure. These
+// hold NO data of their own: every number below is aggregated from `rows` at render
+// time, which is the whole point of #111 — edit a record in the table story and this
+// figure would move with it.
+
+/** Chart mode: the records bucketed by Stage, priorities summed within each bucket. */
+export const ChartByStage: Story = {
+  args: {
+    config: {
+      id: 'v-chart',
+      type: 'view',
+      mode: 'chart',
+      chart: { kind: 'bar', xProperty: 'p-stage', series: [{ property: 'p-priority', agg: 'sum' }] },
+    },
+    schema,
+    rows,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // The axis labels name the PROPERTIES the chart reads — it is a view of the
+    // database, so the category axis is a field and the value axis is a field+verb.
+    await expect(canvas.getByText('Stage')).toBeInTheDocument()
+    await expect(canvas.getByText('Priority')).toBeInTheDocument()
+  },
+}
+
+/** Chart mode, line kind, one point per record (no x property named). */
+export const ChartPerRecord: Story = {
+  args: {
+    config: {
+      id: 'v-chart-line',
+      type: 'view',
+      mode: 'chart',
+      chart: { kind: 'line', series: [{ property: 'p-priority', agg: 'latest' }] },
+    },
+    schema,
+    rows,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Record')).toBeInTheDocument()
+    // The verb is named in the series label, so the read is never ambiguous.
+    await expect(canvas.getByText('Priority (latest)')).toBeInTheDocument()
+  },
+}
+
+/**
+ * A chart KIND with no renderer yet (#94 builds the remaining eight). Valid config —
+ * it reads as a calm notice, so #94 lands renderers without touching this contract.
+ */
+export const ChartKindNotDrawnYet: Story = {
+  args: {
+    config: {
+      id: 'v-chart-radar',
+      type: 'view',
+      mode: 'chart',
+      chart: { kind: 'radar', series: [{ property: 'p-priority', agg: 'sum' }] },
+    },
+    schema,
+    rows,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('A radar chart isn’t drawn yet.')).toBeInTheDocument()
+  },
+}
+
+/**
+ * Big-number mode — what a data page LEADS with (PROJECT_RULES: "data pages lead with
+ * one oversized figure, not a chart"). The figure is read through its aria-label, the
+ * stable plain string, because NumberFlow visually splits the digits.
+ */
+export const BigNumberSum: Story = {
+  args: {
+    config: {
+      id: 'v-figure',
+      type: 'view',
+      mode: 'big-number',
+      bigNumber: { property: 'p-priority', agg: 'sum' },
+    },
+    schema,
+    rows,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 2 + 1 + 3 = 6 (the fourth record carries no priority and simply doesn't count).
+    await expect(canvas.getByRole('status', { name: 'Priority: 6' })).toBeInTheDocument()
+    await expect(canvas.getByText('over 4 records')).toBeInTheDocument()
+  },
+}
+
+/** Big-number mode counting RECORDS — no property needed. */
+export const BigNumberCount: Story = {
+  args: {
+    config: { id: 'v-count', type: 'view', mode: 'big-number', bigNumber: { agg: 'count' } },
+    schema,
+    rows,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('status', { name: 'Records: 4' })).toBeInTheDocument()
+  },
+}
+
+/** Nothing to read: an em dash, never a lying zero. */
+export const BigNumberNoValues: Story = {
+  args: {
+    config: {
+      id: 'v-empty-figure',
+      type: 'view',
+      mode: 'big-number',
+      bigNumber: { property: 'p-priority', agg: 'avg', format: 'currency' },
+    },
+    schema,
+    rows: [{ id: 'r-blank', title: 'Kiln maintenance', values: {} }],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('status', { name: 'Priority (avg): —' })).toBeInTheDocument()
+    await expect(canvas.getByText('over 1 record')).toBeInTheDocument()
+  },
+}
+
+/**
+ * #111 AC 5 — the mode switcher offers chart and big-number beside the older modes,
+ * and switching to one keeps the SAME database: only the view config changes, so the
+ * records are still there when you switch back.
+ */
+export const SwitchTableToBigNumber: Story = {
+  args: { config: tableConfig, schema, rows },
+  render: function Render(args) {
+    const [config, setConfig] = useState<ViewBlock>(args.config)
+    return (
+      <CollectionView
+        config={config}
+        schema={schema}
+        rows={rows}
+        editable
+        onConfigChange={(patch) => setConfig((prev) => ({ ...prev, ...patch }))}
+      />
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // The switcher offers every mode, the two new ones included.
+    await expect(canvas.getByRole('button', { name: 'Chart' })).toBeInTheDocument()
+    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
+
+    // Switch to the big number: an unconfigured mode INFERS a drawable figure from the
+    // schema (first numeric field, summed) rather than showing nothing — the same
+    // tolerance a gantt has when its date properties aren't named.
+    await userEvent.click(canvas.getByRole('button', { name: 'Big number' }))
+    await expect(canvas.getByRole('status', { name: 'Priority: 6' })).toBeInTheDocument()
+    // The picker rewrites only the view config — here, down to counting records.
+    await userEvent.selectOptions(canvas.getByLabelText('Figure'), '')
+    await expect(canvas.getByRole('status', { name: 'Records: 4' })).toBeInTheDocument()
+
+    // Back to the table: the records were never copied or moved.
+    await userEvent.click(canvas.getByRole('button', { name: 'Table' }))
+    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
+    await expect(canvas.getByText('Celadon glaze test')).toBeInTheDocument()
+  },
+}
+
 /** Filter + sort applied: only non-done rows, by priority ascending. */
 export const FilteredAndSorted: Story = {
   args: {
