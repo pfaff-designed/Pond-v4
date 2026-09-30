@@ -29,7 +29,7 @@ const AREA_ROWS = [
   {
     id: 'health',
     parent_id: null,
-    type: 'area',
+    type: 'page',
     title: 'Health',
     order: 0,
     updated_at: '2026-08-30T09:00:00Z',

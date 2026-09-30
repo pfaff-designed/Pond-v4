@@ -62,9 +62,32 @@ export function buildTree(rows: PageRow[]): RailNode[] {
   return roots
 }
 
-/** A node is a folder if it's an area or has children (composite pages count). */
+/**
+ * A node is a folder if it's top-level or has children (#108).
+ *
+ * There is no `type = 'area'` any more: "an area is a page with pages inside it;
+ * it has no technical meaning" (design law), so folder-ness is computed. Every
+ * top-level page counts even while empty — that keeps the five seeded pages
+ * (Personal · Professional · Health · Finances · Creativity) as rail folders at
+ * first run, and it is where a person naturally starts a new area. Any page
+ * becomes a folder the moment it gains a child (composite pages included).
+ */
 export function isFolderNode(node: RailNode): boolean {
-  return node.type === 'area' || node.children.length > 0
+  return node.parentId === null || node.children.length > 0
+}
+
+/**
+ * Does this row carry the AREA voice — the raised label, the accent, the default
+ * glyph (#91)? A TOP-LEVEL page does (#108): that is where a person's areas live
+ * and the only rows the fixed title→glyph defaults are written for. Per-page
+ * glyph/colour is #91's own work; this only replaces the old `type === 'area'`.
+ *
+ * Deliberately NOT the same predicate as `isFolderNode` — a top-level page is a
+ * folder AND an area row, but a nested page with children is a folder only. The
+ * two rules answer different questions, so they stay two named functions.
+ */
+export function isAreaRow(node: RailNode): boolean {
+  return node.parentId === null
 }
 
 // ── Move (drag-to-reparent / reorder, F25) ───────────────────────────────────

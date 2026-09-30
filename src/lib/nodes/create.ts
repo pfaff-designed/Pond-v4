@@ -1,5 +1,5 @@
 /**
- * Domain logic for creating nodes (Areas, Projects, Routines, Actions).
+ * Domain logic for creating nodes (Pages, Projects, Routines, Actions).
  * Framework-agnostic — no Next.js imports.
  */
 
@@ -11,8 +11,11 @@ import { createPage } from '@/lib/pages/client'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────
 
-const AreaCardSchema = z.object({
-  type: z.literal('area'),
+// #108: the old 'area' card is gone — an area is just a page that has pages
+// inside it, so a life domain lifted out of a transcript ("travel", "health") is
+// created as a plain top-level page and becomes an area as things land in it.
+const PageCardSchema = z.object({
+  type: z.literal('page'),
   name: z.string().min(1),
 })
 
@@ -36,7 +39,7 @@ const ActionItemCardSchema = z.object({
 })
 
 const ActionCardSchema = z.discriminatedUnion('type', [
-  AreaCardSchema,
+  PageCardSchema,
   ProjectCardSchema,
   RoutineCardSchema,
   ActionItemCardSchema,
@@ -44,7 +47,7 @@ const ActionCardSchema = z.discriminatedUnion('type', [
 
 // ── Action Card types (derived from schemas) ───────────────────────────────
 
-export type AreaCard = z.infer<typeof AreaCardSchema>
+export type PageCard = z.infer<typeof PageCardSchema>
 export type ProjectCard = z.infer<typeof ProjectCardSchema>
 export type RoutineCard = z.infer<typeof RoutineCardSchema>
 export type ActionItemCard = z.infer<typeof ActionItemCardSchema>
@@ -90,7 +93,7 @@ export async function resolveParentId(
  * Returns null if the JSON is invalid or doesn't conform to the schema.
  *
  * The AI is expected to emit a JSON block like:
- *   {"type": "area", "name": "Travel"}
+ *   {"type": "page", "name": "Travel"}
  *   {"type": "project", "name": "Website", "area_id": "..."}
  */
 export function parseActionCard(json: string): ActionCard | null {
@@ -105,9 +108,11 @@ export function parseActionCard(json: string): ActionCard | null {
 
 /**
  * Create a node from an AI action card. In the unified model every node is a
- * page: the card `type` becomes the page's type tag, and the card's parent
- * reference (area_id / project_id) becomes the page's parent_id. Areas are
- * top-level (no parent). Delegates the insert to pages/client.createPage.
+ * page: the card `type` becomes the page's kind tag, and the card's parent
+ * reference (area_id / project_id) becomes the page's parent_id. A bare `page`
+ * card carries no parent reference, so it lands top-level — which is where a
+ * life domain belongs, and it becomes an area as pages are nested under it
+ * (#108). Delegates the insert to pages/client.createPage.
  */
 export async function createNode(
   supabase: SupabaseClient<Database>,

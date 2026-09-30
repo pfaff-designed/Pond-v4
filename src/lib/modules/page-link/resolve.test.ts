@@ -9,7 +9,7 @@ import type { PageLike } from './resolve'
 const rows: PageLike[] = [
   { id: 'p1', title: 'Sanding guide', type: 'page' },
   { id: 'p2', title: 'Supplies', type: 'page' },
-  { id: 'p3', title: 'Woodworking', type: 'area' },
+  { id: 'p3', title: 'Woodworking', type: 'page' },
   { id: 'p4', title: '', type: 'page' }, // untitled row
 ]
 

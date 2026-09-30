@@ -41,7 +41,7 @@ export function SandboxBanner({ onReset }: SandboxBannerProps = {}) {
       <button
         onClick={handleReset}
         disabled={resetting}
-        className="font-mono lowercase tracking-[0.1em] text-xs text-raw-ink/80 hover:text-raw-ink disabled:opacity-50 transition-colors"
+        className="font-mono lowercase tracking-wider text-xs text-raw-ink/80 hover:text-raw-ink disabled:opacity-50 transition-colors"
         aria-label="Reset sandbox workspace"
       >
         {resetting ? 'resetting…' : 'reset sandbox'}

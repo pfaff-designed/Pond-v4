@@ -65,10 +65,12 @@ describe('toParentOptions', () => {
   it('appends the page type when title AND placement still collide', () => {
     const options = toParentOptions([
       row('creativity', 'Creativity'),
-      row('wood-area', 'Woodworking', 'creativity', 'area'),
+      row('wood-area', 'Woodworking', 'creativity', 'routine'),
       row('wood-project', 'Woodworking', 'creativity', 'project'),
     ])
-    expect(options.find((o) => o.id === 'wood-area')?.title).toBe('Woodworking (Creativity) · area')
+    expect(options.find((o) => o.id === 'wood-area')?.title).toBe(
+      'Woodworking (Creativity) · routine'
+    )
     expect(options.find((o) => o.id === 'wood-project')?.title).toBe(
       'Woodworking (Creativity) · project'
     )

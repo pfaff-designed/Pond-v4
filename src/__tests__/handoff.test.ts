@@ -64,7 +64,7 @@ describe('performHandoff', () => {
 
   it('dissolves the current conversation after writing entities', async () => {
     const deps = makeDeps({
-      extract: jest.fn().mockResolvedValue([{ id: 'e1', type: 'area', name: 'Travel' }]),
+      extract: jest.fn().mockResolvedValue([{ id: 'e1', type: 'page', name: 'Travel' }]),
     })
 
     await performHandoff(supabase, 'conv-1', 'user-1', makeMessages(), deps as never)
@@ -98,7 +98,7 @@ describe('performHandoff', () => {
 
   it('does NOT dissolve the conversation if a write fails (transcript preserved)', async () => {
     const deps = makeDeps({
-      extract: jest.fn().mockResolvedValue([{ id: 'e1', type: 'area', name: 'Travel' }]),
+      extract: jest.fn().mockResolvedValue([{ id: 'e1', type: 'page', name: 'Travel' }]),
       createNode: jest.fn().mockRejectedValue(new Error('db down')),
     })
 

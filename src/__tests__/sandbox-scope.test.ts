@@ -10,11 +10,7 @@
  * .eq('workspace', <scope>), and no query mixes scopes.
  */
 
-import {
-  getChildPages,
-  listPages,
-  createPage,
-} from '@/lib/pages/client'
+import { getChildPages, listPages, createPage } from '@/lib/pages/client'
 import { fetchPages } from '@/lib/pages/tree'
 import { resetSandbox, SANDBOX_FIXTURE } from '@/lib/sandbox/reset'
 
@@ -47,9 +43,7 @@ function makeSupabase(chain = makeChain()) {
 
 /** Every workspace value the query chain was scoped to, in call order. */
 function workspaceArgs(chain: ReturnType<typeof makeChain>): string[] {
-  return (chain.eq as jest.Mock).mock.calls
-    .filter((c) => c[0] === 'workspace')
-    .map((c) => c[1])
+  return (chain.eq as jest.Mock).mock.calls.filter((c) => c[0] === 'workspace').map((c) => c[1])
 }
 
 // ── getChildPages scope ───────────────────────────────────────────────────────
@@ -115,8 +109,26 @@ describe('cross-scope leakage is impossible at the query layer', () => {
     // The DB, given .eq('workspace','main'), returns only main rows. We model
     // that: the mock returns only the rows matching the scope it was asked for.
     const allRows = [
-      { id: 'm1', parent_id: null, type: 'area', title: 'Real Area', blocks: [], status: null, order: 0, workspace: 'main' },
-      { id: 's1', parent_id: null, type: 'area', title: 'Sandbox Area A', blocks: [], status: null, order: 0, workspace: 'sandbox' },
+      {
+        id: 'm1',
+        parent_id: null,
+        type: 'page',
+        title: 'Real Area',
+        blocks: [],
+        status: null,
+        order: 0,
+        workspace: 'main',
+      },
+      {
+        id: 's1',
+        parent_id: null,
+        type: 'page',
+        title: 'Sandbox Area A',
+        blocks: [],
+        status: null,
+        order: 0,
+        workspace: 'sandbox',
+      },
     ]
     function scopedChain(scope: string) {
       return makeChain({
@@ -136,8 +148,26 @@ describe('cross-scope leakage is impossible at the query layer', () => {
 
   it('a main row is not returned by a sandbox query', async () => {
     const allRows = [
-      { id: 'm1', parent_id: null, type: 'area', title: 'Real Area', blocks: [], status: null, order: 0, workspace: 'main' },
-      { id: 's1', parent_id: null, type: 'area', title: 'Sandbox Area A', blocks: [], status: null, order: 0, workspace: 'sandbox' },
+      {
+        id: 'm1',
+        parent_id: null,
+        type: 'page',
+        title: 'Real Area',
+        blocks: [],
+        status: null,
+        order: 0,
+        workspace: 'main',
+      },
+      {
+        id: 's1',
+        parent_id: null,
+        type: 'page',
+        title: 'Sandbox Area A',
+        blocks: [],
+        status: null,
+        order: 0,
+        workspace: 'sandbox',
+      },
     ]
     function scopedChain(scope: string) {
       return makeChain({
@@ -231,8 +261,10 @@ describe('fetchPages scope isolation', () => {
 
   it("the tree read defaults to 'main' rows only", async () => {
     const { eqCalls } = primeClient({
-      main: [{ id: 'm1', parent_id: null, type: 'area', title: 'Real', order: 0, updated_at: 't' }],
-      sandbox: [{ id: 's1', parent_id: null, type: 'area', title: 'SB', order: 0, updated_at: 't' }],
+      main: [{ id: 'm1', parent_id: null, type: 'page', title: 'Real', order: 0, updated_at: 't' }],
+      sandbox: [
+        { id: 's1', parent_id: null, type: 'page', title: 'SB', order: 0, updated_at: 't' },
+      ],
     })
 
     const rows = await fetchPages()
@@ -244,8 +276,10 @@ describe('fetchPages scope isolation', () => {
 
   it("the sandbox tree read returns 'sandbox' rows only", async () => {
     const { eqCalls } = primeClient({
-      main: [{ id: 'm1', parent_id: null, type: 'area', title: 'Real', order: 0, updated_at: 't' }],
-      sandbox: [{ id: 's1', parent_id: null, type: 'area', title: 'SB', order: 0, updated_at: 't' }],
+      main: [{ id: 'm1', parent_id: null, type: 'page', title: 'Real', order: 0, updated_at: 't' }],
+      sandbox: [
+        { id: 's1', parent_id: null, type: 'page', title: 'SB', order: 0, updated_at: 't' },
+      ],
     })
 
     const rows = await fetchPages('sandbox')

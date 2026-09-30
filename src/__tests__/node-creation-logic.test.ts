@@ -28,13 +28,19 @@ function makeSupabase(chain = makeInsertChain()) {
 // ── parseActionCard ────────────────────────────────────────────────────────
 
 describe('parseActionCard', () => {
-  it('parses a valid area action card from AI JSON', () => {
+  // #108: the 'area' card is gone — a life domain lifted out of a transcript is a
+  // plain top-level page, and becomes an area as pages land in it.
+  it('parses a valid page action card from AI JSON', () => {
     const json = JSON.stringify({
-      type: 'area',
+      type: 'page',
       name: 'Travel',
     })
     const card = parseActionCard(json)
-    expect(card).toEqual({ type: 'area', name: 'Travel' })
+    expect(card).toEqual({ type: 'page', name: 'Travel' })
+  })
+
+  it('returns null for the retired "area" type', () => {
+    expect(parseActionCard(JSON.stringify({ type: 'area', name: 'Travel' }))).toBeNull()
   })
 
   it('parses a project with area_id', () => {
@@ -75,7 +81,7 @@ describe('parseActionCard', () => {
   })
 
   it('returns null when name is missing', () => {
-    expect(parseActionCard(JSON.stringify({ type: 'area' }))).toBeNull()
+    expect(parseActionCard(JSON.stringify({ type: 'page' }))).toBeNull()
   })
 
   it('returns null for unknown entity type', () => {
@@ -84,21 +90,22 @@ describe('parseActionCard', () => {
 })
 
 // ── createNode — unified pages routing ─────────────────────────────────────
-// Every node is now a page: the card type becomes the page's type tag, and the
-// card's parent ref (area_id / project_id) becomes parent_id. Areas are top-level.
+// Every node is now a page: the card type becomes the page's kind tag, and the
+// card's parent ref (area_id / project_id) becomes parent_id. A bare page card
+// carries no parent ref, so it lands top-level (#108).
 
 describe('createNode', () => {
-  it('creates a top-level area page for type=area', async () => {
+  it('creates a top-level page for type=page (the former area card)', async () => {
     const chain = makeInsertChain({ id: 'area-new' })
     const sb = makeSupabase(chain)
-    const card: ActionCard = { type: 'area', name: 'Travel' }
+    const card: ActionCard = { type: 'page', name: 'Travel' }
 
     const result = await createNode(sb as never, card)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.insert).toHaveBeenCalled()
     const insertArg = chain.insert.mock.calls[0][0]
-    expect(insertArg.type).toBe('area')
+    expect(insertArg.type).toBe('page')
     expect(insertArg.title).toBe('Travel')
     expect(insertArg.parent_id ?? null).toBeNull()
     expect(insertArg.user_id).toBe('user-1')
@@ -188,7 +195,7 @@ describe('createNode', () => {
       single: jest.fn().mockResolvedValue({ data: null, error: { message: 'RLS violation' } }),
     }
     const sb = makeSupabase(chain)
-    const card: ActionCard = { type: 'area', name: 'Fail Area' }
+    const card: ActionCard = { type: 'page', name: 'Fail Area' }
 
     await expect(createNode(sb as never, card)).rejects.toThrow('RLS violation')
   })

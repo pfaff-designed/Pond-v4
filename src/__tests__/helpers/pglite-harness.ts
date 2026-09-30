@@ -84,20 +84,40 @@ export function migrationFiles(): { name: string; sql: string }[] {
     .map((name) => ({ name, sql: readFileSync(join(MIGRATIONS_DIR, name), 'utf8') }))
 }
 
+/** Apply one migration file by name, surfacing WHICH one broke. */
+export async function applyMigration(db: PGlite, name: string): Promise<void> {
+  const file = migrationFiles().find((m) => m.name === name)
+  if (!file) throw new Error(`No such migration: ${name}`)
+  try {
+    await db.exec(file.sql)
+  } catch (err) {
+    throw new Error(`Migration ${name} failed to apply: ${(err as Error).message}`)
+  }
+}
+
 /**
- * Boot a fresh in-memory Postgres with the auth shim + all real migrations
+ * Boot a fresh in-memory Postgres with the auth shim + the real migrations
  * applied. Each call is an isolated database.
+ *
+ * `opts.through` stops after the named migration (inclusive), which is how a
+ * data-converting migration gets tested: boot the db one short of it, insert the
+ * pre-migration rows, then `applyMigration` the one under test (#108).
  */
-export async function makeDb(): Promise<PGlite> {
+export async function makeDb(opts: { through?: string } = {}): Promise<PGlite> {
   const db = new PGlite({ extensions: { vector } })
   await db.exec(SUPABASE_SHIM)
-  for (const { name, sql } of migrationFiles()) {
+  const all = migrationFiles()
+  if (opts.through && !all.some((m) => m.name === opts.through)) {
+    throw new Error(`No such migration: ${opts.through}`)
+  }
+  for (const { name, sql } of all) {
     try {
       await db.exec(sql)
     } catch (err) {
       // Surface WHICH migration broke — the shim is the known risk area.
       throw new Error(`Migration ${name} failed to apply: ${(err as Error).message}`)
     }
+    if (name === opts.through) break
   }
   return db
 }

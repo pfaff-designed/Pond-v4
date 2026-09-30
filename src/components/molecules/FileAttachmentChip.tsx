@@ -29,7 +29,7 @@ export function FileAttachmentChip({
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-mn-pill bg-mn-wash',
-        'px-2.5 py-0.5 font-mono lowercase tracking-[0.1em] text-xs text-mn-text-meta max-w-[28ch]',
+        'px-2.5 py-0.5 font-mono lowercase tracking-wider text-xs text-mn-text-meta max-w-[28ch]',
         className
       )}
     >

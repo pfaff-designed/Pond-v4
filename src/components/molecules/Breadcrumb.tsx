@@ -11,8 +11,10 @@
  * On a root page (no ancestors, no current) it reads just "Life", still
  * clickable so it stays a consistent home affordance.
  *
- * An area crumb whose title maps to a default glyph leads with that glyph in
- * the area hue (#91); page crumbs carry no mark.
+ * The top-level crumb — the area the trail starts in — leads with that area's
+ * default glyph in the area hue when its title maps to one (#91); deeper crumbs
+ * carry no mark. (#108: there is no `type = 'area'` to test; the first crumb IS
+ * the top-level ancestor, which is where a person's areas live.)
  */
 
 import { Fragment } from 'react'
@@ -41,7 +43,7 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center flex-wrap font-mono text-[11px] tracking-[0.1em] lowercase text-mn-text-faint min-w-0"
+      className="flex items-center flex-wrap font-mono text-mn-11 tracking-wider lowercase text-mn-text-faint min-w-0"
     >
       <button
         onClick={() => onNavigate(null)}
@@ -49,8 +51,8 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
       >
         {rootLabel}
       </button>
-      {crumbs.map((c) => {
-        const glyph = c.type === 'area' ? areaGlyph(c.title) : undefined
+      {crumbs.map((c, i) => {
+        const glyph = i === 0 ? areaGlyph(c.title) : undefined
         // A whole area reads as one hue: colour by the top-level ancestor (the
         // first crumb), the rule accent.ts documents and the kicker square uses.
         const topId = crumbs[0].id

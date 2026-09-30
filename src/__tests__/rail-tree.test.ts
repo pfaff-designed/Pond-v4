@@ -9,6 +9,7 @@ import {
   LIFE_ID,
   buildTree,
   isFolderNode,
+  isAreaRow,
   flattenVisible,
   treeKeyCommand,
   focusFallback,
@@ -37,20 +38,27 @@ const node = (
   parentId: string | null = null
 ): RailNode => ({ id, parentId, type, title, order, children })
 
-/** health(area)[sleep, marathon] · personal(area)[food(area)[recipes], trips] · scratch(page) */
+/**
+ * health[sleep, marathon] · personal[food[recipes], trips] · scratch
+ *
+ * #108: no row carries a type='area' any more — health/personal/food are areas
+ * only because they hold pages. `scratch` is top-level and childless, which under
+ * the new folder rule still makes it a FOLDER (that is where a person starts an
+ * area); `trips` and `sleep` are the genuine leaves.
+ */
 const TREE: RailNode[] = [
-  node('health', 'area', 'Health', [
+  node('health', 'page', 'Health', [
     node('sleep', 'page', 'Sleep', [], 0, 'health'),
     node('marathon', 'project', 'Marathon', [], 1, 'health'),
   ]),
   node(
     'personal',
-    'area',
+    'page',
     'Personal',
     [
       node(
         'food',
-        'area',
+        'page',
         'Food',
         [node('recipes', 'page', 'Recipes', [], 0, 'food')],
         0,
@@ -68,7 +76,7 @@ const ids = (flat: FlatRow[]) => flat.map((f) => f.id)
 describe('buildTree', () => {
   it('nests children under parents and leaves roots at the top', () => {
     const tree = buildTree([
-      row('a', null, 'area', 'A'),
+      row('a', null, 'page', 'A'),
       row('b', 'a', 'page', 'B'),
       row('c', 'b', 'page', 'C'),
     ])
@@ -92,15 +100,44 @@ describe('buildTree', () => {
   })
 })
 
+// #108: folder-ness is computed — top-level, or has children. No type is read.
 describe('isFolderNode', () => {
-  it('an area is a folder even with no children', () => {
-    expect(isFolderNode(node('a', 'area', 'A'))).toBe(true)
+  it('a top-level page is a folder even with no children (an area-to-be)', () => {
+    expect(isFolderNode(node('a', 'page', 'A'))).toBe(true)
   })
   it('a page with children (composite) is a folder', () => {
     expect(isFolderNode(node('p', 'page', 'P', [node('c', 'page', 'C')]))).toBe(true)
   })
-  it('a childless page is a leaf', () => {
-    expect(isFolderNode(node('p', 'page', 'P'))).toBe(false)
+  it('a childless NESTED page is a leaf', () => {
+    expect(isFolderNode(node('p', 'page', 'P', [], 0, 'parent'))).toBe(false)
+  })
+  it('a nested page turns into a folder the moment it gains a child', () => {
+    const leaf = node('p', 'page', 'P', [], 0, 'parent')
+    expect(isFolderNode(leaf)).toBe(false)
+    expect(isFolderNode({ ...leaf, children: [node('c', 'page', 'C', [], 0, 'p')] })).toBe(true)
+  })
+  it('reads no type tag at all — a project with children is a folder, childless is a leaf', () => {
+    expect(isFolderNode(node('pr', 'project', 'Pr', [], 0, 'parent'))).toBe(false)
+    expect(isFolderNode(node('pr', 'project', 'Pr', [node('x', 'page', 'X')], 0, 'parent'))).toBe(
+      true
+    )
+  })
+})
+
+// #108: the area VOICE (raised label, accent, default glyph) is a different
+// question from folder-ness, so it is its own named rule.
+describe('isAreaRow', () => {
+  it('a top-level page is an area row, childless or not', () => {
+    expect(isAreaRow(node('a', 'page', 'A'))).toBe(true)
+    expect(isAreaRow(node('a', 'page', 'A', [node('c', 'page', 'C', [], 0, 'a')]))).toBe(true)
+  })
+  it('a nested page is not — even one that holds children (a folder, not an area)', () => {
+    const nested = node('food', 'page', 'Food', [], 0, 'personal')
+    expect(isAreaRow(nested)).toBe(false)
+    expect(isFolderNode({ ...nested, children: [node('r', 'page', 'R', [], 0, 'food')] })).toBe(
+      true
+    )
+    expect(isAreaRow({ ...nested, children: [node('r', 'page', 'R', [], 0, 'food')] })).toBe(false)
   })
 })
 
@@ -189,9 +226,11 @@ describe('treeKeyCommand', () => {
   })
 
   it('ArrowRight is a no-op on a leaf and on an open folder with no visible child', () => {
-    expect(key('ArrowRight', 'scratch')).toBeNull()
-    // an open area with no children: expand an empty area
-    const emptyArea = [node('empty', 'area', 'Empty')]
+    // `trips` is the genuine leaf (nested + childless); top-level `scratch` is a
+    // folder under the #108 rule, so it would expand rather than no-op.
+    expect(key('ArrowRight', 'trips')).toBeNull()
+    // an open top-level page with no children: expanding an empty area
+    const emptyArea = [node('empty', 'page', 'Empty')]
     const f = flattenVisible(emptyArea, new Set(['empty']), true)
     expect(
       treeKeyCommand('ArrowRight', 'empty', f, { expanded: new Set(['empty']), lifeExpanded: true })
@@ -279,11 +318,11 @@ describe('focusFallback', () => {
 /** Flat rows mirroring TREE:
  *  health[sleep, marathon] · personal[food[recipes], trips] · scratch */
 const ROWS: PageRow[] = [
-  row('health', null, 'area', 'Health', 0),
+  row('health', null, 'page', 'Health', 0),
   row('sleep', 'health', 'page', 'Sleep', 0),
   row('marathon', 'health', 'project', 'Marathon', 1),
-  row('personal', null, 'area', 'Personal', 1),
-  row('food', 'personal', 'area', 'Food', 0),
+  row('personal', null, 'page', 'Personal', 1),
+  row('food', 'personal', 'page', 'Food', 0),
   row('recipes', 'food', 'page', 'Recipes', 0),
   row('trips', 'personal', 'page', 'Trips', 1),
   row('scratch', null, 'page', 'Scratchpad', 2),

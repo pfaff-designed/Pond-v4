@@ -63,7 +63,7 @@ export function GhostSuggestion({
       aria-label={`Ghost suggestion: ${suggestion}`}
       className={cn(
         'mn-arrive pointer-events-none absolute inset-x-0 top-0 px-0 py-1.5',
-        'font-mono lowercase tracking-[0.1em] text-sm text-mn-text-faint/60 select-none truncate',
+        'font-mono lowercase tracking-wider text-sm text-mn-text-faint/60 select-none truncate',
         '@media (prefers-reduced-motion: reduce) mn-arrive',
         className
       )}

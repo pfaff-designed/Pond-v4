@@ -65,6 +65,7 @@ import {
   LIFE_ID,
   buildTree,
   flattenVisible,
+  isAreaRow,
   treeKeyCommand,
   focusFallback,
   canMove,
@@ -86,7 +87,7 @@ import { PondMolecule, type PondMoleculeState } from '@/components/molecules/Pon
 import { AreaMark } from '@/components/atoms/AreaMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
-export { LIFE_ID, buildTree, flattenVisible, isFolderNode } from '@/lib/rail/tree'
+export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
 export type { RailNode, FlatRow } from '@/lib/rail/tree'
 
 // ── The rail's tree row (the TreeRow absorption, #95) ────────────────────────
@@ -143,7 +144,8 @@ interface RailRowProps {
   isBusy: boolean
   /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
   isRoot?: boolean
-  /** An area row — the raised label voice + its accent dot. */
+  /** An area row — the raised label voice + its accent dot. #108: "area" is no
+   *  longer a stored type; the caller decides with `isAreaRow` (a top-level page). */
   isArea?: boolean
   posInSet?: number
   setSize?: number
@@ -430,9 +432,12 @@ const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
  * An area row's leading mark: its default glyph in the area hue, when the
  * title maps to one (#91). An unmapped area returns nothing and keeps its
  * KindDot through the molecule's `dot`.
+ *
+ * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
+ * replacement rule (a top-level page).
  */
 function areaMark(node: RailNode): ReactNode {
-  if (node.type !== 'area') return undefined
+  if (!isAreaRow(node)) return undefined
   const glyph = areaGlyph(node.title)
   return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
 }
@@ -618,7 +623,7 @@ export function RailView({
         setSize={setSize}
         leading={LIFE_MARK}
         trailing={
-          <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30 pr-1 select-none">
+          <span className="font-mono text-[10px] tracking-wider lowercase text-mn-text/30 pr-1 select-none">
             all
           </span>
         }
@@ -646,10 +651,10 @@ export function RailView({
         isOnPath={id !== selectedId && pathIds.has(id)}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        isArea={node.type === 'area'}
+        isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        accent={node.type === 'area' ? pageAccent(id) : undefined}
+        accent={isAreaRow(node) ? pageAccent(id) : undefined}
         leading={areaMark(node)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
@@ -693,7 +698,7 @@ export function RailView({
           children (WAI-ARIA); a <p> inside it would be an illegal child. */}
       {isLoading && (
         <p
-          className="px-2.5 py-2 font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30"
+          className="px-2.5 py-2 font-mono text-[10px] tracking-wider lowercase text-mn-text/30"
           role="status"
         >
           loading…

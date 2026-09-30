@@ -182,7 +182,7 @@ describe('blocksToText', () => {
 
 function baseData(overrides: Partial<NodeContextData> = {}): NodeContextData {
   return {
-    type: 'area',
+    type: 'page',
     title: 'Woodworking',
     documents: [],
     children: [],
@@ -247,7 +247,8 @@ describe('formatNodeContext', () => {
   it('includes the node type and title', () => {
     const out = formatNodeContext(baseData())
     expect(out).toContain('Woodworking')
-    expect(out.toLowerCase()).toContain('area')
+    // #108: a container reads as "Page" — there is no Area label any more.
+    expect(out.toLowerCase()).toContain('page')
   })
 
   it('lists direct children with their type', () => {
@@ -355,9 +356,9 @@ describe('formatNodeContext', () => {
 
 describe('formatWorkspaceOutline', () => {
   const pages: PageSummary[] = [
-    { id: 'a1', parentId: null, type: 'area', title: 'Creativity' },
-    { id: 'a2', parentId: null, type: 'area', title: 'Health' },
-    { id: 'w1', parentId: 'a1', type: 'area', title: 'Woodworking' },
+    { id: 'a1', parentId: null, type: 'page', title: 'Creativity' },
+    { id: 'a2', parentId: null, type: 'page', title: 'Health' },
+    { id: 'w1', parentId: 'a1', type: 'page', title: 'Woodworking' },
     { id: 'p1', parentId: 'w1', type: 'project', title: 'Bench build' },
     { id: 'g1', parentId: 'p1', type: 'page', title: 'Cut list' },
     { id: 'n1', parentId: null, type: 'page', title: 'Scratch note' },
@@ -365,14 +366,15 @@ describe('formatWorkspaceOutline', () => {
 
   it('lists top-level pages with their type labels', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).toContain('Area: Creativity')
-    expect(out).toContain('Area: Health')
+    // #108: areas are pages that hold pages, so they carry the plain Page label.
+    expect(out).toContain('Page: Creativity')
+    expect(out).toContain('Page: Health')
     expect(out).toContain('Page: Scratch note')
   })
 
   it('nests direct children under their top-level parent', () => {
     const out = formatWorkspaceOutline(pages)
-    expect(out).toContain('  - [w1] Area: Woodworking')
+    expect(out).toContain('  - [w1] Page: Woodworking')
   })
 
   it('lists ALL depths with ids — a depth-3+ page is a targetable edit target (ticket-30)', () => {
@@ -385,8 +387,8 @@ describe('formatWorkspaceOutline', () => {
   it('surfaces each page id so a cross-page edit can target it (ticket-30)', () => {
     const out = formatWorkspaceOutline(pages)
     // Ids ride an [id] prefix on every listed entry.
-    expect(out).toContain('[a1] Area: Creativity')
-    expect(out).toContain('[w1] Area: Woodworking')
+    expect(out).toContain('[a1] Page: Creativity')
+    expect(out).toContain('[w1] Page: Woodworking')
     expect(out).toContain('[n1] Page: Scratch note')
   })
 

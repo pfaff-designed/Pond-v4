@@ -163,7 +163,7 @@ describe('AREA_GLYPH — the fixed defaults', () => {
     expect(areaGlyph('Creativity')).toBe('flower-05')
   })
 
-  it("also maps 'Financial' — the title seed_default_pages actually writes", () => {
+  it("also maps the legacy 'Financial' title (pre-#108 seeds wrote it)", () => {
     expect(areaGlyph('Financial')).toBe('stairs-01')
   })
 
@@ -187,8 +187,8 @@ const node = (
 ): RailNode => ({ id, parentId, type, title, order, children })
 
 const TREE: RailNode[] = [
-  node('health', 'area', 'Health', [node('sleep', 'page', 'Sleep', [], 0, 'health')]),
-  node('personal', 'area', 'Personal', [node('food', 'area', 'Food', [], 0, 'personal')], 1),
+  node('health', 'page', 'Health', [node('sleep', 'page', 'Sleep', [], 0, 'health')]),
+  node('personal', 'page', 'Personal', [node('food', 'page', 'Food', [], 0, 'personal')], 1),
   node('scratch', 'page', 'Scratchpad', [], 2),
 ]
 
@@ -236,11 +236,17 @@ describe('Rail — area marks ride the glyph system', () => {
     expect(health.querySelector('[data-part="dot"]')).toBeNull()
   })
 
-  it('an unmapped area keeps the KindDot mark; leaf pages carry neither', () => {
+  // #108: the area voice (accent dot / glyph) rides TOP-LEVEL rows, since there is
+  // no `type = 'area'` left to test and the fixed glyph defaults are written for
+  // the seeded top-level areas. Per-page glyph/colour is #91's own work.
+  it('an unmapped top-level area keeps the KindDot mark; nested pages carry neither', () => {
     const { getByRole } = renderRail()
+    const scratch = getByRole('treeitem', { name: /Scratchpad/ })
+    expect(scratch.querySelector('[data-icon]')).toBeNull()
+    expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
     const food = getByRole('treeitem', { name: /Food/ })
     expect(food.querySelector('[data-icon]')).toBeNull()
-    expect(food.querySelector('[data-part="dot"]')).toBeInTheDocument()
+    expect(food.querySelector('[data-part="dot"]')).toBeNull()
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
     expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
@@ -252,7 +258,7 @@ describe('Breadcrumb — an area crumb shows its mark', () => {
     const { getByRole } = render(
       <Breadcrumb
         crumbs={[
-          { id: 'health', type: 'area', title: 'Health' },
+          { id: 'health', type: 'page', title: 'Health' },
           { id: 'sleep', type: 'page', title: 'Sleep' },
         ]}
         onNavigate={jest.fn()}
@@ -311,9 +317,9 @@ describe('OverviewSurface — the kicker mark', () => {
 describe('AreaOverviewPanel — the container resolves the glyph from the title', () => {
   const at = '2026-01-01T00:00:00Z'
   const ROWS: PageRow[] = [
-    { id: 'health', parent_id: null, type: 'area', title: 'Health', order: 0, updated_at: at },
-    { id: 'personal', parent_id: null, type: 'area', title: 'Personal', order: 1, updated_at: at },
-    { id: 'food', parent_id: 'personal', type: 'area', title: 'Food', order: 0, updated_at: at },
+    { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
+    { id: 'personal', parent_id: null, type: 'page', title: 'Personal', order: 1, updated_at: at },
+    { id: 'food', parent_id: 'personal', type: 'page', title: 'Food', order: 0, updated_at: at },
   ]
 
   /** Seed ['pages'] so the panel renders from data without a fetch (envless). */
@@ -352,10 +358,10 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
 })
 
 describe('Rail — the seed title resolves too', () => {
-  it("an area titled 'Financial' (what seed_default_pages writes) leads with stairs-01", () => {
+  it("an area titled 'Financial' (what pre-#108 seeds wrote) leads with stairs-01", () => {
     const { getByRole } = render(
       <RailView
-        tree={[node('fin', 'area', 'Financial')]}
+        tree={[node('fin', 'page', 'Financial')]}
         selectedId={null}
         expanded={new Set()}
         lifeExpanded
