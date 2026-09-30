@@ -68,6 +68,19 @@ export type ChangeLogAction =
   | 'redo'
 
 /**
+ * The actions whose before/after IS a page's `Block[]` — the ones a block write
+ * makes stale, and which therefore go `outdated` together (spec #110 criterion 5).
+ *
+ * `edit` was the only one until #103. A revert's snapshots are block arrays in
+ * exactly the same way, so a pending revert aimed at a page that has since moved
+ * on must be swept with the edits; leaving it out would let a stale revert be
+ * accepted later and set blocks back over changes made in between. The five
+ * collection tools stay OUT — their before/after live in the page's property
+ * schema and rows, so a block write says nothing about them.
+ */
+export const BLOCK_ACTIONS: readonly ChangeLogAction[] = ['edit', 'revert']
+
+/**
  * Who acted. Single-user ponds today, so in practice `you` or `pond`; the column
  * is free text so a sharer's identity fits without a migration.
  */

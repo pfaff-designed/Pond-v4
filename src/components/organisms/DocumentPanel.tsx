@@ -25,6 +25,7 @@ import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
+import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import {
   readSchema,
   readValues,
@@ -235,6 +236,10 @@ export function DocumentPanel() {
     commitLocalEdit([...viewBlocks, nb])
   }
 
+  // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
+  // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel.
+  const { toggle: toggleChanges, overlay: changesOverlay } = usePageChangesPanel(nodeId)
+
   // ── Root: the Life overview owns the panel (no more empty state) ──────────
   if (!nodeId) {
     return <LifeOverviewPanel />
@@ -301,6 +306,17 @@ export function DocumentPanel() {
           >
             {saved ? 'saved' : 'saving…'}
           </span>
+          {/* The panel's only pointer-reachable entry. The design also names "the
+              page menu › changes", but this build has no page menu to hang it on,
+              so a quiet toggle beside the save state keeps the log from being a
+              keyboard-only feature. */}
+          <button
+            type="button"
+            onClick={toggleChanges}
+            className="shrink-0 font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
+          >
+            changes
+          </button>
         </div>
 
         {/* Typed properties (#17): shown only when the page carries a schema (it
@@ -349,6 +365,8 @@ export function DocumentPanel() {
           className="mt-12 border-t border-mn-hair pt-6"
         />
       </div>
+
+      {changesOverlay}
     </div>
   )
 }
