@@ -10,10 +10,16 @@
  *
  * On a root page (no ancestors, no current) it reads just "Life", still
  * clickable so it stays a consistent home affordance.
+ *
+ * An area crumb whose title maps to a default glyph leads with that glyph in
+ * the area hue (#91); page crumbs carry no mark.
  */
 
 import { Fragment } from 'react'
 import type { Crumb } from '@/lib/pages/overview'
+import { pageAccent } from '@/lib/pages/accent'
+import { areaGlyph } from '@/lib/rail/area-glyph'
+import { AreaMark } from '@/components/atoms/AreaMark'
 
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
@@ -43,18 +49,22 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
       >
         {rootLabel}
       </button>
-      {crumbs.map((c) => (
-        <Fragment key={c.id}>
-          {sep}
-          <button
-            onClick={() => onNavigate(c)}
-            className="hover:text-foreground transition-colors truncate max-w-[180px]"
-            title={c.title}
-          >
-            {c.title}
-          </button>
-        </Fragment>
-      ))}
+      {crumbs.map((c) => {
+        const glyph = c.type === 'area' ? areaGlyph(c.title) : undefined
+        return (
+          <Fragment key={c.id}>
+            {sep}
+            <button
+              onClick={() => onNavigate(c)}
+              className="hover:text-foreground transition-colors inline-flex items-center gap-1 max-w-[180px] min-w-0"
+              title={c.title}
+            >
+              {glyph && <AreaMark glyph={glyph} color={pageAccent(c.id)} size={11} />}
+              <span className="truncate">{c.title}</span>
+            </button>
+          </Fragment>
+        )
+      })}
       {current !== undefined && (
         <>
           {sep}

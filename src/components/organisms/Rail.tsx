@@ -60,6 +60,7 @@ import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent } from '@/lib/pages/accent'
 import { ancestorPath } from '@/lib/pages/overview'
+import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 import {
   LIFE_ID,
   buildTree,
@@ -82,6 +83,7 @@ import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
+import { AreaMark } from '@/components/atoms/AreaMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode } from '@/lib/rail/tree'
@@ -149,7 +151,8 @@ interface RailRowProps {
   accent?: string
   /** Settle-in entrance for rows revealed on expand (ticket-41). */
   settleOnMount?: boolean
-  /** A leading mark slot (the Life root's half-disc) — replaces the dot. */
+  /** A leading mark slot (an area's glyph, the Life root's ring — #91) —
+   *  replaces the dot. */
   leading?: ReactNode
   /** Trailing meta slot (the root's "all" caption). */
   trailing?: ReactNode
@@ -326,7 +329,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         title={label}
         meta=""
         handle={false}
-        dot={!isRoot && isArea && accent !== undefined}
+        dot={!isRoot && isArea && accent !== undefined && leading === undefined}
         accent={accent}
         emphasis={isRoot || isArea}
         leading={leading}
@@ -420,14 +423,18 @@ export interface RailViewProps {
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
 
-/** The Life root's mark — a calm sage half-disc, drawn (not a glyph). */
-function LifeMark() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden className="flex-shrink-0">
-      <circle cx="7" cy="7" r="6" fill="none" stroke="var(--mn-area-a)" strokeWidth="1.4" />
-      <path d="M7 1a6 6 0 0 1 0 12z" fill="var(--mn-area-a)" opacity="0.85" />
-    </svg>
-  )
+/** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
+const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
+
+/**
+ * An area row's leading mark: its default glyph in the area hue, when the
+ * title maps to one (#91). An unmapped area returns nothing and keeps its
+ * KindDot through the molecule's `dot`.
+ */
+function areaMark(node: RailNode): ReactNode {
+  if (node.type !== 'area') return undefined
+  const glyph = areaGlyph(node.title)
+  return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
 }
 
 export function RailView({
@@ -609,7 +616,7 @@ export function RailView({
         isRoot
         posInSet={posInSet}
         setSize={setSize}
-        leading={<LifeMark />}
+        leading={LIFE_MARK}
         trailing={
           <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30 pr-1 select-none">
             all
@@ -643,6 +650,7 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         accent={node.type === 'area' ? pageAccent(id) : undefined}
+        leading={areaMark(node)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
