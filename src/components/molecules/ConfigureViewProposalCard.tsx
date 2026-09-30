@@ -39,6 +39,24 @@ export interface ConfigureViewFilter {
   value: string
 }
 
+/**
+ * The proposed chart config (#111), keyed by property NAME. A chart is a MODE of the
+ * database — the card previews what will be plotted, never any data, because the
+ * figures are aggregated from the records at read time.
+ */
+export interface ConfigureViewChart {
+  kind: string
+  xProperty?: string
+  series: Array<{ property?: string; agg: string }>
+}
+
+/** The proposed big-number config (#111), keyed by property NAME. */
+export interface ConfigureViewBigNumber {
+  property?: string
+  agg: string
+  format?: string
+}
+
 interface ConfigureViewProposalCardProps {
   /** Which of the four existing renderers draws the rows. */
   mode: ViewMode
@@ -48,6 +66,10 @@ interface ConfigureViewProposalCardProps {
   sort?: ConfigureViewSort
   /** Single-clause filter — a property NAME `op` a scalar (label for select/status). */
   filter?: ConfigureViewFilter
+  /** Chart mode (#111): which kind, bucketed by which property NAME, plotting what. */
+  chart?: ConfigureViewChart
+  /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
+  bigNumber?: ConfigureViewBigNumber
   /** Optional one-line note from the model on what the view is for. */
   reason?: string
   /** The currently-selected target collection id (the collection this view is on). */
@@ -79,6 +101,9 @@ const MODE_LABEL: Record<ViewMode, string> = {
   calendar: 'Calendar',
   gallery: 'Gallery',
   gantt: 'Gantt',
+  // #111: a chart and a big number are modes of the database, not blocks of their own.
+  chart: 'Chart',
+  'big-number': 'Big number',
 }
 
 /** A short human phrase for a filter operator, for the read-only preview. */
@@ -95,6 +120,8 @@ export function ConfigureViewProposalCard({
   groupBy,
   sort,
   filter,
+  chart,
+  bigNumber,
   reason,
   selectedTargetId,
   targetOptions,
@@ -123,6 +150,28 @@ export function ConfigureViewProposalCard({
       label: 'Filtered',
       value: `${filter.property} ${OP_LABEL[filter.op]} ${filter.value}`,
     })
+  }
+  // #111 chart mode: what is plotted, and over which category. Never any numbers —
+  // the figures are read from the records, so the card can only promise the shape.
+  if (chart) {
+    clauses.push({ label: 'Chart', value: chart.kind })
+    clauses.push({ label: 'By', value: chart.xProperty?.trim() || 'Each record' })
+    clauses.push({
+      label: 'Plotting',
+      value: chart.series
+        .map((s) => (s.property?.trim() ? `${s.property} (${s.agg})` : `records (${s.agg})`))
+        .join(', '),
+    })
+  }
+  // #111 big-number mode: the single figure this page will lead with.
+  if (bigNumber) {
+    clauses.push({
+      label: 'Figure',
+      value: bigNumber.property?.trim()
+        ? `${bigNumber.property} (${bigNumber.agg})`
+        : `records (${bigNumber.agg})`,
+    })
+    if (bigNumber.format) clauses.push({ label: 'Format', value: bigNumber.format })
   }
 
   return (

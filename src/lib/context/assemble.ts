@@ -22,7 +22,7 @@ import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
 import { resolveDescriptor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
-import { ROW_TYPE, readSchema } from '@/lib/properties/schema'
+import { ROW_TYPE, readSchema, readValues } from '@/lib/properties/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { ViewRow } from '@/lib/modules/view/schema'
 
@@ -303,6 +303,11 @@ async function fetchChildren(sb: Sb, userId: string, nodeId: string): Promise<Ch
  * grafted onto the matching view blocks. No-op (no query) when the page has no view
  * block. The `rows` field is transient (never persisted): the view schema is
  * config-only.
+ *
+ * #111: each row also carries its property `values`, and the block its source
+ * collection's `schema` — the chart and big-number modes AGGREGATE the records at
+ * serialize time, so the model must read the same figures the user sees. One extra
+ * query for the sources' schemas, and only when a view is present.
  */
 export async function hydrateViewBlocks(
   sb: Sb,
@@ -321,16 +326,45 @@ export async function hydrateViewBlocks(
     const children = await getChildPages(sb, userId, sourceId)
     rowsBySource.set(
       sourceId,
-      children.filter((p) => p.type === ROW_TYPE).map((p) => ({ id: p.id, title: p.title }))
+      children
+        .filter((p) => p.type === ROW_TYPE)
+        // `values` (#111) is the row's property map — what chart/big-number modes
+        // aggregate. `readValues` strips the reserved `_schema` key, so a row can
+        // never smuggle a schema into a figure.
+        .map((p) => ({ id: p.id, title: p.title, values: readValues(p.props) }))
     )
+  }
+
+  // The sources' own property schemas — one query for all of them. Needed to read a
+  // chart/big-number figure at serialize time (a property id means nothing without
+  // its type and, for a choice, its option labels).
+  const schemaBySource = new Map<string, PropertySchema>()
+  const { data: sourcePages } = await sb
+    .from('pages')
+    .select('id, props')
+    .eq('user_id', userId)
+    .in('id', [...sourceIds])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const page of (sourcePages ?? []) as any[]) {
+    const schema = readSchema(page.props as Record<string, unknown> | null)
+    if (schema) schemaBySource.set(page.id as string, schema)
   }
 
   // `b.type === 'view'` narrows to ViewBlock so the `rows` graft type-checks (a
   // plain boolean helper wouldn't narrow, and grafting rows onto a table block's
   // own `rows` would collide).
-  return blocks.map((b) =>
-    b.type === 'view' ? { ...b, rows: rowsBySource.get(b.collectionId ?? nodeId) ?? [] } : b
-  )
+  return blocks.map((b) => {
+    if (b.type !== 'view') return b
+    const sourceId = b.collectionId ?? nodeId
+    const schema = schemaBySource.get(sourceId)
+    return {
+      ...b,
+      rows: rowsBySource.get(sourceId) ?? [],
+      // Omitted for a non-collection source, so serialize degrades to naming the
+      // rows rather than reporting a figure it cannot honestly compute.
+      ...(schema ? { schema } : {}),
+    }
+  })
 }
 
 /** All of a user's pages as lean title rows for the workspace outline — one

@@ -12,6 +12,8 @@ import {
   type ViewBlock,
   type HydratedViewBlock,
 } from '@/lib/modules/view/schema'
+import { CHART_KINDS } from '@/lib/modules/view/aggregate'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 const base: ViewBlock = { id: 'v1', type: 'view', mode: 'table' }
 
@@ -98,5 +100,143 @@ describe('viewDescriptor.serialize', () => {
     const out = viewDescriptor.serialize(withRows(base, ['Solo']) as ViewBlock)
     expect(out).toMatch(/\b1 row\b/)
     expect(out).not.toContain('1 rows')
+  })
+})
+
+// ── chart + big-number modes (#111) ──────────────────────────────────────────
+// A chart and a headline figure are MODES of the database, so the block stays
+// config-only: the schema must accept the mode config and reject a malformed one,
+// and serialize must report the AGGREGATED figure (not a promise that a chart
+// exists), because that string is what the model reads.
+
+describe('viewSchema — chart + big-number config (#111)', () => {
+  it('accepts mode:"chart" with a valid chart config', () => {
+    const block: ViewBlock = {
+      ...base,
+      mode: 'chart',
+      chart: {
+        kind: 'bar',
+        xProperty: 'p-month',
+        series: [{ property: 'p-hours', agg: 'sum' }],
+        stacked: true,
+      },
+    }
+    const parsed = viewSchema.safeParse(block)
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data).toEqual(block)
+  })
+
+  it('accepts every #94 chart KIND as a config value (no new block types)', () => {
+    for (const kind of CHART_KINDS) {
+      expect(
+        viewSchema.safeParse({
+          ...base,
+          mode: 'chart',
+          chart: { kind, series: [{ property: 'p-hours', agg: 'sum' }] },
+        }).success
+      ).toBe(true)
+    }
+  })
+
+  it('rejects a malformed chart config (unknown kind, empty series, bogus verb)', () => {
+    const bad = [
+      { kind: 'donut', series: [{ property: 'p-hours', agg: 'sum' }] },
+      { kind: 'bar', series: [] },
+      { kind: 'bar', series: [{ property: 'p-hours', agg: 'median' }] },
+      { kind: 'bar', series: [{ property: 'p-hours', agg: 'sum' }], stacked: 'yes' },
+    ]
+    for (const chart of bad) {
+      expect(viewSchema.safeParse({ ...base, mode: 'chart', chart }).success).toBe(false)
+    }
+  })
+
+  it('accepts mode:"big-number" with a valid bigNumber config', () => {
+    const block: ViewBlock = {
+      ...base,
+      mode: 'big-number',
+      bigNumber: {
+        property: 'p-hours',
+        agg: 'avg',
+        format: 'currency',
+        delta: { property: 'p-status', value: 'o-done' },
+      },
+    }
+    const parsed = viewSchema.safeParse(block)
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data).toEqual(block)
+  })
+
+  it('rejects a malformed bigNumber config (missing verb, bogus verb/format)', () => {
+    const bad = [
+      { property: 'p-hours' },
+      { property: 'p-hours', agg: 'median' },
+      { property: 'p-hours', agg: 'sum', format: 'dollars' },
+      { property: 'p-hours', agg: 'sum', delta: { property: 'p-status' } },
+    ]
+    for (const bigNumber of bad) {
+      expect(viewSchema.safeParse({ ...base, mode: 'big-number', bigNumber }).success).toBe(false)
+    }
+  })
+
+  it('still carries NO data of its own — a chart view holds config only', () => {
+    const parsed = viewSchema.parse({
+      ...base,
+      mode: 'chart',
+      chart: { kind: 'line', series: [{ property: 'p-hours', agg: 'sum' }] },
+      points: [{ x: 'Jan', values: { Hours: 3 } }],
+    } as unknown)
+    expect('points' in parsed).toBe(false)
+  })
+})
+
+describe('viewDescriptor.serialize — aggregated figures (#111 AC 8)', () => {
+  const figureSchema: PropertySchema = [
+    { id: 'p-hours', name: 'Hours', type: 'number' },
+    { id: 'p-month', name: 'Month', type: 'text' },
+  ]
+  const hydrated = (block: ViewBlock): HydratedViewBlock => ({
+    ...block,
+    schema: figureSchema,
+    rows: [
+      { id: 'r1', title: 'Mill', values: { 'p-hours': 3, 'p-month': 'Jan' } },
+      { id: 'r2', title: 'Glue', values: { 'p-hours': 5, 'p-month': 'Jan' } },
+      { id: 'r3', title: 'Finish', values: { 'p-hours': 2, 'p-month': 'Feb' } },
+    ],
+  })
+
+  it('reports a chart view as its aggregated points, not its row titles', () => {
+    const out = viewDescriptor.serialize(
+      hydrated({
+        ...base,
+        mode: 'chart',
+        chart: { kind: 'bar', xProperty: 'p-month', series: [{ property: 'p-hours', agg: 'sum' }] },
+      }) as ViewBlock
+    )
+    expect(out).toContain('chart bar')
+    expect(out).toContain('by Month')
+    expect(out).toContain('Jan 8')
+    expect(out).toContain('Feb 2')
+  })
+
+  it('reports a big-number view as the formatted figure over its records', () => {
+    const out = viewDescriptor.serialize(
+      hydrated({
+        ...base,
+        mode: 'big-number',
+        bigNumber: { property: 'p-hours', agg: 'sum', format: 'currency' },
+      }) as ViewBlock
+    )
+    expect(out).toContain('Hours: $10')
+    expect(out).toContain('over 3 records')
+  })
+
+  it('never invents a figure when the seam injected no schema', () => {
+    const out = viewDescriptor.serialize({
+      ...base,
+      mode: 'big-number',
+      bigNumber: { property: 'p-hours', agg: 'sum' },
+    })
+    expect(out).toContain('no rows')
+    expect(out).not.toContain('$')
   })
 })
