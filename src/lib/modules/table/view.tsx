@@ -59,7 +59,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
             {columns.map((col, i) => (
               <th
                 key={i}
-                className="border-b border-mn-line py-1 pr-3 text-[10.5px] font-medium tracking-[0.1em] text-mn-text-secondary uppercase"
+                className="border-b border-mn-line py-1 pr-3 text-[10.5px] font-medium tracking-wider text-mn-text-secondary uppercase"
               >
                 {col}
               </th>
@@ -117,7 +117,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                   return (
                     <td
                       key={ci}
-                      className="py-1.5 pr-3 text-[10.5px] font-medium tracking-[0.1em] text-mn-text-secondary uppercase"
+                      className="py-1.5 pr-3 text-[10.5px] font-medium tracking-wider text-mn-text-secondary uppercase"
                     >
                       Total
                     </td>

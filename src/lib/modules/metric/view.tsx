@@ -127,7 +127,7 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
       {/* Aggregate rollups show their scope quietly in a caption (w2-design-brief:
           "across N milestone pages"); no `→` (there's no single source to jump to). */}
       {derived.state === 'aggregate' && (
-        <span className="font-mono text-[11px] lowercase tracking-[0.1em] text-mn-text-faint">
+        <span className="font-mono text-mn-11 lowercase tracking-wider text-mn-text-faint">
           across {derived.pageCount} {derived.pageCount === 1 ? 'page' : 'pages'}
         </span>
       )}
@@ -154,7 +154,7 @@ function MetricRow({ data, derived }: { data: MetricBlock; derived: DerivedMetri
 
       {derived.state === 'stale' && (
         <span
-          className="font-mono text-[11px] lowercase tracking-[0.1em] text-mn-text-faint italic"
+          className="font-mono text-mn-11 lowercase tracking-wider text-mn-text-faint italic"
           // Covers stale shapes: the source block (or its whole page) was deleted, OR it
           // still exists but type-morphed into something the binding can't count.
           title="Source block or page missing or no longer countable"

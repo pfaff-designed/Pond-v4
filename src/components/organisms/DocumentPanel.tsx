@@ -290,7 +290,7 @@ export function DocumentPanel() {
             aria-label="Page title"
           />
           <span
-            className="font-mono lowercase tracking-[0.1em] text-[11px] text-mn-text-faint flex-shrink-0"
+            className="font-mono lowercase tracking-wider text-mn-11 text-mn-text-faint flex-shrink-0"
             aria-live="polite"
           >
             {saved ? 'saved' : 'saving…'}

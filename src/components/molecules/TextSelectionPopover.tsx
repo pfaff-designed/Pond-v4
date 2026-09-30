@@ -118,7 +118,7 @@ export function TextSelectionPopover({ containerRef, onAsk, disabled }: TextSele
       <span
         className="
           rounded-mn-pill bg-mn-surface
-          px-3 py-1 text-xs font-mono lowercase tracking-[0.1em] text-mn-text-secondary
+          px-3 py-1 text-xs font-mono lowercase tracking-wider text-mn-text-secondary
           shadow-mn-md ring-1 ring-mn-line hover:text-mn-text hover:ring-mn-text
           transition-colors select-none whitespace-nowrap
         "

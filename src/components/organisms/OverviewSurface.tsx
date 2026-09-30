@@ -71,7 +71,7 @@ function EditableKicker({
   value: string
   onRename?: (title: string) => void
 }) {
-  const kickerClass = 'font-mono text-[11px] tracking-[0.1em] uppercase text-mn-text-faint'
+  const kickerClass = 'font-mono text-mn-11 tracking-wider uppercase text-mn-text-faint'
   const [draft, setDraft] = useState(value)
   // Escape blurs to end the edit, and blur normally commits — but an Escape
   // blur must NOT commit (the whole point is to revert). The blur event fires
@@ -232,7 +232,7 @@ export function OverviewSurface({
                 <span
                   data-part="kicker-dot"
                   aria-hidden
-                  className="w-2 h-2 rounded-[2px] flex-shrink-0"
+                  className="w-2 h-2 rounded-mn-hair flex-shrink-0"
                   style={{ background: accent }}
                 />
               ))}
@@ -244,7 +244,7 @@ export function OverviewSurface({
               onRenameKicker ? (
                 <span className="flex items-center flex-wrap min-w-0">
                   <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} />
-                  <span className="font-mono text-[11px] text-mn-text-faint/60 px-1.5 select-none">
+                  <span className="font-mono text-mn-11 text-mn-text-faint/60 px-1.5 select-none">
                     ›
                   </span>
                   <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />

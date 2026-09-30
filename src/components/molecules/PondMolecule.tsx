@@ -409,7 +409,7 @@ export function PondMolecule({
           </span>
           <span
             data-part="sub"
-            className="font-mono lowercase text-[11.5px] tracking-[0.1em] text-mn-text-secondary"
+            className="font-mono lowercase text-[11.5px] tracking-wider text-mn-text-secondary"
           >
             {sub}
           </span>
@@ -432,7 +432,7 @@ export function PondMolecule({
             data-part="title"
             className={cn(
               'leading-[1.35] font-medium',
-              mobile ? 'text-[14px]' : 'text-[13px]',
+              mobile ? 'text-[14px]' : 'text-mn-13',
               empty && 'text-mn-text-secondary'
             )}
           >
@@ -497,7 +497,7 @@ export function PondMolecule({
       >
         <span
           data-part="label"
-          className="text-[10.5px] font-medium tracking-[0.1em] uppercase text-mn-text-secondary"
+          className="text-[10.5px] font-medium tracking-wider uppercase text-mn-text-secondary"
         >
           {label ?? 'kcal per serving'}
         </span>
@@ -528,8 +528,8 @@ export function PondMolecule({
         <span
           data-part="title"
           className={cn(
-            'min-w-0 flex-1 font-mono lowercase leading-[1.5] text-mn-text-meta',
-            mobile ? 'text-[12px]' : 'text-[11px]'
+            'min-w-0 flex-1 font-mono lowercase leading-normal text-mn-text-meta',
+            mobile ? 'text-[12px]' : 'text-mn-11'
           )}
         >
           {displayTitle}

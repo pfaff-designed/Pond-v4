@@ -42,7 +42,7 @@ function ProgressRing({ label, sub, pct }: { label: string; sub?: string; pct: n
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center leading-none">
         <span className="text-2xl tabular-nums tracking-tight">{label}</span>
         {sub && (
-          <span className="font-mono text-[10px] lowercase tracking-[0.1em] text-mn-text-secondary">
+          <span className="font-mono text-[10px] lowercase tracking-wider text-mn-text-secondary">
             {sub}
           </span>
         )}

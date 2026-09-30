@@ -618,7 +618,7 @@ export function RailView({
         setSize={setSize}
         leading={LIFE_MARK}
         trailing={
-          <span className="font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30 pr-1 select-none">
+          <span className="font-mono text-[10px] tracking-wider lowercase text-mn-text/30 pr-1 select-none">
             all
           </span>
         }
@@ -693,7 +693,7 @@ export function RailView({
           children (WAI-ARIA); a <p> inside it would be an illegal child. */}
       {isLoading && (
         <p
-          className="px-2.5 py-2 font-mono text-[10px] tracking-[0.1em] lowercase text-mn-text/30"
+          className="px-2.5 py-2 font-mono text-[10px] tracking-wider lowercase text-mn-text/30"
           role="status"
         >
           loading…
