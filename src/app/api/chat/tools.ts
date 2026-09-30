@@ -346,6 +346,21 @@ const configureViewInput = z
           .describe(
             'How the figure reads: "number" (default), "currency" (USD), or "percent" (the value is a FRACTION — 0.62 shows as 62%).'
           ),
+        delta: z
+          .object({
+            property: z
+              .string()
+              .describe('The NAME of the property that splits the comparison (from [Properties]).'),
+            value: z
+              .string()
+              .describe(
+                'The value that marks the SUBSET being compared. For a select/status property use the option LABEL.'
+              ),
+          })
+          .optional()
+          .describe(
+            'An optional trend: the figure over the records whose `property` equals `value`, against the figure over all the OTHERS, shown as a signed percentage. Only set it when the user asked for a comparison ("vs last month"); omit otherwise.'
+          ),
       })
       .optional()
       .describe(

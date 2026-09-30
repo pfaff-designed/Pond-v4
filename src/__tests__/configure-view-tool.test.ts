@@ -86,6 +86,29 @@ describe('configure_view input — big-number mode (#111)', () => {
     ).toBe(true)
   })
 
+  it('accepts a figure with a trend clause (named by property + option LABEL)', () => {
+    expect(
+      parse({
+        pageId: 'p1',
+        mode: 'big-number',
+        bigNumber: {
+          property: 'Spend',
+          agg: 'sum',
+          delta: { property: 'Month', value: 'September' },
+        },
+      }).success
+    ).toBe(true)
+    // A half-written trend (no value) fails the gate rather than writing a clause
+    // that can never match a record.
+    expect(
+      parse({
+        pageId: 'p1',
+        mode: 'big-number',
+        bigNumber: { property: 'Spend', agg: 'sum', delta: { property: 'Month' } },
+      }).success
+    ).toBe(false)
+  })
+
   it('accepts a property-less count of records', () => {
     expect(parse({ pageId: 'p1', mode: 'big-number', bigNumber: { agg: 'count' } }).success).toBe(
       true

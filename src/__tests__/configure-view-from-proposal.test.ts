@@ -186,6 +186,39 @@ describe('resolveViewConfig', () => {
     })
   })
 
+  it('resolves a figure TREND clause: property NAME → id, option LABEL → option id', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: {
+          property: 'Hours',
+          agg: 'sum',
+          delta: { property: 'Status', value: 'Done' },
+        },
+      })
+    ).toEqual({
+      mode: 'big-number',
+      bigNumber: {
+        property: 'p-hours',
+        agg: 'sum',
+        delta: { property: 'p-status', value: 'o-done' },
+      },
+    })
+  })
+
+  it('drops an unresolved trend clause but keeps the figure', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: { property: 'Hours', agg: 'sum', delta: { property: 'Nope', value: 'x' } },
+      })
+    ).toEqual({ mode: 'big-number', bigNumber: { property: 'p-hours', agg: 'sum' } })
+  })
+
   it('keeps a property-less COUNT figure (how many records)', () => {
     expect(
       resolveViewConfig(schema, { pageId: 'c', mode: 'big-number', bigNumber: { agg: 'count' } })

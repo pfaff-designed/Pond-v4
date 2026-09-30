@@ -251,7 +251,12 @@ interface ConfigureViewPart {
       stacked?: boolean
     }
     /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
-    bigNumber?: { property?: string; agg: ViewAggValue; format?: ViewFigureFormat }
+    bigNumber?: {
+      property?: string
+      agg: ViewAggValue
+      format?: ViewFigureFormat
+      delta?: { property: string; value: string }
+    }
     /** Linked view (#41): NAME of ANOTHER collection whose rows this view draws. */
     targetCollection?: string
     reason?: string

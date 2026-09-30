@@ -55,6 +55,8 @@ export interface ConfigureViewBigNumber {
   property?: string
   agg: string
   format?: string
+  /** Optional trend clause — a property NAME and the value marking the subset. */
+  delta?: { property: string; value: string }
 }
 
 interface ConfigureViewProposalCardProps {
@@ -172,6 +174,12 @@ export function ConfigureViewProposalCard({
         : `records (${bigNumber.agg})`,
     })
     if (bigNumber.format) clauses.push({ label: 'Format', value: bigNumber.format })
+    if (bigNumber.delta) {
+      clauses.push({
+        label: 'Compared to',
+        value: `everything but ${bigNumber.delta.property} ${bigNumber.delta.value}`,
+      })
+    }
   }
 
   return (

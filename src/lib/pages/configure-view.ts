@@ -79,6 +79,9 @@ export interface ConfigureViewProposal {
     property?: string
     agg: ViewAggValue
     format?: ViewFigureFormat
+    /** Optional trend: the figure over the records matching this clause vs the rest.
+     *  Property by NAME, value by LABEL for a select/status — resolved on accept. */
+    delta?: { property: string; value: string }
   }
   /**
    * A linked view over ANOTHER collection (#41 / #20 D6). Already a collection id
@@ -215,10 +218,27 @@ export function resolveViewConfig(
       ? byName.get(proposal.bigNumber.property.trim().toLowerCase())
       : undefined
     if (def || proposal.bigNumber.agg === 'count') {
+      // The trend clause resolves exactly like a filter: property NAME → id, and a
+      // select/status value LABEL → option id (the stored identity). An unresolved
+      // property drops the trend and keeps the figure.
+      const deltaDef = proposal.bigNumber.delta
+        ? byName.get(proposal.bigNumber.delta.property.trim().toLowerCase())
+        : undefined
+      const delta =
+        deltaDef && proposal.bigNumber.delta
+          ? {
+              property: deltaDef.id,
+              value:
+                deltaDef.type === 'select' || deltaDef.type === 'status'
+                  ? (resolveOptionValue(deltaDef, proposal.bigNumber.delta.value) ?? '')
+                  : proposal.bigNumber.delta.value,
+            }
+          : undefined
       config.bigNumber = {
         ...(def ? { property: def.id } : {}),
         agg: def ? proposal.bigNumber.agg : 'count',
         ...(proposal.bigNumber.format ? { format: proposal.bigNumber.format } : {}),
+        ...(delta ? { delta } : {}),
       }
     }
   }
