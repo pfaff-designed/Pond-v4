@@ -21,7 +21,7 @@
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
 import { kickerClass } from '@/components/atoms/kicker'
-import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
+import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 import type { PropertyType } from '@/lib/properties/schema'
 

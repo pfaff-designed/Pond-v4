@@ -56,7 +56,7 @@ function Harness({
 
 // The meta uses a loose type so render-based stories can bypass component arg requirements.
 const meta: Meta = {
-  title: 'Atoms/GhostSuggestion',
+  title: 'Molecules/GhostSuggestion',
   parameters: { layout: 'centered' },
 }
 

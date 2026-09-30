@@ -43,13 +43,13 @@ import {
   TextSelectionPopover,
   type SelectionContext,
 } from '@/components/molecules/TextSelectionPopover'
-import { VoiceInputButton } from '@/components/atoms/VoiceInputButton'
-import { CsvAttachmentPill } from '@/components/atoms/CsvAttachmentPill'
-import { FileAttachmentChip } from '@/components/atoms/FileAttachmentChip'
+import { VoiceInputButton } from '@/components/molecules/VoiceInputButton'
+import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
+import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
-import { GhostSuggestion, useGhostKeyHandler } from '@/components/atoms/GhostSuggestion'
+import { GhostSuggestion, useGhostKeyHandler } from '@/components/molecules/GhostSuggestion'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
 import {
   TerminalDrawer,
@@ -57,8 +57,8 @@ import {
   TERMINAL_MAX_HEIGHT,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
-import { Markdown } from '@/components/atoms/Markdown'
-import { StageText } from '@/components/atoms/StageText'
+import { Markdown } from '@/components/molecules/Markdown'
+import { StageText } from '@/components/molecules/StageText'
 import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { FollowupChips } from '@/components/molecules/FollowupChips'
