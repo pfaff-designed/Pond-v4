@@ -16,6 +16,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
+import { isOpen } from './status'
 import { jsonEqual, planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
 
@@ -60,6 +61,15 @@ export async function proposeRevert(
   if (existing.some((r) => r.status === 'proposed')) {
     throw new Error(`change log: record ${record.id} already has a revert waiting on you`)
   }
+  // An `outdated` revert raised against this very page state would be raised
+  // again, identically, for as long as the person keeps clicking — and the log
+  // only grows, so each click is permanent. Refuse until something actually
+  // changes; then the answer can differ and a fresh attempt is worth recording.
+  if (
+    existing.some((r) => r.status === 'outdated' && jsonEqual(readBlockSnapshot(r.before), current))
+  ) {
+    throw new Error(`change log: this change could not be set back against the page as it stands`)
+  }
 
   const plan = planRevert(record, current)
   return appendRecord(supabase, {
@@ -80,7 +90,13 @@ export async function proposeRevert(
     // reverted. `after` is exactly what accept will write: accept does NOT re-plan
     // (see `acceptRevert`), so the record can never describe a page that was not.
     before: current,
-    after: plan.blocks,
+    // NULL when the plan is unsound. An outdated revert can never be accepted, so
+    // its `after` is speculative — and a plan built over a block that moved on can
+    // be actively wrong: probed, it marked an unrelated look-alike for deletion.
+    // 0011 freezes `after`, and #147 renders before/after uniformly, so persisting
+    // that array would show the person a diff deleting a block of theirs that
+    // nothing was ever going to delete. Absent beats fabricated.
+    after: plan.movedOn ? null : plan.blocks,
     // NOT the original's thread. A revert raised by clicking a button did not come
     // from the conversation that produced the change it takes back, and #110 calls
     // this "the transcript ↔ log link". Claiming one would be a false provenance
@@ -138,6 +154,12 @@ export async function acceptRevert(
 ): Promise<AcceptRevertResult> {
   const { revert, current } = input
   const actor = input.actor ?? ACTOR_YOU
+
+  // Already settled — swept `outdated` by another accept, or answered in another
+  // tab — so there is nothing to advance. `advanceStatus` would raise
+  // IllegalTransitionError on `outdated → outdated`, which reached the person as a
+  // crash instead of the ordinary "this is out of date".
+  if (!isOpen(revert.status)) return { kind: 'outdated', revert }
 
   const planned = readBlockSnapshot(revert.before)
   if (planned === null || !jsonEqual(current, planned)) {

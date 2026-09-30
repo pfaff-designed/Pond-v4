@@ -221,7 +221,7 @@ describe('accept_revert_record — refusals are atomic', () => {
     const db = await makeDb()
     const { pageId, revert } = await scene(db, { originalStatus: 'undone' })
 
-    await expect(accept(db, revert)).rejects.toThrow(/is undone, not accepted/)
+    await expect(accept(db, revert)).rejects.toThrow(/already taken back/)
     expect(await blocksOf(db, pageId)).toEqual(AFTER)
     await db.close()
   })
@@ -318,6 +318,57 @@ describe('accept_revert_record — the page compare-and-swap', () => {
     await accept(db, revert, reordered)
 
     expect(await blocksOf(db, pageId)).toEqual(BEFORE)
+    await db.close()
+  })
+})
+
+// ── 0014's guards ────────────────────────────────────────────────────────────
+
+describe('accept_revert_record — what it refuses to write', () => {
+  it('refuses a non-array `blocks` rather than corrupting the page', async () => {
+    // `pages.blocks` is NOT NULL so a null raises on its own, but a non-array
+    // jsonb went straight in — leaving content no reader can parse. The app
+    // always passes the record's `after`, and 0011 lets `after` be redacted to
+    // null independently of `before`, so this is reachable from the database side.
+    const db = await makeDb()
+    const { pageId, revert } = await scene(db)
+
+    await expect(
+      db.query(`select * from public.accept_revert_record($1, $2, $3, 'you')`, [
+        revert,
+        JSON.stringify('not blocks'),
+        JSON.stringify(AFTER),
+      ])
+    ).rejects.toThrow(/must write an array of blocks/)
+
+    expect(await blocksOf(db, pageId)).toEqual(AFTER)
+    await db.close()
+  })
+
+  it('refuses a null `blocks`', async () => {
+    const db = await makeDb()
+    const { pageId, revert } = await scene(db)
+
+    await expect(
+      db.query(`select * from public.accept_revert_record($1, null, $2, 'you')`, [
+        revert,
+        JSON.stringify(AFTER),
+      ])
+    ).rejects.toThrow(/must write an array of blocks/)
+
+    expect(await blocksOf(db, pageId)).toEqual(AFTER)
+    await db.close()
+  })
+
+  it('says plainly that the change was already taken back (#104 reaches this)', async () => {
+    // Undo stamps a record `undone`; a revert already proposed against it keeps a
+    // live Accept. The refusal is right — `accepted -> reverted` is the only edge
+    // out — but it has to read as something a surface can show.
+    const db = await makeDb()
+    const { pageId, revert } = await scene(db, { originalStatus: 'undone' })
+
+    await expect(accept(db, revert)).rejects.toThrow(/already taken back \(it is undone\)/)
+    expect(await blocksOf(db, pageId)).toEqual(AFTER)
     await db.close()
   })
 })

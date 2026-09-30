@@ -262,7 +262,11 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
     if (onPage !== undefined) {
       const kept = !claimed.has(onPage.id) && sameBlockIgnoringId(onPage, created)
       createdNow.set(id, kept ? onPage.id : null)
-      if (kept) claimed.add(onPage.id)
+      // Claimed EITHER WAY. This block is spoken for: it is this create, changed
+      // or not. Leaving it unclaimed let a sibling create bind to some other
+      // look-alike and mark it for deletion — probed as `after [provX, provY]`
+      // against page `[provX(edited), real]`, which planned to delete `real`.
+      claimed.add(onPage.id)
       continue
     }
     const key = valueKey(created)
@@ -271,7 +275,15 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
     else byValue.set(key, [id])
   }
   for (const [key, ids] of byValue) {
-    const candidates = current.filter((b) => !claimed.has(b.id) && valueKey(b) === key)
+    // `!beforeById.has(b.id)` — a block that was already on the page BEFORE the
+    // original ran cannot be what it created. Counting those in dead-ended the
+    // revert permanently: two blank paragraphs, two `---` dividers or two
+    // identical list items made the counts disagree, so the revert was born
+    // `outdated` even though nothing had moved, and clicking Revert again only
+    // appended another one to a log that never forgets.
+    const candidates = current.filter(
+      (b) => !claimed.has(b.id) && !beforeById.has(b.id) && valueKey(b) === key
+    )
     if (candidates.length !== ids.length) {
       for (const id of ids) createdNow.set(id, null)
       continue
@@ -281,10 +293,18 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
       claimed.add(candidates[i].id)
     })
   }
-  /** Page-side ids of the blocks the original added — the ones a revert removes. */
-  const removeIds = new Set<string>(
-    [...createdNow.values()].filter((id): id is string => id !== null)
-  )
+  /**
+   * Page-side ids of the blocks the original added — the ones a revert removes.
+   *
+   * ALL OR NOTHING. If any create could not be resolved, this plan is already
+   * `outdated` and will never be written; removing the creates that DID resolve
+   * would still hand the caller an array that deletes blocks, and a pure function
+   * should not return a destructive plan it has itself judged unsound.
+   */
+  const unresolved = [...createdNow.values()].some((id) => id === null)
+  const removeIds = unresolved
+    ? new Set<string>()
+    : new Set<string>([...createdNow.values()].filter((id): id is string => id !== null))
 
   // "If the block has moved on…" — measured against the original's OWN `after`,
   // which is the state it left the page in. Anything else editing those blocks

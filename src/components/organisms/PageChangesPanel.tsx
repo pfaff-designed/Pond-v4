@@ -14,9 +14,11 @@
  *     The page is re-read immediately before planning, because the plan is a diff
  *     against the page as it stands — and if the blocks the original touched have
  *     moved on, the revert is born `outdated` instead ("Pond offers a revision").
- *   - **Accept** re-reads the page again and re-plans, so unrelated edits made
- *     between raising the revert and answering it are not dropped, then commits
- *     the page and advances both records in one transaction (migration 0013).
+ *   - **Accept** re-reads the page and commits the record's own `after` verbatim,
+ *     advancing both records in one transaction (migration 0013). It does NOT
+ *     re-plan: a revert writes exactly what it says it writes. If the page moved
+ *     since the revert was raised, nothing is written and the revert goes
+ *     `outdated` — raising it again re-plans against the page as it then stands.
  *   - **Reject** is a plain status advance. The original stays `accepted` — a
  *     rejected revert takes nothing back.
  *

@@ -394,6 +394,33 @@ describe('planRevert', () => {
     expect(plan.blocks).toEqual([text('shared', 'mine, different content')])
   })
 
+  it('does not count a look-alike that predates the original', () => {
+    // Round three. `p1` was on the page BEFORE the original ran, so it cannot be
+    // what the original created — but it matched by value, inflated the candidate
+    // count, and dead-ended the revert as `outdated` although nothing had moved.
+    // Permanent, and every retry appended another record to a log that only grows.
+    const original = record({
+      before: [text('p1', '')],
+      after: [text('p1', ''), text('prov', '')],
+    })
+    const plan = planRevert(original, [text('p1', ''), text('real', '')])
+
+    expect(plan.movedOn).toBe(false)
+    expect(plan.status).toBe('proposed')
+    expect(plan.blocks).toEqual([text('p1', '')])
+  })
+
+  it('does not let a changed create hand its sibling an unrelated block', () => {
+    // Round three. `provX` is on the page but edited, so it is moved on — and it
+    // must still be CLAIMED, or `provY` binds to `real` and the plan marks a block
+    // nothing created for deletion.
+    const original = record({ before: [], after: [text('provX', 'hi'), text('provY', 'hi')] })
+    const plan = planRevert(original, [text('provX', 'edited'), text('real', 'hi')])
+
+    expect(plan.movedOn).toBe(true)
+    expect(plan.blocks).toEqual([text('provX', 'edited'), text('real', 'hi')])
+  })
+
   it('throws rather than guessing when the record offers no revert', () => {
     expect(() => planRevert(record({ status: 'proposed' }), [])).toThrow(/cannot be reverted/)
   })
@@ -584,6 +611,70 @@ describe('proposeRevert', () => {
     expect(mockedAppend).toHaveBeenCalledTimes(1)
   })
 
+  it('stores no `after` when the plan is unsound', async () => {
+    // Round three. An outdated revert can never be accepted, so its `after` is
+    // speculative — and a plan built over a block that moved on can mark an
+    // unrelated block for deletion. 0011 freezes `after` and #147 renders it, so
+    // the person would be shown a diff deleting a block of theirs forever.
+    const supabase = fakeSupabase({ data: [], error: null })
+    mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
+
+    await proposeRevert(supabase, {
+      userId: USER,
+      record: record(),
+      current: [text('a', 'one'), text('b', 'MOVED ON')],
+    })
+
+    const input = mockedAppend.mock.calls[0][1]
+    expect(input.status).toBe('outdated')
+    expect(input.after).toBeNull()
+    // `before` is still a real page state, and true.
+    expect(input.before).toEqual([text('a', 'one'), text('b', 'MOVED ON')])
+  })
+
+  it('refuses to re-raise a revert that already failed against this same page', async () => {
+    // Round three: otherwise every click appends another `outdated` record, for
+    // ever, to a log with no delete verb.
+    const stale = {
+      id: 'rev-1',
+      user_id: USER,
+      workspace: 'main',
+      status: 'outdated',
+      action: 'revert',
+      actor: 'you',
+      target_page_id: PAGE,
+      target_block_id: null,
+      before: [text('a', 'one'), text('b', 'MOVED ON')],
+      after: null,
+      source_thread_id: null,
+      tool_call_id: null,
+      read: null,
+      links: { revert_of: 'rec-1' },
+      transitions: [],
+      created_at: '2026-01-01T00:00:00.000Z',
+      status_at: '2026-01-01T00:00:00.000Z',
+    }
+    const supabase = fakeSupabase({ data: [stale], error: null })
+
+    await expect(
+      proposeRevert(supabase, {
+        userId: USER,
+        record: record(),
+        current: [text('a', 'one'), text('b', 'MOVED ON')],
+      })
+    ).rejects.toThrow(/could not be set back/)
+    expect(mockedAppend).not.toHaveBeenCalled()
+
+    // But once the page moves, a fresh attempt can give a different answer.
+    mockedAppend.mockResolvedValue(record({ id: 'rev-2', action: 'revert' }))
+    await proposeRevert(supabase, {
+      userId: USER,
+      record: record(),
+      current: [text('a', 'one'), text('b', 'TWO')],
+    })
+    expect(mockedAppend).toHaveBeenCalledTimes(1)
+  })
+
   it('refuses outright when the record offers no revert', async () => {
     const supabase = fakeSupabase({ data: [], error: null })
     await expect(
@@ -690,6 +781,25 @@ describe('acceptRevert', () => {
 
     expect(out.kind).toBe('outdated')
     expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('reports an already-settled revert as outdated instead of crashing', async () => {
+    // Round three. A record swept `outdated` by another accept, or answered in a
+    // second tab, reached `advanceStatus(outdated -> outdated)` — an
+    // IllegalTransitionError surfacing to the person as a crash rather than as
+    // "this is out of date". Reachable today, and #104 widens it.
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest.fn()
+
+    const out = await acceptRevert(supabase, {
+      userId: USER,
+      revert: record({ ...revert, status: 'outdated' }),
+      current: PAGE_AT_PROPOSE,
+    })
+
+    expect(out.kind).toBe('outdated')
+    expect(supabase.rpc).not.toHaveBeenCalled()
+    expect(mockedAdvance).not.toHaveBeenCalled()
   })
 
   it('sweeps the page\u2019s other block diffs once the revert lands', async () => {
