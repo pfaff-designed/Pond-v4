@@ -17,6 +17,22 @@
  *
  * Server-safe: pure data, no React.
  *
+ * ── DEMOTED (#102, spec #110) ────────────────────────────────────────────────
+ * This envelope is no longer the durable record of what changed. The durable,
+ * only-grows change log — `public.change_log`, written through
+ * `src/lib/change-log/store.ts` — is: one record per action, holding the full
+ * before/after snapshot and one of eight statuses, scoped per pond.
+ *
+ * What lives here is now a SESSION-SCOPED UI CACHE, and only that: it keeps
+ * proposal cards inert across a reload and feeds `applyResolutions` so the model
+ * still sees settled results (the ticket-19 SDK gotcha). It stores a binary
+ * `accepted | rejected` DECISION and no diff content, which is exactly why it
+ * cannot be the source of truth. The link between the two is `sourceThreadId` +
+ * `toolCallId`, both stamped on every change-log record, so resolved-card state
+ * is re-derivable from the log.
+ *
+ * Nothing is removed — rollback of #102 leaves this working as it does today.
+ *
  * Ticket-39 (THE SPINE) folds two more facts into the SAME envelope, so the
  * lifecycle and question cards persist and re-seed exactly like proposal cards:
  *   - `lifecycle` — the project phase (grill → wayfinding → build-out), so a

@@ -86,6 +86,60 @@ export interface Database {
         Insert: { id?: string; user_id: string; transcript?: Json; workspace?: Workspace }
         Update: { transcript?: Json; workspace?: Workspace; dissolved_at?: string }
       }
+      // The durable change log (#102, migration 0011). One row = one diff:
+      // before/after + one of eight statuses, scoped per pond (user + workspace).
+      // ONLY GROWS — there is no Delete shape here on purpose, and the table's
+      // trigger + RLS refuse deletes outright. `Update` is narrowed to the three
+      // columns an advance touches, plus the single permitted content mutation
+      // (redacting a deleted memory note's before/after to null).
+      // Read/write it through src/lib/change-log/store.ts, never inline.
+      change_log: {
+        Row: {
+          id: string
+          user_id: string
+          workspace: Workspace
+          status: string
+          action: string
+          actor: string
+          target_page_id: string | null
+          target_block_id: string | null
+          before: Json
+          after: Json
+          source_thread_id: string | null
+          tool_call_id: string | null
+          read: Json
+          links: Json
+          transitions: Json
+          created_at: string
+          status_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          workspace?: Workspace
+          status: string
+          action: string
+          actor?: string
+          target_page_id?: string | null
+          target_block_id?: string | null
+          before?: Json
+          after?: Json
+          source_thread_id?: string | null
+          tool_call_id?: string | null
+          read?: Json
+          links?: Json
+          transitions?: Json
+        }
+        Update: {
+          status?: string
+          status_at?: string
+          transitions?: Json
+          /** Redaction only — may be set to null, never to other content. */
+          before?: null
+          /** Redaction only — may be set to null, never to other content. */
+          after?: null
+        }
+      }
     }
   }
 }
