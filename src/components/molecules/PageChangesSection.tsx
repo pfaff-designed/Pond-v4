@@ -57,11 +57,17 @@ function Status({ status }: { status: ChangeLogStatus }) {
   return <span className="font-mono text-[0.65rem] text-mn-text-meta">{statusLabel(status)}</span>
 }
 
-/** `2026-09-30T09:31:00Z` → `09:31`, in the reader's own timezone. */
+/**
+ * `2026-09-30T09:31:00Z` → `09:31`, in the reader's own timezone.
+ *
+ * `hourCycle: 'h23'` because the design's rows read `09:31` and `18:40`, and
+ * because a locale-default 12-hour clock renders `02:32 PM` — which overflowed
+ * the column when this was first run against the real log.
+ */
 function timeOf(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 }
 
 export function PageChangesSection({

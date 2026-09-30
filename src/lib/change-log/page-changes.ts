@@ -15,7 +15,7 @@
  * no React, no formatting decisions beyond a short human label.
  */
 
-import { canRevertRecord } from './revert'
+import { canRevertRecord } from './revert-plan'
 import type { ChangeLogRecord } from './types'
 
 export interface PageChangeRow {

@@ -26,17 +26,15 @@ jest.mock('@/lib/change-log/store', () => ({
 
 import type { Block } from '@/lib/documents/types'
 import { appendRecord, advanceStatus, markOutdated } from '@/lib/change-log/store'
+import { acceptRevert, listRevertsOf, proposeRevert } from '@/lib/change-log/revert'
 import {
-  acceptRevert,
   canRevertRecord,
   jsonEqual,
-  listRevertsOf,
   planRevert,
-  proposeRevert,
   readBlockSnapshot,
   revertRefusal,
   touchedBlockIds,
-} from '@/lib/change-log/revert'
+} from '@/lib/change-log/revert-plan'
 import type { ChangeLogAction, ChangeLogRecord, ChangeLogStatus } from '@/lib/change-log/types'
 
 const mockedAppend = appendRecord as jest.MockedFunction<typeof appendRecord>
@@ -156,12 +154,19 @@ describe('revertRefusal', () => {
     'promote_table',
     'configure_view',
     'link_records',
-  ])('refuses %s — those six store the call, not a block snapshot', (action) => {
-    // propose.ts writes `before: null` for all six (#146 item 4). There is nothing
-    // to set back, so no affordance is offered rather than one that cannot work.
+  ])('refuses %s — those five store the call, not a block snapshot', (action) => {
+    // propose.ts writes `before: null` for them (#146 item 4). There is nothing to
+    // set back, so no affordance is offered rather than one that cannot work.
     expect(revertRefusal(record({ action, before: null, after: { pageId: PAGE } }))).toBe(
-      'not-an-edit'
+      'not-a-block-diff'
     )
+  })
+
+  it('offers a revert on an accepted REVERT — it is an accepted record like any other', () => {
+    // "Any accepted record can be reverted." A revert's before/after are block
+    // arrays exactly like an edit's, so the reason the other tools are excluded
+    // does not apply to it. accept_revert_record handles the chain (pglite test).
+    expect(revertRefusal(record({ action: 'revert', links: { revertOf: 'rec-0' } }))).toBeNull()
   })
 
   it('refuses a record whose page is gone', () => {
@@ -265,6 +270,44 @@ describe('planRevert', () => {
     const plan = planRevert(original, [text('z', 'later')])
 
     expect(plan.blocks.map((b) => b.id)).toEqual(['gone', 'z'])
+  })
+
+  it('finds a CREATED block under the id the client actually minted', () => {
+    // propose.ts: "the ids minted for CREATED blocks here are provisional: the
+    // client mints its own on accept." Seen live on record 86cae7d7 — `after`
+    // named block e00ac26c…, the page held the identical block as 36a32c65…. A
+    // by-id match would call that "moved on" and the revert could never land,
+    // for every block Pond has ever created.
+    const original = record({
+      before: [],
+      after: [text('provisional', 'advance path live check')],
+    })
+    const plan = planRevert(original, [text('minted-on-accept', 'advance path live check')])
+
+    expect(plan.movedOn).toBe(false)
+    expect(plan.status).toBe('proposed')
+    // Removed under the id it actually landed as.
+    expect(plan.blocks).toEqual([])
+  })
+
+  it('matches two identical creates one-to-one, not both to the first block', () => {
+    const original = record({
+      before: [],
+      after: [text('p1', 'same'), text('p2', 'same')],
+    })
+    const plan = planRevert(original, [text('r1', 'same'), text('r2', 'same'), text('keep', 'x')])
+
+    expect(plan.movedOn).toBe(false)
+    expect(plan.blocks).toEqual([text('keep', 'x')])
+  })
+
+  it('still calls a created block moved on once its content was edited', () => {
+    // Value matching must not become "remove anything vaguely similar".
+    const original = record({ before: [], after: [text('provisional', 'as proposed')] })
+    const plan = planRevert(original, [text('minted', 'edited since')])
+
+    expect(plan.movedOn).toBe(true)
+    expect(plan.blocks).toEqual([text('minted', 'edited since')])
   })
 
   it('arrives outdated when a touched block has moved on since', () => {
