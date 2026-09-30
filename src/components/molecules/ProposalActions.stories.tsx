@@ -4,7 +4,7 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import { ProposalActions } from './ProposalActions'
 
 const meta = {
-  title: 'Atoms/ProposalActions',
+  title: 'Molecules/ProposalActions',
   component: ProposalActions,
   parameters: { layout: 'centered' },
   args: {

@@ -16,7 +16,7 @@
 
 import { cn } from '@/lib/utils'
 import { ModuleDiffCard } from './ModuleDiffCard'
-import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
+import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 import type { ChangePreview } from '@/lib/modules/preview'
 
 interface ProposalGroupProps {

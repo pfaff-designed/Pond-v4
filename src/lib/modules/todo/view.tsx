@@ -2,7 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { TodoBlock } from './schema'
-import { MarkdownInline } from '@/components/atoms/Markdown'
+import { MarkdownInline } from '@/components/molecules/Markdown'
 
 /**
  * Todo view. An interactive module: editing is folded into the view (checkbox +

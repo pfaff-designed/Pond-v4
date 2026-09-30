@@ -3,7 +3,7 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import { CsvAttachmentPill } from './CsvAttachmentPill'
 
 const meta = {
-  title: 'Atoms/CsvAttachmentPill',
+  title: 'Molecules/CsvAttachmentPill',
   component: CsvAttachmentPill,
   parameters: { layout: 'centered' },
   args: {

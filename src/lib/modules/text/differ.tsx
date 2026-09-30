@@ -1,6 +1,6 @@
 'use client'
 
-import { Markdown } from '@/components/atoms/Markdown'
+import { Markdown } from '@/components/molecules/Markdown'
 import type { TextBlock } from './schema'
 
 /**

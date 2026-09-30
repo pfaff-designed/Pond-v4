@@ -8,7 +8,7 @@ import { FileAttachmentChip } from './FileAttachmentChip'
  * (present only with `onRemove`) is the remove-before-send affordance.
  */
 const meta = {
-  title: 'Atoms/FileAttachmentChip',
+  title: 'Molecules/FileAttachmentChip',
   component: FileAttachmentChip,
   parameters: { layout: 'centered' },
   args: {

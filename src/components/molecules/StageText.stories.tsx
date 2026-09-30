@@ -8,7 +8,7 @@ import { StageText } from './StageText'
  * is announced politely and typeset in the correspondence serif, not a mono console.
  */
 const meta = {
-  title: 'Atoms/StageText',
+  title: 'Molecules/StageText',
   component: StageText,
   parameters: { layout: 'padded' },
   args: { label: 'drafting your page…' },
