@@ -236,6 +236,38 @@ export async function getRecord(
 }
 
 /**
+ * The record a given tool call produced, or null when there isn't one.
+ *
+ * This is the transcript → log bridge the accept and reject paths need. A
+ * proposal is logged server-side as the call is emitted (`propose.ts`), keyed by
+ * `tool_call_id`; the browser later resolves that same card and knows only the
+ * tool call id, so this is how it finds the record to advance. Scoped to the pond
+ * like every other read, so a tool call id can never reach across workspaces.
+ *
+ * Null is an ordinary answer, not an error: a card streamed before this build
+ * shipped, or one whose log write was dropped (the log is a side-record and
+ * `recordProposedToolCalls` never throws), has no record to advance.
+ */
+export async function getRecordByToolCall(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; workspace?: WorkspaceScope; toolCallId: string }
+): Promise<ChangeLogRecord | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq('user_id', opts.userId)
+    .eq('workspace', opts.workspace ?? 'main')
+    .eq('tool_call_id', opts.toolCallId)
+    .maybeSingle()
+  // Taking only `data` made a broken query indistinguishable from "this call was
+  // never logged" — and callers read null as "nothing to advance", so a transient
+  // failure would skip the advance with no trace. Same reasoning as the sweep.
+  if (error) throw error
+  return data ? mapChangeLogRow(data as ChangeLogRow) : null
+}
+
+/**
  * Advance one record's status. The ONLY mutation this module performs, and it
  * touches exactly three columns: `status`, `status_at`, and one APPENDED entry
  * on `transitions`. The edge is asserted against the state machine first, so an
@@ -349,17 +381,23 @@ export async function markOutdated(
     blockIds?: string[]
     /** The record that was just accepted — never sweeps itself. */
     exceptId?: string
+    /** Only these actions. A block write outdates block diffs; it says nothing
+     *  about a pending `add_row` or `define_schema` on the same page, whose
+     *  before/after live in the property schema and rows instead. */
+    actions?: ChangeLogAction[]
     actor?: ChangeLogActor
   }
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let q: any = (supabase as any)
     .from(TABLE)
     .select(COLUMNS)
     .eq('user_id', opts.userId)
     .eq('workspace', opts.workspace ?? 'main')
     .eq('target_page_id', opts.targetPageId)
     .eq('status', 'proposed')
+  if (opts.actions !== undefined) q = q.in('action', opts.actions)
+  const { data, error } = await q
   // Taking only `data` made a failed query indistinguishable from "nothing to
   // sweep" — and this runs AFTER the accept has committed, so the sweep quietly
   // evaporating leaves accept-able proposals aimed at a block that has moved on,

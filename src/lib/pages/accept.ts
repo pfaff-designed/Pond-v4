@@ -15,9 +15,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
+import type { WorkspaceScope } from '@/lib/workspace/context'
+import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
-import { commitBlocks } from './commit'
+import { commitBlocks, propagateBlockWrite } from './commit'
 
 /** The outcome of an accept write (Fix-1 / F1a+F12): honest applied/skipped
  *  counts, per-skip reasons for the card, and the target id for the receipt. */
@@ -33,6 +35,13 @@ export interface AcceptWriteResult {
 export async function writeAcceptedChanges(opts: {
   supabase: SupabaseClient<Database>
   queryClient: QueryClient
+  /** Whose pond this is — the scope of the change-log record being advanced.
+   *  Required rather than optional on purpose: a caller that could forget it
+   *  would leave the record `proposed` forever, silently. Explicitly `null` when
+   *  there is no session, which means there is no pond to scope a record to. */
+  userId: string | null
+  /** Which pond. Scopes both the record lookup and the rail invalidation. */
+  workspace?: WorkspaceScope
   resolutions: ConversationResolutions
   toolCallId: string
   openNodeId: string | null
@@ -45,7 +54,8 @@ export async function writeAcceptedChanges(opts: {
    *  per-change accept clicks so split accepts still bind (mutated). */
   refIds?: Record<string, string>
 }): Promise<AcceptWriteResult> {
-  const { supabase, queryClient, resolutions, toolCallId, openNodeId, changes } = opts
+  const { supabase, queryClient, userId, resolutions, toolCallId, openNodeId, changes } = opts
+  const workspace = opts.workspace ?? 'main'
   if (changes.length === 0) return { applied: 0, skipped: 0, skippedReasons: [], targetId: null }
 
   const target = resolveAcceptTarget(resolutions, toolCallId, openNodeId)
@@ -84,12 +94,42 @@ export async function writeAcceptedChanges(opts: {
     }
   })
 
+  // What the log already knows about this proposal. A stale reason means the log
+  // has moved past it — accepting anyway would write a page from a diff the system
+  // has declared out of date, and the log would disagree with the page for good.
+  const proposal = await readProposalForAccept(supabase, { userId, workspace, toolCallId })
+  if (proposal.staleReason !== null) {
+    const reason = proposal.staleReason
+    return {
+      applied: 0,
+      skipped: changes.length,
+      skippedReasons: changes.map(() => reason),
+      targetId: null,
+    }
+  }
+
   const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID(), {
     batch,
     refIds: opts.refIds,
     rejectedKeys,
   })
-  await commitBlocks(supabase, queryClient, target, result.blocks)
+  if (result.applied === 0) {
+    // Nothing landed, so the page has not moved on and the log must not say it
+    // has. The blocks are unchanged; committing them is what this path did before
+    // the log existed, and it keeps the receipt and skip reasons intact.
+    await commitBlocks(supabase, queryClient, target, result.blocks, workspace)
+  } else {
+    await commitAcceptedEdit(supabase, {
+      userId,
+      workspace,
+      record: proposal.record,
+      targetPageId: target,
+      blocks: result.blocks,
+      commit: () => commitBlocks(supabase, queryClient, target, result.blocks, workspace),
+      propagate: () => propagateBlockWrite(queryClient, target, workspace),
+    })
+  }
+
   // External write to the target page — invalidate ['page', target] (not the open
   // page's key) so an open DocumentPanel on that page refetches and adopts the new
   // blocks (commitBlocks leaves that cache alone precisely so this stays the

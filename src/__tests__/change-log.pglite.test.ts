@@ -873,3 +873,118 @@ describe('0011_change_log — accept_change_log_record', () => {
     await db.close()
   })
 })
+
+// ── The accept path's sequence (#146 item 1) ─────────────────────────────────
+//
+// The store's units prove each call in isolation against a mocked builder. What
+// they cannot prove is the SEQUENCE the accept path actually performs — commit +
+// advance, then sweep the page's other proposals to `outdated` — surviving the
+// append-only trigger, which has opinions about every one of those writes. That
+// only holds against real SQL.
+
+describe('0011_change_log — accept then sweep, end to end', () => {
+  /** What markOutdated issues: every OTHER still-proposed record on the page. */
+  async function sweepPage(
+    db: PGlite,
+    opts: { userId?: string; workspace?: string; pageId: string; exceptId: string }
+  ): Promise<number> {
+    const { userId = USER, workspace = 'main', pageId, exceptId } = opts
+    const stale = await db.query<{ id: string }>(
+      `select id from public.change_log
+        where user_id = $1 and workspace = $2 and target_page_id = $3
+          and status = 'proposed' and action = 'edit' and id <> $4`,
+      [userId, workspace, pageId, exceptId]
+    )
+    for (const r of stale.rows) {
+      await db.query('select * from public.advance_change_log_record($1, $2, $3, $4)', [
+        r.id,
+        'proposed',
+        'outdated',
+        'pond',
+      ])
+    }
+    return stale.rows.length
+  }
+
+  it('accepts one proposal and outdates the page’s others, touching nothing else', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await seedUser(db, OTHER)
+
+    const page = await addPage(db, { blocks: [{ id: 'b1', type: 'text', content: 'before' }] })
+    const otherPage = await addPage(db, { title: 'Elsewhere' })
+
+    const accepted = await addRecord(db, { pageId: page, after: [{ id: 'b1' }] })
+    const sibling1 = await addRecord(db, { pageId: page })
+    const sibling2 = await addRecord(db, { pageId: page })
+    // Three records the sweep must leave alone.
+    const elsewhere = await addRecord(db, { pageId: otherPage })
+    const settled = await addRecord(db, { pageId: page, status: 'rejected' })
+    const sandbox = await addRecord(db, { pageId: page, workspace: 'sandbox' })
+    // A pending row insert on the SAME page. Its before/after live in the page's
+    // rows, not its blocks, so a block write says nothing about it and it must
+    // survive the sweep still accept-able.
+    const rowInsert = await addRecord(db, { pageId: page, action: 'add_row' })
+
+    const blocks = [{ id: 'b1', type: 'text', content: 'after' }]
+    await db.query('select * from public.accept_change_log_record($1, $2, $3)', [
+      accepted,
+      JSON.stringify(blocks),
+      'you',
+    ])
+    expect(await sweepPage(db, { pageId: page, exceptId: accepted })).toBe(2)
+
+    // Criterion 5: the page moved on, so the proposals written against the old
+    // state lose their accept affordance.
+    expect(await statusOf(db, accepted)).toBe('accepted')
+    expect(await statusOf(db, sibling1)).toBe('outdated')
+    expect(await statusOf(db, sibling2)).toBe('outdated')
+    // Never itself, never another page, never a settled record, never another pond,
+    // and never an action whose diff is not a block diff.
+    expect(await statusOf(db, elsewhere)).toBe('proposed')
+    expect(await statusOf(db, settled)).toBe('rejected')
+    expect(await statusOf(db, sandbox)).toBe('proposed')
+    expect(await statusOf(db, rowInsert)).toBe('proposed')
+
+    const pageBlocks = await db.query<{ blocks: unknown }>(
+      'select blocks from public.pages where id = $1',
+      [page]
+    )
+    expect(pageBlocks.rows[0].blocks).toEqual(blocks)
+
+    // The audit has to agree with the status it landed on, for every record the
+    // sequence touched — the trigger enforces that, so this proves the sweep's
+    // writes are shaped the way it demands.
+    const audit = await db.query<{ id: string; status: string; transitions: { status: string }[] }>(
+      'select id, status, transitions from public.change_log where id = any($1::uuid[])',
+      [[accepted, sibling1, sibling2]]
+    )
+    for (const r of audit.rows) {
+      expect(r.transitions).toHaveLength(2)
+      expect(r.transitions[0].status).toBe('proposed')
+      expect(r.transitions[1].status).toBe(r.status)
+    }
+    await db.close()
+  })
+
+  it('refuses to outdate the record it just accepted, so the sweep’s filter is load-bearing', async () => {
+    // markOutdated reads only `status = 'proposed'` and skips `exceptId`. If either
+    // guard were dropped, the sweep would try to walk accepted → outdated — an edge
+    // the state machine does not have. SQL is the backstop, and it holds.
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const page = await addPage(db, { blocks: [] })
+    const id = await addRecord(db, { pageId: page })
+
+    await db.query('select * from public.accept_change_log_record($1, $2)', [id, '[]'])
+    await expect(
+      db.query('select * from public.advance_change_log_record($1, $2, $3)', [
+        id,
+        'proposed',
+        'outdated',
+      ])
+    ).rejects.toThrow()
+    expect(await statusOf(db, id)).toBe('accepted')
+    await db.close()
+  })
+})

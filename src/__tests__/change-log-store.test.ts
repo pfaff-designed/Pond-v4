@@ -413,6 +413,44 @@ describe('countProposed', () => {
   })
 })
 
+describe('getRecordByToolCall', () => {
+  it('finds the pond’s record for one tool call', async () => {
+    const sb = makeSupabase({ maybeSingle: row({ id: 'rec-7', tool_call_id: 'call-7' }) })
+    const record = await store.getRecordByToolCall(sb as never, {
+      userId: USER,
+      workspace: 'sandbox',
+      toolCallId: 'call-7',
+    })
+
+    expect(record?.id).toBe('rec-7')
+    expect(record?.toolCallId).toBe('call-7')
+    // Scoped like every other read: a tool call id from another pond is not ours.
+    const eqArgs = sb._chain.eq.mock.calls
+    expect(eqArgs).toContainEqual(['user_id', USER])
+    expect(eqArgs).toContainEqual(['workspace', 'sandbox'])
+    expect(eqArgs).toContainEqual(['tool_call_id', 'call-7'])
+  })
+
+  it('reads null for a call with no record, which is an answer not an error', async () => {
+    const sb = makeSupabase({ maybeSingle: null })
+    await expect(
+      store.getRecordByToolCall(sb as never, { userId: USER, toolCallId: 'never-logged' })
+    ).resolves.toBeNull()
+  })
+
+  it('raises on a failed query instead of reporting no record', async () => {
+    // Swallowing the error made a broken query indistinguishable from "this call
+    // was never logged" — and the caller reads null as "nothing to advance", so a
+    // transient failure would silently skip the advance with no trace. Same
+    // reasoning as the markOutdated sweep.
+    const sb = makeSupabase({ maybeSingle: null })
+    sb._chain.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } })
+    await expect(
+      store.getRecordByToolCall(sb as never, { userId: USER, toolCallId: 'call-1' })
+    ).rejects.toMatchObject({ message: 'boom' })
+  })
+})
+
 describe('listRevisionsOf', () => {
   it('walks the revised_from chain in order and stops on a cycle', async () => {
     const sb = makeSupabase({

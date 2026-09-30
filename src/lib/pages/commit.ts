@@ -29,6 +29,22 @@ export async function commitBlocks(
   workspace: WorkspaceScope = 'main'
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
+  await propagateBlockWrite(queryClient, pageId, workspace)
+}
+
+/**
+ * Everything that has to happen AFTER a page's blocks land, minus the write
+ * itself. Split out because an accepted proposal does not write through
+ * `saveBlocks` at all: the page write rides inside `accept_change_log_record` so
+ * the commit and the record's advance share one transaction (spec #110 criterion
+ * 3). That path still owes the rail a refresh and the index a re-embed, and
+ * duplicating them is how the two write paths drift.
+ */
+export async function propagateBlockWrite(
+  queryClient: QueryClient,
+  pageId: string,
+  workspace: WorkspaceScope = 'main'
+): Promise<void> {
   // refresh the sidebar so any derived listing reflects the write immediately
   await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
   // keep semantic retrieval in step with the saved content (best-effort/background)
