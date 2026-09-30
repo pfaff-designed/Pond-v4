@@ -33,6 +33,13 @@ const eslintConfig = defineConfig([
     "storybook-static/**",
     ".claude/**",
     ".claude-worktrees/**",
+    // wayfinder/ is specs, briefs and the VENDORED design-handoff bundle
+    // (design_handoff_pond/**: _ds_bundle.js, support.js, pond-charts.js) plus
+    // a couple of one-off audit scripts — none of it is app source, and none of
+    // it ships. Linting it produced 2 errors in generated code that failed the
+    // whole `Lint · Typecheck · Test · Build` job at the lint step, so CI never
+    // reached jest and there was no test signal at all on any PR.
+    "wayfinder/**",
   ]),
   {
     // The promoted Bklit chart library and throwaway visual prototypes use
