@@ -76,6 +76,20 @@ export function isFolderNode(node: RailNode): boolean {
   return node.parentId === null || node.children.length > 0
 }
 
+/**
+ * Does this row carry the AREA voice — the raised label, the accent, the default
+ * glyph (#91)? A TOP-LEVEL page does (#108): that is where a person's areas live
+ * and the only rows the fixed title→glyph defaults are written for. Per-page
+ * glyph/colour is #91's own work; this only replaces the old `type === 'area'`.
+ *
+ * Deliberately NOT the same predicate as `isFolderNode` — a top-level page is a
+ * folder AND an area row, but a nested page with children is a folder only. The
+ * two rules answer different questions, so they stay two named functions.
+ */
+export function isAreaRow(node: RailNode): boolean {
+  return node.parentId === null
+}
+
 // ── Move (drag-to-reparent / reorder, F25) ───────────────────────────────────
 
 /** Where a dropped node lands relative to the hovered target row. */

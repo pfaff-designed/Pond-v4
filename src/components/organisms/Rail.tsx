@@ -65,6 +65,7 @@ import {
   LIFE_ID,
   buildTree,
   flattenVisible,
+  isAreaRow,
   treeKeyCommand,
   focusFallback,
   canMove,
@@ -86,7 +87,7 @@ import { PondMolecule, type PondMoleculeState } from '@/components/molecules/Pon
 import { AreaMark } from '@/components/atoms/AreaMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
-export { LIFE_ID, buildTree, flattenVisible, isFolderNode } from '@/lib/rail/tree'
+export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
 export type { RailNode, FlatRow } from '@/lib/rail/tree'
 
 // ── The rail's tree row (the TreeRow absorption, #95) ────────────────────────
@@ -144,8 +145,7 @@ interface RailRowProps {
   /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
   isRoot?: boolean
   /** An area row — the raised label voice + its accent dot. #108: "area" is no
-   *  longer a stored type; the caller passes this for a TOP-LEVEL page, which is
-   *  where a person's areas live. (Per-page glyph/colour is #91.) */
+   *  longer a stored type; the caller decides with `isAreaRow` (a top-level page). */
   isArea?: boolean
   posInSet?: number
   setSize?: number
@@ -433,12 +433,11 @@ const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
  * title maps to one (#91). An unmapped area returns nothing and keeps its
  * KindDot through the molecule's `dot`.
  *
- * #108: there is no `type = 'area'` to test any more, so the mark is offered to
- * TOP-LEVEL pages — where a person's areas live, and the only rows the fixed
- * title→glyph defaults are written for. Per-page glyph/colour is #91's own work.
+ * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
+ * replacement rule (a top-level page).
  */
 function areaMark(node: RailNode): ReactNode {
-  if (node.parentId !== null) return undefined
+  if (!isAreaRow(node)) return undefined
   const glyph = areaGlyph(node.title)
   return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
 }
@@ -652,10 +651,10 @@ export function RailView({
         isOnPath={id !== selectedId && pathIds.has(id)}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        isArea={node.parentId === null}
+        isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        accent={node.parentId === null ? pageAccent(id) : undefined}
+        accent={isAreaRow(node) ? pageAccent(id) : undefined}
         leading={areaMark(node)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.

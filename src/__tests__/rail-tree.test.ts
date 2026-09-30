@@ -9,6 +9,7 @@ import {
   LIFE_ID,
   buildTree,
   isFolderNode,
+  isAreaRow,
   flattenVisible,
   treeKeyCommand,
   focusFallback,
@@ -120,6 +121,23 @@ describe('isFolderNode', () => {
     expect(isFolderNode(node('pr', 'project', 'Pr', [node('x', 'page', 'X')], 0, 'parent'))).toBe(
       true
     )
+  })
+})
+
+// #108: the area VOICE (raised label, accent, default glyph) is a different
+// question from folder-ness, so it is its own named rule.
+describe('isAreaRow', () => {
+  it('a top-level page is an area row, childless or not', () => {
+    expect(isAreaRow(node('a', 'page', 'A'))).toBe(true)
+    expect(isAreaRow(node('a', 'page', 'A', [node('c', 'page', 'C', [], 0, 'a')]))).toBe(true)
+  })
+  it('a nested page is not — even one that holds children (a folder, not an area)', () => {
+    const nested = node('food', 'page', 'Food', [], 0, 'personal')
+    expect(isAreaRow(nested)).toBe(false)
+    expect(isFolderNode({ ...nested, children: [node('r', 'page', 'R', [], 0, 'food')] })).toBe(
+      true
+    )
+    expect(isAreaRow({ ...nested, children: [node('r', 'page', 'R', [], 0, 'food')] })).toBe(false)
   })
 })
 
