@@ -36,6 +36,8 @@ export interface MarkPickerProps {
   onSelectGlyph: (glyph: string | null) => void
   /** Choose a role, or null to go back to inheriting the area's. */
   onSelectRole: (role: AreaRole | null) => void
+  /** Focus the search field on mount — the connected popover's way in by keyboard. */
+  autoFocus?: boolean
   className?: string
 }
 
@@ -46,6 +48,7 @@ export function MarkPicker({
   roleIsOwn,
   onSelectGlyph,
   onSelectRole,
+  autoFocus = false,
   className,
 }: MarkPickerProps) {
   const [query, setQuery] = useState('')
@@ -68,6 +71,7 @@ export function MarkPicker({
       </div>
 
       <input
+        autoFocus={autoFocus}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="search"

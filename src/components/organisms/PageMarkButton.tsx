@@ -88,7 +88,16 @@ export function PageMarkButton({
   const trigger = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
   const open = at !== null
-  const close = useCallback(() => setAt(null), [])
+  // Focus goes INTO the popover on open and back to the trigger on close. Round
+  // two's finding: the popover was mouse-only. Focus stayed on the trigger, the
+  // dialog had no tabindex, and Tab landed on whatever followed the trigger in the
+  // page — behind the click-away overlay, so unclickable — while
+  // `aria-haspopup="dialog"` announced an enterable dialog. Restoring focus is the
+  // other half: closing must not dump the person at the top of the document.
+  const close = useCallback(() => {
+    setAt(null)
+    trigger.current?.focus()
+  }, [])
 
   // The popover lives in a portal, so it has no layout relationship to its
   // trigger — it is anchored to the trigger's viewport rect instead. A scroll or
@@ -174,6 +183,7 @@ export function PageMarkButton({
               className="fixed z-[100] rounded-mn-card bg-mn-surface p-3 shadow-mn-lg"
             >
               <MarkPicker
+                autoFocus
                 glyph={mark.glyph}
                 role={mark.role}
                 glyphIsOwn={mark.glyphIsOwn}

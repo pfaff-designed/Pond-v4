@@ -355,13 +355,15 @@ export async function setPageMark(
   if ('glyph' in mark) patch.glyph = mark.glyph ?? null
   if ('areaRole' in mark) patch.area_role = mark.areaRole ?? null
   if (Object.keys(patch).length === 0) return
+  // `updated_at` is deliberately NOT stamped. The other writers here stamp it
+  // because they change CONTENT (`blocks`) or the page's name (`title`); a mark is
+  // neither. Nothing in the app sorts by it — the rail orders by `order` then
+  // title — and the one reader is `subtreeLatest`, which feeds the overview cards'
+  // "updated …" caption. Stamping it made picking a colour read as an edit to the
+  // page AND to every ancestor above it, with no change-log record behind the
+  // claim. (Round one asked for the stamp; round two probed the consequence.)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
-    .from('pages')
-    // Stamped like every other write in this module — the rail sorts and the
-    // overview cards read "updated …" off it, and a mark IS a change to the page.
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', id)
+  const { error } = await (supabase as any).from('pages').update(patch).eq('id', id)
   // Unlike the log's side-records, this IS what the person just asked for — a
   // silent failure would leave the picker showing a choice that never landed.
   if (error) throw error

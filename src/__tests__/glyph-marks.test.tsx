@@ -23,6 +23,7 @@ import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import type { MarkSource } from '@/lib/pages/mark'
 import { OverviewSurface } from '@/components/organisms/OverviewSurface'
 import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -192,10 +193,11 @@ const TREE: RailNode[] = [
   node('scratch', 'page', 'Scratchpad', [], 2),
 ]
 
-function renderRail() {
+function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
   return render(
     <RailView
       tree={TREE}
+      marks={marks}
       selectedId={null}
       expanded={new Set(['health', 'personal'])}
       lifeExpanded
@@ -399,6 +401,59 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
     const glyph = container.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
     expect(glyph).toBeInTheDocument()
     expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-c)')
+  })
+})
+
+describe('Rail — an explicit mark reaches the rail (#134)', () => {
+  // Round two's latent trap: every rail assertion above runs the EMPTY-map
+  // fallback, so the conversion that makes the rail agree with the other two
+  // surfaces had no test at all and #135 could have regressed it green.
+  const marks = (over: Partial<MarkSource> & { id: string }) =>
+    new Map<string, MarkSource>([
+      ['health', { id: 'health', parentId: null, title: 'Health' }],
+      ['sleep', { id: 'sleep', parentId: 'health', title: 'Sleep' }],
+      [over.id, { parentId: null, title: '', ...over } as MarkSource],
+    ])
+
+  it('shows a top-level row’s chosen glyph and role, not the title-derived ones', () => {
+    const { getByRole } = renderRail(
+      marks({
+        id: 'health',
+        parentId: null,
+        title: 'Health',
+        glyph: 'tulip-01',
+        areaRole: 'area-c',
+      })
+    )
+    const health = getByRole('treeitem', { name: /Health/ })
+    expect(health.querySelector('[data-icon="tulip-01"]')).toBeInTheDocument()
+    // Not the leaf its title would have given it.
+    expect(health.querySelector('[data-icon="leaf-01"]')).toBeNull()
+    const slot = health.querySelector<HTMLElement>('[data-area-mark]')!
+    expect(slot.style.color).toBe('var(--mn-area-c)')
+  })
+
+  it('shows a NESTED row’s glyph when it was explicitly chosen', () => {
+    // The disagreement round two caught: the kicker and breadcrumb showed a
+    // nested page's chosen tulip while the rail, gated on top-level rows alone,
+    // showed nothing.
+    const { getByRole } = renderRail(
+      marks({ id: 'sleep', parentId: 'health', title: 'Sleep', glyph: 'moon', areaRole: 'area-b' })
+    )
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    expect(sleep.querySelector('[data-icon="moon"]')).toBeInTheDocument()
+    expect(sleep.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
+      'var(--mn-area-b)'
+    )
+  })
+
+  it('leaves an untouched nested row unmarked, so the rail still reads as areas', () => {
+    const { getByRole } = renderRail(marks({ id: 'health', parentId: null, title: 'Health' }))
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    expect(sleep.querySelector('[data-icon]')).toBeNull()
+    expect(sleep.querySelector('[data-part="dot"]')?.getAttribute('style') ?? '').not.toContain(
+      'background'
+    )
   })
 })
 
