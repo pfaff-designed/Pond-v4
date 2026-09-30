@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Markdown, READING_PROSE_CLASS } from '@/components/atoms/Markdown'
+import { Markdown, READING_PROSE_CLASS } from '@/components/molecules/Markdown'
 import type { ModuleViewProps } from '../types'
 import type { TextBlock } from './schema'
 

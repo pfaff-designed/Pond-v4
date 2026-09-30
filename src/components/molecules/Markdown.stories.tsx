@@ -9,7 +9,7 @@ import { Markdown, MarkdownInline } from './Markdown'
  * the Press-serif `reading` variant and the compact `terminal` variant.
  */
 const meta = {
-  title: 'Atoms/Markdown',
+  title: 'Molecules/Markdown',
   component: Markdown,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof Markdown>
