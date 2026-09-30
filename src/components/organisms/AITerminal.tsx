@@ -107,7 +107,9 @@ import {
   proposalReducer,
   initialProposalState,
   projectResolutions,
+  type ProposalType,
 } from '@/lib/conversation/proposal-store'
+import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -393,6 +395,67 @@ export function AITerminal() {
   // ~20 flat useState maps this replaced are destructured back into their old local
   // names below, so every READER downstream is unchanged; only WRITES dispatch.
   const [proposals, dispatch] = useReducer(proposalReducer, undefined, initialProposalState)
+  // Every SETTLED card advances its change-log record off `proposed` (#146 item 1).
+  // Without this the propose path's records stayed `proposed` for good, so the
+  // log's headline figure — "N proposed, waiting on you" — counted decisions the
+  // person had already made.
+  //
+  // Called ALONGSIDE the dispatch that settles a card, never instead of it, and
+  // deliberately not folded into `dispatch` itself: wrapping useReducer's dispatch
+  // trips react-hooks/refs and makes all thirteen of its consumers report a
+  // missing dependency, because the lint rule treats only useReducer's own
+  // dispatch as stable.
+  //
+  // The one card this is NOT called for is an accepted block edit:
+  // `writeAcceptedChanges` has to commit the page and advance the record in a
+  // single transaction (spec #110 criterion 3), so it owns that advance.
+  const loggedDecisions = useRef<Set<string>>(new Set())
+  const logDecision = useCallback(
+    (toolCallId: string, decision: ProposalDecision) => {
+      // A batch reject dispatches once per change index; the record advances once.
+      if (loggedDecisions.current.has(toolCallId)) return
+      // Fire-and-forget: the card has already resolved, and resolveChangeLogRecord
+      // swallows its own failures rather than raising an unhandled rejection.
+      void (async () => {
+        const supabase = getSupabase()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        // No session: leave the call UNMARKED so a later decision can still log it.
+        // Marking before this check meant one signed-out moment blocked that call's
+        // advance for the rest of the session.
+        if (!user) return
+        if (loggedDecisions.current.has(toolCallId)) return
+        loggedDecisions.current.add(toolCallId)
+        await resolveChangeLogRecord(supabase, {
+          userId: user.id,
+          workspace,
+          toolCallId,
+          decision,
+        })
+      })()
+    },
+    [getSupabase, workspace]
+  )
+
+  /**
+   * Reject a non-block card and advance its record together, so the two cannot
+   * drift. Reject only: there is no write to fail, so the record can settle at
+   * the same moment the card does.
+   *
+   * An ACCEPT cannot work this way. Every accept handler below settles its card
+   * optimistically and then reverts it to pending if the write throws, so
+   * advancing the record here would stamp `accepted` on a change that never
+   * landed — and the log only grows, so that stamp could not be taken back.
+   * Accepts call logDecision at the END of their try block instead.
+   */
+  const rejectCard = useCallback(
+    (type: ProposalType, toolCallId: string) => {
+      dispatch({ kind: 'resolve', type, id: toolCallId, decision: 'rejected' })
+      logDecision(toolCallId, 'rejected')
+    },
+    [logDecision]
+  )
   // Same-batch bindKey→minted-id memory (ticket-31) stays a ref, not reducer state:
   // writeAcceptedChanges mutates it in place across accept clicks; never rendered/projected/reseeded.
   const proposalRefIds = useRef<Record<string, Record<string, string>>>({})
@@ -1069,17 +1132,38 @@ export function AITerminal() {
     (toolCallId: string, indices: number[], decision: ProposalDecision) => {
       for (const i of indices)
         dispatch({ kind: 'resolve', type: 'changes', id: toolCallId, index: i, decision })
+      // An ACCEPTED block edit advances inside writeAcceptedChanges, sharing the
+      // page commit's transaction; a rejected one has no page write to share, so
+      // it advances here.
+      //
+      // A mixed batch records its FIRST decision and keeps it. The log holds one
+      // record per tool call while the card decides per change, and the state
+      // machine has no `reject → accepted` edge to promote it later — so
+      // rejecting one change and then accepting another leaves the record
+      // `rejected`. There is no "partly accepted" status among the eight; #110
+      // assumes one decision per record.
+      if (decision === 'rejected') logDecision(toolCallId, 'rejected')
     },
-    []
+    [logDecision]
   )
 
   const acceptChanges = useCallback(
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
       if (indices.length === 0) return
       decideChanges(toolCallId, indices, 'accepted')
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       const result = await writeAcceptedChanges({
-        supabase: getSupabase(),
+        supabase,
         queryClient,
+        // The accept advances this call's change-log record, so it needs the pond
+        // it belongs to. Null only when there is no session — the blocks still
+        // commit, the log is simply left alone (there is no pond to scope a record
+        // to), which is how this path behaved before the log existed.
+        userId: user?.id ?? null,
+        workspace,
         resolutions,
         toolCallId,
         openNodeId: nodeId,
@@ -1137,6 +1221,7 @@ export function AITerminal() {
       decideChanges,
       getSupabase,
       queryClient,
+      workspace,
       resolutions,
       nodeId,
       changeTargets,
@@ -1225,13 +1310,16 @@ export function AITerminal() {
         })
         router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }, basePath))
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('create_page failed', err)
         dispatch({ kind: 'revert', type: 'creates', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, router, workspace, basePath]
+    [getSupabase, queryClient, router, workspace, basePath, logDecision]
   )
 
   // ── define_schema resolution (#17 slice 5) ────────────────────────────────
@@ -1277,13 +1365,16 @@ export function AITerminal() {
           return { ...page, props: withSchema(page.props, schema) }
         })
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('define_schema failed', err)
         dispatch({ kind: 'revert', type: 'schemas', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, allPages]
+    [getSupabase, queryClient, workspace, allPages, logDecision]
   )
 
   // ── add_row resolution (#18) ──────────────────────────────────────────────
@@ -1305,13 +1396,16 @@ export function AITerminal() {
           workspace
         )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('add_row failed', err)
         dispatch({ kind: 'revert', type: 'rows', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace]
+    [getSupabase, queryClient, workspace, logDecision]
   )
 
   // ── promote_table resolution (#29) ────────────────────────────────────────
@@ -1350,13 +1444,16 @@ export function AITerminal() {
         )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('promote_table failed', err)
         dispatch({ kind: 'revert', type: 'promotions', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace]
+    [getSupabase, queryClient, workspace, logDecision]
   )
 
   // ── link_records resolution (#40) ─────────────────────────────────────────
@@ -1387,6 +1484,9 @@ export function AITerminal() {
           void queryClient.invalidateQueries({ queryKey: ['rows', linked.targetCollectionId] })
         }
         void queryClient.invalidateQueries({ queryKey: ['page', linked.sourceRowId] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure ON the card (its message names the unresolvable or
         // duplicate title) and revert to pending so the user can retry.
@@ -1399,7 +1499,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'links', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace]
+    [getSupabase, queryClient, workspace, logDecision]
   )
 
   // ── configure_view resolution (#19 slice 5) ───────────────────────────────
@@ -1449,13 +1549,16 @@ export function AITerminal() {
           })
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', host] })
+        // The write landed — only now may the record say so. The log only grows,
+        // so an `accepted` stamped before this point could never be taken back.
+        logDecision(toolCallId, 'accepted')
       } catch (err) {
         // Surface the failure by reverting the card to pending so the user can retry.
         console.error('configure_view failed', err)
         dispatch({ kind: 'revert', type: 'views', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, nodeId]
+    [getSupabase, queryClient, workspace, nodeId, logDecision]
   )
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
@@ -1687,14 +1790,7 @@ export function AITerminal() {
                       })
                     }
                     onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'creates',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('creates', part.toolCallId)}
                   />
                 )
               })}
@@ -1739,14 +1835,7 @@ export function AITerminal() {
                       })
                     }
                     onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'schemas',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('schemas', part.toolCallId)}
                   />
                 )
               })}
@@ -1781,14 +1870,7 @@ export function AITerminal() {
                       })
                     }
                     onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'rows',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('rows', part.toolCallId)}
                   />
                 )
               })}
@@ -1846,14 +1928,7 @@ export function AITerminal() {
                     onAccept={() =>
                       acceptPromoteTable(part.toolCallId, input, selectedTargetId, preview)
                     }
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'promotions',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('promotions', part.toolCallId)}
                   />
                 )
               })}
@@ -1902,14 +1977,7 @@ export function AITerminal() {
                       })
                     }
                     onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'views',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('views', part.toolCallId)}
                   />
                 )
               })}
@@ -1953,14 +2021,7 @@ export function AITerminal() {
                       })
                     }
                     onAccept={() => acceptLinkRecords(part.toolCallId, input, selectedTargetId)}
-                    onReject={() =>
-                      dispatch({
-                        kind: 'resolve',
-                        type: 'links',
-                        id: part.toolCallId,
-                        decision: 'rejected',
-                      })
-                    }
+                    onReject={() => rejectCard('links', part.toolCallId)}
                   />
                 )
               })}
