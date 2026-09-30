@@ -51,10 +51,11 @@ describe('hydrateProposalBlocks', () => {
   it('preserves order across a mixed block array and mints unique ids', () => {
     const data: ModuleData[] = [
       { type: 'text', content: 'intro' },
-      { type: 'metric', label: 'Calories', value: 520, unit: 'kcal' },
+      // #111: a figure is a big-number VIEW of a database now, not a metric block.
+      { type: 'view', mode: 'big-number', bigNumber: { property: 'p-cal', agg: 'avg' } },
     ]
     const blocks = hydrateProposalBlocks(data, mint)
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'metric'])
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'view'])
     expect(blocks[0].id).toBe('id-1')
     expect(blocks[1].id).toBe('id-2')
   })

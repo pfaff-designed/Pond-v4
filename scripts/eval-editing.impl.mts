@@ -261,11 +261,13 @@ const SCENARIOS: Scenario[] = [
     },
   },
 
-  // 5 — multi-op in ONE batch: edit(intro) + create(servings metric), no other ops.
+  // 5 — multi-op in ONE batch: edit(intro) + create(a checklist), no other ops.
+  //     (#111 retired the `metric` block from creation — a figure is now a big-number
+  //     VIEW of a database, so this case pins the multi-op fence with a `todo` create.)
   {
-    name: 'multi-op: reword intro AND add a servings metric',
+    name: 'multi-op: reword intro AND add a shopping checklist',
     ctxData: RECIPE_CTX,
-    text: 'reword the intro to be punchier, and also add a metric for number of servings (6)',
+    text: 'reword the intro to be punchier, and also add a shopping checklist with butter, eggs and flour',
     expectTool: 'propose_changes',
     allowedTouch: ['blk-intro-01'], // the only existing block that may be edited/removed
     check: ({ changes, fail }) => {
@@ -279,8 +281,9 @@ const SCENARIOS: Scenario[] = [
       if (edit.blockId !== 'blk-intro-01') return fail(`edit must target intro, got ${edit.blockId}`)
       if (edit.data.type !== 'text') return fail(`intro edit must stay text, got ${edit.data.type}`)
       const create = creates[0] as Extract<ModuleChange, { op: 'create' }>
-      if (create.data.type !== 'metric') return fail(`servings should be a metric, got ${create.data.type}`)
-      if ('value' in create.data && create.data.value !== 6) return fail(`servings value should be 6, got ${create.data.value}`)
+      if (create.data.type !== 'todo') return fail(`the shopping list should be a todo, got ${create.data.type}`)
+      const labels = ('items' in create.data ? create.data.items : []).map((i) => i.label.toLowerCase())
+      if (!labels.some((l) => /butter/.test(l))) return fail('butter missing from the new checklist')
     },
   },
 
@@ -304,22 +307,13 @@ const SCENARIOS: Scenario[] = [
     },
   },
 
-  // 7 — metric value: "set progress to 60%" → edit the metric-ring id, pct 0.6.
-  {
-    name: 'metric value: set progress to 60%',
-    ctxData: RECIPE_CTX,
-    text: 'set the progress to 60%',
-    expectTool: 'propose_changes',
-    allowedTouch: ['blk-ring-05'],
-    check: ({ changes, fail }) => {
-      if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
-      const ch = changes[0]
-      if (ch.op !== 'edit' || ch.blockId !== 'blk-ring-05') return fail(`expected edit on blk-ring-05, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
-      if (ch.data.type !== 'metric-ring') return fail(`type must stay metric-ring, got ${ch.data.type}`)
-      if (!('pct' in ch.data)) return fail('no pct on ring edit')
-      if (Math.abs(ch.data.pct - 0.6) > 1e-6) return fail(`pct should be 0.6, got ${ch.data.pct}`)
-    },
-  },
+  // 7 — RETIRED by #111. This case pinned "set the progress to 60%" → an edit of the
+  //     `metric-ring` block. The eight data-holding display blocks (metric,
+  //     metric-ring, stat, the charts, heatmap, timeline) left the AI's emit union with
+  //     #111, so the model can no longer author OR edit one: a figure is a big-number
+  //     view of a database, and a legacy block on a page stays read-only (the same
+  //     standing `kanban` has had since #19 slice 6). Kept as a note rather than
+  //     silently deleted, so the gap is visible if the stance is ever revisited.
 
   // 8 — GENUINE ambiguity: two similarly-titled text sections, vague "that section".
   //     The steward clarify-guard must hold: NO tool call, ask which one.

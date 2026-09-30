@@ -13,7 +13,14 @@ const recipeBlocks: ModuleData[] = [
       { label: 'Layer with pasta and cheese', checked: false },
     ],
   },
-  { type: 'metric', label: 'Calories', value: 520, unit: 'kcal' },
+  // #111: the AI no longer composes a data-holding figure block; a scaffolded page
+  // carries real content and a view over its own records instead.
+  {
+    type: 'table',
+    title: 'Per serving',
+    columns: ['Nutrient', 'Amount'],
+    rows: [{ cells: ['Calories', '520 kcal'] }],
+  },
 ]
 
 const meta = {
@@ -105,7 +112,9 @@ export const StructuralProject: Story = {
           { label: 'Draft new IA', checked: false },
         ],
       },
-      { type: 'metric-ring', label: 'Progress', sub: 'DONE', pct: 0.1 },
+      // #111: progress comes from the records, so a scaffolded project carries a view
+      // of its own tasks rather than a hand-set ring that immediately goes stale.
+      { type: 'view', mode: 'big-number', bigNumber: { agg: 'count' } },
     ],
   },
   play: async ({ canvasElement }) => {

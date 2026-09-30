@@ -52,12 +52,33 @@ export type DescriptorType = keyof typeof moduleDescriptors
 
 /**
  * Types kept in the registry for read/render/serialize tolerance but retired from
- * CREATION (#19 slice 6): the standalone `kanban` block is superseded by the `view`
- * block's board mode over a collection. Persisted kanban blocks still hydrate and
- * render; neither the human palette nor the AI may mint a new one. `table` is NOT
- * retired — it remains the freeform-grid primitive (no collection-view equivalent).
+ * CREATION. Persisted blocks of these types still hydrate and render; neither the
+ * human palette nor the AI may mint a new one.
+ *
+ * `kanban` (#19 slice 6) is superseded by the `view` block's board mode over a
+ * collection.
+ *
+ * The eight data-holding display blocks (#111) are superseded by the `view` block's
+ * `chart` and `big-number` modes. Each of them held its OWN copy of the data —
+ * `points`, `cells`, `items`, a hand-set `value` — which the design forbids: "the
+ * record is the source of truth… nothing holds a copy." A chart or a headline figure
+ * is now a view of a database, aggregated from the records at read time. No data
+ * migration: existing pages keep rendering through these descriptors (#111 AC 6).
+ *
+ * `table` is NOT retired — it remains the freeform-grid primitive (a genuine matrix,
+ * not a set of records), and `promote_table` (#101) is how a table becomes a database.
  */
-export const RETIRED_FROM_CREATION = ['kanban'] as const
+export const RETIRED_FROM_CREATION = [
+  'kanban',
+  'chart-line',
+  'chart-bar',
+  'chart-area',
+  'heatmap',
+  'timeline',
+  'metric',
+  'metric-ring',
+  'stat',
+] as const
 export type RetiredType = (typeof RETIRED_FROM_CREATION)[number]
 
 /**

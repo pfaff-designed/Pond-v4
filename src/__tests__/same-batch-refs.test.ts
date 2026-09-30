@@ -41,6 +41,11 @@ const keyedChecklist = {
   data: checklistData,
 } as ModuleChange
 
+// #111 retired `metric` from the AI's emit union, so a metric change is no longer a
+// `ModuleChange` and has to be cast through `unknown`. The ref→id RESOLVER is what
+// this suite guards, and it still runs on every accept: a persisted metric block that
+// already carries a ref must still resolve rather than dangle. Nothing emits a ref
+// today — the plumbing is kept for whatever binds next, not for metric.
 const boundMetric = {
   op: 'create',
   data: {
@@ -49,7 +54,7 @@ const boundMetric = {
     value: 0,
     source: { ref: 'chores', kind: 'checklist-checked' },
   },
-} as ModuleChange
+} as unknown as ModuleChange
 
 describe('resolveSourceRef (the ref→id rewrite)', () => {
   const refs = new Map([['chores', 'blk-123']])
@@ -176,7 +181,7 @@ describe('applyProposedChanges — same-batch binding end to end', () => {
           value: 0,
           source: { ref: 'inv', kind: 'table-rows' },
         },
-      } as ModuleChange,
+      } as unknown as ModuleChange,
       {
         op: 'create',
         bindKey: 'inv',

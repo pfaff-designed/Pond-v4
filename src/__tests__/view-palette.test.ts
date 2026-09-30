@@ -42,3 +42,37 @@ describe('view in the block palette', () => {
     expect(block!.id.length).toBeGreaterThan(0)
   })
 })
+
+/**
+ * #111 AC 6 — the eight data-HOLDING display blocks are retired from creation and
+ * read-tolerant, exactly as `kanban` is: gone from the palette (and from the AI's emit
+ * union, pinned in ai-composition.test.ts), but still registered with a descriptor and
+ * a renderer so every page that already holds one keeps drawing it. No migration.
+ */
+describe('data-holding display blocks retired from creation (#111)', () => {
+  const retired = [
+    'chart-line',
+    'chart-bar',
+    'chart-area',
+    'heatmap',
+    'timeline',
+    'metric',
+    'metric-ring',
+    'stat',
+  ]
+
+  it.each(retired)('%s is NOT offered in the palette', (type) => {
+    expect(paletteItems.some((i) => i.id === type)).toBe(false)
+  })
+
+  it.each(retired)('%s stays a registered descriptor + renderer (read tolerance)', (type) => {
+    expect(type in moduleDescriptors).toBe(true)
+    expect(type in moduleRenderers).toBe(true)
+  })
+
+  it('leaves the palette with the live authoring vocabulary only', () => {
+    expect(paletteItems.map((i) => i.id).sort()).toEqual(
+      ['board', 'image', 'table', 'text', 'todo', 'view'].sort()
+    )
+  })
+})

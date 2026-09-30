@@ -119,12 +119,14 @@ describe('Life composite surface', () => {
     // The new flow (UI-audit Slice 2a): the foot add drops a text block; typing `/`
     // as its first char summons the palette to swap type. One render per module keeps
     // each assertion isolated on a fresh empty Life. Kanban is deliberately absent —
-    // retired from creation (#19 slice 6), so it is no longer offered in the palette.
+    // retired from creation (#19 slice 6) — and so are the eight data-holding display
+    // blocks (metric / metric-ring / stat / charts / heatmap / timeline, #111): a chart
+    // or a headline figure is a MODE of the view block now, so `View` is what the
+    // palette offers. The read-tolerance side is pinned in palette-retired.test.ts.
     const cases: Array<{ name: string; type: string }> = [
       { name: 'Todo', type: 'todo' },
       { name: 'Table', type: 'table' },
-      { name: 'Metric', type: 'metric' },
-      { name: 'Chart line', type: 'chart-line' },
+      { name: 'View', type: 'view' },
     ]
     for (const c of cases) {
       HOME_BLOCKS = []
