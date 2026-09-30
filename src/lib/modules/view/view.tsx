@@ -36,6 +36,14 @@ import {
   type BarDates,
   type CollectionRow,
 } from './apply'
+import {
+  CollectionBigNumber,
+  CollectionChart,
+  ChartControls,
+  BigNumberControls,
+  ControlSelect,
+} from './figures'
+import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
 import { buildTicks, formatTick, GANTT_BAR_SHELL } from './gantt-shared'
@@ -144,15 +152,6 @@ export interface CollectionViewProps {
   onOpenCard?: (rowId: string) => void
 }
 
-/** A calm Press placeholder — the shared shell for every non-drawing state. */
-function ViewNotice({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-mn-inner bg-mn-wash px-4 py-6 text-center text-sm text-mn-text-secondary">
-      {children}
-    </div>
-  )
-}
-
 export function CollectionView({
   config,
   schema,
@@ -232,6 +231,10 @@ export function CollectionView({
           editable={editable}
           onEdit={onEdit}
         />
+      ) : config.mode === 'chart' ? (
+        <CollectionChart schema={schema} rows={processed} chart={config.chart} />
+      ) : config.mode === 'big-number' ? (
+        <CollectionBigNumber schema={schema} rows={processed} bigNumber={config.bigNumber} />
       ) : (
         <CollectionTable
           schema={schema}
@@ -255,6 +258,10 @@ const MODE_LABELS: Record<ViewMode, string> = {
   gantt: 'Gantt',
   calendar: 'Calendar',
   gallery: 'Gallery',
+  // #111: a chart and a big number are MODES of the same database, so they sit in
+  // the same switcher as the table — switching never moves or copies the records.
+  chart: 'Chart',
+  'big-number': 'Big number',
 }
 
 /**
@@ -302,21 +309,26 @@ function ViewControls({
       </div>
 
       {config.mode === 'board' && groupOptions.length > 0 && (
-        <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
-          Group by
-          <select
-            aria-label="Group by property"
-            value={config.groupBy ?? ''}
-            onChange={(e) => onConfigChange({ groupBy: e.target.value || undefined })}
-            className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
-          >
-            {groupOptions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ControlSelect
+          label="Group by"
+          aria="Group by property"
+          value={config.groupBy ?? ''}
+          onChange={(v) => onConfigChange({ groupBy: v || undefined })}
+        >
+          {groupOptions.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </ControlSelect>
+      )}
+
+      {config.mode === 'chart' && (
+        <ChartControls config={config} schema={schema} onConfigChange={onConfigChange} />
+      )}
+
+      {config.mode === 'big-number' && (
+        <BigNumberControls config={config} schema={schema} onConfigChange={onConfigChange} />
       )}
 
       {onUpdateSchema && <AddPropertyControl onAdd={(def) => onUpdateSchema([...schema, def])} />}

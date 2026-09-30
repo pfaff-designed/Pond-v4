@@ -3,10 +3,11 @@
  * (keyed by property NAME) against a collection's schema and upsert THE view block
  * on that collection page.
  *
- * The tool is a name-keyed UPSERT, not a create: the user selects which of the four
- * existing renderers (table/board/calendar/gallery) draws a collection's rows, plus
- * single-clause group-by / sort / filter (decision 15). Nothing here mints a new
- * *kind* of view.
+ * The tool is a name-keyed UPSERT, not a create: the user selects which existing
+ * renderer (table/board/calendar/gallery/gantt/chart/big-number) draws a collection's
+ * rows, plus single-clause group-by / sort / filter (decision 15) and, for the chart
+ * and big-number modes, what is aggregated (#111). Nothing here mints a new *kind* of
+ * view, and nothing here carries data — a chart's numbers are read from the records.
  *
  * Two pure steps + one write, mirroring `resolveRowValues`/`addRowFromProposal`:
  *   1. resolveViewConfig — map each proposed property NAME onto the schema's stable
@@ -28,7 +29,18 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { readSchema, resolveOptionValue } from '@/lib/properties/schema'
 import type { PropertyDef, PropertySchema } from '@/lib/properties/schema'
-import type { ViewBlock, ViewMode, ViewSort, ViewFilter, FilterOp } from '@/lib/modules/view/schema'
+import type {
+  ViewBlock,
+  ViewMode,
+  ViewSort,
+  ViewFilter,
+  FilterOp,
+  ViewChartConfig,
+  ViewBigNumberConfig,
+  ViewChartKind,
+  ViewAggValue,
+  ViewFigureFormat,
+} from '@/lib/modules/view/schema'
 import { getPage, saveBlocks } from '@/lib/pages/client'
 import { collectionNameResolver, type CollectionCandidate } from '@/lib/pages/create-page'
 
@@ -39,7 +51,7 @@ import { collectionNameResolver, type CollectionCandidate } from '@/lib/pages/cr
 export interface ConfigureViewProposal {
   /** The collection whose view is configured (a page carrying a `_schema`). */
   pageId: string
-  /** Which of the four renderers draws the rows. */
+  /** Which renderer draws the rows. */
   mode: ViewMode
   /** Board group-by — a property NAME (required by the tool when mode==='board'). */
   groupBy?: string
@@ -51,6 +63,26 @@ export interface ConfigureViewProposal {
   startDate?: string
   /** Gantt (#27): the NAME of the date property bars end at (optional; else inferred). */
   endDate?: string
+  /**
+   * Chart mode (#111): which kind, bucketed by which property NAME, plotting which
+   * property NAME with which verb. Names — never ids; resolved on accept like every
+   * other clause. NO data: a chart view aggregates the records at read time.
+   */
+  chart?: {
+    kind: ViewChartKind
+    xProperty?: string
+    series: Array<{ property: string; agg: ViewAggValue }>
+    stacked?: boolean
+  }
+  /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
+  bigNumber?: {
+    property?: string
+    agg: ViewAggValue
+    format?: ViewFigureFormat
+    /** Optional trend: the figure over the records matching this clause vs the rest.
+     *  Property by NAME, value by LABEL for a select/status — resolved on accept. */
+    delta?: { property: string; value: string }
+  }
   /**
    * A linked view over ANOTHER collection (#41 / #20 D6). Already a collection id
    * (resolved from a NAME by the accept path), NOT a name: the view lives on `pageId`
@@ -69,6 +101,10 @@ export interface ResolvedViewConfig {
   /** Resolved gantt start/end date property ids (see startDate/endDate names above). */
   startDate?: string
   endDate?: string
+  /** Resolved chart config — property NAMES swapped for their stable ids (#111). */
+  chart?: ViewChartConfig
+  /** Resolved big-number config — same name→id swap (#111). */
+  bigNumber?: ViewBigNumberConfig
   /** The linked-view target collection id, passed through from the proposal (#41). */
   collectionId?: string
 }
@@ -149,6 +185,64 @@ export function resolveViewConfig(
     if (def) config.endDate = def.id
   }
 
+  // Chart mode (#111) — the same name→id resolution, series by series. A series
+  // naming a property that isn't in the schema is DROPPED (lenient, like a stale
+  // filter clause); if that empties the series list the whole chart config is
+  // dropped, and the renderer infers a drawable one rather than showing nothing.
+  if (proposal.chart) {
+    const series = proposal.chart.series
+      .map((s) => {
+        const def = byName.get(s.property.trim().toLowerCase())
+        return def ? { property: def.id, agg: s.agg } : null
+      })
+      .filter((s): s is { property: string; agg: ViewAggValue } => s !== null)
+    if (series.length > 0) {
+      const xDef = proposal.chart.xProperty
+        ? byName.get(proposal.chart.xProperty.trim().toLowerCase())
+        : undefined
+      config.chart = {
+        kind: proposal.chart.kind,
+        // An unresolved x property means "one point per record" (the same fallback
+        // the renderer uses), never a dangling id.
+        ...(xDef ? { xProperty: xDef.id } : {}),
+        series,
+        ...(proposal.chart.stacked ? { stacked: true } : {}),
+      }
+    }
+  }
+
+  // Big-number mode (#111). `count` needs no property at all, so a figure that only
+  // counts records resolves even when no name was given.
+  if (proposal.bigNumber) {
+    const def = proposal.bigNumber.property
+      ? byName.get(proposal.bigNumber.property.trim().toLowerCase())
+      : undefined
+    if (def || proposal.bigNumber.agg === 'count') {
+      // The trend clause resolves exactly like a filter: property NAME → id, and a
+      // select/status value LABEL → option id (the stored identity). An unresolved
+      // property drops the trend and keeps the figure.
+      const deltaDef = proposal.bigNumber.delta
+        ? byName.get(proposal.bigNumber.delta.property.trim().toLowerCase())
+        : undefined
+      const delta =
+        deltaDef && proposal.bigNumber.delta
+          ? {
+              property: deltaDef.id,
+              value:
+                deltaDef.type === 'select' || deltaDef.type === 'status'
+                  ? (resolveOptionValue(deltaDef, proposal.bigNumber.delta.value) ?? '')
+                  : proposal.bigNumber.delta.value,
+            }
+          : undefined
+      config.bigNumber = {
+        ...(def ? { property: def.id } : {}),
+        agg: def ? proposal.bigNumber.agg : 'count',
+        ...(proposal.bigNumber.format ? { format: proposal.bigNumber.format } : {}),
+        ...(delta ? { delta } : {}),
+      }
+    }
+  }
+
   return config
 }
 
@@ -184,6 +278,8 @@ export function upsertViewBlock(
     ...(config.filter ? { filter: config.filter } : {}),
     ...(config.startDate ? { startDate: config.startDate } : {}),
     ...(config.endDate ? { endDate: config.endDate } : {}),
+    ...(config.chart ? { chart: config.chart } : {}),
+    ...(config.bigNumber ? { bigNumber: config.bigNumber } : {}),
     // A linked-view target from THIS config wins; otherwise preserve any existing
     // link so an inline reconfigure of a previously-linked view stays linked (#41).
     ...((config.collectionId ?? existing?.collectionId)

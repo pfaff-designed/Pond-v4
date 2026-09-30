@@ -118,6 +118,125 @@ describe('resolveViewConfig', () => {
       resolveViewConfig(schema, { pageId: 'host', mode: 'table', collectionId: 'coll-src' })
     ).toEqual({ mode: 'table', collectionId: 'coll-src' })
   })
+
+  // ── chart + big-number modes (#111) ────────────────────────────────────────
+  // Same name→id contract as every other clause: the model speaks property NAMES,
+  // the persisted block holds stable ids, and a name that isn't there degrades
+  // leniently instead of writing a dangling reference.
+
+  it('resolves a chart config: x property + series property NAMES → ids (#111)', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'chart',
+        chart: {
+          kind: 'line',
+          xProperty: 'due',
+          series: [{ property: 'Hours', agg: 'sum' }],
+          stacked: true,
+        },
+      })
+    ).toEqual({
+      mode: 'chart',
+      chart: {
+        kind: 'line',
+        xProperty: 'p-due',
+        series: [{ property: 'p-hours', agg: 'sum' }],
+        stacked: true,
+      },
+    })
+  })
+
+  it('drops an unresolved chart x property (one point per record) but keeps the series', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'chart',
+        chart: { kind: 'bar', xProperty: 'Nope', series: [{ property: 'Hours', agg: 'avg' }] },
+      })
+    ).toEqual({
+      mode: 'chart',
+      chart: { kind: 'bar', series: [{ property: 'p-hours', agg: 'avg' }] },
+    })
+  })
+
+  it('drops the whole chart config when no series property resolves (renderer infers)', () => {
+    expect(
+      resolveViewConfig(schema, {
+        pageId: 'c',
+        mode: 'chart',
+        chart: { kind: 'bar', series: [{ property: 'Nope', agg: 'sum' }] },
+      })
+    ).toEqual({ mode: 'chart' })
+  })
+
+  it('resolves a big-number config: property NAME → id, keeping verb + format (#111)', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: { property: 'hours', agg: 'avg', format: 'currency' },
+      })
+    ).toEqual({
+      mode: 'big-number',
+      bigNumber: { property: 'p-hours', agg: 'avg', format: 'currency' },
+    })
+  })
+
+  it('resolves a figure TREND clause: property NAME → id, option LABEL → option id', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: {
+          property: 'Hours',
+          agg: 'sum',
+          delta: { property: 'Status', value: 'Done' },
+        },
+      })
+    ).toEqual({
+      mode: 'big-number',
+      bigNumber: {
+        property: 'p-hours',
+        agg: 'sum',
+        delta: { property: 'p-status', value: 'o-done' },
+      },
+    })
+  })
+
+  it('drops an unresolved trend clause but keeps the figure', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: { property: 'Hours', agg: 'sum', delta: { property: 'Nope', value: 'x' } },
+      })
+    ).toEqual({ mode: 'big-number', bigNumber: { property: 'p-hours', agg: 'sum' } })
+  })
+
+  it('keeps a property-less COUNT figure (how many records)', () => {
+    expect(
+      resolveViewConfig(schema, { pageId: 'c', mode: 'big-number', bigNumber: { agg: 'count' } })
+    ).toEqual({ mode: 'big-number', bigNumber: { agg: 'count' } })
+  })
+
+  it('drops the figure config when the named property is unknown (renderer infers)', () => {
+    // Symmetric with the chart branch: a name that isn't in the schema never becomes
+    // a dangling id. The figure then falls to render-side inference rather than being
+    // pinned to a property the user never named.
+    expect(
+      resolveViewConfig(schema, {
+        pageId: 'c',
+        mode: 'big-number',
+        bigNumber: { property: 'Nope', agg: 'sum' },
+      })
+    ).toEqual({ mode: 'big-number' })
+  })
 })
 
 // ── resolveCollectionByName — linked-view target (name → collection id) ──────
@@ -479,5 +598,81 @@ describe('configureViewFromProposal', () => {
     )
     const payload = sb._update.mock.calls[0][0]
     expect(payload.blocks).toEqual([{ id: 'v-g', type: 'view', mode: 'gantt', startDate: 'p-due' }])
+  })
+
+  // #111: end-to-end for the two new modes — names in, ids out, and NO data in the
+  // written block (the figures are read from the records every time).
+  it('writes a chart view with resolved property ids and no data (#111)', async () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    const sb = makeSupabase({ id: 'coll-4', props: { [SCHEMA_KEY]: withHours }, blocks: [] })
+    await configureViewFromProposal(
+      sb as never,
+      {
+        pageId: 'coll-4',
+        mode: 'chart',
+        chart: { kind: 'line', xProperty: 'Due', series: [{ property: 'Hours', agg: 'sum' }] },
+      },
+      () => 'v-c'
+    )
+    const payload = sb._update.mock.calls[0][0]
+    expect(payload.blocks).toEqual([
+      {
+        id: 'v-c',
+        type: 'view',
+        mode: 'chart',
+        chart: { kind: 'line', xProperty: 'p-due', series: [{ property: 'p-hours', agg: 'sum' }] },
+      },
+    ])
+  })
+
+  it('writes a big-number view with the resolved figure property (#111)', async () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    const sb = makeSupabase({ id: 'coll-5', props: { [SCHEMA_KEY]: withHours }, blocks: [] })
+    await configureViewFromProposal(
+      sb as never,
+      {
+        pageId: 'coll-5',
+        mode: 'big-number',
+        bigNumber: { property: 'Hours', agg: 'sum', format: 'number' },
+      },
+      () => 'v-b'
+    )
+    const payload = sb._update.mock.calls[0][0]
+    expect(payload.blocks).toEqual([
+      {
+        id: 'v-b',
+        type: 'view',
+        mode: 'big-number',
+        bigNumber: { property: 'p-hours', agg: 'sum', format: 'number' },
+      },
+    ])
+  })
+
+  it('SWITCHES an existing table view to a chart, keeping the same block id', async () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    const sb = makeSupabase({
+      id: 'coll-6',
+      props: { [SCHEMA_KEY]: withHours },
+      blocks: [{ id: 'v-keep', type: 'view', mode: 'table' } as Block],
+    })
+    const out = await configureViewFromProposal(
+      sb as never,
+      {
+        pageId: 'coll-6',
+        mode: 'chart',
+        chart: { kind: 'bar', series: [{ property: 'Hours', agg: 'max' }] },
+      },
+      () => 'never-minted'
+    )
+    expect(out.replaced).toBe(true)
+    const payload = sb._update.mock.calls[0][0]
+    expect(payload.blocks).toEqual([
+      {
+        id: 'v-keep',
+        type: 'view',
+        mode: 'chart',
+        chart: { kind: 'bar', series: [{ property: 'p-hours', agg: 'max' }] },
+      },
+    ])
   })
 })

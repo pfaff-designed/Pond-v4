@@ -113,7 +113,13 @@ import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import type { NodeType } from '@/lib/supabase/types'
 import { withSchema, isCollection, readSchema, type AiPropertyDef } from '@/lib/properties/schema'
-import type { ViewMode, FilterOp } from '@/lib/modules/view/schema'
+import type {
+  ViewMode,
+  FilterOp,
+  ViewChartKind,
+  ViewAggValue,
+  ViewFigureFormat,
+} from '@/lib/modules/view/schema'
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
@@ -237,6 +243,20 @@ interface ConfigureViewPart {
     filter?: { property: string; op: FilterOp; value: string }
     startDate?: string
     endDate?: string
+    /** Chart mode (#111): kind + the property NAMES that bucket and get plotted. */
+    chart?: {
+      kind: ViewChartKind
+      xProperty?: string
+      series: Array<{ property: string; agg: ViewAggValue }>
+      stacked?: boolean
+    }
+    /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
+    bigNumber?: {
+      property?: string
+      agg: ViewAggValue
+      format?: ViewFigureFormat
+      delta?: { property: string; value: string }
+    }
     /** Linked view (#41): NAME of ANOTHER collection whose rows this view draws. */
     targetCollection?: string
     reason?: string
@@ -1408,6 +1428,8 @@ export function AITerminal() {
             filter: part?.filter,
             startDate: part?.startDate,
             endDate: part?.endDate,
+            chart: part?.chart,
+            bigNumber: part?.bigNumber,
           },
           () => crypto.randomUUID()
         )
@@ -1859,6 +1881,8 @@ export function AITerminal() {
                     groupBy={input.groupBy}
                     sort={input.sort}
                     filter={input.filter}
+                    chart={input.chart}
+                    bigNumber={input.bigNumber}
                     reason={input.reason}
                     status={status}
                     replacedActiveView={viewReplaced[part.toolCallId] === true}

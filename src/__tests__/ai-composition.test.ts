@@ -17,7 +17,8 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
   it('accepts a content block with no id', () => {
     expect(moduleDataSchema.safeParse({ type: 'text', content: 'hi' }).success).toBe(true)
     expect(
-      moduleDataSchema.safeParse({ type: 'metric', label: 'Balance', value: 42 }).success
+      moduleDataSchema.safeParse({ type: 'table', columns: ['A'], rows: [{ cells: ['1'] }] })
+        .success
     ).toBe(true)
   })
 
@@ -54,115 +55,70 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     ).toBe(false)
   })
 
-  it('rejects a malformed content block (metric value must be a number)', () => {
-    expect(moduleDataSchema.safeParse({ type: 'metric', label: 'x', value: 'lots' }).success).toBe(
-      false
-    )
-  })
-
-  it('accepts a metric bound to an existing block (ticket-23 source binding)', () => {
-    const r = moduleDataSchema.safeParse({
-      type: 'metric',
-      label: 'Books finished',
-      value: 0,
-      source: { blockId: 'existing-todo', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(true)
-  })
-
-  it('rejects a metric binding with an unknown kind', () => {
+  it('rejects a malformed content block (a table row must carry cells)', () => {
     expect(
-      moduleDataSchema.safeParse({
-        type: 'metric',
-        label: 'x',
-        value: 0,
-        source: { blockId: 'b', kind: 'sum-of-cells' },
-      }).success
+      moduleDataSchema.safeParse({ type: 'table', columns: ['A'], rows: [{ label: 'x' }] }).success
     ).toBe(false)
   })
 
-  it('accepts a metric bound by a same-batch ref (ticket-31)', () => {
-    const r = moduleDataSchema.safeParse({
-      type: 'metric',
-      label: 'Done',
-      value: 0,
-      source: { ref: 'chores', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(true)
-  })
-
-  it('a source with both blockId and ref resolves to the blockId form (ref dropped)', () => {
-    // The union's blockId branch matches first and strips the extra `ref` key, so the
-    // safe, existing-block binding wins — no ambiguous both-keys source survives.
-    const r = moduleDataSchema.safeParse({
-      type: 'metric',
-      label: 'x',
-      value: 0,
-      source: { blockId: 'b', ref: 'r', kind: 'table-rows' },
-    })
-    expect(r.success).toBe(true)
-    if (r.success && r.data.type === 'metric') {
-      expect(r.data.source).toEqual({ blockId: 'b', kind: 'table-rows' })
+  /**
+   * #111 — the eight data-HOLDING display blocks left the emit union, exactly as
+   * `kanban` did in #19 slice 6. Each held its own copy of the data; a chart or a
+   * headline figure is now a MODE of the `view` block, aggregated from the records.
+   *
+   * This replaces the ticket-23/31/38 metric-binding emit tests: the model can no
+   * longer author OR edit a metric, so the `source` union (same-page / cross-page /
+   * child-pages / same-batch ref) has no emit surface left to pin. The PERSISTED
+   * `metricSchema` — and its source forms — are still guarded below, because pages
+   * that already hold a bound metric must keep rendering it.
+   */
+  it('REJECTS every retired data-holding display block (#111 — read-tolerant, not composable)', () => {
+    const retired: unknown[] = [
+      { type: 'metric', label: 'Balance', value: 42 },
+      { type: 'metric', label: 'Done', value: 0, source: { ref: 'chores', kind: 'checklist-checked' } },
+      { type: 'metric-ring', label: 'Progress', pct: 0.4 },
+      { type: 'stat', label: 'Revenue', value: 1200 },
+      { type: 'chart-line', title: 'Miles', points: [{ x: '2026-01', values: { Miles: 3 } }] },
+      { type: 'chart-bar', title: 'Spend', points: [{ x: 'Rent', values: { Amount: 1 } }] },
+      { type: 'chart-area', title: 'Balance', points: [{ x: '2026-01', values: { Amount: 1 } }] },
+      { type: 'heatmap', title: 'Streak', cells: [{ date: '2026-01-01', value: 1 }] },
+      { type: 'timeline', title: 'Plan', items: [{ label: 'Frame', start: '2026-01-01' }] },
+      { type: 'kanban', columns: [] },
+    ]
+    for (const data of retired) {
+      expect(moduleDataSchema.safeParse(data).success).toBe(false)
+      expect(createPageBlockSchema.safeParse(data).success).toBe(false)
     }
   })
 
-  it('accepts a cross-page metric binding and PRESERVES pageId (ticket-38)', () => {
-    // Ordering fence: the permissive same-page `{ blockId }` branch must NOT swallow a
-    // `{ pageId, blockId }` and strip pageId — that would silently downgrade a
-    // cross-page rollup into a same-page one.
-    const r = moduleDataSchema.safeParse({
-      type: 'metric',
-      label: 'Milestone tasks',
-      value: 0,
-      source: { pageId: 'other-page', blockId: 'todo-9', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(true)
-    if (r.success && r.data.type === 'metric') {
-      expect(r.data.source).toEqual({
-        pageId: 'other-page',
-        blockId: 'todo-9',
-        kind: 'checklist-checked',
-      })
+  it('still lets the model compose the five live content types', () => {
+    const live: unknown[] = [
+      { type: 'text', content: 'prose' },
+      { type: 'todo', items: [{ label: 'a', checked: false }] },
+      { type: 'table', columns: ['A'], rows: [{ cells: ['1'] }] },
+      { type: 'view', mode: 'table' },
+      { type: 'image', url: 'https://example.test/a.png' },
+    ]
+    for (const data of live) {
+      expect(moduleDataSchema.safeParse(data).success).toBe(true)
     }
   })
 
-  it('accepts a child-pages aggregate binding (ticket-38 rollup)', () => {
-    const r = moduleDataSchema.safeParse({
-      type: 'metric',
-      label: 'Tasks across milestones',
-      value: 0,
-      source: { pages: 'children', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(true)
-    if (r.success && r.data.type === 'metric') {
-      expect(r.data.source).toEqual({ pages: 'children', kind: 'checklist-checked' })
-    }
-  })
-
-  it('rejects an aggregate scope other than "children" (only the stable literal)', () => {
+  it('offers the chart + big-number VIEW modes in place of the retired blocks (#111)', () => {
     expect(
       moduleDataSchema.safeParse({
-        type: 'metric',
-        label: 'x',
-        value: 0,
-        source: { pages: 'all', kind: 'table-rows' },
+        type: 'view',
+        mode: 'chart',
+        chart: { kind: 'line', xProperty: 'p-date', series: [{ property: 'p-weight', agg: 'latest' }] },
       }).success
-    ).toBe(false)
-  })
-
-  it('REJECTS a malformed { pageId, ref } source outright (review fix: no silent collapse)', () => {
-    // Without a strict ref branch this shape (no blockId, so every stable branch fails)
-    // would fall through to the ref schema, which strips `pageId` — cross-page intent
-    // silently becoming a same-batch ref. It must instead fail the whole union so the
-    // tool-input gate triggers repairToolCall and the model re-emits a valid form.
+    ).toBe(true)
     expect(
       moduleDataSchema.safeParse({
-        type: 'metric',
-        label: 'x',
-        value: 0,
-        source: { pageId: 'other-page', ref: 'chores', kind: 'checklist-checked' },
+        type: 'view',
+        mode: 'big-number',
+        bigNumber: { property: 'p-hours', agg: 'sum', format: 'number' },
       }).success
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('accepts a table with an opt-in sum footer (ticket-31)', () => {
@@ -192,6 +148,9 @@ describe('proposeChangesSchema (the tool input)', () => {
   })
 
   it('accepts a keyed create (batch-local bindKey for same-batch binding, ticket-31)', () => {
+    // #111 retired the only module that BOUND to a bindKey (metric). The key itself is
+    // still carried on a create op — the accept path still resolves ref→minted id — so
+    // this pins the envelope, not the (now absent) metric consumer.
     const r = proposeChangesSchema.safeParse({
       changes: [
         {
@@ -199,15 +158,7 @@ describe('proposeChangesSchema (the tool input)', () => {
           bindKey: 'chores',
           data: { type: 'todo', items: [{ label: 'a', checked: false }] },
         },
-        {
-          op: 'create',
-          data: {
-            type: 'metric',
-            label: 'Done',
-            value: 0,
-            source: { ref: 'chores', kind: 'checklist-checked' },
-          },
-        },
+        { op: 'create', data: { type: 'text', content: 'Two of three done.' } },
       ],
     })
     expect(r.success).toBe(true)
@@ -294,8 +245,8 @@ describe('proposeChangesSchema (the tool input)', () => {
 
 describe('moduleCatalog (prompt teaching)', () => {
   it('lists every composable content type', () => {
-    for (const type of ['text', 'todo', 'metric', 'metric-ring']) {
-      expect(moduleCatalog).toContain(type)
+    for (const type of ['text', 'todo', 'table', 'view', 'image']) {
+      expect(moduleCatalog.split('\n').some((l) => l.startsWith(`- ${type}:`))).toBe(true)
     }
   })
 
@@ -307,42 +258,35 @@ describe('moduleCatalog (prompt teaching)', () => {
     expect(moduleCatalog.split('\n').some((l) => l.startsWith('- kanban:'))).toBe(false)
   })
 
-  it('teaches the metric binding, incl. same-batch ref binding (ticket-23 + ticket-31)', () => {
-    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))
-    expect(metricLine).toBeDefined()
-    expect(metricLine).toContain('source')
-    expect(metricLine).toContain('checklist-checked')
-    // Still teaches binding to an EXISTING block…
-    expect(metricLine).toMatch(/EXISTING/i)
-    // …and now the same-batch ref path that ticket-31 opened (the bindKey↔ref pairing).
-    expect(metricLine).toContain('ref')
-    expect(metricLine).toContain('bindKey')
-    expect(metricLine).toMatch(/same batch/i)
+  /**
+   * #111 — the catalog stops advertising every data-HOLDING display block, not just
+   * kanban. This replaces the three ticket-23/31/38 metric-teaching tests: with metric
+   * out of the emit union, teaching its `source` binding would advertise a capability
+   * the gate rejects. The model is coached toward define_schema + add_row +
+   * configure_view instead (pinned in prompt-sections.test.ts).
+   */
+  it('omits every retired data-holding display block (#111)', () => {
+    const lines = moduleCatalog.split('\n')
+    for (const type of [
+      'metric',
+      'metric-ring',
+      'stat',
+      'chart-line',
+      'chart-bar',
+      'chart-area',
+      'heatmap',
+      'timeline',
+    ]) {
+      expect(lines.some((l) => l.startsWith(`- ${type}:`))).toBe(false)
+    }
   })
 
-  it('scopes the bindKey teaching to where it actually works (review fix: catalog ↔ reality)', () => {
-    // The original audit bug reborn: teaching key/ref where it silently drops would
-    // recreate static lying metrics. bindKey now works in BOTH surfaces — the create
-    // op (propose_changes) and the block entry (create_page) — and the catalog must
-    // say exactly that, naming both, so the model never emits a ref anywhere it
-    // would be dropped. Pinned here so a future catalog edit cannot silently
-    // reopen the gap.
-    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))!
-    expect(metricLine).toContain('propose_changes')
-    expect(metricLine).toContain('create_page')
-  })
-
-  it('teaches cross-page & child-pages rollups, and PREFERS a rollup over a manual table (ticket-38)', () => {
-    const metricLine = moduleCatalog.split('\n').find((l) => l.startsWith('- metric:'))!
-    // The two new persisted forms are taught by shape…
-    expect(metricLine).toContain('pageId')
-    expect(metricLine).toContain('pages: "children"')
-    // …with the scope stated (SUMS across child pages)…
-    expect(metricLine).toMatch(/child pages/i)
-    // …and the anti-pattern the AI apologized into is steered against: prefer a live
-    // rollup over a hand-written summary table. Pinned so the teaching can't regress.
-    expect(metricLine).toMatch(/PREFER/i)
-    expect(metricLine).toMatch(/summary table/i)
+  it('teaches the view block as the way to show a database, charts and figures included', () => {
+    const viewLine = moduleCatalog.split('\n').find((l) => l.startsWith('- view:'))!
+    expect(viewLine).toContain('chart')
+    expect(viewLine).toContain('big-number')
+    // The law, stated where the model reads it: a figure is read from the records.
+    expect(viewLine).toMatch(/aggregate/i)
   })
 })
 
@@ -389,14 +333,23 @@ describe('createPageBlockSchema (create_page block entries, ticket-31)', () => {
     if (r.success) expect(r.data.bindKey).toBe('milestones')
   })
 
-  it('accepts an entry without a bindKey and a ref-bound metric entry', () => {
+  it('accepts an entry without a bindKey, and one that declares a bindKey', () => {
     expect(createPageBlockSchema.safeParse({ type: 'text', content: 'hi' }).success).toBe(true)
+    // #111: the metric that USED to bind to a bindKey is retired from creation, so the
+    // entry-level key is pinned on a live type instead. A scaffolded figure is a
+    // big-number view over the page's own records.
     expect(
       createPageBlockSchema.safeParse({
-        type: 'metric',
-        label: 'Done',
-        value: 0,
-        source: { ref: 'milestones', kind: 'checklist-checked' },
+        type: 'todo',
+        bindKey: 'milestones',
+        items: [{ label: 'Frame the wall', checked: false }],
+      }).success
+    ).toBe(true)
+    expect(
+      createPageBlockSchema.safeParse({
+        type: 'view',
+        mode: 'big-number',
+        bigNumber: { agg: 'count' },
       }).success
     ).toBe(true)
   })

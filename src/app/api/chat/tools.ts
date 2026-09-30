@@ -13,7 +13,13 @@ import { proposeChangesSchema, createPageBlockSchema } from '@/lib/modules/ai-co
 import { isTitleEchoHeading, TITLE_ECHO_MESSAGE } from '@/lib/modules/authoring-lint'
 import { askQuestionSchema, suggestFollowupsSchema } from '@/lib/conversation/parts'
 import { aiPropertyDefSchema } from '@/lib/properties/schema'
-import { viewModeSchema, filterOpSchema } from '@/lib/modules/view/schema'
+import {
+  viewModeSchema,
+  filterOpSchema,
+  viewAggSchema,
+  viewFigureFormatSchema,
+  chartKindSchema,
+} from '@/lib/modules/view/schema'
 
 // The web_search tool (ticket-29) lives in ./web-search so this routing-schema
 // module — imported by lint tests and the eval in a jsdom environment — stays free
@@ -88,7 +94,7 @@ const createPageInput = z
  */
 export const createPageTool = {
   description:
-    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether organising (a project, an area) or content (a recipe, a document). An AREA is not a separate thing to create: it is just a page that has pages inside it, so "make me a Travel area" is a page named Travel (usually top-level) — set `type: "page"`, never an area type. This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics. Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block. When the new page STARTS a tracker/log/collection (record-like data with named fields), its blocks MUST include a real `table` block carrying those fields as columns — define_schema cannot target a page that does not exist yet, so a create that only promises a table in prose leaves the user a shell with no table at all (#63).',
+    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether organising (a project, an area) or content (a recipe, a document). An AREA is not a separate thing to create: it is just a page that has pages inside it, so "make me a Travel area" is a page named Travel (usually top-level) — set `type: "page"`, never an area type. This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never a figure the page has no records for (there is no block that holds a number — a figure is a big-number VIEW over a collection). Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block. When the new page STARTS a tracker/log/collection (record-like data with named fields), its blocks MUST include a real `table` block carrying those fields as columns — define_schema cannot target a page that does not exist yet, so a create that only promises a table in prose leaves the user a shell with no table at all (#63).',
   inputSchema: createPageInput,
 } as const
 
@@ -248,7 +254,7 @@ const configureViewInput = z
         'The id of the EXISTING collection page (one that ALREADY has a property schema) whose view to configure, taken verbatim from the [Workspace outline] in context. Never invent an id.'
       ),
     mode: viewModeSchema.describe(
-      'Which existing layout draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), "gallery" (cards), or "gantt" (a read-only timeline of bars over Start→End date properties). Pick the one the user asked for.'
+      'Which existing layout draws the collection\'s rows: "table" (grid), "board" (columns grouped by a select/status property), "calendar" (agenda by a date property), "gallery" (cards), "gantt" (a read-only timeline of bars over Start→End date properties), "chart" (the records aggregated into a chart — requires `chart`), or "big-number" (ONE oversized figure aggregated from the records — requires `bigNumber`). Pick the one the user asked for.'
     ),
     targetCollection: z
       .string()
@@ -293,6 +299,75 @@ const configureViewInput = z
       .describe(
         "For a GANTT: the NAME of the date property each bar ENDS at (from [Properties]). Optional — omit to auto-use the collection's second date property; with only one date property, bars are single-day. Use the human property NAME, never an id."
       ),
+    chart: z
+      .object({
+        kind: chartKindSchema.describe(
+          'Which chart shape. "line" / "area" / "bar" draw today; the others (composed, net, gauge, radar, scatter, sankey, sunburst, funnel) are accepted but not drawn yet, so prefer line/area/bar unless the user names another.'
+        ),
+        xProperty: z
+          .string()
+          .optional()
+          .describe(
+            'The NAME of the property that buckets the x/category axis (from [Properties]) — e.g. a date or a status. OMIT to plot one point per record, labelled by its title. Use the human property NAME, never an id.'
+          ),
+        series: z
+          .array(
+            z.object({
+              property: z
+                .string()
+                .describe('The NAME of the property to plot (from [Properties]). Never an id.'),
+              agg: viewAggSchema.describe(
+                'How the records in each bucket are read into one number: sum, avg, count, min, max, or latest.'
+              ),
+            })
+          )
+          .min(1)
+          .describe('What is plotted — one entry (multi-series is unusual; keep it to one).'),
+        stacked: z
+          .boolean()
+          .optional()
+          .describe('Stack multiple series instead of grouping them. Omit for one series.'),
+      })
+      .optional()
+      .describe(
+        'REQUIRED for mode="chart". The chart is a VIEW of the collection: its numbers are aggregated from the records every time it is read, so never send any data points — only which property buckets the axis and which property is plotted with which verb.'
+      ),
+    bigNumber: z
+      .object({
+        property: z
+          .string()
+          .optional()
+          .describe(
+            'The NAME of the property to aggregate into the figure (from [Properties]). OMIT together with agg="count" to show the NUMBER OF RECORDS. Never an id.'
+          ),
+        agg: viewAggSchema.describe(
+          'How the records are read into the one figure: sum, avg, count, min, max, or latest.'
+        ),
+        format: viewFigureFormatSchema
+          .optional()
+          .describe(
+            'How the figure reads: "number" (default), "currency" (USD), or "percent" (the value is a FRACTION — 0.62 shows as 62%).'
+          ),
+        delta: z
+          .object({
+            property: z
+              .string()
+              .describe('The NAME of the property that splits the comparison (from [Properties]).'),
+            value: z
+              .string()
+              .describe(
+                'The value that marks the SUBSET being compared. For a select/status property use the option LABEL.'
+              ),
+          })
+          .optional()
+          .describe(
+            'An optional trend: the figure over the records whose `property` equals `value`, against the figure over all the OTHERS, shown as a signed percentage. Only set it when the user asked for a comparison ("vs last month"); omit otherwise.'
+          ),
+      })
+      .optional()
+      .describe(
+        'REQUIRED for mode="big-number". ONE oversized figure aggregated from the collection\'s records — what a data page leads with. It holds no value of its own: change a record and the figure changes.'
+      ),
     reason: z
       .string()
       .optional()
@@ -305,6 +380,26 @@ const configureViewInput = z
         message:
           'A board must group its rows: set `groupBy` to the NAME of a select or status property from the collection (see the [Properties] line in context).',
         path: ['groupBy'],
+      })
+    }
+    // #111: a chart / big-number view without its config would draw an INFERRED
+    // figure the user never asked for. The renderer tolerates that (a stale config
+    // must never blank a view), but the model must not lean on it — say what is
+    // plotted. A failure triggers `repairToolCall`, which re-asks with the fix.
+    if (input.mode === 'chart' && !input.chart) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'A chart view must say what it plots: set `chart` to { kind, xProperty (a property NAME, or omit for one point per record), series: [{ property, agg }] }.',
+        path: ['chart'],
+      })
+    }
+    if (input.mode === 'big-number' && !input.bigNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'A big-number view must say which figure it shows: set `bigNumber` to { property (a property NAME, or omit with agg:"count"), agg, format? }.',
+        path: ['bigNumber'],
       })
     }
   })
@@ -321,7 +416,7 @@ const configureViewInput = z
  */
 export const configureViewTool = {
   description:
-    'Configure how an EXISTING collection\'s items are displayed — SELECT a layout (table, board, calendar, gallery, or gantt) for its rows, optionally grouped, sorted, or filtered. Use this when the user asks to show/display/view/format a collection\'s items a certain way (e.g. "show my tasks as a board grouped by status", "view my reading list as a gallery", "sort this table by due date", "show only the books I\'m still reading", "show this plan as a gantt timeline"). Name the target collection by its id from the [Workspace outline]; name any group-by / sort / filter property by its NAME from the [Properties] line in context (never an id) — for a board you MUST name a select/status property to group by, and for a gantt you may optionally name startDate/endDate date properties (else the first/second date property is used; a gantt needs at least one date property). This does NOT build a new kind of view (the four renderers already exist) and is DISTINCT from propose_changes (edits content blocks), define_schema (defines columns), and add_row (adds an item). Only use it on a page that ALREADY has a property schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card showing the resolved layout and can correct the target before anything is written; do NOT re-ask for confirmation. Use property NAMES, never ids.',
+    'Configure how an EXISTING collection\'s items are displayed — SELECT a layout (table, board, calendar, gallery, gantt, chart, or big-number) for its rows, optionally grouped, sorted, or filtered. Use this when the user asks to show/display/view/format a collection\'s items a certain way (e.g. "show my tasks as a board grouped by status", "view my reading list as a gallery", "sort this table by due date", "show only the books I\'m still reading", "show this plan as a gantt timeline"). Name the target collection by its id from the [Workspace outline]; name any group-by / sort / filter property by its NAME from the [Properties] line in context (never an id) — for a board you MUST name a select/status property to group by, and for a gantt you may optionally name startDate/endDate date properties (else the first/second date property is used; a gantt needs at least one date property). A CHART and a BIG NUMBER are modes of the collection too, not blocks you create: for mode="chart" give `chart` (kind + the property NAME that buckets the axis + the property NAME to plot with its verb), and for mode="big-number" give `bigNumber` (the property NAME + verb + format) — both are AGGREGATED from the records at read time, so never send data points or a figure. There is no chart or stat block to create; a request for a chart, a graph, a total, an average, or "the number" over records IS this tool. This does NOT build a new kind of view (the renderers already exist) and is DISTINCT from propose_changes (edits content blocks), define_schema (defines columns), and add_row (adds an item). Only use it on a page that ALREADY has a property schema; if it does not, use define_schema first. Client-resolved (no execute): the user reviews a proposal card showing the resolved layout and can correct the target before anything is written; do NOT re-ask for confirmation. Use property NAMES, never ids.',
   inputSchema: configureViewInput,
 } as const
 

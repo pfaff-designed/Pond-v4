@@ -19,8 +19,9 @@ import type { ModuleData } from '@/lib/modules/ai-composition'
 
 // One AI-emitted (id-less) sample per COMPOSABLE content type. The completeness check
 // fails if a composable type has no sample here — add one when you add a module.
-// Retired-from-creation types (kanban, #19 slice 6) are NOT composable, so they live in
-// `retiredSamples` below and only exercise the read-tolerance (hydrate) path.
+// Retired-from-creation types (kanban, #19 slice 6; the eight data-holding display
+// blocks, #111) are NOT composable, so they live in `retiredSamples` below and only
+// exercise the read-tolerance (hydrate) path.
 const samples: Record<string, ModuleData> = {
   text: { type: 'text', content: 'Hello world' },
   todo: {
@@ -30,65 +31,15 @@ const samples: Record<string, ModuleData> = {
       { label: 'Sand it', checked: true },
     ],
   },
-  metric: { type: 'metric', label: 'Boards cut', value: 12 },
-  'metric-ring': { type: 'metric-ring', label: 'Overall Progress', pct: 0.2 },
   table: {
     type: 'table',
     columns: ['Tool', 'Location'],
     rows: [{ cells: ['Table Saw', 'Centre of shop'] }, { cells: ['Bandsaw', 'Left wall'] }],
   },
-  // ticket-36: Bklit chart promotion. Charts have no nested id-bearing collections
-  // (points are plain `{ x, values }`), so these round-trip with a top-level id strip.
-  'chart-line': {
-    type: 'chart-line',
-    title: 'Weekly mileage',
-    points: [
-      { x: '2026-01', values: { Miles: 32 } },
-      { x: '2026-02', values: { Miles: 38 } },
-    ],
-  },
-  'chart-bar': {
-    type: 'chart-bar',
-    title: 'Spend by category',
-    points: [
-      { x: 'Rent', values: { Amount: 1800 } },
-      { x: 'Food', values: { Amount: 420 } },
-    ],
-  },
-  'chart-area': {
-    type: 'chart-area',
-    title: 'Balance',
-    points: [
-      { x: '2026-01', values: { Balance: 1200 } },
-      { x: '2026-02', values: { Balance: 1650 } },
-    ],
-  },
   // #19: a view is config only (no nested id-bearing collections), so it round-trips
-  // with a flat top-level id strip — like a chart.
+  // with a flat top-level id strip. Its chart / big-number modes (#111) are config too —
+  // the figures are aggregated from the records, so there is nothing to strip.
   view: { type: 'view', mode: 'board', groupBy: 'p-status' },
-  // #12: heatmap + stat promotions. Like the charts, neither carries a nested
-  // id-bearing collection (heatmap `cells` are plain `{ date, value }`), so a flat
-  // top-level id strip is the whole omit-chain.
-  heatmap: {
-    type: 'heatmap',
-    title: 'Workouts',
-    cells: [
-      { date: '2026-01-05', value: 1 },
-      { date: '2026-01-07', value: 2 },
-    ],
-  },
-  stat: { type: 'stat', label: 'MRR', value: 12500, format: 'currency', delta: 0.12 },
-  // #11: standalone timeline (Gantt). Its `items` are plain `{ label, start, end? }`
-  // with no ids (like heatmap cells / chart points), so a flat top-level id strip
-  // is the whole omit-chain.
-  timeline: {
-    type: 'timeline',
-    title: 'Renovation',
-    items: [
-      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
-      { label: 'Inspection', start: '2026-09-30' },
-    ],
-  },
   // #61: an image/file attachment carries no nested id-bearing collections —
   // just the storage URL + display metadata, so a flat top-level id strip is
   // the whole omit-chain.
@@ -121,6 +72,53 @@ const retiredSamples: Record<string, unknown> = {
       { title: 'Done', cards: [] },
     ],
   },
+  // #111: the eight data-HOLDING display blocks. Each one's payload — a hand-set
+  // `value`, `points`, `cells`, `items` — WAS the violation: a copy of data the
+  // records already hold. They left `moduleDataSchema` with #111, so like kanban they
+  // only exercise the read-tolerance hydrate path from here on.
+  metric: { type: 'metric', label: 'Boards cut', value: 12 },
+  'metric-ring': { type: 'metric-ring', label: 'Overall Progress', pct: 0.2 },
+  stat: { type: 'stat', label: 'MRR', value: 12500, format: 'currency', delta: 0.12 },
+  'chart-line': {
+    type: 'chart-line',
+    title: 'Weekly mileage',
+    points: [
+      { x: '2026-01', values: { Miles: 32 } },
+      { x: '2026-02', values: { Miles: 38 } },
+    ],
+  },
+  'chart-bar': {
+    type: 'chart-bar',
+    title: 'Spend by category',
+    points: [
+      { x: 'Rent', values: { Amount: 1800 } },
+      { x: 'Food', values: { Amount: 420 } },
+    ],
+  },
+  'chart-area': {
+    type: 'chart-area',
+    title: 'Balance',
+    points: [
+      { x: '2026-01', values: { Balance: 1200 } },
+      { x: '2026-02', values: { Balance: 1650 } },
+    ],
+  },
+  heatmap: {
+    type: 'heatmap',
+    title: 'Workouts',
+    cells: [
+      { date: '2026-01-05', value: 1 },
+      { date: '2026-01-07', value: 2 },
+    ],
+  },
+  timeline: {
+    type: 'timeline',
+    title: 'Renovation',
+    items: [
+      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
+      { label: 'Inspection', start: '2026-09-30' },
+    ],
+  },
 }
 
 /**
@@ -144,7 +142,7 @@ function elementsAtPath(block: Record<string, unknown>, path: string): Record<st
 const retiredTypes = new Set<string>(RETIRED_FROM_CREATION)
 const contentTypes = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
 // Composable = content types the AI/palette may mint (have an id-less `ModuleData`
-// sample). Retired-from-creation types (kanban) still hydrate on read but are not in
+// sample). Retired-from-creation types (kanban + the #111 display blocks) still hydrate on read but are not in
 // `moduleDataSchema`, so they're excluded from the composition round-trip + stamp loops.
 const composableTypes = contentTypes.filter((t) => !retiredTypes.has(t))
 
@@ -262,8 +260,13 @@ describe('stampDisplayIds stamps the same collections for display', () => {
 
   it('a chart block keeps its point objects id-free (no nestedIdPaths declared)', () => {
     // The complement of the todo/table case: a module that DOESN'T declare
-    // nestedIdPaths must not have ids injected into its object-arrays.
-    const chart = stampDisplayIds(samples['chart-line'], 'preview-3') as Record<string, unknown>
+    // nestedIdPaths must not have ids injected into its object-arrays. The chart
+    // sample now lives in `retiredSamples` (#111) — it is still stamped for DISPLAY,
+    // because a persisted chart block on an old page still renders.
+    const chart = stampDisplayIds(
+      retiredSamples['chart-line'] as Parameters<typeof stampDisplayIds>[0],
+      'preview-3'
+    ) as Record<string, unknown>
     const points = chart.points as Record<string, unknown>[]
     expect(points.every((p) => !('id' in p))).toBe(true)
   })

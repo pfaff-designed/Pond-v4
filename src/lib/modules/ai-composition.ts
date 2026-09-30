@@ -21,21 +21,7 @@ import { z } from 'zod'
 import { moduleDescriptors, RETIRED_FROM_CREATION } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
-import {
-  metricSchema,
-  metricSourceSamePageSchema,
-  metricSourceCrossPageSchema,
-  metricSourceAggregateSchema,
-  metricSourceRefSchema,
-} from './metric/schema'
-import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
-import { chartLineSchema } from './chart-line/schema'
-import { chartBarSchema } from './chart-bar/schema'
-import { chartAreaSchema } from './chart-area/schema'
-import { heatmapSchema } from './heatmap/schema'
-import { statSchema } from './stat/schema'
-import { timelineSchema } from './timeline/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
@@ -70,53 +56,18 @@ const todoData = todoSchema
   .omit({ id: true })
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
 /**
- * Metric EMIT data (ticket-31, ticket-38): the persisted schema accepts the three
- * STABLE source forms (same-page block, cross-page block, child-pages aggregate). At
- * emit time the model may ALSO bind by `{ ref }` to a `bindKey` on a sibling create in
- * the same batch (ticket-31). The accept path resolves ref→minted blockId before
- * hydration; the persisted schema then rejects any `ref` that slipped through
- * unresolved (structural invariant, not convention). The union is spelled out flat
- * (per-form, not nested unions) so the derived JSON tool schema is a clean `oneOf`.
- *
- * Branch ORDER matters (zod strips unknown keys, so a permissive branch swallows a
- * richer one): cross-page (`pageId`+`blockId`) and aggregate (`pages`) come BEFORE the
- * bare same-page `{ blockId }`, else `{ pageId, blockId }` would collapse to same-page.
- * `ref` stays LAST so a stray `{ blockId, ref }` still resolves to the safe blockId form
- * (the existing ticket-31 both-keys test) — and is STRICT (review fix): a lax ref branch
- * would catch a malformed `{ pageId, ref, kind }` (no blockId, so every stable branch
- * fails) and silently strip the `pageId`, turning cross-page intent into a same-batch
- * ref. Strict makes that shape fail the whole union → the tool-input gate rejects it and
- * `repairToolCall` re-asks the model, instead of persisting the wrong binding.
+ * #111 — the eight data-HOLDING display blocks (metric, metric-ring, stat, the three
+ * charts, heatmap, timeline) are gone from the emit unions, exactly as `kanban` is.
+ * Each carried its own copy of the data; a chart or a headline figure is now a MODE of
+ * the `view` block, aggregated from the records ("nothing holds a copy"). Their
+ * descriptors stay registered, so pages that already hold one still render — but the
+ * model can no longer mint a new one, and `moduleCatalog` no longer advertises them.
+ * The same-batch `bindKey`/`ref` plumbing stays in place (the accept path and the
+ * create surfaces still carry it) for whatever binds next; nothing emits a ref today.
  */
-const metricData = metricSchema.omit({ id: true }).extend({
-  source: z
-    .union([
-      metricSourceCrossPageSchema,
-      metricSourceAggregateSchema,
-      metricSourceSamePageSchema,
-      metricSourceRefSchema.strict(),
-    ])
-    .optional(),
-})
-const metricRingData = metricRingSchema.omit({ id: true })
 const tableData = tableSchema
   .omit({ id: true })
   .extend({ rows: z.array(tableRowSchema.omit({ id: true })) })
-// ticket-36: Bklit chart promotion. Charts carry no nested id-bearing collections
-// (their `points` are plain `{ x, values }`), so a flat top-level id strip is the
-// whole omit-chain — the module-nested-ids fence pins that.
-const chartLineData = chartLineSchema.omit({ id: true })
-const chartBarData = chartBarSchema.omit({ id: true })
-const chartAreaData = chartAreaSchema.omit({ id: true })
-// #12: Bklit promotion, wave 2. Like the charts, neither block carries a nested
-// id-bearing collection (heatmap `cells` are plain `{ date, value }`), so a flat
-// top-level id strip is the whole omit-chain — the module-nested-ids fence pins it.
-const heatmapData = heatmapSchema.omit({ id: true })
-const statData = statSchema.omit({ id: true })
-// #11: standalone timeline (Gantt). Its `items` are plain `{ label, start, end? }`
-// with no ids (like heatmap cells), so a flat top-level id strip is the whole
-// omit-chain — the module-nested-ids fence pins it.
-const timelineData = timelineSchema.omit({ id: true })
 // #19: a view is config only — no nested id-bearing collections (its rows are
 // child pages, its groupBy/sort/filter reference existing property ids). So the
 // emit shape is a flat top-level id strip, like a chart.
@@ -130,15 +81,7 @@ const imageData = imageSchema.omit({ id: true })
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
   todoData,
-  metricData,
-  metricRingData,
   tableData,
-  chartLineData,
-  chartBarData,
-  chartAreaData,
-  heatmapData,
-  statData,
-  timelineData,
   viewData,
   imageData,
 ])
@@ -202,21 +145,7 @@ const bindKey = z
 export const createPageBlockSchema = z.discriminatedUnion('type', [
   textBase.extend({ bindKey }).refine(noPipeTable, pipeTableIssue),
   todoData.extend({ bindKey }),
-  metricData.extend({ bindKey }),
-  metricRingData.extend({ bindKey }),
   tableData.extend({ bindKey }),
-  // ticket-36: Bklit chart promotion. No block in a batch binds to a chart, but the
-  // union must list every content type so a page can be created WITH a chart.
-  chartLineData.extend({ bindKey }),
-  chartBarData.extend({ bindKey }),
-  chartAreaData.extend({ bindKey }),
-  // #12: heatmap/stat promotions — nothing binds to them, but a page must be
-  // creatable WITH them, so the union lists every content type (parity fence).
-  heatmapData.extend({ bindKey }),
-  statData.extend({ bindKey }),
-  // #11: timeline — nothing binds to it either, but a page must be creatable WITH
-  // one, so the union lists every content type (parity fence).
-  timelineData.extend({ bindKey }),
   // #19: a page can be created WITH a view block. No block binds to a view, but
   // the union lists every content type for parity with the persisted union.
   viewData.extend({ bindKey }),
