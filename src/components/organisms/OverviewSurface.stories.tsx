@@ -111,7 +111,7 @@ export const Life: Story = {
       cards: [
         {
           id: 'health',
-          type: 'area',
+          type: 'page',
           title: 'Health',
           stat: '7',
           sub: '7 pages inside · updated today',
@@ -119,7 +119,7 @@ export const Life: Story = {
         },
         {
           id: 'personal',
-          type: 'area',
+          type: 'page',
           title: 'Personal',
           stat: '12',
           sub: '12 pages inside · updated yesterday',
@@ -127,7 +127,7 @@ export const Life: Story = {
         },
         {
           id: 'creativity',
-          type: 'area',
+          type: 'page',
           title: 'Creativity',
           stat: '3',
           sub: '3 pages inside · updated 4d ago',

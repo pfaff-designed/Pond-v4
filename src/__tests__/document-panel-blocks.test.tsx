@@ -110,7 +110,9 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
   })
 })
 
-// ── The ticket-22 type-switch: blocks AND children on one surface ─────────────
+// ── The ticket-22 surface switch: blocks AND children on one surface ──────────
+// #108: the switch reads no type tag — a page shows the overview because it HAS
+// children and no blocks of its own. Everything below is a page.
 
 const NOW = new Date().toISOString()
 const nodeRow = (over: Record<string, unknown>) => ({
@@ -129,10 +131,10 @@ const childRow = nodeRow({
 })
 const quote: Block[] = [{ id: 'b-quote', type: 'text', content: 'Consistency beats intensity' }]
 
-describe('DocumentPanel type-switch (ticket-22): blocks and children both render', () => {
+describe('DocumentPanel surface switch (ticket-22, #108): blocks and children both render', () => {
   it('an area WITH blocks renders the editor (its content) plus the children grid', async () => {
-    renderWith({ id: 'page-1', type: 'area', title: 'Workout Routines', blocks: quote }, [
-      nodeRow({ type: 'area' }),
+    renderWith({ id: 'page-1', type: 'page', title: 'Workout Routines', blocks: quote }, [
+      nodeRow({}),
       childRow,
     ])
     // Its own content is reachable: title editor + the block's reading view.
@@ -155,9 +157,9 @@ describe('DocumentPanel type-switch (ticket-22): blocks and children both render
     expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
   })
 
-  it('a pure area (no blocks) keeps the overview, with a "+ Add content" affordance', async () => {
-    renderWith({ id: 'page-1', type: 'area', title: 'Health', blocks: [] }, [
-      nodeRow({ type: 'area', title: 'Health' }),
+  it('a pure container (children, no blocks) keeps the overview, with a "+ Add content" affordance', async () => {
+    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
+      nodeRow({ title: 'Health' }),
       childRow,
     ])
     expect(await screen.findByRole('button', { name: '+ Add content' })).toBeInTheDocument()
@@ -167,8 +169,8 @@ describe('DocumentPanel type-switch (ticket-22): blocks and children both render
   })
 
   it('"+ Add content" opens the palette, then a pick promotes the area and persists that block', async () => {
-    renderWith({ id: 'page-1', type: 'area', title: 'Health', blocks: [] }, [
-      nodeRow({ type: 'area', title: 'Health' }),
+    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
+      nodeRow({ title: 'Health' }),
       childRow,
     ])
     // ticket-44 §2: "+ Add content" is palette-first — it opens the block picker
@@ -186,5 +188,25 @@ describe('DocumentPanel type-switch (ticket-22): blocks and children both render
     const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]
     expect(savedBlocks).toHaveLength(1)
     expect(savedBlocks[0].type).toBe('todo')
+  })
+
+  // #108 — the switch is keyed on children, never on a type tag.
+  it('a childless page with no blocks renders the EDITOR, not the overview', async () => {
+    renderWith({ id: 'page-1', type: 'page', title: 'Fresh page', blocks: [] }, [
+      nodeRow({ title: 'Fresh page' }),
+    ])
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Fresh page')
+    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Everything within')).not.toBeInTheDocument()
+  })
+
+  it('a project with children and no blocks gets the same overview a page would', async () => {
+    renderWith({ id: 'page-1', type: 'project', title: 'Bench build', blocks: [] }, [
+      nodeRow({ type: 'project', title: 'Bench build' }),
+      childRow,
+    ])
+    expect(await screen.findByRole('button', { name: '+ Add content' })).toBeInTheDocument()
+    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
   })
 })
