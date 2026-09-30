@@ -35,6 +35,8 @@ import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
+import { areaGlyph } from '@/lib/rail/area-glyph'
+import { AreaMark } from '@/components/atoms/AreaMark'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { paletteItems } from '@/lib/modules/palette'
 
@@ -164,6 +166,12 @@ export interface OverviewSurfaceProps {
   /** Muted accent for the kicker dot (an area's hue); omit for Life. */
   accent?: string
   /**
+   * The area's default glyph (#91). When set, the kicker leads with the glyph
+   * in the area hue instead of the accent square; omit (an unmapped area) and
+   * the square stays.
+   */
+  glyph?: string
+  /**
    * The breadcrumb trail (ticket-25). When `onNavigateCrumb` is set the header
    * renders a clickable Breadcrumb (Life › … › current) in place of the bare
    * kicker label: `crumbs` are the ancestors, `kicker` doubles as the current
@@ -199,6 +207,7 @@ export function OverviewSurface({
   kicker,
   onRenameKicker,
   accent,
+  glyph,
   crumbs,
   onNavigateCrumb,
   current,
@@ -216,13 +225,17 @@ export function OverviewSurface({
         {/* ── Header: breadcrumb / kicker + "ask Pond" ────────────────────── */}
         <Rise i={ri++} className="flex items-baseline justify-between gap-4">
           <div className="flex items-center gap-2 min-w-0">
-            {accent && (
-              <span
-                aria-hidden
-                className="w-2 h-2 rounded-[2px] flex-shrink-0"
-                style={{ background: accent }}
-              />
-            )}
+            {accent &&
+              (glyph ? (
+                <AreaMark glyph={glyph} color={accent} size={12} />
+              ) : (
+                <span
+                  data-part="kicker-dot"
+                  aria-hidden
+                  className="w-2 h-2 rounded-[2px] flex-shrink-0"
+                  style={{ background: accent }}
+                />
+              ))}
             {/* Breadcrumb trail (ticket-25) with the current node as the tail;
                 when the surface supports rename (ticket-26) the tail is the
                 EditableKicker instead of the static current label. Keyed on
@@ -368,6 +381,7 @@ export function AreaOverviewPanel({
       kicker={name}
       onRenameKicker={handleRename}
       accent={accent}
+      glyph={areaGlyph(name)}
       crumbs={crumbs}
       onNavigateCrumb={navigateCrumb}
       current={name}
