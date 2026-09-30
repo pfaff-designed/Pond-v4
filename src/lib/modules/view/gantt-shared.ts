@@ -54,4 +54,4 @@ export function formatTick(iso: string): string {
  *  read-only bar, and the timeline module's bar all draw the same shape (position +
  *  fill), differing only in what they carry (grab zones vs an aria label). */
 export const GANTT_BAR_SHELL =
-  'absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-press-accent/80'
+  'absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-mn-text/80'

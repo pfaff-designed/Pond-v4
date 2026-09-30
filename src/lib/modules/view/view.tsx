@@ -147,7 +147,7 @@ export interface CollectionViewProps {
 /** A calm Press placeholder — the shared shell for every non-drawing state. */
 function ViewNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-mn-inner bg-press-accent-wash px-4 py-6 text-center text-sm text-press-muted">
+    <div className="rounded-mn-inner bg-mn-wash px-4 py-6 text-center text-sm text-mn-text-secondary">
       {children}
     </div>
   )
@@ -191,7 +191,7 @@ export function CollectionView({
   }
 
   return (
-    <div className="text-sm text-press-ink">
+    <div className="text-sm text-mn-text">
       {editable && onConfigChange && (
         <ViewControls
           config={config}
@@ -291,8 +291,8 @@ function ViewControls({
               className={[
                 'rounded-mn-chrome px-2 py-0.5 text-xs transition-colors',
                 active
-                  ? 'bg-press-accent-wash text-press-ink'
-                  : 'text-press-muted hover:text-press-ink',
+                  ? 'bg-mn-wash text-mn-text'
+                  : 'text-mn-text-secondary hover:text-mn-text',
               ].join(' ')}
             >
               {MODE_LABELS[m]}
@@ -302,13 +302,13 @@ function ViewControls({
       </div>
 
       {config.mode === 'board' && groupOptions.length > 0 && (
-        <label className="flex items-center gap-1 text-xs text-press-muted">
+        <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
           Group by
           <select
             aria-label="Group by property"
             value={config.groupBy ?? ''}
             onChange={(e) => onConfigChange({ groupBy: e.target.value || undefined })}
-            className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+            className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
           >
             {groupOptions.map((d) => (
               <option key={d.id} value={d.id}>
@@ -361,7 +361,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-mn-chrome px-2 py-0.5 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+        className="rounded-mn-chrome px-2 py-0.5 text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
       >
         + Add property
       </button>
@@ -380,13 +380,13 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') setOpen(false)
         }}
-        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none placeholder:text-press-faint"
+        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none placeholder:text-mn-text-faint"
       />
       <select
         aria-label="New property type"
         value={type}
         onChange={(e) => setType(e.target.value as PropertyType)}
-        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-press-ink outline-none"
+        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
       >
         {ADDABLE_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -397,7 +397,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
       <button
         type="button"
         onClick={commit}
-        className="rounded-mn-chrome bg-press-accent-wash px-2 py-0.5 text-xs text-press-ink transition-colors hover:bg-press-accent hover:text-press-paper"
+        className="rounded-mn-chrome bg-mn-wash px-2 py-0.5 text-xs text-mn-text transition-colors hover:bg-mn-text hover:text-mn-surface"
       >
         Add
       </button>
@@ -405,7 +405,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
         type="button"
         aria-label="Cancel adding property"
         onClick={() => setOpen(false)}
-        className="rounded-mn-chrome px-1 py-0.5 text-xs text-press-faint transition-colors hover:text-press-ink"
+        className="rounded-mn-chrome px-1 py-0.5 text-xs text-mn-text-faint transition-colors hover:text-mn-text"
       >
         ×
       </button>
@@ -437,25 +437,25 @@ function CollectionTable({
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
-            <th className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted">
+            <th className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary">
               Name
             </th>
             {schema.map((def) => (
               <th
                 key={def.id}
-                className="border-b border-press-hair py-1 pr-3 text-xs font-medium text-press-muted"
+                className="border-b border-mn-hair py-1 pr-3 text-xs font-medium text-mn-text-secondary"
               >
                 {def.name}
               </th>
             ))}
             {/* Trailing gutter for the per-row delete affordance. */}
-            <th className="w-6 border-b border-press-hair" aria-hidden />
+            <th className="w-6 border-b border-mn-hair" aria-hidden />
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={schema.length + 2} className="py-2 text-press-faint">
+              <td colSpan={schema.length + 2} className="py-2 text-mn-text-faint">
                 No rows yet
               </td>
             </tr>
@@ -463,16 +463,16 @@ function CollectionTable({
           {rows.map((row) => (
             <tr
               key={row.id}
-              className="group/row border-b border-press-line last:border-b-0 align-top"
+              className="group/row border-b border-mn-line last:border-b-0 align-top"
             >
-              <td className="py-1.5 pr-3 font-medium text-press-ink">
+              <td className="py-1.5 pr-3 font-medium text-mn-text">
                 {editable && onRenameRow ? (
                   <input
                     aria-label="Row title"
                     value={row.title}
                     placeholder="Untitled"
                     onChange={(e) => onRenameRow(row.id, e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 font-medium text-press-ink outline-none placeholder:text-press-faint"
+                    className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-faint"
                   />
                 ) : (
                   row.title || 'Untitled'
@@ -496,7 +496,7 @@ function CollectionTable({
                     type="button"
                     aria-label={`Delete row: ${row.title || 'untitled'}`}
                     onClick={() => onRemoveRow(row.id)}
-                    className="rounded-mn-chrome px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                    className="rounded-mn-chrome px-1 leading-none text-mn-text-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
                   >
                     ×
                   </button>
@@ -511,7 +511,7 @@ function CollectionTable({
         <button
           type="button"
           onClick={() => onAddRow()}
-          className="mt-2 rounded-mn-chrome px-2 py-1 text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+          className="mt-2 rounded-mn-chrome px-2 py-1 text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
         >
           + Add row
         </button>
@@ -640,8 +640,8 @@ function CollectionBoard({
               className={[
                 'group/col min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'bg-press-accent-wash shadow-mn-md'
-                  : 'bg-press-card/40 shadow-mn-sm',
+                  ? 'bg-mn-wash shadow-mn-md'
+                  : 'bg-mn-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -653,10 +653,10 @@ function CollectionBoard({
                       value={group.label}
                       autoFocus={group.id === focusColId}
                       onChange={(e) => renameColumn(group.id as string, e.target.value)}
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase outline-none placeholder:text-press-faint"
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase outline-none placeholder:text-mn-text-faint"
                     />
                   ) : (
-                    <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
+                    <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
                       {group.label}
                     </span>
                   )}
@@ -668,7 +668,7 @@ function CollectionBoard({
                       aria-label={`Move column left: ${group.label}`}
                       disabled={optIndex <= 0}
                       onClick={() => moveColumn(group.id as string, 'left')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-press-faint hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-faint hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-faint"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -685,7 +685,7 @@ function CollectionBoard({
                       aria-label={`Move column right: ${group.label}`}
                       disabled={optIndex < 0 || optIndex >= optCount - 1}
                       onClick={() => moveColumn(group.id as string, 'right')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-press-faint hover:text-press-ink disabled:opacity-30 disabled:hover:text-press-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-faint hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-faint"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -699,14 +699,14 @@ function CollectionBoard({
                     </button>
                   </span>
                 )}
-                <span className="text-[0.65rem] text-press-muted tabular-nums">
+                <span className="text-[0.65rem] text-mn-text-secondary tabular-nums">
                   {group.rows.length}
                 </span>
               </header>
 
               <ul className="space-y-2">
                 {group.rows.length === 0 && (
-                  <li className="py-1 text-xs text-press-muted/70">
+                  <li className="py-1 text-xs text-mn-text-secondary/70">
                     {editable ? 'Drop a card here' : 'Empty'}
                   </li>
                 )}
@@ -727,8 +727,8 @@ function CollectionBoard({
                           : undefined
                       }
                       className={[
-                        'group/card relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
+                        'group/card relative flex items-start gap-1.5 rounded-mn-row bg-mn-card px-2 py-2 shadow-mn-sm',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:shadow-mn-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
                         onOpenCard ? 'cursor-pointer' : '',
                       ].join(' ')}
@@ -738,7 +738,7 @@ function CollectionBoard({
                           type="button"
                           aria-label={`Drag card: ${row.title || 'untitled'}`}
                           onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          className="mt-0.5 cursor-grab touch-none leading-none text-press-muted/50 select-none hover:text-press-muted"
+                          className="mt-0.5 cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
                         >
                           ⠿
                         </button>
@@ -752,10 +752,10 @@ function CollectionBoard({
                             autoFocus={row.id === focusRowId}
                             onChange={(e) => onRenameRow(row.id, e.target.value)}
                             // Leave room for the hover delete × so a long title never slides under it.
-                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-press-ink outline-none placeholder:text-press-faint"
+                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-mn-text outline-none placeholder:text-mn-text-faint"
                           />
                         ) : (
-                          <div className="font-medium text-press-ink">
+                          <div className="font-medium text-mn-text">
                             {row.title || 'Untitled'}
                           </div>
                         )}
@@ -777,7 +777,7 @@ function CollectionBoard({
                           aria-label={`Open card: ${row.title || 'untitled'}`}
                           title="Preview page"
                           onClick={() => onOpenCard(row.id)}
-                          className="mt-0.5 shrink-0 leading-none text-press-accent/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-press-accent focus-visible:opacity-100"
+                          className="mt-0.5 shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ↗
                         </button>
@@ -787,7 +787,7 @@ function CollectionBoard({
                           type="button"
                           aria-label={`Delete card: ${row.title || 'untitled'}`}
                           onClick={() => onRemoveRow(row.id)}
-                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-press-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-mn-text-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
                         >
                           ×
                         </button>
@@ -801,7 +801,7 @@ function CollectionBoard({
                 <button
                   type="button"
                   onClick={() => addCard(group.id)}
-                  className="mt-2 w-full rounded-mn-row px-2 py-1 text-left text-xs text-press-muted transition-colors hover:bg-press-accent-wash hover:text-press-ink"
+                  className="mt-2 w-full rounded-mn-row px-2 py-1 text-left text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
                 >
                   + Add card
                 </button>
@@ -816,7 +816,7 @@ function CollectionBoard({
           <button
             type="button"
             onClick={addColumn}
-            className="min-w-[9rem] shrink-0 self-start rounded-mn-inner border border-dashed border-press-hair px-3 py-2 text-left text-xs text-press-muted transition-colors hover:border-press-accent hover:bg-press-accent-wash hover:text-press-ink"
+            className="min-w-[9rem] shrink-0 self-start rounded-mn-inner border border-dashed border-mn-hair px-3 py-2 text-left text-xs text-mn-text-secondary transition-colors hover:border-mn-text hover:bg-mn-wash hover:text-mn-text"
           >
             + Add column
           </button>
@@ -826,11 +826,11 @@ function CollectionBoard({
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-mn-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
-          <div className="font-medium text-press-ink">{draggingRow.title || 'Untitled'}</div>
+          <div className="font-medium text-mn-text">{draggingRow.title || 'Untitled'}</div>
         </div>
       )}
     </div>
@@ -895,7 +895,7 @@ function CollectionCalendar({
 
   return (
     <div {...containerHandlers}>
-      {buckets.length === 0 && <p className="py-2 text-press-faint">No rows yet</p>}
+      {buckets.length === 0 && <p className="py-2 text-mn-text-faint">No rows yet</p>}
       <div className="space-y-4">
         {buckets.map((bucket) => {
           const key = laneKey(bucket.iso)
@@ -907,15 +907,15 @@ function CollectionCalendar({
               className={[
                 'rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'bg-press-accent-wash shadow-mn-md'
-                  : 'bg-press-card/40 shadow-mn-sm',
+                  ? 'bg-mn-wash shadow-mn-md'
+                  : 'bg-mn-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
-                <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
+                <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
                   {bucket.iso ? formatDateHeader(bucket.iso) : 'No date'}
                 </span>
-                <span className="text-[0.65rem] text-press-muted tabular-nums">
+                <span className="text-[0.65rem] text-mn-text-secondary tabular-nums">
                   {bucket.rows.length}
                 </span>
               </header>
@@ -927,8 +927,8 @@ function CollectionCalendar({
                     <li
                       key={row.id}
                       className={[
-                        'relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
+                        'relative flex items-start gap-1.5 rounded-mn-row bg-mn-card px-2 py-2 shadow-mn-sm',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:shadow-mn-md motion-reduce:transition-none',
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}
                     >
@@ -937,13 +937,13 @@ function CollectionCalendar({
                           type="button"
                           aria-label={`Drag card: ${row.title || 'untitled'}`}
                           onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          className="mt-0.5 cursor-grab touch-none leading-none text-press-muted/50 select-none hover:text-press-muted"
+                          className="mt-0.5 cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
                         >
                           ⠿
                         </button>
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
+                        <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
                         {chipDefs.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {chipDefs.map((def) => {
@@ -976,11 +976,11 @@ function CollectionCalendar({
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-mn-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
-          <div className="font-medium text-press-ink">{draggingRow.title || 'Untitled'}</div>
+          <div className="font-medium text-mn-text">{draggingRow.title || 'Untitled'}</div>
         </div>
       )}
     </div>
@@ -997,21 +997,21 @@ function CollectionCalendar({
  */
 function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
   if (rows.length === 0) {
-    return <p className="py-2 text-press-faint">No rows yet</p>
+    return <p className="py-2 text-mn-text-faint">No rows yet</p>
   }
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
       {rows.map((row) => (
         <article
           key={row.id}
-          className="rounded-mn-row bg-press-card px-3 py-2.5 shadow-mn-sm"
+          className="rounded-mn-row bg-mn-card px-3 py-2.5 shadow-mn-sm"
         >
-          <div className="font-medium text-press-ink">{row.title || 'Untitled'}</div>
+          <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
           <dl className="mt-2 space-y-1">
             {schema.map((def) => (
               <div key={def.id} className="flex items-baseline gap-2 text-xs">
-                <dt className="shrink-0 text-press-muted">{def.name}</dt>
-                <dd className="min-w-0 text-press-body">
+                <dt className="shrink-0 text-mn-text-secondary">{def.name}</dt>
+                <dd className="min-w-0 text-mn-text-meta">
                   <Cell
                     def={def}
                     value={coerceValue(def, row.values[def.id])}
@@ -1112,7 +1112,7 @@ function CollectionGantt({
     return <ViewNotice>This gantt needs a date property.</ViewNotice>
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
-    return <p className="py-2 text-press-faint">No dated rows to chart</p>
+    return <p className="py-2 text-mn-text-faint">No dated rows to chart</p>
   }
 
   const { bars, rangeStart } = layout
@@ -1133,7 +1133,7 @@ function CollectionGantt({
           {ticks.map((t) => (
             <span
               key={t.iso}
-              className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-press-muted tabular-nums"
+              className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-mn-text-secondary tabular-nums"
               style={{ left: `${t.left}%` }}
             >
               {formatTick(t.iso)}
@@ -1169,7 +1169,7 @@ function CollectionGantt({
 
             return (
               <li key={row.id} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-xs font-medium text-press-ink">
+                <span className="w-40 shrink-0 truncate text-xs font-medium text-mn-text">
                   {row.title || 'Untitled'}
                 </span>
                 <span
@@ -1182,7 +1182,7 @@ function CollectionGantt({
                     <span
                       key={t.iso}
                       aria-hidden
-                      className="absolute top-0 bottom-0 border-l border-press-hair"
+                      className="absolute top-0 bottom-0 border-l border-mn-hair"
                       style={{ left: `${t.left}%` }}
                     />
                   ))}
@@ -1204,7 +1204,7 @@ function CollectionGantt({
                           type="button"
                           aria-label={`Move start of ${row.title || 'Untitled'}`}
                           onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-start', dates)}
-                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-sm bg-press-accent"
+                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-sm bg-mn-text"
                         />
                       )}
                       {/* Right edge — resize the End (creates one on a tick → span; hidden when too narrow). */}
@@ -1213,7 +1213,7 @@ function CollectionGantt({
                           type="button"
                           aria-label={`Move end of ${row.title || 'Untitled'}`}
                           onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-end', dates)}
-                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-sm bg-press-accent"
+                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-sm bg-mn-text"
                         />
                       )}
                     </span>
@@ -1297,7 +1297,7 @@ function Cell({
   }
 
   const cellInput =
-    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-press-body outline-none placeholder:text-press-faint'
+    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-mn-text-meta outline-none placeholder:text-mn-text-faint'
 
   switch (def.type) {
     case 'number':
@@ -1325,7 +1325,7 @@ function Cell({
       return (
         <input
           type="checkbox"
-          className="h-4 w-4 accent-press-accent"
+          className="h-4 w-4 accent-mn-text"
           aria-label={label}
           checked={value === true}
           onChange={(e) => onChange(e.target.checked)}
@@ -1372,13 +1372,13 @@ function Cell({
 }
 
 function Dash() {
-  return <span className="text-press-faint">—</span>
+  return <span className="text-mn-text-faint">—</span>
 }
 
 /** A select/status value chip: a colored dot + the option label. */
 function OptionChip({ label, color }: { label: string; color?: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-mn-chrome border border-press-line bg-press-paper px-1.5 py-0.5 text-xs text-press-body">
+    <span className="inline-flex items-center gap-1 rounded-mn-chrome border border-mn-line bg-mn-surface px-1.5 py-0.5 text-xs text-mn-text-meta">
       <OptionDot color={color} />
       {label}
     </span>
@@ -1419,14 +1419,14 @@ const TOKEN_DOT: Record<string, string> = {
   violet: 'var(--raw-navy)',
   purple: 'var(--raw-navy)',
   // the sanctioned accent role
-  accent: 'var(--press-accent)',
+  accent: 'var(--mn-text)',
 }
 
 function OptionDot({ color }: { color?: string }) {
-  let background = 'var(--press-line)'
+  let background = 'var(--mn-line)'
   if (color) {
     if (/^(#|rgb|hsl)/i.test(color)) background = color
-    else background = TOKEN_DOT[color.toLowerCase()] ?? 'var(--press-line)'
+    else background = TOKEN_DOT[color.toLowerCase()] ?? 'var(--mn-line)'
   }
   return (
     <span

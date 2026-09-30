@@ -11,7 +11,7 @@
  *
  * Purely presentational: the caller decides WHEN to render it and passes the resolved
  * `label`. It carries the Press serif of the surrounding correspondence (never a mono
- * console line), sits quiet in `press-muted`, and breathes with a slow sage pulse so
+ * console line), sits quiet in `mn-text-secondary`, and breathes with a slow sage pulse so
  * it reads as living, not stalled. The pulse is decorative and disabled under
  * prefers-reduced-motion via Tailwind's `motion-reduce` variant.
  */
@@ -26,9 +26,9 @@ export function StageText({ label }: StageTextProps) {
     <div className="flex items-center gap-2 py-1 pl-0.5" role="status" aria-live="polite">
       <span
         aria-hidden
-        className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-press-accent motion-safe:animate-pulse"
+        className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-mn-text motion-safe:animate-pulse"
       />
-      <span className="font-serif font-extralight text-sm italic text-press-muted">{label}</span>
+      <span className="font-serif font-extralight text-sm italic text-mn-text-secondary">{label}</span>
     </div>
   )
 }

@@ -8,13 +8,13 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* Make Noise type set — three licensed PP faces, self-hosted (issue #88).
-     The --font-press-* vars are set by next/font/local in the root layout; the
+     The --font-mn-* vars are set by next/font/local in the root layout; the
      fallbacks cover contexts that don't render the root layout (e.g. Storybook)
      and are kept per #88 so those surfaces still resolve a sensible face. */
-  --font-sans: var(--font-press-sans, 'PP Neue Montreal', ui-sans-serif, system-ui, sans-serif);
-  --font-serif: var(--font-press-serif, 'PP Editorial New', Georgia, serif);
-  --font-mono: var(--font-press-mono, 'PP Neue Montreal Mono', ui-monospace, monospace);
-  --font-display: var(--font-press-serif, 'PP Editorial New', Georgia, serif);
+  --font-sans: var(--font-mn-sans, 'PP Neue Montreal', ui-sans-serif, system-ui, sans-serif);
+  --font-serif: var(--font-mn-serif, 'PP Editorial New', Georgia, serif);
+  --font-mono: var(--font-mn-mono, 'PP Neue Montreal Mono', ui-monospace, monospace);
+  --font-display: var(--font-mn-serif, 'PP Editorial New', Georgia, serif);
   --font-heading: var(--font-sans);
 
   /* ── Make Noise VOICES (issue #87) — 8 named registers ────────────────────
@@ -159,21 +159,14 @@
   --color-mn-area-b: var(--mn-area-b);
   --color-mn-area-c: var(--mn-area-c);
 
-  /* Press chrome tokens — bg-press-paper, text-press-ink, border-press-line, … */
-  --color-press-paper: var(--press-paper);
-  --color-press-ink: var(--press-ink);
-  --color-press-body: var(--press-body);
-  --color-press-muted: var(--press-muted);
-  --color-press-faint: var(--press-faint);
-  --color-press-line: var(--press-line);
-  --color-press-hair: var(--press-hair);
-  --color-press-card: var(--press-card);
-  --color-press-accent: var(--press-accent);
-  --color-press-accent-soft: var(--press-accent-soft);
-  --color-press-accent-wash: var(--press-accent-wash);
-  --color-press-lime: var(--press-lime);
-  --color-press-lime-ink: var(--press-lime-ink);
-  --color-press-rust: var(--press-rust);
+  /* MN surface + functional roles coined in the #92 rename (theme-aware):
+     bg-mn-surface (ground), bg-mn-card, text-mn-text-faint (faint tier),
+     bg-mn-selected-fill (selected), bg-mn-wash (subtle ground). */
+  --color-mn-surface: var(--mn-surface);
+  --color-mn-card: var(--mn-card);
+  --color-mn-text-faint: var(--mn-text-faint);
+  --color-mn-selected-fill: var(--mn-selected-fill);
+  --color-mn-wash: var(--mn-wash);
   /* ── Motion system (ticket-41) — ONE language, token-sourced ──────────────
      Durations and easings that every authored moment maps from, so the app
      moves with one voice instead of scattered magic numbers. Referenced from
@@ -185,23 +178,23 @@
      earns a calm breath. Nothing overshoots for show — things SETTLE.
 
      Duration ladder — pick by intent, not by taste:
-       instant  reflex feedback (press-down, color hover) — barely perceptible
+       instant  reflex feedback (mn-down, color hover) — barely perceptible
        quick    a change the user just caused (checkbox mark, count tick,
                 menu grow, focus draw) — reads as immediate cause→effect
        settle   a thing finding its rest after a move (tree children, caret,
                 reorder shift, card resolve) — the "settle, not snap" tier
        calm     a single authored object arriving (a reply, a toast, a card)
-       slow     a page's worth of surfaces staggering in (press-rise on mount) */
+       slow     a page's worth of surfaces staggering in (mn-rise on mount) */
   --motion-instant: 90ms;
   --motion-quick: 150ms;
   --motion-settle: 280ms;
   --motion-calm: 460ms;
   --motion-slow: 560ms;
 
-  /* Easings. --ease-press is the house settle curve (a soft, slightly-eased
+  /* Easings. --ease-mn is the house settle curve (a soft, slightly-eased
      landing — no bounce). --ease-out decelerates into rest (entries, draws);
      --ease-in accelerates away (exits/dismissals). */
-  --ease-press: cubic-bezier(0.22, 0.8, 0.2, 1);
+  --ease-mn: cubic-bezier(0.22, 0.8, 0.2, 1);
   /* MN law: one house curve, nothing overshoots. --ease-out/-in kept as aliases
      for call-site readability (entries vs exits) but resolve to the same curve. */
   --ease-out: cubic-bezier(0.22, 0.8, 0.2, 1);
@@ -298,6 +291,14 @@
   --mn-area-a: var(--raw-sage);
   --mn-area-b: var(--raw-mist);
   --mn-area-c: var(--raw-navy);
+  /* Surface + functional roles (coined in #92, replacing the press-* aliases).
+     Theme-aware: surface/card flip on the dark ground; the ink-alpha fills keep
+     their exact opacities so the rename is pixel-identical. */
+  --mn-surface: var(--raw-paper); /* the ground/paper — flips to ink on dark */
+  --mn-card: var(--raw-paper); /* card surface — flips to raw-card-dark on dark */
+  --mn-text-faint: rgb(27 29 20 / 0.3); /* functional-faint tier (placeholders/meta) */
+  --mn-selected-fill: rgb(27 29 20 / 0.12); /* selected/active row fill */
+  --mn-wash: rgb(27 29 20 / 0.06); /* subtle wash ground (cards, chips, code) */
 
   /* ── Make Noise radii (issue #89) — real per-role values, not one base ── */
   --mn-radius-card: 20px;
@@ -313,47 +314,27 @@
   --mn-shadow-md: 0 4px 12px 0 rgb(27 29 20 / 0.1);
   --mn-shadow-lg: 0 12px 32px 0 rgb(27 29 20 / 0.14);
 
-  /* ── Press aliases → Make Noise (issue #92 will rename press-* → color-*) ──
-     KEPT as value-correct aliases so the ~existing components that still say
-     bg-press-paper / text-press-ink adopt MN colours without a mass rename.
-     Each maps to its closest MN role; the names go away in the #92 pass. */
-  --press-paper: var(--raw-paper);
-  --press-ink: var(--raw-ink);
-  --press-body: rgb(27 29 20 / 0.8); /* → meta tier */
-  --press-muted: rgb(27 29 20 / 0.68); /* snapped 52%→68% to hit MN's secondary tier */
-  --press-faint: rgb(27 29 20 / 0.3); /* no MN tier this faint — bridge value, opacity preserved */
-  --press-line: rgb(27 29 20 / 0.09);
-  --press-hair: rgb(27 29 20 / 0.055);
-  --press-card: var(--raw-paper); /* paper-not-frames: cards ARE paper, lifted by shadow */
-  /* MN law: sage is an AREA colour (marks only). These roles are FUNCTIONAL
-     (focus rings, hover/active fills, links, drag handles, chips) so they carry
-     ink, not sage. Genuine area marks use --mn-area-a directly. */
-  --press-accent: var(--raw-ink);
-  --press-accent-soft: rgb(27 29 20 / 0.12);
-  --press-accent-wash: rgb(27 29 20 / 0.06);
-  --press-lime: var(--raw-ink); /* primary CTA = ink-on-paper (MN); was lime */
-  --press-lime-ink: var(--raw-paper);
-  --press-rust: var(--raw-red); /* destructive → MN accent red */
-
-  /* ── shadcn semantic tokens, mapped onto Press ── */
-  --background: var(--press-paper);
-  --foreground: var(--press-ink);
-  --card: var(--press-card);
-  --card-foreground: var(--press-ink);
-  --popover: var(--press-card);
-  --popover-foreground: var(--press-ink);
-  --primary: var(--press-lime);
-  --primary-foreground: var(--press-lime-ink);
-  --secondary: var(--press-accent-wash);
-  --secondary-foreground: var(--press-ink);
-  --muted: var(--press-accent-wash);
-  --muted-foreground: var(--press-muted);
-  --accent: var(--press-accent-soft);
-  --accent-foreground: var(--press-ink);
-  --destructive: var(--press-rust);
-  --border: var(--press-line);
-  --input: var(--press-line);
-  --ring: var(--press-accent);
+  /* ── shadcn semantic tokens, mapped onto Make Noise roles (#92) ──
+     Every token derives from an mn-/raw- role; the .dark block re-themes
+     by overriding those roles, so nothing shadcn is restated on dark. */
+  --background: var(--mn-surface);
+  --foreground: var(--mn-text);
+  --card: var(--mn-card);
+  --card-foreground: var(--mn-text);
+  --popover: var(--mn-card);
+  --popover-foreground: var(--mn-text);
+  --primary: var(--mn-text); /* primary CTA = ink-on-paper (MN); was lime */
+  --primary-foreground: var(--mn-surface);
+  --secondary: var(--mn-wash);
+  --secondary-foreground: var(--mn-text);
+  --muted: var(--mn-wash);
+  --muted-foreground: var(--mn-text-secondary);
+  --accent: var(--mn-selected-fill);
+  --accent-foreground: var(--mn-text);
+  --destructive: var(--raw-red);
+  --border: var(--mn-line);
+  --input: var(--mn-line);
+  --ring: var(--mn-text);
   /* ══ Make Noise chart series — monochrome INK ramp (#94 chart pass) ══════════
      PondChart is single-hue: series read as ink strokes / translucent ink area
      fills over paper, NOT a rainbow. --chart-1 is the strongest ink; each step
@@ -365,14 +346,14 @@
   --chart-4: rgb(27 29 20 / 0.32);
   --chart-5: rgb(27 29 20 / 0.18);
   --radius: 0.625rem;
-  --sidebar: var(--press-paper);
-  --sidebar-foreground: var(--press-ink);
-  --sidebar-primary: var(--press-accent);
-  --sidebar-primary-foreground: var(--press-card);
-  --sidebar-accent: var(--press-accent-soft);
-  --sidebar-accent-foreground: var(--press-ink);
-  --sidebar-border: var(--press-line);
-  --sidebar-ring: var(--press-accent);
+  --sidebar: var(--mn-surface);
+  --sidebar-foreground: var(--mn-text);
+  --sidebar-primary: var(--mn-text);
+  --sidebar-primary-foreground: var(--mn-card);
+  --sidebar-accent: var(--mn-selected-fill);
+  --sidebar-accent-foreground: var(--mn-text);
+  --sidebar-border: var(--mn-line);
+  --sidebar-ring: var(--mn-text);
   /* Chart chrome — paper ground + ink tiers (matches MN text/line scale) */
   --chart-background: var(--raw-paper);
   --chart-foreground: var(--raw-ink);
@@ -401,22 +382,13 @@
 .dark {
   /* ══ Make Noise DARK — only roles reassign; a --raw-* value NEVER moves ══════
      Ground = ink, cards = dark card. Every shadcn/sidebar token in :root
-     derives from the --press- and --mn- roles, so overriding them here re-themes the
+     derives from the --mn- roles, so overriding them here re-themes the
      whole app. Paper carries text in the same 3 tiers (100 / 80 / 68). */
-  --press-paper: var(--raw-ink); /* ground */
-  --press-ink: var(--raw-paper); /* text/ink flips to paper */
-  --press-body: rgb(250 249 239 / 0.8);
-  --press-muted: rgb(250 249 239 / 0.68);
-  --press-faint: rgb(250 249 239 / 0.3);
-  --press-line: rgb(250 249 239 / 0.12);
-  --press-hair: rgb(250 249 239 / 0.07);
-  --press-card: var(--raw-card-dark);
-  --press-accent: var(--raw-paper); /* ink flips to paper on the dark ground */
-  --press-accent-soft: rgb(250 249 239 / 0.2);
-  --press-accent-wash: rgb(250 249 239 / 0.1);
-  --press-lime: var(--raw-paper); /* dark primary CTA = paper-on-ink */
-  --press-lime-ink: var(--raw-ink);
-  --press-rust: var(--raw-red);
+  --mn-surface: var(--raw-ink); /* ground flips to ink */
+  --mn-card: var(--raw-card-dark); /* card surface on the dark ground */
+  --mn-text-faint: rgb(250 249 239 / 0.3);
+  --mn-selected-fill: rgb(250 249 239 / 0.2);
+  --mn-wash: rgb(250 249 239 / 0.1);
 
   /* MN semantic roles — paper tiers on the dark ground */
   --mn-text: var(--raw-paper);
@@ -468,7 +440,7 @@
   --chart-scale-pattern-color: rgb(250 249 239 / 0.04);
 }
 
-@keyframes press-rise {
+@keyframes mn-rise {
   from {
     opacity: 0;
     transform: translateY(14px);
@@ -544,15 +516,15 @@
 @layer components {
   /* Staggered rise-on-mount — the Clearing motion idiom (delay set inline).
      ticket-41: sourced from --motion-slow (a page's worth of surfaces). */
-  .press-rise {
-    animation: press-rise var(--motion-slow) var(--ease-press) both;
+  .mn-rise {
+    animation: mn-rise var(--motion-slow) var(--ease-mn) both;
   }
 
   /* Conversation-surface arrival (ticket-32): a calmer, shorter breath than the
-     full-page press-rise, tuned for a single message/card entering the transcript —
+     full-page mn-rise, tuned for a single message/card entering the transcript —
      one authored moment, not a scatter. ticket-41: --motion-calm. */
-  .press-arrive {
-    animation: press-rise var(--motion-calm) var(--ease-press) both;
+  .mn-arrive {
+    animation: mn-rise var(--motion-calm) var(--ease-mn) both;
   }
 
   /* ── ticket-41 micro-interaction classes — each token-driven, one language ──*/
@@ -574,7 +546,7 @@
      to the box when it flips to checked; the paired bound-metric NumberFlow tick
      lands in the same beat so the pair reads causal. */
   .motion-check {
-    animation: motion-check-settle var(--motion-quick) var(--ease-press) both;
+    animation: motion-check-settle var(--motion-quick) var(--ease-mn) both;
   }
 
   /* Card resolve (ModuleDiffCard / ProposalGroup). Settle tier — the card eases
@@ -583,7 +555,7 @@
   .motion-resolve {
     transition:
       opacity var(--motion-settle) var(--ease-out),
-      transform var(--motion-settle) var(--ease-press);
+      transform var(--motion-settle) var(--ease-mn);
   }
 
   /* Tree children settle (TreeRow subtree) & block insert/reorder settle. A
@@ -599,8 +571,8 @@
      state instantly. Color/opacity hover transitions elsewhere are already
      imperceptible and stay (they carry no travel). */
   @media (prefers-reduced-motion: reduce) {
-    .press-rise,
-    .press-arrive,
+    .mn-rise,
+    .mn-arrive,
     .motion-toast,
     .motion-menu,
     .motion-check,
@@ -630,7 +602,7 @@
     right: 0;
     bottom: -1px;
     height: 1.5px;
-    background: var(--press-accent);
+    background: var(--mn-text);
     transform: scaleX(0);
     transform-origin: left center;
     transition: transform var(--motion-quick) var(--ease-out);
@@ -644,13 +616,13 @@
      object in the terminal share one treatment so the transcript reads as a coherent
      object — a paper surface lifted by a soft shadow, NOT a bordered or accent-ruled
      frame. No hard borders, no sage left margin (area colours are marks only). */
-  .press-letter {
-    background: var(--press-card);
+  .mn-letter {
+    background: var(--mn-card);
     box-shadow: var(--mn-shadow-card);
   }
 
   /* Liquid glass — floating Press chrome ONLY (top bar cluster, palettes). */
-  .press-glass {
+  .mn-glass {
     background: linear-gradient(
       160deg,
       rgba(255, 254, 250, 0.84) 0%,

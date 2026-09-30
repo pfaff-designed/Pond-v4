@@ -20,7 +20,7 @@ import { ChartStatFlow } from '@/components/charts/chart-stat-flow'
  */
 export function StatView({ data }: ModuleViewProps<StatBlock>) {
   return (
-    <div className="flex flex-col items-start py-1 text-press-ink">
+    <div className="flex flex-col items-start py-1 text-mn-text">
       <span role="status" aria-label={`${data.label}: ${formatStatValue(data)}`}>
         <span aria-hidden className="flex flex-col items-start">
           <ChartStatFlow
@@ -29,17 +29,17 @@ export function StatView({ data }: ModuleViewProps<StatBlock>) {
             formatOptions={statFormatOptions(data.format)}
             prefix={data.prefix}
             suffix={data.suffix}
-            valueClassName="text-3xl font-bold tracking-tight text-press-ink tabular-nums"
+            valueClassName="text-3xl font-bold tracking-tight text-mn-text tabular-nums"
             labelClassName={KICKER}
           />
         </span>
       </span>
       {data.delta !== undefined && (
-        <span className="mt-1 font-mono text-xs tabular-nums text-press-muted">
+        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">
           {formatStatDelta(data.delta)}
         </span>
       )}
-      {data.caption && <span className="mt-0.5 text-xs text-press-faint">{data.caption}</span>}
+      {data.caption && <span className="mt-0.5 text-xs text-mn-text-faint">{data.caption}</span>}
     </div>
   )
 }

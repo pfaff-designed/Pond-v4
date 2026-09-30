@@ -65,7 +65,7 @@ export const ButtonInteraction: Story = {
         <button
           aria-label="Ask Pond about selection"
           onClick={() => ctx.args.onAsk({ text: 'test selection', blockId: 'block-1' })}
-          className="rounded-md border border-press-line bg-press-paper px-2.5 py-1 text-xs font-mono text-press-muted shadow-md hover:text-press-accent hover:border-press-accent transition-colors"
+          className="rounded-md border border-mn-line bg-mn-surface px-2.5 py-1 text-xs font-mono text-mn-text-secondary shadow-md hover:text-mn-text hover:border-mn-text transition-colors"
         >
           Ask Pond
         </button>

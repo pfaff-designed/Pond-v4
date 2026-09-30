@@ -34,7 +34,7 @@ export function ChildrenGridLabel({
 /**
  * The interactive host around a `record-card` PondMolecule in stat mode (#95,
  * the OverviewCard absorption): the whole card is one calm click target.
- * ticket-41: hover lift + press-down settle, token-timed — the active state
+ * ticket-41: hover lift + pressed-state settle, token-timed — the active state
  * presses the card back to rest (a physical "click") so the tap reads as
  * cause, not just a hover flourish. Reduced-motion still gets the visual
  * change instantly (no travel is perceptible at the token durations).
@@ -44,7 +44,7 @@ function OverviewCardButton({ card, onOpen }: { card: OverviewCardModel; onOpen:
     <button
       type="button"
       onClick={onOpen}
-      className="group block w-full cursor-pointer rounded-mn-card text-left outline-none transition-transform duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:-translate-y-px active:translate-y-0 active:scale-[0.994] active:duration-[var(--motion-instant)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b motion-reduce:transition-none"
+      className="group block w-full cursor-pointer rounded-mn-card text-left outline-none transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:-translate-y-px active:translate-y-0 active:scale-[0.994] active:duration-[var(--motion-instant)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b motion-reduce:transition-none"
     >
       <PondMolecule
         kind="record-card"

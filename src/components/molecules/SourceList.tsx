@@ -11,7 +11,7 @@
  * nothing bespoke here.
  */
 
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 
 export interface Source {
   /** Stable id for the source (React key). */
@@ -49,19 +49,19 @@ export function SourceList({ sources: rawSources }: SourceListProps) {
   const sources = dedupeByUrl(rawSources)
   if (sources.length === 0) return null
   return (
-    <div className="mt-2.5 border-t border-press-hair pt-2 text-xs text-press-faint">
-      <span className={`mr-1 ${pressKickerClass}`}>Sources</span>
+    <div className="mt-2.5 border-t border-mn-hair pt-2 text-xs text-mn-text-faint">
+      <span className={`mr-1 ${kickerClass}`}>Sources</span>
       <ol className="mt-1.5 space-y-1">
         {sources.map((source, i) => (
           <li key={source.sourceId} className="flex gap-1.5">
-            <span aria-hidden className="tabular-nums text-press-faint">
+            <span aria-hidden className="tabular-nums text-mn-text-faint">
               {i + 1}.
             </span>
             <a
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="truncate font-mono lowercase tracking-[0.1em] text-press-accent underline-offset-2 hover:underline"
+              className="truncate font-mono lowercase tracking-[0.1em] text-mn-text underline-offset-2 hover:underline"
               title={source.url}
             >
               {sourceLabel(source)}

@@ -59,7 +59,7 @@ import {
 } from '@/components/molecules/TerminalDrawer'
 import { Markdown } from '@/components/atoms/Markdown'
 import { StageText } from '@/components/atoms/StageText'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { FollowupChips } from '@/components/molecules/FollowupChips'
 import { QuestionCard, type QuestionAnswerVia } from '@/components/molecules/QuestionCard'
@@ -686,8 +686,8 @@ export function AITerminal() {
       el.focus()
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       // Brief visual emphasis so the user knows focus arrived.
-      el.classList.add('ring-1', 'ring-press-accent')
-      setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
+      el.classList.add('ring-1', 'ring-mn-text')
+      setTimeout(() => el.classList.remove('ring-1', 'ring-mn-text'), 800)
       pendingFocus.current = false
       return
     }
@@ -865,8 +865,8 @@ export function AITerminal() {
       if (el) {
         el.focus()
         el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        el.classList.add('ring-1', 'ring-press-accent')
-        setTimeout(() => el.classList.remove('ring-1', 'ring-press-accent'), 800)
+        el.classList.add('ring-1', 'ring-mn-text')
+        setTimeout(() => el.classList.remove('ring-1', 'ring-mn-text'), 800)
       }
       pendingFocus.current = false
     }
@@ -1473,9 +1473,9 @@ export function AITerminal() {
     // scroll + inner gutter — no re-centering here.
     <div className="flex-1 overflow-y-auto py-4">
       <div className="w-full space-y-6 px-8">
-        {!isReady && <p className="font-serif text-sm italic text-press-faint">Loading…</p>}
+        {!isReady && <p className="font-serif text-sm italic text-mn-text-faint">Loading…</p>}
         {isReady && messages.length === 0 && (
-          <p className="font-serif text-sm italic text-press-faint">
+          <p className="font-serif text-sm italic text-mn-text-faint">
             Talk with Pond — think out loud, ask, or compose.
           </p>
         )}
@@ -1554,21 +1554,21 @@ export function AITerminal() {
                 (message.role === 'user' ? (
                   // The user's line is a quiet aside — left-aligned on the shared reading edge,
                   // with a faint sage left border. NOT a chat bubble competing with the authored reply.
-                  <p className="whitespace-pre-wrap border-l-2 border-press-accent/40 bg-press-accent-wash pl-3.5 pr-2 py-2 font-serif text-[0.95rem] leading-[1.55] text-press-body">
+                  <p className="whitespace-pre-wrap border-l-2 border-mn-text/40 bg-mn-wash pl-3.5 pr-2 py-2 font-serif text-[0.95rem] leading-[1.55] text-mn-text-meta">
                     {text}
                   </p>
                 ) : (
                   // The AI reply is set as full typeset prose in the document's own
                   // measure — letter-style correspondence, not a card in a console. A
-                  // press-hair rule with a small-caps "Pond" attribution heads each
+                  // mn-hair rule with a small-caps "Pond" attribution heads each
                   // reply; the prose below is the same Press serif the page reads in.
-                  // Arrives with one calm breath (press-arrive). Streaming-safe: `text`
+                  // Arrives with one calm breath (mn-arrive). Streaming-safe: `text`
                   // grows token-by-token and react-markdown re-parses each partial
                   // (ticket-20).
-                  <div className="press-arrive">
+                  <div className="mn-arrive">
                     <div className="mb-2.5 flex items-center gap-3">
-                      <span className={pressKickerClass}>Pond</span>
-                      <span aria-hidden className="h-px flex-1 bg-press-hair" />
+                      <span className={kickerClass}>Pond</span>
+                      <span aria-hidden className="h-px flex-1 bg-mn-hair" />
                     </div>
                     <Markdown variant="terminal">{text}</Markdown>
                     {sources.length > 0 && <SourceList sources={sources} />}
@@ -1577,10 +1577,10 @@ export function AITerminal() {
               {/* Sources can arrive on an assistant message with no text (rare, but the
                 citation should still show) — same attributed-letter treatment. */}
               {message.role !== 'user' && !text && sources.length > 0 && (
-                <div className="press-arrive">
+                <div className="mn-arrive">
                   <div className="mb-2.5 flex items-center gap-3">
-                    <span className={pressKickerClass}>Pond</span>
-                    <span aria-hidden className="h-px flex-1 bg-press-hair" />
+                    <span className={kickerClass}>Pond</span>
+                    <span aria-hidden className="h-px flex-1 bg-mn-hair" />
                   </div>
                   <SourceList sources={sources} />
                 </div>
@@ -1611,7 +1611,7 @@ export function AITerminal() {
                 // inferred side-effect stays pending for its own click.
                 const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
                 return (
-                  <div key={part.toolCallId} className="press-arrive space-y-1.5">
+                  <div key={part.toolCallId} className="mn-arrive space-y-1.5">
                     <ProposalGroup
                       changes={previews}
                       statuses={statuses}
@@ -1643,7 +1643,7 @@ export function AITerminal() {
                 return (
                   <CreatePageProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     title={input.title}
                     type={input.type}
                     kind={input.kind}
@@ -1695,7 +1695,7 @@ export function AITerminal() {
                 return (
                   <DefineSchemaProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     properties={properties}
                     reason={input.reason}
                     status={status}
@@ -1739,7 +1739,7 @@ export function AITerminal() {
                 return (
                   <AddRowProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     title={input.title}
                     props={input.props ?? {}}
                     reason={input.reason}
@@ -1801,7 +1801,7 @@ export function AITerminal() {
                 return (
                   <PromoteTableProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     tableTitle={preview.tableTitle}
                     columns={preview.columns}
                     rowCount={preview.rowCount}
@@ -1854,7 +1854,7 @@ export function AITerminal() {
                 return (
                   <ConfigureViewProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     mode={input.mode}
                     groupBy={input.groupBy}
                     sort={input.sort}
@@ -1907,7 +1907,7 @@ export function AITerminal() {
                 return (
                   <LinkRecordsProposalCard
                     key={part.toolCallId}
-                    className="press-arrive"
+                    className="mn-arrive"
                     fromRow={input.fromRow}
                     relation={input.relation}
                     toRows={input.toRows}
@@ -2011,7 +2011,7 @@ export function AITerminal() {
       onDrop={handleDrop}
     >
       <div className="w-full px-8">
-        <div className="border-t border-press-hair">
+        <div className="border-t border-mn-hair">
           {/* Quote chip — highlight-to-ask (ticket-40 F20) */}
           {quoteCtx && (
             <div className="pt-2">
@@ -2110,7 +2110,7 @@ export function AITerminal() {
                 // baseline (motion-focus-draw), so no border-color flip here.
                 // MN: the composer is a machine surface — mono, lowercase, tight
                 // tracking (--voice-mono). Typed intent reads as machine input.
-                className="relative z-10 w-full resize-none border-0 border-b border-press-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-sm text-press-body outline-none placeholder:text-press-faint disabled:opacity-60"
+                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-sm text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>
@@ -2142,7 +2142,7 @@ export function AITerminal() {
               title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
               onClick={handleAttachClick}
               disabled={isStreaming || !isReady}
-              className="self-end mb-2 text-press-faint hover:text-press-accent transition-colors disabled:opacity-40"
+              className="self-end mb-2 text-mn-text-faint hover:text-mn-text transition-colors disabled:opacity-40"
             >
               <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
                 <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 0 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3Z" />
@@ -2158,7 +2158,7 @@ export function AITerminal() {
               }
               // MN: the composer is a machine surface — its Send control speaks the
               // mono machine voice (lowercase, tracking-wider), not the serif kicker.
-              className="self-end pb-2 font-mono lowercase tracking-[0.1em] text-xs text-press-accent transition-colors hover:text-press-ink disabled:opacity-40 disabled:hover:text-press-accent"
+              className="self-end pb-2 font-mono lowercase tracking-[0.1em] text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
             >
               send
             </button>

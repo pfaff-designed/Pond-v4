@@ -14,7 +14,7 @@ export function blockDomId(blockId: string): string {
   return `block-${blockId}`
 }
 
-const HIGHLIGHT_CLASSES = ['ring-2', 'ring-press-faint', 'rounded-sm']
+const HIGHLIGHT_CLASSES = ['ring-2', 'ring-mn-text-faint', 'rounded-sm']
 
 /** Scroll a block into view and (by default) briefly highlight it. */
 export function scrollToBlock(blockId: string, opts: { highlight?: boolean } = {}) {

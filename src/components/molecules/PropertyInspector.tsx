@@ -18,7 +18,7 @@
  */
 
 import { cn } from '@/lib/utils'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
 import {
@@ -41,7 +41,7 @@ export interface PropertyInspectorProps {
 }
 
 const inputClass =
-  'w-full border-0 border-b border-press-line bg-transparent px-0 py-1 font-serif text-sm text-press-body outline-none transition-colors placeholder:text-press-faint focus:border-press-accent disabled:opacity-60'
+  'w-full border-0 border-b border-mn-line bg-transparent px-0 py-1 font-serif text-sm text-mn-text-meta outline-none transition-colors placeholder:text-mn-text-faint focus:border-mn-text disabled:opacity-60'
 
 export function PropertyInspector({
   schema,
@@ -52,7 +52,7 @@ export function PropertyInspector({
 }: PropertyInspectorProps) {
   if (schema.length === 0) {
     return (
-      <p className={cn('font-serif text-xs italic text-press-muted', className)}>
+      <p className={cn('font-serif text-xs italic text-mn-text-secondary', className)}>
         No properties on this page yet.
       </p>
     )
@@ -66,7 +66,7 @@ export function PropertyInspector({
     >
       {schema.map((def) => (
         <div key={def.id} className="contents">
-          <dt className={cn(pressKickerClass, 'pt-1 text-press-muted')}>{def.name}</dt>
+          <dt className={cn(kickerClass, 'pt-1 text-mn-text-secondary')}>{def.name}</dt>
           <dd>
             <PropertyField
               def={def}
@@ -132,7 +132,7 @@ function PropertyField({
       return (
         <input
           type="checkbox"
-          className="h-4 w-4 accent-press-accent"
+          className="h-4 w-4 accent-mn-text"
           aria-label={label}
           disabled={!editable}
           checked={value === true}

@@ -195,7 +195,7 @@ export function TerminalDrawer({
               confined chrome below. The handle itself stays full-width for an
               easy drag target. */}
           <span className="mx-auto w-full max-w-2xl px-8 flex justify-center">
-            <span className="h-1 w-10 rounded-full bg-press-muted/40 group-hover:bg-press-accent group-focus:bg-press-accent transition-colors" />
+            <span className="h-1 w-10 rounded-full bg-mn-text-secondary/40 group-hover:bg-mn-text group-focus:bg-mn-text transition-colors" />
           </span>
         </div>
       )}
@@ -216,7 +216,7 @@ export function TerminalDrawer({
               MN: the composer is a machine surface, so its chrome speaks the mono
               machine voice (lowercase, tracking-wider) — not the correspondence
               serif. The context VALUE stays as-is (it's a page/area name). */}
-          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-[0.1em] text-[11px] text-press-muted">
+          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-[0.1em] text-[11px] text-mn-text-secondary">
             <button
               type="button"
               onClick={onToggleCollapsed}
@@ -243,7 +243,7 @@ export function TerminalDrawer({
               disabled={!canClear}
               aria-label="Clear conversation"
               title="Clear conversation (/clear)"
-              className="text-press-faint hover:text-press-rust transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
+              className="text-mn-text-faint hover:text-raw-red transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
             >
               clear
             </button>

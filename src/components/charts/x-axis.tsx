@@ -80,7 +80,7 @@ function XAxisLabel({
         className={cn("whitespace-nowrap text-chart-label text-xs")}
         style={{
           opacity,
-          transition: "opacity var(--motion-calm) var(--ease-press)",
+          transition: "opacity var(--motion-calm) var(--ease-mn)",
         }}
       >
         {label}

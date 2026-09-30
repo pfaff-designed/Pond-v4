@@ -49,7 +49,7 @@ function Rise({
   children: React.ReactNode
 }) {
   return (
-    <div className={`press-rise ${className}`} style={{ animationDelay: `${i * 70}ms` }}>
+    <div className={`mn-rise ${className}`} style={{ animationDelay: `${i * 70}ms` }}>
       {children}
     </div>
   )
@@ -69,7 +69,7 @@ function EditableKicker({
   value: string
   onRename?: (title: string) => void
 }) {
-  const kickerClass = 'font-mono text-[11px] tracking-[0.1em] uppercase text-press-faint'
+  const kickerClass = 'font-mono text-[11px] tracking-[0.1em] uppercase text-mn-text-faint'
   const [draft, setDraft] = useState(value)
   // Escape blurs to end the edit, and blur normally commits — but an Escape
   // blur must NOT commit (the whole point is to revert). The blur event fires
@@ -112,7 +112,7 @@ function EditableKicker({
         }
       }}
       aria-label="Rename page"
-      className={`${kickerClass} bg-transparent outline-none rounded-sm px-1 -mx-1 min-w-[6ch] hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-body transition-colors`}
+      className={`${kickerClass} bg-transparent outline-none rounded-sm px-1 -mx-1 min-w-[6ch] hover:bg-mn-wash focus:bg-mn-wash focus:text-mn-text-meta transition-colors`}
     />
   )
 }
@@ -131,7 +131,7 @@ function AddContentButton({ onAddContent }: { onAddContent: (item: SlashMenuItem
         onClick={() => setOpen(true)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="text-[12.5px] font-medium text-press-muted hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
+        className="text-[12.5px] font-medium text-mn-text-secondary hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
       >
         + Add content
       </button>
@@ -231,7 +231,7 @@ export function OverviewSurface({
               onRenameKicker ? (
                 <span className="flex items-center flex-wrap min-w-0">
                   <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} />
-                  <span className="font-mono text-[11px] text-press-faint/60 px-1.5 select-none">
+                  <span className="font-mono text-[11px] text-mn-text-faint/60 px-1.5 select-none">
                     ›
                   </span>
                   <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
@@ -279,8 +279,8 @@ export function OverviewSurface({
 
         {/* ── Closing serif exhale ────────────────────────────────────────── */}
         <Rise i={ri++} className="mt-12">
-          <div className="border-t border-press-hair pt-5">
-            <span className="font-serif font-extralight italic text-[16.5px] leading-[1.75] text-press-faint">
+          <div className="border-t border-mn-hair pt-5">
+            <span className="font-serif font-extralight italic text-[16.5px] leading-[1.75] text-mn-text-faint">
               {closing}
             </span>
           </div>
@@ -407,7 +407,7 @@ export function LifeOverviewPanel() {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-press-faint">
+      <div className="h-full flex items-center justify-center text-sm text-mn-text-faint">
         Loading…
       </div>
     )

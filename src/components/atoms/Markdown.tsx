@@ -31,7 +31,7 @@ export type MarkdownVariant = 'reading' | 'terminal'
 
 /** The shared Press serif voice both prose treatments are built from — one base,
  *  two scales, so the two variants cannot drift into different type worlds. */
-const PROSE_BASE_CLASS = 'font-serif font-extralight text-press-body'
+const PROSE_BASE_CLASS = 'font-serif font-extralight text-mn-text-meta'
 
 /**
  * The Press reading-prose text treatment, shared by every flow element of the
@@ -94,27 +94,27 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-press-accent underline decoration-press-line underline-offset-2 hover:decoration-press-accent"
+        className="text-mn-text underline decoration-mn-line underline-offset-2 hover:decoration-mn-text"
       >
         {children}
       </a>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="font-serif font-extralight italic text-press-muted border-l-2 border-press-line pl-4 my-4">
+      <blockquote className="font-serif font-extralight italic text-mn-text-secondary border-l-2 border-mn-line pl-4 my-4">
         {children}
       </blockquote>
     ),
     code: ({ children }) => (
-      <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
+      <code className="font-mono text-[0.85em] bg-mn-wash text-foreground rounded-mn-chrome px-1 py-0.5">
         {children}
       </code>
     ),
     pre: ({ children }) => (
-      <pre className="font-mono text-sm bg-press-accent-wash text-foreground rounded-mn-row p-3 my-4 overflow-x-auto">
+      <pre className="font-mono text-sm bg-mn-wash text-foreground rounded-mn-row p-3 my-4 overflow-x-auto">
         {children}
       </pre>
     ),
-    hr: () => <hr className="border-0 border-t border-press-line my-6" />,
+    hr: () => <hr className="border-0 border-t border-mn-line my-6" />,
     table: ({ children }) => (
       <div className="my-4 overflow-x-auto">
         <table className="w-full border-collapse text-left font-sans text-[0.95rem]">
@@ -123,12 +123,12 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       </div>
     ),
     th: ({ children }) => (
-      <th className="border-b border-press-line py-1.5 pr-4 text-sm font-medium text-press-muted">
+      <th className="border-b border-mn-line py-1.5 pr-4 text-sm font-medium text-mn-text-secondary">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border-b border-press-hair py-1.5 pr-4 text-press-body">{children}</td>
+      <td className="border-b border-mn-hair py-1.5 pr-4 text-mn-text-meta">{children}</td>
     ),
   },
   // ── Terminal answer: the Press serif reading treatment, scaled for the drawer ─
@@ -168,27 +168,27 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-press-accent underline decoration-press-line underline-offset-2 hover:decoration-press-accent"
+        className="text-mn-text underline decoration-mn-line underline-offset-2 hover:decoration-mn-text"
       >
         {children}
       </a>
     ),
     blockquote: ({ children }) => (
-      <blockquote className="font-serif font-extralight italic text-press-muted border-l-2 border-press-line pl-3 my-2">
+      <blockquote className="font-serif font-extralight italic text-mn-text-secondary border-l-2 border-mn-line pl-3 my-2">
         {children}
       </blockquote>
     ),
     code: ({ children }) => (
-      <code className="font-mono text-[0.8em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
+      <code className="font-mono text-[0.8em] bg-mn-wash text-foreground rounded-mn-chrome px-1 py-0.5">
         {children}
       </code>
     ),
     pre: ({ children }) => (
-      <pre className="font-mono text-xs bg-press-accent-wash text-foreground rounded-mn-row p-2.5 my-2 overflow-x-auto">
+      <pre className="font-mono text-xs bg-mn-wash text-foreground rounded-mn-row p-2.5 my-2 overflow-x-auto">
         {children}
       </pre>
     ),
-    hr: () => <hr className="border-0 border-t border-press-line my-3" />,
+    hr: () => <hr className="border-0 border-t border-mn-line my-3" />,
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
         <table className="w-full border-collapse text-left font-sans text-[0.875rem]">
@@ -197,12 +197,12 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       </div>
     ),
     th: ({ children }) => (
-      <th className="border-b border-press-line py-1.5 pr-3 text-xs font-medium text-press-muted">
+      <th className="border-b border-mn-line py-1.5 pr-3 text-xs font-medium text-mn-text-secondary">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border-b border-press-hair py-1.5 pr-3 text-press-body">{children}</td>
+      <td className="border-b border-mn-hair py-1.5 pr-3 text-mn-text-meta">{children}</td>
     ),
   },
 }
@@ -264,7 +264,7 @@ const INLINE_COMPONENTS: Components = {
   strong: ({ children }) => <strong className="font-extrabold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   code: ({ children }) => (
-    <code className="font-mono text-[0.85em] bg-press-accent-wash text-foreground rounded-mn-chrome px-1 py-0.5">
+    <code className="font-mono text-[0.85em] bg-mn-wash text-foreground rounded-mn-chrome px-1 py-0.5">
       {children}
     </code>
   ),
@@ -273,7 +273,7 @@ const INLINE_COMPONENTS: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-press-accent underline decoration-press-line underline-offset-2 hover:decoration-press-accent"
+      className="text-mn-text underline decoration-mn-line underline-offset-2 hover:decoration-mn-text"
     >
       {children}
     </a>

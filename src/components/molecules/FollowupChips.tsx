@@ -10,8 +10,8 @@
  * not shouting buttons. Purely presentational: the terminal owns "what happens on
  * click" (send the text) and passes it in; this molecule only lays the chips out.
  *
- * w2-design-brief aesthetics: warm paper, hairline rules (press-line), sage
- * accent on hover, one calm authored moment (press-rise on arrive), reduced-motion
+ * w2-design-brief aesthetics: warm paper, hairline rules (mn-line), sage
+ * accent on hover, one calm authored moment (mn-rise on arrive), reduced-motion
  * guarded by the shared utility.
  */
 
@@ -41,10 +41,10 @@ export function FollowupChips({
     <div
       role="group"
       aria-label={label ?? 'Follow-up suggestions'}
-      className={cn('press-rise flex flex-wrap items-center gap-2', className)}
+      className={cn('mn-rise flex flex-wrap items-center gap-2', className)}
     >
       {label && (
-        <span className="font-sans text-[0.65rem] font-medium uppercase tracking-[0.06em] text-press-faint">
+        <span className="font-sans text-[0.65rem] font-medium uppercase tracking-[0.06em] text-mn-text-faint">
           {label}
         </span>
       )}
@@ -57,10 +57,10 @@ export function FollowupChips({
           className={cn(
             // Machine surface (composer follow-ups + question-card options): mono,
             // lowercase, tight tracking — a hairline pill, paper-not-frames.
-            'rounded-mn-pill border border-press-line bg-transparent px-3 py-1 font-mono lowercase tracking-[0.1em] text-[0.72rem] leading-none text-press-body',
-            'transition-colors hover:border-press-accent hover:text-press-ink',
-            'focus:outline-none focus-visible:border-press-accent focus-visible:ring-1 focus-visible:ring-press-accent',
-            'disabled:opacity-40 disabled:hover:border-press-line disabled:hover:text-press-body'
+            'rounded-mn-pill border border-mn-line bg-transparent px-3 py-1 font-mono lowercase tracking-[0.1em] text-[0.72rem] leading-none text-mn-text-meta',
+            'transition-colors hover:border-mn-text hover:text-mn-text',
+            'focus:outline-none focus-visible:border-mn-text focus-visible:ring-1 focus-visible:ring-mn-text',
+            'disabled:opacity-40 disabled:hover:border-mn-line disabled:hover:text-mn-text-meta'
           )}
         >
           {chip}

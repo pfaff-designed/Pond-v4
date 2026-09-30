@@ -112,14 +112,14 @@ export function TextSelectionPopover({ containerRef, onAsk, disabled }: TextSele
         // Clear the browser selection so the quote chip in the composer is the only remnant.
         window.getSelection()?.removeAllRanges()
       }}
-      className="fixed z-50 press-arrive"
+      className="fixed z-50 mn-arrive"
       style={{ left: pos.x, top: pos.y - 36, transform: 'translateX(-50%)' }}
     >
       <span
         className="
-          rounded-mn-pill bg-press-paper
-          px-3 py-1 text-xs font-mono lowercase tracking-[0.1em] text-press-muted
-          shadow-mn-md ring-1 ring-press-line hover:text-press-accent hover:ring-press-accent
+          rounded-mn-pill bg-mn-surface
+          px-3 py-1 text-xs font-mono lowercase tracking-[0.1em] text-mn-text-secondary
+          shadow-mn-md ring-1 ring-mn-line hover:text-mn-text hover:ring-mn-text
           transition-colors select-none whitespace-nowrap
         "
       >

@@ -169,13 +169,13 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
 
   return (
     <div
-      className="text-sm text-press-ink"
+      className="text-sm text-mn-text"
       onPointerMove={editable ? onPointerMove : undefined}
       onPointerUp={editable ? onPointerUp : undefined}
       // A pointer leaving the board mid-drag ends it cleanly (no orphaned lift).
       onPointerLeave={editable && drag ? onPointerUp : undefined}
     >
-      {data.title && <div className="mb-2 text-press-muted">{data.title}</div>}
+      {data.title && <div className="mb-2 text-mn-text-secondary">{data.title}</div>}
 
       <div className="flex gap-4 overflow-x-auto pb-1">
         {columns.map((col) => {
@@ -190,31 +190,31 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
               className={[
                 'min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
                 isOver
-                  ? 'bg-press-accent-wash shadow-mn-md'
-                  : 'bg-press-card/40 shadow-mn-sm',
+                  ? 'bg-mn-wash shadow-mn-md'
+                  : 'bg-mn-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-baseline justify-between gap-2">
                 {editable ? (
                   <input
-                    className="min-w-0 flex-1 bg-transparent text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase outline-none"
                     value={col.title}
                     aria-label={`Column title: ${col.title}`}
                     onChange={(e) => emit(renameColumn(data, col.id, e.target.value))}
                   />
                 ) : (
-                  <span className="text-[0.65rem] font-medium tracking-[0.14em] text-press-muted uppercase">
+                  <span className="text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
                     {col.title}
                   </span>
                 )}
-                <span className="text-[0.65rem] text-press-muted tabular-nums">
+                <span className="text-[0.65rem] text-mn-text-secondary tabular-nums">
                   {col.cards.length}
                 </span>
               </header>
 
               <ul className="space-y-2">
                 {col.cards.length === 0 && (
-                  <li className="py-1 text-xs text-press-muted/70">
+                  <li className="py-1 text-xs text-mn-text-secondary/70">
                     {editable ? 'Drop or add a card' : 'Empty'}
                   </li>
                 )}
@@ -225,11 +225,11 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                     <li
                       key={card.id}
                       className={[
-                        'relative flex items-start gap-1.5 rounded-mn-row bg-press-card px-2 py-2 shadow-mn-sm',
+                        'relative flex items-start gap-1.5 rounded-mn-row bg-mn-card px-2 py-2 shadow-mn-sm',
                         // ticket-41: a quiet hover raise (shadow only — the card is
                         // a drag object, not a click target, so it lifts rather than
                         // presses). Token-timed, reduced-motion drops the travel.
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-press)] hover:shadow-mn-md motion-reduce:transition-none',
+                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:shadow-mn-md motion-reduce:transition-none',
                         // The lifted source card fades to a placeholder ghost.
                         isDragging ? 'opacity-30' : '',
                       ].join(' ')}
@@ -241,7 +241,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
                           type="button"
                           aria-label={`Drag card: ${card.title || 'untitled'}`}
                           onPointerDown={(e) => onCardPointerDown(e, card.id)}
-                          className="mt-0.5 cursor-grab touch-none leading-none text-press-muted/50 select-none hover:text-press-muted"
+                          className="mt-0.5 cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
                         >
                           ⠿
                         </button>
@@ -299,7 +299,7 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
         {editable && (
           <button
             type="button"
-            className="min-w-[8rem] shrink-0 self-start rounded-mn-inner border border-dashed border-press-hair px-3 py-2 text-xs text-press-muted hover:text-press-ink"
+            className="min-w-[8rem] shrink-0 self-start rounded-mn-inner border border-dashed border-mn-hair px-3 py-2 text-xs text-mn-text-secondary hover:text-mn-text"
             onClick={() => emit(addColumn(data, 'New column', crypto.randomUUID()))}
           >
             + Column
@@ -310,13 +310,13 @@ export function KanbanView({ data, editable, onChange }: ModuleViewProps<KanbanB
       {/* Floating clone that follows the pointer — the "lift" (soft shadow + tilt). */}
       {draggingCard && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-press-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-mn-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
-          <div className="font-medium text-press-ink">{draggingCard.title}</div>
+          <div className="font-medium text-mn-text">{draggingCard.title}</div>
           {draggingCard.note && (
-            <div className="mt-0.5 text-xs text-press-muted">{draggingCard.note}</div>
+            <div className="mt-0.5 text-xs text-mn-text-secondary">{draggingCard.note}</div>
           )}
         </div>
       )}
@@ -329,7 +329,7 @@ function LinkGlyph({ link }: { link: LinkState }) {
   if (link.kind === 'linked') {
     return (
       <span
-        className="shrink-0 text-press-accent/70 select-none"
+        className="shrink-0 text-mn-text/70 select-none"
         aria-hidden
         title="Linked to a page"
       >
@@ -340,7 +340,7 @@ function LinkGlyph({ link }: { link: LinkState }) {
   if (link.kind === 'missing') {
     return (
       <span
-        className="shrink-0 text-[0.65rem] text-press-muted/70 italic select-none"
+        className="shrink-0 text-[0.65rem] text-mn-text-secondary/70 italic select-none"
         title="Linked page is missing"
       >
         missing
@@ -390,7 +390,7 @@ function CardBody({
         <button
           type="button"
           onClick={onOpen}
-          className="text-left font-medium text-press-accent underline decoration-press-accent/30 underline-offset-2 hover:decoration-press-accent"
+          className="text-left font-medium text-mn-text underline decoration-mn-text/30 underline-offset-2 hover:decoration-mn-text"
         >
           {link.ref.title}
         </button>
@@ -404,7 +404,7 @@ function CardBody({
           <LinkGlyph link={link} />
         </div>
         {card.note && (
-          <MarkdownInline className="mt-0.5 block text-xs text-press-muted">
+          <MarkdownInline className="mt-0.5 block text-xs text-mn-text-secondary">
             {card.note}
           </MarkdownInline>
         )}
@@ -428,7 +428,7 @@ function CardBody({
           <LinkGlyph link={link} />
         </div>
         <input
-          className="mt-0.5 w-full bg-transparent text-xs text-press-muted outline-none"
+          className="mt-0.5 w-full bg-transparent text-xs text-mn-text-secondary outline-none"
           value={card.note ?? ''}
           placeholder="Add a note…"
           aria-label={`Card note: ${card.title || 'untitled'}`}
@@ -440,7 +440,7 @@ function CardBody({
           type="button"
           aria-label={`Link options: ${card.title || 'untitled'}`}
           aria-haspopup="menu"
-          className="leading-none text-press-muted/60 select-none hover:text-press-ink"
+          className="leading-none text-mn-text-secondary/60 select-none hover:text-mn-text"
           onClick={onToggleMenu}
         >
           ⋯
@@ -449,7 +449,7 @@ function CardBody({
       <button
         type="button"
         aria-label={`Archive card: ${card.title || 'untitled'}`}
-        className="text-press-muted/60 hover:text-press-rust"
+        className="text-mn-text-secondary/60 hover:text-raw-red"
         onClick={onRemove}
       >
         ×
@@ -506,13 +506,13 @@ function CardLinkMenu({
     <div
       ref={ref}
       role="menu"
-      className="press-arrive absolute top-7 right-1 z-50 w-52 rounded-mn-row bg-press-paper py-1 text-xs shadow-mn-md"
+      className="mn-arrive absolute top-7 right-1 z-50 w-52 rounded-mn-row bg-mn-surface py-1 text-xs shadow-mn-md"
     >
       {mode === 'menu' ? (
         <ul>
           {link.kind === 'linked' && <MenuItem label="Open page" onClick={onOpen} />}
           {link.kind === 'missing' && (
-            <li className="px-3 py-1.5 text-press-muted/70 italic">Linked page is missing</li>
+            <li className="px-3 py-1.5 text-mn-text-secondary/70 italic">Linked page is missing</li>
           )}
           <MenuItem label="Create page & link" onClick={onCreate} />
           <MenuItem label="Link existing page…" onClick={() => setMode('pick')} />
@@ -526,17 +526,17 @@ function CardLinkMenu({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search pages…"
             aria-label="Search pages to link"
-            className="mb-1 w-full rounded-mn-chrome bg-press-card/60 px-2 py-1 outline-none placeholder:text-press-muted/60"
+            className="mb-1 w-full rounded-mn-chrome bg-mn-card/60 px-2 py-1 outline-none placeholder:text-mn-text-secondary/60"
           />
           <ul className="max-h-40 overflow-y-auto">
-            {results.length === 0 && <li className="px-2 py-1.5 text-press-muted/70">No pages</li>}
+            {results.length === 0 && <li className="px-2 py-1.5 text-mn-text-secondary/70">No pages</li>}
             {results.map((r) => (
               <li key={r.id}>
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => onPick(r)}
-                  className="block w-full truncate rounded-mn-chrome px-2 py-1.5 text-left hover:bg-press-accent-wash"
+                  className="block w-full truncate rounded-mn-chrome px-2 py-1.5 text-left hover:bg-mn-wash"
                 >
                   {r.title}
                 </button>
@@ -565,8 +565,8 @@ function MenuItem({
         role="menuitem"
         onClick={onClick}
         className={[
-          'block w-full px-3 py-1.5 text-left hover:bg-press-accent-wash',
-          destructive ? 'text-press-rust/90 hover:text-press-rust' : 'text-press-ink',
+          'block w-full px-3 py-1.5 text-left hover:bg-mn-wash',
+          destructive ? 'text-raw-red/90 hover:text-raw-red' : 'text-mn-text',
         ].join(' ')}
       >
         {label}
@@ -586,7 +586,7 @@ function AddCardFoot({ onAdd }: { onAdd: (title: string) => void }) {
   }
   return (
     <input
-      className="mt-2 w-full rounded-mn-row bg-transparent px-2.5 py-1.5 text-xs text-press-muted outline-none placeholder:text-press-muted/60 hover:bg-press-accent-wash focus:bg-press-accent-wash focus:text-press-ink"
+      className="mt-2 w-full rounded-mn-row bg-transparent px-2.5 py-1.5 text-xs text-mn-text-secondary outline-none placeholder:text-mn-text-secondary/60 hover:bg-mn-wash focus:bg-mn-wash focus:text-mn-text"
       value={value}
       placeholder="+ Add card"
       aria-label="Add a card"

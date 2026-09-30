@@ -42,14 +42,14 @@ function formatDate(iso: string): string {
 export function RollupValue({ result, loading = false, className }: RollupValueProps) {
   if (loading) {
     return (
-      <span className={cn('text-press-faint', className)} aria-label="Loading rollup">
+      <span className={cn('text-mn-text-faint', className)} aria-label="Loading rollup">
         …
       </span>
     )
   }
   if (result.kind === 'empty') {
-    return <span className={cn('text-press-faint', className)}>—</span>
+    return <span className={cn('text-mn-text-faint', className)}>—</span>
   }
   const text = result.kind === 'number' ? formatNumber(result.value) : formatDate(result.value)
-  return <span className={cn('tabular-nums text-press-body', className)}>{text}</span>
+  return <span className={cn('tabular-nums text-mn-text-meta', className)}>{text}</span>
 }

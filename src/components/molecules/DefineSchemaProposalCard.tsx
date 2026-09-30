@@ -21,7 +21,7 @@
 
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 import type { AiPropertyDef } from '@/lib/properties/schema'
@@ -104,47 +104,47 @@ export function DefineSchemaProposalCard({
       role="group"
       aria-label="Proposed page schema"
       className={cn(
-        'press-letter overflow-hidden rounded-mn-inner text-left',
+        'mn-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
     >
       {/* Header — "New schema" kicker + property count */}
-      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className={pressKickerClass}>
+      <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
+        <span className={kickerClass}>
           New schema · {properties.length} {properties.length === 1 ? 'property' : 'properties'}
         </span>
       </div>
 
-      {reason && <p className="px-3 pt-2.5 font-serif text-xs italic text-press-muted">{reason}</p>}
+      {reason && <p className="px-3 pt-2.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
 
       {/* Column preview — one hairline row per property: name + type chip, with
           option labels shown quietly for a select/status. Height-bounded with
           internal scroll so a wide schema can't push the picker + actions out of
           the auto-grown drawer. */}
       {properties.length > 0 && (
-        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 text-sm">
+        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-mn-hair overflow-y-auto rounded-mn-row bg-mn-wash px-3 text-sm">
           {properties.map((p, i) => (
             <div key={i} className="flex items-baseline justify-between gap-3 py-1.5">
-              <dt className="font-serif text-press-body">{p.name}</dt>
+              <dt className="font-serif text-mn-text-meta">{p.name}</dt>
               <dd className="flex items-baseline gap-2 text-right">
                 {(p.type === 'select' || p.type === 'status') && p.options?.length ? (
-                  <span className="font-serif text-xs italic text-press-muted">
+                  <span className="font-serif text-xs italic text-mn-text-secondary">
                     {p.options.map((o) => o.label).join(' · ')}
                   </span>
                 ) : null}
                 {p.type === 'relation' && p.target ? (
-                  <span className="font-serif text-xs italic text-press-muted">
+                  <span className="font-serif text-xs italic text-mn-text-secondary">
                     {relationTargetSummary(p.target, resolveTargetTitle(p.target))}
                   </span>
                 ) : null}
                 {p.type === 'rollup' ? (
-                  <span className="font-serif text-xs italic text-press-muted">
+                  <span className="font-serif text-xs italic text-mn-text-secondary">
                     {rollupSummary(p)}
                     {unresolvableRollups?.has(p.name) ? ' · no such relation here' : ''}
                   </span>
                 ) : null}
-                <span className={cn(pressKickerClass, 'text-press-muted')}>{p.type}</span>
+                <span className={cn(kickerClass, 'text-mn-text-secondary')}>{p.type}</span>
               </dd>
             </div>
           ))}
@@ -153,7 +153,7 @@ export function DefineSchemaProposalCard({
 
       {/* Destination picker — which page the schema applies to */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
-        <label htmlFor={targetSelectId} className="text-xs text-press-muted">
+        <label htmlFor={targetSelectId} className="text-xs text-mn-text-secondary">
           Apply to
         </label>
         <select
@@ -162,7 +162,7 @@ export function DefineSchemaProposalCard({
           value={selectedTargetId}
           disabled={resolved}
           onChange={(e) => onTargetChange(e.target.value)}
-          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-mn-line bg-mn-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-mn-text disabled:opacity-60"
         >
           {/* No page resolved yet (target not found in the list): a disabled hint. */}
           {!targetOptions.some((o) => o.id === selectedTargetId) && (
@@ -183,7 +183,7 @@ export function DefineSchemaProposalCard({
       {resolved ? (
         <div
           aria-live="polite"
-          className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
+          className="mt-2.5 border-t border-mn-hair px-3 py-1.5 font-serif text-xs italic text-mn-text-secondary"
         >
           {status === 'accepted'
             ? inertCount > 0

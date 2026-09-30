@@ -7,8 +7,8 @@
  */
 
 export const dialogBackdropClass =
-  'fixed inset-0 z-50 bg-press-ink/25 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0'
+  'fixed inset-0 z-50 bg-mn-text/25 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0'
 
 /** Popup chrome minus width — append e.g. `w-[min(24rem,calc(100vw-2rem))]`. */
 export const dialogPopupClass =
-  'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-press-line bg-press-paper p-6 shadow-2xl outline-none transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0'
+  'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-mn-line bg-mn-surface p-6 shadow-2xl outline-none transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0'

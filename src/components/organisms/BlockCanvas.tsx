@@ -335,7 +335,7 @@ function BlockEditor({
           leave them visibly misaligned. */}
       <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-press-faint hover:text-press-ink outline-none focus-visible:ring-2 focus-visible:ring-press-accent cursor-grab"
+          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-mn-text-faint hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
           title="Drag to reorder"
           aria-label="Drag to reorder block"
           onPointerDown={() => setDragArmed(true)}
@@ -344,7 +344,7 @@ function BlockEditor({
           ⠿
         </button>
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-press-faint hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-press-accent"
+          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-mn-text-faint hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
           title="Delete block"
           aria-label="Delete block"
           onClick={onRemove}

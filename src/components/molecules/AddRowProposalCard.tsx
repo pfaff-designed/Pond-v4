@@ -21,7 +21,7 @@
 
 import { useId } from 'react'
 import { cn } from '@/lib/utils'
-import { pressKickerClass } from '@/components/atoms/press-kicker'
+import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 
@@ -75,34 +75,34 @@ export function AddRowProposalCard({
       role="group"
       aria-label="Proposed row"
       className={cn(
-        'press-letter overflow-hidden rounded-mn-inner text-left',
+        'mn-letter overflow-hidden rounded-mn-inner text-left',
         resolved && 'opacity-70',
         className
       )}
     >
       {/* Header — "New row" kicker + field count */}
-      <div className="flex items-center justify-between border-b border-press-hair px-3 py-1.5">
-        <span className={pressKickerClass}>
+      <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
+        <span className={kickerClass}>
           New row · {entries.length} {entries.length === 1 ? 'field' : 'fields'}
         </span>
       </div>
 
       {/* The row's title, set as the display-serif line. */}
-      <p className="px-3 pt-2.5 font-serif text-sm text-press-body">
-        {title?.trim() ? title : <span className="italic text-press-faint">Untitled row</span>}
+      <p className="px-3 pt-2.5 font-serif text-sm text-mn-text-meta">
+        {title?.trim() ? title : <span className="italic text-mn-text-faint">Untitled row</span>}
       </p>
 
-      {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-press-muted">{reason}</p>}
+      {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
 
       {/* Value preview — one hairline row per provided property: name + value.
           Height-bounded with internal scroll so a wide row can't push the picker +
           actions out of the auto-grown drawer. */}
       {entries.length > 0 && (
-        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-press-hair overflow-y-auto rounded-mn-row bg-press-accent-wash px-3 text-sm">
+        <dl className="mx-3 mt-2 max-h-[200px] divide-y divide-mn-hair overflow-y-auto rounded-mn-row bg-mn-wash px-3 text-sm">
           {entries.map(([name, value]) => (
             <div key={name} className="flex items-baseline justify-between gap-3 py-1.5">
-              <dt className={cn(pressKickerClass, 'text-press-muted')}>{name}</dt>
-              <dd className="text-right font-serif text-press-body">{formatValue(value)}</dd>
+              <dt className={cn(kickerClass, 'text-mn-text-secondary')}>{name}</dt>
+              <dd className="text-right font-serif text-mn-text-meta">{formatValue(value)}</dd>
             </div>
           ))}
         </dl>
@@ -110,7 +110,7 @@ export function AddRowProposalCard({
 
       {/* Destination picker — which collection the row is added to */}
       <div className="flex items-center gap-2 px-3 pt-2.5">
-        <label htmlFor={targetSelectId} className="text-xs text-press-muted">
+        <label htmlFor={targetSelectId} className="text-xs text-mn-text-secondary">
           Add to
         </label>
         <select
@@ -119,7 +119,7 @@ export function AddRowProposalCard({
           value={selectedTargetId}
           disabled={resolved}
           onChange={(e) => onTargetChange(e.target.value)}
-          className="flex-1 rounded-mn-chrome border border-press-line bg-press-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-press-accent disabled:opacity-60"
+          className="flex-1 rounded-mn-chrome border border-mn-line bg-mn-card px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-mn-text disabled:opacity-60"
         >
           {/* No collection resolved yet (target not in the list): a disabled hint. */}
           {!targetOptions.some((o) => o.id === selectedTargetId) && (
@@ -140,7 +140,7 @@ export function AddRowProposalCard({
       {resolved ? (
         <div
           aria-live="polite"
-          className="mt-2.5 border-t border-press-hair px-3 py-1.5 font-serif text-xs italic text-press-muted"
+          className="mt-2.5 border-t border-mn-hair px-3 py-1.5 font-serif text-xs italic text-mn-text-secondary"
         >
           {status === 'accepted' ? 'Row added' : 'Dismissed'}
         </div>
