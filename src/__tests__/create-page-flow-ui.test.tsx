@@ -306,7 +306,7 @@ describe('AITerminal — /save command opens picker', () => {
       expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
     })
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
     await user.type(textarea, '/save')
     await user.keyboard('{Enter}')
 

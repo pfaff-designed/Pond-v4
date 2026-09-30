@@ -256,6 +256,8 @@ export const Empty: Story = {
   args: { tree: [], isEmpty: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Setting up your workspace…')).toBeInTheDocument()
+    await expect(
+      canvas.getByText('No pages yet. ＋ a page, or ask the pond to start one.')
+    ).toBeInTheDocument()
   },
 }
