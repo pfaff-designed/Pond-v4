@@ -131,7 +131,7 @@ beforeEach(() => {
 describe('Chat command slash menu', () => {
   it('shows the command menu when "/" is typed', async () => {
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
     expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
     expect(screen.getByText('/clear')).toBeInTheDocument()
@@ -141,7 +141,7 @@ describe('Chat command slash menu', () => {
 
   it('closes the menu when input is cleared', async () => {
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
     expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
     fireEvent.change(textarea, { target: { value: '' } })
@@ -152,7 +152,7 @@ describe('Chat command slash menu', () => {
 
   it('does not show menu for regular text input', async () => {
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: 'hello' } })
     expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
   })
@@ -172,7 +172,7 @@ describe('Chat command slash menu', () => {
       })
 
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
     const clearButton = await screen.findByText('/clear')
     fireEvent.click(clearButton)
@@ -182,7 +182,7 @@ describe('Chat command slash menu', () => {
 
   it('selecting /save opens the save picker modal', async () => {
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
     const saveButton = await screen.findByText('/save')
     fireEvent.click(saveButton)
@@ -191,7 +191,7 @@ describe('Chat command slash menu', () => {
 
   it('selecting /handoff calls performHandoff', async () => {
     renderTerminal()
-    const textarea = await screen.findByPlaceholderText(/Talk to Pond/)
+    const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
     const handoffButton = await screen.findByText('/handoff')
     fireEvent.click(handoffButton)

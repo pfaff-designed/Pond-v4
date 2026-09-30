@@ -125,7 +125,7 @@ export const InferredMarker: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     // Exactly one card carries the badge.
-    await expect(canvas.getByText('Inferred')).toBeInTheDocument()
+    await expect(canvas.getByText('inferred')).toBeInTheDocument()
     // The group accept is scoped to requested changes — the copy says so — and
     // the inferred card keeps its own per-card Accept (all 3 still present).
     const acceptRequested = canvas.getByRole('button', { name: 'Accept requested' })

@@ -304,9 +304,9 @@ describe('AITerminal /save command', () => {
     mockFetchResponse = { extractions: [] }
     wrap(<AITerminal />)
 
-    await waitFor(() => screen.getByPlaceholderText(/talk to pond/i))
+    await waitFor(() => screen.getByPlaceholderText(/ask pond, or \/ for blocks/i))
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/save' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
@@ -320,9 +320,9 @@ describe('AITerminal /save command', () => {
     mockFetchResponse = { extractions: [] }
     wrap(<AITerminal />)
 
-    await waitFor(() => screen.getByPlaceholderText(/talk to pond/i))
+    await waitFor(() => screen.getByPlaceholderText(/ask pond, or \/ for blocks/i))
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/save' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
@@ -338,9 +338,9 @@ describe('AITerminal /save command', () => {
     mockFetchResponse = { extractions: [] }
     wrap(<AITerminal />)
 
-    await waitFor(() => screen.getByPlaceholderText(/talk to pond/i))
+    await waitFor(() => screen.getByPlaceholderText(/ask pond, or \/ for blocks/i))
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/save' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
