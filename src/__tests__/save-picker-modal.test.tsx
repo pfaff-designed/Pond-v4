@@ -187,7 +187,7 @@ describe('SavePickerModal', () => {
 
   it('calls createNode with correct card when Save is clicked', async () => {
     mockFetchResponse = {
-      extractions: [{ id: 'e1', type: 'area', name: 'Travel' }],
+      extractions: [{ id: 'e1', type: 'page', name: 'Travel' }],
     }
     wrap(<SavePickerModal isOpen={true} messages={[]} onClose={jest.fn()} />)
     await waitFor(() => screen.getByText('Travel'))
@@ -197,7 +197,7 @@ describe('SavePickerModal', () => {
     await waitFor(() => {
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
-        { type: 'area', name: 'Travel' },
+        { type: 'page', name: 'Travel' },
         'main'
       )
     })
@@ -271,7 +271,7 @@ describe('SavePickerModal', () => {
   it('can save multiple items independently', async () => {
     mockFetchResponse = {
       extractions: [
-        { id: 'e1', type: 'area', name: 'Area A' },
+        { id: 'e1', type: 'page', name: 'Area A' },
         { id: 'e2', type: 'action', name: 'Action B' },
       ],
     }
@@ -288,7 +288,7 @@ describe('SavePickerModal', () => {
       expect(mockCreateNode).toHaveBeenCalledTimes(1)
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
-        { type: 'area', name: 'Area A' },
+        { type: 'page', name: 'Area A' },
         'main'
       )
     })

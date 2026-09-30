@@ -446,7 +446,7 @@ describe('AC7 — RailView through PondMolecule', () => {
   ): RailNode => ({ id, parentId, type, title, order, children })
 
   const TREE: RailNode[] = [
-    node('health', 'area', 'Health', [node('sleep', 'page', 'Sleep', [], 0, 'health')]),
+    node('health', 'page', 'Health', [node('sleep', 'page', 'Sleep', [], 0, 'health')]),
     node('scratch', 'page', 'Scratchpad', [], 1),
   ]
 
@@ -485,15 +485,17 @@ describe('AC7 — RailView through PondMolecule', () => {
   })
 
   it('drives a three-tier label voice so the "you are here" trail reads', () => {
-    // A page nested under a *page* (not an area) isolates the on-path raise from
-    // the area/root raise: selecting the leaf must lift its plain-page ancestor
-    // above a plain off-path row. Guards the regression where the TreeRow→
+    // A page nested under a *page* (not a top-level area) isolates the on-path
+    // raise from the area/root raise: selecting the leaf must lift its plain-page
+    // ancestor above a plain off-path row. Guards the regression where the TreeRow→
     // PondMolecule absorption flattened every row to one tone (#95 review).
+    // #108: the off-path control row must be NESTED — every top-level row now
+    // carries the raised area voice, so a top-level "Other" would read raised.
     const trail: RailNode[] = [
       node('proj', 'page', 'Project', [
         node('phase', 'page', 'Phase', [node('task', 'page', 'Task', [], 0, 'phase')], 0, 'proj'),
+        node('other', 'page', 'Other', [], 1, 'proj'),
       ]),
-      node('other', 'page', 'Other', [], 1),
     ]
     const { getByRole } = renderRail({
       tree: trail,

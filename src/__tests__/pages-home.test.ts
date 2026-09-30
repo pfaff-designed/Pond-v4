@@ -169,7 +169,7 @@ describe('Life overview excludes the home row', () => {
   it('counts only real content pages (home row never reaches the model)', () => {
     // What fetchPages returns: areas + content, NO home row.
     const rows: PageRow[] = [
-      row('health', null, 'area', 'Health'),
+      row('health', null, 'page', 'Health'),
       row('sleep', 'health', 'page', 'Sleep'),
       row('scratch', null, 'page', 'Scratchpad'),
     ]

@@ -73,6 +73,12 @@ describe('parseChatBody', () => {
     expect(out?.nodeType).toBe('project')
   })
 
+  it('drops the retired "area" nodeType (#108) rather than carrying it', () => {
+    const out = parseChatBody({ messages: [], nodeId: 'n1', nodeType: 'area' })
+    expect(out?.nodeId).toBe('n1')
+    expect(out?.nodeType).toBeUndefined()
+  })
+
   it('carries card resolutions and degrades malformed ones to empty (ticket-19)', () => {
     const valid = parseChatBody({
       messages: [],

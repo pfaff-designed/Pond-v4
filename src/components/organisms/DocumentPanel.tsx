@@ -87,7 +87,11 @@ export function DocumentPanel() {
   // `new Date()` is captured per rows/nodeId change, so the cards' "updated Xd
   // ago" captions refresh with the data rather than the wall clock — the same
   // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
-  const { data: rows = [] } = useQuery({
+  // #108: the surface switch now reads CHILDREN, not a type tag, so these rows are
+  // load-bearing for *which* surface renders — `rowsPending` holds the panel on the
+  // loading state until they land, rather than flashing the editor at a container
+  // page whose children hadn't arrived yet.
+  const { data: rows = [], isPending: rowsPending } = useQuery({
     queryKey: ['pages', workspace],
     queryFn: () => fetchPages(workspace),
   })
@@ -235,7 +239,7 @@ export function DocumentPanel() {
   if (!nodeId) {
     return <LifeOverviewPanel />
   }
-  if (isLoading || !page) {
+  if (isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-mn-text-faint">
         Loading…
@@ -243,17 +247,19 @@ export function DocumentPanel() {
     )
   }
 
-  // ── Type switch (ticket-22) ───────────────────────────────────────────────
+  // ── Surface switch (ticket-22, #108) ──────────────────────────────────────
   // "Everything is a page": a node may hold BOTH its own blocks AND children.
-  //   • A pure area/container (no blocks) keeps the calm Press overview — its
-  //     focal treatment earns its place. A "+ Add content" affordance (now
-  //     palette-first, ticket-44) lets it gain blocks, which flips it to the
+  // Nothing here reads a type tag any more — a page is a container because it HAS
+  // children, per the design ("an area is a page with pages inside it").
+  //   • A pure container (children, no blocks of its own) keeps the calm overview
+  //     — its focal treatment earns its place. A "+ Add content" affordance
+  //     (palette-first, ticket-44) lets it gain blocks, which flips it to the
   //     composite below.
-  //   • Any node WITH blocks (or a non-area with children) shows its content in
-  //     the full editor, with the "Everything within" children grid *below* it —
-  //     so an accepted edit is immediately visible, and no page can ever hide
-  //     its own content behind a folder view.
-  if (page.type === 'area' && viewBlocks.length === 0) {
+  //   • Any node WITH blocks, and any childless leaf, shows the full editor — with
+  //     the "Everything within" children grid *below* it when it has children. So
+  //     an accepted edit is immediately visible, and no page can ever hide its own
+  //     content behind a folder view.
+  if (viewBlocks.length === 0 && cards.length > 0) {
     return (
       <AreaOverviewPanel areaId={page.id} title={page.title} onAddContent={addContentFromPalette} />
     )

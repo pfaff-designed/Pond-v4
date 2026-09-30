@@ -50,7 +50,7 @@ function latestUserText(messages: UIMessage[]): string {
 /** Minimal body-shape guard: the chat route requires a `messages` array. A
  *  malformed body (bad JSON, missing/non-array `messages`) returns 400 instead of
  *  letting `streamText` throw a 500 deeper in the request. */
-const NODE_TYPES: readonly NodeType[] = ['area', 'routine', 'project', 'action', 'page']
+const NODE_TYPES: readonly NodeType[] = ['routine', 'project', 'action', 'page']
 
 export function parseChatBody(body: unknown): {
   messages: UIMessage[]

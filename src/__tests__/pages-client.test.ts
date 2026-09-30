@@ -67,7 +67,7 @@ function pageRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'page-1',
     parent_id: null,
-    type: 'area',
+    type: 'page',
     title: 'Health',
     blocks: sampleBlocks,
     status: null,
@@ -93,7 +93,7 @@ describe('getPage', () => {
     expect(chain.eq).toHaveBeenCalledWith('id', 'page-1')
     expect(result).not.toBeNull()
     expect(result!.parentId).toBe('root-1')
-    expect(result!.type).toBe('area')
+    expect(result!.type).toBe('page')
     expect(result!.blocks).toEqual(sampleBlocks)
   })
 
@@ -175,7 +175,7 @@ describe('getChildPages', () => {
 describe('listPages', () => {
   it("returns the user's pages as a flat list ordered by order", async () => {
     const rows = [
-      pageRow({ id: 'a1', parent_id: null, type: 'area', title: 'Personal' }),
+      pageRow({ id: 'a1', parent_id: null, type: 'page', title: 'Personal' }),
       pageRow({ id: 'c1', parent_id: 'a1', type: 'page', title: 'Reading goals' }),
     ]
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: rows, error: null }) })

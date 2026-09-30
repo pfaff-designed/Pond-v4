@@ -81,11 +81,11 @@ describe('PGLite schema invariants', () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
-    const area = await addPage(db, { type: 'area', title: 'Target area' })
+    const area = await addPage(db, { type: 'page', title: 'Target area' })
     const project = await addPage(db, { parentId: area, type: 'project', title: 'Project' })
     const action = await addPage(db, { parentId: project, type: 'action', title: 'Action' })
 
-    const otherArea = await addPage(db, { type: 'area', title: 'Bystander area' })
+    const otherArea = await addPage(db, { type: 'page', title: 'Bystander area' })
     const otherChild = await addPage(db, {
       parentId: otherArea,
       type: 'project',
@@ -111,7 +111,7 @@ describe('PGLite schema invariants', () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
-    const area = await addPage(db, { type: 'area', title: 'Area' })
+    const area = await addPage(db, { type: 'page', title: 'Area' })
     const middle = await addPage(db, { parentId: area, type: 'project', title: 'Middle' })
     const leaf = await addPage(db, { parentId: middle, type: 'action', title: 'Leaf' })
     const sibling = await addPage(db, { parentId: area, type: 'project', title: 'Sibling' })
@@ -131,7 +131,7 @@ describe('PGLite schema invariants', () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
-    const id = await addPage(db, { type: 'area', title: 'No workspace given' })
+    const id = await addPage(db, { type: 'page', title: 'No workspace given' })
 
     const res = await db.query<{ workspace: string }>(
       'select workspace from public.pages where id = $1',
@@ -148,9 +148,9 @@ describe('PGLite schema invariants', () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
-    const mainPage = await addPage(db, { type: 'area', title: 'Main row', workspace: 'main' })
+    const mainPage = await addPage(db, { type: 'page', title: 'Main row', workspace: 'main' })
     const sandboxPage = await addPage(db, {
-      type: 'area',
+      type: 'page',
       title: 'Sandbox row',
       workspace: 'sandbox',
     })
@@ -186,7 +186,7 @@ describe('sibling-name uniqueness (0009)', () => {
   it('rejects two siblings with the same normalized title under the same parent', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const area = await addPage(db, { type: 'area', title: 'Area', workspace: 'main' })
+    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main' })
     await addPage(db, { parentId: area, title: 'Notes', workspace: 'main' })
     // case-insensitive + trimmed → same key → rejected.
     await expect(
@@ -198,11 +198,11 @@ describe('sibling-name uniqueness (0009)', () => {
   it('rejects duplicate ROOT (null-parent) siblings — proves the COALESCE guard', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await addPage(db, { type: 'area', title: 'Personal', workspace: 'main' })
+    await addPage(db, { type: 'page', title: 'Personal', workspace: 'main' })
     // Without COALESCE(parent_id, sentinel) a plain unique index would treat the
     // two NULL parents as distinct and let this through — the original bug.
     await expect(
-      addPage(db, { type: 'area', title: 'Personal', workspace: 'main' })
+      addPage(db, { type: 'page', title: 'Personal', workspace: 'main' })
     ).rejects.toThrow()
     await db.close()
   })
@@ -210,8 +210,8 @@ describe('sibling-name uniqueness (0009)', () => {
   it('allows the same title under two different parents', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const a = await addPage(db, { type: 'area', title: 'A', workspace: 'main' })
-    const b = await addPage(db, { type: 'area', title: 'B', workspace: 'main' })
+    const a = await addPage(db, { type: 'page', title: 'A', workspace: 'main' })
+    const b = await addPage(db, { type: 'page', title: 'B', workspace: 'main' })
     await addPage(db, { parentId: a, title: 'Notes', workspace: 'main' })
     const second = await addPage(db, { parentId: b, title: 'Notes', workspace: 'main' })
     expect(await pageExists(db, second)).toBe(true)
@@ -221,7 +221,7 @@ describe('sibling-name uniqueness (0009)', () => {
   it('allows multiple blank-titled siblings (placeholders are exempt from the index)', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const area = await addPage(db, { type: 'area', title: 'Area', workspace: 'main' })
+    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main' })
     // New pages / collection rows start blank; several under one parent is normal.
     const a = await addPage(db, { parentId: area, title: '', workspace: 'main' })
     const b = await addPage(db, { parentId: area, title: '', workspace: 'main' })
@@ -233,8 +233,8 @@ describe('sibling-name uniqueness (0009)', () => {
   it('allows the same title in different workspaces', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await addPage(db, { type: 'area', title: 'Shared', workspace: 'main' })
-    const sandbox = await addPage(db, { type: 'area', title: 'Shared', workspace: 'sandbox' })
+    await addPage(db, { type: 'page', title: 'Shared', workspace: 'main' })
+    const sandbox = await addPage(db, { type: 'page', title: 'Shared', workspace: 'sandbox' })
     expect(await pageExists(db, sandbox)).toBe(true)
     await db.close()
   })
@@ -246,11 +246,11 @@ describe('sibling-name uniqueness (0009)', () => {
     await db.exec('drop index if exists pages_sibling_title_uniq')
 
     // Keeper: a root 'Health' with 2 children. One empty twin. One twin w/ 1 child.
-    const keeper = await addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+    const keeper = await addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
     await addPage(db, { parentId: keeper, title: 'Weight', workspace: 'main' })
     await addPage(db, { parentId: keeper, title: 'Sleep', workspace: 'main' })
-    await addPage(db, { type: 'area', title: 'Health', workspace: 'main' }) // empty twin
-    const twin = await addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+    await addPage(db, { type: 'page', title: 'Health', workspace: 'main' }) // empty twin
+    const twin = await addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
     await addPage(db, { parentId: twin, title: 'Lose 40 lbs', workspace: 'main' })
 
     // Re-run the full 0009 migration: dedupe + recreate the index.
@@ -273,7 +273,7 @@ describe('sibling-name uniqueness (0009)', () => {
 
     // And the index is back: a fresh duplicate is rejected again.
     await expect(
-      addPage(db, { type: 'area', title: 'Health', workspace: 'main' })
+      addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
     ).rejects.toThrow()
     await db.close()
   })

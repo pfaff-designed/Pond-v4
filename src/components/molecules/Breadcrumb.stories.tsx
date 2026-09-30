@@ -16,7 +16,7 @@ const meta = {
   ],
   args: {
     crumbs: [
-      { id: 'health', type: 'area', title: 'Health' },
+      { id: 'health', type: 'page', title: 'Health' },
       { id: 'routines', type: 'page', title: 'Workout Routines' },
     ],
     current: '3-Day Full-Body Routine',
@@ -41,7 +41,7 @@ export const Default: Story = {
     // an ancestor crumb navigates with the whole crumb (id + type + title)
     await userEvent.click(canvas.getByText('Health'))
     await expect(args.onNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'health', type: 'area' })
+      expect.objectContaining({ id: 'health', type: 'page' })
     )
   },
 }

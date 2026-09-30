@@ -14,18 +14,18 @@ const node = (
 
 /** A small realistic tree: three areas (one nested), one free-floating leaf. */
 const TREE: RailNode[] = [
-  node('health', 'area', 'Health', [
+  node('health', 'page', 'Health', [
     node('sleep', 'page', 'Sleep', [], 0, 'health'),
     node('marathon', 'project', 'Marathon Training', [], 1, 'health'),
   ]),
   node(
     'personal',
-    'area',
+    'page',
     'Personal',
     [
       node(
         'food',
-        'area',
+        'page',
         'Food',
         [node('recipes', 'page', 'Recipes', [], 0, 'food')],
         0,
@@ -37,7 +37,7 @@ const TREE: RailNode[] = [
   ),
   node(
     'creativity',
-    'area',
+    'page',
     'Creativity',
     [node('shelf', 'page', 'Walnut Shelf', [], 0, 'creativity')],
     2

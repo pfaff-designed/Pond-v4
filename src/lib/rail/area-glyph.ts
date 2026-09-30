@@ -5,10 +5,11 @@
  * storage and a picker are a named follow-up.
  *
  * Resolution is by TITLE, case- and whitespace-insensitive, because an area is
- * only a `pages` row with `type = 'area'`: there is no stable key besides its
- * name. Both "Finances" (the display name, #107) and "Financial" (what
- * `seed_default_pages` writes) resolve. An unmapped area (a user's own, e.g.
- * Food) resolves to nothing and keeps its KindDot.
+ * only a `pages` row that happens to have pages inside it (#108 dropped
+ * `type = 'area'`): there is no stable key besides its name. Both "Finances"
+ * (what `seed_default_pages` now writes, #107) and the older "Financial" resolve.
+ * An unmapped area (a user's own, e.g. Food) resolves to nothing and keeps its
+ * KindDot.
  */
 
 /** The Life root's glyph. */

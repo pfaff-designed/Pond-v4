@@ -30,9 +30,9 @@ import { viewModeSchema, filterOpSchema } from '@/lib/modules/view/schema'
 const createPageInput = z
   .object({
     type: z
-      .enum(['area', 'routine', 'project', 'action', 'page'])
+      .enum(['routine', 'project', 'action', 'page'])
       .describe(
-        'The page type tag. Use a structural type for a project/area/routine/action; use "page" for any content page (recipe, document, inventory, dashboard, note).'
+        'The page KIND tag — a label, never a structure. Use "project"/"routine"/"action" when the page IS one of those; use "page" for everything else, including an AREA. There is no "area" type: an area is simply a page that has pages inside it, so to make one, create a page (usually top-level) and nest pages under it.'
       ),
     kind: z
       .string()
@@ -74,8 +74,10 @@ const createPageInput = z
 /**
  * create_page (M1) — the single merged create gesture for the chat AI. It mints a
  * BRAND-NEW page (separate from the one the user is on) and scaffolds its initial
- * content in one step. Both structural types (project/area/routine/action) AND
- * content pages go through it and get real scaffolded content.
+ * content in one step. Every new page goes through it — an area, a project, a
+ * routine, a recipe — and gets real scaffolded content. #108: there is no 'area'
+ * type; an area is a page that has pages inside it, so the model just creates a
+ * page and nests under it.
  *
  * Client-resolved (no execute): the tool call renders a proposal card, the user
  * reviews + optionally corrects placement, and only on accept does the client mint
@@ -86,7 +88,7 @@ const createPageInput = z
  */
 export const createPageTool = {
   description:
-    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether structural (a project, an area) or content (a recipe, a document). This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics. Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block. When the new page STARTS a tracker/log/collection (record-like data with named fields), its blocks MUST include a real `table` block carrying those fields as columns — define_schema cannot target a page that does not exist yet, so a create that only promises a table in prose leaves the user a shell with no table at all (#63).',
+    'Create a BRAND-NEW page (separate and distinct from the page the user is currently on) and scaffold its initial content blocks in one step — a project, area, routine, action, recipe, document, inventory/collection, dashboard, or any new page. Use this whenever the user asks to create/make/start a new page or node, whether organising (a project, an area) or content (a recipe, a document). An AREA is not a separate thing to create: it is just a page that has pages inside it, so "make me a Travel area" is a page named Travel (usually top-level) — set `type: "page"`, never an area type. This is DISTINCT from propose_changes, which only edits the CURRENT page. Client-resolved (no execute): the user reviews a proposal card and can correct the placement before anything is written; do NOT re-ask for confirmation. Scaffold the blocks so the page is genuinely useful the moment it is created — real content, checklists for any steps or tasks, and never dead all-zero metrics. Do NOT open the page with a heading block that repeats the page title (the title is already shown), and put any tabular data in a `table` module — never a markdown pipe table inside a text block. When the new page STARTS a tracker/log/collection (record-like data with named fields), its blocks MUST include a real `table` block carrying those fields as columns — define_schema cannot target a page that does not exist yet, so a create that only promises a table in prose leaves the user a shell with no table at all (#63).',
   inputSchema: createPageInput,
 } as const
 
@@ -341,19 +343,19 @@ const linkRecordsInput = z.object({
     .string()
     .min(1)
     .describe(
-      "The NAME of the collection that source row belongs to, from the [Workspace outline] — it disambiguates the row. Use the human name, never an id."
+      'The NAME of the collection that source row belongs to, from the [Workspace outline] — it disambiguates the row. Use the human name, never an id.'
     ),
   relation: z
     .string()
     .min(1)
     .describe(
-      "The NAME of the relation property on that collection to link through, from its [Properties] line in context. Use the human name, never an id."
+      'The NAME of the relation property on that collection to link through, from its [Properties] line in context. Use the human name, never an id.'
     ),
   toRows: z
     .array(z.string().min(1))
     .min(1)
     .describe(
-      'The TITLE(s) of the EXISTING target row(s) to link TO, resolved within the relation\'s target collection. Titles only — never invent ids.'
+      "The TITLE(s) of the EXISTING target row(s) to link TO, resolved within the relation's target collection. Titles only — never invent ids."
     ),
   reason: z
     .string()
