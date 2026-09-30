@@ -5,7 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { KanbanBlock } from './schema'
 import { addCard, addColumn, moveCard, patchCard, removeCard, renameColumn } from './move'
-import { MarkdownInline } from '@/components/atoms/Markdown'
+import { MarkdownInline } from '@/components/molecules/Markdown'
 import { usePageLinks } from '../page-link/context'
 import type { PageLinkCapabilities, PageRef } from '../page-link/context'
 
