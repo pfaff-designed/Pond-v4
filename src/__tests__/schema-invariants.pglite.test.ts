@@ -182,6 +182,55 @@ describe('PGLite schema invariants', () => {
 // The unique index pages_sibling_title_uniq enforces "no two siblings share a
 // name" per (user_id, workspace, parent-or-root, lower(btrim(title))), and the
 // migration's dedupe step collapses the historical duplicates first.
+// ── Blast radius (#145) ──────────────────────────────────────────────────────
+//
+// NB on what this proves: the harness connects as the PGLite OWNER, who bypasses
+// RLS entirely, so these assert the SHAPE of the policy — which verbs it grants —
+// not its enforcement against a live `authenticated` session. That is the same
+// technique the change-log suite uses for its own no-delete-policy claim. Proving
+// enforcement needs a non-owner role in the harness, which is its own job.
+
+describe('users policy blast radius (#145)', () => {
+  it('grants the mirror row no DELETE — one stray delete cannot cascade the pond away', async () => {
+    const db = await makeDb()
+
+    // `0001_initial_schema.sql:13-14` opened with `for all using (auth.uid() = id)`.
+    // `for all` includes DELETE, `public.pages` cascades off `public.users`
+    // (`0003:16`) along with six more tables in 0001, and the app ships an anon
+    // browser client — so `from('users').delete().eq('id', myId)` took the whole
+    // page tree with it. Not a breach (single-user; the only actor is the owner)
+    // but nothing stood between one stray statement and everything.
+    const policies = await db.query<{ cmd: string }>(
+      `select cmd from pg_policies where schemaname = 'public' and tablename = 'users'`
+    )
+    const cmds = policies.rows.map((r) => r.cmd).sort()
+
+    expect(cmds).not.toContain('DELETE')
+    expect(cmds).not.toContain('ALL')
+    // No application code touches public.users: the mirror row is written by
+    // 0001's SECURITY DEFINER trigger on auth.users, which bypasses RLS. So the
+    // client needs exactly one verb.
+    expect(cmds).toEqual(['SELECT'])
+    await db.close()
+  })
+
+  it('still lets the account itself go, taking its pond with it', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addPage(db, { title: 'Root' })
+
+    // Narrowing the policy must not make accounts undeletable: a genuine account
+    // deletion goes through auth.users and cascades as before.
+    await db.query('delete from auth.users where id = $1', [USER])
+
+    const users = await db.query<{ n: number }>('select count(*)::int as n from public.users')
+    const pages = await db.query<{ n: number }>('select count(*)::int as n from public.pages')
+    expect(users.rows[0].n).toBe(0)
+    expect(pages.rows[0].n).toBe(0)
+    await db.close()
+  })
+})
+
 describe('sibling-name uniqueness (0009)', () => {
   it('rejects two siblings with the same normalized title under the same parent', async () => {
     const db = await makeDb()

@@ -981,7 +981,10 @@ export function AITerminal() {
       // attachments (#61) ride along as FileUIParts — single-turn, cleared on
       // send like the CSV/quote context. An attachment-only send omits `text`
       // entirely so no empty text part reaches the model.
-      const body = { nodeId, nodeType, resolutions: outgoing }
+      // `workspace` scopes the change-log record the route writes for any
+      // proposal in this turn (#110 criterion 11) — it lives in a client context,
+      // so without it every sandbox proposal would be filed into main.
+      const body = { nodeId, nodeType, workspace, resolutions: outgoing }
       if (fileParts.length > 0) {
         sendMessage(finalText ? { text: finalText, files: fileParts } : { files: fileParts }, {
           body,
@@ -999,6 +1002,7 @@ export function AITerminal() {
       sendMessage,
       nodeId,
       nodeType,
+      workspace,
       quoteCtx,
       csvAttachment,
       fileParts,

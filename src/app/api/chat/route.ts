@@ -33,6 +33,8 @@ import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import type { NodeType } from '@/lib/supabase/types'
+import { recordProposedToolCalls } from '@/lib/change-log/propose'
+import type { WorkspaceScope } from '@/lib/workspace/context'
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -56,6 +58,10 @@ export function parseChatBody(body: unknown): {
   messages: UIMessage[]
   nodeId?: string
   nodeType?: NodeType
+  /** Which pond this turn belongs to — the scope of any change-log record it
+   *  writes (#110 criterion 11). Lives in a client context, so it rides the
+   *  request; anything unrecognised falls back to 'main'. */
+  workspace: WorkspaceScope
   resolutions: ConversationResolutions
 } | null {
   if (typeof body !== 'object' || body === null) return null
@@ -69,6 +75,7 @@ export function parseChatBody(body: unknown): {
     messages: b.messages as UIMessage[],
     nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
     nodeType,
+    workspace: b.workspace === 'sandbox' ? 'sandbox' : 'main',
     resolutions: parseResolutions(b.resolutions),
   }
 }
@@ -84,7 +91,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, resolutions } = parsed
+  const { messages, nodeId, nodeType, workspace, resolutions } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
@@ -250,6 +257,28 @@ export async function POST(req: Request) {
       // suggest_followups (ticket-39): quiet follow-up chips under a reply.
       // Client-resolved (no execute); clicking a chip sends its text.
       suggest_followups: tool(suggestFollowupsTool),
+    },
+    // Spec #110 criterion 2: a proposal becomes a durable change-log record the
+    // moment it is PROPOSED, carrying the before/after snapshot — not a decision
+    // recorded after the fact. Every proposal tool is client-resolved (no
+    // `execute`), so there is no tool body to log from; this is the one
+    // server-side point that sees each call as it is emitted, and it logs whether
+    // or not the browser ever renders the card.
+    //
+    // `recordProposedToolCalls` never throws: the log is a side-record of the
+    // turn, not a precondition for the reply.
+    onStepFinish: async ({ toolCalls }) => {
+      if (!user || toolCalls.length === 0) return
+      await recordProposedToolCalls(supabase, {
+        userId: user.id,
+        workspace,
+        openPageId: nodeId ?? null,
+        toolCalls: toolCalls.map((c) => ({
+          toolCallId: c.toolCallId,
+          toolName: c.toolName as string,
+          input: (c as { input?: unknown }).input,
+        })),
+      })
     },
   })
 
