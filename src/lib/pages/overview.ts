@@ -37,7 +37,8 @@
  */
 
 import type { PageRow } from '@/lib/pages/tree'
-import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
+import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
+import { areaRoleColor } from '@/lib/rail/glyph-library'
 
 export interface OverviewCardModel {
   id: string
@@ -149,6 +150,7 @@ export function insideLabel(direct: number, total: number): string {
 
 function toCard(
   rows: PageRow[],
+  marks: ReadonlyMap<string, MarkSource>,
   row: PageRow,
   parentById: Map<string, string | null>,
   containers: ReadonlySet<string>,
@@ -164,7 +166,10 @@ function toCard(
     title: row.title || 'Untitled',
     stat: String(total),
     sub: [insideLabel(direct, total), ago && `updated ${ago}`].filter(Boolean).join(' · '),
-    accent: pageAccent(rootAncestorId(row.id, parentById)),
+    // A page-kind dot is a MARK — "Area colours (marks only — area glyph +
+    // page-kind dots)" (AGENTS.md §Design language) — so it carries a theme role,
+    // resolved through the same inheritance walk as every other mark (#134).
+    accent: areaRoleColor(resolveMark(row.id, marks).role),
   }
 }
 
@@ -176,7 +181,8 @@ function toCard(
 export function childCards(rows: PageRow[], parentId: string, now: Date): OverviewCardModel[] {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
   const containers = containerIds(rows)
-  return childrenOf(rows, parentId).map((c) => toCard(rows, c, parentById, containers, now))
+  const marks = markIndex(rows)
+  return childrenOf(rows, parentId).map((c) => toCard(rows, marks, c, parentById, containers, now))
 }
 
 // ── The focal-caption phrasing engine (ticket-33) ────────────────────────────
@@ -313,6 +319,7 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
  */
 export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
+  const marks = markIndex(rows)
   const containers = containerIds(rows)
   const roots = childrenOf(rows, null)
   const total = totalContentPages(rows, containers)
@@ -321,7 +328,7 @@ export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
   return {
     focal: String(total),
     focalCaption: phraseFocalCaption({ scope: 'life', total, dominant }),
-    cards: roots.map((r) => toCard(rows, r, parentById, containers, now)),
+    cards: roots.map((r) => toCard(rows, marks, r, parentById, containers, now)),
   }
 }
 

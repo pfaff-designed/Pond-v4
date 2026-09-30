@@ -42,17 +42,19 @@ export const Inherited: Story = {
 export const Roles: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    for (const role of ['area-a', 'area-b', 'area-c']) {
-      await expect(canvas.getByRole('button', { name: role })).toBeInTheDocument()
+    // Labelled by position, never by token id or colour name: `area-a` is a build
+    // term (§Vocabulary) and "sage" would be a lie under any other theme.
+    for (const n of [1, 2, 3]) {
+      await expect(canvas.getByRole('button', { name: `Area colour ${n}` })).toBeInTheDocument()
     }
     // The current role reads as pressed, so the state is not colour-only —
     // which matters because dark mode renders area-b and area-c identically.
-    await expect(canvas.getByRole('button', { name: 'area-a' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Area colour 1' })).toHaveAttribute(
       'aria-pressed',
       'true'
     )
 
-    await userEvent.click(canvas.getByRole('button', { name: 'area-c' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Area colour 3' }))
     await expect(args.onSelectRole).toHaveBeenCalledWith('area-c')
   },
 }

@@ -77,11 +77,22 @@ export function derivedRole(id: string): AreaRole {
  * workspace]` cache the rail, breadcrumb and overview already share, so no
  * surface fetches anything new to draw a mark.
  *
- * An unknown `pageId` still returns a mark: the glyph is null and the role is
- * derived from the id itself. A missing page should not blank a row.
+ * An unknown `pageId` with no `fallback` still returns a mark — a derived role
+ * and no glyph — because a missing page must not blank a row. A caller that
+ * HOLDS the page should pass it as `fallback`; see the note on the parameter.
  */
-export function resolveMark(pageId: string, byId: ReadonlyMap<string, MarkSource>): PageMark {
-  const page = byId.get(pageId)
+export function resolveMark(
+  pageId: string,
+  byId: ReadonlyMap<string, MarkSource>,
+  fallback?: MarkSource
+): PageMark {
+  // `fallback` is the page itself, for a caller that holds it but whose map does
+  // not. Two real cases, both of which silently BLANKED the mark before it
+  // existed: `fetchPages` deliberately excludes HOME_TYPE and ROW_TYPE rows from
+  // the shared `['pages']` cache, and a presentational render (Storybook, a unit
+  // test) has a tree but no pond. Without it an unknown page lost its
+  // title-derived glyph entirely, which is not "derive" — it is "disappear".
+  const page = byId.get(pageId) ?? fallback
   if (!page) {
     return { glyph: null, role: derivedRole(pageId), roleIsOwn: false, glyphIsOwn: false }
   }

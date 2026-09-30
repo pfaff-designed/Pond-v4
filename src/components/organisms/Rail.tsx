@@ -58,9 +58,10 @@ import {
 } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
-import { pageAccent } from '@/lib/pages/accent'
+import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
+import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/overview'
-import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import {
   LIFE_ID,
   buildTree,
@@ -403,6 +404,12 @@ const NO_PATH: ReadonlySet<string> = new Set()
 
 export interface RailViewProps {
   tree: RailNode[]
+  /**
+   * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
+   * and every row falls back to its derived mark, which is what the rail did
+   * before a mark could be chosen.
+   */
+  marks?: ReadonlyMap<string, MarkSource>
   selectedId: string | null
   /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
   pathIds?: ReadonlySet<string>
@@ -429,21 +436,34 @@ export interface RailViewProps {
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
 
 /**
- * An area row's leading mark: its default glyph in the area hue, when the
- * title maps to one (#91). An unmapped area returns nothing and keeps its
+ * An area row's leading mark. An unmapped area returns nothing and keeps its
  * KindDot through the molecule's `dot`.
  *
  * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
  * replacement rule (a top-level page).
+ *
+ * #134: resolved through `resolveMark`, NOT from the title and a hash. The rail
+ * was the one mark surface left deriving its own, which meant picking a tulip in
+ * navy on a page left the rail showing the old leaf in a Press hue — three
+ * surfaces disagreeing about the same page, the exact thing `mark.ts` exists to
+ * prevent. `marks` comes from the shared `['pages']` cache, so the rail needs no
+ * read of its own.
  */
-function areaMark(node: RailNode): ReactNode {
+function areaMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): ReactNode {
   if (!isAreaRow(node)) return undefined
-  const glyph = areaGlyph(node.title)
-  return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
+  // The node itself is the fallback: a rail rendered without a pond (Storybook,
+  // a unit test) still shows every row's title-derived glyph.
+  const mark = resolveMark(node.id, marks, {
+    id: node.id,
+    parentId: node.parentId,
+    title: node.title,
+  })
+  return mark.glyph ? <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} /> : undefined
 }
 
 export function RailView({
   tree,
+  marks,
   selectedId,
   pathIds = NO_PATH,
   expanded,
@@ -460,6 +480,9 @@ export function RailView({
   canDrop,
   onMove,
 }: RailViewProps) {
+  // Empty when the caller supplies none (Storybook): every row then resolves to
+  // its derived mark, which is what the rail showed before marks were choosable.
+  const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
     (id: string) => (el: HTMLDivElement | null) => {
@@ -654,8 +677,14 @@ export function RailView({
         isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        accent={isAreaRow(node) ? pageAccent(id) : undefined}
-        leading={areaMark(node)}
+        accent={
+          isAreaRow(node)
+            ? areaRoleColor(
+                resolveMark(id, markMap, { id, parentId: node.parentId, title: node.title }).role
+              )
+            : undefined
+        }
+        leading={areaMark(node, markMap)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
@@ -739,6 +768,9 @@ export function Rail() {
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
+  // #134: the same rows the tree is built from, indexed for mark resolution — so
+  // the rail agrees with the breadcrumb and the kicker about every page.
+  const marks = useMemo(() => markIndex(pages), [pages])
   const nodeById = useMemo(() => {
     const map = new Map<string, RailNode>()
     const walk = (nodes: RailNode[]) =>
@@ -1007,6 +1039,7 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        marks={marks}
         selectedId={selectedNodeId}
         pathIds={pathIds}
         expanded={expanded}

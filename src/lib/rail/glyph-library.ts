@@ -50,14 +50,6 @@ export const GLYPH_FAMILIES: readonly GlyphFamily[] = [
   { name: 'thing', glyphs: ['heart', 'eye', 'cake', 'arrow-02', 'pacman'] },
 ]
 
-/** Every offered glyph, flat — the picker's search space. */
-export const OFFERED_GLYPHS: readonly string[] = GLYPH_FAMILIES.flatMap((f) => f.glyphs)
-
-/** Is this glyph one the picker offers? (A stored `asset-N` is not, but renders.) */
-export function isOfferedGlyph(glyph: string): boolean {
-  return OFFERED_GLYPHS.includes(glyph)
-}
-
 /**
  * Glyphs whose name or family matches `query`. Empty query → everything, still
  * grouped. Matching on the family name too is what makes "flower" find `tulip-01`.

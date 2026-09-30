@@ -126,13 +126,17 @@ export function MarkPicker({
       </div>
 
       <div className="flex items-center gap-2">
-        {AREA_ROLES.map((r) => {
+        {AREA_ROLES.map((r, i) => {
           const selected = role === r
           return (
             <button
               key={r}
               type="button"
-              aria-label={r}
+              // NOT the token id: `area-a` is a build term, and §Vocabulary keeps
+              // those out of product surfaces. Not a colour name either — naming
+              // it "sage" would pin it to one theme, which is the whole reason
+              // the column stores a role. A number is true under every theme.
+              aria-label={`Area colour ${i + 1}`}
               aria-pressed={selected}
               onClick={() => onSelectRole(r)}
               className={cn(

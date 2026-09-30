@@ -391,7 +391,7 @@ export function AreaOverviewPanel({
       kicker={name}
       onRenameKicker={handleRename}
       accent={accent}
-      markSlot={<PageMarkButton pageId={areaId} mark={mark} size={12} />}
+      markSlot={<PageMarkButton pageId={areaId} pageTitle={name} mark={mark} size={12} />}
       leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
       crumbs={crumbs}
       onNavigateCrumb={navigateCrumb}

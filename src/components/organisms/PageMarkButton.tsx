@@ -46,10 +46,28 @@ import { useWorkspace } from '@/lib/workspace/context'
 import { setPageMark } from '@/lib/pages/client'
 import { areaRoleColor, type AreaRole } from '@/lib/rail/glyph-library'
 import { markIndex, resolveMark, type PageMark } from '@/lib/pages/mark'
+
+/** The row shape `markIndex` consumes — named so callers stop re-declaring it. */
+export type MarkRow = {
+  id: string
+  parent_id: string | null
+  title: string
+  glyph?: string | null
+  area_role?: string | null
+}
 import { cn } from '@/lib/utils'
 
 export interface PageMarkButtonProps {
   pageId: string
+  /**
+   * The page this mark belongs to, for the button's label.
+   *
+   * An overview carries TWO of these at once — the kicker's, for the open page,
+   * and the breadcrumb's, for the area the trail starts in — and they edit
+   * different pages. Both said "Change this page's mark", which is ambiguous to
+   * a screen reader and was outright wrong on the breadcrumb.
+   */
+  pageTitle: string
   /** The resolved mark, from `resolveMark`. */
   mark: PageMark
   /** Glyph size in px, matching whatever the host surface used. @default 13 */
@@ -57,7 +75,13 @@ export interface PageMarkButtonProps {
   className?: string
 }
 
-export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkButtonProps) {
+export function PageMarkButton({
+  pageId,
+  pageTitle,
+  mark,
+  size = 13,
+  className,
+}: PageMarkButtonProps) {
   const getSupabase = useLazySupabase()
   const workspace = useWorkspace()
   const queryClient = useQueryClient()
@@ -69,11 +93,24 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
   // The popover lives in a portal, so it has no layout relationship to its
   // trigger — it is anchored to the trigger's viewport rect instead. A scroll or
   // resize would strand it, so it closes rather than drifting.
+  //
+  // Escape is bound to the DOCUMENT, not to the popup. A React portal bubbles
+  // through the REACT tree, but focus stays on the trigger, which is a SIBLING of
+  // the portal and not a descendant — so an `onKeyDown` on the dialog never fired
+  // unless the person had already clicked inside it. Probed, and it did nothing.
   useEffect(() => {
     if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        close()
+      }
+    }
+    document.addEventListener('keydown', onKey)
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => {
+      document.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
@@ -101,7 +138,8 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
       <button
         ref={trigger}
         type="button"
-        aria-label="Change this page’s mark"
+        aria-label={`Change the mark for ${pageTitle}`}
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={(e) => {
           // The breadcrumb crumb is itself a navigation button; without this a
@@ -130,10 +168,8 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
             {/* Paper, not frames: it floats on shadow alone (AGENTS.md). */}
             <div
               role="dialog"
-              aria-label="Page mark"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') close()
-              }}
+              aria-modal="false"
+              aria-label={`Mark for ${pageTitle}`}
               style={{ left: at.left, top: at.top }}
               className="fixed z-[100] rounded-mn-card bg-mn-surface p-3 shadow-mn-lg"
             >
@@ -166,18 +202,12 @@ export function CrumbMark({
   crumbs,
   size = 11,
 }: {
-  rows: readonly {
-    id: string
-    parent_id: string | null
-    title: string
-    glyph?: string | null
-    area_role?: string | null
-  }[]
-  crumbs: readonly { id: string }[]
+  rows: readonly MarkRow[]
+  crumbs: readonly { id: string; title: string }[]
   size?: number
 }) {
   const first = crumbs[0]
   const mark = useMemo(() => (first ? resolveMark(first.id, markIndex(rows)) : null), [first, rows])
   if (!first || !mark) return null
-  return <PageMarkButton pageId={first.id} mark={mark} size={size} />
+  return <PageMarkButton pageId={first.id} pageTitle={first.title} mark={mark} size={size} />
 }

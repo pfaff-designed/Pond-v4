@@ -303,32 +303,6 @@ export async function saveBlocks(
  * Blank titles are exempt from the index, so clearing a title never collides —
  * the pre-check is skipped for them.
  */
-/**
- * Set (or clear) a page's own mark — issue #134.
- *
- * Both fields are tri-state on purpose: `undefined` leaves the column alone,
- * `null` CLEARS it back to "derive / inherit", and a value sets it. That is what
- * lets the picker offer "reset to default" without a second verb, and what keeps
- * choosing a glyph from silently stamping a colour the person never picked.
- *
- * `area_role` is written as a ROLE, never a colour. See `glyph-library.ts`.
- */
-export async function setPageMark(
-  supabase: SupabaseClient<Database>,
-  id: string,
-  mark: { glyph?: string | null; areaRole?: string | null }
-): Promise<void> {
-  const patch: { glyph?: string | null; area_role?: string | null } = {}
-  if ('glyph' in mark) patch.glyph = mark.glyph ?? null
-  if ('areaRole' in mark) patch.area_role = mark.areaRole ?? null
-  if (Object.keys(patch).length === 0) return
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from('pages').update(patch).eq('id', id)
-  // Unlike the log's side-records, this IS what the person just asked for — a
-  // silent failure would leave the picker showing a choice that never landed.
-  if (error) throw error
-}
-
 export async function updateTitle(
   supabase: SupabaseClient<Database>,
   id: string,
@@ -360,6 +334,37 @@ export async function updateTitle(
     if ((error as any).code === '23505') throw new DuplicateTitleError(title.trim() || 'Untitled')
     throw new Error(error.message)
   }
+}
+
+/**
+ * Set (or clear) a page's own mark — issue #134.
+ *
+ * Both fields are tri-state on purpose: `undefined` leaves the column alone,
+ * `null` CLEARS it back to "derive / inherit", and a value sets it. That is what
+ * lets the picker offer "reset to default" without a second verb, and what keeps
+ * choosing a glyph from silently stamping a colour the person never picked.
+ *
+ * `area_role` is written as a ROLE, never a colour. See `glyph-library.ts`.
+ */
+export async function setPageMark(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  mark: { glyph?: string | null; areaRole?: string | null }
+): Promise<void> {
+  const patch: { glyph?: string | null; area_role?: string | null } = {}
+  if ('glyph' in mark) patch.glyph = mark.glyph ?? null
+  if ('areaRole' in mark) patch.area_role = mark.areaRole ?? null
+  if (Object.keys(patch).length === 0) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('pages')
+    // Stamped like every other write in this module — the rail sorts and the
+    // overview cards read "updated …" off it, and a mark IS a change to the page.
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  // Unlike the log's side-records, this IS what the person just asked for — a
+  // silent failure would leave the picker showing a choice that never landed.
+  if (error) throw error
 }
 
 /**
