@@ -64,14 +64,20 @@ export function Breadcrumb({
         return (
           <Fragment key={c.id}>
             {sep}
-            <button
-              onClick={() => onNavigate(c)}
-              className="hover:text-foreground transition-colors inline-flex items-center gap-1 max-w-[180px] min-w-0"
-              title={c.title}
-            >
+            {/* The mark sits BESIDE the crumb, never inside it: a crumb is a
+                <button> and the mark is a <button>, and a nested button is
+                invalid HTML that React reports as a hydration error. Caught
+                live, in the console, not by any test. */}
+            <span className="inline-flex min-w-0 max-w-[180px] items-center gap-1">
               {i === 0 && leadMark}
-              <span className="truncate">{c.title}</span>
-            </button>
+              <button
+                onClick={() => onNavigate(c)}
+                className="hover:text-foreground transition-colors min-w-0 truncate"
+                title={c.title}
+              >
+                {c.title}
+              </button>
+            </span>
           </Fragment>
         )
       })}

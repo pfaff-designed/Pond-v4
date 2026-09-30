@@ -14,19 +14,32 @@
  * click 2px left of a page name doing something entirely different from a click
  * on it. The rail keeps rendering the plain `AreaMark`.
  *
- * A page with NO glyph renders nothing here and stays un-clickable, because there
- * is no mark to click: the surface shows its `KindDot` as it always has. Giving
- * a glyph to a page that has none is a job for the page menu, which does not
- * exist yet (the same gap #103's panel met).
+ * A PAGE WITH NO GLYPH IS STILL CLICKABLE, and it shows its `KindDot` — which is
+ * its mark, just the other register (a shape-and-colour code rather than a
+ * silhouette; see `KindDot`'s header). An earlier build returned null here and
+ * live verification showed why that was wrong: only the six SEEDED areas have a
+ * title-derived glyph, so every other page — including every area a person makes
+ * themselves — would have had no icon to click and therefore no way to ever get
+ * one. "Any page" has to mean any page.
+ *
+ * THE POPOVER IS PORTALLED, and has to be. Every `Rise` wrapper on an overview
+ * surface carries `animation: … both`, so it keeps its final transform and is
+ * permanently its own STACKING CONTEXT. A child of an earlier Rise therefore
+ * cannot paint above a later sibling Rise whatever z-index it is given: an
+ * absolutely-positioned popover rendered in place sat UNDER the focal numeral's
+ * caption, which silently swallowed every click on the glyph grid. Found by
+ * clicking it, not by reading it.
  *
  * CRITICAL: the Supabase client is built lazily INSIDE the callback, never at
  * render, so an envless mount (Storybook, CI) never constructs a real client and
  * throws — the convention `use-backlinks` and `DocumentPanel` follow.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { KindDot } from '@/components/atoms/KindDot'
 import { MarkPicker } from '@/components/molecules/MarkPicker'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -48,7 +61,23 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
   const getSupabase = useLazySupabase()
   const workspace = useWorkspace()
   const queryClient = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null)
+  const open = at !== null
+  const close = useCallback(() => setAt(null), [])
+
+  // The popover lives in a portal, so it has no layout relationship to its
+  // trigger — it is anchored to the trigger's viewport rect instead. A scroll or
+  // resize would strand it, so it closes rather than drifting.
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open, close])
 
   const write = useCallback(
     async (patch: { glyph?: string | null; areaRole?: string | null }) => {
@@ -67,12 +96,10 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
     [getSupabase, pageId, queryClient, workspace]
   )
 
-  // Nothing to click. The host surface falls back to its KindDot exactly as before.
-  if (mark.glyph === null) return null
-
   return (
     <span className={cn('relative inline-flex', className)}>
       <button
+        ref={trigger}
         type="button"
         aria-label="Change this page’s mark"
         aria-expanded={open}
@@ -81,37 +108,47 @@ export function PageMarkButton({ pageId, mark, size = 13, className }: PageMarkB
           // click on the mark would also navigate.
           e.stopPropagation()
           e.preventDefault()
-          setOpen((v) => !v)
+          if (open) return close()
+          const r = trigger.current?.getBoundingClientRect()
+          setAt(r ? { left: r.left, top: r.bottom + 4 } : { left: 0, top: 0 })
         }}
         className="inline-flex items-center rounded-mn-hair hover:bg-mn-hover-fill"
       >
-        <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} size={size} />
+        {mark.glyph === null ? (
+          <KindDot accent={areaRoleColor(mark.role)} />
+        ) : (
+          <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} size={size} />
+        )}
       </button>
 
-      {open && (
-        <>
-          {/* Click-away. Pointer only — Escape is handled on the popup. */}
-          <span aria-hidden="true" className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Paper, not frames: it floats on shadow alone (AGENTS.md). */}
-          <div
-            role="dialog"
-            aria-label="Page mark"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setOpen(false)
-            }}
-            className="absolute left-0 top-full z-50 mt-1 rounded-mn-card bg-mn-surface p-3 shadow-mn-lg"
-          >
-            <MarkPicker
-              glyph={mark.glyph}
-              role={mark.role}
-              glyphIsOwn={mark.glyphIsOwn}
-              roleIsOwn={mark.roleIsOwn}
-              onSelectGlyph={(glyph) => void write({ glyph })}
-              onSelectRole={(areaRole: AreaRole | null) => void write({ areaRole })}
-            />
-          </div>
-        </>
-      )}
+      {open &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            {/* Click-away. Pointer only — Escape is handled on the popup. */}
+            <div aria-hidden="true" className="fixed inset-0 z-[90]" onClick={close} />
+            {/* Paper, not frames: it floats on shadow alone (AGENTS.md). */}
+            <div
+              role="dialog"
+              aria-label="Page mark"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') close()
+              }}
+              style={{ left: at.left, top: at.top }}
+              className="fixed z-[100] rounded-mn-card bg-mn-surface p-3 shadow-mn-lg"
+            >
+              <MarkPicker
+                glyph={mark.glyph}
+                role={mark.role}
+                glyphIsOwn={mark.glyphIsOwn}
+                roleIsOwn={mark.roleIsOwn}
+                onSelectGlyph={(glyph) => void write({ glyph })}
+                onSelectRole={(areaRole: AreaRole | null) => void write({ areaRole })}
+              />
+            </div>
+          </>,
+          document.body
+        )}
     </span>
   )
 }
