@@ -99,8 +99,9 @@ export function blocksToText(blocks: Block[]): string {
 
 // ── formatNodeContext (pure) ─────────────────────────────────────────────────
 
+// #108: no 'Area' label — an area is a page that has pages inside it, so a
+// container reads as "Page" here and its children speak for its area-ness.
 const TYPE_LABEL: Record<NodeType, string> = {
-  area: 'Area',
   routine: 'Routine',
   project: 'Project',
   action: 'Action',
