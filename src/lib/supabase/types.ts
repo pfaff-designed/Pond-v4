@@ -45,6 +45,10 @@ export interface Database {
           props: Json
           order: number
           workspace: Workspace
+          /** #134: explicit glyph name; null = derive from the title. */
+          glyph: string | null
+          /** #134: explicit area colour ROLE (area-a|b|c); null = inherit. */
+          area_role: string | null
           updated_at: string
           created_at: string
         }
@@ -60,6 +64,8 @@ export interface Database {
           props?: Json
           order?: number
           workspace?: Workspace
+          glyph?: string | null
+          area_role?: string | null
         }
         Update: {
           parent_id?: string | null
@@ -71,6 +77,8 @@ export interface Database {
           props?: Json
           order?: number
           workspace?: Workspace
+          glyph?: string | null
+          area_role?: string | null
           updated_at?: string
         }
       }

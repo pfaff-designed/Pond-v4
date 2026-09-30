@@ -22,6 +22,7 @@ import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { AreaMark } from '@/components/atoms/AreaMark'
 import { OverviewSurface } from '@/components/organisms/OverviewSurface'
 import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -253,8 +254,11 @@ describe('Rail — area marks ride the glyph system', () => {
   })
 })
 
-describe('Breadcrumb — an area crumb shows its mark', () => {
-  it('renders the glyph inside a mapped area crumb, tinted by the area accent', () => {
+describe('Breadcrumb — the lead crumb carries the injected mark', () => {
+  // #134 made the mark a clickable control that writes to the database, so the
+  // molecule no longer derives it — a presentational component has no business
+  // owning that. What it still owns is WHERE the mark goes: the first crumb only.
+  it('renders the injected mark in the first crumb and nowhere else', () => {
     const { getByRole } = render(
       <Breadcrumb
         crumbs={[
@@ -263,15 +267,25 @@ describe('Breadcrumb — an area crumb shows its mark', () => {
         ]}
         onNavigate={jest.fn()}
         current="Dreams"
+        leadMark={<AreaMark glyph="leaf-01" color="var(--mn-area-a)" size={11} />}
       />
     )
     const health = getByRole('button', { name: /Health/ })
     const glyph = health.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
     expect(glyph).toBeInTheDocument()
-    const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe(hexToRgb(pageAccent('health')))
-    // A page crumb shows no mark.
+    // A ROLE, not a colour — the mark follows the theme (#134).
+    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-a)')
     expect(getByRole('button', { name: /Sleep/ }).querySelector('[data-icon]')).toBeNull()
+  })
+
+  it('carries no mark at all when none is injected', () => {
+    const { container } = render(
+      <Breadcrumb
+        crumbs={[{ id: 'health', type: 'page', title: 'Health' }]}
+        onNavigate={jest.fn()}
+      />
+    )
+    expect(container.querySelector('[data-icon]')).toBeNull()
   })
 })
 
@@ -283,7 +297,7 @@ describe('OverviewSurface — the kicker mark', () => {
       <OverviewSurface
         kicker="Health"
         accent="#5f7355"
-        glyph="leaf-01"
+        markSlot={<AreaMark glyph="leaf-01" color="#5f7355" size={12} />}
         model={MODEL}
         closing="That’s Health at a glance."
         onOpenCard={jest.fn()}
@@ -323,11 +337,18 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
   ]
 
   /** Seed ['pages'] so the panel renders from data without a fetch (envless). */
-  function renderPanel(areaId: string, title: string) {
+  function renderPanel(
+    areaId: string,
+    title: string,
+    mark?: { glyph?: string | null; area_role?: string | null }
+  ) {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
-    client.setQueryData(['pages', 'main'], ROWS)
+    client.setQueryData(
+      ['pages', 'main'],
+      mark ? ROWS.map((r) => (r.id === areaId ? { ...r, ...mark } : r)) : ROWS
+    )
     return render(
       <QueryClientProvider client={client}>
         <AreaOverviewPanel areaId={areaId} title={title} />
@@ -335,25 +356,39 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
     )
   }
 
-  it('a mapped area leads its kicker with the glyph in the area hue', () => {
+  it('a mapped area leads its kicker with the glyph in the area ROLE', () => {
     const { container } = renderPanel('health', 'Health')
     const glyph = container.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
     expect(glyph).toBeInTheDocument()
     const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe(hexToRgb(pageAccent('health')))
+    // #134: a role, never a colour. `pageAccent`'s Press six tint no mark now —
+    // switching theme re-colours this with no write and no stale value.
+    expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
     expect(container.querySelector('[data-part="kicker-dot"]')).toBeNull()
   })
 
-  it('an unmapped nested area keeps the accent square; its area crumb shows the parent mark', () => {
+  it('an unmapped nested area keeps the square, coloured by its inherited role', () => {
     const { container, getByRole } = renderPanel('food', 'Food')
     const square = container.querySelector<HTMLElement>('[data-part="kicker-dot"]')!
     expect(square).toBeInTheDocument()
-    // Coloured by the top-level ancestor, as before (#91 changes no hue).
-    expect(square.style.background).toBe(hexToRgb(pageAccent('personal')))
+    // Inherited from the top-level ancestor, so a whole area still reads as one
+    // colour — now expressed as a role.
+    expect(square.style.background).toMatch(/^var\(--mn-area-[abc]\)$/)
     // The trail's Personal crumb carries the house glyph; nothing else does.
     const crumb = getByRole('button', { name: /Personal/ })
     expect(crumb.querySelector('[data-icon="house"]')).toBeInTheDocument()
     expect(container.querySelectorAll('[data-icon]')).toHaveLength(1)
+  })
+
+  it('renders an explicit glyph and role over the derived ones', () => {
+    // The whole point of #134: a choice the person made beats the title hash.
+    const { container } = renderPanel('health', 'Health', {
+      glyph: 'tulip-01',
+      area_role: 'area-c',
+    })
+    const glyph = container.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
+    expect(glyph).toBeInTheDocument()
+    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-c)')
   })
 })
 
