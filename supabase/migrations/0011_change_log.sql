@@ -15,19 +15,26 @@
 --
 -- THE CONTRACT — the log only grows:
 --   * No record is ever deleted. The `change_log_append_only` trigger raises on
---     DELETE, and RLS grants select/insert/update but deliberately has NO delete
---     policy, so an ordinary client cannot even attempt one. The single
---     exemption is the account itself going away: a record dies only WITH its
---     pond, via the `user_id` cascade (see the trigger body).
---   * `before` / `after` are never REWRITTEN. The trigger admits exactly one
---     content mutation — redaction to NULL — which is the design's memory-note
---     rule: "deleting a note removes its content from the log (the record keeps
---     only 'a note was deleted, by whom')". Content may go to NULL; it may never
---     become different non-null content.
---   * `transitions` is an append-only audit array — it may only grow.
---   * What advances is `status` (+ `status_at` + one appended transition).
---     Revert, revise, undo and redo each INSERT A NEW record that links back via
---     `links`; history is never mutated in place.
+--     DELETE, a second trigger raises on TRUNCATE (which fires no row triggers at
+--     all), and RLS grants select/insert/update with deliberately NO delete
+--     policy, so an ordinary client cannot even attempt one. The single exemption
+--     is the ACCOUNT going away — `auth.users`, not the `public.users` mirror
+--     (see the trigger body for why that distinction is the whole ballgame).
+--   * `before`, `after` and `read` are never REWRITTEN. The trigger admits
+--     exactly one content mutation — redaction to NULL — which is the design's
+--     memory-note rule: "deleting a note removes its content from the log (the
+--     record keeps only 'a note was deleted, by whom')". Content may go to NULL;
+--     it may never become different non-null content.
+--   * `transitions` is an append-only audit array — existing entries come back
+--     byte-identical and only the TAIL may grow. A length check alone let a
+--     same-length array forge the history in place.
+--   * `links` are stamped at INSERT and frozen: revert, revise, undo and redo
+--     each INSERT A NEW record carrying its own links rather than re-pointing an
+--     existing one.
+--   * What advances is `status` (+ `status_at` + one appended transition), and
+--     the advance goes through `advance_change_log_record`, which appends in SQL
+--     on a locked row under a compare-and-swap. History is never mutated in
+--     place; a concurrent advance is a loud conflict, not a lost entry.
 --
 -- Per-pond scope is (`user_id`, `workspace`), mirroring 0005 — a record in one
 -- workspace is never visible from the other.
@@ -35,7 +42,9 @@
 -- Down (manual, if ever needed):
 --   drop table if exists public.change_log cascade;
 --   drop function if exists public.change_log_append_only() cascade;
---   drop function if exists public.accept_change_log_record(uuid, jsonb);
+--   drop function if exists public.change_log_no_truncate() cascade;
+--   drop function if exists public.accept_change_log_record(uuid, jsonb, text);
+--   drop function if exists public.advance_change_log_record(uuid, text, text, text);
 
 begin;
 
@@ -122,15 +131,33 @@ create index if not exists change_log_target_page_idx
 -- SQL statement cannot delete a record or rewrite a diff.
 
 create or replace function public.change_log_append_only()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+-- SECURITY DEFINER so the account test below is authoritative: an ordinary
+-- `authenticated` caller has no SELECT on `auth.users`, and a check that cannot
+-- read its own source of truth is not a check. search_path is pinned because a
+-- definer function must never resolve names through the caller's path.
+security definer
+set search_path = public, auth, pg_temp
+as $$
+declare
+  v_i integer;
 begin
   if tg_op = 'DELETE' then
-    -- The ONE exemption: a record dies only WITH its pond. When the account
-    -- itself goes, `public.users` cascades here, and by the time this fires the
-    -- owning user row is already gone — so this test tells a genuine account
-    -- deletion apart from an application delete, which is refused. Without it
-    -- the trigger would make users undeletable.
-    if exists (select 1 from public.users u where u.id = old.user_id) then
+    -- The ONE exemption: a record dies only WITH its pond — and "the pond" is
+    -- the ACCOUNT, `auth.users`, not the `public.users` mirror.
+    --
+    -- Reading the mirror here was a hole (review of #144, probe P9). `0001`
+    -- grants the row owner `for all` on their own mirror row, which includes
+    -- DELETE, and change_log cascades off it — so a browser client could wipe
+    -- its entire log by deleting a row it was allowed to delete, while the
+    -- account itself survived. The mirror is bookkeeping; the account is the
+    -- thing whose disappearance may take the log with it.
+    --
+    -- On a genuine `delete from auth.users`, the RI cascade runs after the
+    -- parent row is gone, so this sees no account and lets the record go —
+    -- without the exemption the trigger would make accounts undeletable.
+    if exists (select 1 from auth.users u where u.id = old.user_id) then
       raise exception 'change_log is append-only: records are never deleted (id=%)', old.id
         using errcode = 'restrict_violation';
     end if;
@@ -148,6 +175,16 @@ begin
      or new.tool_call_id is distinct from old.tool_call_id
   then
     raise exception 'change_log is append-only: identity columns are immutable (id=%)', old.id
+      using errcode = 'restrict_violation';
+  end if;
+
+  -- `links` is frozen too (review of #144, probe P2). The chain tying a revision
+  -- to what it revised — and a revert/undo to what it reverted/undid (#103/#104)
+  -- — is stamped at INSERT and never re-pointed: each of those operations
+  -- inserts a NEW record carrying its own links. Adding a BACKlink to an
+  -- existing record later would be a deliberate migration, not an update.
+  if new.links is distinct from old.links then
+    raise exception 'change_log is append-only: links are immutable (id=%)', old.id
       using errcode = 'restrict_violation';
   end if;
 
@@ -176,15 +213,47 @@ begin
     raise exception 'change_log is append-only: after may only be redacted to null (id=%)', old.id
       using errcode = 'restrict_violation';
   end if;
+  -- `read` is the read-chip provenance of #110 criterion 1 — what Pond consulted
+  -- before it proposed. It was unfrozen (review of #144, probe P1), so the record
+  -- could be made to claim Pond read something it never opened. It follows the
+  -- same rule as the diff content: redactable with the note, never rewritten.
+  if new."read" is distinct from old."read" and new."read" is not null then
+    raise exception 'change_log is append-only: read may only be redacted to null (id=%)', old.id
+      using errcode = 'restrict_violation';
+  end if;
 
-  -- The transition audit only grows.
+  -- The transition audit only grows, and only at the TAIL.
+  --
+  -- A length guard alone is not append-only (review of #144, probes P3/P4): a
+  -- same-length array replaced the whole history in place, so provenance could
+  -- be forged silently, and an array of scalars passed because only the OUTER
+  -- type was checked. Every entry that already exists is history — it must come
+  -- back byte-identical — and anything appended must actually be a transition.
   if jsonb_typeof(new.transitions) <> 'array' then
     raise exception 'change_log.transitions must be a json array (id=%)', old.id
       using errcode = 'restrict_violation';
   end if;
-  if jsonb_array_length(new.transitions) < jsonb_array_length(old.transitions) then
-    raise exception 'change_log is append-only: transitions may only grow (id=%)', old.id
-      using errcode = 'restrict_violation';
+  if new.transitions is distinct from old.transitions then
+    if jsonb_array_length(new.transitions) < jsonb_array_length(old.transitions) then
+      raise exception 'change_log is append-only: transitions may only grow (id=%)', old.id
+        using errcode = 'restrict_violation';
+    end if;
+    for v_i in 0 .. jsonb_array_length(old.transitions) - 1 loop
+      if new.transitions -> v_i is distinct from old.transitions -> v_i then
+        raise exception
+          'change_log is append-only: transitions entry % may not be rewritten (id=%)', v_i, old.id
+          using errcode = 'restrict_violation';
+      end if;
+    end loop;
+    for v_i in jsonb_array_length(old.transitions) .. jsonb_array_length(new.transitions) - 1 loop
+      if jsonb_typeof(new.transitions -> v_i) <> 'object'
+         or (new.transitions -> v_i) ->> 'status' is null
+      then
+        raise exception
+          'change_log.transitions entry % must be an object carrying a status (id=%)', v_i, old.id
+          using errcode = 'restrict_violation';
+      end if;
+    end loop;
   end if;
 
   return new;
@@ -196,6 +265,26 @@ create trigger change_log_append_only_trg
   before update or delete on public.change_log
   for each row execute procedure public.change_log_append_only();
 
+-- TRUNCATE fires no ROW triggers at all, so the whole log could be emptied in one
+-- statement while every row-level guarantee above held (review of #144, probe
+-- P8). It takes owner rights — but this file claims the log can never be
+-- emptied, and a claim with a hole in it is worse than no claim. There is no
+-- legitimate truncate of a change log: even dropping a pond goes through the
+-- account cascade, which is a DELETE.
+
+create or replace function public.change_log_no_truncate()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'change_log is append-only: the log is never truncated'
+    using errcode = 'restrict_violation';
+end;
+$$;
+
+drop trigger if exists change_log_no_truncate_trg on public.change_log;
+create trigger change_log_no_truncate_trg
+  before truncate on public.change_log
+  for each statement execute procedure public.change_log_no_truncate();
+
 -- ── Row-level security ───────────────────────────────────────────────────────
 --
 -- Granular on purpose: select / insert / update only, no DELETE policy at all.
@@ -204,14 +293,78 @@ create trigger change_log_append_only_trg
 
 alter table public.change_log enable row level security;
 
+-- `create policy` has no IF NOT EXISTS, and these sit inside begin;…commit; — so
+-- without the drops a replay of this migration aborted the whole transaction on a
+-- duplicate-object error instead of doing nothing. Every other statement in this
+-- file is already guarded; these were the exception.
+drop policy if exists "change_log: read own rows" on public.change_log;
 create policy "change_log: read own rows" on public.change_log
   for select using (auth.uid() = user_id);
 
+drop policy if exists "change_log: append own rows" on public.change_log;
 create policy "change_log: append own rows" on public.change_log
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "change_log: advance own rows" on public.change_log;
 create policy "change_log: advance own rows" on public.change_log
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ── Atomic advance ───────────────────────────────────────────────────────────
+--
+-- Advancing a status is read-modify-write on `transitions`, and doing that from
+-- the application meant reading the array, appending in JS, and writing the whole
+-- thing back. Two advances racing both read one entry and both wrote two, so the
+-- second ERASED the first's entry — a lost update in the one table whose whole
+-- promise is that it only grows. (The append-only trigger now catches the
+-- overwrite, but a caller should get a clear conflict, not a constraint error.)
+--
+-- So the append happens in SQL, on a locked row, guarded by a compare-and-swap:
+-- the caller states the status it believes it is advancing FROM, and a record
+-- that moved underneath it raises instead of clobbering.
+--
+-- LEGALITY of a transition is NOT decided here — `src/lib/change-log/status.ts`
+-- owns the state machine (spec #110 §3 puts it in the write layer), and
+-- duplicating the table in SQL would only let the two drift. This function owns
+-- atomicity; the store owns what may follow what.
+
+create or replace function public.advance_change_log_record(
+  p_record_id uuid,
+  p_from text,
+  p_to text,
+  p_actor text default 'you'
+)
+returns public.change_log
+language plpgsql
+as $$
+declare
+  v_record public.change_log;
+  v_now timestamptz := now();
+begin
+  select * into v_record from public.change_log where id = p_record_id for update;
+  if not found then
+    raise exception 'change_log record % not found', p_record_id
+      using errcode = 'no_data_found';
+  end if;
+  if v_record.status <> p_from then
+    raise exception
+      'change_log record % is no longer %, it is % — expected status changed underneath this advance',
+      p_record_id, p_from, v_record.status
+      using errcode = 'serialization_failure';
+  end if;
+
+  update public.change_log
+  set status = p_to,
+      status_at = v_now,
+      transitions = transitions
+        || jsonb_build_array(jsonb_build_object('status', p_to, 'at', v_now, 'actor', p_actor))
+  where id = p_record_id
+  returning * into v_record;
+
+  return v_record;
+end;
+$$;
+
+grant execute on function public.advance_change_log_record(uuid, text, text, text) to authenticated;
 
 -- ── Atomic accept ────────────────────────────────────────────────────────────
 --

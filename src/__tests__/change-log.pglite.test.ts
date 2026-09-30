@@ -13,7 +13,7 @@
 // page/thread delete, and the atomicity of `accept_change_log_record`.
 
 import type { PGlite } from '@electric-sql/pglite'
-import { makeDb, seedUser } from './helpers/pglite-harness'
+import { applyMigration, makeDb, seedUser } from './helpers/pglite-harness'
 
 const USER = '11111111-1111-1111-1111-111111111111'
 const OTHER = '22222222-2222-2222-2222-222222222222'
@@ -138,6 +138,20 @@ describe('0011_change_log — shape', () => {
     await db.close()
   })
 
+  it('re-applies cleanly, so a replayed migration is a no-op not an abort', async () => {
+    const db = await makeDb()
+    // Every statement in 0011 is guarded except the `create policy` lines, which
+    // sit inside begin;…commit; — so a re-run aborted the whole migration on a
+    // duplicate-object error rather than doing nothing.
+    await expect(applyMigration(db, '0011_change_log.sql')).resolves.toBeUndefined()
+
+    const policies = await db.query<{ cmd: string }>(
+      `select cmd from pg_policies where schemaname = 'public' and tablename = 'change_log'`
+    )
+    expect(policies.rows.map((r) => r.cmd).sort()).toEqual(['INSERT', 'SELECT', 'UPDATE'])
+    await db.close()
+  })
+
   it('creates the three indexes the spec names', async () => {
     const db = await makeDb()
     const idx = await db.query<{ indexname: string }>(
@@ -235,6 +249,23 @@ describe('0011_change_log — the log only grows', () => {
     await db.close()
   })
 
+  it('refuses TRUNCATE, which a per-row trigger never sees', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addRecord(db)
+
+    // The append-only trigger is BEFORE ... FOR EACH ROW, and TRUNCATE fires no
+    // row triggers at all — so the table could be emptied in one statement while
+    // every row-level guarantee held. It needs owner rights, but 0011 claims the
+    // log can never be emptied, and a claim with a hole in it is worse than no
+    // claim.
+    await expect(db.query('truncate public.change_log')).rejects.toThrow(/append-only/)
+
+    const res = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
+    expect(res.rows[0].n).toBe(1)
+    await db.close()
+  })
+
   it('refuses to rewrite before/after with different content', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
@@ -306,6 +337,125 @@ describe('0011_change_log — the log only grows', () => {
     )
     expect(res.rows[0].n).toBe(2)
     expect(await statusOf(db, id)).toBe('accepted')
+    await db.close()
+  })
+
+  it('freezes `links`: the relationships between records are set at birth', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const original = await addRecord(db)
+    // Links are stamped at INSERT — a revision is born knowing what it revised.
+    const revision = (
+      await db.query<{ id: string }>(
+        `insert into public.change_log
+           (user_id, status, action, actor, links, transitions)
+         values ($1,'proposed','edit','pond', jsonb_build_object('revised_from', $2::text), '[]'::jsonb)
+         returning id`,
+        [USER, original]
+      )
+    ).rows[0].id
+
+    // Probe P2: `links` was outside the identity list, so the chain that ties a
+    // revision to what it revised — and, downstream, a revert to what it
+    // reverted (#103) and an undo to what it undid (#104) — could be re-pointed
+    // at any other record after the fact. Revert/revise/undo/redo each INSERT a
+    // new record carrying its own links; nothing ever re-links an existing one.
+    await expect(
+      db.query(
+        `update public.change_log set links = jsonb_build_object('revised_from', $2::text) where id = $1`,
+        [revision, revision]
+      )
+    ).rejects.toThrow(/links/)
+
+    const res = await db.query<{ from: string }>(
+      `select links ->> 'revised_from' as from from public.change_log where id = $1`,
+      [revision]
+    )
+    expect(res.rows[0].from).toBe(original)
+    await db.close()
+  })
+
+  it('freezes `read`: read-chip provenance may be redacted, never rewritten', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    // Read chips are captured at propose time, so they are stamped at INSERT.
+    const id = (
+      await db.query<{ id: string }>(
+        `insert into public.change_log
+           (user_id, status, action, actor, "read", transitions)
+         values ($1,'proposed','edit','pond', '[{"pageId":"p1","title":"Sleep log"}]'::jsonb, '[]'::jsonb)
+         returning id`,
+        [USER]
+      )
+    ).rows[0].id
+
+    // Probe P1: `read` is the provenance #110 criterion 1 names — what Pond read
+    // before it proposed. Rewritable provenance is no provenance: it could be
+    // made to claim Pond consulted something it never opened.
+    await expect(
+      db.query(
+        `update public.change_log set "read" = '[{"pageId":"p2","title":"Something else"}]'::jsonb where id = $1`,
+        [id]
+      )
+    ).rejects.toThrow(/read/)
+
+    // Clearing it IS allowed — same rule as before/after, so deleting a memory
+    // note can take its read chips with it.
+    await db.query(`update public.change_log set "read" = null where id = $1`, [id])
+    const res = await db.query<{ read: unknown }>(
+      'select "read" from public.change_log where id = $1',
+      [id]
+    )
+    expect(res.rows[0].read).toBeNull()
+    await db.close()
+  })
+
+  it('refuses to forge an existing transition in place, even at the same length', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    // A length guard alone is not append-only (review of #144, probe P3): the
+    // birth entry can be REPLACED by a different one of the same length, so the
+    // audit can be made to say a record was accepted, by someone who never
+    // touched it, with no trace that anything was rewritten. Every entry already
+    // in the array is history and is immutable; only the tail may grow.
+    await expect(
+      db.query(
+        `update public.change_log
+         set transitions = '[{"status":"accepted","at":"2020-01-01T00:00:00Z","actor":"FORGED"}]'::jsonb
+         where id = $1`,
+        [id]
+      )
+    ).rejects.toThrow(/transitions/)
+
+    const res = await db.query<{ actor: string }>(
+      `select transitions -> 0 ->> 'actor' as actor from public.change_log where id = $1`,
+      [id]
+    )
+    expect(res.rows[0].actor).toBe('pond')
+    await db.close()
+  })
+
+  it('refuses to replace the audit with non-transition junk of any length', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    // Probe P4: `jsonb_typeof = 'array'` was the only element-level check, so an
+    // array of scalars passed. It is longer than the original, so the length
+    // guard waved it through too.
+    await expect(
+      db.query(`update public.change_log set transitions = '[1,2,3]'::jsonb where id = $1`, [id])
+    ).rejects.toThrow(/transitions/)
+
+    // …and an APPENDED entry must still look like a transition, not a scalar.
+    await expect(
+      db.query(
+        `update public.change_log set transitions = transitions || '[42]'::jsonb where id = $1`,
+        [id]
+      )
+    ).rejects.toThrow(/transitions/)
     await db.close()
   })
 
@@ -419,6 +569,29 @@ describe('0011_change_log — records outlive their targets', () => {
     await db.close()
   })
 
+  it('survives the mirror-row bypass: the account is auth.users, not public.users', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addRecord(db, { userId: USER })
+
+    // `0001_initial_schema.sql:13-14` grants the row owner `for all` on their
+    // public.users MIRROR row — which includes DELETE — and change_log cascades
+    // off that mirror. So if the trigger reads the mirror to decide "this is a
+    // genuine account deletion", an ordinary browser client wipes its own log by
+    // deleting a row it is permitted to delete, while the account itself
+    // (auth.users) survives untouched. The account is auth.users; the mirror is
+    // bookkeeping. Deleting the mirror alone must take the whole statement down.
+    await expect(db.query('delete from public.users where id = $1', [USER])).rejects.toThrow(
+      /append-only/
+    )
+
+    const log = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
+    expect(log.rows[0].n).toBe(1)
+    const mirror = await db.query<{ n: number }>('select count(*)::int as n from public.users')
+    expect(mirror.rows[0].n).toBe(1)
+    await db.close()
+  })
+
   it('isolates ponds: a workspace-scoped read never sees the other scope', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
@@ -440,6 +613,98 @@ describe('0011_change_log — records outlive their targets', () => {
 })
 
 // ── Atomic accept ────────────────────────────────────────────────────────────
+
+describe('0011_change_log — advance_change_log_record', () => {
+  it('appends the transition in SQL rather than replacing the array', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    await db.query(`select public.advance_change_log_record($1,'proposed','rejected','you')`, [id])
+
+    const res = await db.query<{ n: number; first: string; last: string; status: string }>(
+      `select jsonb_array_length(transitions)::int as n,
+              transitions -> 0 ->> 'status' as first,
+              transitions -> -1 ->> 'status' as last,
+              status
+       from public.change_log where id = $1`,
+      [id]
+    )
+    expect(res.rows[0].status).toBe('rejected')
+    expect(res.rows[0].n).toBe(2)
+    // The birth entry is still there, untouched — the audit grew, it did not move.
+    expect(res.rows[0].first).toBe('proposed')
+    expect(res.rows[0].last).toBe('rejected')
+    await db.close()
+  })
+
+  it('touches nothing but status, status_at and transitions', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const page = await addPage(db)
+    const id = await addRecord(db, {
+      pageId: page,
+      blockId: 'b1',
+      before: { id: 'b1', type: 'text', content: 'old' },
+      after: { id: 'b1', type: 'text', content: 'new' },
+    })
+    const wasRes = await db.query(
+      `select action, actor, target_page_id, target_block_id, "before", "after", created_at
+       from public.change_log where id = $1`,
+      [id]
+    )
+
+    await db.query(`select public.advance_change_log_record($1,'proposed','accepted','you')`, [id])
+
+    const nowRes = await db.query(
+      `select action, actor, target_page_id, target_block_id, "before", "after", created_at
+       from public.change_log where id = $1`,
+      [id]
+    )
+    // An advance moves the STATUS. The diff it carries, who made it, where it
+    // applies and when it was born are all exactly as they were.
+    expect(nowRes.rows[0]).toEqual(wasRes.rows[0])
+    await db.close()
+  })
+
+  it('refuses a stale advance instead of silently losing the other one', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    // `advanceStatus` used to read the record, then write `[...transitions, new]`
+    // from what it had read. Two advances racing both read one entry and both
+    // wrote two, so whichever landed second ERASED the other's entry — a lost
+    // update in a table whose whole promise is that it only grows. The caller
+    // now states the status it believes it is advancing FROM, so a record that
+    // moved underneath it is a loud conflict, not a silent overwrite.
+    await db.query(`select public.advance_change_log_record($1,'proposed','accepted','you')`, [id])
+
+    await expect(
+      db.query(`select public.advance_change_log_record($1,'proposed','rejected','you')`, [id])
+    ).rejects.toThrow(/no longer|expected/i)
+
+    const res = await db.query<{ n: number; status: string }>(
+      `select jsonb_array_length(transitions)::int as n, status
+       from public.change_log where id = $1`,
+      [id]
+    )
+    expect(res.rows[0].status).toBe('accepted')
+    expect(res.rows[0].n).toBe(2)
+    await db.close()
+  })
+
+  it('raises on a record that is not there', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await expect(
+      db.query(
+        `select public.advance_change_log_record('00000000-0000-0000-0000-000000000000','proposed','rejected','you')`
+      )
+    ).rejects.toThrow(/not found/)
+    await db.close()
+  })
+})
 
 describe('0011_change_log — accept_change_log_record', () => {
   const NEW_BLOCKS = [{ id: 'b1', type: 'text', content: 'after' }]

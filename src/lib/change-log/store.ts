@@ -255,20 +255,23 @@ export async function advanceStatus(
 ): Promise<ChangeLogRecord> {
   const current = await getRecord(supabase, id)
   if (!current) throw new Error(`change log: record ${id} not found`)
+  // Legality lives here, in one place, in TypeScript — spec #110 §3 puts the
+  // state machine in the write layer, and a copy of it in SQL would only drift.
   assertTransition(current.status, to)
 
-  const now = new Date().toISOString()
+  // The WRITE goes through a compare-and-swap RPC that appends in SQL on a locked
+  // row. Reading the record and writing `[...transitions, next]` back from the
+  // application lost a concurrent advance's entry outright: both readers saw one
+  // entry, both wrote two, and the second erased the first — a lost update in the
+  // one table whose whole promise is that it only grows. Passing the status we
+  // believe we are leaving turns that race into a loud conflict.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from(TABLE)
-    .update({
-      status: to,
-      status_at: now,
-      transitions: [...current.transitions, { status: to, at: now, actor }],
-    })
-    .eq('id', id)
-    .select(COLUMNS)
-    .single()
+  const { data, error } = await (supabase as any).rpc('advance_change_log_record', {
+    p_record_id: id,
+    p_from: current.status,
+    p_to: to,
+    p_actor: actor,
+  })
   if (error) throw error
   return mapChangeLogRow(data as ChangeLogRow)
 }
@@ -350,13 +353,18 @@ export async function markOutdated(
   }
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data, error } = await (supabase as any)
     .from(TABLE)
     .select(COLUMNS)
     .eq('user_id', opts.userId)
     .eq('workspace', opts.workspace ?? 'main')
     .eq('target_page_id', opts.targetPageId)
     .eq('status', 'proposed')
+  // Taking only `data` made a failed query indistinguishable from "nothing to
+  // sweep" — and this runs AFTER the accept has committed, so the sweep quietly
+  // evaporating leaves accept-able proposals aimed at a block that has moved on,
+  // which is the exact state `outdated` exists to prevent.
+  if (error) throw error
   const rows = ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
 
   const blockIds = opts.blockIds ?? []

@@ -53,6 +53,7 @@ function makeSupabase(
     count?: number
     rpc?: unknown
     rpcError?: unknown
+    listError?: unknown
   } = {}
 ) {
   const chain: Record<string, jest.Mock> & { then?: unknown } = {
@@ -71,7 +72,11 @@ function makeSupabase(
   }
   // Awaiting the chain (listRecords / countProposed) resolves here.
   chain.then = (resolve_: (v: unknown) => void) =>
-    resolve_({ data: opts.list ?? [], error: null, count: opts.count ?? 0 })
+    resolve_({
+      data: opts.listError ? null : (opts.list ?? []),
+      error: opts.listError ?? null,
+      count: opts.count ?? 0,
+    })
 
   const supabase = {
     from: jest.fn(() => chain),
@@ -196,29 +201,28 @@ describe('reviseRecord', () => {
 // ── Advances ─────────────────────────────────────────────────────────────────
 
 describe('advanceStatus', () => {
-  it('appends to the transition audit rather than replacing it', async () => {
+  // NB: "appends rather than replaces" is no longer a claim this layer can make
+  // on its own — the append happens in SQL now, and it is proved for real in
+  // change-log.pglite.test.ts ('appends the transition in SQL rather than
+  // replacing the array'). What this layer still owns is WHICH call it issues,
+  // with what compare-and-swap, and refusing an illegal edge before any write.
+  it('advances through the compare-and-swap RPC, stating the status it came from', async () => {
     const sb = makeSupabase({
       maybeSingle: row({ status: 'proposed' }),
-      single: row({ status: 'rejected' }),
+      rpc: row({ status: 'rejected' }),
     })
-    await store.advanceStatus(sb as never, 'rec-1', 'rejected', 'you')
+    const out = await store.advanceStatus(sb as never, 'rec-1', 'rejected', 'you')
 
-    const update = writtenTo(sb, 'update')
-    expect(update.status).toBe('rejected')
-    expect(update.status_at).toEqual(expect.any(String))
-    const transitions = update.transitions as { status: string; actor: string }[]
-    expect(transitions.map((t) => t.status)).toEqual(['proposed', 'rejected'])
-    expect(transitions[1].actor).toBe('you')
-  })
-
-  it('never touches before, after, action or actor', async () => {
-    const sb = makeSupabase({ maybeSingle: row(), single: row({ status: 'withdrawn' }) })
-    await store.advanceStatus(sb as never, 'rec-1', 'withdrawn')
-    expect(Object.keys(writtenTo(sb, 'update')).sort()).toEqual([
-      'status',
-      'status_at',
-      'transitions',
-    ])
+    expect(sb.rpc).toHaveBeenCalledWith('advance_change_log_record', {
+      p_record_id: 'rec-1',
+      p_from: 'proposed',
+      p_to: 'rejected',
+      p_actor: 'you',
+    })
+    // Read-modify-write from the application is what lost a concurrent advance's
+    // transition entry; the store must not issue a bare update any more.
+    expect(sb._chain.update).not.toHaveBeenCalled()
+    expect(out.status).toBe('rejected')
   })
 
   it('throws on an illegal edge BEFORE issuing any write', async () => {
@@ -226,13 +230,22 @@ describe('advanceStatus', () => {
     await expect(store.advanceStatus(sb as never, 'rec-1', 'accepted')).rejects.toBeInstanceOf(
       IllegalTransitionError
     )
+    expect(sb.rpc).not.toHaveBeenCalled()
     expect(sb._chain.update).not.toHaveBeenCalled()
   })
 
   it('throws when the record is not there', async () => {
     const sb = makeSupabase({ maybeSingle: null })
     await expect(store.advanceStatus(sb as never, 'nope', 'rejected')).rejects.toThrow(/not found/)
-    expect(sb._chain.update).not.toHaveBeenCalled()
+    expect(sb.rpc).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a lost race as an error rather than returning a stale record', async () => {
+    const sb = makeSupabase({
+      maybeSingle: row({ status: 'proposed' }),
+      rpcError: new Error('is no longer proposed, it is accepted'),
+    })
+    await expect(store.advanceStatus(sb as never, 'rec-1', 'rejected')).rejects.toThrow(/no longer/)
   })
 
   it('exposes the three settle verbs on top of it', async () => {
@@ -243,7 +256,10 @@ describe('advanceStatus', () => {
     ] as const) {
       const sb = makeSupabase({ maybeSingle: row({ status: 'proposed' }) })
       await fn(sb as never, 'rec-1')
-      expect(writtenTo(sb, 'update').status).toBe(expected)
+      expect(sb.rpc).toHaveBeenCalledWith(
+        'advance_change_log_record',
+        expect.objectContaining({ p_to: expected, p_from: 'proposed' })
+      )
     }
   })
 })
@@ -292,10 +308,29 @@ describe('markOutdated (G2)', () => {
     })
 
     // b1 and the page-level proposal go stale; b2 is untouched, and the record
-    // that was just accepted never sweeps itself.
-    expect(writtenTo(sb, 'update').status).toBe('outdated')
+    // that was just accepted never sweeps itself. Each sweep advances through the
+    // same compare-and-swap RPC as any other advance.
     expect(swept).toHaveLength(2)
-    expect(sb._chain.update).toHaveBeenCalledTimes(2)
+    expect(sb.rpc).toHaveBeenCalledTimes(2)
+    expect(sb.rpc).toHaveBeenCalledWith(
+      'advance_change_log_record',
+      expect.objectContaining({ p_to: 'outdated', p_actor: 'pond' })
+    )
+    expect(sb._chain.update).not.toHaveBeenCalled()
+  })
+
+  it('raises when the sweep query fails instead of reporting nothing to sweep', async () => {
+    const sb = makeSupabase({ listError: new Error('connection reset') })
+
+    // The sweep destructured only `data`, so a failed query looked exactly like
+    // "no stale records" — and it runs AFTER the accept has already committed.
+    // A G2 sweep that silently evaporates leaves accept-able proposals pointing
+    // at a block that has moved on, which is the precise state `outdated` exists
+    // to prevent.
+    await expect(
+      store.markOutdated(sb as never, { userId: USER, targetPageId: 'page-1' })
+    ).rejects.toThrow(/connection reset/)
+    expect(sb.rpc).not.toHaveBeenCalled()
   })
 
   it('sweeps the whole page when no blocks are named', async () => {
@@ -435,6 +470,27 @@ describe('mapChangeLogRow', () => {
 
 // ── The only-grows gate ──────────────────────────────────────────────────────
 
+/**
+ * Does this source text issue a delete against the change-log table?
+ *
+ * The gate reads source, so it has to see through the alias the store actually
+ * uses: `store.ts` addresses its table as `.from(TABLE)`, and matching only a
+ * quoted `'change_log'` meant the gate could not match the very file it exists
+ * to guard (review of #144). Normalizing the alias first is what gives it teeth.
+ */
+export function issuesChangeLogDelete(text: string): boolean {
+  const alias = text.match(/const\s+(\w+)\s*=\s*['"`]change_log['"`]/)
+  const normalized = alias
+    ? text.replace(new RegExp(`\\.from\\(\\s*${alias[1]}\\s*\\)`, 'g'), ".from('change_log')")
+    : text
+  return (
+    // Builder form: .from('change_log') … .delete()
+    /from\(\s*['"`]change_log['"`]\s*\)[\s\S]{0,200}?\.delete\(/.test(normalized) ||
+    // Raw SQL.
+    /delete\s+from\s+(public\.)?change_log/i.test(normalized)
+  )
+}
+
 describe('the log only grows', () => {
   it('exposes no delete verb on the store module', () => {
     const verbs = Object.keys(store)
@@ -457,19 +513,33 @@ describe('the log only grows', () => {
           continue
         }
         if (!/\.(ts|tsx)$/.test(entry)) continue
-        const text = readFileSync(full, 'utf8')
-        // A delete issued against the change-log table, in either the builder
-        // form (.from('change_log')….delete()) or raw SQL.
-        if (/from\(\s*['"`]change_log['"`]\s*\)[\s\S]{0,200}?\.delete\(/.test(text)) {
-          offenders.push(full)
-        }
-        if (/delete\s+from\s+(public\.)?change_log/i.test(text)) {
-          offenders.push(full)
-        }
+        if (issuesChangeLogDelete(readFileSync(full, 'utf8'))) offenders.push(full)
       }
     }
     walk(SRC)
     expect(offenders).toEqual([])
+  })
+
+  it('…and the gate itself fires on a delete written the way the store writes one', () => {
+    // A gate nobody has watched fire is not a gate. These are the three forms a
+    // delete could actually take in this codebase — including the aliased one the
+    // original patterns missed entirely.
+    expect(
+      issuesChangeLogDelete(
+        `const TABLE = 'change_log'\nawait supabase.from(TABLE).delete().eq('id', id)`
+      )
+    ).toBe(true)
+    expect(issuesChangeLogDelete(`await supabase.from('change_log').delete().eq('id', id)`)).toBe(
+      true
+    )
+    expect(issuesChangeLogDelete(`await db.query('delete from public.change_log')`)).toBe(true)
+
+    // …and it does not cry wolf over the store as it actually stands, nor over a
+    // delete aimed at some other table.
+    expect(
+      issuesChangeLogDelete(readFileSync(resolve(__dirname, '../lib/change-log/store.ts'), 'utf8'))
+    ).toBe(false)
+    expect(issuesChangeLogDelete(`await supabase.from('pages').delete().eq('id', id)`)).toBe(false)
   })
 
   it('never writes before/after on an update outside redaction', () => {
