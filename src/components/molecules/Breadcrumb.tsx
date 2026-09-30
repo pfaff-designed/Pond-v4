@@ -41,7 +41,7 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center flex-wrap font-mono text-[11px] tracking-[0.1em] lowercase text-mn-text-faint min-w-0"
+      className="flex items-center flex-wrap font-mono text-mn-11 tracking-wider lowercase text-mn-text-faint min-w-0"
     >
       <button
         onClick={() => onNavigate(null)}

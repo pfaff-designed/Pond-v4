@@ -69,7 +69,7 @@ export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="mt-4">
       <button
-        className="font-mono lowercase tracking-[0.1em] text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
+        className="font-mono lowercase tracking-wider text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
         aria-label="Add a block"
         onClick={onAdd}
       >

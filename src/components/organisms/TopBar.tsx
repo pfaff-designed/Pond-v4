@@ -78,7 +78,7 @@ export function TopBarView({
         aria-label="Command palette (⌘K)"
         onClick={onCommandK}
       >
-        <span className="font-mono lowercase tracking-[0.1em] text-[11px] px-[7px] py-0.5 rounded-mn-hair bg-mn-text/[0.03] text-mn-text-meta">
+        <span className="font-mono lowercase tracking-wider text-mn-11 px-[7px] py-0.5 rounded-mn-hair bg-mn-text/[0.03] text-mn-text-meta">
           ⌘k
         </span>
       </button>

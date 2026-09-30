@@ -63,7 +63,7 @@ export function QuestionCard({
         <span aria-hidden className="h-px flex-1 bg-mn-hair" />
       </div>
 
-      <p className="font-serif text-[0.95rem] leading-[1.5] text-mn-text-meta">{question}</p>
+      <p className="font-serif text-[0.95rem] leading-normal text-mn-text-meta">{question}</p>
 
       {resolved ? (
         // Inert once answered — the branch is closed; keep the audit line.

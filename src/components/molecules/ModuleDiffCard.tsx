@@ -142,7 +142,7 @@ export function ModuleDiffCard({
           Proposed {OP_LABEL[op]} · {type}
         </span>
         {inferred && (
-          <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 font-mono lowercase tracking-[0.1em] text-[10px] text-mn-text">
+          <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 font-mono lowercase tracking-wider text-[10px] text-mn-text">
             inferred
           </span>
         )}

@@ -216,7 +216,7 @@ export function TerminalDrawer({
               MN: the composer is a machine surface, so its chrome speaks the mono
               machine voice (lowercase, tracking-wider) — not the correspondence
               serif. The context VALUE stays as-is (it's a page/area name). */}
-          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-[0.1em] text-[11px] text-mn-text-secondary">
+          <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-wider text-mn-11 text-mn-text-secondary">
             <button
               type="button"
               onClick={onToggleCollapsed}

@@ -166,11 +166,11 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
       return [
         'font-bold uppercase tracking-[-0.01em] leading-none',
         mobile ? 'text-[30px]' : 'text-[38px]',
-        level === 2 && cn('leading-[1.1]', mobile ? 'text-[20px]' : 'text-[22px]'),
-        level === 3 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-[18px]'),
-        level === 4 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-[16px]'),
+        level === 2 && cn('leading-tight', mobile ? 'text-[20px]' : 'text-mn-22'),
+        level === 3 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-mn-18'),
+        level === 4 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-mn-16'),
         level === 5 && 'normal-case font-medium tracking-normal leading-[1.4] text-[13.5px]',
-        level === 6 && 'font-medium tracking-wider leading-[1.4] text-[11px]',
+        level === 6 && 'font-medium tracking-wider leading-[1.4] text-mn-11',
       ]
         .filter(Boolean)
         .join(' ')
@@ -186,12 +186,12 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
     case 'quote':
       return cn(
         'font-serif font-extralight italic tracking-[-0.01em]',
-        mobile ? 'text-[18px]' : 'text-[19px]'
+        mobile ? 'text-mn-18' : 'text-[19px]'
       )
     case 'code':
       return cn(
         'font-mono lowercase rounded-mn-chrome bg-mn-text/5 px-1.5 py-0.5 text-mn-text',
-        mobile ? 'text-[13px]' : 'text-[12px]'
+        mobile ? 'text-mn-13' : 'text-[12px]'
       )
     case 'link':
       return cn(
@@ -201,7 +201,7 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
     case 'file':
       return cn(
         'font-mono lowercase tracking-wider text-mn-text-meta',
-        mobile ? 'text-[12px]' : 'text-[11px]'
+        mobile ? 'text-[12px]' : 'text-mn-11'
       )
     default:
       return ''
@@ -348,7 +348,7 @@ export function PondAtom({
           aria-hidden
           className={cn(
             'flex flex-none items-center justify-center rounded-mn-pill font-medium',
-            mobile ? 'size-[26px] text-[11px]' : 'size-5 text-[9px]',
+            mobile ? 'size-[26px] text-mn-11' : 'size-5 text-[9px]',
             INVERSE_INK
           )}
         >

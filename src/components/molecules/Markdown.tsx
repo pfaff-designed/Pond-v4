@@ -59,7 +59,7 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
   reading: {
     ...SHARED_COMPONENTS,
     h1: ({ children }) => (
-      <h1 className="font-display font-extrabold text-3xl leading-[1.1] tracking-[-0.01em] text-foreground mt-6 mb-3 first:mt-0">
+      <h1 className="font-display font-extrabold text-3xl leading-tight tracking-[-0.01em] text-foreground mt-6 mb-3 first:mt-0">
         {children}
       </h1>
     ),

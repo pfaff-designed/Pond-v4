@@ -2158,7 +2158,7 @@ export function AITerminal() {
               }
               // MN: the composer is a machine surface — its Send control speaks the
               // mono machine voice (lowercase, tracking-wider), not the serif kicker.
-              className="self-end pb-2 font-mono lowercase tracking-[0.1em] text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
+              className="self-end pb-2 font-mono lowercase tracking-wider text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
             >
               send
             </button>
