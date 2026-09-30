@@ -3,7 +3,7 @@ import { expect, fn, within } from 'storybook/test'
 import { VoiceInputButton } from './VoiceInputButton'
 
 const meta = {
-  title: 'Atoms/VoiceInputButton',
+  title: 'Molecules/VoiceInputButton',
   component: VoiceInputButton,
   parameters: { layout: 'centered' },
   args: {

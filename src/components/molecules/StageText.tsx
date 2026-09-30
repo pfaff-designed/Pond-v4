@@ -4,7 +4,7 @@
  * StageText (ticket-32) — the whispered progress line under a long generation.
  *
  * While the AI is still working and has streamed no visible answer yet, a bare "…"
- * left the user staring at 25–30s of silence (audit finding 11). This atom shows a
+ * left the user staring at 25–30s of silence (audit finding 11). This molecule shows a
  * single calm stage line derived from the tool-call events already in the stream
  * (see `@/lib/conversation/stage-text` for the part→copy mapping) — "searching the
  * web…", "reading Ceramics Studio Plan…", "drafting your page…".

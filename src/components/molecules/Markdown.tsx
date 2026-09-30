@@ -17,7 +17,7 @@
  *     (the AI authors real markdown with double-newline paragraphs).
  *
  * Element styling is supplied via `components` (Tailwind classes on the mapped tags)
- * rather than a global `.prose` sheet, so the atom is self-contained and testable.
+ * rather than a global `.prose` sheet, so the molecule is self-contained and testable.
  * Memoized: the terminal re-renders the whole transcript on every streamed token,
  * and only the growing message's source should re-parse.
  */

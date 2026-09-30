@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import { ModuleView } from '@/lib/modules/renderers'
 import { stampDisplayIds } from '@/lib/modules/preview'
 import { kickerClass } from '@/components/atoms/kicker'
-import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
+import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import type { NodeType } from '@/lib/supabase/types'
 

@@ -3,7 +3,7 @@
 import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
 import { sumColumn as sumTableColumn, formatTotal } from './sum'
-import { MarkdownInline } from '@/components/atoms/Markdown'
+import { MarkdownInline } from '@/components/molecules/Markdown'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view

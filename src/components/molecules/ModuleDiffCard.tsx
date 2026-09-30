@@ -25,7 +25,7 @@ import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
 import { kickerClass } from '@/components/atoms/kicker'
-import { ProposalActions, type ProposalStatus } from '@/components/atoms/ProposalActions'
+import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 
 export type ChangeOp = 'create' | 'edit' | 'remove'
 
