@@ -32,8 +32,11 @@ export async function proxy(request: NextRequest) {
   // DEV-ONLY auth bypass: auto-login as a fixed dev user so local work skips the
   // magic-link flow. Gated behind DEV_AUTOLOGIN — unset it to restore normal auth.
   // Server-only env (no NEXT_PUBLIC): the dev password never reaches the browser bundle.
+  // Hard-gated on a non-production build too, so a deployed environment that happens
+  // to carry these vars can never auto-login a visitor as the dev user.
   if (
     !user &&
+    process.env.NODE_ENV !== 'production' &&
     process.env.DEV_AUTOLOGIN === '1' &&
     process.env.DEV_EMAIL &&
     process.env.DEV_PASSWORD
