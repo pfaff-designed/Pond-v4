@@ -459,6 +459,71 @@ describe('0011_change_log — the log only grows', () => {
     await db.close()
   })
 
+  it('refuses a status change that does not append its own transition', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    // The audit is only provenance if it cannot disagree with the record. A raw
+    // update could rewind `accepted` back to `proposed` and append nothing, so
+    // the log said one thing and its own history said another — the same forgery
+    // P3 achieved by overwriting an entry, reached from the other side.
+    await expect(
+      db.query(`update public.change_log set status = 'accepted' where id = $1`, [id])
+    ).rejects.toThrow(/transition/)
+
+    expect(await statusOf(db, id)).toBe('proposed')
+    await db.close()
+  })
+
+  it('refuses an appended transition that disagrees with the status it lands on', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    await expect(
+      db.query(
+        `update public.change_log
+         set status = 'withdrawn',
+             transitions = transitions || '[{"status":"accepted","at":"2026-01-01T00:00:00Z","actor":"x"}]'
+         where id = $1`,
+        [id]
+      )
+    ).rejects.toThrow(/transition/)
+    await db.close()
+  })
+
+  it('refuses a transition entry carrying a status that is not one of the eight', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    // The column CHECK constrains `status`; nothing constrained the same value
+    // inside the audit array, so the history could name a status the table
+    // itself would reject.
+    await expect(
+      db.query(
+        `update public.change_log
+         set status = 'rejected',
+             transitions = transitions || '[{"status":"NOT_A_STATUS","at":"2026-01-01T00:00:00Z","actor":"x"}]'
+         where id = $1`,
+        [id]
+      )
+    ).rejects.toThrow(/transition/)
+    await db.close()
+  })
+
+  it('refuses to rewind status_at', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db)
+
+    await expect(
+      db.query(`update public.change_log set status_at = '2000-01-01' where id = $1`, [id])
+    ).rejects.toThrow(/status_at/)
+    await db.close()
+  })
+
   it('permits exactly one content mutation: redacting a deleted memory note to null', async () => {
     const db = await makeDb()
     await seedUser(db, USER)

@@ -242,10 +242,10 @@ export async function getRecord(
  * illegal advance (accepting an outdated record, re-deciding a settled one)
  * throws before any write.
  *
- * Note the read-then-write: `transitions` is appended client-side because
- * PostgREST has no jsonb-concat verb. The DB trigger is the backstop — it
- * refuses any update that SHRINKS the array, so a lost-update race can drop an
- * entry but can never erase history.
+ * The append happens in SQL, not here: `advance_change_log_record` locks the row
+ * and concatenates the entry, under a compare-and-swap on the status this call
+ * believes it is leaving. Appending client-side is what let two concurrent
+ * advances each read one entry, each write two, and the second erase the first.
  */
 export async function advanceStatus(
   supabase: SupabaseClient<Database>,

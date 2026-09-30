@@ -35,6 +35,11 @@
 --     the advance goes through `advance_change_log_record`, which appends in SQL
 --     on a locked row under a compare-and-swap. History is never mutated in
 --     place; a concurrent advance is a loud conflict, not a lost entry.
+--   * The audit must AGREE with the record: a status change appends exactly one
+--     entry naming the status it lands on, a record that did not move gains no
+--     entry, every entry names one of the eight, and `status_at` never rewinds.
+--     Freezing the entries alone still let a raw update rewind the status and
+--     append nothing, so the log said one thing and its own history another.
 --
 -- Per-pond scope is (`user_id`, `workspace`), mirroring 0005 — a record in one
 -- workspace is never visible from the other.
@@ -253,7 +258,50 @@ begin
           'change_log.transitions entry % must be an object carrying a status (id=%)', v_i, old.id
           using errcode = 'restrict_violation';
       end if;
+      -- The column CHECK constrains `status`; nothing constrained the same value
+      -- inside the audit, so the history could name a status the table itself
+      -- would reject.
+      if (new.transitions -> v_i) ->> 'status' not in (
+        'proposed','accepted','rejected','changes_requested',
+        'outdated','withdrawn','undone','reverted'
+      ) then
+        raise exception
+          'change_log.transitions entry % names a status that is not one of the eight (id=%)',
+          v_i, old.id
+          using errcode = 'restrict_violation';
+      end if;
     end loop;
+  end if;
+
+  -- The audit must agree with the record. Freezing the entries was only half of
+  -- it: a raw update could still rewind `accepted` to `proposed` and append
+  -- nothing, leaving the log saying one thing and its own history another — P3's
+  -- forgery reached from the other side. So a status change appends exactly one
+  -- entry, naming the status it lands on; and a record that did not move gains
+  -- no entry.
+  if new.status is distinct from old.status then
+    if jsonb_array_length(new.transitions) <> jsonb_array_length(old.transitions) + 1 then
+      raise exception
+        'change_log: a status change must append exactly one transition (id=%)', old.id
+        using errcode = 'restrict_violation';
+    end if;
+    if (new.transitions -> -1) ->> 'status' is distinct from new.status then
+      raise exception
+        'change_log: the appended transition must name the status it lands on (id=%, status=%)',
+        old.id, new.status
+        using errcode = 'restrict_violation';
+    end if;
+  elsif new.transitions is distinct from old.transitions then
+    raise exception
+      'change_log: a transition without a status change is not an advance (id=%)', old.id
+      using errcode = 'restrict_violation';
+  end if;
+
+  -- `status_at` records when the record last moved; moving it backwards would
+  -- misdate the advance the audit just recorded.
+  if new.status_at < old.status_at then
+    raise exception 'change_log: status_at may not be rewound (id=%)', old.id
+      using errcode = 'restrict_violation';
   end if;
 
   return new;
@@ -322,10 +370,13 @@ create policy "change_log: advance own rows" on public.change_log
 -- the caller states the status it believes it is advancing FROM, and a record
 -- that moved underneath it raises instead of clobbering.
 --
--- LEGALITY of a transition is NOT decided here — `src/lib/change-log/status.ts`
--- owns the state machine (spec #110 §3 puts it in the write layer), and
--- duplicating the table in SQL would only let the two drift. This function owns
--- atomicity; the store owns what may follow what.
+-- The TRANSITION TABLE is not duplicated here — `src/lib/change-log/status.ts`
+-- owns which status may follow which (spec #110 §3 puts the state machine in the
+-- write layer), and a second copy in SQL would only let the two drift. This
+-- function owns atomicity and the compare-and-swap. (`accept_change_log_record`
+-- does hard-code one edge, `proposed → accepted`, because accepting is the one
+-- advance that must commit a page write in the same transaction and so cannot
+-- take the caller's word for the starting status.)
 
 create or replace function public.advance_change_log_record(
   p_record_id uuid,

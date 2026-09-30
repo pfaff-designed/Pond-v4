@@ -272,7 +272,7 @@ export async function POST(req: Request) {
       await recordProposedToolCalls(supabase, {
         userId: user.id,
         workspace,
-        openNodeId: nodeId ?? null,
+        openPageId: nodeId ?? null,
         toolCalls: toolCalls.map((c) => ({
           toolCallId: c.toolCallId,
           toolName: c.toolName as string,

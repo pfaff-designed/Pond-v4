@@ -11,12 +11,23 @@
  * calls "propose time" — before the person has decided anything. That also means
  * a proposal is recorded even if the browser never renders the card.
  *
- * WHAT IS RECORDED. `before` is the target page exactly as it stood when the
- * proposal was made; `after` is what that page WOULD read if the batch were
- * accepted, computed with the same `applyProposedChanges` the accept path uses.
- * Storing the tool arguments instead would persist an instruction, not a diff,
- * and #110 asks for snapshots that the registry facets can re-render on a record
+ * WHAT IS RECORDED, AND WHERE THE LINE CURRENTLY IS.
+ *
+ * For `propose_changes` — the one criterion 2 names, and the only tool that
+ * edits content blocks — `before` is the target page exactly as it stood when
+ * the proposal was made, and `after` is what that page WOULD read if the batch
+ * were accepted, computed with the same `applyProposedChanges` the accept path
+ * uses. That is a genuine diff: the registry facets can re-render it on a record
  * page long after the call is gone.
+ *
+ * For the other six proposal tools this records the CALL, not a snapshot:
+ * `after` is the tool's arguments and `before` is null. For `create_page` that
+ * is already right (a create has no before). For `define_schema`, `add_row`,
+ * `promote_table`, `configure_view` and `link_records` it is HONESTLY PARTIAL —
+ * their before/after live in the page's property schema and rows, not its
+ * blocks, and snapshotting those is the downstream diff-flow work #110's
+ * Delivered-by table assigns beyond this issue. Until then, a record page for
+ * one of those six can show what was asked for but not what it would replace.
  *
  * The ids minted for CREATED blocks here are provisional: the client mints its
  * own on accept, so a created block's id in `after` need not be the id that
@@ -57,7 +68,7 @@ export interface RecordProposalsInput {
   userId: string
   workspace: WorkspaceScope
   /** The page the person has open — the default target of a block proposal. */
-  openNodeId: string | null
+  openPageId: string | null
   /** The conversation the proposal came from, when the caller knows it. */
   sourceThreadId?: string | null
   toolCalls: ProposalToolCall[]
@@ -68,7 +79,7 @@ function asRecord(input: unknown): Record<string, unknown> {
 }
 
 /** The page a call applies to: the one it named, else the one that is open. */
-function targetPageOf(toolName: string, input: unknown, openNodeId: string | null): string | null {
+function targetPageOf(toolName: string, input: unknown, openPageId: string | null): string | null {
   const args = asRecord(input)
   // propose_changes names a cross-page target as `targetPageId` (ticket-30); the
   // collection tools name theirs `pageId`. A create has no target page yet.
@@ -77,7 +88,7 @@ function targetPageOf(toolName: string, input: unknown, openNodeId: string | nul
     const v = args[key]
     if (typeof v === 'string' && v.length > 0) return v
   }
-  return openNodeId
+  return openPageId
 }
 
 /** The target page's blocks as they stand right now, or null if unreadable. */
@@ -102,7 +113,7 @@ export async function recordProposedToolCalls(
   supabase: SupabaseClient<Database>,
   input: RecordProposalsInput
 ): Promise<number> {
-  const { userId, workspace, openNodeId, sourceThreadId = null, toolCalls } = input
+  const { userId, workspace, openPageId, sourceThreadId = null, toolCalls } = input
   let written = 0
 
   for (const call of toolCalls) {
@@ -110,7 +121,7 @@ export async function recordProposedToolCalls(
     if (!action) continue
 
     try {
-      const targetPageId = targetPageOf(call.toolName, call.input, openNodeId)
+      const targetPageId = targetPageOf(call.toolName, call.input, openPageId)
       let before: unknown = null
       let after: unknown = asRecord(call.input)
 

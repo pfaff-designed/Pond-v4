@@ -76,7 +76,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'main',
-      openNodeId: PAGE,
+      openPageId: PAGE,
       toolCalls: [proposeChangesCall()],
     })
 
@@ -106,7 +106,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'main',
-      openNodeId: 'the-open-page',
+      openPageId: 'the-open-page',
       toolCalls: [
         proposeChangesCall({
           targetPageId: 'another-page',
@@ -124,7 +124,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'sandbox',
-      openNodeId: PAGE,
+      openPageId: PAGE,
       toolCalls: [proposeChangesCall()],
     })
 
@@ -137,7 +137,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'main',
-      openNodeId: PAGE,
+      openPageId: PAGE,
       toolCalls: [
         { toolCallId: 'c1', toolName: 'create_page', input: { title: 'New' } },
         { toolCallId: 'c2', toolName: 'define_schema', input: { pageId: PAGE, properties: [] } },
@@ -163,7 +163,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'main',
-      openNodeId: PAGE,
+      openPageId: PAGE,
       toolCalls: [
         { toolCallId: 'r1', toolName: 'read_page', input: { pageId: PAGE } },
         { toolCallId: 'r2', toolName: 'fetch_context', input: { query: 'sleep' } },
@@ -183,7 +183,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
       workspace: 'main',
-      openNodeId: null,
+      openPageId: null,
       toolCalls: [proposeChangesCall()],
     })
 
@@ -205,7 +205,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
       recordProposedToolCalls(supabase, {
         userId: USER,
         workspace: 'main',
-        openNodeId: PAGE,
+        openPageId: PAGE,
         toolCalls: [proposeChangesCall()],
       })
     ).resolves.toBe(0)
