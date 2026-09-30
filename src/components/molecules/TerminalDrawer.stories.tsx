@@ -147,7 +147,7 @@ export const ColumnConfined: Story = {
     await expect(section).not.toHaveClass('border-t')
     // The chat is ONE rounded panel within the column, now fully transparent:
     // no fill, border, or shadow — the page shows straight through.
-    const card = section.querySelector('.rounded-2xl')
+    const card = section.querySelector('.rounded-mn-card')
     await expect(card).toBeTruthy()
     await expect(card).not.toHaveClass('bg-card')
     await expect(card).not.toHaveClass('border')

@@ -75,7 +75,7 @@ export const NoResults: Story = {
     const canvas = within(canvasElement)
     const input = canvas.getByLabelText('Search pages or actions')
     await userEvent.type(input, 'zzzzz')
-    await expect(canvas.getByText('No results')).toBeInTheDocument()
+    await expect(canvas.getByText('no results')).toBeInTheDocument()
   },
 }
 

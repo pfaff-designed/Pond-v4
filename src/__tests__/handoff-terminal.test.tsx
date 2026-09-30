@@ -72,9 +72,9 @@ describe('AITerminal /handoff command', () => {
   it('runs performHandoff with the current transcript and clears the terminal', async () => {
     wrap(<AITerminal />)
 
-    await waitFor(() => screen.getByPlaceholderText(/talk to pond/i))
+    await waitFor(() => screen.getByPlaceholderText(/reply, or ask something else/i))
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/reply, or ask something else/i)
     fireEvent.change(textarea, { target: { value: '/handoff' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
@@ -98,9 +98,9 @@ describe('AITerminal /handoff command', () => {
 
   it('does not send /handoff as a chat message', async () => {
     wrap(<AITerminal />)
-    await waitFor(() => screen.getByPlaceholderText(/talk to pond/i))
+    await waitFor(() => screen.getByPlaceholderText(/reply, or ask something else/i))
 
-    const textarea = screen.getByPlaceholderText(/talk to pond/i)
+    const textarea = screen.getByPlaceholderText(/reply, or ask something else/i)
     fireEvent.change(textarea, { target: { value: '/handoff' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
