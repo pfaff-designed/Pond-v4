@@ -29,7 +29,7 @@
  * throws — the convention `use-backlinks` and `DocumentPanel` already follow.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -75,7 +75,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const rows = useMemo(() => buildPageChanges(records), [records])
 
   /** Everything a write needs, or null when there is no session / no page. */
-  const context = useCallback(async () => {
+  const loadWriteContext = useCallback(async () => {
     if (pageId === undefined) return null
     const supabase = getSupabase()
     const {
@@ -125,7 +125,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const onRevert = useCallback(
     (recordId: string) =>
       void run(recordId, async () => {
-        const ctx = await context()
+        const ctx = await loadWriteContext()
         if (!ctx) return
         const record = records.find((r) => r.id === recordId)
         if (!record) return
@@ -136,13 +136,13 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
           current: ctx.page.blocks,
         })
       }),
-    [run, context, records, workspace]
+    [run, loadWriteContext, records, workspace]
   )
 
   const onAccept = useCallback(
     (recordId: string) =>
       void run(recordId, async () => {
-        const ctx = await context()
+        const ctx = await loadWriteContext()
         if (!ctx) return
         const revert = records.find((r) => r.id === recordId)
         if (!revert) return
@@ -168,18 +168,18 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         }
         await refreshPage()
       }),
-    [run, context, records, workspace, refreshPage]
+    [run, loadWriteContext, records, workspace, refreshPage]
   )
 
   const onReject = useCallback(
     (recordId: string) =>
       void run(recordId, async () => {
-        const ctx = await context()
+        const ctx = await loadWriteContext()
         if (!ctx) return
         // A rejected revert leaves the original `accepted` — nothing was taken back.
         await advanceStatus(ctx.supabase, recordId, 'rejected')
       }),
-    [run, context]
+    [run, loadWriteContext]
   )
 
   return (
@@ -194,4 +194,53 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
       className={className}
     />
   )
+}
+
+/**
+ * The panel's open state, its ⌥⌘H shortcut, and the floating surface it renders.
+ *
+ * Lives here rather than in `DocumentPanel` so the editor does not gain a third
+ * reason to change — the design's frame 8 makes this one feature (a view of the
+ * log, a shortcut, and a way in), and it belongs in one place.
+ *
+ * The open state is the PAGE the panel is open for, not a boolean, so navigating
+ * away closes it by derivation. Holding a boolean and clearing it in an effect on
+ * `pageId` is the same behaviour one render later — and one cascading render that
+ * `react-hooks/set-state-in-effect` rightly rejects.
+ */
+export function usePageChangesPanel(pageId: string | null) {
+  const [openFor, setOpenFor] = useState<string | null>(null)
+  const open = openFor !== null && openFor === pageId
+
+  const toggle = useCallback(() => {
+    setOpenFor((current) => (current === pageId ? null : pageId))
+  }, [pageId])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // `e.code`, not `e.key`: on macOS Option+H emits '˙', so a key check would
+      // never match.
+      if (e.altKey && e.metaKey && e.code === 'KeyH') {
+        e.preventDefault()
+        setOpenFor((current) => (current === pageId ? null : pageId))
+        return
+      }
+      if (e.key === 'Escape') setOpenFor(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pageId])
+
+  // Paper, not frames (AGENTS.md): it floats over the canvas on shadow alone.
+  const overlay =
+    open && pageId !== null ? (
+      <aside
+        className="fixed right-6 top-6 bottom-6 z-40 w-[320px] overflow-y-auto rounded-mn-card bg-mn-surface p-4 shadow-mn-lg"
+        aria-label="Changes to this page"
+      >
+        <PageChangesPanel pageId={pageId} />
+      </aside>
+    ) : null
+
+  return { open, toggle, overlay }
 }

@@ -30,6 +30,8 @@ interface ProposalActionsProps {
   labels?: { accept?: string; edit?: string; reject?: string }
   /** Card-footer divider + padding. False when the container supplies its own. */
   divider?: boolean
+  /** Quieten the controls while the decision's write is in flight (#103). */
+  disabled?: boolean
   className?: string
 }
 
@@ -40,6 +42,7 @@ export function ProposalActions({
   onEdit,
   labels,
   divider = true,
+  disabled = false,
   className,
 }: ProposalActionsProps) {
   if (status !== 'pending') {
@@ -66,15 +69,15 @@ export function ProposalActions({
         className
       )}
     >
-      <Button size="xs" variant="default" onClick={onAccept}>
+      <Button size="xs" variant="default" disabled={disabled} onClick={onAccept}>
         {labels?.accept ?? 'Accept'}
       </Button>
       {onEdit && (
-        <Button size="xs" variant="outline" onClick={onEdit}>
+        <Button size="xs" variant="outline" disabled={disabled} onClick={onEdit}>
           {labels?.edit ?? 'Edit'}
         </Button>
       )}
-      <Button size="xs" variant="ghost" onClick={onReject}>
+      <Button size="xs" variant="ghost" disabled={disabled} onClick={onReject}>
         {labels?.reject ?? 'Reject'}
       </Button>
     </div>

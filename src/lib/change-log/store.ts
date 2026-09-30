@@ -506,6 +506,35 @@ export async function countProposed(
 }
 
 /**
+ * The records that propose reverting `recordId` — the design's `reverted by`
+ * field, and the guard against raising a second revert of the same change while
+ * one is still waiting (#103).
+ *
+ * Queried through `links->>revert_of` because the backlink is DERIVED: 0011
+ * freezes `links` at insert, so the original never gains a pointer to its revert.
+ * Sits beside {@link listRevisionsOf} — both walk the link chain, and every
+ * `change_log` query belongs in this module.
+ */
+export async function listRevertsOf(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; workspace?: WorkspaceScope; recordId: string }
+): Promise<ChangeLogRecord[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq('user_id', opts.userId)
+    .eq('workspace', opts.workspace ?? 'main')
+    .eq('links->>revert_of', opts.recordId)
+    .order('created_at', { ascending: false })
+  // A failed query read as "no reverts yet" would let a second revert be raised
+  // over one already waiting, and would blank the `reverted by` field without
+  // saying why. Same reasoning as the sweep and `getRecordByToolCall`.
+  if (error) throw error
+  return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
+}
+
+/**
  * Walk a record's revision chain forward — original → revision → revision …
  * following `links.revisedFrom` in the other direction. The record page shows
  * these "as linked records, in order".

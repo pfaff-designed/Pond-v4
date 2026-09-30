@@ -59,8 +59,9 @@ describe('buildPageChanges', () => {
 
     expect(originalRow.revertable).toBe(false)
     expect(originalRow.revertBlockedBy).toBe('waiting')
-    // Derived, not stored — the original carries no link to its revert.
-    expect(originalRow.revertedBy.map((r) => r.id)).toEqual(['rev-1'])
+    // Derived, not stored — the original carries no link to its revert. The
+    // backlink itself is the record page's to render (#147); this panel only
+    // needs to know that one is waiting.
     expect(originalRow.record.links).toEqual({})
   })
 
@@ -72,7 +73,7 @@ describe('buildPageChanges', () => {
     const originalRow = rows.find((r) => r.record.id === 'rec-1')!
 
     expect(originalRow.revertable).toBe(true)
-    expect(originalRow.revertedBy).toHaveLength(1)
+    expect(originalRow.revertBlockedBy).toBeNull()
   })
 
   it('offers no revert on a record that is not an accepted edit', () => {

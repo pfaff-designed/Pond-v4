@@ -19,6 +19,7 @@
  */
 
 import { Button } from '@/components/ui/button'
+import { ProposalActions } from '@/components/molecules/ProposalActions'
 import { kickerClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import type { PageChangeRow } from '@/lib/change-log/page-changes'
@@ -107,6 +108,7 @@ export function PageChangesSection({
         {rows.map(({ record, label, revertable, revertBlockedBy }) => {
           const busy = busyId === record.id
           const answerable = record.action === 'revert' && record.status === 'proposed'
+          const outdated = record.action === 'revert' && record.status === 'outdated'
           return (
             <li key={record.id} className="flex items-center gap-3 py-2">
               <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
@@ -119,23 +121,27 @@ export function PageChangesSection({
               <Status status={record.status} />
 
               {answerable && (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <Button
-                    size="xs"
-                    variant="default"
-                    disabled={busy}
-                    onClick={() => onAccept(record.id)}
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => onReject(record.id)}
-                  >
-                    Reject
-                  </Button>
+                // The same control row every other proposal uses. It was extracted
+                // from ModuleDiffCard precisely so a second accept/reject pair
+                // could not diverge from the first; `divider={false}` because this
+                // row supplies its own chrome.
+                <ProposalActions
+                  status="pending"
+                  divider={false}
+                  disabled={busy}
+                  className="shrink-0"
+                  onAccept={() => onAccept(record.id)}
+                  onReject={() => onReject(record.id)}
+                />
+              )}
+
+              {outdated && (
+                // Criterion 5 withdraws accept from an outdated diff and offers
+                // revise. There is no revise verb on this surface yet, so say what
+                // the person can actually do: the change it reverts offers Revert
+                // again, and that re-plans against the page as it now stands.
+                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
+                  out of date — revert it again
                 </span>
               )}
 

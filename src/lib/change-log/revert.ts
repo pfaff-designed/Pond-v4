@@ -15,43 +15,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
-import { advanceStatus, appendRecord, mapChangeLogRow, markOutdated } from './store'
+import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
 import { planRevert, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
 
 // ── Store calls ──────────────────────────────────────────────────────────────
-
-const TABLE = 'change_log'
-
-const COLUMNS =
-  'id, user_id, workspace, status, action, actor, target_page_id, target_block_id, before, after, source_thread_id, tool_call_id, read, links, transitions, created_at, status_at'
-
-/**
- * The records that propose reverting `recordId` — the "reverted by" field of the
- * design's record page, and the guard against raising a second revert of the same
- * change while one is still waiting.
- *
- * Queried through `links->>revert_of` because the backlink is derived: 0011 freezes
- * `links` at insert, so the original never gains a pointer to its revert.
- */
-export async function listRevertsOf(
-  supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; recordId: string }
-): Promise<ChangeLogRecord[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
-    .eq('links->>revert_of', opts.recordId)
-    .order('created_at', { ascending: false })
-  // A failed query read as "no reverts yet" would let the caller raise a second
-  // revert of a change that already has one waiting, and would blank the record
-  // page's `reverted by` field without saying why.
-  if (error) throw error
-  return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
-}
 
 export interface ProposeRevertInput {
   userId: string
@@ -98,13 +66,23 @@ export async function proposeRevert(
     workspace,
     status: plan.status,
     action: 'revert',
-    // The person asked for it, so it is theirs — unlike a proposal, which is Pond's.
+    // `you` on a `proposed` record, which nothing else in the log produces. It is
+    // right: the person RAISES a revert, and "revert goes through accept like any
+    // change" — the storyboard draws accept/reject on it. #110 criterion 7's
+    // "own edits land accepted" is about typing on a page, not about proposing.
     actor: ACTOR_YOU,
     targetPageId: record.targetPageId,
     targetBlockId: record.targetBlockId,
-    before: current,
-    after: plan.blocks,
-    sourceThreadId: record.sourceThreadId,
+    // The blocks this sets back, not a whole-page array — see `RevertPlan`. The
+    // page write is computed again at accept time against the page as it then
+    // stands; only this diff is frozen, and it stays true.
+    before: plan.diffBefore,
+    after: plan.diffAfter,
+    // NOT the original's thread. A revert raised by clicking a button did not come
+    // from the conversation that produced the change it takes back, and #110 calls
+    // this "the transcript ↔ log link". Claiming one would be a false provenance
+    // chip on #147's record page, which is exactly what its blocker 1 says to avoid.
+    sourceThreadId: null,
     links: { revertOf: record.id },
   })
 }
@@ -165,6 +143,9 @@ export async function acceptRevert(
     return { kind: 'outdated', revert: advanced }
   }
 
+  // `plan.blocks` is the whole page, recomputed now — deliberately NOT the record's
+  // `after`, which is the block-scoped diff this revert describes. The record says
+  // which blocks go back; this says what the page therefore holds.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('accept_revert_record', {
     p_record_id: revert.id,

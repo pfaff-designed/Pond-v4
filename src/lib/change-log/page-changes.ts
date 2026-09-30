@@ -26,12 +26,6 @@ export interface PageChangeRow {
   revertable: boolean
   /** Why not, when `revertable` is false and the reason is worth saying. */
   revertBlockedBy: 'waiting' | null
-  /**
-   * The reverts aimed at this record, newest first — the design's `reverted by`
-   * field. Derived from `links.revertOf`, because 0011 freezes `links` at insert
-   * and the original never gains a pointer back.
-   */
-  revertedBy: ChangeLogRecord[]
   /** When this row IS a revert: the record it sets back, if it is on this page. */
   reverts: ChangeLogRecord | null
 }
@@ -54,11 +48,11 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
     case 'create_page':
       return 'created this page'
     case 'define_schema':
-      return 'set up the properties'
+      return 'set up the fields'
     case 'add_row':
       return 'added a row'
     case 'promote_table':
-      return 'turned a table into a collection'
+      return 'turned a table into a database'
     case 'configure_view':
       return 'configured a view'
     case 'link_records':
@@ -74,6 +68,10 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
     case 'redo':
       return 'redo'
     default:
+      // Reachable, despite the union looking exhaustive: 0011 gives `action` NO
+      // CHECK on purpose — "a new tool can be logged without a migration" — and
+      // `mapChangeLogRow` casts the column to `ChangeLogAction`. A record written
+      // by a later build lands here, and showing its raw action beats a blank row.
       return record.action
   }
 }
@@ -99,16 +97,18 @@ export function buildPageChanges(records: ChangeLogRecord[]): PageChangeRow[] {
   }
 
   return records.map((record) => {
-    const revertedBy = revertsOf.get(record.id) ?? []
-    const waiting = revertedBy.some((r) => r.status === 'proposed')
+    // The `reverted by` backlink is computed but not exposed: this panel says only
+    // whether a revert is already waiting. Rendering the linked record itself is
+    // the record page's job (#147), which queries `listRevertsOf` for it.
+    const waiting = (revertsOf.get(record.id) ?? []).some((r) => r.status === 'proposed')
     const revertable = canRevertRecord(record) && !waiting
+    const reverts = byId.get(record.links.revertOf ?? '') ?? null
     return {
       record,
-      label: describeChange(record, byId.get(record.links.revertOf ?? '') ?? null),
+      label: describeChange(record, reverts),
       revertable,
       revertBlockedBy: !revertable && waiting ? 'waiting' : null,
-      revertedBy,
-      reverts: byId.get(record.links.revertOf ?? '') ?? null,
+      reverts,
     }
   })
 }

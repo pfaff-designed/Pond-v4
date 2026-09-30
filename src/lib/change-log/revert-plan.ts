@@ -7,6 +7,14 @@
  * accepted record can be reverted. If the block has moved on, the revert arrives
  * outdated and Pond offers a revision."
  *
+ * HONEST LIMIT ON THAT LAST CLAUSE. The arriving-outdated half is built; the
+ * "offers a revision" half is NOT. There is no revise verb on any surface yet —
+ * `reviseRecord` exists in `store.ts` with no caller — so an outdated revert is
+ * answered by reverting the original again, which re-plans against the page as it
+ * then stands. #110's Delivered-by table routes criterion 5 to #102 "+ downstream
+ * diff-flow work", not here; the panel says what to do instead of implying a
+ * button that is not there.
+ *
  * WHEN THE ORIGINAL BECOMES `reverted`. Not at propose time. Frame 4's record page
  * is a field grid whose two rows are `status → accepted by you · 09:31` and
  * `reverted by → revert · 10:02 [proposed]`. `reverted by` is a FIELD LABEL, not a
@@ -173,6 +181,21 @@ export function touchedBlockIds(before: Block[], after: Block[]): string[] {
 export interface RevertPlan {
   /** What the page would hold if this revert were accepted. */
   blocks: Block[]
+  /**
+   * The revert's own diff: just the blocks it touches, as they stand now and as
+   * they would read after.
+   *
+   * These, NOT {@link blocks}, are what the record stores. A whole-page array
+   * frozen at propose time would describe a page that never existed by the time
+   * the revert is accepted — accept RE-PLANS against the page as it then stands
+   * (so unrelated edits made in between survive), and `after` is frozen by 0011's
+   * append-only trigger, so the record could never be corrected. Spec #110 §1
+   * allows "Block/page/record shape", and the storyboard's revert card is two
+   * diff-lines — one removal, one addition — not a page snapshot. Block-scoped is
+   * both the honest record and the one the design draws.
+   */
+  diffBefore: Block[]
+  diffAfter: Block[]
   /** The blocks the original record changed — what this revert sets back. */
   touchedIds: string[]
   /** True when any touched block no longer matches the original's `after`. */
@@ -286,5 +309,34 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
     blocks.splice(at, 0, block)
   }
 
-  return { blocks, touchedIds, movedOn, status: movedOn ? 'outdated' : 'proposed' }
+  // The record's own diff, in `before`-order then any created blocks, so two runs
+  // over the same inputs produce the same record.
+  const diffBefore: Block[] = []
+  const diffAfter: Block[] = []
+  for (const id of touchedIds) {
+    const restored = beforeById.get(id)
+    if (restored === undefined) {
+      // The original CREATED this block, so the revert removes it: it appears in
+      // the diff's before (under the id it actually landed as) and not in its after.
+      const landedId = createdNow.get(id)
+      const landed =
+        landedId === null || landedId === undefined ? undefined : currentById.get(landedId)
+      if (landed !== undefined) diffBefore.push(landed)
+      continue
+    }
+    // An update, or a delete the revert brings back. Absent from the page today
+    // means there is no "before" line to draw — only the restoration.
+    const onPage = currentById.get(id)
+    if (onPage !== undefined) diffBefore.push(onPage)
+    diffAfter.push(restored)
+  }
+
+  return {
+    blocks,
+    diffBefore,
+    diffAfter,
+    touchedIds,
+    movedOn,
+    status: movedOn ? 'outdated' : 'proposed',
+  }
 }

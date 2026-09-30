@@ -26,7 +26,8 @@ jest.mock('@/lib/change-log/store', () => ({
 
 import type { Block } from '@/lib/documents/types'
 import { appendRecord, advanceStatus, markOutdated } from '@/lib/change-log/store'
-import { acceptRevert, listRevertsOf, proposeRevert } from '@/lib/change-log/revert'
+import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
+import { listRevertsOf } from '@/lib/change-log/store'
 import {
   canRevertRecord,
   jsonEqual,
@@ -380,12 +381,52 @@ describe('proposeRevert', () => {
         actor: 'you',
         targetPageId: PAGE,
         links: { revertOf: 'rec-1' },
-        before: [text('a', 'one'), text('b', 'TWO')],
-        after: [text('a', 'one'), text('b', 'two')],
+        // The blocks this sets back — NOT a whole-page array. `a` is untouched by
+        // the original, so it is no part of the revert's diff.
+        before: [text('b', 'TWO')],
+        after: [text('b', 'two')],
+        // A button-click revert did not come from the original's thread.
+        sourceThreadId: null,
       })
     )
     // "Revert doesn't rewrite history."
     expect(mockedAdvance).not.toHaveBeenCalled()
+  })
+
+  it('records a diff that stays true after an unrelated edit lands', async () => {
+    // The defect this replaced: `after` was the whole page frozen at propose time,
+    // while accept re-plans and commits a different array. The record permanently
+    // claimed a page state that never existed — and 0011 freezes `after`, so it
+    // could never be corrected. Block-scoped, it stays true however the rest of
+    // the page moves.
+    const supabase = fakeSupabase({ data: [], error: null })
+    mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
+
+    await proposeRevert(supabase, {
+      userId: USER,
+      record: record(),
+      current: [text('a', 'one'), text('b', 'TWO'), text('z', 'unrelated, added since')],
+    })
+
+    const input = mockedAppend.mock.calls[0][1]
+    expect(input.before).toEqual([text('b', 'TWO')])
+    expect(input.after).toEqual([text('b', 'two')])
+  })
+
+  it('records a created block as a removal — before only, no after', async () => {
+    const supabase = fakeSupabase({ data: [], error: null })
+    mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
+
+    await proposeRevert(supabase, {
+      userId: USER,
+      record: record({ before: [], after: [text('provisional', 'from pond')] }),
+      current: [text('minted', 'from pond')],
+    })
+
+    const input = mockedAppend.mock.calls[0][1]
+    // Under the id it actually landed as, which is the whole point.
+    expect(input.before).toEqual([text('minted', 'from pond')])
+    expect(input.after).toEqual([])
   })
 
   it('is born outdated when the block has already moved on', async () => {
