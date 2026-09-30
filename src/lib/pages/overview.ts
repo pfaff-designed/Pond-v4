@@ -8,12 +8,19 @@
  *   • the LIFE overview (nodeId = null): a card per top-level page, focal
  *     numeral = every content page across the workspace
  *
- * ── The one counting rule (ticket-25) ────────────────────────────────────────
- * A *content page* is any node whose `type !== 'area'`. Areas are the shell —
- * the rail renders `type='area'` as a collapsible folder; they organise content
- * but aren't themselves "a page across your life", so every count here excludes
- * areas. `subtree` counts (recency, presence checks) still walk the whole tree;
- * only the *headline numbers* the user reads are content-page counts.
+ * ── The one counting rule (ticket-25, redefined by #108) ─────────────────────
+ * A *content page* is a LEAF — a page with no children. There is no
+ * `type = 'area'` any more: the design settles it ("an area is a page with pages
+ * inside it; it has no technical meaning"), so container-ness is computed from
+ * the tree, not read off a tag. A page with children is organising the pond, so
+ * it isn't itself "a page across your life" and no headline number counts it;
+ * every leaf below it is. `subtree` counts (recency, presence checks) still walk
+ * the whole tree; only the *headline numbers* the user reads are leaf counts.
+ *
+ * Consequence worth knowing: a brand-new empty page — including an empty
+ * top-level one the person means as an area — reads as content until it gains a
+ * child, at which point it becomes a container. That is the design's own sense of
+ * the words, and it is why the numbers move as a pond fills out.
  *
  * Where direct children and deeper descendants differ, the caption says so
  * explicitly ("2 pages · 1 nested") rather than collapsing to one ambiguous
@@ -61,9 +68,21 @@ export function timeAgo(iso: string, now: Date): string {
   return `${Math.floor(days / 30)}mo ago`
 }
 
-/** Is this node a content page (not an organising area folder)? */
-function isContent(row: PageRow): boolean {
-  return row.type !== 'area'
+/**
+ * The ids of every page that holds at least one child — the containers (#108).
+ * Computed once per call at the public entry points and threaded down, so the
+ * counting helpers stay a single pass over the flat rows instead of re-scanning
+ * for every node.
+ */
+function containerIds(rows: PageRow[]): ReadonlySet<string> {
+  const out = new Set<string>()
+  for (const r of rows) if (r.parent_id) out.add(r.parent_id)
+  return out
+}
+
+/** Is this node a content page — i.e. a leaf, not an organising container? */
+function isContent(row: PageRow, containers: ReadonlySet<string>): boolean {
+  return !containers.has(row.id)
 }
 
 function childrenOf(rows: PageRow[], parentId: string | null): PageRow[] {
@@ -73,25 +92,30 @@ function childrenOf(rows: PageRow[], parentId: string | null): PageRow[] {
 }
 
 /**
- * Count content pages (non-areas) in a node's subtree, excluding the node
- * itself. Areas nested inside still get walked — their own content descendants
- * are counted — but the area rows themselves are never tallied.
+ * Count content pages (leaves) in a node's subtree, excluding the node itself.
+ * Containers nested inside still get walked — their own leaves are counted — but
+ * the container rows themselves are never tallied.
  */
-function contentDescendants(rows: PageRow[], id: string): number {
+function contentDescendants(rows: PageRow[], id: string, containers: ReadonlySet<string>): number {
   return childrenOf(rows, id).reduce(
-    (sum, c) => sum + (isContent(c) ? 1 : 0) + contentDescendants(rows, c.id),
+    (sum, c) =>
+      sum + (isContent(c, containers) ? 1 : 0) + contentDescendants(rows, c.id, containers),
     0
   )
 }
 
-/** Direct content children (non-areas) of a node. */
-function directContentChildren(rows: PageRow[], id: string): number {
-  return childrenOf(rows, id).filter(isContent).length
+/** Direct content children (leaves) of a node. */
+function directContentChildren(
+  rows: PageRow[],
+  id: string,
+  containers: ReadonlySet<string>
+): number {
+  return childrenOf(rows, id).filter((c) => isContent(c, containers)).length
 }
 
-/** Every content page across the whole workspace. */
-function totalContentPages(rows: PageRow[]): number {
-  return rows.filter(isContent).length
+/** Every content page (leaf) across the whole workspace. */
+function totalContentPages(rows: PageRow[], containers: ReadonlySet<string>): number {
+  return rows.filter((r) => isContent(r, containers)).length
 }
 
 /** Most recent updated_at across a page's subtree (its own included). */
@@ -123,9 +147,15 @@ export function insideLabel(direct: number, total: number): string {
   return `${total} ${pagesWord(total)} inside`
 }
 
-function toCard(rows: PageRow[], row: PageRow, parentById: Map<string, string | null>, now: Date) {
-  const direct = directContentChildren(rows, row.id)
-  const total = contentDescendants(rows, row.id)
+function toCard(
+  rows: PageRow[],
+  row: PageRow,
+  parentById: Map<string, string | null>,
+  containers: ReadonlySet<string>,
+  now: Date
+) {
+  const direct = directContentChildren(rows, row.id, containers)
+  const total = contentDescendants(rows, row.id, containers)
   const latest = subtreeLatest(rows, row.id)
   const ago = latest ? timeAgo(latest, now) : ''
   return {
@@ -145,7 +175,8 @@ function toCard(rows: PageRow[], row: PageRow, parentById: Map<string, string | 
  */
 export function childCards(rows: PageRow[], parentId: string, now: Date): OverviewCardModel[] {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
-  return childrenOf(rows, parentId).map((c) => toCard(rows, c, parentById, now))
+  const containers = containerIds(rows)
+  return childrenOf(rows, parentId).map((c) => toCard(rows, c, parentById, containers, now))
 }
 
 // ── The focal-caption phrasing engine (ticket-33) ────────────────────────────
@@ -234,11 +265,16 @@ export function phraseFocalCaption(p: FocalPhrasing): string {
  * `null` for an even spread, a top-level page, or a workspace with no areas —
  * the caller then keeps the plain total.
  */
-function dominantAreaForLife(rows: PageRow[], total: number): DominantArea | null {
-  const topAreas = childrenOf(rows, null).filter((r) => !isContent(r))
+function dominantAreaForLife(
+  rows: PageRow[],
+  total: number,
+  containers: ReadonlySet<string>
+): DominantArea | null {
+  // A top-level page that holds children IS an area, in the design's sense (#108).
+  const topAreas = childrenOf(rows, null).filter((r) => !isContent(r, containers))
   const counts = topAreas.map((a) => ({
     name: a.title || 'Untitled',
-    count: contentDescendants(rows, a.id),
+    count: contentDescendants(rows, a.id, containers),
   }))
   if (counts.length === 0) return null
 
@@ -255,8 +291,9 @@ function dominantAreaForLife(rows: PageRow[], total: number): DominantArea | nul
 
 /** The overview for one area page: focal = content pages within, card per direct child. */
 export function areaOverview(rows: PageRow[], areaId: string, now: Date): OverviewModel {
-  const direct = directContentChildren(rows, areaId)
-  const within = contentDescendants(rows, areaId)
+  const containers = containerIds(rows)
+  const direct = directContentChildren(rows, areaId, containers)
+  const within = contentDescendants(rows, areaId, containers)
 
   return {
     focal: String(within),
@@ -276,14 +313,15 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
  */
 export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
+  const containers = containerIds(rows)
   const roots = childrenOf(rows, null)
-  const total = totalContentPages(rows)
-  const dominant = dominantAreaForLife(rows, total)
+  const total = totalContentPages(rows, containers)
+  const dominant = dominantAreaForLife(rows, total, containers)
 
   return {
     focal: String(total),
     focalCaption: phraseFocalCaption({ scope: 'life', total, dominant }),
-    cards: roots.map((r) => toCard(rows, r, parentById, now)),
+    cards: roots.map((r) => toCard(rows, r, parentById, containers, now)),
   }
 }
 

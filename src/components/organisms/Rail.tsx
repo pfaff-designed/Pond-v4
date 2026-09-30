@@ -143,7 +143,9 @@ interface RailRowProps {
   isBusy: boolean
   /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
   isRoot?: boolean
-  /** An area row — the raised label voice + its accent dot. */
+  /** An area row — the raised label voice + its accent dot. #108: "area" is no
+   *  longer a stored type; the caller passes this for a TOP-LEVEL page, which is
+   *  where a person's areas live. (Per-page glyph/colour is #91.) */
   isArea?: boolean
   posInSet?: number
   setSize?: number
@@ -430,9 +432,13 @@ const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
  * An area row's leading mark: its default glyph in the area hue, when the
  * title maps to one (#91). An unmapped area returns nothing and keeps its
  * KindDot through the molecule's `dot`.
+ *
+ * #108: there is no `type = 'area'` to test any more, so the mark is offered to
+ * TOP-LEVEL pages — where a person's areas live, and the only rows the fixed
+ * title→glyph defaults are written for. Per-page glyph/colour is #91's own work.
  */
 function areaMark(node: RailNode): ReactNode {
-  if (node.type !== 'area') return undefined
+  if (node.parentId !== null) return undefined
   const glyph = areaGlyph(node.title)
   return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
 }
@@ -646,10 +652,10 @@ export function RailView({
         isOnPath={id !== selectedId && pathIds.has(id)}
         isFocused={rovingId === id}
         isBusy={id === busyId}
-        isArea={node.type === 'area'}
+        isArea={node.parentId === null}
         posInSet={posInSet}
         setSize={setSize}
-        accent={node.type === 'area' ? pageAccent(id) : undefined}
+        accent={node.parentId === null ? pageAccent(id) : undefined}
         leading={areaMark(node)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
