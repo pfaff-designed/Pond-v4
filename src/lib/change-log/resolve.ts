@@ -36,7 +36,7 @@ import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { ProposalDecision } from '@/lib/conversation/resolutions'
 import { isOpen } from './status'
 import { acceptRecord, advanceStatus, getRecordByToolCall, markOutdated } from './store'
-import { ACTOR_YOU, type ChangeLogRecord, type ChangeLogStatus } from './types'
+import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogStatus } from './types'
 
 export interface ResolveRecordInput {
   userId: string
@@ -225,9 +225,10 @@ export async function commitAcceptedEdit(
   }
 
   // G2 (criterion 5): the page moved on, so the other BLOCK diffs aimed at it were
-  // written against a state that no longer exists. Scoped to `edit` because that
-  // is the only action whose before/after is blocks — a pending `add_row` on this
-  // page is untouched by a block write and stays perfectly applicable.
+  // written against a state that no longer exists. Scoped to the block actions —
+  // a pending `add_row` on this page is untouched by a block write and stays
+  // perfectly applicable, but a pending `revert` (#103) is a block diff exactly
+  // like an edit and goes stale with them.
   //
   // Guarded for the same reason as above: this runs after the blocks have landed.
   if (userId !== null) {
@@ -237,7 +238,7 @@ export async function commitAcceptedEdit(
         workspace,
         targetPageId,
         exceptId: record?.id,
-        actions: ['edit'],
+        actions: [...BLOCK_ACTIONS],
       })
     } catch (err) {
       console.error('[change-log] outdated sweep failed for page', targetPageId, err)

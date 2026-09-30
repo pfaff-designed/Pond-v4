@@ -25,6 +25,7 @@ import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
+import { PageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import {
   readSchema,
   readValues,
@@ -235,6 +236,32 @@ export function DocumentPanel() {
     commitLocalEdit([...viewBlocks, nb])
   }
 
+  // ── "Changes to this page" (#103, storyboard frame 8) ─────────────────────
+  // "Every page can show its own changes: the log filtered to that page, in a
+  // floating panel… shortcut ⌥⌘H, or the page menu › changes."
+  //
+  // `e.code` rather than `e.key`: on macOS, Option+H emits '˙', so a key check
+  // would never match. Escape closes, like every other overlay here.
+  //
+  // The open state is the PAGE the panel is open for, not a boolean, so navigating
+  // away closes it by derivation. Holding a boolean and clearing it in an effect
+  // on `nodeId` is the same behaviour one render later — and one cascading render
+  // that `react-hooks/set-state-in-effect` rightly rejects.
+  const [changesOpenFor, setChangesOpenFor] = useState<string | null>(null)
+  const changesOpen = changesOpenFor !== null && changesOpenFor === nodeId
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.altKey && e.metaKey && e.code === 'KeyH') {
+        e.preventDefault()
+        setChangesOpenFor((open) => (open === nodeId ? null : nodeId))
+        return
+      }
+      if (e.key === 'Escape') setChangesOpenFor(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [nodeId])
+
   // ── Root: the Life overview owns the panel (no more empty state) ──────────
   if (!nodeId) {
     return <LifeOverviewPanel />
@@ -349,6 +376,18 @@ export function DocumentPanel() {
           className="mt-12 border-t border-mn-hair pt-6"
         />
       </div>
+
+      {/* The log for this page, floating over the content rather than reflowing
+          it — the design's frame 8. Toggled by ⌥⌘H; closed on Escape and on
+          navigating away. */}
+      {changesOpen && (
+        <aside
+          className="fixed right-6 top-6 bottom-6 z-40 w-[320px] overflow-y-auto rounded-mn-chrome border border-mn-line bg-mn-surface p-4 shadow-mn-lg"
+          aria-label="Changes to this page"
+        >
+          <PageChangesPanel pageId={page.id} />
+        </aside>
+      )}
     </div>
   )
 }

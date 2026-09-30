@@ -478,8 +478,9 @@ describe('writeAcceptedChanges — the change-log record', () => {
       targetPageId: 'stamped-id',
       exceptId: 'rec-1',
       // Only block diffs. A pending add_row on this page is untouched by a block
-      // write and stays applicable, so the sweep must not reach it.
-      actions: ['edit'],
+      // write and stays applicable, so the sweep must not reach it — but a pending
+      // `revert` (#103) IS a block diff, and goes stale with the edits.
+      actions: ['edit', 'revert'],
     })
   })
 
