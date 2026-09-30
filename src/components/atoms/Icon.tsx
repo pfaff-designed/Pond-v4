@@ -86,7 +86,7 @@ export function Icon({ name, size = 13, className, 'aria-hidden': ariaHidden = t
     <span
       data-icon={name}
       aria-hidden={ariaHidden ? 'true' : undefined}
-      className={cn('inline-block flex-shrink-0', className)}
+      className={cn('inline-block flex-none', className)}
       style={{
         width: size,
         height: size,

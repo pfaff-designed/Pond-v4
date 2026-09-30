@@ -1,5 +1,5 @@
 /**
- * The Make Noise glyph mark system (#92, part 2) — rendering primitives + the
+ * The Make Noise glyph mark system (#91) — rendering primitives + the
  * fixed default area→glyph wiring. These tests defend the acceptance criteria:
  * the `Icon` atom fetches `/icons/<name>.png` ONCE per name (module-level
  * cache), applies it as a data-URI CSS mask over `background: currentColor`

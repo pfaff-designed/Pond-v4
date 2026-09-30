@@ -51,6 +51,9 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
       </button>
       {crumbs.map((c) => {
         const glyph = c.type === 'area' ? areaGlyph(c.title) : undefined
+        // A whole area reads as one hue: colour by the top-level ancestor (the
+        // first crumb), the rule accent.ts documents and the kicker square uses.
+        const topId = crumbs[0].id
         return (
           <Fragment key={c.id}>
             {sep}
@@ -59,7 +62,7 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
               className="hover:text-foreground transition-colors inline-flex items-center gap-1 max-w-[180px] min-w-0"
               title={c.title}
             >
-              {glyph && <AreaMark glyph={glyph} color={pageAccent(c.id)} size={11} />}
+              {glyph && <AreaMark glyph={glyph} color={pageAccent(topId)} size={11} />}
               <span className="truncate">{c.title}</span>
             </button>
           </Fragment>

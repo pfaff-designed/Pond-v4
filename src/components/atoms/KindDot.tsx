@@ -3,8 +3,9 @@
  * area accent. Pond codes page kinds with a shape and a colour where another
  * system would reach for a symbol (handoff readme §3); area glyphs are the
  * other register (`Icon`), and the two never mix. Extracted from
- * PondMolecule's inline `kindDot` helper so the rail, cards and the overview
- * kicker share one mark.
+ * PondMolecule's inline `kindDot` helper so the rail and cards share one mark.
+ * (The overview kicker's fallback square is still its own inline span, and
+ * PondAtom's `dot` kind is a fourth copy — both are follow-ups, not this one.)
  *
  * Colour rule: an `accent` (a raw hex from the page-accent set) applies as an
  * inline background and REPLACES the muted class — marks only, never text or

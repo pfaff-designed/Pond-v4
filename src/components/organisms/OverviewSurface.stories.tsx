@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { OverviewSurface } from './OverviewSurface'
 import type { OverviewModel } from '@/lib/pages/overview'
@@ -66,6 +66,37 @@ export const Area: Story = {
     await expect(canvas.getByText('Everything within')).toBeInTheDocument()
     await userEvent.click(canvas.getByText('Marathon Training'))
     await expect(args.onOpenCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'marathon' }))
+  },
+}
+
+/**
+ * An area whose title maps to a glyph (#91): the kicker leads with the masked
+ * mark in the area hue and the fallback accent square retires. Asserted in a
+ * real Chromium because the mask is the whole point — jsdom drops it, and a
+ * glyph that fails to load paints as a SOLID SQUARE rather than a silhouette.
+ */
+export const AreaWithGlyph: Story = {
+  args: { glyph: 'leaf-01' },
+  play: async ({ canvasElement }) => {
+    const mark = canvasElement.querySelector('[data-area-mark]') as HTMLElement
+    await expect(mark).toBeTruthy()
+    // The hue rides the slot, so the masked glyph inherits it via currentColor.
+    await expect(mark.style.color).toBe('rgb(95, 115, 85)')
+
+    const glyph = mark.querySelector('[data-icon="leaf-01"]') as HTMLElement
+    await expect(glyph).toBeTruthy()
+    await waitFor(async () => {
+      const cs = getComputedStyle(glyph)
+      // Both the standard and the -webkit- property carry the decoded data-URI.
+      await expect(cs.maskImage).toContain('data:image/png;base64')
+      await expect(cs.webkitMaskImage).toContain('data:image/png;base64')
+      // Painted THROUGH the mask, never as a filled box.
+      await expect(cs.backgroundColor).toBe('rgb(95, 115, 85)')
+      await expect(cs.maskRepeat).toBe('no-repeat')
+      await expect(cs.maskSize).toBe('contain')
+    })
+    // The plain accent square is gone once a glyph takes the slot.
+    await expect(canvasElement.querySelector('[data-part="kicker-dot"]')).toBeNull()
   },
 }
 
