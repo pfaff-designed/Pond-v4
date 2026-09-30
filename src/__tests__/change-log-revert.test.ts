@@ -349,8 +349,81 @@ describe('planRevert', () => {
     expect(plan.blocks).toEqual([text('a', 'EDITED BY HAND'), text('b', 'two')])
   })
 
+  it('refuses to guess which of two look-alike blocks a create became', () => {
+    // Round two, and the worst defect of the build. Pond appends an EMPTY text
+    // block; the person types into it; the page also holds an unrelated empty
+    // paragraph. Resolving the create by value alone bound it to that unrelated
+    // paragraph and deleted both it and the person's typing — while reporting
+    // `movedOn: false`, so it was offered as a clean accept.
+    //
+    // The id is on the page but has changed, which is "moved on" — never a licence
+    // to go looking for another block that happens to look like it.
+    const original = record({
+      before: [text('a', 'A')],
+      after: [text('a', 'A'), text('new', '')],
+    })
+    const current = [text('a', 'A'), text('new', 'the person typed this'), text('blank', '')]
+
+    const plan = planRevert(original, current)
+
+    expect(plan.movedOn).toBe(true)
+    // Nothing of the person's is touched.
+    expect(plan.blocks).toEqual(current)
+  })
+
+  it('refuses when the page holds more look-alikes than the original created', () => {
+    // The id was re-minted, so it must be found by value — but two candidates and
+    // one create means we cannot tell which is which, and a revert must not guess
+    // at what to delete.
+    const original = record({ before: [], after: [text('provisional', 'same')] })
+    const plan = planRevert(original, [text('r1', 'same'), text('r2', 'same')])
+
+    expect(plan.movedOn).toBe(true)
+    expect(plan.blocks).toEqual([text('r1', 'same'), text('r2', 'same')])
+  })
+
+  it('never drops a page block that merely shares a provisional id', () => {
+    // `touched` holds PROVISIONAL ids. Keying the removal on them rather than on
+    // what they resolved to deleted whatever happened to share the id.
+    const original = record({ before: [], after: [text('shared', 'from pond')] })
+    // Nothing on the page matches the created block, so there is nothing to remove
+    // — and the page's own `shared` block must survive untouched.
+    const plan = planRevert(original, [text('shared', 'mine, different content')])
+
+    expect(plan.movedOn).toBe(true)
+    expect(plan.blocks).toEqual([text('shared', 'mine, different content')])
+  })
+
   it('throws rather than guessing when the record offers no revert', () => {
     expect(() => planRevert(record({ status: 'proposed' }), [])).toThrow(/cannot be reverted/)
+  })
+})
+
+describe('reverting a revert', () => {
+  it('puts a restored block back where it was, not at the front', () => {
+    // Round two. With whole-page snapshots the delete-restore anchor has real
+    // neighbours to aim at. When the revert record carried only its own touched
+    // blocks, the anchor had nothing to find and `x` landed at position 0.
+    const page = [text('a', 'A'), text('x', 'X'), text('b', 'B')]
+    // An edit that created `x` in the middle.
+    const original = record({ before: [text('a', 'A'), text('b', 'B')], after: page })
+    const revertPlan = planRevert(original, page)
+    expect(revertPlan.blocks).toEqual([text('a', 'A'), text('b', 'B')])
+
+    // The revert record, as `proposeRevert` writes it: whole-page before/after.
+    const revert = record({
+      id: 'rev-1',
+      action: 'revert',
+      status: 'accepted',
+      before: page,
+      after: revertPlan.blocks,
+      links: { revertOf: 'rec-1' },
+    })
+
+    const unrevert = planRevert(revert, revertPlan.blocks)
+
+    expect(unrevert.movedOn).toBe(false)
+    expect(unrevert.blocks).toEqual(page)
   })
 })
 
@@ -381,10 +454,9 @@ describe('proposeRevert', () => {
         actor: 'you',
         targetPageId: PAGE,
         links: { revertOf: 'rec-1' },
-        // The blocks this sets back — NOT a whole-page array. `a` is untouched by
-        // the original, so it is no part of the revert's diff.
-        before: [text('b', 'TWO')],
-        after: [text('b', 'two')],
+        // Whole-page snapshots, the shape propose.ts writes for an edit.
+        before: [text('a', 'one'), text('b', 'TWO')],
+        after: [text('a', 'one'), text('b', 'two')],
         // A button-click revert did not come from the original's thread.
         sourceThreadId: null,
       })
@@ -393,40 +465,36 @@ describe('proposeRevert', () => {
     expect(mockedAdvance).not.toHaveBeenCalled()
   })
 
-  it('records a diff that stays true after an unrelated edit lands', async () => {
-    // The defect this replaced: `after` was the whole page frozen at propose time,
-    // while accept re-plans and commits a different array. The record permanently
-    // claimed a page state that never existed — and 0011 freezes `after`, so it
-    // could never be corrected. Block-scoped, it stays true however the rest of
-    // the page moves.
+  it('records whole-page snapshots, and an `after` that is exactly what accept writes', async () => {
+    // `after` is frozen by 0011, so the record must describe a page that really
+    // will exist. It does because accept writes this array verbatim — it does not
+    // re-plan. Unrelated blocks are carried through untouched; only `b` goes back.
     const supabase = fakeSupabase({ data: [], error: null })
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
       userId: USER,
       record: record(),
-      current: [text('a', 'one'), text('b', 'TWO'), text('z', 'unrelated, added since')],
+      current: [text('a', 'one'), text('b', 'TWO'), text('z', 'unrelated')],
     })
 
     const input = mockedAppend.mock.calls[0][1]
-    expect(input.before).toEqual([text('b', 'TWO')])
-    expect(input.after).toEqual([text('b', 'two')])
+    expect(input.before).toEqual([text('a', 'one'), text('b', 'TWO'), text('z', 'unrelated')])
+    expect(input.after).toEqual([text('a', 'one'), text('b', 'two'), text('z', 'unrelated')])
   })
 
-  it('records a created block as a removal — before only, no after', async () => {
+  it('records the removal of a created block under the id it landed as', async () => {
     const supabase = fakeSupabase({ data: [], error: null })
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
       userId: USER,
       record: record({ before: [], after: [text('provisional', 'from pond')] }),
-      current: [text('minted', 'from pond')],
+      current: [text('minted', 'from pond'), text('keep', 'mine')],
     })
 
     const input = mockedAppend.mock.calls[0][1]
-    // Under the id it actually landed as, which is the whole point.
-    expect(input.before).toEqual([text('minted', 'from pond')])
-    expect(input.after).toEqual([])
+    expect(input.after).toEqual([text('keep', 'mine')])
   })
 
   it('is born outdated when the block has already moved on', async () => {
@@ -536,38 +604,46 @@ describe('listRevertsOf', () => {
 // ── Answering a revert ───────────────────────────────────────────────────────
 
 describe('acceptRevert', () => {
-  const original = record()
+  // A revert raised against a page reading [a one, b TWO], which sets `b` back.
+  const PAGE_AT_PROPOSE = [text('a', 'one'), text('b', 'TWO')]
   const revert = record({
     id: 'rev-1',
     action: 'revert',
     status: 'proposed',
     actor: 'you',
     links: { revertOf: 'rec-1' },
+    before: PAGE_AT_PROPOSE,
+    after: [text('a', 'one'), text('b', 'two')],
   })
 
-  it('re-plans against the page NOW, so edits made since are not dropped', async () => {
+  it('writes exactly what the record says, never a fresh plan', async () => {
+    // The invariant the re-planning build could not hold: `after` is frozen by
+    // 0011, so if accept wrote anything else the record would describe a page
+    // that never existed, permanently.
     const supabase = fakeSupabase({})
-    supabase.rpc = jest.fn().mockResolvedValue({
-      data: { ...toRow(revert), status: 'accepted' },
-      error: null,
-    })
-    // `c` arrived after the revert was raised; the frozen `after` on the record
-    // knows nothing about it. Replaying that array would delete it.
-    const current = [text('a', 'one'), text('b', 'TWO'), text('c', 'arrived since')]
+    supabase.rpc = jest
+      .fn()
+      .mockResolvedValue({ data: { ...toRow(revert), status: 'accepted' }, error: null })
 
-    const out = await acceptRevert(supabase, { userId: USER, revert, original, current })
+    const out = await acceptRevert(supabase, {
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
 
     expect(out.kind).toBe('accepted')
     expect(supabase.rpc).toHaveBeenCalledWith('accept_revert_record', {
       p_record_id: 'rev-1',
-      p_blocks: [text('a', 'one'), text('b', 'two'), text('c', 'arrived since')],
-      // The compare-and-swap: what the plan was computed against.
-      p_expected: current,
+      p_blocks: revert.after,
+      p_expected: revert.before,
       p_actor: 'you',
     })
   })
 
-  it('withdraws accept and goes outdated when the block moved on, writing nothing', async () => {
+  it('goes outdated rather than clobbering a page that moved since', async () => {
+    // `c` arrived after the revert was raised — through the ordinary debounced
+    // save, which logs nothing. Writing the frozen `after` would delete it, so
+    // accept is withdrawn instead and the person raises the revert again.
     const supabase = fakeSupabase({})
     supabase.rpc = jest.fn()
     mockedAdvance.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
@@ -575,8 +651,7 @@ describe('acceptRevert', () => {
     const out = await acceptRevert(supabase, {
       userId: USER,
       revert,
-      original,
-      current: [text('a', 'one'), text('b', 'MOVED ON')],
+      current: [...PAGE_AT_PROPOSE, text('c', 'typed since')],
     })
 
     expect(out.kind).toBe('outdated')
@@ -584,18 +659,46 @@ describe('acceptRevert', () => {
     expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rev-1', 'outdated', 'you')
   })
 
-  it('sweeps the page’s other block diffs once the revert lands', async () => {
+  it('is not fooled by JSONB key order when comparing the page', async () => {
+    // pages.blocks round-trips through JSONB, which does not preserve key order.
+    // A stringify comparison would call every accept outdated.
     const supabase = fakeSupabase({})
     supabase.rpc = jest
       .fn()
       .mockResolvedValue({ data: { ...toRow(revert), status: 'accepted' }, error: null })
 
-    await acceptRevert(supabase, {
+    const reordered = [
+      { content: 'one', type: 'text', id: 'a' },
+      { type: 'text', content: 'TWO', id: 'b' },
+    ] as unknown as typeof PAGE_AT_PROPOSE
+
+    const out = await acceptRevert(supabase, { userId: USER, revert, current: reordered })
+
+    expect(out.kind).toBe('accepted')
+  })
+
+  it('goes outdated when the record carries no usable snapshot', async () => {
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest.fn()
+    mockedAdvance.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
+
+    const out = await acceptRevert(supabase, {
       userId: USER,
-      revert,
-      original,
-      current: [text('a', 'one'), text('b', 'TWO')],
+      revert: record({ ...revert, before: 'not blocks' }),
+      current: PAGE_AT_PROPOSE,
     })
+
+    expect(out.kind).toBe('outdated')
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('sweeps the page\u2019s other block diffs once the revert lands', async () => {
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest
+      .fn()
+      .mockResolvedValue({ data: { ...toRow(revert), status: 'accepted' }, error: null })
+
+    await acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
 
     expect(mockedSweep).toHaveBeenCalledWith(
       supabase,
@@ -618,12 +721,7 @@ describe('acceptRevert', () => {
     mockedSweep.mockRejectedValue(new Error('sweep down'))
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    const out = await acceptRevert(supabase, {
-      userId: USER,
-      revert,
-      original,
-      current: [text('a', 'one'), text('b', 'TWO')],
-    })
+    const out = await acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
 
     expect(out.kind).toBe('accepted')
     quiet.mockRestore()
@@ -634,12 +732,7 @@ describe('acceptRevert', () => {
     supabase.rpc = jest.fn().mockResolvedValue({ data: null, error: { message: 'conflict' } })
 
     await expect(
-      acceptRevert(supabase, {
-        userId: USER,
-        revert,
-        original,
-        current: [text('a', 'one'), text('b', 'TWO')],
-      })
+      acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
     ).rejects.toBeTruthy()
     expect(mockedSweep).not.toHaveBeenCalled()
   })

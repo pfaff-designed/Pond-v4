@@ -16,7 +16,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
-import { planRevert, revertRefusal } from './revert-plan'
+import { jsonEqual, planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
 
 // ── Store calls ──────────────────────────────────────────────────────────────
@@ -34,9 +34,10 @@ export interface ProposeRevertInput {
  * Raise a revert: ONE new record, `action: 'revert'`, linked back through
  * `links.revertOf`. The original is not touched — "revert doesn't rewrite history".
  *
- * The new record's `before` is the page as it stands now and its `after` is the
- * planned result, so it is an ordinary diff that renders through the same registry
- * facets as any other and can be accepted through the same affordance.
+ * The new record's `before` is the page as it stands now and its `after` is what
+ * the page will read once it lands — an ordinary diff in exactly the shape
+ * `propose.ts` writes for an edit, so it renders through the same registry facets
+ * and is answered through the same affordance.
  *
  * Raises when the record offers no revert, and when one is already waiting: a
  * second open revert of the same change would race the first, and accepting both
@@ -73,11 +74,13 @@ export async function proposeRevert(
     actor: ACTOR_YOU,
     targetPageId: record.targetPageId,
     targetBlockId: record.targetBlockId,
-    // The blocks this sets back, not a whole-page array — see `RevertPlan`. The
-    // page write is computed again at accept time against the page as it then
-    // stands; only this diff is frozen, and it stays true.
-    before: plan.diffBefore,
-    after: plan.diffAfter,
+    // Whole-page snapshots, the same shape `propose.ts` writes for an `edit` — so
+    // #147's record page has ONE thing to render, and so the delete-restore anchor
+    // in `planRevert` has real neighbours to aim at when this record is itself
+    // reverted. `after` is exactly what accept will write: accept does NOT re-plan
+    // (see `acceptRevert`), so the record can never describe a page that was not.
+    before: current,
+    after: plan.blocks,
     // NOT the original's thread. A revert raised by clicking a button did not come
     // from the conversation that produced the change it takes back, and #110 calls
     // this "the transcript ↔ log link". Claiming one would be a false provenance
@@ -90,8 +93,9 @@ export async function proposeRevert(
 /** What accepting a revert did. `outdated` is an ordinary outcome, not a failure. */
 export type AcceptRevertResult =
   | { kind: 'accepted'; revert: ChangeLogRecord }
-  /** The blocks moved on since the revert was raised — accept is withdrawn, revise
-   *  is offered, and the revert has been advanced to `outdated`. */
+  /** The page moved after this revert was raised — accept is withdrawn and the
+   *  record has been advanced to `outdated`. Raise a fresh revert of the original;
+   *  it re-plans against the page as it now stands. */
   | { kind: 'outdated'; revert: ChangeLogRecord }
 
 export interface AcceptRevertInput {
@@ -99,8 +103,6 @@ export interface AcceptRevertInput {
   workspace?: WorkspaceScope
   /** The `proposed` revert record being answered. */
   revert: ChangeLogRecord
-  /** The record it reverts — `links.revertOf`, still `accepted`. */
-  original: ChangeLogRecord
   /** The target page's blocks as they stand NOW. */
   current: Block[]
   actor?: string
@@ -116,41 +118,38 @@ export interface AcceptRevertInput {
  * could leave the page set back and the original still reading `accepted`, and
  * since the log only grows, that disagreement would be permanent.
  *
- * THE PLAN IS RECOMPUTED HERE, against the page as it stands now, rather than
- * writing the `after` frozen into the record at propose time. Between raising a
- * revert and answering it the page can gain unrelated edits, and replaying a stale
- * array would silently drop them. Re-planning keeps the design's promise exactly:
- * only the blocks the original touched are set back, everything else stays. If
- * those blocks are the ones that moved, `movedOn` is true and this returns
- * `outdated` without writing — "accept is not offered; revise is offered"
- * (criterion 5) — advancing the revert so the affordance goes with it.
+ * WHAT IS WRITTEN IS THE RECORD'S OWN `after`, NOT A FRESH PLAN. An earlier build
+ * re-planned here so that unrelated edits made between raising and answering would
+ * survive — and it worked, but it meant the page was set to something the record
+ * did not describe, permanently, because 0011 freezes `after`. The invariant is
+ * worth more than the convenience: a revert writes exactly what it says it writes.
  *
- * Raises — rolling the page write back with it — if the revert is not `proposed`,
- * if it carries no `revert_of`, if the record it reverts is no longer `accepted`,
- * or if the page changed between the plan and the transaction (the RPC's
- * compare-and-swap; the caller re-reads and tries again).
+ * So the page must be as it was when the revert was planned. When it is not, the
+ * revert goes `outdated` and nothing is written — "accept is not offered; revise
+ * is offered" (criterion 5). Raising it again re-plans against the page as it then
+ * stands, which preserves whatever landed in between; the cost is one more click,
+ * and the gain is a log that never lies. The RPC repeats the comparison under its
+ * row lock, so a page that moves between this check and the transaction is caught
+ * there rather than clobbered.
  */
 export async function acceptRevert(
   supabase: SupabaseClient<Database>,
   input: AcceptRevertInput
 ): Promise<AcceptRevertResult> {
-  const { revert, original, current } = input
+  const { revert, current } = input
   const actor = input.actor ?? ACTOR_YOU
 
-  const plan = planRevert(original, current)
-  if (plan.movedOn) {
+  const planned = readBlockSnapshot(revert.before)
+  if (planned === null || !jsonEqual(current, planned)) {
     const advanced = await advanceStatus(supabase, revert.id, 'outdated', actor)
     return { kind: 'outdated', revert: advanced }
   }
 
-  // `plan.blocks` is the whole page, recomputed now — deliberately NOT the record's
-  // `after`, which is the block-scoped diff this revert describes. The record says
-  // which blocks go back; this says what the page therefore holds.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('accept_revert_record', {
     p_record_id: revert.id,
-    p_blocks: plan.blocks,
-    p_expected: current,
+    p_blocks: revert.after,
+    p_expected: revert.before,
     p_actor: actor,
   })
   if (error) throw error

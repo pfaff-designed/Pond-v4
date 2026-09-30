@@ -101,6 +101,19 @@ function sameBlockIgnoringId(a: Block, b: Block): boolean {
   return jsonEqual(withoutId(a), withoutId(b))
 }
 
+/** A block's content as a stable string, ignoring `id` and JSONB key order. */
+function valueKey(block: Block): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (typeof value !== 'object' || value === null) return value
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0
+    )
+    return entries.map(([k, v]) => [k, canonical(v)])
+  }
+  return JSON.stringify(canonical(withoutId(block)))
+}
+
 function withoutId(block: Block): Record<string, unknown> {
   const out: Record<string, unknown> = { ...(block as unknown as Record<string, unknown>) }
   delete out.id
@@ -181,21 +194,6 @@ export function touchedBlockIds(before: Block[], after: Block[]): string[] {
 export interface RevertPlan {
   /** What the page would hold if this revert were accepted. */
   blocks: Block[]
-  /**
-   * The revert's own diff: just the blocks it touches, as they stand now and as
-   * they would read after.
-   *
-   * These, NOT {@link blocks}, are what the record stores. A whole-page array
-   * frozen at propose time would describe a page that never existed by the time
-   * the revert is accepted — accept RE-PLANS against the page as it then stands
-   * (so unrelated edits made in between survive), and `after` is frozen by 0011's
-   * append-only trigger, so the record could never be corrected. Spec #110 §1
-   * allows "Block/page/record shape", and the storyboard's revert card is two
-   * diff-lines — one removal, one addition — not a page snapshot. Block-scoped is
-   * both the honest record and the one the design draws.
-   */
-  diffBefore: Block[]
-  diffAfter: Block[]
   /** The blocks the original record changed — what this revert sets back. */
   touchedIds: string[]
   /** True when any touched block no longer matches the original's `after`. */
@@ -235,31 +233,53 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
   const touched = new Set(touchedIds)
 
   // A touched id that appears ONLY in `after` is a block the original CREATED, and
-  // its id there is provisional (see `sameBlockIgnoringId`). Find what it actually
-  // became on the page: the same id when that is what landed, otherwise an
-  // unclaimed block that is identical apart from its id. Claiming keeps two
-  // identical creates in one batch matched one-to-one rather than both to the
-  // first candidate. No match means the created block is gone or has been edited
-  // since — which is exactly "the block has moved on".
+  // its id there is PROVISIONAL (see `sameBlockIgnoringId`). Resolving it to what
+  // it actually became on the page is the delicate part, because getting it wrong
+  // deletes something the person wrote:
+  //
+  //   * the id IS on the page and still matches  → that is the block;
+  //   * the id IS on the page but has changed    → it moved on. NOT a licence to
+  //     go looking for some other block that happens to look like it;
+  //   * the id is absent (re-minted on accept)   → find it by value, but only when
+  //     the match is UNAMBIGUOUS: the number of unclaimed look-alikes on the page
+  //     must equal the number of creates with that same content. Fewer means one
+  //     is gone; more means we cannot tell which is which, and a revert must never
+  //     guess at which block to delete.
+  //
+  // Probed live: Pond appends an empty text block, the person types into it, and
+  // the page also holds an unrelated empty paragraph. Before this rule, the revert
+  // bound the create to the unrelated paragraph, deleted both it AND the person's
+  // typing, and reported `movedOn: false` — a clean-looking accept that destroyed
+  // two blocks.
   const createdNow = new Map<string, string | null>()
   const claimed = new Set<string>()
+  const byValue: Map<string, string[]> = new Map()
   for (const id of touchedIds) {
     if (beforeById.has(id)) continue
     const created = afterById.get(id)
     if (created === undefined) continue
-    const byId = currentById.get(id)
-    if (byId !== undefined && !claimed.has(byId.id) && sameBlockIgnoringId(byId, created)) {
-      createdNow.set(id, byId.id)
-      claimed.add(byId.id)
+    const onPage = currentById.get(id)
+    if (onPage !== undefined) {
+      const kept = !claimed.has(onPage.id) && sameBlockIgnoringId(onPage, created)
+      createdNow.set(id, kept ? onPage.id : null)
+      if (kept) claimed.add(onPage.id)
       continue
     }
-    const match = current.find((b) => !claimed.has(b.id) && sameBlockIgnoringId(b, created))
-    if (match !== undefined) {
-      createdNow.set(id, match.id)
-      claimed.add(match.id)
-    } else {
-      createdNow.set(id, null)
+    const key = valueKey(created)
+    const group = byValue.get(key)
+    if (group) group.push(id)
+    else byValue.set(key, [id])
+  }
+  for (const [key, ids] of byValue) {
+    const candidates = current.filter((b) => !claimed.has(b.id) && valueKey(b) === key)
+    if (candidates.length !== ids.length) {
+      for (const id of ids) createdNow.set(id, null)
+      continue
     }
+    ids.forEach((id, i) => {
+      createdNow.set(id, candidates[i].id)
+      claimed.add(candidates[i].id)
+    })
   }
   /** Page-side ids of the blocks the original added — the ones a revert removes. */
   const removeIds = new Set<string>(
@@ -279,14 +299,13 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
   // Walk the CURRENT page, so untouched blocks keep their place and their content.
   const blocks: Block[] = []
   for (const block of current) {
-    // Added by the original ⇒ the revert removes it, under whatever id it landed as.
+    // Added by the original ⇒ the revert removes it, under the id it landed as.
     if (removeIds.has(block.id)) continue
-    if (!touched.has(block.id)) {
-      blocks.push(block)
-      continue
-    }
-    const restored = beforeById.get(block.id)
-    if (restored !== undefined) blocks.push(restored)
+    // Changed by the original ⇒ set that block back. Keyed on `beforeById`, never
+    // on `touched` alone: a touched id may be a PROVISIONAL one, and a page block
+    // that merely shares it is somebody else's and must not be dropped.
+    const restored = touched.has(block.id) ? beforeById.get(block.id) : undefined
+    blocks.push(restored ?? block)
   }
 
   // Blocks the original DELETED come back. Anchored after whichever of their
@@ -309,34 +328,5 @@ export function planRevert(record: ChangeLogRecord, current: Block[]): RevertPla
     blocks.splice(at, 0, block)
   }
 
-  // The record's own diff, in `before`-order then any created blocks, so two runs
-  // over the same inputs produce the same record.
-  const diffBefore: Block[] = []
-  const diffAfter: Block[] = []
-  for (const id of touchedIds) {
-    const restored = beforeById.get(id)
-    if (restored === undefined) {
-      // The original CREATED this block, so the revert removes it: it appears in
-      // the diff's before (under the id it actually landed as) and not in its after.
-      const landedId = createdNow.get(id)
-      const landed =
-        landedId === null || landedId === undefined ? undefined : currentById.get(landedId)
-      if (landed !== undefined) diffBefore.push(landed)
-      continue
-    }
-    // An update, or a delete the revert brings back. Absent from the page today
-    // means there is no "before" line to draw — only the restoration.
-    const onPage = currentById.get(id)
-    if (onPage !== undefined) diffBefore.push(onPage)
-    diffAfter.push(restored)
-  }
-
-  return {
-    blocks,
-    diffBefore,
-    diffAfter,
-    touchedIds,
-    movedOn,
-    status: movedOn ? 'outdated' : 'proposed',
-  }
+  return { blocks, touchedIds, movedOn, status: movedOn ? 'outdated' : 'proposed' }
 }

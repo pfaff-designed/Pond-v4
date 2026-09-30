@@ -146,24 +146,17 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         if (!ctx) return
         const revert = records.find((r) => r.id === recordId)
         if (!revert) return
-        const originalId = revert.links.revertOf
-        // The record a revert sets back need not be on this page's list — it is,
-        // in practice, since both carry the same target — so this is read through
-        // the list first and falls back to saying so rather than guessing.
-        const original = originalId ? records.find((r) => r.id === originalId) : undefined
-        if (!original) {
-          setError('the change this reverts is not on this page')
-          return
-        }
+        // The record it reverts is resolved inside the transaction, from
+        // `links.revertOf` — the panel does not need to find it, and could not
+        // vouch for it if it did.
         const result = await acceptRevert(ctx.supabase, {
           userId: ctx.userId,
           workspace,
           revert,
-          original,
           current: ctx.page.blocks,
         })
         if (result.kind === 'outdated') {
-          setError('those blocks have changed since — ask Pond to revise this revert')
+          setError('this page changed since — revert the change again')
           return
         }
         await refreshPage()
