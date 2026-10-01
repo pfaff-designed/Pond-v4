@@ -13,6 +13,7 @@
 
 import { derivedRole, markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
 import { AREA_ROLES } from '@/lib/rail/glyph-library'
+import { setPageMark } from '@/lib/pages/client'
 
 function index(rows: MarkSource[]): Map<string, MarkSource> {
   return new Map(rows.map((r) => [r.id, r]))
@@ -156,5 +157,57 @@ describe('markIndex', () => {
     })
     expect(map.get('b')?.glyph).toBeNull()
     expect(map.get('b')?.areaRole).toBeNull()
+  })
+})
+
+// ── The write path ───────────────────────────────────────────────────────────
+
+describe('setPageMark', () => {
+  function fakeSupabase() {
+    const captured: { patch?: Record<string, unknown>; id?: string } = {}
+    const chain = {
+      update(patch: Record<string, unknown>) {
+        captured.patch = patch
+        return chain
+      },
+      eq(_col: string, id: string) {
+        captured.id = id
+        return Promise.resolve({ error: null })
+      },
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { supabase: { from: () => chain } as any, captured }
+  }
+
+  it('does NOT stamp updated_at — a mark is not a content edit', async () => {
+    // Pinned because a reviewer already asked for the stamp once, on the grounds
+    // that every other `pages` write has it. Those writes change content
+    // (`blocks`) or the name (`title`); a mark is neither. Nothing sorts by
+    // `updated_at`, and its one reader feeds the overview cards' "updated …"
+    // caption — so stamping it made picking a COLOUR read as an edit to the page
+    // and to every ancestor, with no change-log record behind the claim.
+    const { supabase, captured } = fakeSupabase()
+    await setPageMark(supabase, 'p1', { glyph: 'tulip-01' })
+    expect(captured.patch).toEqual({ glyph: 'tulip-01' })
+    expect(captured.patch).not.toHaveProperty('updated_at')
+  })
+
+  it('writes only the half it was given, and clears with null', async () => {
+    // Tri-state on purpose: absent leaves the column alone, null resets it to
+    // derive/inherit. That is what lets the picker offer "reset" per half without
+    // a second verb, and stops choosing a glyph stamping a colour nobody picked.
+    const a = fakeSupabase()
+    await setPageMark(a.supabase, 'p1', { areaRole: null })
+    expect(a.captured.patch).toEqual({ area_role: null })
+
+    const b = fakeSupabase()
+    await setPageMark(b.supabase, 'p1', { glyph: 'moon', areaRole: 'area-c' })
+    expect(b.captured.patch).toEqual({ glyph: 'moon', area_role: 'area-c' })
+  })
+
+  it('writes nothing at all when handed an empty patch', async () => {
+    const { supabase, captured } = fakeSupabase()
+    await setPageMark(supabase, 'p1', {})
+    expect(captured.patch).toBeUndefined()
   })
 })

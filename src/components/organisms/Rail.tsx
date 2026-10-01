@@ -332,7 +332,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         title={label}
         meta=""
         handle={false}
-        dot={!isRoot && isArea && accent !== undefined && leading === undefined}
+        // `accent` is already gated (top-level, or a role the person chose), so the
+        // extra `isArea` here made the colour-only case unreachable: setting just a
+        // hue on a nested page painted the breadcrumb and kicker and left the rail
+        // row with no dot at all. Round three caught the dead branch.
+        dot={!isRoot && accent !== undefined && leading === undefined}
         accent={accent}
         emphasis={isRoot || isArea}
         leading={leading}
@@ -647,10 +651,10 @@ export function RailView({
 
   const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) => {
     // Resolved ONCE per row: both the glyph and the dot's colour come off it, and
-    // two calls would walk the ancestor chain twice for the same answer. The Life
-    // branch below never needs it — it carries `LIFE_MARK`.
-    const mark = rowMark(node, markMap)
-    return id === LIFE_ID ? (
+    // two calls would walk the ancestor chain twice for the same answer. Not for
+    // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
+    const mark = id === LIFE_ID ? null : rowMark(node, markMap)
+    return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
         key={id}

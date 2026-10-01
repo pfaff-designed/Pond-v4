@@ -405,55 +405,63 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
 })
 
 describe('Rail — an explicit mark reaches the rail (#134)', () => {
-  // Round two's latent trap: every rail assertion above runs the EMPTY-map
-  // fallback, so the conversion that makes the rail agree with the other two
-  // surfaces had no test at all and #135 could have regressed it green.
-  const marks = (over: Partial<MarkSource> & { id: string }) =>
-    new Map<string, MarkSource>([
-      ['health', { id: 'health', parentId: null, title: 'Health' }],
-      ['sleep', { id: 'sleep', parentId: 'health', title: 'Sleep' }],
-      [over.id, { parentId: null, title: '', ...over } as MarkSource],
-    ])
+  // Round two's trap: every other rail assertion runs the empty-map fallback, so
+  // the conversion had no test. Round three then showed the FIRST version of these
+  // tests did not bite either — destroying `resolveMark`'s ancestor walk left them
+  // all green, because each one set the role on the row it asserted. They now
+  // resolve a role the row does NOT carry, so the walk is load-bearing.
+  function railMarks(entries: MarkSource[]): Map<string, MarkSource> {
+    return new Map(entries.map((e) => [e.id, e]))
+  }
+  const HEALTH = { id: 'health', parentId: null, title: 'Health' }
+  const SLEEP = { id: 'sleep', parentId: 'health', title: 'Sleep' }
 
-  it('shows a top-level row’s chosen glyph and role, not the title-derived ones', () => {
+  it('prefers a top-level row’s chosen glyph over its title-derived one', () => {
     const { getByRole } = renderRail(
-      marks({
-        id: 'health',
-        parentId: null,
-        title: 'Health',
-        glyph: 'tulip-01',
-        areaRole: 'area-c',
-      })
+      railMarks([{ ...HEALTH, glyph: 'tulip-01', areaRole: 'area-c' }, SLEEP])
     )
     const health = getByRole('treeitem', { name: /Health/ })
     expect(health.querySelector('[data-icon="tulip-01"]')).toBeInTheDocument()
-    // Not the leaf its title would have given it.
     expect(health.querySelector('[data-icon="leaf-01"]')).toBeNull()
-    const slot = health.querySelector<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe('var(--mn-area-c)')
+    expect(health.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
+      'var(--mn-area-c)'
+    )
   })
 
-  it('shows a NESTED row’s glyph when it was explicitly chosen', () => {
-    // The disagreement round two caught: the kicker and breadcrumb showed a
-    // nested page's chosen tulip while the rail, gated on top-level rows alone,
-    // showed nothing.
+  it('tints a nested row’s chosen glyph with the role INHERITED from its area', () => {
+    // `sleep` carries a glyph and NO role; `health` carries the role. Break the
+    // ancestor walk and this is the test that fails.
     const { getByRole } = renderRail(
-      marks({ id: 'sleep', parentId: 'health', title: 'Sleep', glyph: 'moon', areaRole: 'area-b' })
+      railMarks([
+        { ...HEALTH, areaRole: 'area-c' },
+        { ...SLEEP, glyph: 'moon' },
+      ])
     )
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon="moon"]')).toBeInTheDocument()
     expect(sleep.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
-      'var(--mn-area-b)'
+      'var(--mn-area-c)'
     )
   })
 
-  it('leaves an untouched nested row unmarked, so the rail still reads as areas', () => {
-    const { getByRole } = renderRail(marks({ id: 'health', parentId: null, title: 'Health' }))
+  it('paints a nested row’s dot when only a COLOUR was chosen', () => {
+    // Round three: this was unreachable. The dot was gated on `isArea` as well as
+    // on `accent`, so a hue set on a nested page showed in the breadcrumb and the
+    // kicker and nowhere in the rail.
+    const { getByRole } = renderRail(railMarks([HEALTH, { ...SLEEP, areaRole: 'area-b' }]))
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    const dot = sleep.querySelector<HTMLElement>('[data-part="dot"]')!
+    expect(dot).toBeInTheDocument()
+    expect(dot.style.background).toBe('var(--mn-area-b)')
+  })
+
+  it('leaves an untouched nested row with no mark at all', () => {
+    const { getByRole } = renderRail(railMarks([{ ...HEALTH, areaRole: 'area-c' }, SLEEP]))
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
-    expect(sleep.querySelector('[data-part="dot"]')?.getAttribute('style') ?? '').not.toContain(
-      'background'
-    )
+    // Asserted as ABSENCE of the element — the earlier version read a style off a
+    // node that was never there, so it could not have failed.
+    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
   })
 })
 

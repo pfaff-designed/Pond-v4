@@ -88,15 +88,27 @@ export function PageMarkButton({
   const trigger = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
   const open = at !== null
-  // Focus goes INTO the popover on open and back to the trigger on close. Round
-  // two's finding: the popover was mouse-only. Focus stayed on the trigger, the
-  // dialog had no tabindex, and Tab landed on whatever followed the trigger in the
-  // page — behind the click-away overlay, so unclickable — while
-  // `aria-haspopup="dialog"` announced an enterable dialog. Restoring focus is the
-  // other half: closing must not dump the person at the top of the document.
-  const close = useCallback(() => {
+  const popover = useRef<HTMLDivElement>(null)
+
+  /** Close and leave focus alone — for a close the person did not ask for. */
+  const close = useCallback(() => setAt(null), [])
+
+  /**
+   * Close AND hand focus back to the trigger — for Escape, click-away, or a second
+   * click on the mark.
+   *
+   * Split from {@link close} because `close` is also the scroll and resize
+   * handler. Round two restored focus unconditionally there, so SCROLLING while
+   * focus sat in the editor closed the popover and yanked the caret onto the mark
+   * mid-keystroke — and the next Space re-opened it. Only reclaim focus the
+   * popover actually holds; `preventScroll` so returning to a trigger that has
+   * scrolled out of view does not jump the page back.
+   */
+  const dismiss = useCallback(() => {
+    const active = document.activeElement
+    const held = active !== null && popover.current?.contains(active) === true
     setAt(null)
-    trigger.current?.focus()
+    if (held) trigger.current?.focus({ preventScroll: true })
   }, [])
 
   // The popover lives in a portal, so it has no layout relationship to its
@@ -112,7 +124,7 @@ export function PageMarkButton({
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        close()
+        dismiss()
       }
     }
     document.addEventListener('keydown', onKey)
@@ -123,7 +135,7 @@ export function PageMarkButton({
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
-  }, [open, close])
+  }, [open, close, dismiss])
 
   const write = useCallback(
     async (patch: { glyph?: string | null; areaRole?: string | null }) => {
@@ -155,7 +167,7 @@ export function PageMarkButton({
           // click on the mark would also navigate.
           e.stopPropagation()
           e.preventDefault()
-          if (open) return close()
+          if (open) return dismiss()
           const r = trigger.current?.getBoundingClientRect()
           setAt(r ? { left: r.left, top: r.bottom + 4 } : { left: 0, top: 0 })
         }}
@@ -173,9 +185,10 @@ export function PageMarkButton({
         createPortal(
           <>
             {/* Click-away. Pointer only — Escape is handled on the popup. */}
-            <div aria-hidden="true" className="fixed inset-0 z-[90]" onClick={close} />
+            <div aria-hidden="true" className="fixed inset-0 z-[90]" onClick={dismiss} />
             {/* Paper, not frames: it floats on shadow alone (AGENTS.md). */}
             <div
+              ref={popover}
               role="dialog"
               aria-modal="false"
               aria-label={`Mark for ${pageTitle}`}
