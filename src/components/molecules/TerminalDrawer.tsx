@@ -5,9 +5,10 @@
  * ergonomics — collapse, user-resize with a drag handle, and remembered height —
  * so the AITerminal organism can stay focused on chat/proposal data.
  *
- * A flex *sibling* of the main panel (not an overlay): collapsing or shrinking it
- * hands the reclaimed height back to the content above, so the drawer never
- * covers what the user is reading.
+ * #96 (BUILD-BRIEF-float-chat-over-content): the drawer FLOATS over the bottom
+ * of the content column as an absolute overlay — the page scrolls behind it and
+ * `WorkspaceShell` pads the content so the last lines can clear the card. The
+ * flanks either side of the card click through to the page beneath.
  *
  * Height is controlled by the parent (persisted to localStorage there); this
  * molecule reports drag deltas and toggles via callbacks. Purely presentational
@@ -15,10 +16,10 @@
  *
  * ticket-42: the terminal's visible chrome now lives entirely within the same
  * centered column the transcript uses. The outer section is transparent so paper
- * shows through outside the column — no full-width beige slab. The shared
- * RAIL_WIDTH_PX constant is the single source of truth for the rail-offset
- * coupling (Rail.tsx also uses w-[252px]); AITerminal imports it so text and
- * chrome can't drift.
+ * shows through outside the column — no full-width beige slab. The card itself
+ * is floating glass (`mn-glass`, composer radius 20 — handoff README § Surfaces).
+ * The shared RAIL_WIDTH_PX constant is the single source of truth for the
+ * rail-width coupling (Rail.tsx also uses w-[206px]).
  */
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -31,12 +32,12 @@ export const TERMINAL_DEFAULT_HEIGHT = 288 // 18rem — the incumbent fixed heig
 export const TERMINAL_COLLAPSED_HEIGHT = 40
 
 /**
- * The rail sidebar's fixed width in px. Both Rail (w-[252px]) and the terminal
- * column offset (pl-[252px]) couple to this value. Exporting it here gives
- * AITerminal a single import to keep text and chrome aligned — if Rail's width
- * ever changes, updating this constant fixes both.
+ * The rail card's width in px (`PondRail`: 206 at desktop). Rail (w-[206px]) and
+ * the Storybook column offsets couple to this value — if Rail's width ever
+ * changes, updating this constant fixes both. The card is inset 20px from the
+ * shell's edges (WorkspaceShell), so the content column begins at 246.
  */
-export const RAIL_WIDTH_PX = 252
+export const RAIL_WIDTH_PX = 206
 
 export function clampTerminalHeight(h: number): number {
   return Math.min(TERMINAL_MAX_HEIGHT, Math.max(TERMINAL_MIN_HEIGHT, h))
@@ -164,11 +165,13 @@ export function TerminalDrawer({
   )
 
   // ticket-42: the outer section is transparent — no full-width bg-card slab.
-  // Only the column-scoped inner surface carries the background and borders.
-  // The section still manages height for the flex layout.
+  // #96: it is an absolute overlay anchored to the bottom of the content column
+  // (z-30, above the page), with pointer-events off so the flanks beside the
+  // card stay scrollable/clickable; the handle and the card opt back in. The
+  // section still manages height so the card grows UPWARD from its anchor.
   return (
     <section
-      className="flex flex-col flex-shrink-0"
+      className="absolute inset-x-0 bottom-0 z-30 flex flex-col pointer-events-none"
       style={{ height: collapsed ? TERMINAL_COLLAPSED_HEIGHT : height + TERMINAL_COLLAPSED_HEIGHT }}
       aria-label="Pond terminal"
     >
@@ -188,7 +191,7 @@ export function TerminalDrawer({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onKeyDown={onHandleKeyDown}
-          className="group relative z-40 h-4 -mt-3 cursor-ns-resize flex items-center outline-none touch-none"
+          className="group relative z-40 h-4 -mt-3 cursor-ns-resize flex items-center outline-none touch-none pointer-events-auto"
           data-testid="terminal-resize-handle"
         >
           {/* Grip centered over the column (not the full window), matching the
@@ -200,18 +203,19 @@ export function TerminalDrawer({
         </div>
       )}
 
-      {/* The whole chat is ONE rounded, bordered card confined to the center
-          column (a floating panel over the paper, matching the v85 proto) — not a
-          full-width dock. The single outer wrapper below carries only the
-          rounding + layout — it's fully transparent (no border/background/shadow,
-          and the header wash is dropped) so the page shows through the chat;
-          header / body / footer live inside it as sections, so the inner column
-          wrappers (AITerminal) no longer re-center.
-          The terminal now lives in the column to the RIGHT of the full-height
-          rail (WorkspaceShell), so `mx-auto max-w-2xl` centers the card in that
+      {/* The whole chat is ONE floating glass card confined to the center column
+          (`Pond 05 Shell`: the composer sits 24px off the bottom, centred over
+          the content) — not a full-width dock. The card carries the glass recipe
+          and the composer radius (20); header / body / footer live inside it as
+          sections, so the inner column wrappers (AITerminal) no longer re-center.
+          The terminal lives in the column to the RIGHT of the rail
+          (WorkspaceShell), so `mx-auto max-w-2xl` centers the card in that
           column directly — no rail offset needed. */}
-      <div className="flex-1 min-h-0 flex px-4 pb-3">
-        <div className="mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-mn-card">
+      <div className="flex-1 min-h-0 flex px-4 pb-6">
+        <div
+          data-part="composer-card"
+          className="mn-glass pointer-events-auto mx-auto w-full max-w-2xl min-h-0 flex flex-col overflow-hidden rounded-mn-card"
+        >
           {/* Header: context + visible controls (collapse toggle, clear).
               MN: the composer is a machine surface, so its chrome speaks the mono
               machine voice (lowercase, tracking-wider) — not the correspondence
@@ -227,7 +231,7 @@ export function TerminalDrawer({
             >
               <span
                 aria-hidden
-                className="inline-block text-[10px] transition-transform"
+                className="inline-block text-mn-11 transition-transform"
                 style={{ transform: collapsed ? 'rotate(-90deg)' : 'none' }}
               >
                 ▾

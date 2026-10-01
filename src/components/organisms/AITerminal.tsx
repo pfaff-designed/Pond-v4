@@ -2199,7 +2199,7 @@ export function AITerminal() {
                 // baseline (motion-focus-draw), so no border-color flip here.
                 // MN: the composer is a machine surface — mono, lowercase, tight
                 // tracking (--voice-mono). Typed intent reads as machine input.
-                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-sm text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
+                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-mn-13 text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>

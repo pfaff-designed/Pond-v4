@@ -58,6 +58,7 @@ const meta = {
   ],
   args: {
     tree: TREE,
+    pondName: 'Life',
     selectedId: null,
     expanded: new Set<string>(),
     lifeExpanded: true,
@@ -70,6 +71,7 @@ const meta = {
     onDelete: fn(),
     onLife: fn(),
     onToggleLife: fn(),
+    onNewPage: fn(),
     canDrop: () => true,
     onMove: fn(),
   },

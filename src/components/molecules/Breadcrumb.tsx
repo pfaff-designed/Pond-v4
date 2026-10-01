@@ -1,12 +1,16 @@
 'use client'
 
 /**
- * The "you are here" trail in a surface header (Life › Health › Workout
- * Routines). Every ancestor crumb is a click target that navigates to that
- * page; Life leads back to the root overview. The current node is either a
- * quiet non-clickable tail (`current`) — used on overview surfaces where it
- * replaces the bare title label — or omitted entirely on the editor, where the
- * title stays an editable input and the breadcrumb shows only the ANCESTOR path.
+ * The "you are here" trail (Life › Health › Workout Routines) — a floating
+ * glass PILL over the canvas, per `Pond 02` 2t: the pond glyph, the ancestor
+ * crumbs at the 68 tier, › separators at 80, the current node in full ink, then
+ * a hairline divider and the ⌘K chip. PP Neue Montreal 500 at 11, .04em.
+ *
+ * Every ancestor crumb is a click target that navigates to that page; Life
+ * leads back to the root overview. The current node is either a quiet
+ * non-clickable tail (`current`), a caller-supplied `tail` (the overview's
+ * editable kicker), or omitted on the editor, where the title input is the tail
+ * and the pill shows only the ANCESTOR path.
  *
  * On a root page (no ancestors, no current) it reads just "Life", still
  * clickable so it stays a consistent home affordance.
@@ -19,9 +23,14 @@
  * #134: the mark is INJECTED as `leadMark`, not derived here. It became a
  * clickable control that writes to the database, and a presentational molecule
  * has no business owning that — the connected `CrumbMark` supplies it.
+ *
+ * #96 / ADR 0002: the ⌘K affordance is single-user and stays; presence and
+ * access states ("only you", "ana here") are M2 and are not drawn.
  */
 
 import { Fragment, type ReactNode } from 'react'
+import { Icon } from '@/components/atoms/Icon'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import type { Crumb } from '@/lib/pages/overview'
 
 export interface BreadcrumbProps {
@@ -34,29 +43,45 @@ export interface BreadcrumbProps {
    * editor surface, where the title input is the tail instead.
    */
   current?: string
+  /** A custom tail rendered inside the pill in place of `current` (the overview's rename field). */
+  tail?: ReactNode
   /** Label for the root crumb. Defaults to "Life". */
   rootLabel?: string
   /** The top-level crumb's mark (#134). Omit and the trail carries none. */
   leadMark?: ReactNode
+  /** Opens the command palette. When given, the pill ends in the ⌘K chip (2t). */
+  onCommandK?: () => void
 }
 
-const sep = <span className="text-mn-text-meta/80 px-1.5 select-none">›</span>
+const sep = (
+  <span className="text-mn-text-meta select-none" aria-hidden>
+    ›
+  </span>
+)
 
 export function Breadcrumb({
   crumbs,
   onNavigate,
   current,
+  tail,
   rootLabel = 'Life',
   leadMark,
+  onCommandK,
 }: BreadcrumbProps) {
+  const hasTail = tail !== undefined || current !== undefined
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center flex-wrap font-mono text-mn-11 tracking-wider lowercase text-mn-text-faint min-w-0"
+      className="mn-glass rounded-mn-pill inline-flex max-w-full min-w-0 items-center gap-2.5 py-2 pr-2 pl-3.5 font-sans text-mn-11 font-medium tracking-[0.04em] whitespace-nowrap text-foreground"
     >
+      {/* The pond's glyph leads the trail (2t). A plain Icon, not an AreaMark:
+          the pond is not an area, and #134's lead mark stays the only one. */}
+      <span className="inline-flex flex-none items-center" aria-hidden>
+        <Icon name={LIFE_GLYPH} size={12} />
+      </span>
       <button
         onClick={() => onNavigate(null)}
-        className="hover:text-foreground transition-colors whitespace-nowrap"
+        className="text-mn-text-secondary hover:text-foreground transition-colors whitespace-nowrap"
       >
         {rootLabel}
       </button>
@@ -72,7 +97,7 @@ export function Breadcrumb({
               {i === 0 && leadMark}
               <button
                 onClick={() => onNavigate(c)}
-                className="hover:text-foreground transition-colors min-w-0 truncate"
+                className="text-mn-text-secondary hover:text-foreground transition-colors min-w-0 truncate"
                 title={c.title}
               >
                 {c.title}
@@ -81,16 +106,34 @@ export function Breadcrumb({
           </Fragment>
         )
       })}
-      {current !== undefined && (
+      {hasTail && (
         <>
           {sep}
-          <span
-            aria-current="page"
-            className="text-foreground truncate max-w-[220px]"
-            title={current}
+          {tail !== undefined ? (
+            tail
+          ) : (
+            <span
+              aria-current="page"
+              className="text-foreground truncate max-w-[220px]"
+              title={current}
+            >
+              {current}
+            </span>
+          )}
+        </>
+      )}
+      {onCommandK && (
+        <>
+          <span className="h-3.5 w-px flex-none bg-mn-line" aria-hidden />
+          <button
+            type="button"
+            onClick={onCommandK}
+            title="Command palette (⌘K)"
+            aria-label="Command palette (⌘K)"
+            className="rounded-mn-pill bg-mn-hover-fill px-[9px] py-1 text-mn-text-secondary hover:text-foreground transition-colors cursor-pointer"
           >
-            {current}
-          </span>
+            ⌘K
+          </button>
         </>
       )}
     </nav>

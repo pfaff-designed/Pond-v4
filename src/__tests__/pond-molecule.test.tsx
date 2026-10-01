@@ -458,11 +458,13 @@ describe('AC7 — RailView through PondMolecule', () => {
       onDelete: jest.fn(),
       onLife: jest.fn(),
       onToggleLife: jest.fn(),
+      onNewPage: jest.fn(),
       onMove: jest.fn(),
     }
     const utils = render(
       <RailView
         tree={TREE}
+        pondName="Life"
         selectedId={null}
         expanded={new Set(['health'])}
         lifeExpanded

@@ -23,6 +23,7 @@ import type { Block } from '@/lib/documents/types'
 import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { requestCommandPalette } from '@/lib/shell-commands'
 import {
   areaOverview,
   lifeOverview,
@@ -58,11 +59,11 @@ function Rise({
 }
 
 /**
- * The kicker micro-label above the numeral. Static text when read-only; an
- * inline click-to-rename field when `onRename` is supplied (ticket-26). Kept
- * uppercase-mono so a renamed area reads the same resting as a static one, and
- * the caption ("Health") stays legible while typing lowercase — the CSS
- * uppercases the display. Enter commits + blurs; Escape reverts; blur commits.
+ * The kicker — the current node's name at the tail of the breadcrumb pill.
+ * Static text when read-only; an inline click-to-rename field when `onRename`
+ * is supplied (ticket-26), styled as the crumb it replaces so a renamed area
+ * reads the same resting as a static one. Enter commits + blurs; Escape
+ * reverts; blur commits.
  */
 function EditableKicker({
   value,
@@ -71,7 +72,9 @@ function EditableKicker({
   value: string
   onRename?: (title: string) => void
 }) {
-  const kickerClass = 'font-mono text-mn-11 tracking-wider uppercase text-mn-text-faint'
+  // #96: the kicker is the breadcrumb pill's editable tail (2t: the current
+  // crumb in full ink, sans 500 / 11, .04em) — one voice with the crumbs.
+  const kickerClass = 'font-sans text-mn-11 font-medium tracking-[0.04em] text-foreground'
   const [draft, setDraft] = useState(value)
   // Escape blurs to end the edit, and blur normally commits — but an Escape
   // blur must NOT commit (the whole point is to revert). The blur event fires
@@ -133,7 +136,7 @@ function AddContentButton({ onAddContent }: { onAddContent: (item: SlashMenuItem
         onClick={() => setOpen(true)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="text-[12.5px] font-medium text-mn-text-secondary hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
+        className="text-mn-13 font-medium text-mn-text-secondary hover:text-foreground border-b border-transparent hover:border-border transition-colors whitespace-nowrap"
       >
         + Add content
       </button>
@@ -224,10 +227,17 @@ export function OverviewSurface({
   const showBreadcrumb = !!onNavigateCrumb
   return (
     <div className="h-full overflow-y-auto font-sans">
-      <div className="max-w-[720px] mx-auto px-8 pt-8 pb-24">
-        {/* ── Header: breadcrumb / kicker + "ask Pond" ────────────────────── */}
-        <Rise i={ri++} className="flex items-baseline justify-between gap-4">
-          <div className="flex items-center gap-2 min-w-0">
+      {/* #96: pt-5 puts the breadcrumb pill 20px off the top (`Pond 05 Shell`);
+          pb-72 lets the last lines scroll clear of the floating composer. */}
+      <div className="max-w-[720px] mx-auto px-8 pt-5 pb-72">
+        {/* ── Header: the floating breadcrumb pill (centred, sticky — the page
+            scrolls under it; 2t) with "+ Add content" at the right ──────────── */}
+        <Rise
+          i={ri++}
+          className="sticky top-5 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4"
+        >
+          <span aria-hidden />
+          <div className="flex items-center justify-center gap-2 min-w-0">
             {markSlot ??
               (accent && (
                 <span
@@ -243,30 +253,27 @@ export function OverviewSurface({
                 value so an external rename (rail/AI) re-seeds the draft. */}
             {showBreadcrumb ? (
               onRenameKicker ? (
-                <span className="flex items-center flex-wrap min-w-0">
-                  <Breadcrumb
-                    crumbs={crumbs ?? []}
-                    onNavigate={onNavigateCrumb}
-                    leadMark={leadMark}
-                  />
-                  <span className="font-mono text-mn-11 text-mn-text-faint/60 px-1.5 select-none">
-                    ›
-                  </span>
-                  <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
-                </span>
+                <Breadcrumb
+                  crumbs={crumbs ?? []}
+                  onNavigate={onNavigateCrumb}
+                  leadMark={leadMark}
+                  tail={<EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />}
+                  onCommandK={requestCommandPalette}
+                />
               ) : (
                 <Breadcrumb
                   crumbs={crumbs ?? []}
                   onNavigate={onNavigateCrumb}
                   current={current}
                   leadMark={leadMark}
+                  onCommandK={requestCommandPalette}
                 />
               )
             ) : (
               <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-end gap-4">
             {onAddContent && <AddContentButton onAddContent={onAddContent} />}
           </div>
         </Rise>
@@ -303,7 +310,7 @@ export function OverviewSurface({
         {/* ── Closing serif exhale ────────────────────────────────────────── */}
         <Rise i={ri++} className="mt-12">
           <div className="border-t border-mn-hair pt-5">
-            <span className="font-serif font-extralight italic text-[16.5px] leading-[1.75] text-mn-text-faint">
+            <span className="font-serif font-extralight italic text-mn-16 leading-[1.75] text-mn-text-faint">
               {closing}
             </span>
           </div>
@@ -432,7 +439,7 @@ export function LifeOverviewPanel() {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-mn-text-faint">
+      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-faint">
         Loading…
       </div>
     )

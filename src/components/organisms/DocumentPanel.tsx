@@ -45,6 +45,7 @@ import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
+import { requestCommandPalette } from '@/lib/shell-commands'
 import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -247,7 +248,7 @@ export function DocumentPanel() {
   }
   if (isLoading || rowsPending || !page) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-mn-text-faint">
+      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-faint">
         Loading…
       </div>
     )
@@ -279,13 +280,15 @@ export function DocumentPanel() {
           and persists it. Everything inside (the #57 timeline's %-positioned
           bars included) reflows because the width is applied here, at the
           column wrapper. */}
+      {/* #96: pt-5 puts the breadcrumb pill 20px off the top (`Pond 05 Shell`);
+          pb-72 lets the last lines scroll clear of the floating composer. */}
       <div
-        className="relative mx-auto px-8 py-8"
+        className="relative mx-auto px-8 pt-5 pb-72"
         style={{ maxWidth: contentWidth }}
         data-testid="page-column"
       >
         <ContentWidthHandle
-          className="absolute inset-y-8 right-0"
+          className="absolute inset-y-5 right-0"
           width={contentWidth}
           onWidthChange={setContentWidth}
           onWidthCommit={commitWidth}
@@ -294,11 +297,16 @@ export function DocumentPanel() {
             is the editable tail, so the crumb never duplicates the current name. */}
         {/* #134: the trail's lead mark is clickable — it opens the picker for the
             area the trail starts in. */}
-        <Breadcrumb
-          crumbs={crumbs}
-          onNavigate={navigateCrumb}
-          leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
-        />
+        {/* #96: the pill FLOATS at the head of the column (sticky, centred, 2t)
+            and the page scrolls under it; ⌘K rides in it (ADR 0002). */}
+        <div className="sticky top-5 z-20 mb-6 flex justify-center">
+          <Breadcrumb
+            crumbs={crumbs}
+            onNavigate={navigateCrumb}
+            leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
+            onCommandK={requestCommandPalette}
+          />
+        </div>
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
             className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-faint"
@@ -320,7 +328,7 @@ export function DocumentPanel() {
           <button
             type="button"
             onClick={toggleChanges}
-            className="shrink-0 font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
+            className="shrink-0 font-mono text-mn-11 lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
           >
             changes
           </button>
