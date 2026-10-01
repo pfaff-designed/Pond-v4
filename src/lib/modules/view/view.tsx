@@ -658,9 +658,13 @@ function CollectionBoard({
                     <input
                       aria-label={`Column name: ${group.label}`}
                       value={group.label}
+                      placeholder="Untitled"
                       autoFocus={group.id === focusColId}
                       onChange={(e) => renameColumn(group.id as string, e.target.value)}
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase outline-none placeholder:text-mn-text-secondary"
+                      // The typed name sits at full ink and the "Untitled" prompt a
+                      // tier below it (.68), so an unnamed column is legible AS unnamed.
+                      // Both tiers are legal; the two must never be the same one (#220).
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text uppercase outline-none placeholder:text-mn-text-secondary"
                     />
                   ) : (
                     <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
@@ -675,7 +679,7 @@ function CollectionBoard({
                       aria-label={`Move column left: ${group.label}`}
                       disabled={optIndex <= 0}
                       onClick={() => moveColumn(group.id as string, 'left')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -692,7 +696,7 @@ function CollectionBoard({
                       aria-label={`Move column right: ${group.label}`}
                       disabled={optIndex < 0 || optIndex >= optCount - 1}
                       onClick={() => moveColumn(group.id as string, 'right')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -1393,9 +1397,13 @@ function OptionChip({ label, color }: { label: string; color?: string }) {
 }
 
 // Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
-// the Make Noise system). Map each to its nearest MN house hue so option dots stay
-// distinguishable but on-brand — ~8 hues, all --raw-* tokens (issue: MN reskin #1).
-// A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
+// the Make Noise system). Each maps to the nearest MN house hue, all --raw-* tokens
+// (issue: MN reskin #1). Since #220 freed the three signals, the warm half of that
+// rainbow collapses: red / rose / rust / pink / orange / amber all land on rose, and
+// yellow / lime join the greens on sage. So these twenty-two names resolve to FIVE
+// swatches — olive-mid, rose, sage, mist, navy — plus ink for `accent`. Two option
+// colours can therefore draw the same dot; the label beside it is what distinguishes
+// them. A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
 const TOKEN_DOT: Record<string, string> = {
   // neutrals → the house neutral-400
   zinc: 'var(--raw-olive-mid)',
@@ -1405,7 +1413,7 @@ const TOKEN_DOT: Record<string, string> = {
   // reds + warms → the dusty-rose swatch, the one warm the palette sanctions for
   // option dots. Red is diff removals, burnt orange the ONE dated thing per screen
   // and wheat highlighted passages only (PROJECT_RULES § Colors), so none of the
-  // three signals may tint a dot (#220).
+  // three signals may tint a dot (#220). Six names share this one swatch.
   red: 'var(--raw-rose)',
   rose: 'var(--raw-rose)',
   rust: 'var(--raw-rose)',

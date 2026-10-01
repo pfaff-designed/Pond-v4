@@ -4,6 +4,7 @@ import type { ModuleViewProps } from '../types'
 import type { TableBlock, TableRow } from './schema'
 import { sumColumn as sumTableColumn, formatTotal } from './sum'
 import { MarkdownInline } from '@/components/molecules/Markdown'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 /**
  * Table view. An interactive module like todo: editing is folded into the view
@@ -59,7 +60,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
             {columns.map((col, i) => (
               <th
                 key={i}
-                className="border-b border-mn-line py-1 pr-3 text-[10.5px] font-medium tracking-wider text-mn-text-secondary uppercase"
+                className={`${pageEyebrowClass} border-b border-mn-line py-1 pr-3`}
               >
                 {col}
               </th>
@@ -117,7 +118,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                   return (
                     <td
                       key={ci}
-                      className="py-1.5 pr-3 text-[10.5px] font-medium tracking-wider text-mn-text-secondary uppercase"
+                      className={`${pageEyebrowClass} py-1.5 pr-3`}
                     >
                       Total
                     </td>

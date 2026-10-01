@@ -96,7 +96,12 @@
   --tracking-tight: -0.03em;
   --tracking-normal: 0em;
   --tracking-wide: 0.06em; /* label */
-  --tracking-wider: 0.1em; /* label-bold (sans eyebrows) ONLY — never mono (#220) */
+  --tracking-wider: 0.1em; /* label-bold: the UPPERCASE eyebrow, in either medium.
+                              `Pond 06.01` 6a draws it at 10.5/.1em on the page
+                              (sans) AND on the machine surface (mono: "pond",
+                              "new page — proposed"). What must never carry it is
+                              LOWERCASE running mono, which the boards track at
+                              .01–.04em — that was the #220 defect. */
 
   /* ── Make Noise component spacing (issue #90) — spacing-mn-* utilities ──
      The tight ramp for chrome/cards; never blurs into the layout scale. */
@@ -162,8 +167,10 @@
 
   /* MN surface + functional roles coined in the #92 rename (theme-aware):
      bg-mn-surface (ground), bg-mn-card, bg-mn-selected-fill (selected),
-     bg-mn-wash (subtle ground). ring-/decoration-mn-mark-faint is the a(.3)
-     MARK tint (#220) — a decoration colour, never a text utility. */
+     bg-mn-wash (subtle ground). mn-mark-faint is the a(.3) MARK tint (#220) —
+     spent on rings, underline decorations and hand-drawn / mask glyphs
+     (`text-mn-mark-faint` on an SVG paints its currentColor stroke). It is
+     never a tier for reading type: the three ink tiers are 100 / .8 / .68. */
   --color-mn-surface: var(--mn-surface);
   --color-mn-card: var(--mn-card);
   --color-mn-mark-faint: var(--mn-mark-faint);

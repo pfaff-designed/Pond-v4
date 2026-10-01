@@ -28,7 +28,7 @@ export function QuoteChip({ text, onRemove, className }: QuoteChipProps) {
         type="button"
         aria-label="Remove quoted context"
         onClick={onRemove}
-        className="flex-shrink-0 text-mn-text/30 transition-colors hover:text-mn-text-meta"
+        className="flex-shrink-0 text-mn-mark-faint transition-colors hover:text-mn-text-meta"
       >
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
           <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />

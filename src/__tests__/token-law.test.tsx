@@ -1,5 +1,5 @@
 /**
- * Token law (#220) — the three token-layer defects and the leaks of the same class.
+ * Token law — the three token-layer defects of #220 and the leaks of the same class.
  *
  * PROJECT_RULES § Colors: three ink tiers only (100 / 80 small meta / 68); three
  * signals, one job each (burnt orange = the one dated thing, wheat = highlighted
@@ -24,6 +24,11 @@ import { READING_PROSE_CLASS, TERMINAL_PROSE_CLASS } from '@/components/molecule
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { SandboxBanner } from '@/components/molecules/SandboxBanner'
 import { ChartCard, KICKER } from '@/lib/modules/chart/card'
+import { machineEyebrowClass } from '@/components/atoms/kicker'
+import { ModuleDiffCard } from '@/components/molecules/ModuleDiffCard'
+import { BlockHandleMenu } from '@/components/molecules/BlockHandleMenu'
+import { ProposalActions } from '@/components/molecules/ProposalActions'
+import type { ChangePreview } from '@/lib/modules/preview'
 import { TodoView } from '@/lib/modules/todo/view'
 import { TableView } from '@/lib/modules/table/view'
 import { TextView } from '@/lib/modules/text/view'
@@ -52,14 +57,18 @@ function sourceFiles(): string[] {
   return out
 }
 
-/** Files whose lines match `re`, as `file:line` strings for a readable failure. */
-function linesMatching(re: RegExp, files = sourceFiles()): string[] {
+/** Files whose lines match `test`, as `file:line` strings for a readable failure. */
+function linesMatching(
+  test: RegExp | ((line: string) => boolean),
+  files = sourceFiles()
+): string[] {
+  const matches = typeof test === 'function' ? test : (line: string) => test.test(line)
   const hits: string[] = []
   for (const file of files) {
     read(file)
       .split('\n')
       .forEach((line, i) => {
-        if (re.test(line)) hits.push(`${file}:${i + 1}`)
+        if (matches(line)) hits.push(`${file}:${i + 1}`)
       })
   }
   return hits
@@ -102,12 +111,18 @@ describe('source sweep — no fourth ink tier is used for type anywhere', () => 
     expect(linesMatching(/text-mn-text\/30[^"'`]*font-(mono|sans|serif)/)).toEqual([])
   })
 
-  it('the mark token is spent only on decorations (the scroll-to-block ring)', () => {
+  it('every genuine mark site spells a(.3) as the token, never ad hoc', () => {
+    // The token had ONE consumer while the marks it was coined for still wrote
+    // `mn-text/30` by hand — which is how a(.3) got mistaken for a text tier in
+    // the first place. Each of these is a ring, an underline decoration or a
+    // glyph painted through currentColor; none of them is reading type.
     const hits = linesMatching(/mn-mark-faint/)
-    expect(hits.length).toBeGreaterThan(0)
     for (const hit of hits) {
-      expect(hit).toMatch(/globals\.css|block-dom\.ts/)
+      expect(hit).toMatch(
+        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|QuoteChip\.tsx|RelationChip\.tsx|Rail\.tsx/
+      )
     }
+    expect(linesMatching(/-mn-text\/30\b/)).toEqual([])
   })
 })
 
@@ -147,18 +162,83 @@ describe('source sweep — red appears only where a diff removal is drawn', () =
     expect(linesMatching(/text-raw-red|hover:text-raw-red/)).toEqual([])
   })
 
-  it('the button destructive variant resolves to ink, not a red class', () => {
-    const cls = buttonVariants({ variant: 'destructive' })
-    expect(cls).not.toMatch(/raw-red|signal-removal/)
+  it('there is no button destructive variant left to paint', () => {
+    // `PondControl.dc.html` draws no destructive variant, and with --destructive
+    // reading ink it rendered as a quiet button wearing a scary name. Deleted
+    // (#220 review / #221), so no variant can reach for red by accident.
+    const source = read('src/components/ui/button.tsx')
+    expect(source).not.toMatch(/^\s*destructive:/m)
+    expect(linesMatching(/variant="destructive"|variant: 'destructive'/)).toEqual([])
+    for (const variant of ['default', 'outline', 'secondary', 'ghost', 'link'] as const) {
+      expect(buttonVariants({ variant })).not.toMatch(/raw-red|signal-removal/)
+    }
   })
 })
 
-// ── Defect 3: mono letterspacing inverted ───────────────────────────────────
+// ── Defect 3: mono letterspacing ────────────────────────────────────────────
+//
+// THE RULE, measured rather than reasoned. The machine surface is not
+// untracked — it is tracked *small*:
+//
+//   | board              | site                          | mono value      |
+//   | ------------------ | ----------------------------- | --------------- |
+//   | `Pond 06.01` 6a    | the composer's running rows   | 12.5px / .02em  |
+//   | `Pond 06.03` 6c f5 | the resolved status line      | 12.5px / .02em  |
+//   | `Pond 06.10` 6j f2 | the block menu's group labels | 10.5px / .04em  |
+//   | `Pond 06.01` 6a    | the UPPERCASE eyebrow         | 10.5px / .1em   |
+//
+// So what is banned is not "tracking on mono". It is a wide tracking on mono
+// LOWERCASE running text — the `tracking-wider` (.1em) that the token layer was
+// leaking into the machine voice. The last row is the carve-out that makes this
+// a measurement and not a slogan: `new page — proposed` and the `pond`
+// attribution on `Pond 06.01` both sit under a `PP Neue Montreal Mono` ancestor
+// at .1em *because they are uppercase eyebrows*, which is exactly what
+// `machineEyebrowClass` transcribes. A rule that banned .1em on mono outright
+// would "correct" an accurate transcription into an inaccurate one — the error
+// ADR 0003's 2026-10-01 amendment exists to stop us repeating.
 
-describe('globals.css — mono carries no added letterspacing', () => {
+/** A tracking class at or above .05em: the Tailwind steps, or a wide bracket. */
+const WIDE_TRACKING = /\btracking-(wide|wider|widest)\b|\btracking-\[-?0?\.(0[5-9]|[1-9]\d*)em\]/
+
+const classOf = (el: Element) => el.getAttribute('class') ?? ''
+
+/**
+ * Resolve an inherited class-driven property the way the cascade would: walk up
+ * from the element and take the nearest ancestor that declares one of `decls`.
+ */
+function resolveInherited(el: Element, decls: RegExp): string | null {
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    const match = decls.exec(classOf(node))
+    if (match) return match[0]
+  }
+  return null
+}
+
+/**
+ * Every rendered element that carries a wide tracking while sitting in a MONO
+ * subtree — whether `font-mono` is on the element or on any ancestor. The
+ * line-level source sweep below cannot see that inheritance, which is how both
+ * of #220's misses (`ModuleDiffCard`'s `inferred` pill, and the false positive
+ * on `BlockHandleMenu`'s group label) got through review.
+ *
+ * Uppercase elements are exempt: that is the board's eyebrow (see the table).
+ */
+function wideTrackingOnMono(root: HTMLElement): string[] {
+  const offenders: string[] = []
+  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+    const own = classOf(el)
+    if (!WIDE_TRACKING.test(own)) continue
+    if (resolveInherited(el, /\b(uppercase|lowercase|normal-case)\b/) === 'uppercase') continue
+    if (resolveInherited(el, /\bfont-(mono|sans|serif)\b/) !== 'font-mono') continue
+    offenders.push(`<${el.tagName.toLowerCase()} class="${own}">`)
+  }
+  return offenders
+}
+
+describe('globals.css — the mono voice runs tight', () => {
   const css = read(CSS)
 
-  it('the mono voice tracks normal; label-bold keeps .1em', () => {
+  it('the mono voice tracks normal; the eyebrow voice keeps .1em', () => {
     expect(css).toMatch(/--voice-mono-tracking:\s*var\(--tracking-normal\)/)
     expect(css).toMatch(/--voice-label-bold-tracking:\s*var\(--tracking-wider\)/)
     expect(css).toMatch(/--tracking-wider:\s*0\.1em;/)
@@ -170,21 +250,136 @@ describe('globals.css — mono carries no added letterspacing', () => {
   })
 })
 
-describe('source sweep — no font-mono class string adds letterspacing', () => {
-  it('no line pairs font-mono with tracking-wide / tracking-wider / tracking-widest', () => {
-    expect(linesMatching(/font-mono[^"'`\n]*tracking-wide(r|st)?\b/)).toEqual([])
-    expect(linesMatching(/tracking-wide(r|st)?\b[^"'`\n]*font-mono/)).toEqual([])
+describe('the inheritance-aware sweep itself', () => {
+  // The guard is only worth its runtime if it catches what the line sweep missed,
+  // so it is tested against the shapes directly rather than trusted.
+  it('flags a wide tracking under an ancestor that supplies font-mono', () => {
+    const { container } = render(
+      <div className="font-mono lowercase">
+        <div className="flex">
+          <span className="rounded-mn-pill tracking-wider">inferred</span>
+        </div>
+      </div>
+    )
+    expect(wideTrackingOnMono(container)).toHaveLength(1)
   })
 
-  it('no mono line carries a bracket tracking wider than the boards’ .02em', () => {
-    // .02em is measured off `Pond 06.01` 6a (ProposalActions, MadeFromChip, #97);
-    // anything looser on mono was the inverted token leaking in.
-    const loose = /tracking-\[0?\.(0[3-9]|[1-9]\d*)em\]/
-    const hits = linesMatching(/font-mono/).filter((hit) => {
-      const [file, line] = hit.split(':')
-      return loose.test(read(file).split('\n')[Number(line) - 1])
-    })
-    expect(hits).toEqual([])
+  it('passes the board-measured .04em and .02em on mono', () => {
+    const { container } = render(
+      <div className="font-mono lowercase">
+        <div className="tracking-[0.04em]">turn into</div>
+        <div className="tracking-[0.02em]">rejected — nothing changed</div>
+      </div>
+    )
+    expect(wideTrackingOnMono(container)).toEqual([])
+  })
+
+  it('passes the board’s mono UPPERCASE eyebrow at .1em', () => {
+    const { container } = render(<span className={machineEyebrowClass}>new page — proposed</span>)
+    expect(machineEyebrowClass).toMatch(/\bfont-mono\b/)
+    expect(machineEyebrowClass).toMatch(/tracking-\[0\.1em\]/)
+    expect(wideTrackingOnMono(container)).toEqual([])
+  })
+
+  it('ignores a wide tracking that a nearer font-sans takes back out of mono', () => {
+    const { container } = render(
+      <div className="font-mono">
+        <span className="font-sans tracking-wider">MADE FROM</span>
+      </div>
+    )
+    expect(wideTrackingOnMono(container)).toEqual([])
+  })
+})
+
+describe('rendered machine surfaces carry no wide tracking', () => {
+  const diffHandlers = () => ({
+    onAccept: jest.fn(),
+    onReject: jest.fn(),
+    onRequestChanges: jest.fn(),
+  })
+
+  /** A change the model inferred — the `inferred` pill is only drawn for this. */
+  const inferredChange: ChangePreview = {
+    op: 'create',
+    before: null,
+    after: { id: '__preview__', type: 'text', content: 'worktop template — w/c 13 oct' },
+    reason: 'the worktop follows the electrician by a week',
+    inferred: true,
+  }
+
+  it('the diff card, including the inferred pill (the #220 miss)', () => {
+    const { container } = render(
+      <ModuleDiffCard changes={[inferredChange]} targetName="schedule" {...diffHandlers()} />
+    )
+    // The pill is really on screen — otherwise this test would pass vacuously.
+    expect(screen.getByText('inferred')).toBeInTheDocument()
+    expect(wideTrackingOnMono(container)).toEqual([])
+  })
+
+  it('the diff card once it has settled', () => {
+    const { container } = render(
+      <ModuleDiffCard
+        changes={[inferredChange]}
+        targetName="schedule"
+        status="rejected"
+        {...diffHandlers()}
+      />
+    )
+    expect(wideTrackingOnMono(container)).toEqual([])
+  })
+
+  it('the proposal actions row, pending and settled', () => {
+    for (const status of ['pending', 'accepted'] as const) {
+      const { container } = render(
+        <ProposalActions status={status} onAccept={jest.fn()} onReject={jest.fn()} />
+      )
+      expect(wideTrackingOnMono(container)).toEqual([])
+    }
+  })
+
+  it('the block handle menu — and its group label KEEPS the board’s .04em', () => {
+    const { container } = render(
+      <BlockHandleMenu
+        items={[
+          {
+            id: 'table',
+            group: 'turn into',
+            label: 'table',
+            preview: '4 rows · 3 columns',
+            icon: 'table',
+          },
+          { id: 'delete', group: 'block', label: 'delete block', icon: 'delete' },
+        ]}
+        onSelect={jest.fn()}
+        onClose={jest.fn()}
+      />
+    )
+    expect(wideTrackingOnMono(container)).toEqual([])
+    const label = screen.getByText('turn into')
+    expect(label.className).toMatch(/tracking-\[0\.04em\]/)
+    expect(label.className).toMatch(/text-\[10\.5px\]/)
+  })
+})
+
+describe('source sweep — no single line pairs mono with a wide tracking', () => {
+  // The cheap half of the guard: it reads text, so it only sees an element that
+  // declares `font-mono` and its tracking in ONE class string. The rendered sweep
+  // above is the one that resolves inheritance; this one keeps the whole tree in
+  // scope rather than only the components a test happens to mount.
+  const sameLineMono = (line: string) =>
+    /\bfont-mono\b/.test(line) && !/\buppercase\b/.test(line) && WIDE_TRACKING.test(line)
+
+  it('no line pairs lowercase mono with tracking-wide / wider / widest', () => {
+    expect(linesMatching((line) => sameLineMono(line))).toEqual([])
+  })
+
+  it('a bracket tracking on mono stays at or under the boards’ .04em', () => {
+    const tooWide = /\btracking-\[-?0?\.(0[5-9]|[1-9]\d*)em\]/
+    expect(
+      linesMatching(
+        (line) => /\bfont-mono\b/.test(line) && !/\buppercase\b/.test(line) && tooWide.test(line)
+      )
+    ).toEqual([])
   })
 })
 

@@ -317,7 +317,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid h-[34px] w-[20px] flex-shrink-0 place-items-center text-mn-text/30 transition-colors hover:text-mn-text"
+          className="grid h-[34px] w-[20px] flex-shrink-0 place-items-center text-mn-mark-faint transition-colors hover:text-mn-text"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -355,7 +355,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onAddChild && (
                   <button
                     type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Add sub-page"
                     aria-label={`Add sub-page to ${label}`}
                     disabled={isBusy}
@@ -377,7 +377,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onDelete && (
                   <button
                     type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Delete page"
                     aria-label={`Delete ${label}`}
                     disabled={isBusy}

@@ -20,6 +20,7 @@
  */
 
 import { cn } from '@/lib/utils'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 export const POND_ATOM_KINDS = [
   'heading',
@@ -216,7 +217,7 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
         .filter(Boolean)
         .join(' ')
     case 'eyebrow':
-      return 'text-[10.5px] font-medium uppercase tracking-wider text-mn-text-secondary'
+      return pageEyebrowClass
     case 'prose':
       return cn('font-serif font-extralight leading-relaxed', mobile ? 'text-[17px]' : 'text-[17.5px]')
     case 'highlight':
@@ -236,7 +237,7 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
       )
     case 'link':
       return cn(
-        'underline decoration-mn-text/30 underline-offset-[3px]',
+        'underline decoration-mn-mark-faint underline-offset-[3px]',
         hover && 'opacity-75'
       )
     case 'file':
@@ -450,7 +451,7 @@ export function PondAtom({
           className={cn(
             'flex-none bg-current',
             mobile ? 'size-5' : 'size-4',
-            areaText ?? (empty ? 'text-mn-text/30' : 'text-mn-text')
+            areaText ?? (empty ? 'text-mn-mark-faint' : 'text-mn-text')
           )}
         />
       )}
