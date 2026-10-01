@@ -118,7 +118,7 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
         // MN PondPicker: the picker is a card-level floating surface — outer
         // radius 20 (rounded-mn-card), separated by shadow not a hard frame
         // ("paper-not-frames"), with the sans-row list inset by p-1 padding.
-        'motion-menu bg-mn-surface rounded-mn-card shadow-mn-lg overflow-hidden',
+        'motion-menu mn-glass rounded-mn-card overflow-hidden',
         // Portal mode owns its own fixed box (w-72, high z); inline mode takes
         // the caller's positioning className.
         anchorEl ? 'fixed z-[100] w-72' : className
@@ -142,7 +142,9 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
       <div ref={itemsRef} className="overflow-y-auto max-h-64 p-1.5 flex flex-col gap-0.5">
         {filteredItems.length === 0 ? (
           // MN note voice: machine-surface message is mono lowercase, muted tier.
-          <p className="px-3 py-2 font-mono lowercase tracking-wider text-xs text-mn-text-secondary">No blocks match</p>
+          <p className="px-3 py-2 font-mono lowercase tracking-wider text-xs text-mn-text-secondary">
+            No blocks match
+          </p>
         ) : (
           filteredItems.map((item, i) => {
             const isActive = i === clampedIndex

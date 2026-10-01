@@ -155,6 +155,7 @@
   --color-mn-signal-highlight: var(--mn-signal-highlight);
   --color-mn-signal-highlight-ink: var(--mn-signal-highlight-ink);
   --color-mn-signal-removal: var(--mn-signal-removal);
+  --color-mn-wall: var(--mn-wall);
   --color-mn-area-a: var(--mn-area-a);
   --color-mn-area-b: var(--mn-area-b);
   --color-mn-area-c: var(--mn-area-c);
@@ -294,7 +295,23 @@
   /* Surface + functional roles (coined in #92, replacing the press-* aliases).
      Theme-aware: surface/card flip on the dark ground; the ink-alpha fills keep
      their exact opacities so the rename is pixel-identical. */
-  --mn-surface: var(--raw-paper); /* the ground/paper — flips to ink on dark */
+  /* ONE paper on light. design_handoff_pond/PROJECT_RULES.md §Design language —
+     the bundle's top-priority file, which its README says "overrides anything in
+     a mockup that disagrees with it" — reads: "The wall and the modules are the
+     same paper (#FAF9EF), separated by shadow rather than by borders or a page
+     frame." README §Design tokens says it again: "#FAF9EF paper: the ground and
+     the cards (one sheet, separated by shadow)."
+
+     So modules are separated from the ground by SHADOW AND THE 20px WINDOW INSET,
+     never by a colour step. Pond 01 §1a/§1g do name a #EDECD8 "wall", but those
+     are mockup files and PROJECT_RULES overrides them; #EDECD8 reaches a ground
+     only in the Make Noise `.theme-press` selection, which _ds/mn/tokens/themes.css
+     says was itself derived FROM this repo's globals.css (R6).
+
+     Dark IS two values — ground #1B1D14, cards one ramp step up to #30312A, per
+     the same rule. That light/dark asymmetry is the design, not a slip. */
+  --mn-wall: var(--raw-paper); /* the ground — same paper as cards on light */
+  --mn-surface: var(--raw-paper); /* card paper — modules, rail, composer */
   --mn-card: var(--raw-paper); /* card surface — flips to raw-card-dark on dark */
   --mn-text-faint: rgb(27 29 20 / 0.3); /* functional-faint tier (placeholders/meta) */
   --mn-selected-fill: rgb(27 29 20 / 0.12); /* selected/active row fill */
@@ -317,7 +334,7 @@
   /* ── shadcn semantic tokens, mapped onto Make Noise roles (#92) ──
      Every token derives from an mn-/raw- role; the .dark block re-themes
      by overriding those roles, so nothing shadcn is restated on dark. */
-  --background: var(--mn-surface);
+  --background: var(--mn-wall); /* the ground; = card paper on light, ink on dark */
   --foreground: var(--mn-text);
   --card: var(--mn-card);
   --card-foreground: var(--mn-text);
@@ -384,7 +401,12 @@
      Ground = ink, cards = dark card. Every shadcn/sidebar token in :root
      derives from the --mn- roles, so overriding them here re-themes the
      whole app. Paper carries text in the same 3 tiers (100 / 80 / 68). */
-  --mn-surface: var(--raw-ink); /* ground flips to ink */
+  --mn-wall: var(--raw-ink); /* #1B1D14 — the dark ground (dark IS two values) */
+  --mn-surface: var(
+    --raw-card-dark
+  ); /* card paper, so bg-mn-surface means the same
+    thing on both themes — it was the GROUND here, which made every floating
+    surface ground-coloured on dark */
   --mn-card: var(--raw-card-dark); /* card surface on the dark ground */
   --mn-text-faint: rgb(250 249 239 / 0.3);
   --mn-selected-fill: rgb(250 249 239 / 0.2);

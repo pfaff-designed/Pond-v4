@@ -113,7 +113,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
     >
       {/* Panel — stop click-propagation so clicks inside don't close */}
       <div
-        className="mn-arrive w-full max-w-lg rounded-mn-card bg-mn-surface shadow-mn-lg overflow-hidden"
+        className="mn-arrive mn-glass w-full max-w-lg rounded-mn-card overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}

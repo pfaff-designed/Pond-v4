@@ -193,7 +193,7 @@ export function PageMarkButton({
               aria-modal="false"
               aria-label={`Mark for ${pageTitle}`}
               style={{ left: at.left, top: at.top }}
-              className="fixed z-[100] rounded-mn-card bg-mn-surface p-3 shadow-mn-lg"
+              className="mn-glass fixed z-[100] rounded-mn-card p-3"
             >
               <MarkPicker
                 autoFocus

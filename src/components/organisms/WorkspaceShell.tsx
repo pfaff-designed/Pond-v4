@@ -32,7 +32,12 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           the full window. */}
       <div className="flex flex-col h-full">
         {isSandbox && <SandboxBanner />}
-        <div className="relative flex flex-1 min-h-0">
+        {/* §1c "20 window inset": the rail and the page sit 20 off every window
+            edge, so the rail reads as a floating object on the paper rather than
+            furniture docked to the edge. With one paper (PROJECT_RULES §Design
+            language) this inset plus the card shadow IS the separation — there is
+            no colour step doing it. TopBar is viewport-fixed, so it is unaffected. */}
+        <div className="relative flex flex-1 min-h-0 gap-5 p-5">
           <DeletionUndoProvider>
             <Suspense fallback={<div className="w-[252px] flex-shrink-0" />}>
               <Rail />

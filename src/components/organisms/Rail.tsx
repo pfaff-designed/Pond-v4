@@ -728,7 +728,7 @@ export function RailView({
   }
 
   return (
-    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-3 pb-[14px] font-sans">
+    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto rounded-mn-card bg-mn-surface px-3 pb-[14px] font-sans shadow-mn-card">
       {/* Pinned to the top-left: the wordmark stays put while the tree scrolls
           beneath it (sticky, with the paper bg so rows pass under cleanly). The
           wordmark is the calm sans title voice (PP Neue Montreal, weight 500,

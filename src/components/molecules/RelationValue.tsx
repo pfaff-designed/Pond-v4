@@ -113,7 +113,7 @@ export function RelationValue({
         <div
           role="menu"
           aria-label="Page picker"
-          className="motion-menu absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-mn-inner bg-mn-surface shadow-mn-lg"
+          className="motion-menu mn-glass absolute left-0 top-full z-[100] mt-1 w-64 overflow-hidden rounded-mn-inner"
         >
           <input
             ref={inputRef}
