@@ -483,7 +483,7 @@ function BlockEditor({
           </svg>
         </button>
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
+          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text focus-visible:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
           title="Delete block"
           aria-label="Delete block"
           onClick={onRemove}

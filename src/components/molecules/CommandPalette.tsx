@@ -119,7 +119,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
         {/* Search input */}
         <div className="border-b border-mn-hair px-4 py-3 flex items-center gap-3">
           <span
-            className="rounded-mn-chrome bg-mn-wash px-1.5 py-0.5 font-mono lowercase tracking-wider text-xs text-mn-text-faint select-none"
+            className="rounded-mn-chrome bg-mn-wash px-1.5 py-0.5 font-mono lowercase text-xs text-mn-text-secondary select-none"
             aria-hidden
           >
             ⌘K
@@ -133,7 +133,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
             }}
             onKeyDown={handleKeyDown}
             placeholder="search pages or actions…"
-            className="flex-1 bg-transparent font-mono lowercase tracking-wider text-sm outline-none placeholder:text-mn-text-faint text-mn-text-meta"
+            className="flex-1 bg-transparent font-mono lowercase text-sm outline-none placeholder:text-mn-text-secondary text-mn-text-meta"
             aria-label="Search pages or actions"
             aria-autocomplete="list"
             role="combobox"
@@ -141,7 +141,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
           />
           <button
             onClick={onClose}
-            className="font-mono lowercase tracking-wider text-xs text-mn-text-faint hover:text-mn-text-meta transition-colors"
+            className="font-mono lowercase text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
             aria-label="Close palette"
           >
             esc
@@ -151,7 +151,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
         {/* Results */}
         <div ref={listRef} className="overflow-y-auto max-h-80" role="listbox">
           {flatFiltered.length === 0 ? (
-            <p className="px-4 py-3 font-mono lowercase tracking-wider text-sm text-mn-text-secondary">
+            <p className="px-4 py-3 font-mono lowercase text-sm text-mn-text-secondary">
               no results
             </p>
           ) : (
@@ -160,7 +160,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
               runningIndex += groupItems.length
               return (
                 <div key={group}>
-                  <div className="px-4 pt-3 pb-1 font-mono lowercase tracking-wider text-[0.65rem] text-mn-text-faint">
+                  <div className="px-4 pt-3 pb-1 font-mono lowercase text-[0.65rem] text-mn-text-secondary">
                     {GROUP_LABELS[group]}
                   </div>
                   {groupItems.map((item, localI) => {
@@ -179,11 +179,11 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
                         onMouseEnter={() => setActiveIndex(globalI)}
                         onClick={() => onSelect(item)}
                       >
-                        <div className="font-mono lowercase tracking-wider text-sm text-mn-text-meta truncate">
+                        <div className="font-mono lowercase text-sm text-mn-text-meta truncate">
                           {item.label}
                         </div>
                         {item.subtitle && (
-                          <div className="font-mono lowercase tracking-wider text-[0.65rem] text-mn-text-secondary truncate mt-0.5">
+                          <div className="font-mono lowercase text-[0.65rem] text-mn-text-secondary truncate mt-0.5">
                             {item.subtitle}
                           </div>
                         )}
@@ -197,7 +197,7 @@ export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps
         </div>
 
         {/* Footer hint */}
-        <div className="border-t border-mn-hair px-4 py-2 flex gap-4 font-mono lowercase tracking-wider text-xs text-mn-text-faint">
+        <div className="border-t border-mn-hair px-4 py-2 flex gap-4 font-mono lowercase text-xs text-mn-text-secondary">
           <span>↑↓ navigate</span>
           <span>↵ select</span>
           <span>esc close</span>

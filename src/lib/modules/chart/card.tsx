@@ -3,21 +3,22 @@
 import type { ReactNode } from 'react'
 import type { ChartPoint } from './data'
 import { seriesNames } from './data'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 /**
  * Shared chart CARD chrome — the module-card wrapper every chart KIND renders inside.
  * The Bklit VISUAL is untouched; this only supplies the surrounding chrome so all
- * thirteen kinds read as one family: a kicker title, a muted caption, axis + legend
- * labels in the small mono-kicker voice, and a calm empty state that never crashes on
+ * thirteen kinds read as one family: a sans eyebrow title, a muted caption, axis + legend
+ * labels in the same eyebrow voice, and a calm empty state that never crashes on
  * degenerate data. Colours are the Make Noise chart tokens only (#94 retint).
  */
 
-/** The module-card kicker voice — exported so any surface that needs the block
- *  eyebrow shares the exact chrome instead of restating the classes. Make Noise:
- *  the block eyebrow is the mono machine-surface voice (lowercase, tight
- *  tracking) in muted ink — the label over a data block. */
-export const KICKER =
-  'font-mono text-mn-11 lowercase tracking-wider text-mn-text-secondary'
+/** The block eyebrow — exported so any surface that needs it shares the exact
+ *  chrome instead of restating the classes. `PondBlock.dc.html` (read inline):
+ *  10.5 / 500 / .1em / uppercase / a(.68) with NO font-family, so it inherits the
+ *  block's sans. A block lives on a PAGE, so it is the page eyebrow — never the
+ *  mono machine voice (atoms/kicker.ts, "two mediums"; #220). */
+export const KICKER = pageEyebrowClass
 
 export interface ChartCardProps {
   title?: string

@@ -13,22 +13,21 @@
 
 import { Fragment } from 'react'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import type { OverviewCardModel } from '@/lib/pages/overview'
 
 /**
- * The grid's mono section label — one component so the label can't drift between
- * ChildrenGrid's inline rendering and OverviewSurface's rise-animated copy.
+ * The grid's section label — one component so the label can't drift between
+ * ChildrenGrid's inline rendering and OverviewSurface's rise-animated copy. It
+ * lives on a page, so it is the sans page eyebrow (10.5 / .1em / .68), not a
+ * mono label at a fourth ink tier (#220).
  */
 export function ChildrenGridLabel({
   children = 'Everything within',
 }: {
   children?: React.ReactNode
 }) {
-  return (
-    <div className="font-mono text-[10px] tracking-[0.2em] uppercase text-mn-text/30 mb-3.5">
-      {children}
-    </div>
-  )
+  return <div className={`${pageEyebrowClass} mb-3.5`}>{children}</div>
 }
 
 /**

@@ -70,7 +70,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
         <tbody>
           {rows.length === 0 && !editable && (
             <tr>
-              <td colSpan={columns.length} className="py-2 text-mn-text-faint">
+              <td colSpan={columns.length} className="py-2 text-mn-text-secondary">
                 No entries yet
               </td>
             </tr>
@@ -99,7 +99,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                   <button
                     type="button"
                     aria-label={`Remove row ${ri + 1}`}
-                    className="text-mn-text-faint hover:text-mn-text-meta"
+                    className="text-mn-text-secondary hover:text-mn-text-meta"
                     onClick={() => removeRow(ri)}
                   >
                     ×

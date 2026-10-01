@@ -103,7 +103,7 @@ export function RelationValue({
           type="button"
           aria-label="Link a page"
           onClick={() => (open ? close() : setOpen(true))}
-          className="rounded-mn-pill border border-dashed border-mn-line px-2 py-0.5 font-mono lowercase tracking-wider text-xs text-mn-text-secondary transition-colors hover:border-mn-text/50 hover:text-mn-text-meta"
+          className="rounded-mn-pill border border-dashed border-mn-line px-2 py-0.5 font-mono lowercase text-xs text-mn-text-secondary transition-colors hover:border-mn-text/50 hover:text-mn-text-meta"
         >
           + link
         </button>
@@ -127,7 +127,7 @@ export function RelationValue({
             }}
             placeholder="search pages…"
             aria-label="Search pages to link"
-            className="w-full border-b border-mn-hair bg-transparent px-3 py-2 font-mono lowercase tracking-wider text-sm outline-none placeholder:text-mn-text-faint"
+            className="w-full border-b border-mn-hair bg-transparent px-3 py-2 font-mono lowercase text-sm outline-none placeholder:text-mn-text-secondary"
           />
           <div className="max-h-64 overflow-y-auto p-1">
             {options.length === 0 ? (

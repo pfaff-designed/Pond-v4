@@ -34,7 +34,7 @@ export function BacklinksSection({ groups, onOpen, className }: BacklinksSection
       <div className="space-y-3">
         {groups.map((group) => (
           <div key={`${group.sourceCollectionId}:${group.propertyId}`}>
-            <p className="mb-1 font-mono text-xs text-mn-text-faint">
+            <p className="mb-1 font-mono text-xs text-mn-text-secondary">
               {group.sourceCollectionTitle} · {group.propertyName}
             </p>
             <div className="flex flex-wrap gap-1">

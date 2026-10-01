@@ -31,9 +31,11 @@ import { answerComponents } from './markdown-answer'
 
 export type MarkdownVariant = 'reading' | 'terminal' | 'answer'
 
-/** The shared Press serif voice both prose treatments are built from — one base,
- *  two scales, so the two variants cannot drift into different type worlds. */
-const PROSE_BASE_CLASS = 'font-serif font-extralight text-mn-text-meta'
+/** The shared serif prose voice both treatments are built from — one base, two
+ *  scales, so the two variants cannot drift into different type worlds. FULL ink:
+ *  `PondAtom.dc.html` sets the prose atom at fg; .8 is the small-meta tier and
+ *  was never a prose value (#220). */
+const PROSE_BASE_CLASS = 'font-serif font-extralight text-mn-text'
 
 /**
  * The Press reading-prose text treatment, shared by every flow element of the

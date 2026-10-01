@@ -35,13 +35,15 @@ export function SandboxBanner({ onReset }: SandboxBannerProps = {}) {
     <div
       role="status"
       aria-label="Sandbox workspace"
-      className="flex items-center justify-between px-3 py-1.5 bg-raw-wheat text-raw-ink"
+      // Wheat is highlighted passages only (PROJECT_RULES § Colors), so the banner
+      // is the ink wash — the quiet ground chips and code share — carrying ink (#220).
+      className="flex items-center justify-between px-3 py-1.5 bg-mn-wash text-mn-text"
     >
-      <span className="font-mono lowercase tracking-[0.14em] text-[10px]">sandbox</span>
+      <span className="font-mono lowercase text-[10.5px]">sandbox</span>
       <button
         onClick={handleReset}
         disabled={resetting}
-        className="font-mono lowercase tracking-wider text-xs text-raw-ink/80 hover:text-raw-ink disabled:opacity-50 transition-colors"
+        className="font-mono lowercase text-[10.5px] text-mn-text-meta hover:text-mn-text disabled:opacity-50 transition-colors"
         aria-label="Reset sandbox workspace"
       >
         {resetting ? 'resetting…' : 'reset sandbox'}

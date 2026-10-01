@@ -44,7 +44,7 @@ export function FollowupChips({
       className={cn('mn-rise flex flex-wrap items-center gap-2', className)}
     >
       {label && (
-        <span className="font-sans text-[0.65rem] font-medium uppercase tracking-wide text-mn-text-faint">
+        <span className="font-sans text-[0.65rem] font-medium uppercase tracking-wide text-mn-text-secondary">
           {label}
         </span>
       )}
@@ -57,7 +57,7 @@ export function FollowupChips({
           className={cn(
             // Machine surface (composer follow-ups + question-card options): mono,
             // lowercase, tight tracking — a hairline pill, paper-not-frames.
-            'rounded-mn-pill border border-mn-line bg-transparent px-3 py-1 font-mono lowercase tracking-wider text-[0.72rem] leading-none text-mn-text-meta',
+            'rounded-mn-pill border border-mn-line bg-transparent px-3 py-1 font-mono lowercase text-[0.72rem] leading-none text-mn-text-meta',
             'transition-colors hover:border-mn-text hover:text-mn-text',
             'focus:outline-none focus-visible:border-mn-text focus-visible:ring-1 focus-visible:ring-mn-text',
             'disabled:opacity-40 disabled:hover:border-mn-line disabled:hover:text-mn-text-meta'

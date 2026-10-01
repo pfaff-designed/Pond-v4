@@ -50,7 +50,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
             // Read-only: inline markdown rendering (Fix-4 / F8) — bold/italic/code/links
             // without block elements, so "**item**" shows as bold text, not raw asterisks.
             <MarkdownInline
-              className={item.checked ? 'flex-1 text-mn-text-faint line-through' : 'flex-1'}
+              className={item.checked ? 'flex-1 text-mn-text-secondary line-through' : 'flex-1'}
             >
               {item.label}
             </MarkdownInline>

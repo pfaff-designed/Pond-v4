@@ -136,13 +136,13 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
         }}
         onKeyDown={handleKeyDown}
         placeholder="filter…"
-        className="w-full border-b border-mn-hair bg-transparent font-mono lowercase tracking-wider text-sm px-3 pt-2.5 pb-3 outline-none placeholder:text-mn-text-faint"
+        className="w-full border-b border-mn-hair bg-transparent font-mono lowercase text-sm px-3 pt-2.5 pb-3 outline-none placeholder:text-mn-text-secondary"
         aria-label="Filter blocks"
       />
       <div ref={itemsRef} className="overflow-y-auto max-h-64 p-1.5 flex flex-col gap-0.5">
         {filteredItems.length === 0 ? (
           // MN note voice: machine-surface message is mono lowercase, muted tier.
-          <p className="px-3 py-2 font-mono lowercase tracking-wider text-xs text-mn-text-secondary">No blocks match</p>
+          <p className="px-3 py-2 font-mono lowercase text-xs text-mn-text-secondary">No blocks match</p>
         ) : (
           filteredItems.map((item, i) => {
             const isActive = i === clampedIndex

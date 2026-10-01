@@ -85,7 +85,7 @@ export function PromoteTableProposalCard({
         <span className={kickerClass}>
           Convert table · {columns.length} {columns.length === 1 ? 'column' : 'columns'}
         </span>
-        <span className={cn(kickerClass, 'text-mn-text-faint')}>
+        <span className={cn(kickerClass, 'text-mn-text-secondary')}>
           {rowCount} {rowCount === 1 ? 'row' : 'rows'}
         </span>
       </div>
@@ -95,7 +95,7 @@ export function PromoteTableProposalCard({
         {tableTitle?.trim() ? (
           tableTitle
         ) : (
-          <span className="italic text-mn-text-faint">Untitled table</span>
+          <span className="italic text-mn-text-secondary">Untitled table</span>
         )}
       </p>
 

@@ -409,7 +409,7 @@ export function PondMolecule({
           </span>
           <span
             data-part="sub"
-            className="font-mono lowercase text-[11.5px] tracking-wider text-mn-text-secondary"
+            className="font-mono lowercase text-[11.5px] text-mn-text-secondary"
           >
             {sub}
           </span>

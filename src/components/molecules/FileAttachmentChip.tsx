@@ -29,7 +29,7 @@ export function FileAttachmentChip({
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-mn-pill bg-mn-wash',
-        'px-2.5 py-0.5 font-mono lowercase tracking-wider text-xs text-mn-text-meta max-w-[28ch]',
+        'px-2.5 py-0.5 font-mono lowercase text-xs text-mn-text-meta max-w-[28ch]',
         className
       )}
     >
@@ -63,7 +63,7 @@ export function FileAttachmentChip({
           type="button"
           aria-label={`Remove ${filename}`}
           onClick={onRemove}
-          className="flex-shrink-0 text-mn-text-faint hover:text-mn-text-meta transition-colors ml-0.5"
+          className="flex-shrink-0 text-mn-text-secondary hover:text-mn-text-meta transition-colors ml-0.5"
         >
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
             <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />

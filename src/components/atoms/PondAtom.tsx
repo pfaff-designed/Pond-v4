@@ -241,7 +241,7 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
       )
     case 'file':
       return cn(
-        'font-mono lowercase tracking-wider text-mn-text-meta',
+        'font-mono lowercase text-mn-text-meta',
         mobile ? 'text-[12px]' : 'text-mn-11'
       )
     default:
@@ -319,7 +319,7 @@ export function PondAtom({
             </svg>
           </span>
         )}
-        <span className="whitespace-nowrap font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary">
+        <span className="whitespace-nowrap font-mono lowercase text-[10.5px] text-mn-text-secondary">
           {MEDIA_CAPTION[state](video)}
         </span>
       </span>
@@ -466,7 +466,7 @@ export function PondAtom({
             numeric && 'font-medium',
             chip &&
               cn(
-                'font-mono lowercase tracking-wider rounded-mn-pill text-mn-text-meta',
+                'font-mono lowercase rounded-mn-pill text-mn-text-meta',
                 mobile ? 'px-[11px] py-[5px] text-[12px]' : 'px-[9px] py-[3px] text-[10.5px]',
                 empty || error
                   ? 'ring-[1px] ring-inset ring-mn-text/20'
@@ -498,7 +498,7 @@ export function PondAtom({
       {noteText && (
         <span
           data-part="note"
-          className="whitespace-nowrap font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary"
+          className="whitespace-nowrap font-mono lowercase text-[10.5px] text-mn-text-secondary"
         >
           {noteText}
         </span>

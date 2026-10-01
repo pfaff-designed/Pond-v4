@@ -60,7 +60,7 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
   // ── No file yet ────────────────────────────────────────────────────────────
   if (!data.url) {
     if (!editable) {
-      return <p className="py-1 text-sm text-mn-text-faint">No file uploaded yet.</p>
+      return <p className="py-1 text-sm text-mn-text-secondary">No file uploaded yet.</p>
     }
     return (
       <div className="py-1">
@@ -103,7 +103,7 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
           className="max-h-[480px] max-w-full rounded-mn-row shadow-mn-sm"
         />
         {data.caption && (
-          <figcaption className="mt-1.5 text-xs text-mn-text-faint">{data.caption}</figcaption>
+          <figcaption className="mt-1.5 text-xs text-mn-text-secondary">{data.caption}</figcaption>
         )}
       </figure>
     )
@@ -120,7 +120,7 @@ export function ImageView({ data, editable, onChange }: ModuleViewProps<ImageBlo
         <PaperclipIcon />
         <span>{name}</span>
       </a>
-      {data.caption && <p className="mt-1.5 text-xs text-mn-text-faint">{data.caption}</p>}
+      {data.caption && <p className="mt-1.5 text-xs text-mn-text-secondary">{data.caption}</p>}
     </div>
   )
 }

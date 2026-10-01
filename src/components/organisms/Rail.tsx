@@ -377,7 +377,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onDelete && (
                   <button
                     type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-signal-removal/10 hover:text-mn-signal-removal focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-text/30 outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Delete page"
                     aria-label={`Delete ${label}`}
                     disabled={isBusy}
@@ -735,7 +735,7 @@ export function RailView({
         setSize={setSize}
         leading={LIFE_MARK}
         trailing={
-          <span className="font-mono text-mn-11 tracking-wider lowercase text-mn-text/30 pr-1 select-none">
+          <span className="font-mono text-mn-11 lowercase text-mn-text-secondary pr-1 select-none">
             all
           </span>
         }

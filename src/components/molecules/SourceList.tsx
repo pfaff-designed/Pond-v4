@@ -49,19 +49,19 @@ export function SourceList({ sources: rawSources }: SourceListProps) {
   const sources = dedupeByUrl(rawSources)
   if (sources.length === 0) return null
   return (
-    <div className="mt-2.5 border-t border-mn-hair pt-2 text-xs text-mn-text-faint">
+    <div className="mt-2.5 border-t border-mn-hair pt-2 text-xs text-mn-text-secondary">
       <span className={`mr-1 ${kickerClass}`}>Sources</span>
       <ol className="mt-1.5 space-y-1">
         {sources.map((source, i) => (
           <li key={source.sourceId} className="flex gap-1.5">
-            <span aria-hidden className="tabular-nums text-mn-text-faint">
+            <span aria-hidden className="tabular-nums text-mn-text-secondary">
               {i + 1}.
             </span>
             <a
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="truncate font-mono lowercase tracking-wider text-mn-text underline-offset-2 hover:underline"
+              className="truncate font-mono lowercase text-mn-text underline-offset-2 hover:underline"
               title={source.url}
             >
               {sourceLabel(source)}

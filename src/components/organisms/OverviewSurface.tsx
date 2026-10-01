@@ -317,7 +317,7 @@ export function OverviewSurface({
         {/* ── Closing serif exhale ────────────────────────────────────────── */}
         <Rise i={ri++} className="mt-12">
           <div className="border-t border-mn-hair pt-5">
-            <span className="font-serif font-extralight italic text-mn-16 leading-[1.75] text-mn-text-faint">
+            <span className="font-serif font-extralight italic text-mn-16 leading-[1.75] text-mn-text-secondary">
               {closing}
             </span>
           </div>
@@ -453,7 +453,7 @@ export function LifeOverviewPanel() {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-faint">
+      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
         Loading…
       </div>
     )

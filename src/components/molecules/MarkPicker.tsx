@@ -63,7 +63,7 @@ export function MarkPicker({
           <button
             type="button"
             onClick={() => onSelectGlyph(null)}
-            className="font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
+            className="font-mono text-[0.65rem] lowercase text-mn-text-secondary hover:text-mn-text"
           >
             reset
           </button>
@@ -76,16 +76,16 @@ export function MarkPicker({
         onChange={(e) => setQuery(e.target.value)}
         placeholder="search"
         aria-label="Search glyphs"
-        className="w-full rounded-mn-inner bg-mn-wash px-2 py-1 font-mono text-xs lowercase tracking-wider text-foreground outline-none placeholder:text-mn-text-faint"
+        className="w-full rounded-mn-inner bg-mn-wash px-2 py-1 font-mono text-xs lowercase text-foreground outline-none placeholder:text-mn-text-secondary"
       />
 
       <div className="max-h-[220px] overflow-y-auto">
         {families.length === 0 && (
-          <p className="font-mono text-xs text-mn-text-faint">no glyph by that name</p>
+          <p className="font-mono text-xs text-mn-text-secondary">no glyph by that name</p>
         )}
         {families.map((family) => (
           <div key={family.name} className="mb-2">
-            <p className="mb-1 font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint">
+            <p className="mb-1 font-mono text-[0.65rem] lowercase text-mn-text-secondary">
               {family.name}
             </p>
             <div className="flex flex-wrap gap-1">
@@ -122,7 +122,7 @@ export function MarkPicker({
           <button
             type="button"
             onClick={() => onSelectRole(null)}
-            className="font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
+            className="font-mono text-[0.65rem] lowercase text-mn-text-secondary hover:text-mn-text"
           >
             inherit
           </button>
@@ -159,7 +159,7 @@ export function MarkPicker({
         {!roleIsOwn && (
           // Says WHY the colour is what it is, so "inherit" is a state the person
           // can see rather than infer from the absence of a reset link.
-          <span className="ml-1 font-mono text-[0.65rem] lowercase tracking-wider text-mn-text-faint">
+          <span className="ml-1 font-mono text-[0.65rem] lowercase text-mn-text-secondary">
             from its area
           </span>
         )}
