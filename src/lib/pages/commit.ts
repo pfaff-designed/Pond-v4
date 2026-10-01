@@ -4,6 +4,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { saveBlocks } from './client'
+import { sweepOutdatedAfterOwnEdit } from '@/lib/change-log/own-edit'
 
 /**
  * Persist a page's blocks and propagate the write everywhere downstream: refresh
@@ -26,9 +27,29 @@ export async function commitBlocks(
   queryClient: QueryClient,
   pageId: string,
   blocks: Block[],
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  opts: {
+    /** The person's OWN typed edit (G2, #98): sweep the page's pending block diffs
+     *  to `outdated` once the blocks land. The accept path leaves this off — it
+     *  runs its own sweep with the accepted record excepted, and an all-skipped
+     *  accept re-saves unchanged blocks, which is no edit at all. */
+    ownEdit?: boolean
+  } = {}
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
+  // The sweep is a side-record of the save (it never throws) — but it is AWAITED,
+  // and it runs BEFORE anything downstream is told the page moved.
+  //
+  // ORDER HERE IS THE BEHAVIOUR. A diff card learns it has gone outdated by
+  // re-reading the log, and that re-read is triggered by the page's blocks
+  // changing — `propagateBlockWrite` here, and the caller's own cache reconcile
+  // the moment this promise resolves. Firing the sweep with `void`, or after the
+  // propagation, races that re-read: the card reads the log before the sweep has
+  // written to it, finds the record still `proposed`, and keeps its accept
+  // button. That is exactly the state `outdated` exists to prevent, and it is
+  // what the person sees on nearly every own edit. Awaiting it first makes the
+  // outcome deterministic rather than a coin toss on two round-trips.
+  if (opts.ownEdit) await sweepOutdatedAfterOwnEdit(supabase, { workspace, pageId, blocks })
   await propagateBlockWrite(queryClient, pageId, workspace)
 }
 

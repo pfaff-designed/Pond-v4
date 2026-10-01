@@ -80,7 +80,7 @@ import {
 import { PROPOSAL_MIN_HEIGHT } from '@/lib/layout/terminal-height'
 import { Markdown } from '@/components/molecules/Markdown'
 import { StageText } from '@/components/molecules/StageText'
-import { ProposalGroup } from '@/components/molecules/ProposalGroup'
+import { ProposalGroup, type ProposalGroupCard } from '@/components/molecules/ProposalGroup'
 import { FollowupChips } from '@/components/molecules/FollowupChips'
 import { QuestionCard, type QuestionAnswerVia } from '@/components/molecules/QuestionCard'
 import { SourceList, type Source } from '@/components/molecules/SourceList'
@@ -104,8 +104,9 @@ import {
 import { ConfigureViewProposalCard } from '@/components/molecules/ConfigureViewProposalCard'
 import { LinkRecordsProposalCard } from '@/components/molecules/LinkRecordsProposalCard'
 import {
-  changeStatus,
   unresolvedProposalIds,
+  batchStatus,
+  reconcileCardStatus,
   DEFINE_SCHEMA_TYPE,
   ADD_ROW_TYPE,
   PROMOTE_TABLE_TYPE,
@@ -130,6 +131,7 @@ import {
   type ProposalType,
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
+import { listRecordsByToolCalls } from '@/lib/change-log/store'
 import { previewForChange } from '@/lib/modules/preview'
 import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -190,6 +192,11 @@ interface ProposeChangesPart {
 function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
   return part.type === 'tool-propose_changes'
 }
+
+/** The canned note `revise` sends on an outdated card (#98, G2): Pond redrafts
+ *  the diff against the page as it now stands. */
+const REVISE_NOTE =
+  'the page changed since this was proposed — revise it against the page as it now stands.'
 
 /** A create_page tool part — a proposed brand-new page + scaffold (M1). Client-
  *  resolved (no execute); the card below drives accept/reject + placement. */
@@ -479,6 +486,10 @@ export function AITerminal() {
   // Same-batch bindKey→minted-id memory (ticket-31) stays a ref, not reducer state:
   // writeAcceptedChanges mutates it in place across accept clicks; never rendered/projected/reseeded.
   const proposalRefIds = useRef<Record<string, Record<string, string>>>({})
+  // #98 — the card a request-changes note (or an outdated revise) was sent on:
+  // the next propose_changes to stream in is Pond's revision of it. It lives for
+  // exactly ONE turn; the effect below clears it when that turn settles.
+  const pendingRevisionOf = useRef<string | null>(null)
   const {
     changes: changeDecisions,
     creates: createDecisions,
@@ -504,6 +515,8 @@ export function AITerminal() {
     promotionTarget,
     pageProposals,
     pageProposalErrors,
+    changeNotes,
+    revisions,
   } = proposals
 
   // The persistable projection of the decision maps (ticket-19): saved with the
@@ -902,6 +915,13 @@ export function AITerminal() {
       .filter((p) => p.state === 'input-available' && !changeTargets[p.toolCallId])
     if (unstamped.length === 0) return
     for (const part of unstamped) {
+      // #98 — the first batch to stream in after a request-changes note is
+      // Pond's revision of that card. Write-once in the store.
+      const revising = pendingRevisionOf.current
+      if (revising && revising !== part.toolCallId && !revisions[part.toolCallId]) {
+        dispatch({ kind: 'noteRevision', id: part.toolCallId, revisedFrom: revising })
+        pendingRevisionOf.current = null
+      }
       const resolved = resolveStampTarget({
         targetPageId: part.input?.targetPageId,
         pages: allPages,
@@ -915,7 +935,19 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null)
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-  }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded])
+  }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded, revisions])
+
+  // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
+  // `pendingRevisionOf` was set on send and cleared only when a propose_changes
+  // batch arrived. A revision turn that comes back as PROSE — "which part did
+  // you mean?", or a refusal — therefore left it set, and the next unrelated
+  // batch, however many questions later, was stamped as a revision of that old
+  // card and linked to it in the log. The note's turn is the ref's whole life:
+  // when the turn settles, it goes. Declared AFTER the stamping effect above so
+  // that effect still gets the ref on the commit the batch lands in.
+  useEffect(() => {
+    if (status === 'ready') pendingRevisionOf.current = null
+  }, [status])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -1358,30 +1390,6 @@ export function AITerminal() {
     ]
   )
 
-  // Edit: accept the change, then jump to its block in the document panel to keep
-  // editing there (full inline-editable drop deferred). A `create` has no id until
-  // it lands, so there's nothing to scroll to yet.
-  const editChange = useCallback(
-    async (toolCallId: string, allChanges: ModuleChange[], index: number) => {
-      await acceptChanges(toolCallId, allChanges, [index])
-      const change = allChanges[index]
-      const blockId = change.op === 'create' ? undefined : change.blockId
-      if (blockId) {
-        requestAnimationFrame(() => {
-          const el = document.getElementById(`block-${blockId}`)
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          // Text blocks are now click-to-edit (ticket-20): the source textarea only
-          // exists once the block is in edit mode, so trigger that first. Interactive
-          // blocks (todo/table) keep their inline inputs and fall through to focus.
-          const editTrigger = el?.querySelector<HTMLElement>('[data-text-edit-trigger]')
-          if (editTrigger) editTrigger.click()
-          else el?.querySelector('textarea')?.focus()
-        })
-      }
-    },
-    [acceptChanges]
-  )
-
   // "Open page" on a cross-page proposal card (ticket-30): navigate to the
   // stamped target. The page's type is looked up here (not inline in JSX) so
   // the render path stays a plain callback reference.
@@ -1400,6 +1408,106 @@ export function AITerminal() {
     },
     [router, allPages, basePath]
   )
+
+  // ── Request changes / revise (#98, board 6c frame 3) ──────────────────────
+  // The note under the card goes to whoever proposed the diff — in M1 always
+  // Pond — who returns a REVISED diff. The decision settles the card here and
+  // rides THIS turn's envelope (so the model reads the stamp as well as the
+  // note); the body names the call so the route lands the record's advance and
+  // links the revision it emits. `revise` on an outdated card is the same path
+  // with a canned note — the record is already settled, so nothing re-decides.
+  const sendRequestChanges = useCallback(
+    (toolCallId: string, count: number, note: string, reason: 'note' | 'outdated') => {
+      let next = proposals
+      if (reason === 'note') {
+        for (let i = 0; i < count; i++) {
+          const action = {
+            kind: 'resolve' as const,
+            type: 'changes' as const,
+            id: toolCallId,
+            index: i,
+            decision: 'changes_requested' as const,
+            ...(i === 0 ? { aux: { note } } : {}),
+          }
+          next = proposalReducer(next, action)
+          dispatch(action)
+        }
+        logDecision(toolCallId, 'changes_requested')
+      }
+      pendingRevisionOf.current = toolCallId
+      const body = {
+        nodeId,
+        nodeType,
+        workspace,
+        resolutions: projectResolutions(next),
+        requestChanges: { toolCallId, note, reason },
+      }
+      // The thread shows the note under the card, not as a second "you" line;
+      // the metadata is how the renderer knows this message is that note.
+      const metadata = {
+        sentAt: new Date().toISOString(),
+        requestChanges: { toolCallId, reason },
+      }
+      clearError?.()
+      sendMessage({ text: note, metadata }, { body })
+    },
+    [proposals, logDecision, nodeId, nodeType, workspace, sendMessage, clearError]
+  )
+
+  // ── Read the cards' records back (#98, G2) ────────────────────────────────
+  // The change log is the durable record; the decision maps are a UI cache.
+  // Whenever the open page's blocks change (an own edit landed, an accept swept
+  // the page) re-read the records behind the propose_changes cards still live
+  // here and adopt what the log settled — most often `outdated`, which greys
+  // the card, drops accept and offers revise. Idempotent: once adopted, the
+  // reconcile returns null and the loop ends.
+  const liveDiffCards = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const m of messages) {
+      for (const p of m.parts as Array<{ type: string }>) {
+        if (!isProposeChangesPart(p) || p.state !== 'input-available') continue
+        const count = p.input?.changes?.length ?? 0
+        const status = batchStatus(changeDecisions, p.toolCallId, count)
+        if (status === 'pending' || status === 'accepted') counts.set(p.toolCallId, count)
+      }
+    }
+    return counts
+  }, [messages, changeDecisions])
+  useEffect(() => {
+    if (liveDiffCards.size === 0) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+      const records = await listRecordsByToolCalls(supabase, {
+        userId: user.id,
+        workspace,
+        toolCallIds: [...liveDiffCards.keys()],
+      })
+      if (cancelled) return
+      for (const record of records) {
+        const id = record.toolCallId
+        if (!id) continue
+        const count = liveDiffCards.get(id) ?? 0
+        const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), record.status)
+        if (!adopt) continue
+        for (let i = 0; i < count; i++) {
+          dispatch({ kind: 'resolve', type: 'changes', id, index: i, decision: adopt })
+        }
+      }
+    })().catch((err) => console.error('[change-log] card record sync failed', err))
+    return () => {
+      cancelled = true
+    }
+    // `currentPage?.blocks` is the trigger: react-query hands back a new array only
+    // when the blocks actually changed (an own edit saved, an accept landed) or
+    // the person navigated to another page — which is when a card aimed at it can
+    // have gone stale. A record outdated from ANOTHER tab is read on the next of
+    // those, not live (no realtime subscription in M1).
+  }, [liveDiffCards, changeDecisions, currentPage?.blocks, workspace, getSupabase])
 
   // ── create_page resolution (M1) ───────────────────────────────────────────
   // Accept: mint block ids, resolve the user-chosen parent, write via createPage,
@@ -2013,6 +2121,46 @@ export function AITerminal() {
               url: p.url!,
               title: p.title,
             }))
+          // #98 — one diff card per propose_changes batch ("one card per page
+          // touched"), decided as a whole. While the tool input is still
+          // streaming, `part.input` is partially parsed JSON — block payloads can
+          // be missing required fields, and the module views render them
+          // unvalidated — so a streaming batch waits for its complete input.
+          const batchById = new Map<string, ModuleChange[]>()
+          const diffCards: ProposalGroupCard[] = []
+          for (const part of changeBatches) {
+            if (part.state === 'input-streaming') continue
+            const rawChanges = part.input?.changes ?? []
+            batchById.set(part.toolCallId, rawChanges)
+            // The stamped target (ticket-30): `crossPage` is set when the batch
+            // resolved to a real page other than the open one, and the diff is
+            // read against THAT page's blocks.
+            const target = changeTargets[part.toolCallId]
+            const targetMissing = target?.missing === true
+            const crossPage = target && !targetMissing && target.nodeId !== nodeId ? target : null
+            const targetBlocks = crossPage
+              ? (blocksForTarget.get(crossPage.nodeId) ?? [])
+              : (currentPage?.blocks ?? [])
+            diffCards.push({
+              id: part.toolCallId,
+              changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
+              status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
+              targetName: target?.nodeName || contextLabel,
+              targetMissing,
+              onOpenTarget: crossPage ? () => openTargetPage(crossPage) : undefined,
+              note: changeNotes[part.toolCallId],
+              revised: !!revisions[part.toolCallId],
+              skippedCount: changeSkipped[part.toolCallId] ?? 0,
+              skippedReasons: changeSkipReasons[part.toolCallId] ?? [],
+            })
+          }
+          const allIndices = (id: string) => (batchById.get(id) ?? []).map((_, i) => i)
+          const pendingDiffIds = diffCards.filter((c) => c.status === 'pending').map((c) => c.id)
+          // A request-changes note renders under its card (from the envelope),
+          // not as a second "you" line in the thread.
+          const isRequestChangesNote =
+            message.role === 'user' &&
+            !!(message.metadata as { requestChanges?: unknown } | undefined)?.requestChanges
 
           return (
             <div key={message.id} data-message-id={message.id} className="space-y-3">
@@ -2029,6 +2177,7 @@ export function AITerminal() {
                 </div>
               )}
               {text &&
+                !isRequestChangesNote &&
                 (message.role === 'user' ? (
                   // The question sits in mono (`Pond 06.01` 6a frame 2, PondComposer
                   // `youRow`): "you" · the line · when it was said, 12.5px at ink .8,
@@ -2123,52 +2272,44 @@ export function AITerminal() {
                   onStop={stop}
                 />
               )}
-              {changeBatches.map((part) => {
-                // While the tool input is still streaming, `part.input` is partially
-                // parsed JSON — block payloads can be missing required fields, and the
-                // module views render them unvalidated. Wait for the complete input.
-                if (part.state === 'input-streaming') return null
-                const rawChanges = part.input?.changes ?? []
-                // The stamped target (ticket-30), computed once: `crossPage` is set
-                // when the batch resolved to a real page other than the open one.
-                const target = changeTargets[part.toolCallId]
-                const targetMissing = target?.missing === true
-                const crossPage =
-                  target && !targetMissing && target.nodeId !== nodeId ? target : null
-                // Cross-page edit: diff against the TARGET page's blocks; fall back
-                // to the open page's blocks for a same-page proposal.
-                const targetBlocks = crossPage
-                  ? (blocksForTarget.get(crossPage.nodeId) ?? [])
-                  : (currentPage?.blocks ?? [])
-                const previews = rawChanges.map((c) => previewForChange(c, targetBlocks))
-                const statuses = rawChanges.map((_, i) =>
-                  changeStatus(changeDecisions, part.toolCallId, i)
-                )
-                const pending = rawChanges.map((_, i) => i).filter((i) => statuses[i] === 'pending')
-                // Accept-all sweeps REQUESTED changes only (review must-fix 3): an
-                // inferred side-effect stays pending for its own click.
-                const pendingRequested = pending.filter((i) => rawChanges[i]?.inferred !== true)
-                return (
-                  <div key={part.toolCallId} className="mn-arrive space-y-1.5">
-                    <ProposalGroup
-                      changes={previews}
-                      statuses={statuses}
-                      targetName={target?.nodeName || contextLabel}
-                      targetMissing={targetMissing}
-                      onOpenTarget={crossPage ? () => openTargetPage(crossPage) : undefined}
-                      skippedCount={changeSkipped[part.toolCallId] ?? 0}
-                      skippedReasons={changeSkipReasons[part.toolCallId] ?? []}
-                      onAccept={(i) => acceptChanges(part.toolCallId, rawChanges, [i])}
-                      onReject={(i) => decideChanges(part.toolCallId, [i], 'rejected')}
-                      onEdit={(i) => editChange(part.toolCallId, rawChanges, i)}
-                      onAcceptAll={() =>
-                        acceptChanges(part.toolCallId, rawChanges, pendingRequested)
-                      }
-                      onRejectAll={() => decideChanges(part.toolCallId, pending, 'rejected')}
-                    />
-                  </div>
-                )
-              })}
+              {diffCards.length > 0 && (
+                <div className="mn-arrive">
+                  <ProposalGroup
+                    cards={diffCards}
+                    onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
+                    onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
+                    onRequestChanges={(id, note) =>
+                      sendRequestChanges(id, allIndices(id).length, note, 'note')
+                    }
+                    onRevise={(id) =>
+                      sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
+                    }
+                    onAskAgain={() => {
+                      const q = questionBefore(messageIndex).text
+                      if (q && !isStreaming) sendText(q)
+                    }}
+                    onAcceptAll={() => {
+                      // Sequentially (#98 review). Each accept is a
+                      // read-modify-write of its target page's whole block
+                      // array, and two cards in one message can name the SAME
+                      // page — fired in parallel they both read the pre-write
+                      // blocks and the second save silently drops the first
+                      // batch. `writeAcceptedChanges` serialises per page as
+                      // well (the lock is the guarantee, since a second click
+                      // or another surface can race too); awaiting here also
+                      // keeps the toast receipts in card order.
+                      void (async () => {
+                        for (const id of pendingDiffIds) {
+                          await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                        }
+                      })()
+                    }}
+                    onRejectAll={() => {
+                      for (const id of pendingDiffIds) decideChanges(id, allIndices(id), 'rejected')
+                    }}
+                  />
+                </div>
+              )}
               {createPageParts.map((part) => {
                 // Same streaming caveat as above: a partially-parsed `blocks` array
                 // crashes the block previews (e.g. TableView on undefined rows).

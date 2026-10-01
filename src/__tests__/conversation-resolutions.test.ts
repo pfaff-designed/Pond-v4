@@ -645,3 +645,64 @@ describe('resolveStampTarget', () => {
     expect(resolveAcceptTarget(parsed, 'pc1', 'open-id')).toBeNull()
   })
 })
+
+// ── #98: the eight statuses reach the model ──────────────────────────────────
+
+describe('applyResolutions — the other five statuses (#98)', () => {
+  function withChanges(
+    changes: ConversationResolutions['changes'],
+    extra: Partial<ConversationResolutions> = {}
+  ): ConversationResolutions {
+    return { ...emptyResolutions(), changes, ...extra }
+  }
+
+  it('changes requested: the model reads the note and is told to come back revised', () => {
+    const out = applyResolutions(
+      proposalTranscript(),
+      withChanges(
+        { 'pc1:0': 'changes_requested', 'pc1:1': 'changes_requested' },
+        { changeNotes: { pc1: 'keep the electrician, drop the worktop' } }
+      )
+    )
+    const part = findPart(out, 'pc1')
+    expect(part.state).toBe('output-available')
+    const output = part.output as { decisions: string[]; note: string; requestedChanges?: string }
+    expect(output.decisions).toEqual(['changes_requested', 'changes_requested'])
+    expect(output.requestedChanges).toBe('keep the electrician, drop the worktop')
+    expect(output.note).toMatch(/requested changes/i)
+    expect(output.note).toMatch(/revised/i)
+    expect(output.note).not.toMatch(/do not re-propose accepted or rejected/i)
+  })
+
+  it('outdated: the model is told the page moved on and not to apply the diff as-is', () => {
+    const out = applyResolutions(
+      proposalTranscript(),
+      withChanges({ 'pc1:0': 'outdated', 'pc1:1': 'outdated' })
+    )
+    const output = findPart(out, 'pc1').output as { note: string }
+    expect(output.note).toMatch(/outdated/i)
+    expect(output.note).toMatch(/edited|moved on|changed/i)
+  })
+
+  it('withdrawn, undone and reverted each carry their own honest note', () => {
+    for (const status of ['withdrawn', 'undone', 'reverted'] as const) {
+      const out = applyResolutions(
+        proposalTranscript(),
+        withChanges({ 'pc1:0': status, 'pc1:1': status })
+      )
+      const output = findPart(out, 'pc1').output as { note: string; decisions: string[] }
+      expect(output.decisions).toEqual([status, status])
+      expect(output.note.toLowerCase()).toContain(status)
+    }
+  })
+
+  it('a resolved card survives real SDK replay whatever its status', async () => {
+    const out = applyResolutions(
+      proposalTranscript(),
+      withChanges({ 'pc1:0': 'outdated', 'pc1:1': 'outdated' })
+    )
+    const model = await toModelMessages(out)
+    const json = JSON.stringify(model)
+    expect(json).toContain('pc1')
+  })
+})

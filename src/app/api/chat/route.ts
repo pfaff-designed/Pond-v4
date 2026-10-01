@@ -34,7 +34,13 @@ import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import type { NodeType } from '@/lib/supabase/types'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
+import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import type { WorkspaceScope } from '@/lib/workspace/context'
+import {
+  parseRequestChanges,
+  requestChangesContextNote,
+  type RequestChangesBody,
+} from './request-changes'
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -63,6 +69,9 @@ export function parseChatBody(body: unknown): {
    *  request; anything unrecognised falls back to 'main'. */
   workspace: WorkspaceScope
   resolutions: ConversationResolutions
+  /** #98 — this turn is a request-changes note (or an outdated revise) on a
+   *  propose_changes card; the reply must be a revised diff. */
+  requestChanges?: RequestChangesBody
 } | null {
   if (typeof body !== 'object' || body === null) return null
   const b = body as Record<string, unknown>
@@ -71,12 +80,14 @@ export function parseChatBody(body: unknown): {
     typeof b.nodeType === 'string' && (NODE_TYPES as string[]).includes(b.nodeType)
       ? (b.nodeType as NodeType)
       : undefined
+  const requestChanges = parseRequestChanges(b.requestChanges)
   return {
     messages: b.messages as UIMessage[],
     nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
     nodeType,
     workspace: b.workspace === 'sandbox' ? 'sandbox' : 'main',
     resolutions: parseResolutions(b.resolutions),
+    ...(requestChanges ? { requestChanges } : {}),
   }
 }
 
@@ -91,7 +102,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, workspace, resolutions } = parsed
+  const { messages, nodeId, nodeType, workspace, resolutions, requestChanges } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
@@ -118,7 +129,23 @@ export async function POST(req: Request) {
       latestUserText: userText,
     })
     if (context) contextBlocks.push(context)
+
+    // Request changes (#98, 6c frame 3): the note is the person's decision on
+    // the original card, so the record leaves `proposed` here — the browser
+    // advances it too, and both are idempotent against each other through the
+    // store's `isOpen` check. Never throws.
+    if (requestChanges && requestChanges.reason === 'note') {
+      await resolveChangeLogRecord(supabase, {
+        userId: user.id,
+        workspace,
+        toolCallId: requestChanges.toolCallId,
+        decision: 'changes_requested',
+      })
+    }
   }
+  // #98 — tell the model this turn answers a request-changes note (or revises an
+  // outdated card) and must come back as a REVISED propose_changes. Deterministic.
+  if (requestChanges) contextBlocks.push(requestChangesContextNote(requestChanges))
   // Stuck-in-grill guard (ticket-39 review): once the grill has run
   // GRILL_NUDGE_THRESHOLD turns, inject the [Lifecycle] note that forces an
   // advance chip into this reply's suggest_followups (the CORRESPONDENCE
@@ -273,6 +300,9 @@ export async function POST(req: Request) {
         userId: user.id,
         workspace,
         openPageId: nodeId ?? null,
+        // #98 — a propose_changes emitted in answer to a request-changes note is
+        // the revision of that card's record, linked through links.revisedFrom.
+        revisesToolCallId: requestChanges?.toolCallId ?? null,
         toolCalls: toolCalls.map((c) => ({
           toolCallId: c.toolCallId,
           toolName: c.toolName as string,

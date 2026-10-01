@@ -28,6 +28,49 @@ export const PROMOTE_TABLE_TYPE = 'tool-promote_table'
 export const CONFIGURE_VIEW_TYPE = 'tool-configure_view'
 export const LINK_RECORDS_TYPE = 'tool-link_records'
 
+/**
+ * The ONE status of a propose_changes card (#98). Accept and reject take the
+ * whole diff — partial acceptance goes through request changes — so the card
+ * decides as a unit, while the envelope keeps its per-index keys
+ * (`${toolCallId}:${index}`) so legacy transcripts still parse. All pending ⇒
+ * pending; otherwise the decision the indices share. A legacy split batch picks
+ * the honest word: `accepted` when anything landed, else the first settled one.
+ */
+export function batchStatus<T extends string>(
+  decisions: Record<string, T>,
+  toolCallId: string,
+  count: number
+): T | 'pending' {
+  let first: T | null = null
+  for (let i = 0; i < count; i++) {
+    const d = changeStatus(decisions, toolCallId, i)
+    if (d === 'pending') continue
+    if (d === 'accepted') return d
+    first ??= d
+  }
+  return first ?? 'pending'
+}
+
+/**
+ * What a card adopts when the change log knows more than the session (#98,
+ * G2). The log is the durable record; the session's maps are a UI cache.
+ *   - a PENDING card takes whatever settled status the log holds — most often
+ *     `outdated`, swept when the target page was edited after the proposal;
+ *   - an ACCEPTED card follows the log into `undone` / `reverted`, the two edges
+ *     the state machine allows out of accepted;
+ *   - anything else is settled in the session and left alone.
+ * Returns null when nothing should change.
+ */
+export function reconcileCardStatus<T extends string>(
+  local: T | 'pending',
+  remote: T | 'proposed'
+): T | null {
+  if (remote === 'proposed') return null
+  if (local === 'pending') return remote as T
+  if (local === 'accepted' && (remote === 'undone' || remote === 'reverted')) return remote as T
+  return null
+}
+
 /** A single change's decision inside a propose_changes batch ('pending' when undecided). */
 export function changeStatus<T extends string>(
   decisions: Record<string, T>,

@@ -11,57 +11,68 @@ const meta = {
     status: 'pending',
     onAccept: fn(),
     onReject: fn(),
-    onEdit: fn(),
+    onRequestChanges: fn(),
   },
 } satisfies Meta<typeof ProposalActions>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Pending single-card row: Accept / Edit / Reject, each firing its own intent. */
+/** Pending card row: accept / reject / request changes, each firing its own intent. */
 export const Pending: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Accept' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Edit' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Reject' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'accept' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'reject' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'request changes' }))
     await expect(args.onAccept).toHaveBeenCalledTimes(1)
-    await expect(args.onEdit).toHaveBeenCalledTimes(1)
     await expect(args.onReject).toHaveBeenCalledTimes(1)
+    await expect(args.onRequestChanges).toHaveBeenCalledTimes(1)
   },
 }
 
-/** Group bar: no Edit, relabelled to "Accept all / Reject all". */
+/** Group bar: no request changes, relabelled to "accept all / reject all". */
 export const GroupBar: Story = {
   args: {
-    onEdit: undefined,
+    onRequestChanges: undefined,
     divider: false,
-    labels: { accept: 'Accept all', reject: 'Reject all' },
+    labels: { accept: 'accept all', reject: 'reject all' },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'Accept all' })).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'Reject all' })).toBeInTheDocument()
-    await expect(canvas.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'accept all' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'reject all' })).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'request changes' })).not.toBeInTheDocument()
   },
 }
 
-/** Resolved (accepted): buttons gone, status line remains for the audit trail. */
+/** A named accept (W6): "an accept may be named for what it does". */
+export const NamedAccept: Story = {
+  args: { labels: { accept: 'make page' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'make page' })).toBeInTheDocument()
+  },
+}
+
+/** Resolved: buttons gone, one status line per status. */
 export const Accepted: Story = {
   args: { status: 'accepted' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Accepted')).toBeInTheDocument()
+    await expect(canvas.getByText('accepted')).toBeInTheDocument()
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
   },
 }
 
-/** Resolved (rejected): rejected status line. */
-export const Rejected: Story = {
-  args: { status: 'rejected' },
+export const Rejected: Story = { args: { status: 'rejected' } }
+export const ChangesRequested: Story = {
+  args: { status: 'changes_requested' },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.getByText('Rejected')).toBeInTheDocument()
-    await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
+    await expect(within(canvasElement).getByText('changes requested')).toBeInTheDocument()
   },
 }
+export const Outdated: Story = { args: { status: 'outdated' } }
+export const Withdrawn: Story = { args: { status: 'withdrawn' } }
+export const Undone: Story = { args: { status: 'undone' } }
+export const Reverted: Story = { args: { status: 'reverted' } }

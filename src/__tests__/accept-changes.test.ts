@@ -35,6 +35,7 @@ import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { emptyResolutions, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
+import type { Block } from '@/lib/documents/types'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
@@ -756,4 +757,149 @@ describe('writeAcceptedChanges — the change-log record', () => {
       expect(mockedAdvance).not.toHaveBeenCalled()
     }
   )
+})
+
+/**
+ * #98 review, BLOCKING 2 — two batches accepted at once on ONE page.
+ *
+ * Each accept is a read-modify-write: getPage, apply, saveBlocks the WHOLE
+ * array. "accept all" fired one per pending card in parallel, and one assistant
+ * message can raise several cards aimed at the same page — so both read the
+ * pre-write blocks and the second save silently overwrote the first batch. No
+ * error, no skip count, just a change the person accepted that is not there.
+ *
+ * The page here is a live store: getPage hands back whatever was last committed,
+ * and the read is slow enough that an unserialised pair WILL interleave.
+ */
+describe('concurrent accepts on the same page', () => {
+  /** The page as it actually stands, mutated by each commit. */
+  let stored: Block[]
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  beforeEach(() => {
+    stored = []
+    mockedGetPage.mockImplementation(async () => {
+      // A real round-trip: long enough that a parallel pair would both read []
+      // and the loser's blocks would never be seen again.
+      await delay(5)
+      return { id: 'stamped-id', blocks: [...stored] } as unknown as Awaited<
+        ReturnType<typeof getPage>
+      >
+    })
+    mockedCommitBlocks.mockImplementation(async (_sb, _qc, _id, next) => {
+      await delay(5)
+      stored = [...(next as Block[])]
+    })
+  })
+
+  function textChange(content: string): ModuleChange {
+    return { op: 'create', data: { type: 'text', content } } as ModuleChange
+  }
+
+  it('both batches survive — neither accept clobbers the other', async () => {
+    const resolutions: ConversationResolutions = {
+      ...emptyResolutions(),
+      targets: {
+        pc1: { nodeId: 'stamped-id', nodeName: 'Garage' },
+        pc2: { nodeId: 'stamped-id', nodeName: 'Garage' },
+      },
+    }
+    const accept = (toolCallId: string, content: string) =>
+      writeAcceptedChanges({
+        supabase,
+        queryClient,
+        userId: USER,
+        resolutions,
+        toolCallId,
+        openNodeId: null,
+        changes: [textChange(content)],
+      })
+
+    // Exactly what onAcceptAll does: both in flight at once.
+    const [first, second] = await Promise.all([
+      accept('pc1', 'from batch one'),
+      accept('pc2', 'from batch two'),
+    ])
+
+    expect(first.applied).toBe(1)
+    expect(second.applied).toBe(1)
+    const contents = stored.map((b) => (b as { content?: string }).content)
+    expect(contents).toHaveLength(2)
+    expect(contents).toEqual(expect.arrayContaining(['from batch one', 'from batch two']))
+  })
+
+  it('a failed accept does not wedge the queue behind it', async () => {
+    const resolutions: ConversationResolutions = {
+      ...emptyResolutions(),
+      targets: {
+        pc1: { nodeId: 'stamped-id', nodeName: 'Garage' },
+        pc2: { nodeId: 'stamped-id', nodeName: 'Garage' },
+      },
+    }
+    mockedGetPage.mockRejectedValueOnce(new Error('network'))
+    const failing = writeAcceptedChanges({
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions,
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes: [textChange('lost')],
+    })
+    const following = writeAcceptedChanges({
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions,
+      toolCallId: 'pc2',
+      openNodeId: null,
+      changes: [textChange('still lands')],
+    })
+
+    await expect(failing).rejects.toThrow('network')
+    await expect(following).resolves.toMatchObject({ applied: 1 })
+  })
+
+  it('writes to DIFFERENT pages still overlap — the lock is per page', async () => {
+    const resolutions: ConversationResolutions = {
+      ...emptyResolutions(),
+      targets: {
+        pc1: { nodeId: 'page-a', nodeName: 'A' },
+        pc2: { nodeId: 'page-b', nodeName: 'B' },
+      },
+    }
+    const open: string[] = []
+    let peak = 0
+    mockedGetPage.mockImplementation(async (_sb, id) => {
+      open.push(id as string)
+      peak = Math.max(peak, open.length)
+      await delay(5)
+      open.pop()
+      return { id, blocks: [] } as unknown as Awaited<ReturnType<typeof getPage>>
+    })
+
+    await Promise.all([
+      writeAcceptedChanges({
+        supabase,
+        queryClient,
+        userId: USER,
+        resolutions,
+        toolCallId: 'pc1',
+        openNodeId: null,
+        changes: [textChange('a')],
+      }),
+      writeAcceptedChanges({
+        supabase,
+        queryClient,
+        userId: USER,
+        resolutions,
+        toolCallId: 'pc2',
+        openNodeId: null,
+        changes: [textChange('b')],
+      }),
+    ])
+
+    expect(peak).toBe(2)
+  })
 })

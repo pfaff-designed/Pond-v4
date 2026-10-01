@@ -108,6 +108,27 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
     // The edit is wholesale block state — the untouched rows must survive.
     expect(table && table.type === 'table' && table.rows[1].cells).toEqual(['Bandsaw', 'Left wall'])
   })
+
+  // #98 review, BLOCKING 3. Renaming a page runs the same debounced save, which
+  // carries `ownEdit` and therefore the outdated sweep. A title change is NOT an
+  // edit to any diff's target, and `outdated` is one-way — it drops accept — so
+  // a rename that swept the page would silently destroy every pending diff on
+  // it. The guard is the blocks handed to the sweep: unchanged here, so
+  // `markOutdated` spares every record whose `before` still matches them.
+  it('a title-only rename saves the blocks UNCHANGED, so the sweep spares pending diffs', async () => {
+    renderPanel()
+    const titleInput = await screen.findByLabelText('Page title')
+    fireEvent.change(titleInput, { target: { value: 'Workshop notes' } })
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
+    expect(mockUpdateTitle).toHaveBeenCalledWith(expect.anything(), 'page-1', 'Workshop notes')
+    const [, , , savedBlocks, , opts] = mockCommitBlocks.mock.calls[0]
+    // Still an own edit — the sweep runs; what makes the rename harmless is that
+    // the blocks it is handed are byte-for-byte the ones the diffs were written
+    // against.
+    expect(opts).toMatchObject({ ownEdit: true })
+    expect(savedBlocks).toEqual(blocks)
+  })
 })
 
 // ── The ticket-22 surface switch: blocks AND children on one surface ──────────
