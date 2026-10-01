@@ -133,7 +133,7 @@ describe('AC5 — colour prop tints only icon glyph + dot', () => {
 
   it('tints the dot (navy → mn-area-c, the role that flips to mist on dark)', () => {
     const { container } = render(<PondAtom kind="dot" color="navy" />)
-    const dot = container.querySelector('[data-part="kind-dot"]')
+    const dot = container.querySelector('[data-part="dot"]')
     expect(dot?.className).toContain('bg-mn-area-c')
   })
 

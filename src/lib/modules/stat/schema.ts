@@ -1,8 +1,6 @@
 import { z } from 'zod'
 import type { ModuleDescriptor } from '../types'
-// format.ts type-imports StatFormat back from here — erased at compile, so the
-// value dependency is one-directional (schema → format) and acyclic at runtime.
-import { formatStatValue, signedStatDelta } from './format'
+import { formatStatValue, signedStatDelta } from '../view/figure-format'
 
 /**
  * `stat` (#12) — a headline KPI figure promoted from the Bklit set, wrapping

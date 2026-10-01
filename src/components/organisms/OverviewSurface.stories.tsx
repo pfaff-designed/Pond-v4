@@ -98,8 +98,9 @@ export const AreaWithGlyph: Story = {
       await expect(cs.maskRepeat).toBe('no-repeat')
       await expect(cs.maskSize).toBe('contain')
     })
-    // The plain accent square is gone once a glyph takes the slot.
-    await expect(canvasElement.querySelector('[data-part="kicker-dot"]')).toBeNull()
+    // The plain accent mark is gone once a glyph takes the slot. Scoped to the
+    // kicker cluster: the child cards carry their own KindDot marks.
+    await expect(mark.parentElement!.querySelector('[data-part="dot"]')).toBeNull()
   },
 }
 

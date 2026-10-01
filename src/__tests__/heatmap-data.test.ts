@@ -1,18 +1,18 @@
 /**
- * The `heatmap` render transform (#12) — the one non-mechanical piece of the
- * promotion. `toHeatmapGrid` bins the module's flat AI-emittable cells
+ * The `heatmap` render transform (#111) — the one non-mechanical piece of the
+ * chart kind. `toHeatmapGrid` bins the flat derived cells
  * (`{ date: 'YYYY-MM-DD', value }`) into the Bklit `HeatmapColumn[]` grid the
  * chart consumes: one column per Sunday-start week (GitHub-contributions
  * convention — the Bklit default `weekStartDay: 0`), one bin per weekday row,
  * with `xDomain` derived from the min/max cell date.
  *
- * Pinned here because the mapping is where a promotion silently rots: timezone
+ * Pinned here because this mapping is where a calendar silently rots: timezone
  * shifts (an ISO date parsed as UTC lands on the previous local day), week
  * boundaries, gap weeks, and duplicate dates all have to come out exactly right
  * for the grid to read as a calendar.
  */
 
-import { parseIsoDateLocal, toHeatmapGrid } from '@/lib/modules/heatmap/data'
+import { parseIsoDateLocal, toHeatmapGrid } from '@/lib/modules/view/heatmap-data'
 
 describe('parseIsoDateLocal', () => {
   it('parses YYYY-MM-DD as LOCAL midnight, never UTC', () => {

@@ -17,7 +17,7 @@
  * Dependency direction: this file owns the `VIEW_AGGS` / `CHART_KINDS` vocabularies as
  * VALUES; `schema.ts` imports them to build its zod enums and type-imports its own
  * config types back. Types erase at compile, so the runtime graph is one-directional
- * (schema → aggregate) and acyclic — the same trick `stat/format.ts` uses.
+ * (schema → aggregate) and acyclic — the same trick `figure-format.ts` uses.
  */
 import {
   coerceValue,
@@ -25,7 +25,7 @@ import {
   type PropertySchema,
 } from '@/lib/properties/schema'
 import type { ChartStatFlowFormat } from '@/components/charts/chart-stat-flow'
-import { statFormatOptions } from '../stat/format'
+import { statFormatOptions } from './figure-format'
 import type { ViewBigNumberConfig, ViewFigureFormat } from './schema'
 import type { CollectionRow } from './apply'
 
@@ -50,8 +50,10 @@ export const AGG_LABELS: Record<ViewAgg, string> = {
 }
 
 /**
- * Every chart KIND a chart-mode view may name. The #94 kinds are `kind` VALUES here,
- * never new block types — that is the whole point of #111. All eleven draw
+ * Every chart KIND a chart-mode view may name — the thirteen `PondChart.dc.html`
+ * declares, in the board's own order. They are `kind` VALUES here, never block types:
+ * that is the whole point of #111, and it is why `heatmap` and `ring` are kinds rather
+ * than the retired `heatmap` / `metric-ring` blocks they replace. All thirteen draw
  * (`collection-chart.tsx` → `src/components/charts/*`); the derivation that feeds
  * them lives in `chart-data.ts`.
  */
@@ -61,6 +63,8 @@ export const CHART_KINDS = [
   'bar',
   'composed',
   'net',
+  'heatmap',
+  'ring',
   'gauge',
   'radar',
   'scatter',
@@ -142,11 +146,8 @@ export function aggregateRows(
 
 /**
  * The Intl options per figure format — the NumberFlow bridge for the big-number
- * renderer. Delegates to `stat/format.ts`: the `stat` BLOCK is retired from creation
- * (#111), but its pure formatter is the established truth for number/currency/percent
- * in this codebase, and a big-number view must render a figure identically to the
- * headline stat it supersedes. `ViewFigureFormat` and `StatFormat` are the same three
- * words, so no mapping is needed.
+ * renderer. Delegates to `figure-format.ts`, the one pure formatter for
+ * number/currency/percent in this codebase.
  */
 export function figureFormatOptions(format?: ViewFigureFormat): ChartStatFlowFormat {
   return statFormatOptions(format)
@@ -156,7 +157,7 @@ export function figureFormatOptions(format?: ViewFigureFormat): ChartStatFlowFor
  * Format a figure for display. Pinned to en-US: the formatted string feeds BOTH the
  * screen and `serialize` (prompts/embeddings), so it must be deterministic across
  * environments. `percent` treats the value as a FRACTION (0.62 → "62%"), matching
- * Intl semantics and the `stat` block it supersedes. A null figure reads "—" — an
+ * Intl semantics. A null figure reads "—" — an
  * aggregate with nothing to read is not zero.
  */
 export function formatFigure(value: number | null, format?: ViewFigureFormat): string {

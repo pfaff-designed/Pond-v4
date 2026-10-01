@@ -1,5 +1,5 @@
 /**
- * The `stat` formatting helpers (#12) — pure, shared by the view (via
+ * The figure-formatting helpers (#111) — pure, shared by the big-number view mode (via
  * ChartStatFlow's `formatOptions`) and by `serialize`, so the AI's context and
  * the rendered figure can never disagree. Locale is pinned to en-US for the
  * string-producing side (serialize + the static pre-custom-element render path)
@@ -11,7 +11,7 @@ import {
   formatStatValue,
   signedStatDelta,
   statFormatOptions,
-} from '@/lib/modules/stat/format'
+} from '@/lib/modules/view/figure-format'
 
 describe('formatStatValue', () => {
   it('number (default): grouped, up to 2 decimals', () => {

@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { getOrCreateHomePage } from '@/lib/pages/home'
@@ -240,15 +241,7 @@ export function OverviewSurface({
   // draft. Without a trail (Storybook) the kicker stands alone.
   const pillCluster = (
     <div className="flex items-center justify-center gap-2 min-w-0">
-      {markSlot ??
-        (accent && (
-          <span
-            data-part="kicker-dot"
-            aria-hidden
-            className="w-2 h-2 rounded-mn-hair flex-shrink-0"
-            style={{ background: accent }}
-          />
-        ))}
+      {markSlot ?? (accent && <KindDot accent={accent} />)}
       {showBreadcrumb ? (
         onRenameKicker ? (
           <Breadcrumb

@@ -477,7 +477,7 @@ const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
 /**
  * An area row's leading mark. An unmapped area returns nothing and keeps its
- * KindDot through the molecule's `dot`.
+ * KindDot (PondAtom) through the molecule's `dot`.
  *
  * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
  * replacement rule (a top-level page).

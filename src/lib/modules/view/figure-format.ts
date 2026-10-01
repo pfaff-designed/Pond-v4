@@ -1,17 +1,21 @@
 import type { ChartStatFlowFormat } from '@/components/charts/chart-stat-flow'
-import type { StatFormat } from './schema'
+import type { ViewFigureFormat } from './schema'
 
 /**
- * `stat` formatting (#12) — pure, shared by the view and `serialize` so the AI's
- * context and the rendered figure can never disagree. The view hands
- * `statFormatOptions` to ChartStatFlow (NumberFlow animates through the same
- * Intl options); serialize renders the identical string via en-US Intl (pinned
- * locale — serialize feeds prompts/embeddings and must be deterministic across
- * environments).
+ * Figure formatting (#111) — pure, shared by the big-number view mode and
+ * `serialize` so the AI's context and the rendered figure can never disagree.
+ * The view hands `statFormatOptions` to ChartStatFlow (NumberFlow animates
+ * through the same Intl options); serialize renders the identical string via
+ * en-US Intl (pinned locale — serialize feeds prompts/embeddings and must be
+ * deterministic across environments).
+ *
+ * Dependency direction: the format union lives in `schema.ts`, which value-imports
+ * `aggregate.ts`, which value-imports this file. The import back is TYPE-only, so
+ * it erases at compile and the runtime graph stays one-directional and acyclic.
  */
 
-/** Intl options per stat format — the ChartStatFlow bridge. */
-export function statFormatOptions(format?: StatFormat): ChartStatFlowFormat {
+/** Intl options per figure format — the ChartStatFlow bridge. */
+export function statFormatOptions(format?: ViewFigureFormat): ChartStatFlowFormat {
   switch (format) {
     case 'currency':
       // Whole dollars unless cents are present ($12,500 / $99.99). Currency is
@@ -28,7 +32,7 @@ export function statFormatOptions(format?: StatFormat): ChartStatFlowFormat {
 /** The full formatted figure: prefix + Intl-formatted value + suffix. */
 export function formatStatValue(data: {
   value: number
-  format?: StatFormat
+  format?: ViewFigureFormat
   prefix?: string
   suffix?: string
 }): string {

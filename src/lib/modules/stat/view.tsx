@@ -2,7 +2,7 @@
 
 import type { ModuleViewProps } from '../types'
 import type { StatBlock } from './schema'
-import { formatStatDelta, formatStatValue, statFormatOptions } from './format'
+import { formatStatDelta, formatStatValue, statFormatOptions } from '../view/figure-format'
 import { KICKER } from '../chart/card'
 import { ChartStatFlow } from '@/components/charts/chart-stat-flow'
 

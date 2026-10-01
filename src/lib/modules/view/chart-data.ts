@@ -4,19 +4,27 @@
  * `aggregate.ts` (which keeps the verbs and the big number) so each file stays
  * small; both are pure, server-safe, and shared by the renderer and `serialize`.
  *
- * Every one of the eleven kinds reads the same `ChartData`: point-major
- * `{ x, values }` rows bucketed by the x property. Three kinds need one extra
+ * Every one of the thirteen kinds reads the same `ChartData`: point-major
+ * `{ x, values }` rows bucketed by the x property. Five kinds need one extra
  * reading, derived here so the renderers stay dumb:
  * - **scatter** keeps one point PER RECORD (no bucket merge) — each dot a night.
  * - **sunburst** carries each bucket's records as `leaves` — the outer ring.
  * - **gauge** reads ONE figure over all rows against a `target` (the record count
  *   when none is configured — "14 of 24").
+ * - **ring** reads each bucket as a PART OF THE WHOLE — the board's "budget share",
+ *   `transactions · category, £`: every positive bucket against the total.
+ * - **heatmap** reads a DATE × VALUE calendar — the board's "workouts",
+ *   `sessions · date, minutes`: one cell per day, so it needs a date x property.
  */
 import { coerceValue, optionForValue, type PropertyDef, type PropertySchema } from '@/lib/properties/schema'
 import type { ChartPoint } from '../chart/data'
 import type { ViewChartConfig } from './schema'
 import type { CollectionRow } from './apply'
+import type { HeatmapCell } from './heatmap-data'
 import { aggregateRows, defById, firstNumericDef, seriesName, type ChartKind, type ViewAgg } from './aggregate'
+
+/** A calendar day, `YYYY-MM-DD` — the prefix a stored ISO date/datetime starts with. */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 
 /** The first property that reads as a category/x axis: a date, then a choice, then text. */
 function firstCategoryDef(schema: PropertySchema): PropertyDef | undefined {
@@ -95,6 +103,18 @@ export interface ChartData {
   leaves?: Record<string, ChartPoint[]>
   /** Gauge only: the first series read over ALL rows, and the target it is read against. */
   gauge?: { value: number | null; target: number }
+  /**
+   * Ring only: each bucket's first-series figure as a part of the whole, in the view's
+   * own row order, plus the total the shares are read against. Only POSITIVE figures
+   * participate — a share of a negative whole is not a reading (as for sankey/sunburst).
+   */
+  ring?: { slices: { label: string; value: number }[]; total: number }
+  /**
+   * Heatmap only: one `{ date, value }` cell per calendar day. Absent unless the x
+   * property is a DATE — a calendar cannot be read off a category label, and the
+   * renderer says so rather than drawing a lie.
+   */
+  heatmap?: { cells: HeatmapCell[] }
 }
 
 /** The category a row falls under, as a label. Empty/unset buckets under "No value". */
@@ -169,6 +189,38 @@ export function chartDataFromRows(
 
   if (kind === 'gauge') {
     data.gauge = { value: aggregateRows(rows, series[0].def, series[0].agg), target: target ?? rows.length }
+  }
+
+  if (kind === 'ring') {
+    // Part of the whole: the first series per bucket, negatives and gaps dropped, and
+    // the total they are read against. The slice order is the view's own row order —
+    // a ring's reading is the person's, not the chart's (the funnel rule).
+    const slices: { label: string; value: number }[] = []
+    let total = 0
+    for (const point of points) {
+      const value = point.values[names[0]]
+      if (typeof value !== 'number' || !(value > 0)) continue
+      slices.push({ label: point.x, value })
+      total += value
+    }
+    data.ring = { slices, total }
+  }
+
+  if (kind === 'heatmap') {
+    // A calendar reads by DAY, so the x property must be a date; anything else yields
+    // no cells and the renderer shows a notice. Dates are stored as ISO strings, which
+    // may carry a time — the calendar day is its first ten characters.
+    const cells: HeatmapCell[] = []
+    if (xAxis === 'date') {
+      for (const point of points) {
+        const day = point.x.slice(0, 10)
+        if (!ISO_DAY.test(day)) continue
+        const value = point.values[names[0]]
+        if (typeof value !== 'number') continue
+        cells.push({ date: day, value })
+      }
+    }
+    data.heatmap = { cells }
   }
 
   return data

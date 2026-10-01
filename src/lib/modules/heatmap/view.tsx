@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { HeatmapBlock } from './schema'
-import { toHeatmapGrid } from './data'
+import { toHeatmapGrid } from '../view/heatmap-data'
 import { KICKER } from '../chart/card'
 import {
   HeatmapChart,
