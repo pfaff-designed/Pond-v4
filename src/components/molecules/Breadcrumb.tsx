@@ -12,16 +12,17 @@
  * clickable so it stays a consistent home affordance.
  *
  * The top-level crumb — the area the trail starts in — leads with that area's
- * default glyph in the area hue when its title maps to one (#91); deeper crumbs
- * carry no mark. (#108: there is no `type = 'area'` to test; the first crumb IS
- * the top-level ancestor, which is where a person's areas live.)
+ * mark; deeper crumbs carry none. (#108: there is no `type = 'area'` to test;
+ * the first crumb IS the top-level ancestor, which is where a person's areas
+ * live.)
+ *
+ * #134: the mark is INJECTED as `leadMark`, not derived here. It became a
+ * clickable control that writes to the database, and a presentational molecule
+ * has no business owning that — the connected `CrumbMark` supplies it.
  */
 
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import type { Crumb } from '@/lib/pages/overview'
-import { pageAccent } from '@/lib/pages/accent'
-import { areaGlyph } from '@/lib/rail/area-glyph'
-import { AreaMark } from '@/components/atoms/AreaMark'
 
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
@@ -35,11 +36,19 @@ export interface BreadcrumbProps {
   current?: string
   /** Label for the root crumb. Defaults to "Life". */
   rootLabel?: string
+  /** The top-level crumb's mark (#134). Omit and the trail carries none. */
+  leadMark?: ReactNode
 }
 
 const sep = <span className="text-mn-text-meta/80 px-1.5 select-none">›</span>
 
-export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: BreadcrumbProps) {
+export function Breadcrumb({
+  crumbs,
+  onNavigate,
+  current,
+  rootLabel = 'Life',
+  leadMark,
+}: BreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
@@ -52,21 +61,23 @@ export function Breadcrumb({ crumbs, onNavigate, current, rootLabel = 'Life' }: 
         {rootLabel}
       </button>
       {crumbs.map((c, i) => {
-        const glyph = i === 0 ? areaGlyph(c.title) : undefined
-        // A whole area reads as one hue: colour by the top-level ancestor (the
-        // first crumb), the rule accent.ts documents and the kicker square uses.
-        const topId = crumbs[0].id
         return (
           <Fragment key={c.id}>
             {sep}
-            <button
-              onClick={() => onNavigate(c)}
-              className="hover:text-foreground transition-colors inline-flex items-center gap-1 max-w-[180px] min-w-0"
-              title={c.title}
-            >
-              {glyph && <AreaMark glyph={glyph} color={pageAccent(topId)} size={11} />}
-              <span className="truncate">{c.title}</span>
-            </button>
+            {/* The mark sits BESIDE the crumb, never inside it: a crumb is a
+                <button> and the mark is a <button>, and a nested button is
+                invalid HTML that React reports as a hydration error. Caught
+                live, in the console, not by any test. */}
+            <span className="inline-flex min-w-0 max-w-[180px] items-center gap-1">
+              {i === 0 && leadMark}
+              <button
+                onClick={() => onNavigate(c)}
+                className="hover:text-foreground transition-colors min-w-0 truncate"
+                title={c.title}
+              >
+                {c.title}
+              </button>
+            </span>
           </Fragment>
         )
       })}

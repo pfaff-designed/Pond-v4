@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 
+import { AreaMark } from '@/components/atoms/AreaMark'
 import { OverviewSurface } from './OverviewSurface'
 import type { OverviewModel } from '@/lib/pages/overview'
 
@@ -76,7 +77,9 @@ export const Area: Story = {
  * glyph that fails to load paints as a SOLID SQUARE rather than a silhouette.
  */
 export const AreaWithGlyph: Story = {
-  args: { glyph: 'leaf-01' },
+  // #134 turned the kicker mark into an injected slot, so the story supplies the
+  // plain presentational AreaMark — Storybook has no session to write a mark with.
+  args: { markSlot: <AreaMark glyph="leaf-01" color="#5f7355" size={12} /> },
   play: async ({ canvasElement }) => {
     const mark = canvasElement.querySelector('[data-area-mark]') as HTMLElement
     await expect(mark).toBeTruthy()

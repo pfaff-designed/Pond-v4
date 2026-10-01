@@ -58,9 +58,10 @@ import {
 } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
-import { pageAccent } from '@/lib/pages/accent'
+import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
+import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/overview'
-import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import {
   LIFE_ID,
   buildTree,
@@ -331,7 +332,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         title={label}
         meta=""
         handle={false}
-        dot={!isRoot && isArea && accent !== undefined && leading === undefined}
+        // `accent` is already gated (top-level, or a role the person chose), so the
+        // extra `isArea` here made the colour-only case unreachable: setting just a
+        // hue on a nested page painted the breadcrumb and kicker and left the rail
+        // row with no dot at all. Round three caught the dead branch.
+        dot={!isRoot && accent !== undefined && leading === undefined}
         accent={accent}
         emphasis={isRoot || isArea}
         leading={leading}
@@ -403,6 +408,12 @@ const NO_PATH: ReadonlySet<string> = new Set()
 
 export interface RailViewProps {
   tree: RailNode[]
+  /**
+   * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
+   * and every row falls back to its derived mark, which is what the rail did
+   * before a mark could be chosen.
+   */
+  marks?: ReadonlyMap<string, MarkSource>
   selectedId: string | null
   /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
   pathIds?: ReadonlySet<string>
@@ -429,21 +440,52 @@ export interface RailViewProps {
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
 
 /**
- * An area row's leading mark: its default glyph in the area hue, when the
- * title maps to one (#91). An unmapped area returns nothing and keeps its
+ * An area row's leading mark. An unmapped area returns nothing and keeps its
  * KindDot through the molecule's `dot`.
  *
  * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
  * replacement rule (a top-level page).
+ *
+ * #134: resolved through `resolveMark`, NOT from the title and a hash. The rail
+ * was the one mark surface left deriving its own, which meant picking a tulip in
+ * navy on a page left the rail showing the old leaf in a Press hue — three
+ * surfaces disagreeing about the same page, the exact thing `mark.ts` exists to
+ * prevent. `marks` comes from the shared `['pages']` cache, so the rail needs no
+ * read of its own.
  */
-function areaMark(node: RailNode): ReactNode {
-  if (!isAreaRow(node)) return undefined
-  const glyph = areaGlyph(node.title)
-  return glyph ? <AreaMark glyph={glyph} color={pageAccent(node.id)} /> : undefined
+function rowMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark {
+  // The node itself is the fallback: a rail rendered without a pond (Storybook,
+  // a unit test) still shows every row's title-derived glyph.
+  return resolveMark(node.id, marks, {
+    id: node.id,
+    parentId: node.parentId,
+    title: node.title,
+  })
+}
+
+/**
+ * A row's leading glyph, or nothing (the row keeps its `dot`).
+ *
+ * WHICH ROWS CARRY ONE. A top-level row shows its mark as it always has — the
+ * rail uses the mark as the area voice (#108). A NESTED row shows one only when
+ * the person has EXPLICITLY chosen a glyph for it.
+ *
+ * That split is the point. Round two caught the rail still gated on `isAreaRow`
+ * alone: set a tulip on Health › Sleep and the breadcrumb and kicker showed it
+ * while the rail showed nothing — three surfaces disagreeing about one page,
+ * which is exactly what `resolveMark` exists to prevent, and a direct
+ * contradiction of the spec's "Any page". Gating on `glyphIsOwn` honours an
+ * explicit choice everywhere without turning every nested row into a marked one,
+ * so an untouched pond still reads as areas-with-pages-inside.
+ */
+function areaMark(node: RailNode, mark: PageMark): ReactNode {
+  if (!isAreaRow(node) && !mark.glyphIsOwn) return undefined
+  return mark.glyph ? <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} /> : undefined
 }
 
 export function RailView({
   tree,
+  marks,
   selectedId,
   pathIds = NO_PATH,
   expanded,
@@ -460,6 +502,9 @@ export function RailView({
   canDrop,
   onMove,
 }: RailViewProps) {
+  // Empty when the caller supplies none (Storybook): every row then resolves to
+  // its derived mark, which is what the rail showed before marks were choosable.
+  const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
     (id: string) => (el: HTMLDivElement | null) => {
@@ -604,8 +649,12 @@ export function RailView({
     dropTarget && dropTarget.id === id && !dropTarget.rejected ? dropTarget.zone : null
   const isDropRejected = (id: string) => dropTarget?.id === id && dropTarget.rejected
 
-  const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) =>
-    id === LIFE_ID ? (
+  const renderRow = ({ id, node, depth, isFolder, posInSet, setSize }: FlatRow) => {
+    // Resolved ONCE per row: both the glyph and the dot's colour come off it, and
+    // two calls would walk the ancestor chain twice for the same answer. Not for
+    // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
+    const mark = id === LIFE_ID ? null : rowMark(node, markMap)
+    return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
         key={id}
@@ -654,8 +703,8 @@ export function RailView({
         isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        accent={isAreaRow(node) ? pageAccent(id) : undefined}
-        leading={areaMark(node)}
+        accent={isAreaRow(node) || mark.roleIsOwn ? areaRoleColor(mark.role) : undefined}
+        leading={areaMark(node, mark)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
@@ -676,6 +725,7 @@ export function RailView({
         onDragEnd={handleDragEnd}
       />
     )
+  }
 
   return (
     <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-3 pb-[14px] font-sans">
@@ -739,6 +789,9 @@ export function Rail() {
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
+  // #134: the same rows the tree is built from, indexed for mark resolution — so
+  // the rail agrees with the breadcrumb and the kicker about every page.
+  const marks = useMemo(() => markIndex(pages), [pages])
   const nodeById = useMemo(() => {
     const map = new Map<string, RailNode>()
     const walk = (nodes: RailNode[]) =>
@@ -1007,6 +1060,7 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        marks={marks}
         selectedId={selectedNodeId}
         pathIds={pathIds}
         expanded={expanded}

@@ -25,6 +25,7 @@ import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
+import { CrumbMark } from '@/components/organisms/PageMarkButton'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import {
   readSchema,
@@ -291,7 +292,13 @@ export function DocumentPanel() {
         />
         {/* Breadcrumb shows the ancestor path (ticket-25); the title input below
             is the editable tail, so the crumb never duplicates the current name. */}
-        <Breadcrumb crumbs={crumbs} onNavigate={navigateCrumb} />
+        {/* #134: the trail's lead mark is clickable — it opens the picker for the
+            area the trail starts in. */}
+        <Breadcrumb
+          crumbs={crumbs}
+          onNavigate={navigateCrumb}
+          leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
+        />
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
             className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-faint"

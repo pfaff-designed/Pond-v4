@@ -34,9 +34,9 @@ import {
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
-import { pageAccent, rootAncestorId } from '@/lib/pages/accent'
-import { areaGlyph } from '@/lib/rail/area-glyph'
-import { AreaMark } from '@/components/atoms/AreaMark'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { CrumbMark, PageMarkButton } from '@/components/organisms/PageMarkButton'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { paletteItems } from '@/lib/modules/palette'
 
@@ -166,11 +166,13 @@ export interface OverviewSurfaceProps {
   /** Muted accent for the kicker dot (an area's hue); omit for Life. */
   accent?: string
   /**
-   * The area's default glyph (#91). When set, the kicker leads with the glyph
-   * in the area hue instead of the accent square; omit (an unmapped area) and
-   * the square stays.
+   * The kicker's mark (#134) — a connected `PageMarkButton`, so the glyph can be
+   * clicked and changed. When omitted the accent square stays, which is what an
+   * unmapped page has always shown.
    */
-  glyph?: string
+  markSlot?: React.ReactNode
+  /** The breadcrumb's lead mark (#134) — the top-level crumb's. */
+  leadMark?: React.ReactNode
   /**
    * The breadcrumb trail (ticket-25). When `onNavigateCrumb` is set the header
    * renders a clickable Breadcrumb (Life › … › current) in place of the bare
@@ -207,7 +209,8 @@ export function OverviewSurface({
   kicker,
   onRenameKicker,
   accent,
-  glyph,
+  markSlot,
+  leadMark,
   crumbs,
   onNavigateCrumb,
   current,
@@ -225,10 +228,8 @@ export function OverviewSurface({
         {/* ── Header: breadcrumb / kicker + "ask Pond" ────────────────────── */}
         <Rise i={ri++} className="flex items-baseline justify-between gap-4">
           <div className="flex items-center gap-2 min-w-0">
-            {accent &&
-              (glyph ? (
-                <AreaMark glyph={glyph} color={accent} size={12} />
-              ) : (
+            {markSlot ??
+              (accent && (
                 <span
                   data-part="kicker-dot"
                   aria-hidden
@@ -243,14 +244,23 @@ export function OverviewSurface({
             {showBreadcrumb ? (
               onRenameKicker ? (
                 <span className="flex items-center flex-wrap min-w-0">
-                  <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} />
+                  <Breadcrumb
+                    crumbs={crumbs ?? []}
+                    onNavigate={onNavigateCrumb}
+                    leadMark={leadMark}
+                  />
                   <span className="font-mono text-mn-11 text-mn-text-faint/60 px-1.5 select-none">
                     ›
                   </span>
                   <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
                 </span>
               ) : (
-                <Breadcrumb crumbs={crumbs ?? []} onNavigate={onNavigateCrumb} current={current} />
+                <Breadcrumb
+                  crumbs={crumbs ?? []}
+                  onNavigate={onNavigateCrumb}
+                  current={current}
+                  leadMark={leadMark}
+                />
               )
             ) : (
               <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
@@ -359,10 +369,10 @@ export function AreaOverviewPanel({
   const navigateCrumb = useNavigateCrumb()
 
   const model = useMemo(() => areaOverview(rows, areaId, new Date()), [rows, areaId])
-  const accent = useMemo(() => {
-    const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
-    return pageAccent(rootAncestorId(areaId, parentById))
-  }, [rows, areaId])
+  // #134: the mark resolves through the inheritance rule, and its colour is a
+  // theme ROLE — `pageAccent`'s Press six no longer tint any mark.
+  const mark = useMemo(() => resolveMark(areaId, markIndex(rows)), [rows, areaId])
+  const accent = areaRoleColor(mark.role)
   const crumbs = useMemo(() => ancestorPath(rows, areaId), [rows, areaId])
 
   // Rename from the overview surface (ticket-26): same updateTitle path the
@@ -381,7 +391,8 @@ export function AreaOverviewPanel({
       kicker={name}
       onRenameKicker={handleRename}
       accent={accent}
-      glyph={areaGlyph(name)}
+      markSlot={<PageMarkButton pageId={areaId} pageTitle={name} mark={mark} size={12} />}
+      leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
       crumbs={crumbs}
       onNavigateCrumb={navigateCrumb}
       current={name}

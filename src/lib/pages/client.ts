@@ -337,6 +337,39 @@ export async function updateTitle(
 }
 
 /**
+ * Set (or clear) a page's own mark — issue #134.
+ *
+ * Both fields are tri-state on purpose: `undefined` leaves the column alone,
+ * `null` CLEARS it back to "derive / inherit", and a value sets it. That is what
+ * lets the picker offer "reset to default" without a second verb, and what keeps
+ * choosing a glyph from silently stamping a colour the person never picked.
+ *
+ * `area_role` is written as a ROLE, never a colour. See `glyph-library.ts`.
+ */
+export async function setPageMark(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  mark: { glyph?: string | null; areaRole?: string | null }
+): Promise<void> {
+  const patch: { glyph?: string | null; area_role?: string | null } = {}
+  if ('glyph' in mark) patch.glyph = mark.glyph ?? null
+  if ('areaRole' in mark) patch.area_role = mark.areaRole ?? null
+  if (Object.keys(patch).length === 0) return
+  // `updated_at` is deliberately NOT stamped. The other writers here stamp it
+  // because they change CONTENT (`blocks`) or the page's name (`title`); a mark is
+  // neither. Nothing in the app sorts by it — the rail orders by `order` then
+  // title — and the one reader is `subtreeLatest`, which feeds the overview cards'
+  // "updated …" caption. Stamping it made picking a colour read as an edit to the
+  // page AND to every ancestor above it, with no change-log record behind the
+  // claim. (Round one asked for the stamp; round two probed the consequence.)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('pages').update(patch).eq('id', id)
+  // Unlike the log's side-records, this IS what the person just asked for — a
+  // silent failure would leave the picker showing a choice that never landed.
+  if (error) throw error
+}
+
+/**
  * Persist a page's embedding vector (Track D — semantic search). Written
  * alongside content on save so retrieval matches the latest blocks.
  */

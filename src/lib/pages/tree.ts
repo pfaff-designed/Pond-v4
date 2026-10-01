@@ -21,6 +21,15 @@ export interface PageRow {
   title: string
   order: number
   updated_at: string
+  /**
+   * #134: the page's own mark. OPTIONAL rather than `| null` because a row
+   * synthesised in code (the Life home row) or a fixture testing rail ordering
+   * has no business carrying mark columns — and `markIndex` already reads an
+   * absent field as "derive", the same answer as null. `fetchPages` always
+   * selects both.
+   */
+  glyph?: string | null
+  area_role?: string | null
 }
 
 export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<PageRow[]> {
@@ -32,7 +41,10 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
 
   const { data, error } = await supabase
     .from('pages')
-    .select('id, parent_id, type, title, "order", updated_at')
+    // #134: glyph + area_role ride along, so the ONE ['pages', workspace] cache
+    // the rail, breadcrumb and overview already share is enough to resolve every
+    // mark — no surface fetches anything extra to draw one.
+    .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
     .eq('user_id', user.id)
     .eq('workspace', workspace)
     // ticket-44: the reserved Life home row never enters the ['pages'] cache

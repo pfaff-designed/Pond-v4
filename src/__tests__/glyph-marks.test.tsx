@@ -22,10 +22,11 @@ import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { AreaMark } from '@/components/atoms/AreaMark'
+import type { MarkSource } from '@/lib/pages/mark'
 import { OverviewSurface } from '@/components/organisms/OverviewSurface'
 import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { pageAccent } from '@/lib/pages/accent'
 import type { OverviewModel } from '@/lib/pages/overview'
 import type { PageRow } from '@/lib/pages/tree'
 
@@ -192,10 +193,11 @@ const TREE: RailNode[] = [
   node('scratch', 'page', 'Scratchpad', [], 2),
 ]
 
-function renderRail() {
+function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
   return render(
     <RailView
       tree={TREE}
+      marks={marks}
       selectedId={null}
       expanded={new Set(['health', 'personal'])}
       lifeExpanded
@@ -229,10 +231,11 @@ describe('Rail — area marks ride the glyph system', () => {
     const health = getByRole('treeitem', { name: /Health/ })
     const glyph = health.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
     expect(glyph).toBeInTheDocument()
-    // The glyph inherits the SAME hue the dot used, via currentColor on the slot.
+    // The glyph inherits the hue via currentColor on the slot — and since #134
+    // that hue is a theme ROLE, so the rail agrees with the breadcrumb and the
+    // kicker about the same page instead of hashing its own Press accent.
     const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBeTruthy()
-    expect(slot.style.color).toBe(hexToRgb(pageAccent('health')))
+    expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
     expect(health.querySelector('[data-part="dot"]')).toBeNull()
   })
 
@@ -253,8 +256,11 @@ describe('Rail — area marks ride the glyph system', () => {
   })
 })
 
-describe('Breadcrumb — an area crumb shows its mark', () => {
-  it('renders the glyph inside a mapped area crumb, tinted by the area accent', () => {
+describe('Breadcrumb — the lead crumb carries the injected mark', () => {
+  // #134 made the mark a clickable control that writes to the database, so the
+  // molecule no longer derives it — a presentational component has no business
+  // owning that. What it still owns is WHERE the mark goes: the first crumb only.
+  it('renders the injected mark in the first crumb and nowhere else', () => {
     const { getByRole } = render(
       <Breadcrumb
         crumbs={[
@@ -263,15 +269,29 @@ describe('Breadcrumb — an area crumb shows its mark', () => {
         ]}
         onNavigate={jest.fn()}
         current="Dreams"
+        leadMark={<AreaMark glyph="leaf-01" color="var(--mn-area-a)" size={11} />}
       />
     )
+    // Beside the crumb, never inside it: a crumb is a <button> and so is the
+    // mark, and nesting them is invalid HTML React reports as a hydration error.
     const health = getByRole('button', { name: /Health/ })
-    const glyph = health.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
+    const glyph = health.parentElement!.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
     expect(glyph).toBeInTheDocument()
-    const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe(hexToRgb(pageAccent('health')))
-    // A page crumb shows no mark.
-    expect(getByRole('button', { name: /Sleep/ }).querySelector('[data-icon]')).toBeNull()
+    expect(health.querySelector('[data-icon]')).toBeNull()
+    // A ROLE, not a colour — the mark follows the theme (#134).
+    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-a)')
+    const sleep = getByRole('button', { name: /Sleep/ })
+    expect(sleep.parentElement!.querySelector('[data-icon]')).toBeNull()
+  })
+
+  it('carries no mark at all when none is injected', () => {
+    const { container } = render(
+      <Breadcrumb
+        crumbs={[{ id: 'health', type: 'page', title: 'Health' }]}
+        onNavigate={jest.fn()}
+      />
+    )
+    expect(container.querySelector('[data-icon]')).toBeNull()
   })
 })
 
@@ -283,7 +303,7 @@ describe('OverviewSurface — the kicker mark', () => {
       <OverviewSurface
         kicker="Health"
         accent="#5f7355"
-        glyph="leaf-01"
+        markSlot={<AreaMark glyph="leaf-01" color="#5f7355" size={12} />}
         model={MODEL}
         closing="That’s Health at a glance."
         onOpenCard={jest.fn()}
@@ -323,11 +343,18 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
   ]
 
   /** Seed ['pages'] so the panel renders from data without a fetch (envless). */
-  function renderPanel(areaId: string, title: string) {
+  function renderPanel(
+    areaId: string,
+    title: string,
+    mark?: { glyph?: string | null; area_role?: string | null }
+  ) {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
-    client.setQueryData(['pages', 'main'], ROWS)
+    client.setQueryData(
+      ['pages', 'main'],
+      mark ? ROWS.map((r) => (r.id === areaId ? { ...r, ...mark } : r)) : ROWS
+    )
     return render(
       <QueryClientProvider client={client}>
         <AreaOverviewPanel areaId={areaId} title={title} />
@@ -335,25 +362,106 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
     )
   }
 
-  it('a mapped area leads its kicker with the glyph in the area hue', () => {
+  it('a mapped area leads its kicker with the glyph in the area ROLE', () => {
     const { container } = renderPanel('health', 'Health')
     const glyph = container.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
     expect(glyph).toBeInTheDocument()
     const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe(hexToRgb(pageAccent('health')))
+    // #134: a role, never a colour. `pageAccent`'s Press six tint no mark now —
+    // switching theme re-colours this with no write and no stale value.
+    expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
     expect(container.querySelector('[data-part="kicker-dot"]')).toBeNull()
   })
 
-  it('an unmapped nested area keeps the accent square; its area crumb shows the parent mark', () => {
+  it('an unmapped area shows a CLICKABLE KindDot, coloured by its inherited role', () => {
+    // #134: a page with no glyph is still its own mark — the other register of
+    // the same system. Returning nothing here meant only the six seeded areas
+    // could ever be given a glyph, which is not "any page".
     const { container, getByRole } = renderPanel('food', 'Food')
-    const square = container.querySelector<HTMLElement>('[data-part="kicker-dot"]')!
-    expect(square).toBeInTheDocument()
-    // Coloured by the top-level ancestor, as before (#91 changes no hue).
-    expect(square.style.background).toBe(hexToRgb(pageAccent('personal')))
-    // The trail's Personal crumb carries the house glyph; nothing else does.
-    const crumb = getByRole('button', { name: /Personal/ })
-    expect(crumb.querySelector('[data-icon="house"]')).toBeInTheDocument()
+    const markBtn = getByRole('button', { name: 'Change the mark for Food' })
+    const dot = markBtn.querySelector<HTMLElement>('[data-part="dot"]')!
+    expect(dot).toBeInTheDocument()
+    // Inherited from the top-level ancestor, so a whole area still reads as one
+    // colour — now expressed as a role.
+    expect(dot.style.background).toMatch(/^var\(--mn-area-[abc]\)$/)
+    // The trail's Personal crumb carries the house glyph; nothing else does. Its
+    // mark is a SECOND control on this screen, editing the AREA rather than the
+    // open page — which is why the labels name their page.
+    const crumbMark = getByRole('button', { name: 'Change the mark for Personal' })
+    expect(crumbMark.querySelector('[data-icon="house"]')).toBeInTheDocument()
     expect(container.querySelectorAll('[data-icon]')).toHaveLength(1)
+  })
+
+  it('renders an explicit glyph and role over the derived ones', () => {
+    // The whole point of #134: a choice the person made beats the title hash.
+    const { container } = renderPanel('health', 'Health', {
+      glyph: 'tulip-01',
+      area_role: 'area-c',
+    })
+    const glyph = container.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
+    expect(glyph).toBeInTheDocument()
+    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-c)')
+  })
+})
+
+describe('Rail — an explicit mark reaches the rail (#134)', () => {
+  // Round two's trap: every other rail assertion runs the empty-map fallback, so
+  // the conversion had no test. Round three then showed the FIRST version of these
+  // tests did not bite either — destroying `resolveMark`'s ancestor walk left them
+  // all green, because each one set the role on the row it asserted. They now
+  // resolve a role the row does NOT carry, so the walk is load-bearing.
+  function railMarks(entries: MarkSource[]): Map<string, MarkSource> {
+    return new Map(entries.map((e) => [e.id, e]))
+  }
+  const HEALTH = { id: 'health', parentId: null, title: 'Health' }
+  const SLEEP = { id: 'sleep', parentId: 'health', title: 'Sleep' }
+
+  it('prefers a top-level row’s chosen glyph over its title-derived one', () => {
+    const { getByRole } = renderRail(
+      railMarks([{ ...HEALTH, glyph: 'tulip-01', areaRole: 'area-c' }, SLEEP])
+    )
+    const health = getByRole('treeitem', { name: /Health/ })
+    expect(health.querySelector('[data-icon="tulip-01"]')).toBeInTheDocument()
+    expect(health.querySelector('[data-icon="leaf-01"]')).toBeNull()
+    expect(health.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
+      'var(--mn-area-c)'
+    )
+  })
+
+  it('tints a nested row’s chosen glyph with the role INHERITED from its area', () => {
+    // `sleep` carries a glyph and NO role; `health` carries the role. Break the
+    // ancestor walk and this is the test that fails.
+    const { getByRole } = renderRail(
+      railMarks([
+        { ...HEALTH, areaRole: 'area-c' },
+        { ...SLEEP, glyph: 'moon' },
+      ])
+    )
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    expect(sleep.querySelector('[data-icon="moon"]')).toBeInTheDocument()
+    expect(sleep.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
+      'var(--mn-area-c)'
+    )
+  })
+
+  it('paints a nested row’s dot when only a COLOUR was chosen', () => {
+    // Round three: this was unreachable. The dot was gated on `isArea` as well as
+    // on `accent`, so a hue set on a nested page showed in the breadcrumb and the
+    // kicker and nowhere in the rail.
+    const { getByRole } = renderRail(railMarks([HEALTH, { ...SLEEP, areaRole: 'area-b' }]))
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    const dot = sleep.querySelector<HTMLElement>('[data-part="dot"]')!
+    expect(dot).toBeInTheDocument()
+    expect(dot.style.background).toBe('var(--mn-area-b)')
+  })
+
+  it('leaves an untouched nested row with no mark at all', () => {
+    const { getByRole } = renderRail(railMarks([{ ...HEALTH, areaRole: 'area-c' }, SLEEP]))
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    expect(sleep.querySelector('[data-icon]')).toBeNull()
+    // Asserted as ABSENCE of the element — the earlier version read a style off a
+    // node that was never there, so it could not have failed.
+    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
   })
 })
 
@@ -384,8 +492,6 @@ describe('Rail — the seed title resolves too', () => {
   })
 })
 
-/** '#5f7355' → 'rgb(95, 115, 85)' — jsdom normalises inline colours to rgb(). */
-function hexToRgb(hex: string): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
-}
+// `hexToRgb` and `pageAccent` are gone from this file on purpose: after #134 no
+// mark asserts a raw colour at all, which is what criterion 6 asks for. Every
+// mark assertion now matches `var(--mn-area-*)` — a role the theme resolves.
