@@ -27,15 +27,17 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Full trail: Life › Health › Workout Routines › current. Ancestors navigate. */
+/** Full trail: life › Health › Workout Routines › current. Ancestors navigate. */
 export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Life')).toBeInTheDocument()
+    // The root crumb is lowercase, as `Pond 06.10` draws the whole pill.
+    await expect(canvas.getByText('life')).toBeInTheDocument()
+    await expect(canvas.queryByText('Life')).toBeNull()
     await expect(canvas.getByText('3-Day Full-Body Routine')).toBeInTheDocument()
 
-    // Life navigates to the root (null)
-    await userEvent.click(canvas.getByText('Life'))
+    // life navigates to the root (null)
+    await userEvent.click(canvas.getByText('life'))
     await expect(args.onNavigate).toHaveBeenCalledWith(null)
 
     // an ancestor crumb navigates with the whole crumb (id + type + title)
@@ -70,13 +72,36 @@ export const AncestorPathOnly: Story = {
   },
 }
 
-/** A root page: just "Life", still a home affordance. */
+/** A root page: just "life", still a home affordance. */
 export const RootOnly: Story = {
   args: { crumbs: [], current: undefined },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByText('Life'))
+    await userEvent.click(canvas.getByText('life'))
     await expect(args.onNavigate).toHaveBeenCalledWith(null)
+  },
+}
+
+/**
+ * The pond's SECOND root (#101 review / ADR 0003 / 3c): a page under `databases`
+ * starts its trail AT databases — no "life" ahead of it — and that root crumb is
+ * the real page, so a click opens it rather than the life overview.
+ */
+export const DatabasesRoot: Story = {
+  args: {
+    rootCrumb: { id: 'root-db', type: 'page', title: 'databases' },
+    crumbs: [],
+    current: 'ingredients',
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('databases')).toBeInTheDocument()
+    await expect(canvas.queryByText('life')).toBeNull()
+
+    await userEvent.click(canvas.getByText('databases'))
+    await expect(args.onNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'root-db', title: 'databases' })
+    )
   },
 }
 
