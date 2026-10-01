@@ -56,3 +56,20 @@ Two things stay gated, because they are not reversible by a revert:
   lands as a reviewed commit, and `main` can be reverted. That trade is the point of the grant.
 - `wayfinder/OPEN-QUESTIONS.md` loses its reason to exist for M1. Entries leave it by becoming an
   issue or a ruling here.
+
+---
+
+## Amendment, 2026-10-01 — the type ruling in the table above is SUPERSEDED
+
+**What I ruled:** off-scale call sites snap to the README's UI scale of 11 / 13 / 16 / 18 / 22 / 28 / 36 / 46, with 12px going to 11 on the machine surface and 13 elsewhere.
+
+**Why it was wrong:** the component boards do not use that scale. `PondAtom.dc.html` and `PondMolecule.dc.html` specify **13.5, 10.5, 12.5, 16.5, 17.5, 19, 30, 38, 56, 76**, and `PondAtom.tsx` (#93) and `PondMolecule.tsx` (#95) faithfully transcribe them. Applying my ruling would have had agents "correcting" accurate transcriptions into inaccurate ones — degrading fidelity while appearing to enforce a rule.
+
+**Corrected:**
+
+1. **A value written in a board wins, always.** `13.5px` means 13.5px. Never round to a scale step.
+2. The README's scale is a **default for UI type where no board specifies a value** — a new surface, a state the boards do not draw. It is not a filter to run existing values through.
+3. **Tailwind's named sizes stay banned** — this is what the original ruling was reaching for. `text-xs` (12), `text-sm` (14), `text-base`, `text-lg`, `text-xl` appear in no board. Replace with the board's exact value in bracket notation, or the scale default where no board covers the case.
+4. The machine surface is **mono, 10.5–12.5px, tight letterspacing.** The token layer's `--tracking-wider: 0.1em` applied to mono inverts this; that is a defect, not a spec.
+
+**The lesson, which matters more than the ruling:** I derived a rule from the README's prose and applied it over values measured from boards. `AGENTS.md`'s source order puts `PROJECT_RULES.md` above the mockups for **product law** — vocabulary, the diff model, colour roles — not for **values**. For a value the board is the most specific statement and it wins. This is the same disposition that let the row-delete `×` survive: treating what exists, or what reads as a general rule, as the baseline against which the design must argue. It is backwards.

@@ -5,6 +5,21 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# THE DESIGN IS THE SOURCE OF TRUTH. EXISTING CODE HAS NO STANDING.
+
+`wayfinder/design_handoff_pond/` defines what Pond looks like and what it does. **Shipped code is not evidence of anything.** Most of this app was built before the handoff existed, from internal tickets, and has never been reconciled with it.
+
+So, when code and a board disagree:
+
+- **The board wins. Every time.** Do not look for a reading that preserves what is there.
+- **Delete what no board describes.** An affordance with no board behind it is not a feature to protect — it is a defect. The row-delete `×` is the type case: invented by an old ticket, drawn in no board, and it survived five careful review passes because everyone treated existing code as the baseline.
+- **Build what the boards draw and the code lacks.** Missing is as much a divergence as wrong. A component with four of its five kinds unbuilt is not "partial", it is absent.
+- **Do not preserve behaviour because it works.** Working is not the bar. Matching the design is the bar.
+
+The one thing that must survive is **engine logic the boards assume but do not draw** — the 8-type field engine's relations, rollups and coercion, the diff accept path, persistence, the rail's keyboard tree. Boards specify appearance and states; they do not specify that a rollup recomputes. Keep the engine, replace the surface.
+
+**A value written in a board is final.** Do not round it to a scale, snap it to a token, or reconcile it with prose elsewhere. `13.5px` means 13.5px.
+
 # The design handoff is the spec. Build from it; do not re-litigate it.
 
 `wayfinder/design_handoff_pond/` is a complete, high-fidelity specification of the whole product, and `docs/adr/` holds the decisions made since. Together they are the plan. **Read them and build.**
