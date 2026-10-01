@@ -128,6 +128,7 @@ jest.mock('@ai-sdk/react', () => ({
 
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
+import { readStamp } from '@/lib/conversation/page-proposals'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -155,17 +156,35 @@ function answeredThread(): MockMessage[] {
         },
         { type: 'text', text: PROSE },
       ],
+      // The read chips are STAMPED on the message when the answer lands (S8) — an
+      // answered thread is one that already carries them.
+      metadata: { read: ['Kitchen renovation', 'Budget'] },
     },
   ]
 }
 
-function renderTerminal() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+// A FRESH element each call (React bails out of re-rendering an identical one), on
+// the SAME client — so a rerender really re-reads the mocked navigation state.
+function terminalTree(qc: QueryClient) {
+  return (
     <QueryClientProvider client={qc}>
       <AITerminal />
     </QueryClientProvider>
   )
+}
+
+function newQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
+}
+
+function renderTerminal() {
+  return render(terminalTree(newQueryClient()))
+}
+
+function readChipLabels(): string[] {
+  return within(screen.getByTestId('read-chips'))
+    .getAllByTestId('read-chip')
+    .map((c) => c.textContent)
 }
 
 async function ready() {
@@ -174,6 +193,9 @@ async function ready() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  // The drawer remembers collapse in localStorage; a test that collapses it must
+  // not hand the next test a collapsed composer.
+  window.localStorage.clear()
   mockNodeId = 'kr-1'
   mockNodeName = 'Kitchen renovation'
   mockMessages = answeredThread()
@@ -223,12 +245,42 @@ describe('the answer in the thread (6a frames 2–3)', () => {
   it('always renders read chips under the answer — the context page first, then what it read (S8)', async () => {
     renderTerminal()
     await ready()
-    const read = screen.getByTestId('read-chips')
-    expect(within(read).getByText('read')).toBeInTheDocument()
-    const chips = within(read)
-      .getAllByTestId('read-chip')
-      .map((c) => c.textContent)
-    expect(chips).toEqual(['Kitchen renovation', 'Budget'])
+    expect(within(screen.getByTestId('read-chips')).getByText('read')).toBeInTheDocument()
+    expect(readChipLabels()).toEqual(['Kitchen renovation', 'Budget'])
+  })
+
+  it('stamps the read chips onto the answer as it lands, beside sentAt', async () => {
+    const thread = answeredThread()
+    delete thread[1].metadata
+    mockMessages = thread
+    renderTerminal()
+    await ready()
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalled())
+    const stamp = mockSetMessages.mock.calls
+      .map((c) => c[0])
+      .filter((arg): arg is (m: MockMessage[]) => MockMessage[] => typeof arg === 'function')
+      .at(-1)!
+    const stamped = stamp(thread)
+    expect(readStamp(stamped[1].metadata)).toEqual(['Kitchen renovation', 'Budget'])
+    // The stamp rides beside what metadata already carried; the question is untouched.
+    expect(stamped[0].metadata).toEqual({ sentAt: '2026-09-22T07:12:00' })
+  })
+
+  it('an answer’s read chips never change when the person walks to another page', async () => {
+    const qc = newQueryClient()
+    const { rerender } = render(terminalTree(qc))
+    await ready()
+    expect(readChipLabels()).toEqual(['Kitchen renovation', 'Budget'])
+
+    // Off to another page. The chips above are a record of what Pond read when it
+    // answered — they must not start claiming it read wherever we are standing now.
+    mockNodeId = 'cre-1'
+    mockNodeName = 'Creativity'
+    rerender(terminalTree(qc))
+    await act(async () => {})
+
+    expect(readChipLabels()).toEqual(['Kitchen renovation', 'Budget'])
   })
 
   it('offers make this a page and ask again, and nothing called keep as note / keep in thread (W4)', async () => {
@@ -290,6 +342,45 @@ describe('streaming (6a frame 2)', () => {
     fireEvent.change(textarea, { target: { value: 'kept' } })
     fireEvent.keyDown(textarea, { key: 'Escape' })
     expect((textarea as HTMLTextAreaElement).value).toBe('kept')
+  })
+
+  it('an error drops the answer it belongs to — and only that one', async () => {
+    // A turn can leave two assistant messages in a row: a tool-only one, then the
+    // text. One error must take the message that was in flight, not the complete
+    // answer before it.
+    const thread: MockMessage[] = [
+      answeredThread()[0],
+      {
+        id: 'a0',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-read_page',
+            toolCallId: 'rp0',
+            state: 'output-available',
+            input: { pageId: 'bud-1' },
+          },
+        ],
+        metadata: { read: ['Kitchen renovation', 'Budget'] },
+      },
+      { ...answeredThread()[1], id: 'a1' },
+    ]
+    mockMessages = thread
+    mockError = new Error('boom')
+    const qc = newQueryClient()
+    const { rerender } = render(terminalTree(qc))
+    await ready()
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalledTimes(1))
+    const drop = mockSetMessages.mock.calls[0][0] as (m: MockMessage[]) => MockMessage[]
+    const kept = drop(thread)
+    expect(kept.map((m) => m.id)).toEqual(['u1', 'a0'])
+
+    // The state update lands; the SAME error must not go on eating messages.
+    mockMessages = kept
+    rerender(terminalTree(qc))
+    await act(async () => {})
+    expect(mockSetMessages).toHaveBeenCalledTimes(1)
   })
 
   it('an error keeps nothing: the error line replaces the answer and offers ask again', async () => {
@@ -461,6 +552,26 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect((within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement).value).toBe(
       ''
     )
+  })
+
+  it('Esc inside the card’s fields leaves the field — it never collapses the composer (C8)', async () => {
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    name.focus()
+    fireEvent.keyDown(name, { key: 'Escape' })
+    // Esc steps back one rung: out of the field, with the card still standing.
+    expect(document.activeElement).not.toBe(name)
+    expect(window.localStorage.getItem('pond:terminal-collapsed')).not.toBe('1')
+    expect(within(card).getByRole('button', { name: 'make page' })).toBeInTheDocument()
+    expect(name.value).not.toBe('')
+
+    // The next Esc, with focus back on the body, takes the next rung.
+    fireEvent.keyDown(card, { key: 'Escape' })
+    expect(window.localStorage.getItem('pond:terminal-collapsed')).toBe('1')
   })
 
   it('a very long typed name is written clamped, never raw', async () => {

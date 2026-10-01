@@ -12,6 +12,7 @@
  * marks are inline SVG at stroke 1.4 — PROJECT_RULES § Icons).
  */
 
+import { chipBaseClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 
 export interface AnswerActionsProps {
@@ -25,8 +26,7 @@ export interface AnswerActionsProps {
   className?: string
 }
 
-const chipClass =
-  'rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-mn-text-meta transition-colors hover:bg-mn-text/[0.1] hover:text-foreground'
+const chipClass = cn(chipBaseClass, 'py-1.5 text-mn-text-meta hover:text-foreground')
 
 export function AnswerActions({
   streaming,

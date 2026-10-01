@@ -111,6 +111,24 @@ describe('the made-from chip', () => {
     )
   })
 
+  it('a failed hide rolls back — the chip never asserts what the row does not say', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {})
+    mockSetMadeFromHidden.mockRejectedValueOnce(new Error('offline'))
+    renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
+    await screen.findByText('made from')
+
+    fireEvent.click(screen.getByRole('button', { name: 'hide' }))
+    await waitFor(() =>
+      expect(mockSetMadeFromHidden).toHaveBeenCalledWith(expect.anything(), 'page-1', true)
+    )
+    // The row never hid it, so the optimistic cache write is rolled back: the chip
+    // stays shown rather than asserting a flag the row does not carry.
+    await waitFor(() => expect(screen.getByText('made from')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'made from · show' })).not.toBeInTheDocument()
+    expect(errors).toHaveBeenCalled()
+    errors.mockRestore()
+  })
+
   it('shows nothing on a page without a stamp', async () => {
     renderPage({ kind: 'page' })
     await screen.findByDisplayValue('renovation blockers')

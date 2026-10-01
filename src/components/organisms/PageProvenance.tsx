@@ -10,7 +10,9 @@
  * MadeFromChip, opens the thread at the message on click, and owns the ONLY
  * post-birth write: the hide/show flag — reflected in the ['page'] cache at once
  * and persisted by a read-merge-write that leaves every other prop (the schema
- * included) alone. It can be hidden, not removed: nothing here deletes the stamp.
+ * included) alone. A failed write rolls that cache back and invalidates it, so the
+ * chip never shows a state the row does not hold. It can be hidden, not removed:
+ * nothing here deletes the stamp.
  *
  * The Supabase client is built lazily inside the handler (never at render), so
  * an envless mount (Storybook, CI) never constructs a real client.
@@ -35,12 +37,19 @@ export function PageProvenance({ pageId, props, className }: PageProvenanceProps
   if (!stamp) return null
 
   function toggleHidden(hidden: boolean) {
-    queryClient.setQueryData(
-      ['page', pageId],
-      (prev: { props?: Record<string, unknown> } | null | undefined) =>
-        prev ? { ...prev, props: withMadeFromHidden(prev.props ?? {}, hidden) } : prev
+    const key = ['page', pageId]
+    // Optimistic, with a way back: the cache must never keep asserting a flag the
+    // row does not carry. Snapshot first, restore on failure, then invalidate so
+    // the next read comes from the row itself rather than from our guess.
+    const snapshot = queryClient.getQueryData(key)
+    queryClient.setQueryData(key, (prev: { props?: Record<string, unknown> } | null | undefined) =>
+      prev ? { ...prev, props: withMadeFromHidden(prev.props ?? {}, hidden) } : prev
     )
-    void setMadeFromHidden(getSupabase(), pageId, hidden).catch(console.error)
+    void setMadeFromHidden(getSupabase(), pageId, hidden).catch((err) => {
+      console.error(err)
+      queryClient.setQueryData(key, snapshot)
+      void queryClient.invalidateQueries({ queryKey: key })
+    })
   }
 
   return (

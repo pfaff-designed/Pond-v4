@@ -244,6 +244,32 @@ export function readChips(opts: {
   return out
 }
 
+/**
+ * The read chips STAMPED onto an assistant message's metadata, or null when that
+ * message carries none.
+ *
+ * S8 provenance has to be a fact about the answer, not about where the person
+ * happens to be standing now: computing the chips from live navigation state
+ * makes an old answer claim to have read whatever page is open (PROJECT_RULES:
+ * "every value that came from somewhere else carries a provenance chip"). So the
+ * terminal writes {@link readChips}' result onto the message the moment the
+ * answer lands — next to `sentAt`, which already rides there — and renders from
+ * the stamp ever after. It persists with the transcript, so a reload keeps it.
+ */
+export function readStamp(metadata: unknown): string[] | null {
+  if (typeof metadata !== 'object' || metadata === null) return null
+  const read = (metadata as { read?: unknown }).read
+  if (!Array.isArray(read)) return null
+  return read.filter((x): x is string => typeof x === 'string')
+}
+
+/** Write the chips onto a message's metadata, leaving every other field alone. */
+export function withReadStamp<T extends { metadata?: unknown }>(message: T, read: string[]): T {
+  const base =
+    typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}
+  return { ...message, metadata: { ...base, read } }
+}
+
 // ── Labels ───────────────────────────────────────────────────────────────────
 
 /** The made-from chip's text (6a frame 5): "tuesday 07:12 — “the question”". */

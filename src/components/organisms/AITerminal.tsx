@@ -31,8 +31,12 @@ import {
   formatThreadTime,
   openPageProposalIds,
   readChips,
+  readStamp,
+  withReadStamp,
   type PageProposal,
+  type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
+import { eyebrowClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
@@ -635,11 +639,25 @@ export function AITerminal() {
   // its partial answer, so the thread never holds half an answer as if it were
   // one. (Esc / stop is the opposite: it KEEPS what arrived — `stop` leaves the
   // partial message in place.) The error line below offers ask again.
+  //
+  // Exactly ONE message goes: the answer that was in flight when the error
+  // arrived. Keyed off the error object (and not off `messages`), because a turn
+  // can leave two assistant messages in a row — a tool-only one, then the text —
+  // and re-running on the shortened list would eat the earlier, complete answer
+  // too.
+  const droppedForError = useRef<unknown>(null)
   useEffect(() => {
-    if (!error) return
-    const last = messages[messages.length - 1]
-    if (last?.role === 'assistant') setMessages(messages.slice(0, -1))
-  }, [error, messages, setMessages])
+    if (!error) {
+      droppedForError.current = null
+      return
+    }
+    if (droppedForError.current === error) return
+    droppedForError.current = error
+    setMessages((prev) => {
+      const last = prev[prev.length - 1]
+      return last?.role === 'assistant' ? prev.slice(0, -1) : prev
+    })
+  }, [error, setMessages])
   const [chatMenuOpen, setChatMenuOpen] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
@@ -1183,12 +1201,24 @@ export function AITerminal() {
 
   // The last step of Esc: with focus elsewhere in the composer (a chip, a card
   // control), Esc closes the composer. The textarea handles its own Esc above.
+  //
+  // Esc STEPS BACK, one rung at a time (AUDIT C8): stop the stream, else leave the
+  // field, else close the composer. So Esc inside a proposal card's own field —
+  // name, under, kind — only leaves that field; it must never collapse the whole
+  // composer out from under the card the person is filling in. A second Esc, with
+  // focus back on the body, takes the next rung.
   const handleBodyKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
-      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return
+      const target = e.target as HTMLElement
+      if (target.tagName === 'TEXTAREA') return
       if (isStreaming) {
         stop()
+        return
+      }
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault()
+        target.blur()
         return
       }
       setIsCollapsed(true)
@@ -1809,6 +1839,52 @@ export function AITerminal() {
     (id: string) => allPages.find((p) => p.id === id)?.title,
     [allPages]
   )
+
+  // ── Stamp the read chips on arrival (S8 provenance) ───────────────────────
+  // An answer's read chips are a fact about the answer: the page the question was
+  // asked from, plus every page the turn read. Deriving them at render time from
+  // live navigation made them drift — walk to another page and an old answer
+  // started claiming it had read THAT page (PROJECT_RULES: every answer names
+  // what it read; every value that came from somewhere else carries a provenance
+  // chip). So the chips are written onto the message the moment the answer is
+  // done, beside `sentAt`, and every render after that reads the stamp.
+  //
+  // Deferred until the pages list resolves, like the proposal-target stamp above,
+  // so a read_page chip stamps its page's TITLE and not a raw id. An answer
+  // re-seeded from the saved transcript is stamped from its own parts only: we
+  // know what it read, but the page it was asked from is no longer knowable, and
+  // guessing it from where the person is standing now is the very drift this
+  // fixes.
+  useEffect(() => {
+    if (isStreaming || !pagesLoaded) return
+    const unstamped = messages.filter(
+      (m) => m.role === 'assistant' && readStamp(m.metadata) === null
+    )
+    if (unstamped.length === 0) return
+    const ids = new Set(unstamped.map((m) => m.id))
+    setMessages((prev) =>
+      prev.map((m) =>
+        ids.has(m.id)
+          ? withReadStamp(
+              m,
+              readChips({
+                contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
+                parts: m.parts as ReadPartLike[],
+                resolvePageName,
+              })
+            )
+          : m
+      )
+    )
+  }, [
+    isStreaming,
+    pagesLoaded,
+    messages,
+    initialMessageIds,
+    contextLabel,
+    resolvePageName,
+    setMessages,
+  ])
   const stageLine = useMemo(() => {
     if (!isStreaming) return null
     const last = messages[messages.length - 1]
@@ -1869,19 +1945,18 @@ export function AITerminal() {
           const answerStreaming = isLastAssistant && isStreaming
           const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
           const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
-          // S8: what Pond read before this answer — the context page first, then
-          // each read_page in the message, as chips under the answer.
+          // S8: what Pond read before this answer, taken from the STAMP written when
+          // the answer landed (never recomputed from live navigation — see the
+          // stamping effect above). Only an answer still arriving has no stamp yet,
+          // and that one row is live by definition.
           const read =
             message.role === 'assistant'
-              ? readChips({
+              ? (readStamp(message.metadata) ??
+                readChips({
                   contextLabel,
-                  parts: message.parts as Array<{
-                    type: string
-                    state?: string
-                    input?: { pageId?: string }
-                  }>,
+                  parts: message.parts as ReadPartLike[],
                   resolvePageName,
-                })
+                }))
               : []
           const cardsForMessage = Object.values(pageProposals).filter(
             (p) => p.messageId === message.id
@@ -1978,9 +2053,7 @@ export function AITerminal() {
                   // react-markdown re-parses each partial (ticket-20); the caret shows
                   // while this answer is still arriving.
                   <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                    <span className="font-sans text-[10.5px] font-medium uppercase tracking-[0.1em] text-mn-text-secondary">
-                      pond
-                    </span>
+                    <span className={eyebrowClass}>pond</span>
                     <div className="relative">
                       <Markdown variant="answer">{text}</Markdown>
                       {answerStreaming && (
@@ -1999,9 +2072,7 @@ export function AITerminal() {
                 citation should still show) — same attributed treatment. */}
               {message.role !== 'user' && !text && sources.length > 0 && (
                 <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                  <span className="font-sans text-[10.5px] font-medium uppercase tracking-[0.1em] text-mn-text-secondary">
-                    pond
-                  </span>
+                  <span className={eyebrowClass}>pond</span>
                   <SourceList sources={sources} />
                   <ReadChips read={read} />
                 </div>
@@ -2017,7 +2088,6 @@ export function AITerminal() {
                   parentId={proposal.parentId}
                   kind={proposal.kind}
                   parentOptions={parentOptions}
-                  pondName={contextLabel === nodeName ? 'life' : contextLabel.toLowerCase()}
                   status={proposal.status}
                   error={pageProposalErrors[proposal.id]}
                   onNameChange={(name) => editPageProposal(proposal.id, { name })}

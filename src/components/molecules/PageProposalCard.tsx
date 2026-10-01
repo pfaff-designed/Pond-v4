@@ -23,6 +23,7 @@
  */
 
 import { useId, useRef, useState } from 'react'
+import { chipBaseClass, eyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
 
@@ -55,8 +56,6 @@ export interface PageProposalCardProps {
   className?: string
 }
 
-const eyebrowClass =
-  'font-sans font-medium text-[10.5px] uppercase tracking-[0.1em] text-mn-text-secondary'
 const rowClass = 'flex items-baseline gap-3 px-2 py-0.5'
 const labelClass = 'w-[52px] flex-none text-mn-text-meta'
 const fieldClass =
@@ -104,7 +103,7 @@ export function PageProposalCard({
           <button
             type="button"
             onClick={onOpenPage}
-            className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-mn-text-meta transition-colors hover:text-foreground"
+            className={cn(chipBaseClass, 'py-1.5 text-mn-text-meta hover:text-foreground')}
           >
             open {name}
           </button>

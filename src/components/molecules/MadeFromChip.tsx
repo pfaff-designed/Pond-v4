@@ -11,6 +11,7 @@
  * ink .68; chip 5px 11px, pill, ink .07 fill, mono 11px .02em, full ink.
  */
 
+import { chipBaseClass, eyebrowClass } from '@/components/atoms/kicker'
 import { madeFromLabel } from '@/lib/conversation/page-proposals'
 import type { MadeFromThread } from '@/lib/pages/made-from'
 import { cn } from '@/lib/utils'
@@ -43,14 +44,15 @@ export function MadeFromChip({ stamp, onOpen, onToggleHidden, className }: MadeF
 
   return (
     <div data-part="made-from" className={cn('flex flex-wrap items-center gap-2.5', className)}>
-      <span className="font-sans text-[10.5px] font-medium uppercase tracking-[0.1em] text-mn-text-secondary">
-        made from
-      </span>
+      <span className={eyebrowClass}>made from</span>
       <button
         type="button"
         onClick={onOpen}
         title="open the thread at this moment"
-        className="flex items-center gap-[7px] rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-[5px] font-mono text-[11px] lowercase tracking-[0.02em] text-foreground transition-colors hover:bg-mn-text/[0.1]"
+        className={cn(
+          chipBaseClass,
+          'flex items-center gap-[7px] py-[5px] font-mono text-[11px] lowercase tracking-[0.02em] text-foreground'
+        )}
       >
         {label}
       </button>
