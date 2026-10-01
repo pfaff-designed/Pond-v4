@@ -5,6 +5,16 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Refactoring means gut and replace, not patch toward.
+
+When a surface diverges from its board, **delete the implementation and build the board's version.** Do not migrate it, do not patch it value by value, do not keep its shape and retint it.
+
+Patching preserves the original's structure, and the structure is usually what is wrong. The check row kept a delete `×` nobody designed because five passes patched _around_ it. `mentioned` rendered as 17.5px serif body prose because it was a markdown block being nudged toward a card. Both needed deleting, not adjusting.
+
+So: read the board, list its states, delete the old component, write the new one, and let the call sites break — then fix them to the new shape. **A surface whose lineage is a superseded aesthetic (Press, v85 Clearing, any pre-handoff ticket) has no shape worth preserving at all.**
+
+What survives a gut is **engine logic the boards assume but do not draw**: the field engine, the diff path, persistence, ARIA trees, data derivation. Lift that out first, then gut the surface around it.
+
 # There are exactly two kinds of component. Everything else is deleted.
 
 1. **The component library** — what Pond itself is built from. `Pond 02 Component library` and its child DCs define it: `PondAtom`, `PondControl`, `PondMolecule`, `PondPicker`, `PondRail`, `PondComposer`, `PondChart`, `PondTemplate`. This is the chrome.
