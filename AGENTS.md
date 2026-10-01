@@ -5,6 +5,29 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# There are exactly two kinds of component. Everything else is deleted.
+
+1. **The component library** — what Pond itself is built from. `Pond 02 Component library` and its child DCs define it: `PondAtom`, `PondControl`, `PondMolecule`, `PondPicker`, `PondRail`, `PondComposer`, `PondChart`, `PondTemplate`. This is the chrome.
+2. **Blocks** — everything a person or Pond can put **on a page**. `PondBlock` defines the family and its states; the module registry is its engine.
+
+That is the whole taxonomy. A component that is neither is **stale, a duplicate, or was never specified** — and it gets deleted, not relocated.
+
+**Duplicates go.** Where two things do one job, the one the boards describe survives and the other is deleted along with its call sites and tests. A shadcn primitive sitting beside its `PondControl` equivalent is a duplicate. A chart kind that is also a block type is a duplicate. A component absorbed into a `Pond*` family whose remnant still exists is a duplicate.
+
+**Stale goes.** Anything superseded by the handoff, or left behind by a ticket that predates it, is deleted outright. Do not keep it working, do not migrate it, do not leave a shim.
+
+**Both kinds are built on shadcn and Bklit.** That is the intended foundation, not a legacy to migrate off:
+
+- **shadcn** is the primitive layer — accessibility, focus management, keyboard handling, state machines (dialog, popover, menu, switch, checkbox, segmented control).
+- **Bklit** is the chart layer. `src/components/charts/` is its registry.
+- The `Pond*` library **wraps** those and applies the boards' values, states and vocabulary.
+
+So a shadcn primitive sitting under its `Pond*` wrapper is the architecture working, **not** a duplicate. A duplicate is **two Pond-level components doing one job**. When a board specifies something we lack a primitive for, install it from shadcn rather than hand-rolling it — the audit found no field, toggle, styled checkbox, menu row or segmented control in the product, and all five exist upstream.
+
+What is wrong with the primitives we do have is their **values and variant axes**, not their existence: wrap and retint them, and drop variants no board describes.
+
+Atomic-design words (`atoms`, `molecules`, `organisms`, `layouts`, `screens`) are **build vocabulary**: they may describe directories and live in section 02, and they must never reach product copy.
+
 # THE DESIGN IS THE SOURCE OF TRUTH. EXISTING CODE HAS NO STANDING.
 
 `wayfinder/design_handoff_pond/` defines what Pond looks like and what it does. **Shipped code is not evidence of anything.** Most of this app was built before the handoff existed, from internal tickets, and has never been reconciled with it.
