@@ -63,8 +63,12 @@ export function ProposalActions({
         aria-live="polite"
         data-part="status"
         className={cn(
-          // Audit-trail line: machine surface → mono voice (lowercase, tracked).
-          'font-mono text-xs lowercase tracking-wider text-mn-text-meta',
+          // Audit-trail line: machine surface → mono voice. Values measured off
+          // `Pond 06.03` 6c frame 5 ("rejected — nothing changed"): 12.5px / 400
+          // / .02em at ink .8. NOT `text-xs` + `tracking-wider` — the board is
+          // 12.5 not 12, and the machine surface runs TIGHT (the .1em in
+          // `--tracking-wider` is a token-layer defect, see #220).
+          'font-mono text-[12.5px] tracking-[0.02em] lowercase text-mn-text-meta',
           divider && 'border-t border-mn-hair px-3 py-1.5',
           className
         )}
