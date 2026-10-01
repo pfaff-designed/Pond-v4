@@ -6,7 +6,7 @@ import { Markdown, MarkdownInline } from './Markdown'
 /**
  * The rendered-reading primitive (ticket-20). Verifies that markdown source is
  * typeset — no literal `##`, `**`, `---`, or pipe-table syntax survives — in both
- * the Press-serif `reading` variant and the compact `terminal` variant.
+ * the serif `reading` variant and the compact mono `terminal` variant.
  */
 const meta = {
   title: 'Molecules/Markdown',

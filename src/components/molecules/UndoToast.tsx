@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * The undo toast (ticket-27) — a Press-aesthetic snackbar shown after a
- * reversible deletion (a leaf page or an editor block). It states what was
+ * The undo toast (ticket-27) — the snackbar shown after a reversible deletion
+ * (a leaf page or an editor block). It states what was
  * removed and offers an Undo action for a grace window; on dismiss (or window
  * elapse, driven by the host) the deletion is committed.
  *

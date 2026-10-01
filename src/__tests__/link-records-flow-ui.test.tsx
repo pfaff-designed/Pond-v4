@@ -70,10 +70,6 @@ jest.mock('@/lib/pages/tree', () => ({
   insertPageOptimistic: jest.fn(),
 }))
 
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
-
 jest.mock('@/lib/conversation/client', () => ({
   getOrCreateConversation: jest.fn().mockResolvedValue({
     id: 'conv-1',
@@ -211,9 +207,7 @@ describe('AITerminal — link_records proposal card', () => {
     // The clear "no such row" message lands on the card; the card re-arms so the
     // user can retry — and nothing dangling was written (the write path threw
     // before any write).
-    await waitFor(() =>
-      expect(screen.getByText(/No row titled "Lantern"/)).toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.getByText(/No row titled "Lantern"/)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'Link' })).toBeInTheDocument()
   })
 })

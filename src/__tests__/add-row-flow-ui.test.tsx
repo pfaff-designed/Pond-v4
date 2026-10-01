@@ -69,10 +69,6 @@ jest.mock('@/lib/pages/tree', () => ({
   insertPageOptimistic: jest.fn(),
 }))
 
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
-
 jest.mock('@/lib/conversation/client', () => ({
   getOrCreateConversation: jest.fn().mockResolvedValue({
     id: 'conv-1',

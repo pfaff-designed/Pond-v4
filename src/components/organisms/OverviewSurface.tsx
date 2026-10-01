@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * The shared overview surface — v85 Clearing's area-overview pattern,
- * data-driven: kicker header, one focal numeral, a card per child page, a
- * closing serif exhale. Used for both an area page and the Life root (slice 5);
- * the callers derive the model from real ['pages'] rows via lib/pages/overview.
+ * The shared overview surface, data-driven: kicker header, one focal numeral, a card
+ * per child page, a closing serif exhale. Used for both an area page and the Life
+ * root (slice 5); the callers derive the model from real ['pages'] rows via
+ * lib/pages/overview. The LAYOUT still descends from the superseded "v85 Clearing"
+ * aesthetic and needs resolving against `Pond 05 Shell` — a separate issue.
  *
  * Deliberately structural: no Pond note, no AI synthesis — that's a named
  * follow-up with its own grill.

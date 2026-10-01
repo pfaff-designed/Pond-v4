@@ -78,10 +78,6 @@ jest.mock('@/lib/pages/tree', () => ({
   insertPageOptimistic: (...args: unknown[]) => mockInsertPageOptimistic(...args),
 }))
 
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
-
 const mockAppendProposal = jest.fn().mockResolvedValue({ id: 'rec-1', status: 'proposed' })
 const mockAdvanceStatus = jest.fn().mockResolvedValue({ id: 'rec-1' })
 jest.mock('@/lib/change-log/store', () => ({
