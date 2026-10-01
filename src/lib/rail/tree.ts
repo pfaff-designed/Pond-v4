@@ -25,12 +25,16 @@ export interface RailNode {
   children: RailNode[]
 }
 
-/** The Life root as a RailNode — synthetic, no children of its own here. */
+/**
+ * The Life root as a RailNode — synthetic, no children of its own here. Its title
+ * is lowercase, like every other line of the rail's source copy in `Pond 05 Shell`
+ * (#101 review); where the boards show capitals it is a CSS transform.
+ */
 export const LIFE_NODE: RailNode = {
   id: LIFE_ID,
   parentId: null,
   type: 'life',
-  title: 'Life',
+  title: 'life',
   order: 0,
   children: [],
 }

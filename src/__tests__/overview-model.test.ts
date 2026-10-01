@@ -20,6 +20,7 @@ import {
   lifeOverview,
   childCards,
   ancestorPath,
+  crumbTrail,
   insideLabel,
   phraseFocalCaption,
   timeAgo,
@@ -260,6 +261,37 @@ describe('lifeOverview', () => {
     expect(model.focal).toBe('1')
     expect(model.focalCaption).toBe('1 page, tucked in Creativity.')
   })
+
+  // #101: the `databases` root is the pond's SECOND root (3c, "one root beside
+  // life"), which the rail lifts out of the Life tree. Life's overview has to
+  // agree — otherwise the same page is a root on one surface and an area on
+  // another.
+  it('leaves the databases root and its databases out of Life entirely', () => {
+    const rows = [
+      ...ROWS,
+      row('root-db', null, 'page', 'databases', 3),
+      row('db-1', 'root-db', 'page', 'ingredients', 0),
+      row('db-2', 'root-db', 'page', 'kitchen costs', 1),
+    ]
+    const model = lifeOverview(rows, NOW)
+    // No card for it, and no card for anything inside it.
+    expect(model.cards.map((c) => c.title)).toEqual(['Health', 'Personal', 'Scratchpad'])
+    // And its databases are not "pages across your life" either — the focal is
+    // the same 4 leaves as the plain ROWS.
+    expect(model.focal).toBe('4')
+    expect(model.focalCaption).toBe('4 pages across your life, 2 of them in Health.')
+  })
+
+  it('still gives the databases root its own overview when it is opened', () => {
+    const rows = [
+      row('root-db', null, 'page', 'databases', 0),
+      row('db-1', 'root-db', 'page', 'ingredients', 0),
+      row('db-2', 'root-db', 'page', 'kitchen costs', 1),
+    ]
+    const model = areaOverview(rows, 'root-db', NOW)
+    expect(model.focal).toBe('2')
+    expect(model.cards.map((c) => c.title)).toEqual(['ingredients', 'kitchen costs'])
+  })
 })
 
 describe('phraseFocalCaption — the human voice matrix (ticket-33)', () => {
@@ -375,5 +407,59 @@ describe('ancestorPath — the breadcrumb trail', () => {
     const cyclic: PageRow[] = [row('a', 'b', 'page', 'A'), row('b', 'a', 'page', 'B')]
     // must terminate — the exact trail is unimportant, only that it doesn't hang
     expect(() => ancestorPath(cyclic, 'a')).not.toThrow()
+  })
+})
+
+// ── crumbTrail — which root the trail starts at (#101 review / ADR 0003) ─────
+
+describe('crumbTrail', () => {
+  // 3c's two roots: life for reading, databases for data. A page under databases
+  // must not read as though it were inside life.
+  const DB_ROWS: PageRow[] = [
+    ...ROWS,
+    row('root-db', null, 'page', 'databases', 3),
+    row('db-1', 'root-db', 'page', 'ingredients', 0),
+    row('db-nested', 'db-1', 'page', 'archive', 0),
+  ]
+
+  it('starts a page under databases AT databases, with no life ahead of it', () => {
+    const trail = crumbTrail(DB_ROWS, 'db-1')
+    expect(trail.root).toEqual({ id: 'root-db', type: 'page', title: 'databases' })
+    expect(trail.crumbs).toEqual([])
+  })
+
+  it('keeps the rest of the chain below that root', () => {
+    const trail = crumbTrail(DB_ROWS, 'db-nested')
+    expect(trail.root!.title).toBe('databases')
+    expect(trail.crumbs.map((c) => c.title)).toEqual(['ingredients'])
+  })
+
+  it('leaves a page under life on the synthetic root (null), chain untouched', () => {
+    const trail = crumbTrail(DB_ROWS, 'week-1')
+    expect(trail.root).toBeNull()
+    expect(trail.crumbs.map((c) => c.title)).toEqual(['Health', 'Marathon Training'])
+  })
+
+  it('makes the databases root page its OWN trail root, so it reads just "databases"', () => {
+    expect(crumbTrail(DB_ROWS, 'root-db')).toEqual({
+      root: { id: 'root-db', type: 'page', title: 'databases' },
+      crumbs: [],
+    })
+  })
+
+  it('invents no third root when the ancestry reaches neither (a top-level page)', () => {
+    expect(crumbTrail(DB_ROWS, 'health')).toEqual({ root: null, crumbs: [] })
+    expect(crumbTrail(DB_ROWS, 'nope')).toEqual({ root: null, crumbs: [] })
+  })
+
+  it('does not mistake a NESTED page named "databases" for the root', () => {
+    const rows: PageRow[] = [
+      row('health', null, 'page', 'Health', 0),
+      row('fake', 'health', 'page', 'databases', 0),
+      row('under', 'fake', 'page', 'A page', 0),
+    ]
+    const trail = crumbTrail(rows, 'under')
+    expect(trail.root).toBeNull()
+    expect(trail.crumbs.map((c) => c.title)).toEqual(['Health', 'databases'])
   })
 })

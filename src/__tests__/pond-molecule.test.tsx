@@ -526,7 +526,7 @@ describe('AC7 — RailView through PondMolecule', () => {
 
   it('keeps the APG tree contract: aria coordinates + one roving tab stop', () => {
     const { getByRole } = renderRail()
-    const life = getByRole('treeitem', { name: /Life/ })
+    const life = getByRole('treeitem', { name: /life/ })
     expect(life).toHaveAttribute('aria-level', '1')
     expect(life).toHaveAttribute('tabindex', '0')
     const health = getByRole('treeitem', { name: /Health/ })

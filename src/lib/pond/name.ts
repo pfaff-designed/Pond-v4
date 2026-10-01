@@ -11,12 +11,17 @@
  * handoff's own default for a person's pond stands — `PondRail` at rest names it
  * "life", the same word as the root of the tree — and the sandbox workspace
  * says what it is.
+ *
+ * Both names are LOWERCASE (#101 review): the rail's source copy in `Pond 05
+ * Shell` is lowercase throughout (life, personal, journal, notes) and the capitals
+ * in the boards are `text-transform: uppercase` on the eyebrow, a presentational
+ * rule the CSS already carries. The data is lowercase; the transform is the view's.
  */
 
 import { useWorkspace, type WorkspaceScope } from '@/lib/workspace/context'
 
 export function defaultPondName(workspace: WorkspaceScope): string {
-  return workspace === 'sandbox' ? 'Sandbox' : 'Life'
+  return workspace === 'sandbox' ? 'sandbox' : 'life'
 }
 
 /** The current workspace's pond name. */

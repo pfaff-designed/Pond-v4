@@ -165,8 +165,11 @@ describe('Drag handle', () => {
   it('renders a drag handle for each block', async () => {
     const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Hello' }]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const handles = await screen.findAllByRole('button', { name: 'Drag to reorder block' })
+    // #101: the handle is also the block-menu trigger (press-and-drag reorders,
+    // a click opens the menu), so its accessible name is the menu's.
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     expect(handles.length).toBeGreaterThanOrEqual(1)
+    expect(handles[0]).toHaveAttribute('title', expect.stringMatching(/drag to reorder/i))
   })
 })
 

@@ -62,6 +62,7 @@ import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pa
 import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/overview'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { requestCreatePage } from '@/lib/shell-commands'
@@ -449,6 +450,28 @@ export interface RailViewProps {
 /** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
 
+/**
+ * The databases root's mark (#101; PondRail's foot row): a hand-drawn cylinder in
+ * `currentColor` — a functional mark, not an area glyph, since the root is the
+ * pond's SECOND root (3c), not one of Life's areas. 13px, stroke 1.4, round caps.
+ */
+const DATABASES_MARK = (
+  <span className="inline-flex flex-none items-center" aria-hidden>
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+    >
+      <ellipse cx="7" cy="3.4" rx="4.6" ry="1.6" />
+      <path d="M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6" />
+    </svg>
+  </span>
+)
+
 /** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
@@ -529,11 +552,33 @@ export function RailView({
     []
   )
 
-  // The ONE flattened list — Life first — driving render, ARIA coordinates,
-  // and keyboard order alike (they can't drift; see lib/rail/tree.ts).
+  // #101 / 3c: the databases root is the pond's SECOND root — "life for reading,
+  // databases for data". PondRail draws it after the Life tree, at the foot, so
+  // it is lifted out of Life's areas here and flattened on its own (its row at
+  // depth 0, its databases at depth 1), present only once the pond has one.
+  const databasesRoot = useMemo(() => tree.find(isDatabasesRoot) ?? null, [tree])
+  const lifeTree = useMemo(
+    () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
+    [tree, databasesRoot]
+  )
+  const databasesFlat = useMemo(
+    () =>
+      databasesRoot
+        ? flattenVisible([databasesRoot], expanded, true)
+            .slice(1) // drop the synthetic Life row flattenVisible always leads with
+            .map((f) => ({ ...f, depth: f.depth - 1 }))
+        : [],
+    [databasesRoot, expanded]
+  )
+  const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
+
+  // The ONE flattened list — Life first, the databases root last — driving
+  // render, ARIA coordinates, and keyboard order alike (they can't drift; see
+  // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
+  // ↑/↓ walk from the last Life row into databases.
   const flat = useMemo(
-    () => flattenVisible(tree, expanded, lifeExpanded),
-    [tree, expanded, lifeExpanded]
+    () => [...flattenVisible(lifeTree, expanded, lifeExpanded), ...databasesFlat],
+    [lifeTree, expanded, lifeExpanded, databasesFlat]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
@@ -674,7 +719,10 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
-        title="Life"
+        // Lowercase, like every other line of the rail's source copy in `Pond 05
+        // Shell` — the capitals in the boards are the eyebrow's own text-transform
+        // (#101 review). The pond NAME above reads `usePondName()`, also lowercase.
+        title="life"
         depth={0}
         isFolder
         isExpanded={lifeExpanded}
@@ -718,8 +766,15 @@ export function RailView({
         isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        accent={isAreaRow(node) || mark.roleIsOwn ? areaRoleColor(mark.role) : undefined}
-        leading={areaMark(node, mark)}
+        // The databases root carries its own functional mark, no area colour (#101).
+        accent={
+          isDatabasesRoot(node)
+            ? undefined
+            : isAreaRow(node) || mark.roleIsOwn
+              ? areaRoleColor(mark.role)
+              : undefined
+        }
+        leading={isDatabasesRoot(node) ? DATABASES_MARK : areaMark(node, mark)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
@@ -781,8 +836,23 @@ export function RailView({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-          {flat.map(renderRow)}
+          {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
         </div>
+
+        {/* The databases root (3c / PondRail): after the Life tree, above a
+            hairline — measured margin 10 / padding-top 10 off the foot row —
+            shown only once the pond has one to list (#101). Its own tree so
+            the ARIA structure says what the rail says: two roots. */}
+        {databasesFlat.length > 0 && (
+          <div
+            role="tree"
+            aria-label="Databases"
+            aria-multiselectable={false}
+            className="mt-2.5 border-t border-mn-line pt-2.5"
+          >
+            {databasesFlat.map(renderRow)}
+          </div>
+        )}
 
         {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
             children (WAI-ARIA); a <p> inside it would be an illegal child.
@@ -812,7 +882,7 @@ export function RailView({
       </div>
 
       {/* The foot (PondRail): a hairline, then "＋ new page". The databases root
-          (3c) belongs here too, once the pond has one to list. */}
+          (3c) sits above, at the end of the scrolling tree (#101). */}
       <div className="mt-auto border-t border-mn-line px-2 pt-2.5">
         <button
           type="button"

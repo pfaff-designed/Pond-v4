@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The "you are here" trail (Life › Health › Workout Routines) — a floating
+ * The "you are here" trail (life › creativity › recipes) — a floating
  * glass PILL over the canvas, per `Pond 02` 2t: the pond's mark, the ancestor
  * crumbs at the 68 tier, › separators at 80, the current node in full ink, then
  * a hairline divider and the ⌘K chip. PP Neue Montreal 500 at 11, .04em.
@@ -9,14 +9,23 @@
  * radius 999; the chip 4px 9px on a 16px line. Where the pill SITS is the
  * shell's business (lib/layout/breadcrumb-slot), not this molecule's.
  *
- * Every ancestor crumb is a click target that navigates to that page; Life
+ * Every crumb is a click target that navigates to that page; the root crumb
  * leads back to the root overview. The current node is either a quiet
  * non-clickable tail (`current`), a caller-supplied `tail` (the overview's
  * editable kicker), or omitted on the editor, where the title input is the tail
  * and the pill shows only the ANCESTOR path.
  *
- * On a root page (no ancestors, no current) it reads just "Life", still
- * clickable so it stays a consistent home affordance.
+ * On a root page (no ancestors, no current) it reads just "life", still
+ * clickable so it stays a consistent home affordance. Every segment is written
+ * lowercase on the board (`Pond 06.10`, measured), and a crumb's own text is its
+ * page title verbatim — nothing here title-cases anything.
+ *
+ * #101 review / ADR 0003: WHICH root the pill starts at is the page's own
+ * business, not this molecule's. `root` carries it when that root is a real page
+ * — the `databases` root, 3c's second root, which a click can then open — and
+ * otherwise the root is life's synthetic workspace root: `rootLabel`, and a
+ * `null` navigate. `lib/pages/overview`'s `crumbTrail` resolves it, and its
+ * `CrumbTrail` is exactly `{ root, crumbs }` so a caller can spread one trail.
  *
  * The top-level crumb — the area the trail starts in — leads with that area's
  * mark; deeper crumbs carry none. (#108: there is no `type = 'area'` to test;
@@ -38,7 +47,7 @@ import type { Crumb } from '@/lib/pages/overview'
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
   crumbs: Crumb[]
-  /** Navigate to a crumb (or, for Life, to the root when `crumb` is null). */
+  /** Navigate to a crumb (or, for life, to the root overview when `crumb` is null). */
   onNavigate: (crumb: Crumb | null) => void
   /**
    * The current node's title, rendered as a non-clickable tail. Omit on the
@@ -47,8 +56,13 @@ export interface BreadcrumbProps {
   current?: string
   /** A custom tail rendered inside the pill in place of `current` (the overview's rename field). */
   tail?: ReactNode
-  /** Label for the root crumb. Defaults to "Life". */
+  /** Label for the root crumb when it is life's synthetic root. Lowercase, as drawn. */
   rootLabel?: string
+  /**
+   * The trail's root as a real page — the `databases` root (3c). Given, the root
+   * reads its title and a click OPENS it; omitted (or null), the root is life's.
+   */
+  root?: Crumb | null
   /** The top-level crumb's mark (#134). Omit and the trail carries none. */
   leadMark?: ReactNode
   /** Opens the command palette. When given, the pill ends in the ⌘K chip (2t). */
@@ -66,7 +80,8 @@ export function Breadcrumb({
   onNavigate,
   current,
   tail,
-  rootLabel = 'Life',
+  rootLabel = 'life',
+  root,
   leadMark,
   onCommandK,
 }: BreadcrumbProps) {
@@ -81,10 +96,11 @@ export function Breadcrumb({
           lead mark stays the only one. */}
       <PondMark size={12} />
       <button
-        onClick={() => onNavigate(null)}
+        onClick={() => onNavigate(root ?? null)}
         className="text-mn-text-secondary hover:text-foreground transition-colors whitespace-nowrap"
+        title={root?.title}
       >
-        {rootLabel}
+        {root ? root.title : rootLabel}
       </button>
       {crumbs.map((c, i) => {
         return (

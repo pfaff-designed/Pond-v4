@@ -39,6 +39,7 @@
 import type { PageRow } from '@/lib/pages/tree'
 import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { isDatabasesRoot, withoutDatabasesRoot } from '@/lib/pages/databases-root'
 
 export interface OverviewCardModel {
   id: string
@@ -316,8 +317,15 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
  * reconciliation still holds: every content page is either top-level (its own
  * card) or inside exactly one top-level card, so total = top-level content
  * pages + Σ card stats (asserted in overview-model.test).
+ *
+ * #101: the `databases` root and everything under it are subtracted first. It is
+ * the pond's SECOND root (3c, "one root beside life"), a peer of life — so it is
+ * neither a card in Life's grid nor counted in "pages across your life", which is
+ * the same exclusion the rail makes, from the same predicate. Opening the root
+ * itself still gives the ordinary area overview of the databases inside it.
  */
-export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
+export function lifeOverview(allRows: PageRow[], now: Date): OverviewModel {
+  const rows = withoutDatabasesRoot(allRows)
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
   const marks = markIndex(rows)
   const containers = containerIds(rows)
@@ -343,7 +351,8 @@ export interface Crumb {
 /**
  * The ancestor chain from the root down to — but NOT including — the given node,
  * derived from the parent_id chain. `["Life", …ancestors]`-less: callers prepend
- * the Life root themselves. Cycle-guarded against malformed data.
+ * the Life root themselves (or let {@link crumbTrail} resolve which root that is).
+ * Cycle-guarded against malformed data.
  *
  * Example: for Health › Workout Routines › 3-Day routine, passing the routine's
  * id returns [Health, Workout Routines].
@@ -361,4 +370,46 @@ export function ancestorPath(rows: PageRow[], nodeId: string): Crumb[] {
     current = row.parent_id
   }
   return chain
+}
+
+/**
+ * The trail for a node, split into the ROOT it descends from and the ancestors
+ * below that root (#101 review; ADR 0003 ruling).
+ *
+ * `Pond 03 Concepts` 3c defines two roots — life for reading, databases for data
+ * — and they are peers, so a page under databases must not read as though it were
+ * inside life: it is `databases › ingredients`, never `life › databases ›
+ * ingredients`. Which root a page belongs to is read off its own ancestry here
+ * (through the one `isDatabasesRoot` predicate), not decided at any call site.
+ *
+ * `root` is the root AS A CRUMB when it is a real `pages` row (the databases
+ * root, which a click can therefore open), and `null` for life, whose root is
+ * synthetic — never a row — so the breadcrumb falls back to its `rootLabel` and
+ * navigates to the pond's root overview. The databases root PAGE is its own trail
+ * root, so it reads simply "databases" rather than being placed inside life; the
+ * surface then carries no tail, since the root crumb already names where you are.
+ * Any other node whose ancestry reaches neither root (a top-level page) keeps the
+ * life behaviour: there is no third root to invent.
+ */
+export interface CrumbTrail {
+  /** The root the node descends from, as a crumb — null for life's synthetic root. */
+  root: Crumb | null
+  /** The ancestors BELOW that root, root-ward first. */
+  crumbs: Crumb[]
+}
+
+export function crumbTrail(rows: PageRow[], nodeId: string): CrumbTrail {
+  const crumbs = ancestorPath(rows, nodeId)
+  const top = crumbs[0]
+  // `crumbs[0]` is the chain's own end, which is top-level unless the data is
+  // malformed — so the row is re-read to test the real `parent_id`, not assume it.
+  const topRow = top ? rows.find((r) => r.id === top.id) : undefined
+  if (topRow && isDatabasesRoot({ parentId: topRow.parent_id, title: topRow.title })) {
+    return { root: top, crumbs: crumbs.slice(1) }
+  }
+  const own = rows.find((r) => r.id === nodeId)
+  if (own && isDatabasesRoot({ parentId: own.parent_id, title: own.title })) {
+    return { root: { id: own.id, type: own.type, title: own.title || 'Untitled' }, crumbs: [] }
+  }
+  return { root: null, crumbs }
 }

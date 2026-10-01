@@ -17,15 +17,24 @@
  * surfaces share one editor.
  */
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
+import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
 import { paletteItems, emptyBlockForType, BOARD_PRESET_ID } from '@/lib/modules/palette'
 import { ensureBoardGroupBy } from '@/lib/modules/view/board-preset'
+import {
+  createDatabaseFromList,
+  inferListDatabaseTitle,
+  previewListTable,
+} from '@/lib/pages/list-to-table'
+import { replaceBlockWithView } from '@/lib/pages/promote-table'
+import { deletePage } from '@/lib/pages/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { useWorkspace } from '@/lib/workspace/context'
 import { useQueryClient } from '@tanstack/react-query'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
@@ -38,11 +47,43 @@ function blockLabel(block: Block): string {
   return `Deleted ${block.type} block`
 }
 
+/**
+ * The handle menu's items for one block (#101, board 6j frame 2). `turn into ›
+ * table` is offered only on a LIST block, with the preview of what will come out
+ * ("4 rows · 3 columns"); the `block` group carries the block's own actions.
+ *
+ * Called only for the block whose menu is OPEN — the preview scans the block's
+ * whole content, which is not work to redo for every block on every keystroke.
+ */
+function menuItemsFor(block: Block): BlockMenuItem[] {
+  const items: BlockMenuItem[] = []
+  const preview = previewListTable(block)
+  if (preview) {
+    const rows = `${preview.rows} ${preview.rows === 1 ? 'row' : 'rows'}`
+    const cols = `${preview.columns} ${preview.columns === 1 ? 'column' : 'columns'}`
+    items.push({
+      id: 'turn-into-table',
+      group: 'turn into',
+      label: 'table',
+      preview: `${rows} · ${cols}`,
+      icon: 'table',
+    })
+  }
+  items.push({ id: 'delete', group: 'block', label: 'delete block', icon: 'delete' })
+  return items
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
   /** The page these blocks belong to (drives bound-metric cross-page lookups). */
   pageId: string
+  /**
+   * The page's title (#101): the fallback name for a database made from a list
+   * when no heading sits above it. Optional — a surface without one falls back
+   * to "Untitled".
+   */
+  pageTitle?: string
   /** Emit the full next block array; the caller owns persistence (debounced save). */
   onChange: (next: Block[]) => void
   /**
@@ -72,13 +113,23 @@ export interface BlockCanvasProps {
 export function BlockCanvas({
   blocks,
   pageId,
+  pageTitle = '',
   onChange,
   onUndoRemove,
   insertedIds,
 }: BlockCanvasProps) {
-  const { stageDeletion } = useDeletionUndo()
+  const { stageDeletion, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
+  const workspace = useWorkspace()
+  // The LATEST blocks, for the async paths below (the list→table write and its
+  // undo). They run after awaits / from a toast, when the `blocks` their closure
+  // captured may be stale — re-basing an edit on that snapshot would drop
+  // whatever the person typed in between (the hazard onUndoRemove documents).
+  const blocksRef = useRef(blocks)
+  useEffect(() => {
+    blocksRef.current = blocks
+  }, [blocks])
   // F27: link capabilities for card→page links, parented at THIS page. Provided to
   // every module view below via context — modules that don't link (all but kanban
   // today) simply never read it.
@@ -89,11 +140,56 @@ export function BlockCanvas({
   const [slashMenuOpenAt, setSlashMenuOpenAt] = useState<number | null>(null)
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // Which block index has the handle menu open (null = closed) — #101.
+  const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
   function markInserted(id: string) {
     insertedIds?.add(id)
+  }
+
+  /**
+   * The handle menu's "turn into › table" on a LIST block (#101, board 6j). A
+   * table is always a view of a database, so this CREATES a real database from
+   * the list's rows (filed under the databases root) and swaps the list for a
+   * table-mode view of it in place. It is the person's own gesture, so it applies
+   * at once through the caller's ordinary save — no proposal card; only Pond's
+   * changes arrive as diffs — with an undo that puts the list back and removes
+   * the database it made. The page is left untouched when the write fails.
+   */
+  async function turnIntoTable(index: number) {
+    const block = blocks[index]
+    if (!block) return
+    const title = inferListDatabaseTitle(blocks, index, pageTitle)
+    try {
+      const made = await createDatabaseFromList(getSupabase(), { block, title, workspace }, () =>
+        crypto.randomUUID()
+      )
+      markInserted(made.view.id)
+      onChange(replaceBlockWithView(blocksRef.current, block.id, made.view))
+      // The rail lists the new database (and, on first use, the databases root).
+      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      stageDeletion({
+        message: 'Turned into a table',
+        scope: 'block',
+        // Everything already applied; nothing is deferred behind the grace window.
+        commit: () => {},
+        undo: async () => {
+          onChange(blocksRef.current.map((b) => (b.id === made.view.id ? block : b)))
+          try {
+            // Removes its records too (parent_id cascade).
+            await deletePage(getSupabase(), made.databaseId)
+          } catch (err) {
+            console.error('Failed to remove the database after undo', err)
+          }
+          queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        },
+      })
+    } catch (err) {
+      console.error('Failed to turn the list into a table', err)
+      notify("Couldn't turn the list into a table")
+    }
   }
 
   function setBlockAt(index: number, next: Block) {
@@ -208,6 +304,18 @@ export function BlockCanvas({
                   setSlashMenuOpenAt(null)
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
+                menuOpen={menuOpenAt === i}
+                // Only the OPEN block's items are derived: menuItemsFor splits and
+                // regex-scans a text block's whole content, and this render runs on
+                // every keystroke anywhere on the page (#101 review).
+                menuItems={menuOpenAt === i ? menuItemsFor(block) : undefined}
+                onMenuToggle={() => setMenuOpenAt((open) => (open === i ? null : i))}
+                onMenuClose={() => setMenuOpenAt(null)}
+                onMenuSelect={(id) => {
+                  setMenuOpenAt(null)
+                  if (id === 'turn-into-table') void turnIntoTable(i)
+                  else if (id === 'delete') removeBlockAt(i)
+                }}
                 isDragging={draggingIndex === i}
                 onDragStart={() => setDraggingIndex(i)}
                 onDragEnd={() => setDraggingIndex(null)}
@@ -250,8 +358,12 @@ export function BlockCanvas({
  *
  * Ticket-37: `/` in an empty text block opens the block palette (intercepted in the
  * onChange below, so the slash never persists); ⌥↑/⌥↓ reorders the focused block;
- * the ⠿ handle drags to reorder. `draggable` is armed only while the pointer is
+ * the handle drags to reorder. `draggable` is armed only while the pointer is
  * down on the handle — an always-draggable block would hijack text-selection drags.
+ *
+ * #101 (board 6j): a CLICK on the handle (a press with no drag) opens the block
+ * menu — `turn into › table` on a list, the block's own actions — anchored under
+ * the handle at the block's left edge, where frame 2 draws it.
  */
 function BlockEditor({
   block,
@@ -264,6 +376,11 @@ function BlockEditor({
   slashMenuOpen,
   onSlashSelect,
   onSlashClose,
+  menuOpen,
+  menuItems = [],
+  onMenuToggle,
+  onMenuSelect,
+  onMenuClose,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -280,6 +397,11 @@ function BlockEditor({
   slashMenuOpen?: boolean
   onSlashSelect?: (item: SlashMenuItem) => void
   onSlashClose?: () => void
+  menuOpen?: boolean
+  menuItems?: BlockMenuItem[]
+  onMenuToggle?: () => void
+  onMenuSelect?: (id: string) => void
+  onMenuClose?: () => void
   isDragging?: boolean
   onDragStart?: () => void
   onDragEnd?: () => void
@@ -287,6 +409,7 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
+  const handleRef = useRef<HTMLButtonElement>(null)
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.altKey && e.key === 'ArrowUp') {
@@ -329,31 +452,64 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* Gutter affordances (ticket-37): drag handle + delete, revealed on hover/
-          focus. Both live in one flex row so the ⠿ and × sit in identical boxes and
-          share a baseline — otherwise the two glyphs' differing optical metrics
-          leave them visibly misaligned. */}
+      {/* Gutter affordances (ticket-37): the block menu handle + delete, revealed on
+          hover/focus. Both live in one flex row, in identical 20×16 boxes, so the
+          two hand-drawn marks share a centre — their own artwork differs in optical
+          weight, and without the shared box they read as misaligned. Both sit on
+          the 68% ink tier: PROJECT_RULES allows three tiers only (100 / 80 small
+          meta / 68), so neither gutter mark may drop to a fainter ink. The handle is
+          the six-dot mark 6j draws (10×14, dots r 1.1); press-and-drag reorders, a
+          click opens the block menu (#101). */}
       <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-mn-text-faint hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
-          title="Drag to reorder"
-          aria-label="Drag to reorder block"
+          ref={handleRef}
+          type="button"
+          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
+          title="Block menu · drag to reorder"
+          aria-label="Block menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen ? true : undefined}
           onPointerDown={() => setDragArmed(true)}
           onPointerUp={() => setDragArmed(false)}
+          onClick={onMenuToggle}
         >
-          ⠿
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+            <circle cx="3" cy="3" r="1.1" />
+            <circle cx="7" cy="3" r="1.1" />
+            <circle cx="3" cy="7" r="1.1" />
+            <circle cx="7" cy="7" r="1.1" />
+            <circle cx="3" cy="11" r="1.1" />
+            <circle cx="7" cy="11" r="1.1" />
+          </svg>
         </button>
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-mn-text-faint hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
+          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
           title="Delete block"
           aria-label="Delete block"
           onClick={onRemove}
         >
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
-            <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <path
+              d="M3 3l6 6M9 3l-6 6"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       </div>
+
+      {/* The block menu (#101, 6j frame 2): under the handle, at the block's left
+          edge — measured left −10 / top 36 off the frame. */}
+      {menuOpen && (
+        <BlockHandleMenu
+          items={menuItems}
+          onSelect={onMenuSelect ?? (() => {})}
+          onClose={onMenuClose ?? (() => {})}
+          anchorRef={handleRef}
+          className="absolute -left-2.5 top-9 z-10"
+        />
+      )}
 
       {/* The `/` block palette, anchored under this block (ticket-37). */}
       {slashMenuOpen && (

@@ -29,7 +29,7 @@ import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import {
   areaOverview,
   lifeOverview,
-  ancestorPath,
+  crumbTrail,
   type Crumb,
   type OverviewCardModel,
   type OverviewModel,
@@ -180,12 +180,14 @@ export interface OverviewSurfaceProps {
   leadMark?: React.ReactNode
   /**
    * The breadcrumb trail (ticket-25). When `onNavigateCrumb` is set the header
-   * renders a clickable Breadcrumb (Life › … › current) in place of the bare
+   * renders a clickable Breadcrumb (life › … › current) in place of the bare
    * kicker label: `crumbs` are the ancestors, `kicker` doubles as the current
    * node's title tail (for Life, pass an empty `crumbs` — the trail reads just
-   * "Life"). Omit `onNavigateCrumb` to keep the plain kicker (Storybook).
+   * "life"). Omit `onNavigateCrumb` to keep the plain kicker (Storybook).
    */
   crumbs?: Crumb[]
+  /** The trail's root when it is a real page — see Breadcrumb's `root` (#101). */
+  root?: Crumb | null
   onNavigateCrumb?: (crumb: Crumb | null) => void
   /** The current node's title in the trail; when omitted, `kicker` is used. */
   current?: string
@@ -217,6 +219,7 @@ export function OverviewSurface({
   markSlot,
   leadMark,
   crumbs,
+  root,
   onNavigateCrumb,
   current,
   model,
@@ -250,6 +253,7 @@ export function OverviewSurface({
         onRenameKicker ? (
           <Breadcrumb
             crumbs={crumbs ?? []}
+            root={root}
             onNavigate={onNavigateCrumb}
             leadMark={leadMark}
             tail={<EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />}
@@ -258,6 +262,7 @@ export function OverviewSurface({
         ) : (
           <Breadcrumb
             crumbs={crumbs ?? []}
+            root={root}
             onNavigate={onNavigateCrumb}
             current={current}
             leadMark={leadMark}
@@ -388,7 +393,14 @@ export function AreaOverviewPanel({
   // theme ROLE — `pageAccent`'s Press six no longer tint any mark.
   const mark = useMemo(() => resolveMark(areaId, markIndex(rows)), [rows, areaId])
   const accent = areaRoleColor(mark.role)
-  const crumbs = useMemo(() => ancestorPath(rows, areaId), [rows, areaId])
+  // #101 review: the trail starts at the root this area descends from — a database
+  // under `databases` reads "databases › …", never "life › databases › …" (3c).
+  const trail = useMemo(() => crumbTrail(rows, areaId), [rows, areaId])
+  // When this page IS the root its own trail names — the reserved `databases` root
+  // (3c) — the root crumb already says where you are, so the pill carries NO tail
+  // (it would read "databases › databases") and offers no rename: that title is
+  // what `isDatabasesRoot` reads, and renaming it would orphan the root.
+  const isTrailRoot = trail.root?.id === areaId
 
   // Rename from the overview surface (ticket-26): same updateTitle path the
   // editor uses, then invalidate ['pages'] so the rail label updates and
@@ -404,13 +416,13 @@ export function AreaOverviewPanel({
   return (
     <OverviewSurface
       kicker={name}
-      onRenameKicker={handleRename}
+      onRenameKicker={isTrailRoot ? undefined : handleRename}
       accent={accent}
       markSlot={<PageMarkButton pageId={areaId} pageTitle={name} mark={mark} size={12} />}
-      leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
-      crumbs={crumbs}
+      leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
+      {...trail}
       onNavigateCrumb={navigateCrumb}
-      current={name}
+      current={isTrailRoot ? undefined : name}
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
       onOpenCard={openCard}

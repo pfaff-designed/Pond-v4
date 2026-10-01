@@ -100,7 +100,7 @@ describe('getOrCreateHomePage', () => {
     const sb = makeSupabase({ user: { id: 'u1' }, rows: [] })
     const home = await getOrCreateHomePage(sb)
     expect(home).not.toBeNull()
-    expect(home!.title).toBe('Life')
+    expect(home!.title).toBe('life')
     expect(home!.blocks).toEqual([])
     // Exactly one insert, of the reserved type at top-level.
     expect(sb._inserts).toHaveLength(1)

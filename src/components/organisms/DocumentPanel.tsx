@@ -48,7 +48,7 @@ import { useContentWidth } from '@/lib/layout/content-width'
 import { ShellBreadcrumb } from '@/lib/layout/breadcrumb-slot'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { requestCommandPalette } from '@/lib/shell-commands'
-import { childCards, ancestorPath } from '@/lib/pages/overview'
+import { childCards, crumbTrail } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { emptyBlockForType } from '@/lib/modules/palette'
@@ -107,9 +107,11 @@ export function DocumentPanel() {
   const openCard = useOpenCard()
   const navigateCrumb = useNavigateCrumb()
   const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
-  // The ancestor trail for the editor header — the title input stays the tail,
-  // so the breadcrumb shows only the path down to (not including) this node.
-  const crumbs = useMemo(() => (nodeId ? ancestorPath(rows, nodeId) : []), [rows, nodeId])
+  // The ancestor trail for the editor header — the title input stays the tail, so the
+  // pill shows only the path down to (not including) this node, starting at the ROOT it
+  // descends from (#101 review: `databases` is 3c's second root, not one of life's).
+  // No node (or an unknown one) resolves to the empty life-rooted trail.
+  const trail = useMemo(() => crumbTrail(rows, nodeId ?? ''), [rows, nodeId])
 
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -307,9 +309,9 @@ export function DocumentPanel() {
             in it (ADR 0002). Rendered alone, it sits here in the flow. */}
         <ShellBreadcrumb>
           <Breadcrumb
-            crumbs={crumbs}
+            {...trail}
             onNavigate={navigateCrumb}
-            leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
+            leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
             onCommandK={requestCommandPalette}
           />
         </ShellBreadcrumb>
@@ -363,6 +365,7 @@ export function DocumentPanel() {
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}
+          pageTitle={viewTitle}
           onChange={commitLocalEdit}
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}

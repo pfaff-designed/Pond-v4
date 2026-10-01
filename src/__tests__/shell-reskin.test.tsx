@@ -363,7 +363,7 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
     expect(glyph.closest('[data-area-mark]')).toBeNull()
   })
 
-  it('positions nothing itself — where the pill sits is the shell slot\'s job', () => {
+  it("positions nothing itself — where the pill sits is the shell slot's job", () => {
     render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
     expect(nav.className).not.toMatch(/\b(absolute|fixed|sticky)\b/)
@@ -378,6 +378,31 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
     expect(onCommandK).toHaveBeenCalledTimes(1)
     rerender(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} />)
     expect(screen.queryByRole('button', { name: 'Command palette (⌘K)' })).toBeNull()
+  })
+
+  // #101 review: `Pond 06.10`'s pill reads "life › creativity › recipes › …" —
+  // every segment lowercase, the root included, and no segment title-cased by the
+  // pill itself (a crumb is its page title verbatim).
+  it('the root crumb reads lowercase "life", and no segment is title-cased', () => {
+    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(nav).getByText('life')).toBeInTheDocument()
+    expect(within(nav).queryByText('Life')).toBeNull()
+    expect(nav.className).not.toMatch(/\b(capitalize|uppercase|lowercase)\b/)
+    // The crumbs keep their pages' own casing — the pill never restyles them.
+    expect(within(nav).getByText('Health')).toBeInTheDocument()
+  })
+
+  // 3c's two roots are peers, so a page under databases must not read as if it
+  // were inside life; the root crumb is the real page, so a click opens it.
+  it('starts at the databases root when given one, with no life ahead of it', () => {
+    const onNavigate = jest.fn()
+    const root = { id: 'root-db', type: 'page', title: 'databases' }
+    render(<Breadcrumb crumbs={[]} root={root} onNavigate={onNavigate} current="ingredients" />)
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(nav).queryByText('life')).toBeNull()
+    fireEvent.click(within(nav).getByText('databases'))
+    expect(onNavigate).toHaveBeenCalledWith(root)
   })
 
   it('the tail slot renders inside the pill in place of `current`', () => {
@@ -443,7 +468,9 @@ describe('TerminalDrawer — the composer is floating glass, not a docked band',
     expect(card.parentElement!.className).toMatch(/\bpb-6\b/)
     // the handle is confined to the column too — it never reaches over the rail
     expect(
-      screen.getByRole('separator', { name: 'Resize terminal' }).closest('[data-part="composer-column"]')
+      screen
+        .getByRole('separator', { name: 'Resize terminal' })
+        .closest('[data-part="composer-column"]')
     ).toBe(column)
   })
 })
@@ -523,9 +550,13 @@ describe('composer clearance — the drawer publishes its real height, the surfa
 // ── The pond's name ─────────────────────────────────────────────────────────
 
 describe('defaultPondName — the M1 seam for the pond name', () => {
-  it('names the main pond and the sandbox', () => {
-    expect(defaultPondName('main')).toBe('Life')
-    expect(defaultPondName('sandbox')).toBe('Sandbox')
+  // #101 review: lowercase. The rail's source copy in `Pond 05 Shell` is lowercase
+  // throughout (life, personal, journal, notes); the capitals in the boards are the
+  // eyebrow's own `text-transform: uppercase`, which the head class already carries
+  // (asserted above). The data is lowercase; the transform is presentational.
+  it('names the main pond and the sandbox, both lowercase', () => {
+    expect(defaultPondName('main')).toBe('life')
+    expect(defaultPondName('sandbox')).toBe('sandbox')
   })
 })
 
@@ -546,7 +577,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
     expect(aside.className).not.toMatch(/\bmn-glass\b/)
-    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('Life')
+    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
 
     // One ⌘K affordance, inside the breadcrumb pill — the top-right cluster is gone.
     const kButtons = await screen.findAllByRole('button', { name: 'Command palette (⌘K)' })
