@@ -69,6 +69,7 @@ describe('PGLite schema invariants', () => {
     expect(tableNames).toContain('pages')
     expect(tableNames).toContain('users')
     expect(tableNames).toContain('conversations')
+    expect(tableNames).toContain('templates') // #154 template store
     expect(tableNames).not.toContain('areas')
     expect(tableNames).not.toContain('documents')
 
@@ -324,6 +325,194 @@ describe('sibling-name uniqueness (0009)', () => {
     await expect(
       addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
     ).rejects.toThrow()
+    await db.close()
+  })
+})
+
+// ── #154 — the template store (migration 0016) ───────────────────────────────
+//
+// `public.templates` is the data layer under the whole Phase 4 template system.
+// Four schema facts are proved here against real Postgres: the kind CHECK holds
+// the vocabulary to the twelve fixed labels, the unique index refuses a
+// same-pond name collision case-insensitively, the same name is fine in another
+// workspace (a pond is user + workspace), and deleting a template leaves every
+// page carrying its made-from stamp byte-identical — a template is a shape you
+// copy, never a tie, so there is no FK and nothing cascades or nulls out.
+
+const TEMPLATE_KIND_LABELS = [
+  'page',
+  'notes',
+  'list',
+  'project',
+  'tracker',
+  'journal',
+  'collection',
+  'database',
+  'dashboard',
+  'meeting notes',
+  'reading list',
+  'habit',
+]
+
+async function addTemplate(
+  db: PGlite,
+  opts: { name: string; kind?: string; workspace?: string; origin?: string; userId?: string }
+): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    `insert into public.templates (user_id, workspace, name, kind, origin)
+     values ($1, $2, $3, $4, $5) returning id`,
+    [
+      opts.userId ?? USER,
+      opts.workspace ?? 'main',
+      opts.name,
+      opts.kind ?? 'notes',
+      opts.origin ?? 'yours',
+    ]
+  )
+  return res.rows[0].id
+}
+
+describe('template store (0016)', () => {
+  it('ships the columns the spec names, with their defaults', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addTemplate(db, { name: 'Weekly review', kind: 'meeting notes' })
+
+    const res = await db.query<{
+      workspace: string
+      blocks: unknown
+      origin: string
+      created_at: string
+      updated_at: string
+    }>(
+      'select workspace, blocks, origin, created_at, updated_at from public.templates where id = $1',
+      [id]
+    )
+    expect(res.rows[0].workspace).toBe('main')
+    expect(res.rows[0].blocks).toEqual([])
+    expect(res.rows[0].origin).toBe('yours')
+    expect(res.rows[0].created_at).toBeTruthy()
+    expect(res.rows[0].updated_at).toBeTruthy()
+    await db.close()
+  })
+
+  it('accepts each of the twelve kinds and rejects an unknown one (the kind CHECK)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    for (const [i, kind] of TEMPLATE_KIND_LABELS.entries()) {
+      await expect(addTemplate(db, { name: `T${i}`, kind })).resolves.toBeTruthy()
+    }
+    await expect(addTemplate(db, { name: 'Bad', kind: 'recipe' })).rejects.toThrow()
+    // The mockup's abbreviations are a prop artefact, not the vocabulary.
+    await expect(addTemplate(db, { name: 'Abbrev', kind: 'meeting' })).rejects.toThrow()
+    await expect(addTemplate(db, { name: 'Cased', kind: 'Page' })).rejects.toThrow()
+    await db.close()
+  })
+
+  it("restricts origin to 'premade' | 'yours'", async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await expect(addTemplate(db, { name: 'A', origin: 'premade' })).resolves.toBeTruthy()
+    await expect(addTemplate(db, { name: 'B', origin: 'yours' })).resolves.toBeTruthy()
+    await expect(addTemplate(db, { name: 'C', origin: 'shared' })).rejects.toThrow()
+    await db.close()
+  })
+
+  it('rejects a same-pond name collision case-insensitively (the unique index)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addTemplate(db, { name: 'Weekly review' })
+    await expect(addTemplate(db, { name: 'weekly REVIEW' })).rejects.toThrow()
+    await expect(addTemplate(db, { name: '  Weekly review ' })).rejects.toThrow()
+    await db.close()
+  })
+
+  it('allows the same name in a different workspace (a pond is user + workspace)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addTemplate(db, { name: 'Weekly review', workspace: 'main' })
+    const sandbox = await addTemplate(db, { name: 'Weekly review', workspace: 'sandbox' })
+    const res = await db.query('select 1 from public.templates where id = $1', [sandbox])
+    expect(res.rows).toHaveLength(1)
+    await db.close()
+  })
+
+  it('deleting a template leaves every page carrying its provenance stamp byte-identical', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const tpl = await addTemplate(db, { name: 'Weekly review', kind: 'meeting notes' })
+
+    // Two pages made from the template: the stamp is a sibling of `_schema` in
+    // props, and the kind label is the ordinary editable `props.kind`.
+    const props = JSON.stringify({
+      _schema: [{ id: 'stage', name: 'Stage', type: 'status' }],
+      kind: 'meeting notes',
+      madeFromTemplate: { templateId: tpl, name: 'Weekly review', at: '2026-10-01T12:00:00.000Z' },
+    })
+    const a = await db.query<{ id: string }>(
+      `insert into public.pages (user_id, type, title, props) values ($1, 'page', 'Review A', $2::jsonb) returning id`,
+      [USER, props]
+    )
+    const b = await db.query<{ id: string }>(
+      `insert into public.pages (user_id, type, title, props) values ($1, 'page', 'Review B', $2::jsonb) returning id`,
+      [USER, props]
+    )
+    const ids = [a.rows[0].id, b.rows[0].id]
+
+    const snapshot = async () =>
+      (
+        await db.query<{ row: string }>(
+          `select to_jsonb(p)::text as row from public.pages p where id = any($1::uuid[]) order by id`,
+          [ids]
+        )
+      ).rows.map((r) => r.row)
+
+    const before = await snapshot()
+    expect(before).toHaveLength(2)
+    expect(before[0]).toContain(tpl) // the stamp really is in there
+
+    await db.query('delete from public.templates where id = $1', [tpl])
+
+    const gone = await db.query('select 1 from public.templates where id = $1', [tpl])
+    expect(gone.rows).toHaveLength(0)
+    // Every column of every stamped page — props, updated_at, all of it — unchanged.
+    expect(await snapshot()).toEqual(before)
+    await db.close()
+  })
+
+  it('has RLS on with four separate per-verb policies and no `for all`', async () => {
+    const db = await makeDb()
+    const rls = await db.query<{ relrowsecurity: boolean }>(
+      `select relrowsecurity from pg_class where oid = 'public.templates'::regclass`
+    )
+    expect(rls.rows[0].relrowsecurity).toBe(true)
+
+    // 0012 exists because `for all` on the users mirror row let one stray delete
+    // cascade the pond away (#145). New tables grant verbs one at a time.
+    const policies = await db.query<{ cmd: string }>(
+      `select cmd from pg_policies where schemaname = 'public' and tablename = 'templates'`
+    )
+    expect(policies.rows.map((r) => r.cmd).sort()).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE'])
+    await db.close()
+  })
+
+  it('cascades templates away with the account (auth.users), not with a page', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await addTemplate(db, { name: 'Weekly review' })
+    const page = await addPage(db, { title: 'Unrelated' })
+
+    // A page going does nothing to templates (no tie in either direction).
+    await db.query('delete from public.pages where id = $1', [page])
+    expect(
+      (await db.query<{ n: number }>('select count(*)::int as n from public.templates')).rows[0].n
+    ).toBe(1)
+
+    // The account going takes its templates with it.
+    await db.query('delete from auth.users where id = $1', [USER])
+    expect(
+      (await db.query<{ n: number }>('select count(*)::int as n from public.templates')).rows[0].n
+    ).toBe(0)
     await db.close()
   })
 })
