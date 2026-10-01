@@ -20,6 +20,7 @@ import {
   stampMadeFrom,
   withMadeFromHidden,
 } from '@/lib/pages/made-from'
+import { MENTIONED_KEY, readMentioned, stampMentioned } from '@/lib/pages/mentioned'
 import { PAGE_NAME_MAX, type PageProposal } from '@/lib/conversation/page-proposals'
 
 const PROSE =
@@ -125,17 +126,11 @@ describe('makePageFromAnswer', () => {
     expect(row.type).toBe('page')
     expect(row.title).toBe('renovation blockers')
     expect(row.workspace).toBe('main')
-    expect(row.blocks).toEqual([
-      { id: 'b1', type: 'text', content: PROSE },
-      {
-        id: 'b2',
-        type: 'text',
-        // The label is the page EYEBROW on the board, so it rides as the smallest
-        // markdown heading — the reading renderer typesets h6 through
-        // `pageEyebrowClass` instead of setting it as a line of serif prose.
-        content: '###### mentioned\n\n- Cabinet quote\n- Worktop template',
-      },
-    ])
+    // The prose, word for word, is the page's ONLY block (6a frame 5).
+    expect(row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // What the answer mentioned is a card, not prose, so it rides in props beside
+    // the made-from stamp. Notes are Pond's own characterisation of WHY a page is
+    // mentioned — model work, tracked separately, so none is written yet.
     expect(row.props).toEqual({
       kind: 'page',
       [MADE_FROM_THREAD_KEY]: {
@@ -144,6 +139,10 @@ describe('makePageFromAnswer', () => {
         question: 'what is actually blocking the renovation?',
         askedAt: '2026-09-22T07:12:00Z',
       },
+      [MENTIONED_KEY]: [
+        { pageId: 'cq-1', title: 'Cabinet quote' },
+        { pageId: 'wt-1', title: 'Worktop template' },
+      ],
     })
   })
 
@@ -155,6 +154,8 @@ describe('makePageFromAnswer', () => {
       mint()
     )
     expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+    // No mentions, no key at all — an empty list is never written.
+    expect(inserts[0].row.props).not.toHaveProperty(MENTIONED_KEY)
   })
 
   it('refuses when the parent was deleted between proposal and make page — nothing is written', async () => {
@@ -318,5 +319,51 @@ describe('made-from stamp — hideable, not removable', () => {
     const { supabase, updates } = makeSupabase({ existing: { 'p-2': { props: {} } } })
     await setMadeFromHidden(supabase, 'p-2', true)
     expect(updates).toHaveLength(0)
+  })
+})
+
+// ── props.mentioned — the card's data (6a frame 5) ───────────────────────────
+
+describe('the mentioned list in props', () => {
+  it('writes pageId and title, and a note only when there is one', () => {
+    const props = stampMentioned({ kind: 'page' }, [
+      { pageId: 'cq-1', title: 'Cabinet quote' },
+      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
+      { pageId: 'el-1', title: 'Electrician', note: '   ' },
+    ])
+    expect(props[MENTIONED_KEY]).toEqual([
+      { pageId: 'cq-1', title: 'Cabinet quote' },
+      { pageId: 'wt-1', title: 'Worktop template', note: 'after the carcasses are measured' },
+      { pageId: 'el-1', title: 'Electrician' },
+    ])
+    // Everything else on props is left alone.
+    expect(props.kind).toBe('page')
+  })
+
+  it('writes no key at all for an empty list', () => {
+    expect(stampMentioned({ kind: 'page' }, [])).toEqual({ kind: 'page' })
+  })
+
+  it('reads back what was written, and null when there is nothing to show', () => {
+    const items = [{ pageId: 'cq-1', title: 'Cabinet quote' }]
+    expect(readMentioned(stampMentioned({}, items))).toEqual(items)
+    expect(readMentioned({})).toBeNull()
+    expect(readMentioned(null)).toBeNull()
+    expect(readMentioned({ [MENTIONED_KEY]: [] })).toBeNull()
+  })
+
+  it('drops a malformed entry rather than throwing — a bad row shortens the list', () => {
+    expect(
+      readMentioned({
+        [MENTIONED_KEY]: [
+          { pageId: 'ok-1', title: 'Budget' },
+          { title: 'no page id' },
+          { pageId: 'blank', title: '   ' },
+          'not an object',
+          null,
+        ],
+      })
+    ).toEqual([{ pageId: 'ok-1', title: 'Budget' }])
+    expect(readMentioned({ [MENTIONED_KEY]: 'not a list' })).toBeNull()
   })
 })

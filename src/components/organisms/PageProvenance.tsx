@@ -1,9 +1,12 @@
 'use client'
 
 /**
- * The connected made-from row for a page (#97, `Pond 06.01` 6a frame 5) — the
- * one fetch/write boundary for the made-from stamp, mirroring how BacklinksPanel
- * and PageChangesPanel wrap their presentational sections.
+ * The connected provenance of a page made from a streamed answer (#97,
+ * `Pond 06.01` 6a frame 5) — the one fetch/write boundary for what that page
+ * carries in its `props`, mirroring how BacklinksPanel and PageChangesPanel wrap
+ * their presentational sections. Two surfaces, both read from the same props and
+ * both born on make page: the made-from row above the prose ({@link PageProvenance})
+ * and the "mentioned" card below it ({@link PageMentioned}).
  *
  * A page made from a streamed answer carries `props.madeFromThread`; this
  * organism reads it off the page the DocumentPanel already holds, renders the
@@ -21,7 +24,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { MadeFromChip } from '@/components/molecules/MadeFromChip'
+import { MentionedCard } from '@/components/molecules/MentionedCard'
 import { readMadeFrom, setMadeFromHidden, withMadeFromHidden } from '@/lib/pages/made-from'
+import { readMentioned } from '@/lib/pages/mentioned'
 import { requestThreadMessage } from '@/lib/terminal-focus'
 
 export interface PageProvenanceProps {
@@ -60,4 +65,22 @@ export function PageProvenance({ pageId, props, className }: PageProvenanceProps
       className={className}
     />
   )
+}
+
+/**
+ * The "mentioned" card (6a frame 5) — the one thing Pond adds to a made page,
+ * under its prose. Read-only: the list is written once on make page and nothing
+ * here edits it, so this is a read of `props` and nothing more. Absent on every
+ * page that was not made from an answer.
+ */
+export function PageMentioned({
+  props,
+  className,
+}: {
+  props: Record<string, unknown>
+  className?: string
+}) {
+  const mentioned = readMentioned(props)
+  if (!mentioned) return null
+  return <MentionedCard mentioned={mentioned} className={className} />
 }

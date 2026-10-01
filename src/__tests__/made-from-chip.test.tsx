@@ -10,13 +10,14 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { MADE_FROM_THREAD_KEY } from '@/lib/pages/made-from'
 import { OPEN_THREAD_MESSAGE_EVENT } from '@/lib/terminal-focus'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { MENTIONED_KEY } from '@/lib/pages/mentioned'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -145,5 +146,38 @@ describe('the made-from chip', () => {
     await screen.findByDisplayValue('renovation blockers')
     expect(screen.queryByText('made from')).not.toBeInTheDocument()
     expect(screen.queryByText(/made from · show/)).not.toBeInTheDocument()
+  })
+})
+
+// ── the mentioned card (6a frame 5) ─────────────────────────────────────────
+
+describe('the mentioned card on a made page', () => {
+  it('renders a row per mention — dot, title, note — as a card and never as prose', async () => {
+    renderPage({
+      kind: 'page',
+      [MADE_FROM_THREAD_KEY]: STAMP,
+      [MENTIONED_KEY]: [
+        { pageId: 'cq-1', title: 'cabinet quote', note: 'the one everything waits on' },
+        { pageId: 'wt-1', title: 'worktop template' },
+      ],
+    })
+    const card = await screen.findByRole('region', { name: 'mentioned' })
+    const rows = card.querySelectorAll('[data-part="mentioned-row"]')
+    expect(rows).toHaveLength(2)
+    expect(within(card).getByText('cabinet quote')).toBeInTheDocument()
+    expect(within(card).getByText('the one everything waits on')).toBeInTheDocument()
+    // A mention with no note still gets a row, with no empty note element in it.
+    expect(rows[1].querySelector('[data-part="mentioned-note"]')).toBeNull()
+    // The dot is the existing KindDot mark, one per row.
+    expect(card.querySelectorAll('[data-part="dot"]')).toHaveLength(2)
+    // It is a card, not prose: no bullet list, no markdown heading left behind.
+    expect(card.querySelector('li')).toBeNull()
+    expect(card.textContent).not.toContain('######')
+  })
+
+  it('draws nothing on a page that mentioned nothing', async () => {
+    renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
+    await screen.findByText('made from')
+    expect(screen.queryByRole('region', { name: 'mentioned' })).not.toBeInTheDocument()
   })
 })

@@ -13,7 +13,6 @@
 
 import {
   DEFAULT_PAGE_KIND,
-  MENTIONED_HEADING,
   PAGE_NAME_MAX,
   clampPageName,
   derivePageName,
@@ -161,19 +160,17 @@ describe('proposalBlocks — the page is born with the prose, word for word', ()
     return () => `b${++n}`
   }
 
-  it('moves the prose across verbatim as the first text block', () => {
-    const blocks = proposalBlocks(PROSE, [], mint())
+  it('moves the prose across verbatim as the one and only block', () => {
+    const blocks = proposalBlocks(PROSE, mint())
     expect(blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
   })
 
-  it('adds a "mentioned" list only when there is something to list', () => {
-    const blocks = proposalBlocks(PROSE, [{ id: 'p1', title: 'cabinet quote' }], mint())
-    expect(blocks).toHaveLength(2)
-    expect(blocks[1]).toEqual({
-      id: 'b2',
-      type: 'text',
-      content: `###### ${MENTIONED_HEADING}\n\n- cabinet quote`,
-    })
+  it('never writes the "mentioned" list as prose — it is a card in props, not a block', () => {
+    // It used to ride as a second text block, which set its eyebrow as serif body
+    // copy and flattened the rows to bullets. See lib/pages/mentioned.ts.
+    const blocks = proposalBlocks(PROSE, mint())
+    expect(blocks).toHaveLength(1)
+    expect(JSON.stringify(blocks)).not.toContain('mentioned')
   })
 })
 

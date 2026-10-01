@@ -5,9 +5,9 @@
  * Only now does anything touch a page. This module owns that write and the
  * change-log records around it, framework-agnostic (a SupabaseClient in, no
  * Next.js, no React), so the terminal stays a thin adapter and jest can prove
- * the result (6a): a new page record carrying the prose word for word plus the
- * "mentioned" list, a change-log record, and — through `createPage` landing in
- * the pond's page tree — a rail entry.
+ * the result (6a): a new page record carrying the prose word for word, the
+ * "mentioned" list in its props, a change-log record, and — through `createPage`
+ * landing in the pond's page tree — a rail entry.
  *
  * Carried audit items (6a gaps):
  *   - the parent was deleted between proposal and make page → `ParentGoneError`
@@ -30,6 +30,7 @@ import {
 } from '@/lib/conversation/page-proposals'
 import { createPage, getPage } from './client'
 import { stampMadeFrom } from './made-from'
+import { stampMentioned } from './mentioned'
 
 /** The chosen parent no longer exists — raised BEFORE any write. */
 export class ParentGoneError extends Error {
@@ -77,16 +78,22 @@ export async function makePageFromAnswer(
   }
 
   const title = clampPageName(proposal.name) || 'untitled'
-  const blocks = proposalBlocks(proposal.prose, mentionedPages(proposal.prose, pages), mintId)
+  // The prose, word for word, is the page's only block. What the answer mentioned
+  // is a card, not prose, so it rides in props beside the made-from stamp (6a
+  // frame 5). Notes are Pond's own characterisation and are not written yet.
+  const blocks = proposalBlocks(proposal.prose, mintId)
   const kind = proposal.kind.trim() || 'page'
-  const props = stampMadeFrom(
-    { kind },
-    {
-      threadId,
-      messageId: proposal.messageId,
-      question: proposal.question,
-      askedAt: proposal.askedAt,
-    }
+  const props = stampMentioned(
+    stampMadeFrom(
+      { kind },
+      {
+        threadId,
+        messageId: proposal.messageId,
+        question: proposal.question,
+        askedAt: proposal.askedAt,
+      }
+    ),
+    mentionedPages(proposal.prose, pages).map((m) => ({ pageId: m.id, title: m.title }))
   )
 
   const page = await createPage(supabase, user.id, {

@@ -182,29 +182,16 @@ function wholeWordIndex(text: string, needle: string): number {
 
 // ── The made page's blocks ───────────────────────────────────────────────────
 
-/** The kicker Pond puts over its list of what the answer mentioned. On the board
- *  it is the page eyebrow (sans · 500 · 10.5px · .1em · uppercase · ink .68), so
- *  the block carries it as the smallest markdown heading — which the reading
- *  renderer typesets through `pageEyebrowClass` — rather than as a line of serif
- *  body prose. */
-export const MENTIONED_HEADING = 'mentioned'
-
 /**
  * What the new page is born with (6a frame 5): the prose, word for word, as one
- * text block — then, only when there is something to list, a second text block
- * carrying the "mentioned" list. Pond adds nothing else.
+ * text block. Nothing else — the "mentioned" list is NOT prose. On the board it is
+ * a card of its own (paper, an eyebrow, a row per page with a dot, a title and a
+ * note), so it rides in `props.mentioned` and renders as `MentionedCard`; see
+ * lib/pages/mentioned.ts. Writing it as a second text block set the eyebrow as
+ * 17.5px serif body copy and flattened the rows to bullets.
  */
-export function proposalBlocks(
-  prose: string,
-  mentioned: MentionablePage[],
-  mintId: () => string
-): Block[] {
-  const blocks: Block[] = [{ id: mintId(), type: 'text', content: prose }]
-  if (mentioned.length > 0) {
-    const list = mentioned.map((m) => `- ${m.title}`).join('\n')
-    blocks.push({ id: mintId(), type: 'text', content: `###### ${MENTIONED_HEADING}\n\n${list}` })
-  }
-  return blocks
+export function proposalBlocks(prose: string, mintId: () => string): Block[] {
+  return [{ id: mintId(), type: 'text', content: prose }]
 }
 
 // ── Read chips (S8) ──────────────────────────────────────────────────────────
