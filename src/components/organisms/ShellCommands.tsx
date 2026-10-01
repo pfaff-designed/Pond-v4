@@ -43,7 +43,7 @@ function readRecents(): RecentEntry[] {
   }
 }
 
-export function writeRecent(entry: RecentEntry) {
+function writeRecent(entry: RecentEntry) {
   try {
     const prev = readRecents().filter((r) => r.id !== entry.id)
     window.localStorage.setItem(

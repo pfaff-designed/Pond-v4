@@ -1,5 +1,5 @@
 /**
- * Terminal focus event name contract (Fix-7 / F18a). The ⌘K handler in TopBar
+ * Terminal focus event name contract (Fix-7 / F18a). The ⌘K handler in ShellCommands
  * fires FOCUS_TERMINAL_EVENT; AITerminal listens for the same constant. Pinning
  * the string ensures they stay in sync across merges.
  */

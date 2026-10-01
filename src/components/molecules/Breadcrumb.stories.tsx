@@ -79,3 +79,55 @@ export const RootOnly: Story = {
     await expect(args.onNavigate).toHaveBeenCalledWith(null)
   },
 }
+
+/**
+ * #96 / ADR 0002: with `onCommandK` the pill ends in a hairline and the ⌘K
+ * chip — the shell's one palette affordance. `Pond 05 Shell` (measured): the
+ * pill is 40px tall, radius 999, glass; the chip 4px 9px on the hover fill.
+ */
+export const WithCommandK: Story = {
+  args: { onCommandK: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const nav = canvas.getByRole('navigation', { name: 'Breadcrumb' })
+    await expect(nav).toHaveClass('mn-glass')
+    await expect(nav).toHaveClass('rounded-mn-pill')
+    await expect(nav.getBoundingClientRect().height).toBe(40)
+    await expect(nav.querySelector('[data-pond-mark] [data-icon]')).toHaveStyle({ width: '12px' })
+    const chip = canvas.getByRole('button', { name: 'Command palette (⌘K)' })
+    await expect(chip).toHaveTextContent('⌘K')
+    await userEvent.click(chip)
+    await expect(args.onCommandK).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** Without `onCommandK` there is no chip and no hairline — nothing dead in the pill. */
+export const WithoutCommandK: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('button', { name: 'Command palette (⌘K)' })).toBeNull()
+  },
+}
+
+/**
+ * The overview's editable tail (ticket-26): a `tail` node renders inside the
+ * pill in place of `current`, so a rename happens in the trail itself.
+ */
+export const EditableTail: Story = {
+  args: {
+    current: undefined,
+    tail: <input aria-label="Rename page" defaultValue="3-Day Full-Body Routine" />,
+    onCommandK: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const nav = canvas.getByRole('navigation', { name: 'Breadcrumb' })
+    const field = within(nav).getByRole('textbox', { name: 'Rename page' })
+    await expect(field).toHaveValue('3-Day Full-Body Routine')
+    // the static tail is gone — the field IS the tail
+    await expect(canvas.queryByText('3-Day Full-Body Routine')).toBeNull()
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Push day')
+    await expect(field).toHaveValue('Push day')
+  },
+}

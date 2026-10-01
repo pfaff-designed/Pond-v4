@@ -63,6 +63,7 @@ import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/overview'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { usePondName } from '@/lib/pond/name'
+import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { requestCreatePage } from '@/lib/shell-commands'
 import {
   LIFE_ID,
@@ -88,6 +89,7 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { PondMark } from '@/components/atoms/PondMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -448,7 +450,7 @@ export interface RailViewProps {
 /** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
 
-/** PondRail's loading skeleton: eight bars, widths in %, every third one indented. */
+/** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
 /**
@@ -741,20 +743,28 @@ export function RailView({
     )
   }
 
-  // #96 — the rail is a FLOATING GLASS CARD over the paper (`Pond 05 Shell`:
-  // 206 wide, inset 20px from the top, left and bottom; `PondRail`: padding
-  // 18px 0 14px, radius 20), never a column docked to the window's edge. Three
-  // bands: the head (the pond's name), the scrolling tree, and the foot.
+  // #96 — the rail is a floating PAPER CARD over the canvas (`Pond 05 Shell` /
+  // `PondRail`, measured: 206 wide, inset 20px from the top, left and bottom,
+  // padding 18px 0 14px, radius 20, the card paper + the card shadow, no
+  // backdrop blur — the glass recipe is the breadcrumb's and the composer's,
+  // not the rail's), never a column docked to the window's edge. Light: one
+  // paper, so the card is the ground's own colour and reads by shadow alone;
+  // dark: the card steps up to #30312A. Both come from the --mn-card /
+  // --mn-shadow-card roles. Three bands: the head (the pond's name), the
+  // scrolling tree, and the foot.
   return (
-    <aside className="mn-glass rounded-mn-card my-5 ml-5 flex w-[206px] flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans">
+    <aside
+      className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
+      style={{ width: RAIL_WIDTH_PX }}
+    >
       {/* The head is the pond's NAME (AUDIT C3, trimmed by ADR 0002 to a name
           only — the switcher chevron is M3 and the reminders bell is Phase 8, and
           a dead affordance is worse than none). `PondRail` head: 0 16px 12px, the
-          pond glyph at 13 over currentColor, the name in the sans at 500 / 13 (the
+          pond's mark at 13 over currentColor, the name in the sans at 500 / 13 (the
           mockup's 13.5, on-scale per ADR 0003). The serif display face is reserved
           for reading prose, never chrome. */}
       <div data-part="rail-head" className="flex items-center gap-2 px-4 pb-3">
-        <AreaMark glyph={LIFE_GLYPH} color="currentColor" />
+        <PondMark size={13} />
         <span
           data-part="pond-name"
           className="min-w-0 truncate font-sans text-mn-13 font-medium text-foreground select-none"

@@ -2,11 +2,14 @@
  * #96 — the shell reskin onto Make Noise + the pond's name as the rail header.
  *
  * Paper, not frames: the wall and the modules are ONE sheet (#FAF9EF light /
- * #1B1D14 ground + #30312A cards dark), separated by shadow only. The rail
- * cluster, the breadcrumb and the composer FLOAT over that canvas on the
- * floating-glass recipe (README § Surfaces, read verbatim), rather than docking
- * to an edge. The rail header is the pond's NAME — no switcher, no chevron
- * (ADR 0002 trims C3 to a name; the switcher is M3).
+ * #1B1D14 ground + #30312A cards dark), separated by shadow only. The rail is
+ * a PAPER card (the card role, no blur) and the breadcrumb and the composer
+ * FLOAT over that canvas on the floating-glass recipe (README § Surfaces, read
+ * verbatim) — all three inset from the edges, none docked. The breadcrumb and
+ * composer are SHELL-level absolutes centred at calc(50% + 13px) (measured in
+ * `Pond 05 Shell`), and the composer publishes its real height so the surfaces
+ * pad against ONE value. The rail header is the pond's NAME — no switcher, no
+ * chevron (ADR 0002 trims C3 to a name; the switcher is M3).
  *
  * Source: wayfinder/design_handoff_pond — `Pond 05 Shell` 5af (the shell
  * frame), `PondRail` (head / loading / empty states), `Pond 02` 2t (the
@@ -81,6 +84,15 @@ import { TerminalDrawer, TERMINAL_DEFAULT_HEIGHT } from '@/components/molecules/
 import { WorkspaceShell } from '@/components/organisms/WorkspaceShell'
 import { defaultPondName } from '@/lib/pond/name'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
+import {
+  COMPOSER_CLEARANCE_GAP,
+  COMPOSER_CLEARANCE_VAR,
+  PROPOSAL_MIN_HEIGHT,
+  TERMINAL_COLLAPSED_HEIGHT,
+  composerClearancePadding,
+  drawerFootprintPx,
+} from '@/lib/layout/terminal-height'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 /** Whitespace- and leading-zero-insensitive, so prettier's `0.86` matches the README's `.86`. */
@@ -99,6 +111,11 @@ const TOUCHED = [
   'src/components/organisms/ShellCommands.tsx',
   'src/components/molecules/Breadcrumb.tsx',
   'src/components/molecules/TerminalDrawer.tsx',
+  'src/components/molecules/ContentWidthHandle.tsx',
+  'src/components/atoms/PondMark.tsx',
+  'src/lib/layout/breadcrumb-slot.tsx',
+  'src/lib/layout/terminal-height.ts',
+  'src/lib/layout/rail-width.ts',
   'src/app/globals.css',
 ]
 
@@ -178,7 +195,7 @@ describe('globals.css — floating glass (AC2)', () => {
     expect(dark).toMatch(/--mn-glass-border\s*:/)
     expect(dark).toMatch(/--mn-glass-shadow\s*:/)
     expect(norm(dark)).toContain(
-      '--mn-glass-bg:linear-gradient(160deg,rgba(74,73,64,.86),rgba(48,49,42,.66));'
+      '--mn-glass-bg:linear-gradient(160deg,rgba(72,73,64,.86),rgba(48,49,42,.66));'
     )
   })
 })
@@ -263,13 +280,30 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(head).not.toHaveTextContent('Pond')
   })
 
-  it('the rail is a floating glass card, not a docked column', () => {
+  it('the rail is a floating PAPER card (the card role, no glass), not a docked column', () => {
+    // `PondRail` / `Pond 05 Shell`, measured: background = the card paper,
+    // box-shadow = the card shadow, radius 20, no backdrop-filter. Light is
+    // one paper so it reads by shadow alone; dark flips --mn-card to #30312A.
     const { container } = renderRail()
-    const aside = container.querySelector('aside')!
-    expect(aside.className).toMatch(/\bmn-glass\b/)
+    const aside = container.querySelector<HTMLElement>('aside')!
+    expect(aside.className).toMatch(/\bbg-mn-card\b/)
+    expect(aside.className).toMatch(/\bshadow-mn-card\b/)
     expect(aside.className).toMatch(/\brounded-mn-card\b/)
+    expect(aside.className).not.toMatch(/\bmn-glass\b/)
     expect(aside.className).not.toMatch(/\bfixed\b/)
     expect(aside.className).not.toMatch(/\bborder-r\b/)
+    // 206 wide, from the one shared constant (not a second hardcoded 206).
+    expect(aside.style.width).toBe(`${RAIL_WIDTH_PX}px`)
+    expect(RAIL_WIDTH_PX).toBe(206)
+  })
+
+  it('the head draws the pond mark at 13 — the same PondMark the breadcrumb draws at 12', () => {
+    const { container } = renderRail()
+    const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
+    const glyph = head.querySelector<HTMLElement>(`[data-pond-mark] [data-icon="${LIFE_GLYPH}"]`)!
+    expect(glyph).toBeInTheDocument()
+    expect(glyph.style.width).toBe('13px')
+    expect(head.querySelector('[data-area-mark]')).toBeNull()
   })
 
   it('the foot carries "＋ new page" (PondRail foot), raising onNewPage', () => {
@@ -299,17 +333,32 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
 describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', () => {
   const crumbs = [{ id: 'health', type: 'page', title: 'Health' }]
 
-  it('is glass, pill-shaped, and leads with the pond glyph', () => {
+  it('is glass, pill-shaped, 40px tall, and leads with the pond mark at 12', () => {
     const { container } = render(
       <Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />
     )
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
     expect(nav.className).toMatch(/\bmn-glass\b/)
     expect(nav.className).toMatch(/\brounded-mn-pill\b/)
-    // The pond glyph is not an AREA mark — #134's lead mark stays the only one.
-    const glyph = container.querySelector(`[data-icon="${LIFE_GLYPH}"]`)!
+    // `Pond 05 Shell`, measured: height 40, padding 8px 8px 8px 14px, gap 10.
+    expect(nav.className).toMatch(/\bh-10\b/)
+    expect(nav.className).toMatch(/\bpy-2\b/)
+    expect(nav.className).toMatch(/\bpr-2\b/)
+    expect(nav.className).toMatch(/\bpl-3\.5\b/)
+    expect(nav.className).toMatch(/\bgap-2\.5\b/)
+    // The pond's mark is the shared PondMark (plain mask in currentColor), not
+    // an AREA mark — #134's lead mark stays the only one.
+    const glyph = container.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
     expect(glyph).toBeInTheDocument()
+    expect(glyph.style.width).toBe('12px')
+    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
     expect(glyph.closest('[data-area-mark]')).toBeNull()
+  })
+
+  it('positions nothing itself — where the pill sits is the shell slot\'s job', () => {
+    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(nav.className).not.toMatch(/\b(absolute|fixed|sticky)\b/)
   })
 
   it('renders the ⌘K chip only when a handler is given, and raises it', () => {
@@ -338,21 +387,26 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
 
 // ── AC2: the composer floats over the canvas ────────────────────────────────
 
+function renderDrawer(over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {}) {
+  return render(
+    <TerminalDrawer
+      contextLabel="Life"
+      height={TERMINAL_DEFAULT_HEIGHT}
+      collapsed={false}
+      onToggleCollapsed={jest.fn()}
+      onHeightChange={jest.fn()}
+      onClear={jest.fn()}
+      footer={<div>footer</div>}
+      {...over}
+    >
+      <div>body</div>
+    </TerminalDrawer>
+  )
+}
+
 describe('TerminalDrawer — the composer is floating glass, not a docked band', () => {
-  it('overlays the bottom of the column and lets the flanks click through', () => {
-    const { container } = render(
-      <TerminalDrawer
-        contextLabel="Life"
-        height={TERMINAL_DEFAULT_HEIGHT}
-        collapsed={false}
-        onToggleCollapsed={jest.fn()}
-        onHeightChange={jest.fn()}
-        onClear={jest.fn()}
-        footer={<div>footer</div>}
-      >
-        <div>body</div>
-      </TerminalDrawer>
-    )
+  it('overlays the bottom of the shell and lets the flanks click through', () => {
+    const { container } = renderDrawer()
     const section = screen.getByRole('region', { name: 'Pond terminal' })
     expect(section.className).toMatch(/\babsolute\b/)
     expect(section.className).toMatch(/\bbottom-0\b/)
@@ -364,6 +418,97 @@ describe('TerminalDrawer — the composer is floating glass, not a docked band',
     expect(screen.getByRole('separator', { name: 'Resize terminal' }).className).toMatch(
       /\bpointer-events-auto\b/
     )
+  })
+
+  it('is centred on the WHOLE shell at calc(50% + 13px), 534 wide, 24px off the bottom (measured)', () => {
+    const { container } = renderDrawer()
+    const column = container.querySelector<HTMLElement>('[data-part="composer-column"]')!
+    expect(column.className).toMatch(/\babsolute\b/)
+    expect(column.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
+    expect(column.className.split(' ')).toContain('-translate-x-1/2')
+    expect(column.className).toMatch(/\bw-\[534px\]/)
+    // the card fills the column — no second centring, no max-w-2xl
+    const card = container.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    expect(card.className).toMatch(/\bw-full\b/)
+    expect(card.className).not.toMatch(/max-w-2xl|mx-auto/)
+    // 24px off the bottom: the card's wrapper carries pb-6
+    expect(card.parentElement!.className).toMatch(/\bpb-6\b/)
+    // the handle is confined to the column too — it never reaches over the rail
+    expect(
+      screen.getByRole('separator', { name: 'Resize terminal' }).closest('[data-part="composer-column"]')
+    ).toBe(column)
+  })
+})
+
+// ── One source for the composer's clearance ─────────────────────────────────
+
+describe('composer clearance — the drawer publishes its real height, the surfaces pad against it', () => {
+  it('the padding reads the published variable, falling back to the default drawer, plus 24px of air', () => {
+    expect(COMPOSER_CLEARANCE_GAP).toBe(24)
+    expect(composerClearancePadding()).toBe(
+      `calc(var(${COMPOSER_CLEARANCE_VAR}, ${TERMINAL_DEFAULT_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px) + 24px)`
+    )
+    expect(drawerFootprintPx(500, true)).toBe(TERMINAL_COLLAPSED_HEIGHT)
+    expect(drawerFootprintPx(500, false)).toBe(540)
+  })
+
+  function renderInShell(over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {}) {
+    const shell = document.createElement('div')
+    shell.setAttribute('data-part', 'shell')
+    document.body.appendChild(shell)
+    const utils = render(
+      <TerminalDrawer
+        contextLabel="Life"
+        height={TERMINAL_DEFAULT_HEIGHT}
+        collapsed={false}
+        onToggleCollapsed={jest.fn()}
+        onHeightChange={jest.fn()}
+        onClear={jest.fn()}
+        footer={<div>footer</div>}
+        {...over}
+      >
+        <div>body</div>
+      </TerminalDrawer>,
+      { container: shell }
+    )
+    const read = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
+    return { ...utils, shell, read }
+  }
+
+  it('tracks the drawer: collapsed → the strip alone; a proposal open → its floor + the strip', () => {
+    const { read, rerender, unmount } = renderInShell({ collapsed: true })
+    expect(read()).toBe(`${TERMINAL_COLLAPSED_HEIGHT}px`)
+
+    // AITerminal auto-grows the drawer to PROPOSAL_MIN_HEIGHT while a diff needs
+    // review (the accept/reject gesture) — the clearance must follow, so that
+    // gesture is never pinned behind the glass with no scroll room.
+    rerender(
+      <TerminalDrawer
+        contextLabel="Life"
+        height={PROPOSAL_MIN_HEIGHT}
+        collapsed={false}
+        onToggleCollapsed={jest.fn()}
+        onHeightChange={jest.fn()}
+        onClear={jest.fn()}
+        footer={<div>footer</div>}
+      >
+        <div>body</div>
+      </TerminalDrawer>
+    )
+    expect(read()).toBe(`${PROPOSAL_MIN_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px`)
+    expect(PROPOSAL_MIN_HEIGHT + TERMINAL_COLLAPSED_HEIGHT).toBe(540)
+
+    // the drawer's own box is sized from the very same value
+    expect(screen.getByRole('region', { name: 'Pond terminal' }).style.height).toBe('540px')
+
+    // gone with the drawer — no stale clearance left on the shell
+    unmount()
+    expect(read()).toBe('')
+  })
+
+  it('a user drag publishes the dragged height', () => {
+    const { read } = renderInShell({ height: 160 })
+    expect(read()).toBe(`${160 + TERMINAL_COLLAPSED_HEIGHT}px`)
   })
 })
 
@@ -388,10 +533,11 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     )
   }
 
-  it('rail = glass card with the pond name; ⌘K lives in the breadcrumb, ＋ in the rail foot', async () => {
+  it('rail = paper card with the pond name; ⌘K lives in the breadcrumb, ＋ in the rail foot', async () => {
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
-    expect(aside.className).toMatch(/\bmn-glass\b/)
+    expect(aside.className).toMatch(/\bbg-mn-card\b/)
+    expect(aside.className).not.toMatch(/\bmn-glass\b/)
     expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('Life')
 
     // One ⌘K affordance, inside the breadcrumb pill — the top-right cluster is gone.
@@ -404,6 +550,40 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     const plus = screen.getAllByRole('button', { name: 'New page' })
     expect(plus).toHaveLength(1)
     expect(aside.contains(plus[0])).toBe(true)
+  })
+
+  it('the breadcrumb and the composer are SHELL-level absolutes, not column children (measured)', async () => {
+    const { container } = renderShell()
+    const nav = await screen.findByRole('navigation', { name: 'Breadcrumb' })
+    const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
+    const main = container.querySelector<HTMLElement>('main')!
+
+    // The pill portals into the shell's slot: top 20, left calc(50% + 13px),
+    // translateX(-50%) — relative to the WHOLE shell, not the content column.
+    const slot = nav.closest<HTMLElement>('[data-part="breadcrumb-slot"]')!
+    expect(slot).not.toBeNull()
+    expect(slot.parentElement).toBe(shell)
+    expect(slot.className).toMatch(/\babsolute\b/)
+    expect(slot.className).toMatch(/\btop-5\b/)
+    expect(slot.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
+    expect(slot.className.split(' ')).toContain('-translate-x-1/2')
+    expect(main.contains(nav)).toBe(false)
+    // …and nothing sticky is left behind in the column.
+    expect(main.querySelector('.sticky')).toBeNull()
+
+    // The composer is the shell's child too — its calc(50% + 13px) is against the shell.
+    const terminal = screen.getByRole('region', { name: 'Pond terminal' })
+    expect(terminal.parentElement).toBe(shell)
+    expect(main.contains(terminal)).toBe(false)
+
+    // No fixed 288px stand-in anywhere: <main> carries no bottom padding, and the
+    // surface pads against the composer's published clearance instead, starting
+    // 76px down (under the pill — the mockup's 20px inset + 56px padding).
+    expect(main.className).not.toMatch(/\bpb-/)
+    expect(shell.querySelectorAll('.pb-72')).toHaveLength(0)
+    const column = main.querySelector<HTMLElement>('.mx-auto.px-8')!
+    expect(column.className).toMatch(/\bpt-\[76px\]/)
+    expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })
 
   it('the breadcrumb ⌘K opens the palette; the rail ＋ opens the New page dialog', async () => {

@@ -2,9 +2,12 @@
 
 /**
  * The "you are here" trail (Life › Health › Workout Routines) — a floating
- * glass PILL over the canvas, per `Pond 02` 2t: the pond glyph, the ancestor
+ * glass PILL over the canvas, per `Pond 02` 2t: the pond's mark, the ancestor
  * crumbs at the 68 tier, › separators at 80, the current node in full ink, then
  * a hairline divider and the ⌘K chip. PP Neue Montreal 500 at 11, .04em.
+ * Measured in `Pond 05 Shell`: 40px tall, padding 8px 8px 8px 14px, gap 10,
+ * radius 999; the chip 4px 9px on a 16px line. Where the pill SITS is the
+ * shell's business (lib/layout/breadcrumb-slot), not this molecule's.
  *
  * Every ancestor crumb is a click target that navigates to that page; Life
  * leads back to the root overview. The current node is either a quiet
@@ -29,8 +32,7 @@
  */
 
 import { Fragment, type ReactNode } from 'react'
-import { Icon } from '@/components/atoms/Icon'
-import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { PondMark } from '@/components/atoms/PondMark'
 import type { Crumb } from '@/lib/pages/overview'
 
 export interface BreadcrumbProps {
@@ -72,13 +74,12 @@ export function Breadcrumb({
   return (
     <nav
       aria-label="Breadcrumb"
-      className="mn-glass rounded-mn-pill inline-flex max-w-full min-w-0 items-center gap-2.5 py-2 pr-2 pl-3.5 font-sans text-mn-11 font-medium tracking-[0.04em] whitespace-nowrap text-foreground"
+      className="mn-glass rounded-mn-pill inline-flex h-10 max-w-full min-w-0 items-center gap-2.5 py-2 pr-2 pl-3.5 font-sans text-mn-11 font-medium tracking-[0.04em] whitespace-nowrap text-foreground"
     >
-      {/* The pond's glyph leads the trail (2t). A plain Icon, not an AreaMark:
-          the pond is not an area, and #134's lead mark stays the only one. */}
-      <span className="inline-flex flex-none items-center" aria-hidden>
-        <Icon name={LIFE_GLYPH} size={12} />
-      </span>
+      {/* The pond's mark leads the trail (2t) at 12 — the same mark the rail
+          head draws at 13. Not an AreaMark: the pond is not an area, and #134's
+          lead mark stays the only one. */}
+      <PondMark size={12} />
       <button
         onClick={() => onNavigate(null)}
         className="text-mn-text-secondary hover:text-foreground transition-colors whitespace-nowrap"
@@ -130,7 +131,7 @@ export function Breadcrumb({
             onClick={onCommandK}
             title="Command palette (⌘K)"
             aria-label="Command palette (⌘K)"
-            className="rounded-mn-pill bg-mn-hover-fill px-[9px] py-1 text-mn-text-secondary hover:text-foreground transition-colors cursor-pointer"
+            className="rounded-mn-pill bg-mn-hover-fill px-[9px] py-1 leading-4 text-mn-text-secondary hover:text-foreground transition-colors cursor-pointer"
           >
             ⌘K
           </button>

@@ -24,6 +24,8 @@ import { FocalNumeral } from '@/components/molecules/FocalNumeral'
 import { ChildrenGrid, ChildrenGridLabel } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { requestCommandPalette } from '@/lib/shell-commands'
+import { ShellBreadcrumb } from '@/lib/layout/breadcrumb-slot'
+import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import {
   areaOverview,
   lifeOverview,
@@ -225,54 +227,60 @@ export function OverviewSurface({
 }: OverviewSurfaceProps) {
   let ri = 0
   const showBreadcrumb = !!onNavigateCrumb
+  // #96: the column's insets — 76 under the floating pill, the composer's
+  // published clearance below — shared with the editor (lib/layout/surface-column).
+  const { column } = useSurfaceColumn(720)
+  // The pill cluster: the current node's mark beside the trail (#134), then the
+  // trail itself — with the current node as the tail; when the surface supports
+  // rename (ticket-26) the tail is the EditableKicker instead of the static
+  // current label. Keyed on value so an external rename (rail/AI) re-seeds the
+  // draft. Without a trail (Storybook) the kicker stands alone.
+  const pillCluster = (
+    <div className="flex items-center justify-center gap-2 min-w-0">
+      {markSlot ??
+        (accent && (
+          <span
+            data-part="kicker-dot"
+            aria-hidden
+            className="w-2 h-2 rounded-mn-hair flex-shrink-0"
+            style={{ background: accent }}
+          />
+        ))}
+      {showBreadcrumb ? (
+        onRenameKicker ? (
+          <Breadcrumb
+            crumbs={crumbs ?? []}
+            onNavigate={onNavigateCrumb}
+            leadMark={leadMark}
+            tail={<EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />}
+            onCommandK={requestCommandPalette}
+          />
+        ) : (
+          <Breadcrumb
+            crumbs={crumbs ?? []}
+            onNavigate={onNavigateCrumb}
+            current={current}
+            leadMark={leadMark}
+            onCommandK={requestCommandPalette}
+          />
+        )
+      ) : (
+        <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
+      )}
+    </div>
+  )
   return (
     <div className="h-full overflow-y-auto font-sans">
-      {/* #96: pt-5 puts the breadcrumb pill 20px off the top (`Pond 05 Shell`);
-          pb-72 lets the last lines scroll clear of the floating composer. */}
-      <div className="max-w-[720px] mx-auto px-8 pt-5 pb-72">
-        {/* ── Header: the floating breadcrumb pill (centred, sticky — the page
-            scrolls under it; 2t) with "+ Add content" at the right ──────────── */}
-        <Rise
-          i={ri++}
-          className="sticky top-5 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-4"
-        >
+      <div {...column}>
+        {/* The pill is a SHELL-level absolute (2t / `Pond 05 Shell`): it portals
+            into the shell's slot and the page scrolls under it. Rendered alone it
+            falls back into the header row below. */}
+        <ShellBreadcrumb>{pillCluster}</ShellBreadcrumb>
+        {/* ── Header row: "+ Add content" at the right (and, rendered alone, the
+            pill cluster centred) ─────────────────────────────────────────────── */}
+        <Rise i={ri++} className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
           <span aria-hidden />
-          <div className="flex items-center justify-center gap-2 min-w-0">
-            {markSlot ??
-              (accent && (
-                <span
-                  data-part="kicker-dot"
-                  aria-hidden
-                  className="w-2 h-2 rounded-mn-hair flex-shrink-0"
-                  style={{ background: accent }}
-                />
-              ))}
-            {/* Breadcrumb trail (ticket-25) with the current node as the tail;
-                when the surface supports rename (ticket-26) the tail is the
-                EditableKicker instead of the static current label. Keyed on
-                value so an external rename (rail/AI) re-seeds the draft. */}
-            {showBreadcrumb ? (
-              onRenameKicker ? (
-                <Breadcrumb
-                  crumbs={crumbs ?? []}
-                  onNavigate={onNavigateCrumb}
-                  leadMark={leadMark}
-                  tail={<EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />}
-                  onCommandK={requestCommandPalette}
-                />
-              ) : (
-                <Breadcrumb
-                  crumbs={crumbs ?? []}
-                  onNavigate={onNavigateCrumb}
-                  current={current}
-                  leadMark={leadMark}
-                  onCommandK={requestCommandPalette}
-                />
-              )
-            ) : (
-              <EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />
-            )}
-          </div>
+          <span aria-hidden />
           <div className="flex items-center justify-end gap-4">
             {onAddContent && <AddContentButton onAddContent={onAddContent} />}
           </div>

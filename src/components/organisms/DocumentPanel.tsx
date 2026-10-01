@@ -45,6 +45,8 @@ import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
+import { ShellBreadcrumb } from '@/lib/layout/breadcrumb-slot'
+import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { requestCommandPalette } from '@/lib/shell-commands'
 import { childCards, ancestorPath } from '@/lib/pages/overview'
 import { fetchPages } from '@/lib/pages/tree'
@@ -68,6 +70,9 @@ export function DocumentPanel() {
   // the ContentWidthHandle on the column's right edge. Hook lives above the
   // early returns (rules of hooks); only the editor branch below renders it.
   const { width: contentWidth, setWidth: setContentWidth, commitWidth } = useContentWidth()
+  // #96: the column's insets — 76 under the floating pill, the composer's
+  // published clearance below — shared with the overview (lib/layout/surface-column).
+  const { column, handle } = useSurfaceColumn(contentWidth)
 
   // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
   // Flush pending block toasts (staged by BlockCanvas) when leaving a page — a
@@ -241,6 +246,9 @@ export function DocumentPanel() {
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel.
   const { toggle: toggleChanges, overlay: changesOverlay } = usePageChangesPanel(nodeId)
+  // Typed properties (#17): present only when the page carries a schema (it is
+  // a collection). Read here, above the early returns, so the JSX below stays flat.
+  const propSchema = page ? readSchema(page.props) : null
 
   // ── Root: the Life overview owns the panel (no more empty state) ──────────
   if (!nodeId) {
@@ -280,15 +288,13 @@ export function DocumentPanel() {
           and persists it. Everything inside (the #57 timeline's %-positioned
           bars included) reflows because the width is applied here, at the
           column wrapper. */}
-      {/* #96: pt-5 puts the breadcrumb pill 20px off the top (`Pond 05 Shell`);
-          pb-72 lets the last lines scroll clear of the floating composer. */}
-      <div
-        className="relative mx-auto px-8 pt-5 pb-72"
-        style={{ maxWidth: contentWidth }}
-        data-testid="page-column"
-      >
+      {/* #96: the column's top/bottom insets (76 under the floating pill; the
+          composer's published clearance + 24 below) come from useSurfaceColumn,
+          and the handle is bounded to the READABLE column — it stops where the
+          content stops, so the drag strip never runs through the composer's region. */}
+      <div {...column} data-testid="page-column">
         <ContentWidthHandle
-          className="absolute inset-y-5 right-0"
+          {...handle}
           width={contentWidth}
           onWidthChange={setContentWidth}
           onWidthCommit={commitWidth}
@@ -297,16 +303,17 @@ export function DocumentPanel() {
             is the editable tail, so the crumb never duplicates the current name. */}
         {/* #134: the trail's lead mark is clickable — it opens the picker for the
             area the trail starts in. */}
-        {/* #96: the pill FLOATS at the head of the column (sticky, centred, 2t)
-            and the page scrolls under it; ⌘K rides in it (ADR 0002). */}
-        <div className="sticky top-5 z-20 mb-6 flex justify-center">
+        {/* #96: the pill is a SHELL-level absolute (2t / `Pond 05 Shell`) — it
+            portals into the shell's slot and the page scrolls under it; ⌘K rides
+            in it (ADR 0002). Rendered alone, it sits here in the flow. */}
+        <ShellBreadcrumb>
           <Breadcrumb
             crumbs={crumbs}
             onNavigate={navigateCrumb}
             leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
             onCommandK={requestCommandPalette}
           />
-        </div>
+        </ShellBreadcrumb>
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
             className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-faint"
@@ -336,18 +343,15 @@ export function DocumentPanel() {
 
         {/* Typed properties (#17): shown only when the page carries a schema (it
             is a collection). Edits write optimistically, bypassing the AI gate. */}
-        {(() => {
-          const propSchema = readSchema(page.props)
-          return propSchema ? (
-            <div className="mb-6 border-b border-mn-hair pb-6">
-              <PropertyInspector
-                schema={propSchema}
-                values={readValues(page.props)}
-                onChange={onProperty}
-              />
-            </div>
-          ) : null
-        })()}
+        {propSchema && (
+          <div className="mb-6 border-b border-mn-hair pb-6">
+            <PropertyInspector
+              schema={propSchema}
+              values={readValues(page.props)}
+              onChange={onProperty}
+            />
+          </div>
+        )}
 
         {/* The shared authoring surface (ticket-44): the `/` palette, hover `+`
             InsertBetween, reorder, bound metrics, and the always-visible palette-
