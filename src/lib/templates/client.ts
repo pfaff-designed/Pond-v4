@@ -152,7 +152,7 @@ export async function createTemplate(
   const insert = {
     user_id: userId,
     workspace: input.workspace ?? 'main',
-    name: input.name,
+    name: input.name.trim(),
     kind: input.kind,
     blocks: input.blocks ?? [],
     origin: input.origin ?? 'yours',
@@ -185,7 +185,7 @@ export async function renameTemplate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('templates')
-    .update({ name, updated_at: new Date().toISOString() })
+    .update({ name: name.trim(), updated_at: new Date().toISOString() })
     .eq('id', id)
 
   if (error) {

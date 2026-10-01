@@ -68,12 +68,10 @@ create table if not exists public.templates (
 -- the same lower(btrim(…)) key 0009's pages_sibling_title_uniq uses, so the
 -- application helper (normalizeTitle) describes both. Unlike pages there is no
 -- parent and no blank-title exemption: a template always has a name.
+-- This index also serves listTemplates, which orders by name within a pond,
+-- so no second index is needed.
 create unique index if not exists templates_name_uniq
   on public.templates (user_id, workspace, lower(btrim(name)));
-
--- Newest-first listing of a pond's templates.
-create index if not exists templates_pond_idx
-  on public.templates (user_id, workspace, updated_at desc);
 
 -- ── Row-level security ───────────────────────────────────────────────────────
 --
