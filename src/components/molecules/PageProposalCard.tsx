@@ -15,7 +15,8 @@
  * A machine surface (PROJECT_RULES § Design language): mono, lowercase, tight
  * tracking. Values read inline from the frame: the pane is white .72 over the
  * glass with a white .9 border, radius 14, padding 12px 13px, gap 10; the head
- * is the sans eyebrow (500 · 10.5px · .1em · uppercase · ink .68) with "3
+ * is the MONO eyebrow (500 · 10.5px · .1em · uppercase · ink .68 — a composer
+ * surface, so the mono register) with "3
  * fields" at 10.5px ink .8; rows are 11px / 1.75 with a 52px label at ink .8;
  * make page is ink on paper, the other two ink .07 fills, all 500 · 11px with
  * 7px 13px padding, pill. Dark takes PondComposer's `diffCard` ink values via
@@ -23,7 +24,7 @@
  */
 
 import { useId, useRef, useState } from 'react'
-import { chipBaseClass, eyebrowClass } from '@/components/atoms/kicker'
+import { chipBaseClass, machineEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
 
@@ -140,7 +141,7 @@ export function PageProposalCard({
       )}
     >
       <div className="flex items-center justify-between">
-        <span className={eyebrowClass}>new page — proposed</span>
+        <span className={machineEyebrowClass}>new page — proposed</span>
         <span className="text-[10.5px] text-mn-text-meta">3 fields</span>
       </div>
 

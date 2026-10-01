@@ -36,7 +36,7 @@ import {
   type PageProposal,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
-import { eyebrowClass } from '@/components/atoms/kicker'
+import { machineEyebrowClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
@@ -2053,7 +2053,7 @@ export function AITerminal() {
                   // react-markdown re-parses each partial (ticket-20); the caret shows
                   // while this answer is still arriving.
                   <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                    <span className={eyebrowClass}>pond</span>
+                    <span className={machineEyebrowClass}>pond</span>
                     <div className="relative">
                       <Markdown variant="answer">{text}</Markdown>
                       {answerStreaming && (
@@ -2072,7 +2072,7 @@ export function AITerminal() {
                 citation should still show) — same attributed treatment. */}
               {message.role !== 'user' && !text && sources.length > 0 && (
                 <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                  <span className={eyebrowClass}>pond</span>
+                  <span className={machineEyebrowClass}>pond</span>
                   <SourceList sources={sources} />
                   <ReadChips read={read} />
                 </div>

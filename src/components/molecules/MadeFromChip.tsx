@@ -8,10 +8,11 @@
  * stays on the page either way.
  *
  * Values read inline from the frame: eyebrow 500 · 10.5px · .1em · uppercase ·
- * ink .68; chip 5px 11px, pill, ink .07 fill, mono 11px .02em, full ink.
+ * ink .68 in the SANS — it lives on the page, not in the composer (PROJECT_RULES
+ * § two registers, split by medium); chip 5px 11px, pill, ink .07 fill, mono 11px .02em, full ink.
  */
 
-import { chipBaseClass, eyebrowClass } from '@/components/atoms/kicker'
+import { chipBaseClass, pageEyebrowClass } from '@/components/atoms/kicker'
 import { madeFromLabel } from '@/lib/conversation/page-proposals'
 import type { MadeFromThread } from '@/lib/pages/made-from'
 import { cn } from '@/lib/utils'
@@ -44,7 +45,7 @@ export function MadeFromChip({ stamp, onOpen, onToggleHidden, className }: MadeF
 
   return (
     <div data-part="made-from" className={cn('flex flex-wrap items-center gap-2.5', className)}>
-      <span className={eyebrowClass}>made from</span>
+      <span className={pageEyebrowClass}>made from</span>
       <button
         type="button"
         onClick={onOpen}

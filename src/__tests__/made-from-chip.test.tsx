@@ -16,6 +16,7 @@ import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { MADE_FROM_THREAD_KEY } from '@/lib/pages/made-from'
 import { OPEN_THREAD_MESSAGE_EVENT } from '@/lib/terminal-focus'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -127,6 +128,16 @@ describe('the made-from chip', () => {
     expect(screen.queryByRole('button', { name: 'made from · show' })).not.toBeInTheDocument()
     expect(errors).toHaveBeenCalled()
     errors.mockRestore()
+  })
+
+  it('sets its eyebrow in the SANS — the chip lives on a page, not in the composer', async () => {
+    // PROJECT_RULES § two registers, split by medium: the composer's eyebrows are
+    // mono, a page's are sans. Board 6a frame 5 measures "made from" in PP Neue
+    // Montreal at 10.5px / 500 / .1em / uppercase / ink .68.
+    renderPage({ kind: 'page', [MADE_FROM_THREAD_KEY]: STAMP })
+    const eyebrow = await screen.findByText('made from')
+    expect(eyebrow.className).toBe(pageEyebrowClass)
+    expect(eyebrow.className).toMatch(/\bfont-sans\b/)
   })
 
   it('shows nothing on a page without a stamp', async () => {

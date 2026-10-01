@@ -129,6 +129,7 @@ jest.mock('@ai-sdk/react', () => ({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { readStamp } from '@/lib/conversation/page-proposals'
+import { machineEyebrowClass, pageEyebrowClass } from '@/components/atoms/kicker'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -637,6 +638,52 @@ describe('closing Pond with a proposal open (6d)', () => {
       const resolutions = last?.[3] as { pageProposals?: Record<string, { status: string }> }
       expect(Object.values(resolutions?.pageProposals ?? {})[0]?.status).toBe('proposed')
     })
+  })
+})
+
+// ── The eyebrow's medium (PROJECT_RULES § two registers) ─────────────────────
+
+describe('the eyebrow splits by medium, not by author', () => {
+  // PROJECT_RULES § Design language: "two registers, split by medium, not by
+  // author" — the machine surface (composer, palette, @-picker, diff cards,
+  // provenance chips) is PP Neue Montreal MONO; anything living on a page is the
+  // SANS. Board 6a measures all four of its eyebrows at 10.5px / 500 / .1em /
+  // uppercase / ink .68, differing in that one thing: `pond` and `new page —
+  // proposed` are mono (composer), `made from` and `mentioned` sans (page).
+  //
+  // One shared eyebrow constant therefore sets two registers, and the wrong family
+  // on half of them — a correct-LOOKING constant applied across both registers.
+  // These pin the two apart, and pin everything else together so they cannot drift
+  // into two different sizes.
+  it('is mono on the machine surface and sans on a page', () => {
+    expect(machineEyebrowClass).toMatch(/\bfont-mono\b/)
+    expect(machineEyebrowClass).not.toMatch(/\bfont-sans\b/)
+    expect(pageEyebrowClass).toMatch(/\bfont-sans\b/)
+    expect(pageEyebrowClass).not.toMatch(/\bfont-mono\b/)
+  })
+
+  it('is otherwise one recipe — the family is the only difference (6a: 10.5px / 500 / .1em / uppercase / ink .68)', () => {
+    const withoutFamily = (c: string) => c.replace(/\bfont-(mono|sans)\b/, '').trim()
+    expect(withoutFamily(machineEyebrowClass)).toBe(withoutFamily(pageEyebrowClass))
+    for (const value of [
+      'text-[10.5px]',
+      'font-medium',
+      'tracking-[0.1em]',
+      'uppercase',
+      'text-mn-text-secondary',
+    ])
+      expect(machineEyebrowClass).toContain(value)
+  })
+
+  it('sets the composer’s own eyebrows in the mono: the pond attribution and the card head', async () => {
+    renderTerminal()
+    await ready()
+    const answer = screen.getByText(PROSE).closest('[data-part="answer"]')!
+    expect(within(answer as HTMLElement).getByText('pond').className).toBe(machineEyebrowClass)
+
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    expect(within(card).getByText('new page — proposed').className).toBe(machineEyebrowClass)
   })
 })
 

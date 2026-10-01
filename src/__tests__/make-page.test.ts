@@ -127,7 +127,14 @@ describe('makePageFromAnswer', () => {
     expect(row.workspace).toBe('main')
     expect(row.blocks).toEqual([
       { id: 'b1', type: 'text', content: PROSE },
-      { id: 'b2', type: 'text', content: 'mentioned\n\n- Cabinet quote\n- Worktop template' },
+      {
+        id: 'b2',
+        type: 'text',
+        // The label is the page EYEBROW on the board, so it rides as the smallest
+        // markdown heading — the reading renderer typesets h6 through
+        // `pageEyebrowClass` instead of setting it as a line of serif prose.
+        content: '###### mentioned\n\n- Cabinet quote\n- Worktop template',
+      },
     ])
     expect(row.props).toEqual({
       kind: 'page',

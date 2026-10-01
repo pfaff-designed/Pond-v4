@@ -26,6 +26,7 @@ import { memo } from 'react'
 import ReactMarkdown, { type Components, type Options } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { answerComponents } from './markdown-answer'
 
 export type MarkdownVariant = 'reading' | 'terminal' | 'answer'
@@ -78,6 +79,12 @@ const BASE_COMPONENTS: Record<Exclude<MarkdownVariant, 'answer'>, Components> = 
       <h3 className="font-serif text-lg font-extrabold leading-snug text-foreground mt-5 mb-2 first:mt-0">
         {children}
       </h3>
+    ),
+    // The smallest heading on a page is the eyebrow, not a tiny serif title: the
+    // sans label a section sits under (`Pond 06.01` 6a frame 5's "mentioned").
+    // Sans because it lives on the page — PROJECT_RULES § two registers.
+    h6: ({ children }) => (
+      <h6 className={`${pageEyebrowClass} mt-5 mb-2 first:mt-0`}>{children}</h6>
     ),
     p: ({ children }) => (
       <p className={`${READING_PROSE_CLASS} my-3 first:mt-0 last:mb-0`}>{children}</p>

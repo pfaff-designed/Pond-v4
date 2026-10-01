@@ -172,7 +172,7 @@ describe('proposalBlocks — the page is born with the prose, word for word', ()
     expect(blocks[1]).toEqual({
       id: 'b2',
       type: 'text',
-      content: `${MENTIONED_HEADING}\n\n- cabinet quote`,
+      content: `###### ${MENTIONED_HEADING}\n\n- cabinet quote`,
     })
   })
 })

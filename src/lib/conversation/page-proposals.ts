@@ -182,7 +182,11 @@ function wholeWordIndex(text: string, needle: string): number {
 
 // ── The made page's blocks ───────────────────────────────────────────────────
 
-/** The kicker Pond puts over its list of what the answer mentioned. */
+/** The kicker Pond puts over its list of what the answer mentioned. On the board
+ *  it is the page eyebrow (sans · 500 · 10.5px · .1em · uppercase · ink .68), so
+ *  the block carries it as the smallest markdown heading — which the reading
+ *  renderer typesets through `pageEyebrowClass` — rather than as a line of serif
+ *  body prose. */
 export const MENTIONED_HEADING = 'mentioned'
 
 /**
@@ -198,7 +202,7 @@ export function proposalBlocks(
   const blocks: Block[] = [{ id: mintId(), type: 'text', content: prose }]
   if (mentioned.length > 0) {
     const list = mentioned.map((m) => `- ${m.title}`).join('\n')
-    blocks.push({ id: mintId(), type: 'text', content: `${MENTIONED_HEADING}\n\n${list}` })
+    blocks.push({ id: mintId(), type: 'text', content: `###### ${MENTIONED_HEADING}\n\n${list}` })
   }
   return blocks
 }
