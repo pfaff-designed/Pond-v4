@@ -51,6 +51,9 @@ function blockLabel(block: Block): string {
  * The handle menu's items for one block (#101, board 6j frame 2). `turn into ›
  * table` is offered only on a LIST block, with the preview of what will come out
  * ("4 rows · 3 columns"); the `block` group carries the block's own actions.
+ *
+ * Called only for the block whose menu is OPEN — the preview scans the block's
+ * whole content, which is not work to redo for every block on every keystroke.
  */
 function menuItemsFor(block: Block): BlockMenuItem[] {
   const items: BlockMenuItem[] = []
@@ -302,7 +305,10 @@ export function BlockCanvas({
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
                 menuOpen={menuOpenAt === i}
-                menuItems={menuItemsFor(block)}
+                // Only the OPEN block's items are derived: menuItemsFor splits and
+                // regex-scans a text block's whole content, and this render runs on
+                // every keystroke anywhere on the page (#101 review).
+                menuItems={menuOpenAt === i ? menuItemsFor(block) : undefined}
                 onMenuToggle={() => setMenuOpenAt((open) => (open === i ? null : i))}
                 onMenuClose={() => setMenuOpenAt(null)}
                 onMenuSelect={(id) => {
@@ -446,12 +452,14 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* Gutter affordances (ticket-37): drag handle + delete, revealed on hover/
-          focus. Both live in one flex row so the handle and × sit in identical boxes
-          and share a baseline — otherwise the two glyphs' differing optical metrics
-          leave them visibly misaligned. The handle is the six-dot mark 6j draws
-          (10×14, dots r 1.1, the secondary ink tier); press-and-drag reorders,
-          a click opens the block menu (#101). */}
+      {/* Gutter affordances (ticket-37): the block menu handle + delete, revealed on
+          hover/focus. Both live in one flex row, in identical 20×16 boxes, so the
+          two hand-drawn marks share a centre — their own artwork differs in optical
+          weight, and without the shared box they read as misaligned. Both sit on
+          the 68% ink tier: PROJECT_RULES allows three tiers only (100 / 80 small
+          meta / 68), so neither gutter mark may drop to a fainter ink. The handle is
+          the six-dot mark 6j draws (10×14, dots r 1.1); press-and-drag reorders, a
+          click opens the block menu (#101). */}
       <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
         <button
           ref={handleRef}
@@ -475,7 +483,7 @@ function BlockEditor({
           </svg>
         </button>
         <button
-          className="flex h-5 w-4 items-center justify-center rounded text-sm leading-none text-mn-text-faint hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
+          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-destructive focus-visible:text-destructive outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
           title="Delete block"
           aria-label="Delete block"
           onClick={onRemove}

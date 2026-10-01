@@ -39,6 +39,7 @@
 import type { PageRow } from '@/lib/pages/tree'
 import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { withoutDatabasesRoot } from '@/lib/pages/databases-root'
 
 export interface OverviewCardModel {
   id: string
@@ -316,8 +317,15 @@ export function areaOverview(rows: PageRow[], areaId: string, now: Date): Overvi
  * reconciliation still holds: every content page is either top-level (its own
  * card) or inside exactly one top-level card, so total = top-level content
  * pages + Σ card stats (asserted in overview-model.test).
+ *
+ * #101: the `databases` root and everything under it are subtracted first. It is
+ * the pond's SECOND root (3c, "one root beside life"), a peer of life — so it is
+ * neither a card in Life's grid nor counted in "pages across your life", which is
+ * the same exclusion the rail makes, from the same predicate. Opening the root
+ * itself still gives the ordinary area overview of the databases inside it.
  */
-export function lifeOverview(rows: PageRow[], now: Date): OverviewModel {
+export function lifeOverview(allRows: PageRow[], now: Date): OverviewModel {
+  const rows = withoutDatabasesRoot(allRows)
   const parentById = new Map(rows.map((r) => [r.id, r.parent_id]))
   const marks = markIndex(rows)
   const containers = containerIds(rows)

@@ -25,9 +25,10 @@ const node = (
 ): RailNode => ({ id, parentId, type: 'page', title, order, children })
 
 const health = node('health', 'Health', [node('sleep', 'Sleep', [], 'health')])
+// Lowercase, as 3c draws it and as `DATABASES_ROOT_TITLE` seeds it.
 const databases = node(
   'root-db',
-  'Databases',
+  'databases',
   [node('db-1', 'ingredients', [], 'root-db')],
   null,
   9
@@ -62,10 +63,10 @@ describe('rail — the databases root', () => {
     renderRail([health, databases])
     const life = screen.getByRole('tree', { name: 'Workspace' })
     expect(within(life).getByText('Health')).toBeInTheDocument()
-    expect(within(life).queryByText('Databases')).not.toBeInTheDocument()
+    expect(within(life).queryByText('databases')).not.toBeInTheDocument()
 
     const foot = screen.getByRole('tree', { name: 'Databases' })
-    expect(within(foot).getByText('Databases')).toBeInTheDocument()
+    expect(within(foot).getByText('databases')).toBeInTheDocument()
   })
 
   it('lists a database under the root when it is expanded (the new database appears under databases)', () => {

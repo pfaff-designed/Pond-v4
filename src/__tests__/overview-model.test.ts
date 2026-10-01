@@ -260,6 +260,37 @@ describe('lifeOverview', () => {
     expect(model.focal).toBe('1')
     expect(model.focalCaption).toBe('1 page, tucked in Creativity.')
   })
+
+  // #101: the `databases` root is the pond's SECOND root (3c, "one root beside
+  // life"), which the rail lifts out of the Life tree. Life's overview has to
+  // agree — otherwise the same page is a root on one surface and an area on
+  // another.
+  it('leaves the databases root and its databases out of Life entirely', () => {
+    const rows = [
+      ...ROWS,
+      row('root-db', null, 'page', 'databases', 3),
+      row('db-1', 'root-db', 'page', 'ingredients', 0),
+      row('db-2', 'root-db', 'page', 'kitchen costs', 1),
+    ]
+    const model = lifeOverview(rows, NOW)
+    // No card for it, and no card for anything inside it.
+    expect(model.cards.map((c) => c.title)).toEqual(['Health', 'Personal', 'Scratchpad'])
+    // And its databases are not "pages across your life" either — the focal is
+    // the same 4 leaves as the plain ROWS.
+    expect(model.focal).toBe('4')
+    expect(model.focalCaption).toBe('4 pages across your life, 2 of them in Health.')
+  })
+
+  it('still gives the databases root its own overview when it is opened', () => {
+    const rows = [
+      row('root-db', null, 'page', 'databases', 0),
+      row('db-1', 'root-db', 'page', 'ingredients', 0),
+      row('db-2', 'root-db', 'page', 'kitchen costs', 1),
+    ]
+    const model = areaOverview(rows, 'root-db', NOW)
+    expect(model.focal).toBe('2')
+    expect(model.cards.map((c) => c.title)).toEqual(['ingredients', 'kitchen costs'])
+  })
 })
 
 describe('phraseFocalCaption — the human voice matrix (ticket-33)', () => {

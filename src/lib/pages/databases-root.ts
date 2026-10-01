@@ -7,8 +7,13 @@
  * a view of a database, and the database lives with the other databases. The
  * root is a plain top-level page (no new `type`: #108's rule that structure is
  * never a stored type applies to it too), identified by its reserved title. The
- * sibling-title unique index (#84) guarantees at most one per pond, and the rail
- * reads the same predicate (`isDatabasesRoot`) to draw it at its foot.
+ * sibling-title unique index (#84) guarantees at most one per pond.
+ *
+ * The two roots are PEERS, so the root is not one of Life's areas on ANY surface.
+ * One predicate (`isDatabasesRoot`) answers "is this it", and one filter
+ * (`withoutDatabasesRoot`) is applied wherever Life's children are enumerated —
+ * the rail's Life tree and the Life overview's cards and counts alike — so a
+ * page can never read as a root on one surface and an area on another.
  *
  * Framework-agnostic — takes a SupabaseClient, exercised directly in jest.
  */
@@ -18,8 +23,12 @@ import type { Database } from '@/lib/supabase/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { createPage } from '@/lib/pages/client'
 
-/** The reserved title of the databases root page. */
-export const DATABASES_ROOT_TITLE = 'Databases'
+/**
+ * The reserved title of the databases root page — lowercase, as 3c draws it
+ * ("databases", beside "life"). {@link isDatabasesRoot} matches case-insensitively,
+ * so a pond whose root was seeded with the old casing still resolves.
+ */
+export const DATABASES_ROOT_TITLE = 'databases'
 
 /**
  * Is this node the databases root — a TOP-LEVEL page titled "databases"? The one
@@ -31,6 +40,48 @@ export function isDatabasesRoot(node: { parentId: string | null; title: string }
   return (
     node.parentId === null && node.title.trim().toLowerCase() === DATABASES_ROOT_TITLE.toLowerCase()
   )
+}
+
+/**
+ * {@link isDatabasesRoot} over a flat `['pages']` row (snake_case `parent_id`) —
+ * the same predicate, one adapter, so row-shaped callers don't re-spell the rule.
+ */
+function isDatabasesRootRow(row: { parent_id: string | null; title: string }): boolean {
+  return isDatabasesRoot({ parentId: row.parent_id, title: row.title })
+}
+
+/**
+ * Life's own rows: every page EXCEPT the databases root and its whole subtree.
+ *
+ * 3c's "one root beside life" means the databases root is a PEER of life, not one
+ * of its areas — so every surface that enumerates Life's children (the rail's
+ * Life tree, the Life overview's cards, and the "pages across your life" count
+ * that reads the same rows) must subtract it. Applying it here, once, is what
+ * keeps the two surfaces from disagreeing. The root's own page still reads
+ * normally when opened — it is a page with pages inside it, i.e. an overview.
+ */
+export function withoutDatabasesRoot<
+  T extends { id: string; parent_id: string | null; title: string },
+>(rows: readonly T[]): T[] {
+  const root = rows.find(isDatabasesRootRow)
+  if (!root) return [...rows]
+  const childrenOf = new Map<string, T[]>()
+  for (const row of rows) {
+    if (!row.parent_id) continue
+    const siblings = childrenOf.get(row.parent_id)
+    if (siblings) siblings.push(row)
+    else childrenOf.set(row.parent_id, [row])
+  }
+  const excluded = new Set<string>([root.id])
+  const queue = [root.id]
+  while (queue.length > 0) {
+    for (const child of childrenOf.get(queue.pop() as string) ?? []) {
+      if (excluded.has(child.id)) continue // cycle guard on malformed data
+      excluded.add(child.id)
+      queue.push(child.id)
+    }
+  }
+  return rows.filter((r) => !excluded.has(r.id))
 }
 
 /**

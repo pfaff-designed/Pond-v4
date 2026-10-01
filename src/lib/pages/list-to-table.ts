@@ -30,7 +30,7 @@ import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { TableRow } from '@/lib/modules/table/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
-import { createPage } from '@/lib/pages/client'
+import { createPage, deletePage } from '@/lib/pages/client'
 import { inferSchema, tableRowsToPageInputs } from '@/lib/pages/promote-table'
 import { getOrCreateDatabasesRoot } from '@/lib/pages/databases-root'
 import { ROW_TYPE, withSchema, type PropertySchema } from '@/lib/properties/schema'
@@ -112,7 +112,13 @@ const UNIT_WORDS = new Set([
   '°f',
 ])
 
-/** `500g strong white flour` → amount 500, unit g, item strong white flour. */
+/**
+ * `500g strong white flour` → amount 500, unit g, item strong white flour. A
+ * comma decimal separator is accepted ("1,5 l milk") and normalised to a point by
+ * {@link parseAmountLine} — `inferColumnType` reads a cell as a number only
+ * through `Number()`, for which "1,5" is NaN, so a comma left in place would type
+ * the amount column as text.
+ */
 const AMOUNT_LINE = /^(-?\d+(?:[.,]\d+)?)\s*([a-zA-Z%°]{1,4})?(?:\s+(.*))?$/
 
 interface AmountParts {
@@ -125,18 +131,21 @@ interface AmountParts {
 function parseAmountLine(line: string): AmountParts | null {
   const m = AMOUNT_LINE.exec(line.trim())
   if (!m) return null
-  const amount = m[1]
+  const matched = m[1]
   let unit = m[2] ?? ''
   let item = (m[3] ?? '').trim()
   // A unit the regex split off with a space must be a known unit word; otherwise
-  // it was the start of the thing itself ("2 eggs" → eggs is the item).
-  const attached = unit !== '' && line.trim().startsWith(amount + unit)
+  // it was the start of the thing itself ("2 eggs" → eggs is the item). Measured
+  // against the text AS WRITTEN, before the separator is normalised below.
+  const attached = unit !== '' && line.trim().startsWith(matched + unit)
   if (unit !== '' && !attached && !UNIT_WORDS.has(unit.toLowerCase())) {
     item = item === '' ? unit : `${unit} ${item}`
     unit = ''
   }
   if (item === '') return null
-  return { amount, unit, item }
+  // One decimal separator downstream: the cell must satisfy `Number()` for the
+  // column to type as `number` (see AMOUNT_LINE), so "1,5" is stored as "1.5".
+  return { amount: matched.replace(',', '.'), unit, item }
 }
 
 /**
@@ -219,6 +228,29 @@ export interface DatabaseFromList {
 }
 
 /**
+ * Undo this call's own writes after a failure part-way through, so a stranded
+ * half-built database never shows up under databases. Deleting the database page
+ * cascades its records (the self-referential FK), and the root goes too only when
+ * THIS call created it — an older root may hold other databases. Best-effort by
+ * design: every error is swallowed so the original failure is what the caller
+ * sees, and the worst case is the empty shell the cleanup was meant to remove.
+ */
+async function rollbackDatabase(
+  supabase: SupabaseClient<Database>,
+  databaseId: string | null,
+  rootId: string | null
+): Promise<void> {
+  for (const id of [databaseId, rootId]) {
+    if (!id) continue
+    try {
+      await deletePage(supabase, id)
+    } catch {
+      // Nothing better to do: the caller's own error is the one worth raising.
+    }
+  }
+}
+
+/**
  * Write the database a list becomes (AC2-4): the databases root (created on first
  * use), a collection page under it carrying the inferred schema, and one
  * `type='row'` record per line with its values coerced to the field types —
@@ -226,6 +258,11 @@ export interface DatabaseFromList {
  * titled by the list's identifying text column (the last one), so it reads in
  * every view mode. Throws on a non-list block or when unauthenticated, before
  * writing anything, so the editor can leave the page untouched.
+ *
+ * Writes are not transactional (one insert per row over the client), so a failure
+ * part-way is rolled back by {@link rollbackDatabase} before the error is
+ * rethrown: it is all-or-nothing from the user's side, never a database with
+ * three of its four rows sitting under databases.
  */
 export async function createDatabaseFromList(
   supabase: SupabaseClient<Database>,
@@ -247,32 +284,39 @@ export async function createDatabaseFromList(
   const schema = inferSchema(table.columns, rows, mintId)
 
   const root = await getOrCreateDatabasesRoot(supabase, user.id, workspace)
-  const database = await createPage(supabase, user.id, {
-    parentId: root.id,
-    type: 'page',
-    title: input.title,
-    props: withSchema({}, schema),
-    workspace,
-  })
-
-  const titleCol = table.columns.length - 1
-  const inputs = tableRowsToPageInputs(schema, rows, titleCol)
-  for (const row of inputs) {
-    await createPage(supabase, user.id, {
-      parentId: database.id,
-      type: ROW_TYPE,
-      title: row.title,
-      props: row.props,
+  let databaseId: string | null = null
+  try {
+    const database = await createPage(supabase, user.id, {
+      parentId: root.id,
+      type: 'page',
+      title: input.title,
+      props: withSchema({}, schema),
       workspace,
     })
-  }
+    databaseId = database.id
 
-  const view: ViewBlock = { id: mintId(), type: 'view', mode: 'table', collectionId: database.id }
-  return {
-    view,
-    databaseId: database.id,
-    databasesRootId: root.id,
-    rowCount: inputs.length,
-    schema,
+    const titleCol = table.columns.length - 1
+    const inputs = tableRowsToPageInputs(schema, rows, titleCol)
+    for (const row of inputs) {
+      await createPage(supabase, user.id, {
+        parentId: database.id,
+        type: ROW_TYPE,
+        title: row.title,
+        props: row.props,
+        workspace,
+      })
+    }
+
+    const view: ViewBlock = { id: mintId(), type: 'view', mode: 'table', collectionId: database.id }
+    return {
+      view,
+      databaseId: database.id,
+      databasesRootId: root.id,
+      rowCount: inputs.length,
+      schema,
+    }
+  } catch (err) {
+    await rollbackDatabase(supabase, databaseId, root.created ? root.id : null)
+    throw err
   }
 }

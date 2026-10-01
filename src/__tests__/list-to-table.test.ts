@@ -18,11 +18,16 @@ import {
   inferListDatabaseTitle,
   createDatabaseFromList,
 } from '@/lib/pages/list-to-table'
-import { replaceBlockWithView, tableRowsToPageInputs } from '@/lib/pages/promote-table'
+import {
+  inferColumnType,
+  replaceBlockWithView,
+  tableRowsToPageInputs,
+} from '@/lib/pages/promote-table'
 import {
   DATABASES_ROOT_TITLE,
   getOrCreateDatabasesRoot,
   isDatabasesRoot,
+  withoutDatabasesRoot,
 } from '@/lib/pages/databases-root'
 import { PROPERTY_TYPES, ROW_TYPE, SCHEMA_KEY, readSchema } from '@/lib/properties/schema'
 import type { TextBlock } from '@/lib/modules/text/schema'
@@ -116,6 +121,19 @@ describe('inferListTable', () => {
     ])
   })
 
+  it('normalises a comma decimal separator so the amount column still types as a number', () => {
+    const { columns, rows } = inferListTable(['1,5 l milk', '2,25 kg flour', '3 eggs'])
+    expect(columns).toEqual(['amount', 'unit', 'item'])
+    expect(rows).toEqual([
+      ['1.5', 'l', 'milk'],
+      ['2.25', 'kg', 'flour'],
+      ['3', '', 'eggs'],
+    ])
+    // The guarantee that matters: every amount cell satisfies Number(), which is
+    // the only test inferColumnType applies.
+    expect(inferColumnType(rows.map((r) => r[0]))).toBe('number')
+  })
+
   it('falls back to a single item column when most lines carry no pattern', () => {
     expect(inferListTable(['milk', 'bread', '2 eggs', 'butter'])).toEqual({
       columns: ['item'],
@@ -185,6 +203,34 @@ describe('isDatabasesRoot', () => {
     expect(isDatabasesRoot({ parentId: 'x', title: 'Databases' })).toBe(false)
     expect(isDatabasesRoot({ parentId: null, title: 'Personal' })).toBe(false)
   })
+
+  it('seeds the root lowercase, the way 3c draws it beside life', () => {
+    expect(DATABASES_ROOT_TITLE).toBe('databases')
+  })
+})
+
+describe('withoutDatabasesRoot', () => {
+  const row = (id: string, title: string, parent_id: string | null = null) => ({
+    id,
+    title,
+    parent_id,
+  })
+
+  it('drops the root AND its whole subtree — the two roots are peers, not areas', () => {
+    const rows = [
+      row('health', 'Health'),
+      row('sleep', 'Sleep', 'health'),
+      row('root-db', 'databases'),
+      row('db-1', 'ingredients', 'root-db'),
+      row('db-1-nested', 'archive', 'db-1'),
+    ]
+    expect(withoutDatabasesRoot(rows).map((r) => r.id)).toEqual(['health', 'sleep'])
+  })
+
+  it('leaves a pond with no databases root untouched', () => {
+    const rows = [row('health', 'Health'), row('nested', 'databases', 'health')]
+    expect(withoutDatabasesRoot(rows)).toEqual(rows)
+  })
 })
 
 // ── createDatabaseFromList — orchestrator (AC2-5) ────────────────────────────
@@ -204,13 +250,24 @@ type Row = {
 /**
  * In-memory fake Supabase covering the call shapes this path uses: the root
  * lookup (select→eq→eq→is → thenable list), createPage (insert→select→single),
- * and getPage/saveBlocks for the composition check. Assert end-state via `_pages`.
+ * deletePage (delete→eq, cascading to children the way the self-referential FK
+ * does), and getPage/saveBlocks for the composition check. Assert end-state via
+ * `_pages`. `failInsertAt` makes the Nth insert (1-based) fail, which is how the
+ * partial-failure rollback is exercised.
  */
-function makeFakeSupabase(seed: Row[]) {
+function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
   const pages = new Map<string, Row>(seed.map((r) => [r.id, { ...r }]))
   let seq = 0
+  let inserts = 0
+  /** Delete these rows and, recursively, their children — the FK cascade. */
+  const cascade = (victims: Row[]) => {
+    for (const victim of victims) {
+      pages.delete(victim.id)
+      cascade([...pages.values()].filter((r) => r.parent_id === victim.id))
+    }
+  }
   const from = () => {
-    let op: 'select' | 'insert' | 'update' | null = null
+    let op: 'select' | 'insert' | 'update' | 'delete' | null = null
     let insertPayload: Record<string, unknown> | null = null
     const filters: Array<(r: Row) => boolean> = []
     const matching = () => [...pages.values()].filter((r) => filters.every((f) => f(r)))
@@ -222,6 +279,10 @@ function makeFakeSupabase(seed: Row[]) {
       insert(payload: Record<string, unknown>) {
         op = 'insert'
         insertPayload = payload
+        return builder
+      },
+      delete() {
+        op = 'delete'
         return builder
       },
       eq(col: string, val: string) {
@@ -236,6 +297,14 @@ function makeFakeSupabase(seed: Row[]) {
         return Promise.resolve({ data: matching()[0] ?? null, error: null })
       },
       single() {
+        // A non-23505 code, so createPage surfaces it rather than retrying with a
+        // de-duplicated title.
+        if (op === 'insert' && ++inserts === failInsertAt) {
+          return Promise.resolve({
+            data: null,
+            error: { code: '08006', message: 'connection failure' },
+          })
+        }
         const id = `new-${++seq}`
         const row: Row = {
           id,
@@ -251,8 +320,12 @@ function makeFakeSupabase(seed: Row[]) {
         pages.set(id, row)
         return Promise.resolve({ data: { id }, error: null })
       },
-      // The root lookup awaits the filtered builder directly (a list read).
-      then(resolve: (v: { data: Row[]; error: null }) => unknown) {
+      // The root lookup and the delete both await the filtered builder directly.
+      then(resolve: (v: { data: Row[] | null; error: null }) => unknown) {
+        if (op === 'delete') {
+          cascade(matching())
+          return Promise.resolve({ data: null, error: null }).then(resolve)
+        }
         return Promise.resolve({ data: matching(), error: null }).then(resolve)
       },
     }
@@ -383,6 +456,28 @@ describe('createDatabaseFromList', () => {
       )
     ).rejects.toThrow(/not a list/i)
     expect(sb._pages.size).toBe(1)
+  })
+
+  it('leaves nothing stranded when a record write fails part-way through', async () => {
+    // Insert 1 is the database page, 2–5 are the four records: fail the third
+    // record, so two are already written when it goes wrong.
+    const sb = makeFakeSupabase([existingRoot], 4)
+    await expect(
+      createDatabaseFromList(sb as never, { block: ingredients, title: 'ingredients' }, counter())
+    ).rejects.toThrow(/connection failure/i)
+
+    // The half-built database and every record under it are gone; the pre-existing
+    // root survives, because this call did not create it.
+    expect([...sb._pages.keys()]).toEqual(['root-db'])
+  })
+
+  it('removes the root it created too, when the very first write fails', async () => {
+    // Insert 1 creates the root, insert 2 is the database page.
+    const sb = makeFakeSupabase([], 2)
+    await expect(
+      createDatabaseFromList(sb as never, { block: ingredients, title: 'ingredients' }, counter())
+    ).rejects.toThrow(/connection failure/i)
+    expect([...sb._pages.values()]).toEqual([])
   })
 
   it('refuses when not authenticated', async () => {
