@@ -14,7 +14,7 @@ aimed at **zen**. Themes cover **light + dark**, static + **living backgrounds**
 
 Builder agents: implement each as its own variant in `src/app/proto/visual-language/` following the
 harness contract (see `proto-catalog-r2-BUILD.md` for the exact code pattern). Keep the shell's
-information architecture identical across all — only the *world* changes. `globals.css` stays untouched.
+information architecture identical across all — only the _world_ changes. `globals.css` stays untouched.
 
 Per entry: **mode** · **soul** · **palette (hexes)** · **type** · **container/material** ·
 **the steward (AI panel)** · **living bg?** · **motion** · **the ×10 move**.
@@ -98,11 +98,11 @@ Steward: its reflection ripples faintly. Motion: slow heat-shimmer on the mirror
 
 ## Family C — Water (the Pond namesake)
 
-**C1 · Pond Surface** 🌗 LIVE  ⭐ namesake
+**C1 · Pond Surface** 🌗 LIVE ⭐ namesake
 Soul: the app is literally a pond. Palette: water teal-green `#4E6E63`, sky reflection, lily-pad greens, sand edge.
 Type: humanist sans. Material: sidebar = reeds; pages = **lily-pad containers**; terminal = ripples from a dropped stone.
 Steward: a stone dropped on the water — thoughts ripple outward. LIVE: gentle water surface + drifting reflections.
-Motion: everything responds in concentric ripples. ×10: the metaphor made whole — you work *on water*.
+Motion: everything responds in concentric ripples. ×10: the metaphor made whole — you work _on water_.
 
 **C2 · Depths** 🌙 LIVE
 Soul: underwater stillness, light shafts from above. Palette: deep teal `#0F2A2E` → ink, caustic light, bioluminescent cyan `#6FE3D0`.
@@ -143,7 +143,7 @@ Soul: cool silver night, everything asleep but you. Palette: slate `#20242B`, si
 Type: light grotesk. Material: cool matte panels, soft moon-glow rim light. LIVE: drifting clouds dim/brighten the scene.
 Steward: silver-lit, the one clearly awake. Motion: cloud-shadow drift. ×10: nocturne calm, silver instead of blue-black.
 
-**D4 · Aurora Borealis** 🌙 LIVE  ⭐
+**D4 · Aurora Borealis** 🌙 LIVE ⭐
 Soul: dark sky, living aurora ribbons overhead. Palette: night `#0C1220`, aurora green `#5FE0A8` + violet `#9B7FE0`.
 Type: airy grotesk. Material: dark glass panels; aurora ribbons drift behind them, tinting the glass.
 Steward: the panel the aurora pools brightest behind. LIVE: real flowing aurora shader. Motion: slow ribbon flow. ×10: a living sky as the whole background.
@@ -191,12 +191,12 @@ Steward: the brightest bloom of light. LIVE: drifting glowing particles that rea
 
 ## Family F — Glass & Air (the glass love, maximized)
 
-**F1 · Liquid Glass — Aurora Field** 🌗 LIVE  ⭐ all-3-loves
+**F1 · Liquid Glass — Aurora Field** 🌗 LIVE ⭐ all-3-loves
 Soul: Apple Liquid Glass, whole app is glass on a living dawn. Palette: peach `#F7C9A8` → sage `#BFD3B5` → lilac `#C9BEE0`, shifting.
 Type: grotesk with specular sheen. Material: EVERY surface a frosted rounded capsule, refraction + specular edge, real blur. No opaque UI.
 Steward: clearest pane; brightens & lenses the aurora when speaking. LIVE: aurora breathes ~60s, tracks time of day. ×10: zero opaque UI + a living background.
 
-**F2 · Dreamscape Nocturne** 🌙 LIVE  ⭐
+**F2 · Dreamscape Nocturne** 🌙 LIVE ⭐
 Soul: a lucid dream, twilight glow. Palette: plum→indigo `#2A2140`→`#3B2E5A`, blurred glow orbs, lilac/pink glass.
 Type: airy grotesk, faint glow. Material: heavily blurred lilac glass panels, inner glow, parallax over out-of-focus orbs.
 Steward: a luminous glass orb; orbs drift toward it when it speaks. LIVE: parallax glow drift. ×10: dreamlike depth & light as the world.
@@ -258,15 +258,16 @@ Steward: sits at the blob's warm heart. Motion: blob breathe. ×10: one enormous
 **G7 · Neon Zen** 🌙 LIVE
 Soul: restrained synth calm — vaporwave with the volume way down. Palette: deep indigo `#191436`, soft magenta `#D18AD8`, teal glow.
 Type: clean grotesk. Material: dark glass with thin neon rim-light; subtle scanline. LIVE: slow neon hue drift.
-Steward: the warmest neon glow. Motion: hue breathe. ×10: neon as *calm* not loud — the anti-cyberpunk.
+Steward: the warmest neon glow. Motion: hue breathe. ×10: neon as _calm_ not loud — the anti-cyberpunk.
 
 ---
 
 ## Coverage check
-- **Light-primary:** A1 A2 A4 A5 A6 B1 B2 B3 B7 C3 C5 D1 D2 E1 E3 E4 F3 F4 G1  (19)
-- **Dark-primary:** B4 C2 C4 D3 D4 D6 E2 E5 F2 F5 F6 G2 G3 G4 G7  (15)
-- **Themed/either:** A3 B5 B6 C1 D5 G5 G6  (7)  → both light+dark since we'll have themes
-- **Living backgrounds:** A3 B2 B7 C1 C2 C3 C4 C5 D1 D2 D3 D4 D5 D6 E1 E2 E3 E4 E5 F1 F2 F3 F4 F5 F6 G2 G4 G5 G6 G7  (30)
+
+- **Light-primary:** A1 A2 A4 A5 A6 B1 B2 B3 B7 C3 C5 D1 D2 E1 E3 E4 F3 F4 G1 (19)
+- **Dark-primary:** B4 C2 C4 D3 D4 D6 E2 E5 F2 F5 F6 G2 G3 G4 G7 (15)
+- **Themed/either:** A3 B5 B6 C1 D5 G5 G6 (7) → both light+dark since we'll have themes
+- **Living backgrounds:** A3 B2 B7 C1 C2 C3 C4 C5 D1 D2 D3 D4 D5 D6 E1 E2 E3 E4 E5 F1 F2 F3 F4 F5 F6 G2 G4 G5 G6 G7 (30)
 - **Most literal metaphor:** C-family (water), E-family (nature), B2 (garden), D6 (candle)
 - **Most abstract:** G1 G3 G4 G6, F4
 

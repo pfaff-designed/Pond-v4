@@ -14,13 +14,13 @@
 
 ---
 
-
 **Goal (Charles, 2026-08-13):** the Ledger dashboards (`#72`) currently render as a
 plain rail + charts with NO chrome. Fold in `#71 Folio`'s shell — floating **Ask**
 chat, **⌘K** command palette, **Capture**, **Notifications** drawer — so the charts
-become the page *body* inside Folio's frame. Steps 1–3 status below; this is Step 4.
+become the page _body_ inside Folio's frame. Steps 1–3 status below; this is Step 4.
 
 ## Where things stand (verified 2026-08-13)
+
 - **Steps 1 & 2 DONE.** `#72 Ledger` = folder `src/app/proto/visual-language/variants/v72-ledger/`:
   - `index.tsx` — interactive rail, `activeAreaId`/`activePageId` useState → `AreaDashboard` switch.
   - `ui.tsx` — palette + `Panel`/`Stat`/`RingsPanel`/`DashboardHeader` + per-domain heatmap ramps.
@@ -33,6 +33,7 @@ become the page *body* inside Folio's frame. Steps 1–3 status below; this is S
   returns `[0, maxValue*1.1]` when `stacked` — stacked bars were overflowing the plot). Keep it.
 
 ## The two things to fuse
+
 - **Ledger** `variants/v72-ledger/index.tsx` — its `<View>` is the rail (`<aside>`) + `<main>`
   (renders `<AreaDashboard/>`). This is the BODY.
 - **Folio** `variants/v71-folio.tsx` (611 lines, one `View()`), the CHROME. Reusable pieces,
@@ -44,6 +45,7 @@ become the page *body* inside Folio's frame. Steps 1–3 status below; this is S
   - Top-right control cluster (Notifications / Capture / Ask buttons) **L414–420**.
 
 ## Recommended approach (least churn)
+
 Fusion needs ONE state owner. Two viable shapes — pick per taste:
 
 **Option A (recommended): make Ledger the shell.** Lift Folio's chrome state + the four
@@ -58,10 +60,11 @@ imported from `v72-ledger/dashboards`. More rework (Folio's page-spectrum model 
 
 Go with **A**. Reuse Folio's exact glass recipe? NO — Ledger honours the FLAT ruling (charts are
 flat panels on warm paper, plain rail). Keep chrome elements (palette, chat, capture, drawer,
-top-right buttons) as Folio's warm glass *floating overlays*, but the page body stays flat.
+top-right buttons) as Folio's warm glass _floating overlays_, but the page body stays flat.
 That's the intended contrast: flat dashboard, glass chrome hovering above it.
 
 ## Gotchas
+
 - `content.ts` supplies `tree`, `openNodeId`, `diffCard`, `transcript`, `contextLabel` — Folio's
   chrome reads these; Ledger already imports `tree`. Reuse the same.
 - The proto's outer switcher also listens for keys (←/→ variant nav). ⌘K is Meta/Ctrl-guarded so it
@@ -69,6 +72,7 @@ That's the intended contrast: flat dashboard, glass chrome hovering above it.
 - Charts need a sized parent (`aspectRatio="" className="h-full"` in a fixed-height wrapper).
 
 ## Verify (same bar as before)
+
 `npx tsc --noEmit` clean · dev **:3000** · load `/proto/visual-language`, **← once** to Ledger
 (16/16) · click each area (rail + ⌘K) · open Ask / Capture / Notifications · **0 console errors** ·
 screenshot to `wayfinder/screens/r5-72-shell-*.png`. `document.querySelector('main').scrollTop`

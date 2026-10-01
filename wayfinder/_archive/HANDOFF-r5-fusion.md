@@ -1,6 +1,7 @@
 # HANDOFF — R5 fusion shell (ticket-14 → Atrium → Folio → Ledger)
 
 ## ⟶ LATEST: `#72 Ledger` — the "lived-in" cut, on REAL Bklit charts (2026-08-12)
+
 Built `#72 Ledger` — `src/app/proto/visual-language/variants/v72-ledger.tsx`,
 registered **last** (position **16/16**; press **←** once from index 0 to wrap to
 it). Shows what Pond looks like after months of use: the Health · Marathon Training
@@ -8,7 +9,8 @@ area grown dense with seeded history. Typecheck-clean, **0 console errors**, ver
 live. Screens: `wayfinder/screens/r5-72-ledger-{top,bottom}.png`.
 
 **What's new / decisions made this task:**
-- **Bklit is real and now wired in.** `@bklit` is a shadcn *registry*
+
+- **Bklit is real and now wired in.** `@bklit` is a shadcn _registry_
   (`https://ui.bklit.com/r/{name}.json`), NOT an npm package — added to
   `components.json > registries`. Installed `line/area/bar/ring/heatmap` charts via
   `npx shadcn@latest add @bklit/<name>` → they live in **`src/components/charts/`**
@@ -31,19 +33,21 @@ live. Screens: `wayfinder/screens/r5-72-ledger-{top,bottom}.png`.
      tokens problem in the flesh — resolve before adopting Bklit's theme layer.**
   3. **Stacked vertical `BarChart` overflowed its plot** (2026-08-12, ledger-buildout):
      bars are positioned by `buildYScalesForLines`, whose `resolveDomain` returned the
-     max *individual* segment, while the axis `valueScale` used the stacked *sum* — so
+     max _individual_ segment, while the axis `valueScale` used the stacked _sum_ — so
      any stack taller than its biggest segment ran off the top. Patched `bar-chart.tsx`
      `yScales.resolveDomain` to return `[0, maxValue*1.1]` when `stacked`.
 - **Aesthetic:** reused Folio's earthy palette but honoured the FLAT ruling — charts
   are flat panels on warm paper, areas in a plain rail, no doc↔dashboard slider.
 
 ## `#71 Folio` (Charles's clarified product model, supersedes #70)
+
 Charles clarified the model, and it's simpler than #70's four-tab switcher. Built
 `#71 Folio` — `src/app/proto/visual-language/variants/v71-folio.tsx`, registered
 last (position **15/15**; press **←** once from index 0 to wrap to it).
 Typecheck-clean, 0 console errors, every interaction verified live 2026-08-12.
 
 **The clarified model:**
+
 - **Areas → a persistent left rail** (not a "view"). You add **pages + subpages**
   under areas. `＋` on any area adds a page.
 - **A page is a spectrum, not a type — the ONLY variable is modules.** No modules →
@@ -58,12 +62,13 @@ Typecheck-clean, 0 console errors, every interaction verified live 2026-08-12.
 - **Relationships → CUT** ("juice ≠ squeeze").
 - Kept from Atrium: floating Pond chat · ⌘K (now wired to switch pages) · capture.
 
-Seeded pages span the spectrum to prove it live: *Design System* = pure document,
-*Sleep* = pure dashboard, *Marathon/Q3/Walnut Shelf* = in-between.
+Seeded pages span the spectrum to prove it live: _Design System_ = pure document,
+_Sleep_ = pure dashboard, _Marathon/Q3/Walnut Shelf_ = in-between.
 Screens: `wayfinder/screens/r5-71-folio-*.png` (mixed · document · dashboard · notif
 · accepted · written-back · new-page).
 
 **Open / next for Folio:**
+
 - Page editing is read-only (no real block editing / add-module-to-a-page yet — the
   spectrum is shown via seeded pages, not authored). Adding a module to a live page
   to watch the meter move would nail the thesis.
@@ -82,30 +87,33 @@ errors, all key interactions verified live. **All four views now built for real*
 this round and verified live 2026-08-11).
 
 ## The reframe (Charles's synthesis)
+
 He numbered by **switcher position** (the `NN/34` counter), not variant id. Mapping
 of what each winner becomes in the one product:
 
-| pos | variant | role in the product |
-|-----|---------|--------------------|
-| 1 | Prism | the **layout/shell** — chat floats *above* the page, page fills the screen |
-| 2 | Ma | minimalist **vibe / aesthetic baseline** |
-| 3 | Constellation | **Relationships** view (show how things connect) |
-| 4 | Command | **⌘K command palette** — a real feature |
-| 6 | Current | **Timeline / notification** view |
-| 7 | Almanac | **Area** view (an area with several modules) |
-| 11 | Catch | **quick capture** |
-| 12 | Ink Live | **Document** view (what a document looks like) |
+| pos | variant       | role in the product                                                        |
+| --- | ------------- | -------------------------------------------------------------------------- |
+| 1   | Prism         | the **layout/shell** — chat floats _above_ the page, page fills the screen |
+| 2   | Ma            | minimalist **vibe / aesthetic baseline**                                   |
+| 3   | Constellation | **Relationships** view (show how things connect)                           |
+| 4   | Command       | **⌘K command palette** — a real feature                                    |
+| 6   | Current       | **Timeline / notification** view                                           |
+| 7   | Almanac       | **Area** view (an area with several modules)                               |
+| 11  | Catch         | **quick capture**                                                          |
+| 12  | Ink Live      | **Document** view (what a document looks like)                             |
 
 ## Atrium (`#70`) — what's built
+
 File: `src/app/proto/visual-language/variants/v70-atrium.tsx` (registered last in
 `variants/index.tsx`; position **14/34** in the switcher — from index 0 press **←**
 once to wrap straight to it).
 
 Shell model:
+
 - **Canvas** — one earthy cream viewport w/ drifting light (Almanac palette, sage accent).
 - **Distinct glass containers** — rounded + drop-shadow + backdrop-blur. Charles's
   words: "distinct containers with drop shadow and rounded corners." `glass` recipe
-  + `tile` at top of file.
+  - `tile` at top of file.
 - **View switcher** (segmented, top center): Area · Document · Relationships · Timeline.
 - **Floating chat** — Pond hovers ABOVE the page as a glass dock (bottom center);
   click to expand → transcript + diff card + input. Sits behind the switcher chrome;
@@ -115,6 +123,7 @@ Shell model:
   "Just captured" chip under the canvas.
 
 Views:
+
 - **Area** (`AreaView`) — the full Almanac bento as distinct containers. ANCHOR, done.
   Brief's suggested edit has a wired Accept.
 - **Document** (`DocumentView`) — adapted from `#68 Ink Live`. ⚠️ **FLAT, not a
@@ -137,6 +146,7 @@ Views:
   notes · origin.
 
 ## Verified live (0 current console errors)
+
 Area render · view switch · ⌘K palette · capture→routing (Walnut Shelf) · floating
 chat open · Document render (flat) · Document accept-suggestion (rewrite + focus dim)
 · **Relationships render + area re-select (Health→Work: orbit lights, legend
@@ -148,10 +158,12 @@ Note: the session-wide (`all=true`) console dump shows stale `Can't resolve
 `index.tsx` only imports the 14 surviving variants (v48–v70) and tsc is clean.
 
 ## OPEN QUESTION for Charles
+
 - Document's **"Pond suggests" callout** is still a small subtle card. Flatten it too
   (inline/margin note), or leave as an AI affordance card? (asked, not yet answered)
 
 ## NEXT STEPS
+
 1. ~~Build Relationships + Timeline~~ — **DONE** (both container-bound; verified live).
 2. Resolve the Document callout question above.
 3. Wire the ⌘K "Go to" rows + capture destinations to actually switch views
@@ -161,6 +173,7 @@ Note: the session-wide (`all=true`) console dump shows stale `Can't resolve
    satellites or pan/zoom; Timeline's Reject currently removes the entry with no undo.
 
 ## Standing prefs / harness (unchanged)
+
 - North star **zen**; earthy + curved-container + glass; make it **clear how each UI
   works** + **more interactive** each round.
 - Route `/proto/visual-language`; `←/→` cycle (wraps), `1–9` jump, `h` hide chrome.

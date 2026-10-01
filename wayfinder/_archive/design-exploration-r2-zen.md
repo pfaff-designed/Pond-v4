@@ -13,7 +13,7 @@ north-star: zen
 > **take the boldness you'd normally reach for and multiply it by 10**, then aim every gram of
 > that boldness at a single feeling — the **zen** Charles wants to feel while using Pond every day.
 >
-> Bold here does **not** mean loud. It means *art-directed*: a committed material world, a real
+> Bold here does **not** mean loud. It means _art-directed_: a committed material world, a real
 > point of view, no defaults. Restraint taken to an extreme is bolder than noise.
 
 ---
@@ -27,6 +27,7 @@ typography (Bloco studio, "Grid One 06", Model Discovery) · **blurred-motion ph
 · **Liquid Glass** (the frosted capsule over 3D floral glass, pin "LiquidGlass.psd") · one restrained accent.
 
 **Charles's three loves (from the R1 protos):**
+
 1. **6 / 7 — calm earthiness** (`proto-06-parchment`, `proto-07-sage`)
 2. **10 — everything in its own curved-rectangle container** (`proto-10-aurora`)
 3. **15 — the glass effect** (`proto-15-dreamscape`)
@@ -58,11 +59,11 @@ Zen in a daily tool comes from four moves, and every direction below is scored o
 
 1. **Ma (間) — negative space as the primary material.** Emptiness is not "unused"; it is the design.
 2. **One breath, one focus.** The app never shows you everything at once. What you're not doing recedes.
-3. **A single honest material.** Paper, glass, clay, stone, light — pick one and be *devout* about it.
+3. **A single honest material.** Paper, glass, clay, stone, light — pick one and be _devout_ about it.
 4. **Slow, weighted, organic motion.** Nothing snaps. Things settle, bleed, breathe, and pool.
 
 The Pond shell rendered in all 15: **sidebar tree · page editor · AI terminal (the steward).** How each
-direction treats *the steward's panel* is the tell — that's where the app's soul either glows or stays quiet.
+direction treats _the steward's panel_ is the tell — that's where the app's soul either glows or stays quiet.
 
 ---
 
@@ -74,6 +75,7 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 ---
 
 ### 01 · Sumi-e — Ink Garden
+
 - **Soul:** A brush-and-rice-paper scroll painting you happen to be able to type into.
 - **Palette:** Warm rice paper `#F4EFE6`, sumi black `#1A1714`, single vermilion seal `#C8492F`.
 - **Type:** A humanist serif for body (literary), hand-adjacent mono for labels. Generous leading.
@@ -81,11 +83,12 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
   shadow, never a hard border. Dividers are single dry-brush strokes, not lines.
 - **The steward:** Speaks in a column of ink that **bleeds onto the page** as it "thinks," then settles.
 - **Motion:** ink-diffusion reveals; focus = the rest of the page desaturates to a wash.
-- **×10 move:** the entire UI obeys *ma* — 60%+ of every screen is intentional emptiness, and structure
+- **×10 move:** the entire UI obeys _ma_ — 60%+ of every screen is intentional emptiness, and structure
   is implied by brushstrokes and alignment, not chrome.
 - **Loves fused:** earthiness. **Boldness: 7/10.**
 
-### 02 · Liquid Glass — Aurora Field  *(the R1 #10 + #15 fusion, taken all the way)*
+### 02 · Liquid Glass — Aurora Field _(the R1 #10 + #15 fusion, taken all the way)_
+
 - **Soul:** Apple's Liquid Glass, but the whole app is glass floating on a living dawn.
 - **Palette:** Ambient gradient field — peach `#F7C9A8` → sage `#BFD3B5` → lilac `#C9BEE0`, shifting slowly.
 - **Type:** Clean grotesk, white with a faint specular sheen; near-invisible until you rest on it.
@@ -94,22 +97,24 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **The steward:** the clearest pane of glass on screen; when it speaks the glass **brightens and lenses**
   the aurora behind it.
 - **Motion:** the gradient breathes on a ~60s loop; panels settle with a soft, weighted spring.
-- **×10 move:** zero opaque UI + a background that is genuinely *alive* and tracks time of day
+- **×10 move:** zero opaque UI + a background that is genuinely _alive_ and tracks time of day
   (dawn palette in the morning, dusk at night).
 - **Loves fused:** ALL THREE (glass + curved containers + earthy dawn). **Boldness: 9/10.** ⭐
 
 ### 03 · Clay — Soft Body
+
 - **Soul:** A warm lump of clay pressed into an interface. Tactile, rounded, physical.
 - **Palette:** Oat `#EAE0D2`, terracotta `#C57B57`, deep clay `#6B4E3D`.
 - **Type:** Soft rounded sans (friendly, not childish).
 - **Container & material:** Extruded clay tiles — thick soft double-shadow neumorphism (board's funnels
-  & fitness pins), everything visibly *raised* from the surface. Corners are fat.
+  & fitness pins), everything visibly _raised_ from the surface. Corners are fat.
 - **The steward:** a pressed-in well (debossed) where words rise up out of the clay.
 - **Motion:** press = putty squash-and-settle; nothing has a hard edge in space or time.
 - **×10 move:** commit fully to physical claymation depth — the anti-flat-design app.
 - **Loves fused:** earthiness + curved containers. **Boldness: 7/10.**
 
 ### 04 · Karesansui — Stone & Raked Sand
+
 - **Soul:** A Japanese dry rock garden. You tend it; it stays calm.
 - **Palette:** Raked-sand beige `#E7E0D3`, river-stone grays, single moss `#7A8B6F`.
 - **Type:** Quiet mono for structure, serif for content.
@@ -117,14 +122,15 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
   sand; the sidebar tree is a row of stones. Subtle raked concentric texture in the canvas.
 - **The steward:** a still pond-stone in the corner; ripples radiate when it responds.
 - **Motion:** the cursor **leaves rake lines** in the sand that fade; focus ripples outward like a dropped pebble.
-- **×10 move:** navigation is *gardening* — reordering feels like placing stones; the whole surface is a tended space.
+- **×10 move:** navigation is _gardening_ — reordering feels like placing stones; the whole surface is a tended space.
 - **Loves fused:** earthiness + curved (organic) containers. **Boldness: 8/10.**
 
 ### 05 · Letterpress — Warm Literary Journal
+
 - **Soul:** An artisan-printed book you write inside. (Evolves R1 Parchment + Editorial.)
 - **Palette:** Cream `#F3EAD8`, ink brown `#3A2E24`, rust `#A8442A`.
 - **Type:** A real display serif for headings (drop caps), old-style serif body, ruled margins.
-- **Container & material:** Pages, not cards — deep paper texture, a faint letterpress *deboss* on headings,
+- **Container & material:** Pages, not cards — deep paper texture, a faint letterpress _deboss_ on headings,
   hairline rules as the only dividers.
 - **The steward:** hand-written marginalia in the rust ink, in the outer margin, like an editor's notes.
 - **Motion:** page-turn transitions; text sets (justifies) with a gentle settle.
@@ -132,28 +138,31 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **Loves fused:** earthiness. **Boldness: 6/10.**
 
 ### 06 · Onsen — Steam & Lantern
+
 - **Soul:** A warm night bathhouse. Dark, misty, dimly glowing, deeply quiet.
 - **Palette:** Warm charcoal `#211E1B`, steam-gray fog, amber lantern glow `#E0A24B`.
 - **Type:** Warm off-white grotesk; amber only on the live element.
-- **Container & material:** Fogged **glass panels** with volumetric steam drifting *between* them; light
+- **Container & material:** Fogged **glass panels** with volumetric steam drifting _between_ them; light
   glows through the glass from behind.
 - **The steward:** a paper lantern — its glass warms and the steam parts around it when it speaks.
 - **Motion:** slow volumetric fog; glow swells and fades like breath ([Unwind lotus](https://60fps.design/shots/unwind-lotus-breathing-animation)).
-- **×10 move:** a dark mode that feels *warm and wet*, not techy-black — glass + fog as the whole atmosphere.
+- **×10 move:** a dark mode that feels _warm and wet_, not techy-black — glass + fog as the whole atmosphere.
 - **Loves fused:** glass + earthiness. **Boldness: 8/10.**
 
 ### 07 · Herbarium — Pressed Botanical
+
 - **Soul:** A naturalist's specimen book. Calm, studied, alive at the edges.
 - **Palette:** Off-white `#F1EEE4`, sage `#8B9B7A`, ochre `#C9973F`, ink line.
 - **Type:** Old-style serif + fine italic captions.
 - **Container & material:** Content framed like **pressed-plant specimen cards** — thin ruled frames, a
   faint botanical line-drawing bleeding off one edge of each panel.
 - **The steward:** a growing vine in the margin; new leaves unfurl as it adds thoughts.
-- **Motion:** line-art *draws itself* slowly ([How We Feel](https://60fps.design/shots/how-we-feel-onboarding) morph energy, calmed).
+- **Motion:** line-art _draws itself_ slowly ([How We Feel](https://60fps.design/shots/how-we-feel-onboarding) morph energy, calmed).
 - **×10 move:** living illustration as a system, not decoration — the app quietly grows.
 - **Loves fused:** earthiness. **Boldness: 7/10.**
 
 ### 08 · Dawn — Kinetic Light
+
 - **Soul:** The app has a sun. Everything is lit by it, and the light moves through your day.
 - **Palette:** Near-white paper warmed by a real dawn gradient; long soft warm shadows.
 - **Type:** Airy grotesk; shadow does the emphasis, not weight.
@@ -164,7 +173,8 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **×10 move:** time-of-day is a first-class material — the UI at 7am and 7pm are visibly different moods.
 - **Loves fused:** earthiness + curved containers. **Boldness: 8/10.**
 
-### 09 · Ma — Radical Emptiness  *(Swiss-Zen)*
+### 09 · Ma — Radical Emptiness _(Swiss-Zen)_
+
 - **Soul:** Almost nothing on screen. What remains is perfect.
 - **Palette:** Warm white `#F6F3EC`, one graphite text, one accent dot.
 - **Type:** Small precise mono/grotesk, enormous margins.
@@ -173,9 +183,10 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **The steward:** invisible until addressed; a single dot pulses to signal presence, then a line of text.
 - **Motion:** things fade in from nothing; nothing ever slides in from an edge.
 - **×10 move:** 90% intentional emptiness — the boldest restraint on the board; content surfaces on focus, the rest dissolves.
-- **Loves fused:** the *spirit* of all three via subtraction. **Boldness: 9/10 (by restraint).** ⭐
+- **Loves fused:** the _spirit_ of all three via subtraction. **Boldness: 9/10 (by restraint).** ⭐
 
 ### 10 · Celadon — Glazed Ceramic
+
 - **Soul:** A hand-thrown celadon bowl. Matte body, glossy pooled glaze, quiet green.
 - **Palette:** Cream body `#EDE7DA`, celadon glaze `#9DBCB0`, iron-speck accent.
 - **Type:** Refined humanist sans.
@@ -187,28 +198,31 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **Loves fused:** earthiness + curved containers + a whisper of glass (glaze). **Boldness: 8/10.**
 
 ### 11 · Shoji — Backlit Paper Screens
-- **Soul:** Sliding rice-paper screens with light diffusing through. Glass, but *warm* glass.
+
+- **Soul:** Sliding rice-paper screens with light diffusing through. Glass, but _warm_ glass.
 - **Palette:** Warm rice-white `#F2ECDD`, sumi lattice `#2B2721`, soft amber backlight.
 - **Type:** Restrained grotesk, generous.
 - **Container & material:** Panels are **translucent shoji** — warm frosted glass over a fine black
-  lattice; content is *backlit*, diffusing softly through paper.
+  lattice; content is _backlit_, diffusing softly through paper.
 - **The steward:** the panel that glows warmest from behind; slides open to speak.
 - **Motion:** **shoji-slide** navigation — panels glide horizontally; light blooms as one opens ([Canopi](https://60fps.design/shots/canopi-new-collection-add-items)).
-- **×10 move:** glass reimagined as *paper-and-light* instead of iOS blur — the most original take on the glass love.
+- **×10 move:** glass reimagined as _paper-and-light_ instead of iOS blur — the most original take on the glass love.
 - **Loves fused:** glass + earthiness + curved containers. **Boldness: 9/10.** ⭐
 
 ### 12 · Aurora — Living Gradient Field
+
 - **Soul:** A weightless lava-lamp calm; UI floating on slow moving color. (R1 #10, ×10.)
 - **Palette:** Full-bleed slow gradient: dawn peach → sage → periwinkle `#B7C0E6`.
 - **Type:** Soft grotesk, white frost cards.
 - **Container & material:** Content in **floating white-frost cards** with heavy blur, drifting a few px,
-  never touching edges. Everything is *in its own curved container* (the exact #10 love, maximized).
+  never touching edges. Everything is _in its own curved container_ (the exact #10 love, maximized).
 - **The steward:** a card that floats slightly forward, catching more of the gradient behind it.
 - **Motion:** ambient 60s gradient drift + parallax float; nothing docked.
 - **×10 move:** the background is genuinely animated and never repeats within a session — living ambient calm.
 - **Loves fused:** curved containers + glass + earthy dawn palette. **Boldness: 8/10.**
 
 ### 13 · Riso — Warm Print Grain
+
 - **Soul:** A risograph zine. Tactile grain, two warm inks, gentle imperfection.
 - **Palette:** Cream `#F0E9D6`, riso red `#E4573C`, slate blue `#4E6A8A`, halftone grain.
 - **Type:** Chunky rounded grotesk; overprint where the two inks meet.
@@ -219,7 +233,8 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **×10 move:** analog print texture as the entire material — imperfect on purpose, deeply human.
 - **Loves fused:** earthiness + curved containers. **Boldness: 7/10.**
 
-### 14 · Ember — Warm Zen Terminal  *(dark, focused)*
+### 14 · Ember — Warm Zen Terminal _(dark, focused)_
+
 - **Soul:** A campfire in the dark. The AI steward glows like embers; everything else is quiet night.
 - **Palette:** Warm near-black `#17140F` (not blue-black), warm-white text, single ember `#E07A3C`.
 - **Type:** A calm mono for the terminal, warm serif for the page.
@@ -227,10 +242,11 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **The steward:** the emotional center — a softly **glowing ember panel** that pulses as it thinks
   ([Mindfulness breathing](https://60fps.design/shots/mindfulness-inhale-exhale-animation)).
 - **Motion:** ember glow breathes; text arrives one calm line at a time.
-- **×10 move:** a dark mode built around *warmth and firelight*, inverting the cold-terminal cliché — deep-focus night writing.
+- **×10 move:** a dark mode built around _warmth and firelight_, inverting the cold-terminal cliché — deep-focus night writing.
 - **Loves fused:** glass (command bar) + earthy warmth. **Boldness: 8/10.**
 
-### 15 · Dreamscape — Liquid Glass Nocturne  *(R1 #15, ×10)*
+### 15 · Dreamscape — Liquid Glass Nocturne _(R1 #15, ×10)_
+
 - **Soul:** A lucid dream. Twilight depth, blurred glow, ethereal glass.
 - **Palette:** Deep twilight plum→indigo `#2A2140` → `#3B2E5A`, blurred glow orbs, lilac/pink glass.
 - **Type:** Airy grotesk, faint outer glow.
@@ -251,10 +267,11 @@ Format per entry: **soul** · **palette** · **type** · **container & material*
 - **Best dark/night mode:** **06 Onsen**, **14 Ember**, **15 Dreamscape**.
 
 ### Recommended shortlist to prototype next (build the shell in each, `←/→` to flip)
+
 1. **02 · Liquid Glass — Aurora Field** — the maximal fusion of all three loves; highest ceiling.
-2. **11 · Shoji — Backlit Paper Screens** — the most *original* answer to the glass love, and deeply calm.
+2. **11 · Shoji — Backlit Paper Screens** — the most _original_ answer to the glass love, and deeply calm.
 3. **01 · Sumi-e — Ink Garden** — the purest zen; proves whether extreme restraint feels premium or empty.
-4. **06 · Onsen — Steam & Lantern** *(or 14 Ember)* — the warm-dark direction, so we're not only testing light modes.
+4. **06 · Onsen — Steam & Lantern** _(or 14 Ember)_ — the warm-dark direction, so we're not only testing light modes.
 
 A blend is likely the endgame: e.g. **Shoji structure + Aurora light field + Sumi-e restraint**. Prototype
 the four as distinct worlds first, then graft.
@@ -262,7 +279,8 @@ the four as distinct worlds first, then graft.
 ---
 
 ## Open questions for Charles
-1. **One material or a light/dark pair?** Several here (Onsen, Ember, Dreamscape) are inherently dark — do you want the *primary* mood to be light-and-earthy with a warm dark mode, or is a dark-first zen on the table?
+
+1. **One material or a light/dark pair?** Several here (Onsen, Ember, Dreamscape) are inherently dark — do you want the _primary_ mood to be light-and-earthy with a warm dark mode, or is a dark-first zen on the table?
 2. **How literal should the metaphor be?** Sumi-e ink-bleed and Karesansui rake-lines are gorgeous but flirt with skeuomorphism — is that the delightful edge you want, or a step too whimsical for a daily driver?
 3. **Living backgrounds** (Aurora drift, Dawn time-tracking) cost GPU and can distract during deep work — worth it for the ambient calm, or should motion be strictly on-interaction?
 4. Which **3–4** should I actually build as R2 protos in the `/proto/visual-language` harness?

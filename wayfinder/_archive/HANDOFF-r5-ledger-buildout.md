@@ -6,6 +6,7 @@ Folio shell. Build in the order below; each step is independently shippable + ve
 Still a static mockup — seeded data, no backend.
 
 ## Progress log
+
 - **2026-08-12 — Steps 1 & 2 DONE.** Split `v72-ledger.tsx` → `variants/v72-ledger/`
   folder: `index.tsx` (interactive rail + `activeAreaId`/`activePageId` useState →
   `AreaDashboard` switch), `ui.tsx` (palette + fonts + `Panel`/`Stat`/`RingsPanel`/
@@ -19,12 +20,13 @@ Still a static mockup — seeded data, no backend.
   **→ Step 4 has its own focused handoff: `wayfinder/HANDOFF-r5-72-step4.md` (fuse Folio's
   chat/⌘K/capture/notifications chrome onto the flat dashboards). Start there next session.**
 - **Bklit fix (3rd registry bug):** stacked vertical `BarChart` overflowed the plot —
-  bars are *positioned* by `buildYScalesForLines` whose `resolveDomain` returned the max
-  *individual* segment, while the axis `valueScale` used the stacked *sum*. Patched
+  bars are _positioned_ by `buildYScalesForLines` whose `resolveDomain` returned the max
+  _individual_ segment, while the axis `valueScale` used the stacked _sum_. Patched
   `bar-chart.tsx` `yScales` `resolveDomain` to return `[0, maxValue*1.1]` when `stacked`.
   Fixes genre-mix, session-mix, task-states, cut-list. (Was latent in the "DONE" Health cut.)
 
 ## Ground truth (already done — don't redo)
+
 - `#72 Ledger` = `src/app/proto/visual-language/variants/v72-ledger/` (folder; pos 16/16).
   Interactive rail switches a dashboard per area on the real Bklit charts.
 - **Bklit is installed** (shadcn registry `@bklit` in `components.json`; charts in
@@ -34,6 +36,7 @@ Still a static mockup — seeded data, no backend.
   colors, never rely on Bklit's CSS-var theme**). See `HANDOFF-r5-fusion.md`.
 
 ## Reusable Bklit API cheatsheet (from generated source)
+
 ```tsx
 // time-series (date can be a Date or a string). Charts need a SIZED parent →
 // aspectRatio="" + className="h-full" inside a fixed-height wrapper, else ParentSize=0.
@@ -59,6 +62,7 @@ Still a static mockup — seeded data, no backend.
   </HeatmapChart>
 </div>
 ```
+
 Imports: `@/components/charts/{area-chart,line-chart}` (re-export Area/Line),
 `{bar-chart}`+`{bar}`, `{grid}`, `{x-axis}`, `{bar-x-axis}`, `{ring-chart}`+`{ring}`,
 `@/components/charts/heatmap` (barrel). Palette in v72: ACCENT `#5f7355`, CLAY `#a8613c`,
@@ -67,14 +71,18 @@ GOLD `#c99a3f`, SKY `#5f7d8c`, LINE `rgba(42,39,34,0.10)`, PAPER `#efeae0`, INK 
 ## Build order
 
 ### 1 · Make the rail interactive (foundation)
+
 Refactor `v72-ledger.tsx`: lift `activeAreaId` into `useState` (default `'health'`);
 clicking a rail area/page sets it; `<main>` renders `<AreaDashboard areaId=…/>`. Extract
 the current Marathon content into a `HealthDashboard`. Keep `Panel`/`Stat`/palette shared
 (consider a small `v72-ledger/` folder: `index.tsx` shell + `dashboards/*.tsx` + `data.ts`
-+ `ui.tsx`). Verify each area click swaps the surface.
+
+- `ui.tsx`). Verify each area click swaps the surface.
 
 ### 2 · A dashboard per area (the ask — "a prototype for each section")
+
 Give each seeded area its own believable chart set (variety per domain):
+
 - **Health / Marathon** — DONE (mileage area+projection, volume bars, session-mix stack,
   resting-HR line, sleep area, goal rings, consistency heatmap).
 - **Work** (Q3 Planning · Design System) — **burn-down** LineChart (dashed remaining),
@@ -86,24 +94,28 @@ Give each seeded area its own believable chart set (variety per domain):
 - **Reading** — **pages/week** LineChart (data already in v72), **books finished/month**
   BarChart, **pace vs goal** RingChart, **genre mix** stacked bar (or install pie), a
   **reading-streak heatmap**. GOLD-led.
-Each dashboard: same flat-panel language, ~4 stat tiles + 5–7 chart panels, seeded
-deterministically (no `Math.random`). Verify tsc + screenshot each.
+  Each dashboard: same flat-panel language, ~4 stat tiles + 5–7 chart panels, seeded
+  deterministically (no `Math.random`). Verify tsc + screenshot each.
 
 ### 3 · Tooltips + more chart variety (interactivity)
+
 Add `<ChartTooltip />` (`@/components/charts/tooltip`) to the time-series charts for hover
 read-outs. If more types wanted: `npx shadcn@latest add @bklit/{pie,radar,gauge,scatter}-chart`
 (same registry; watch for the same theme/util caveat). Good fits: pie/radar for Reading
 genre mix, gauge for a single goal, scatter for pace-vs-HR.
 
 ### 4 · Wrap in the Folio shell (make it feel like the app)
+
 Fold in `#71 Folio`'s chrome (`v71-folio.tsx`): floating chat, ⌘K palette (switch areas),
 quick-capture, notifications drawer. Reuse its patterns; keep charts as the page body.
 
 ### 5 · Visual polish pass
+
 Hierarchy/density/spacing/color balance across panels; consistent chart heights; make it
 read premium. `/design-review` or `/impeccable` fits here.
 
 ## Verify each step
+
 `npx tsc --noEmit` clean · dev server already on **:3000** · load `/proto/visual-language`,
 **←** once from index 0 to reach Ledger · screenshot to `wayfinder/screens/r5-72-*.png` ·
 **0 console errors**. Scroll `<main>` (internal scroll) via `document.querySelector('main').scrollTop`

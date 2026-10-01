@@ -103,8 +103,8 @@ Life is a REAL page now: a **reserved, per-user `home`-type row** — top-level
 
 ### Tests added
 
-`pages-home.test.ts` (get-or-create, idempotency, race, no-leak), 
-`pages-tree-home-filter.test.ts` (fetchPages strips home), 
+`pages-home.test.ts` (get-or-create, idempotency, race, no-leak),
+`pages-tree-home-filter.test.ts` (fetchPages strips home),
 `life-home-composite.test.ts` (Life composite render + empty + always-visible add
 opens palette + inserts each module empty state + persists to the home row),
 updated `document-panel-blocks` (area palette-open) and the `OverviewSurface` +
