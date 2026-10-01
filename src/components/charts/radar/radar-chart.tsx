@@ -4,21 +4,23 @@ import type { FigurePoint } from '../pond/pond-chart-data'
 import { PondChartSvg } from '../pond/pond-chart-svg'
 import { FILL_AREA, FONT_LABEL, GRID, INK, LABEL_STRONG, STROKE_RADAR } from '../pond/pond-chart-style'
 import { seriesColor } from '../chart-ramp'
+import type { ReactNode } from 'react'
 import { layoutRadar, radialHeight } from './radar-layout'
 
 export interface RadarChartProps {
   points: readonly FigurePoint[]
   series: readonly string[]
   label?: string
+  fallback?: ReactNode
 }
 
 /**
  * Radar: hairline rings and spokes, axis names in the strong label tier, and an
  * ink-stroked polygon with a .12 area fill per series.
  */
-export function RadarChart({ points, series, label = 'Radar chart' }: RadarChartProps) {
+export function RadarChart({ points, series, label = 'Radar chart', fallback }: RadarChartProps) {
   return (
-    <PondChartSvg height={radialHeight} label={label}>
+    <PondChartSvg height={radialHeight} label={label} fallback={fallback}>
       {(width, height) => {
         const r = layoutRadar(points, series, width, height)
         if (!r) return null

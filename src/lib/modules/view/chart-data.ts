@@ -40,7 +40,8 @@ export interface ResolvedChartConfig {
  * each missing piece inferred. An unresolvable `xProperty` falls back to the row
  * TITLE (`xProperty: undefined` means "one point per record, labelled by title") —
  * always drawable, never empty. A series whose property is gone is dropped; with no
- * series left, the count of records is charted, which is honest and non-empty.
+ * series left, the first NUMERIC property is plotted (summed) — only a schema with
+ * no numeric property at all falls back to counting records.
  */
 export function resolveChartConfig(schema: PropertySchema, config: ViewChartConfig | undefined): ResolvedChartConfig {
   const kind = config?.kind ?? 'bar'

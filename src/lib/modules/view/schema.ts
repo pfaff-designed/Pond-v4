@@ -112,7 +112,7 @@ export const viewChartConfigSchema = z.object({
    * count, "14 of 24"), or the dashed target line on a COMPOSED chart. Never data —
    * one number the person sets, like a filter value.
    */
-  target: z.number().optional(),
+  target: z.number().finite().optional(),
 })
 export type ViewChartConfig = z.infer<typeof viewChartConfigSchema>
 

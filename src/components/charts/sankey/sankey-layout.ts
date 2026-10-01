@@ -2,8 +2,9 @@
  * Sankey geometry — PondChart "sankey": ONE source (the total) flowing into a
  * node per category, largest first. Read from the mockup at 318 × 150: source
  * node at x 12, 6 wide, 10 → 128; target nodes 80px in from the right edge, each
- * flow a cubic whose control points meet at the horizontal midpoint; 2.4px of air
- * between target nodes.
+ * flow a cubic whose control points sit 60% of the way across (the mockup's fixed
+ * x=150 of 18→238); a ribbon is the SAME thickness at both ends (source 10→52.4,
+ * target 6→48.4), the target stack simply overflowing the span by its 2.4px gaps.
  */
 import type { FigurePoint } from '../pond/pond-chart-data'
 
@@ -59,18 +60,16 @@ export function layoutSankey(
   const source = { x: SOURCE_X, y: TOP, w: SANKEY_NODE_W, h: span }
   const tx = width - SANKEY_LABEL_GUTTER
   const sx = SOURCE_X + SANKEY_NODE_W
-  const mx = (sx + tx) / 2
-  // Targets share the source's span minus the gaps, so the ribbons are read as the
-  // source split up, not as a second quantity.
-  const usable = span - GAP * (items.length - 1)
+  const mx = sx + 0.6 * (tx - sx)
 
   let sy = TOP
-  let ty = TOP - (GAP * (items.length - 1)) / 2
+  // The target stack is centred on the source span and never starts above the frame.
+  let ty = Math.max(0, TOP - (GAP * (items.length - 1)) / 2)
   let lastLabelY = -Infinity
   const flows: SankeyFlow[] = items.map((it, rank) => {
-    const h = (it.value / total) * usable
+    const h = (it.value / total) * span
     const sy0 = sy
-    const sy1 = sy + (it.value / total) * span
+    const sy1 = sy + h
     const ty0 = ty
     const ty1 = ty + h
     const path = `M${r(sx)},${r(sy0)} C${r(mx)},${r(sy0)} ${r(mx)},${r(ty0)} ${r(tx)},${r(ty0)} L${r(tx)},${r(ty1)} C${r(mx)},${r(ty1)} ${r(mx)},${r(sy1)} ${r(sx)},${r(sy1)} Z`

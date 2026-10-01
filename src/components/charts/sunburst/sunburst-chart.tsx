@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import type { FigurePoint } from '../pond/pond-chart-data'
 import { rankColor } from '../chart-ramp'
 import { layoutSunburst, SUNBURST_OUTER_OPACITY, SUNBURST_SIZE } from './sunburst-layout'
@@ -12,6 +13,7 @@ export interface SunburstChartProps {
   /** What the outer ring is made of, for the footnote ("records", "nested pages"). */
   leafLabel?: string
   label?: string
+  fallback?: ReactNode
 }
 
 /**
@@ -20,9 +22,9 @@ export interface SunburstChartProps {
  * ink fills; the outer ring sits at .52 of its parent — exactly the mockup's
  * opacity math.
  */
-export function SunburstChart({ points, series, leaves, leafLabel = 'records', label = 'Sunburst chart' }: SunburstChartProps) {
+export function SunburstChart({ points, series, leaves, leafLabel = 'records', label = 'Sunburst chart', fallback }: SunburstChartProps) {
   const s = layoutSunburst(points, series, leaves)
-  if (!s) return null
+  if (!s) return <>{fallback ?? null}</>
   return (
     <div className="mn-arrive flex items-center gap-[18px]" style={{ height: SUNBURST_SIZE }}>
       <svg width={SUNBURST_SIZE - 10} height={SUNBURST_SIZE} viewBox={`0 0 ${SUNBURST_SIZE - 10} ${SUNBURST_SIZE}`} role="img" aria-label={label} style={{ display: 'block', overflow: 'visible', flex: 'none' }}>

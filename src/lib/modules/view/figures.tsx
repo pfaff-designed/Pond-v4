@@ -150,7 +150,10 @@ export function ChartControls({
             aria-label="Target"
             placeholder={kind === 'gauge' ? 'records' : '—'}
             value={config.chart?.target ?? ''}
-            onChange={(e) => write({ target: e.target.value === '' ? undefined : Number(e.target.value) })}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              write({ target: e.target.value === '' || !Number.isFinite(n) ? undefined : n })
+            }}
             className={`${CONTROL_INPUT} w-20 tabular-nums`}
           />
         </label>

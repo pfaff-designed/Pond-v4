@@ -13,7 +13,7 @@ export const INK_DOT = 'var(--chart-2)'
 export const INK_REFERENCE = 'var(--chart-3)'
 /** Composed-chart bars (.18). */
 export const INK_BAR = 'var(--chart-5)'
-/** Gauge progress, sankey nodes (.85). */
+/** Gauge progress, the strongest ranked fill (.85). */
 export const FILL_STRONG = 'var(--chart-fill-strong)'
 /** Radar area (.12). */
 export const FILL_AREA = 'var(--chart-fill-area)'
@@ -27,7 +27,7 @@ export const GRID = 'var(--chart-grid)'
 export const ZERO_LINE = 'var(--chart-crosshair)'
 /** Tick labels (.68). */
 export const LABEL = 'var(--chart-label)'
-/** Axis names, flow labels, radar axes (.8). */
+/** Axis names, flow labels + nodes, radar axes (.8). */
 export const LABEL_STRONG = 'var(--chart-label-strong)'
 /** The chart's own ground — hollow markers and the hairline between flows. */
 export const GROUND = 'var(--chart-background)'

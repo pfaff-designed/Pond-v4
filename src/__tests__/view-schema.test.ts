@@ -132,6 +132,9 @@ describe('viewSchema — chart + big-number config (#111)', () => {
     expect(
       viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: '30' } }).success
     ).toBe(false)
+    expect(
+      viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: Infinity } }).success
+    ).toBe(false)
   })
 
   it('accepts every #94 chart KIND as a config value (no new block types)', () => {

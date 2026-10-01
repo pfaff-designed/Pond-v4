@@ -17,10 +17,10 @@ describe('layoutRadar', () => {
 
   it('reproduces the mockup frame: radius 62, first axis straight up, three rings', () => {
     const layout = layoutRadar(groups, ['Sets'], 318, 150)!
-    expect(layout.radius).toBe(61)
+    expect(layout.radius).toBe(62)
     expect(layout.rings).toHaveLength(3)
     expect(layout.axes[0].x).toBe(159)
-    expect(layout.axes[0].y).toBeCloseTo(76 - 61)
+    expect(layout.axes[0].y).toBeCloseTo(14)
     expect(layout.axes.map((a) => a.label)).toEqual(['push', 'pull', 'legs', 'core', 'cardio'])
   })
 

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import type { FigurePoint } from '../pond/pond-chart-data'
 import { rankColor } from '../chart-ramp'
 import { formatValue } from '../pond/linear-scale'
@@ -9,6 +10,7 @@ export interface FunnelChartProps {
   points: readonly FigurePoint[]
   series: string
   label?: string
+  fallback?: ReactNode
 }
 
 /**
@@ -16,12 +18,12 @@ export interface FunnelChartProps {
  * width is the step's share of the mouth, the count right-aligned at weight 500.
  * Ranked ink fills fade down the steps. Plain flex, as the mockup draws it.
  */
-export function FunnelChart({ points, series, label = 'Funnel chart' }: FunnelChartProps) {
+export function FunnelChart({ points, series, label = 'Funnel chart', fallback }: FunnelChartProps) {
   const steps = layoutFunnel(points, series)
-  if (steps.length === 0) return null
+  if (steps.length === 0) return <>{fallback ?? null}</>
+  // A real list of real text — no img role, so the step names and counts stay readable.
   return (
     <ol
-      role="img"
       aria-label={label}
       className="mn-arrive m-0 flex list-none flex-col justify-center p-0"
       style={{ gap: FUNNEL_GAP, minHeight: 150 }}

@@ -329,6 +329,7 @@ const configureViewInput = z
           .describe('Stack multiple series instead of grouping them. Omit for one series.'),
         target: z
           .number()
+          .finite()
           .optional()
           .describe(
             'For a GAUGE: the goal the figure fills toward (omit to read against the record count). For a COMPOSED chart: the dashed reference line (a budget). A number the user stated — never invent one.'

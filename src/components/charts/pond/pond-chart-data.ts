@@ -9,13 +9,3 @@ export interface FigurePoint {
   x: string
   values: Record<string, number>
 }
-
-/** The numeric values of one series across points, in order; gaps are skipped. */
-export function seriesValues(points: readonly FigurePoint[], series: string): number[] {
-  const out: number[] = []
-  for (const p of points) {
-    const v = p.values[series]
-    if (typeof v === 'number' && Number.isFinite(v)) out.push(v)
-  }
-  return out
-}

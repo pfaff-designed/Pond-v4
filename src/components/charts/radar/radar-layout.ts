@@ -1,7 +1,8 @@
 /**
  * Radar geometry — PondChart "radar": one axis per category, three grid rings,
  * a polygon per series scaled to the largest value. Read from the mockup at
- * 150 tall: radius 62 (half the height less 14), labels 14px beyond the rim.
+ * 150 tall: centre (159, 76) = height/2 + 1, rim 14px above the centre (radius
+ * 62), labels 14px beyond the rim.
  */
 import type { FigurePoint } from '../pond/pond-chart-data'
 
@@ -44,7 +45,7 @@ export function layoutRadar(
   if (points.length < RADAR_MIN_AXES || series.length === 0) return null
   const cx = width / 2
   const cy = height / 2 + 1
-  const radius = height / 2 - 14
+  const radius = cy - 14
   const n = points.length
   const angle = (i: number) => -Math.PI / 2 + (2 * Math.PI * i) / n
   const at = (i: number, r: number): [number, number] => [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))]

@@ -37,7 +37,7 @@ const at = (cx: number, cy: number, radius: number, a: number): string => `${r(c
 
 /** A donut slice from angle a0 to a1 (clockwise from the top). */
 export function donutPath(cx: number, cy: number, inner: number, outer: number, a0: number, a1: number): string {
-  const sweep = Math.min(a1 - a0, TAU - 0.001)
+  const sweep = Math.min(Math.max(0, a1 - a0), TAU - 0.001)
   const end = a0 + sweep
   const large = sweep > Math.PI ? 1 : 0
   return `M${at(cx, cy, outer, a0)} A${outer},${outer} 0 ${large} 1 ${at(cx, cy, outer, end)} L${at(cx, cy, inner, end)} A${inner},${inner} 0 ${large} 0 ${at(cx, cy, inner, a0)} Z`
@@ -63,8 +63,16 @@ export function layoutSunburst(
   const outer: SunburstLayout['outer'] = []
   for (const it of items) {
     const sweep = (it.value / total) * TAU
+    // A sliver thinner than the gap would invert if the gap were subtracted from
+    // both ends; the gap shrinks to half the sweep, and a sweep that rounds to
+    // nothing is not drawn at all (it still counts in the total and the legend).
+    const g = Math.min(GAP, sweep * 0.5)
+    if (sweep < 1e-6) {
+      a += sweep
+      continue
+    }
     const rank = rankOf.get(it.label) ?? 0
-    inner.push({ label: it.label, value: it.value, share: it.value / total, rank, path: donutPath(cx, cy, RADII.innerIn, RADII.innerOut, a + GAP / 2, a + sweep - GAP / 2) })
+    inner.push({ label: it.label, value: it.value, share: it.value / total, rank, path: donutPath(cx, cy, RADII.innerIn, RADII.innerOut, a + g / 2, a + sweep - g / 2) })
     const kids = (leaves[it.label] ?? [])
       .map((p) => ({ label: p.x, value: p.values[series] }))
       .filter((k): k is { label: string; value: number } => typeof k.value === 'number' && k.value > 0)
@@ -72,7 +80,10 @@ export function layoutSunburst(
     let b = a
     kids.forEach((k, i) => {
       const ks = (k.value / kidTotal) * sweep
-      outer.push({ label: k.label, value: k.value, share: k.value / total, rank: i, parentRank: rank, path: donutPath(cx, cy, RADII.outerIn, RADII.outerOut, b + GAP / 2, b + ks - GAP / 2) })
+      const kg = Math.min(GAP, ks * 0.5)
+      if (ks >= 1e-6) {
+        outer.push({ label: k.label, value: k.value, share: k.value / total, rank: i, parentRank: rank, path: donutPath(cx, cy, RADII.outerIn, RADII.outerOut, b + kg / 2, b + ks - kg / 2) })
+      }
       b += ks
     })
     a += sweep

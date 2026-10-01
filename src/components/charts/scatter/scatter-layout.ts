@@ -37,6 +37,42 @@ export function detectAxis(labels: readonly string[]): ScatterAxisKind {
   return 'ordinal'
 }
 
+/**
+ * Clip the segment (x1,y1)→(x2,y2) to the rect [0,w]×[0,h] (Liang–Barsky), keeping
+ * its slope — clamping the endpoints independently would bend the line. Null when
+ * the segment misses the rect entirely.
+ */
+export function clipSegment(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  w: number,
+  h: number
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  let t0 = 0
+  let t1 = 1
+  const edges: [number, number][] = [
+    [-dx, x1],
+    [dx, w - x1],
+    [-dy, y1],
+    [dy, h - y1],
+  ]
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return null
+      continue
+    }
+    const t = q / p
+    if (p < 0) t0 = Math.max(t0, t)
+    else t1 = Math.min(t1, t)
+    if (t0 > t1) return null
+  }
+  return { x1: x1 + t0 * dx, y1: y1 + t0 * dy, x2: x1 + t1 * dx, y2: y1 + t1 * dy }
+}
+
 /** Ordinary least squares `y = a + b·x`; null when x has no spread. */
 export function leastSquares(xs: readonly number[], ys: readonly number[]): { a: number; b: number } | null {
   const n = Math.min(xs.length, ys.length)
@@ -110,13 +146,11 @@ export function layoutScatter(
       pairs.map((q) => q[1])
     )
     if (fit) {
-      const clampY = (v: number) => Math.min(plotH, Math.max(0, y(v)))
-      trend = {
-        x1: 0,
-        y1: clampY(fit.a + fit.b * xDomain[0]),
-        x2: plotW,
-        y2: clampY(fit.a + fit.b * xDomain[1]),
-      }
+      // Evaluate across the DATA's x extent (not the nice-extended axis), then clip
+      // the segment to the plot so its slope is the fit's slope, never a bent one.
+      const xs = pairs.map((q) => q[0])
+      const [dx0, dx1] = [Math.min(...xs), Math.max(...xs)]
+      trend = clipSegment(x(dx0), y(fit.a + fit.b * dx0), x(dx1), y(fit.a + fit.b * dx1), plotW, plotH)
     }
   }
 

@@ -80,10 +80,13 @@ describe('chartDataFromRows', () => {
     expect(chartDataFromRows(rows, schema, undefined).points.length).toBeGreaterThan(0)
   })
 
-  it('degrades a series whose property is gone into a record count', () => {
+  it('falls back to the first numeric property when a series\u2019 property is gone (count only when none exists)', () => {
     const data = chartDataFromRows(rows, schema, { kind: 'bar', xProperty: 'p-month', series: [{ property: 'p-deleted', agg: 'sum' }] })
     expect(data.series[0].name).toBe('Hours')
     expect(data.points[0].values).toEqual({ Hours: 8 })
+    const textOnly = chartDataFromRows(rows, [schema[1]], { kind: 'bar', xProperty: 'p-month', series: [{ property: 'p-deleted', agg: 'sum' }] })
+    expect(textOnly.series[0].name).toBe('Records')
+    expect(textOnly.points[0].values).toEqual({ Records: 2 })
   })
 
   it('carries the configured target through for gauge / composed', () => {

@@ -10,8 +10,8 @@ export interface GaugeChartProps {
   value: number
   /** The figure to reach — the arc fills `value / target`. */
   target: number
-  /** What the figure counts ("books", "records") — read under the numeral as "of 30 books". */
-  unit: string
+  /** What the figure counts ("records") — read under the numeral as "of 8 records". Omit for a bare "of 30". */
+  unit?: string
   label?: string
 }
 
@@ -41,7 +41,7 @@ export function GaugeChart({ value, target, unit, label = 'Gauge' }: GaugeChartP
               {formatValue(value)}
             </text>
             <text x={g.cx} y={g.cy + 10} fontSize={FONT_LABEL} fill={LABEL} textAnchor="middle">
-              {`of ${formatValue(target)} ${unit}`}
+              {`of ${formatValue(target)}${unit ? ` ${unit}` : ''}`}
             </text>
             <text x={g.cx - g.outer} y={g.cy + 18} fontSize={FONT_LABEL} fill={LABEL} textAnchor="middle">
               0

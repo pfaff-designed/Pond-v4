@@ -1,4 +1,4 @@
-import { layoutComposed, runningTotal } from './composed-layout'
+import { layoutComposed, projectRunningTotal, runningTotal } from './composed-layout'
 import type { FigurePoint } from '../pond/pond-chart-data'
 
 const points: FigurePoint[] = [
@@ -34,9 +34,30 @@ describe('layoutComposed', () => {
     expect(layout.lines.map((l) => l.name)).toEqual(['Budget'])
   })
 
+  it('projects the running total one slot forward by its last increment (B5)', () => {
+    expect(projectRunningTotal(points, 'Spend')).toBe(2000 + 700)
+    const layout = layoutComposed(points, ['Spend'], 284, 124)!
+    // Five slots: four months + the projection's empty slot (the mockup's oct/nov room).
+    const slot = 284 / 5
+    expect(layout.xLabels).toHaveLength(4)
+    expect(layout.projection).toBeDefined()
+    expect(layout.projection!.x2).toBeCloseTo(slot * 4 + slot / 2)
+    expect(layout.projection!.x1).toBeCloseTo(layout.lines[0].points[3].x)
+    expect(layout.projection!.label).toBe('2,700 projected')
+    // The projected value is inside the y domain.
+    expect(layout.ticks[layout.ticks.length - 1]).toBeGreaterThanOrEqual(2700)
+  })
+
+  it('does not project when further series are real lines, and labels the reference "budget"', () => {
+    const two = points.map((p) => ({ ...p, values: { ...p.values, Budget: 800 } }))
+    expect(layoutComposed(two, ['Spend', 'Budget'], 284, 124)!.projection).toBeUndefined()
+    expect(layoutComposed(points, ['Spend'], 284, 124, 10000)!.target?.label).toBe('budget')
+    expect(layoutComposed(points, ['Spend'], 284, 124, 10000, 'goal')!.target?.label).toBe('goal')
+  })
+
   it('places a target reference inside the y domain', () => {
     const layout = layoutComposed(points, ['Spend'], 284, 124, 10000)!
-    expect(layout.target?.label).toBe('target')
+    expect(layout.target?.label).toBe('budget')
     expect(layout.ticks[layout.ticks.length - 1]).toBeGreaterThanOrEqual(10000)
   })
 

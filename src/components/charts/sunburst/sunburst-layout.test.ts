@@ -39,6 +39,16 @@ describe('layoutSunburst', () => {
     expect(layout.outer[0].share).toBeCloseTo(0.3)
   })
 
+  it('never inverts a sliver thinner than the gap (B1): every arc sweeps forward', () => {
+    const layout = layoutSunburst([{ x: 'big', values: { V: 10000 } }, { x: 'tiny', values: { V: 10 } }], 'V')!
+    expect(layout.inner).toHaveLength(2)
+    // A forward sweep of a sub-gap slice is a short arc with the small-arc flag, not a ~353° one.
+    expect(layout.inner[1].path).toContain('A44,44 0 0 1')
+    const [x0, y0] = layout.inner[1].path.slice(1).split(' ')[0].split(',').map(Number)
+    const [x1, y1] = layout.inner[1].path.split(' ')[5].split(',').map(Number)
+    expect(Math.hypot(x1 - x0, y1 - y0)).toBeLessThan(1)
+  })
+
   it('returns null with nothing positive', () => {
     expect(layoutSunburst([{ x: 'a', values: {} }], 'Minutes')).toBeNull()
   })

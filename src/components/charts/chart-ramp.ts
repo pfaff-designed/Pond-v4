@@ -5,9 +5,10 @@
  * used two ways, and nowhere else defines chart colours:
  *
  * - `seriesColor(i)` — CATEGORICAL: a second/third series cycles the ramp.
- * - `rankColor(i)` — RANKED: a sunburst slice, funnel step or flow target fades
- *   down the ramp by rank and CLAMPS at the palest step, so the sixth item never
- *   snaps back to solid ink beside a near-paper fifth.
+ * - `rankColor(i)` — RANKED: a sunburst slice or funnel step starts at the .85
+ *   fill (the mockup's strongest fill is .85, never solid ink), fades down the
+ *   ramp by rank and CLAMPS at the palest step, so the sixth item never snaps
+ *   back to strong ink beside a near-paper fifth.
  *
  * PROJECT_RULES: area colours (sage/mist/navy) are marks only; signals (burnt
  * orange, wheat, red) each have one job. Neither ever enters a chart.
@@ -25,7 +26,10 @@ export function seriesColor(i: number): string {
   return CHART_SERIES_COLORS[((i % CHART_SERIES_COLORS.length) + CHART_SERIES_COLORS.length) % CHART_SERIES_COLORS.length]
 }
 
+/** The ranked fill ramp: .85 first, then the ramp's paler steps. */
+export const CHART_RANK_COLORS = ['var(--chart-fill-strong)', ...CHART_SERIES_COLORS.slice(1)] as const
+
 /** Ranked: rank `i` (0 = strongest) fades down the ramp and clamps at the palest step. */
 export function rankColor(i: number): string {
-  return CHART_SERIES_COLORS[Math.min(Math.max(i, 0), CHART_SERIES_COLORS.length - 1)]
+  return CHART_RANK_COLORS[Math.min(Math.max(i, 0), CHART_RANK_COLORS.length - 1)]
 }

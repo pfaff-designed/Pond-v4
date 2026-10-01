@@ -18,6 +18,7 @@ import { chartDataFromRows, type ChartData } from './chart-data'
 import { ViewNotice } from './notice'
 import { toChartRows } from '../chart/data'
 import { ChartCard, CHART_SERIES_COLORS } from '../chart/card'
+import { seriesColor } from '@/components/charts/chart-ramp'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { LineChart, Line } from '@/components/charts/line-chart'
 import { AreaChart } from '@/components/charts/area-chart'
@@ -34,8 +35,6 @@ import { SankeyChart } from '@/components/charts/sankey'
 import { SunburstChart } from '@/components/charts/sunburst'
 import { FunnelChart } from '@/components/charts/funnel'
 
-const color = (i: number) => CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]
-
 /** The three promoted Bklit visuals, fed the flat row shape they expect. */
 function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
   const common = {
@@ -49,7 +48,7 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
       <LineChart {...common}>
         <Grid />
         {names.map((name, i) => (
-          <Line key={name} dataKey={name} stroke={color(i)} animate={false} loading={false} />
+          <Line key={name} dataKey={name} stroke={seriesColor(i)} animate={false} loading={false} />
         ))}
       </LineChart>
     )
@@ -59,7 +58,7 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
       <AreaChart {...common}>
         <Grid />
         {names.map((name, i) => (
-          <Area key={name} dataKey={name} fill={color(i)} stroke={color(i)} animate={false} loading={false} />
+          <Area key={name} dataKey={name} fill={seriesColor(i)} stroke={seriesColor(i)} animate={false} loading={false} />
         ))}
       </AreaChart>
     )
@@ -69,7 +68,7 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
     <BarChart {...common} stacked={data.stacked}>
       <Grid />
       {names.map((name, i) => (
-        <Bar key={name} dataKey={name} fill={color(i)} animate={false} />
+        <Bar key={name} dataKey={name} fill={seriesColor(i)} animate={false} />
       ))}
     </BarChart>
   )
@@ -83,39 +82,62 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
  */
 export function ChartKind({ data, names }: { data: ChartData; names: string[] }) {
   const label = `${data.kind} chart of ${names.join(', ')} by ${data.xLabel}`
+  // AGENTS.md G6: a kind with nothing drawable reads as a notice, never card chrome
+  // around a blank. Each says what the records would need.
+  const empty = <ViewNotice>Nothing to draw yet — these records carry no number in “{names[0]}”.</ViewNotice>
   switch (data.kind) {
     case 'line':
     case 'area':
     case 'bar':
       return <BklitKind data={data} names={names} />
     case 'composed':
-      return <ComposedChart points={data.points} series={names} target={data.target} label={label} />
+      return <ComposedChart points={data.points} series={names} target={data.target} label={label} fallback={empty} />
     case 'net':
-      return <NetChart points={data.points} series={names} label={label} />
+      return <NetChart points={data.points} series={names} label={label} fallback={empty} />
     case 'gauge': {
       if (!data.gauge || data.gauge.value === null) {
         return <ViewNotice>Nothing to read for this gauge — plot a number field.</ViewNotice>
       }
-      // "14 of 24 records" when the target is the record count; "23 of 30 pages read"
-      // when the person set a goal — the unit is then what the series counts.
-      const unit = data.target === undefined ? 'records' : names[0].toLowerCase()
+      // "5 of 8 records" when the target is the record count. With a goal the unit is
+      // omitted ("12,500 of 20,000"): a series name is rarely a plural noun, and the
+      // chart has no access to the collection's own word for its records.
+      const unit = data.target === undefined ? 'records' : undefined
       return <GaugeChart value={data.gauge.value} target={data.gauge.target} unit={unit} label={label} />
     }
     case 'radar':
       if (data.points.length < RADAR_MIN_AXES) {
         return <ViewNotice>A radar needs at least three categories — pick a “By” field with more values.</ViewNotice>
       }
-      return <RadarChart points={data.points} series={names} label={label} />
+      return <RadarChart points={data.points} series={names} label={label} fallback={empty} />
     case 'scatter':
-      return <ScatterChart points={data.points} series={names} label={label} />
+      return <ScatterChart points={data.points} series={names} label={label} fallback={empty} />
     case 'sankey':
-      return <SankeyChart points={data.points} series={names[0]} label={label} />
+      return (
+        <SankeyChart
+          points={data.points}
+          series={names[0]}
+          label={label}
+          fallback={<ViewNotice>Nothing to flow yet — a sankey needs positive values in “{names[0]}”.</ViewNotice>}
+        />
+      )
     case 'sunburst':
-      return <SunburstChart points={data.points} series={names[0]} leaves={data.leaves} leafLabel="records" label={label} />
+      return (
+        <SunburstChart
+          points={data.points}
+          series={names[0]}
+          leaves={data.leaves}
+          leafLabel="records"
+          label={label}
+          fallback={<ViewNotice>Nothing to share out yet — a sunburst needs positive values in “{names[0]}”.</ViewNotice>}
+        />
+      )
     case 'funnel':
-      return <FunnelChart points={data.points} series={names[0]} label={label} />
+      return <FunnelChart points={data.points} series={names[0]} label={label} fallback={empty} />
   }
 }
+
+/** The kinds with axes — only these show the ↕ series / ↔ category footer the mockup gives them. */
+const CARTESIAN_KINDS = new Set<ChartData['kind']>(['line', 'area', 'bar', 'composed', 'net', 'scatter'])
 
 export function CollectionChart({
   schema,
@@ -128,8 +150,14 @@ export function CollectionChart({
 }) {
   const data = useMemo(() => chartDataFromRows(rows, schema, chart), [rows, schema, chart])
   const names = data.series.map((s) => s.name)
+  const axes = CARTESIAN_KINDS.has(data.kind)
   return (
-    <ChartCard xLabel={data.xLabel} yLabel={names.join(' · ')} points={data.points} seriesColors={CHART_SERIES_COLORS}>
+    <ChartCard
+      xLabel={axes ? data.xLabel : undefined}
+      yLabel={axes ? names.join(' · ') : undefined}
+      points={data.points}
+      seriesColors={CHART_SERIES_COLORS}
+    >
       <ChartKind data={data} names={names} />
     </ChartCard>
   )

@@ -61,7 +61,7 @@ const rows: CollectionRow[] = [
 
 const view = (id: string, chart: ViewChartConfig): ViewBlock => ({ id, type: 'view', mode: 'chart', chart })
 
-/** Composed: monthly Out as bars, its running total as the line, a 6,000 budget as the dashed target. */
+/** Composed: monthly Out as bars, its running total as the line, the dashed projection one slot on, a 6,000 budget line. */
 export const Composed: Story = {
   args: { config: view('v-composed', { kind: 'composed', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }], target: 6000 }), schema, rows },
   play: async ({ canvasElement }) => {
@@ -69,7 +69,11 @@ export const Composed: Story = {
     await expect(await canvas.findByRole('img', { name: /composed chart of Out by Month/ })).toBeInTheDocument()
     // Bars + the running-total line come from the SAME rows: four months → four bars.
     await expect(canvasElement.querySelectorAll('rect[rx="2"]')).toHaveLength(4)
-    await expect(canvas.getByText('target')).toBeInTheDocument()
+    await expect(canvas.getByText('budget')).toBeInTheDocument()
+    // The projection: last total 6,406 carried forward by August's 3,550.
+    await expect(canvas.getByText('9,956 projected')).toBeInTheDocument()
+    // Axis chrome belongs to cartesian kinds.
+    await expect(canvas.getByText('Month')).toBeInTheDocument()
   },
 }
 
@@ -94,6 +98,8 @@ export const Gauge: Story = {
     // 5 of 8 reviewed — the figure and the "of N records" line are both read from the rows.
     await expect(canvas.getByText('5')).toBeInTheDocument()
     await expect(canvas.getByText('of 8 records')).toBeInTheDocument()
+    // A gauge has no axes, so no ↕/↔ footer (B6).
+    await expect(canvas.queryByText('Record')).not.toBeInTheDocument()
   },
 }
 
@@ -103,7 +109,7 @@ export const GaugeWithTarget: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('12,500')).toBeInTheDocument()
-    await expect(canvas.getByText('of 20,000 in')).toBeInTheDocument()
+    await expect(canvas.getByText('of 20,000')).toBeInTheDocument()
   },
 }
 
@@ -169,7 +175,7 @@ export const Funnel: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('img', { name: /funnel chart/ })).toBeInTheDocument()
+    await expect(await canvas.findByRole('list', { name: /funnel chart/ })).toBeInTheDocument()
     // Steps follow the view's own row order (first-seen bucket under the sort), so a
     // funnel's order is the person's, not the chart's: Transport (2,580) is the mouth.
     const labels = Array.from(canvasElement.querySelectorAll('ol li span[title]')).map((el) => el.textContent)
@@ -178,13 +184,84 @@ export const Funnel: Story = {
   },
 }
 
-/** Area and line through the same seam, for the full set of eleven in one place. */
+// ── The three Bklit kinds through the same seam, so all eleven sit in one place ──
+export const Line: Story = {
+  args: { config: view('v-line', { kind: 'line', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Month')).toBeInTheDocument()
+    await expect(canvas.getByText('In')).toBeInTheDocument()
+  },
+}
 export const Area: Story = {
   args: { config: view('v-area', { kind: 'area', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Month')).toBeInTheDocument()
     await expect(canvas.getByText('Out')).toBeInTheDocument()
+  },
+}
+export const Bar: Story = {
+  args: { config: view('v-bar', { kind: 'bar', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Category')).toBeInTheDocument()
+  },
+}
+
+// ── Degenerate datasets — where hand-rolled geometry is thinnest ──────────────
+
+/** One record: the net chart centres its single marker and draws no segment. */
+export const NetSingleRecord: Story = {
+  args: { config: view('v-net-1', { kind: 'net', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }] }), schema, rows: rows.slice(0, 1) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('img', { name: /net chart/ })).toBeInTheDocument()
+    await expect(canvasElement.querySelectorAll('circle')).toHaveLength(1)
+    await expect(canvasElement.querySelectorAll('line[stroke-width="1.6"]')).toHaveLength(0)
+  },
+}
+
+/** Nothing positive to flow: a notice, not card chrome around a blank. */
+export const SankeyNothingPositive: Story = {
+  args: {
+    config: view('v-sankey-neg', { kind: 'sankey', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    schema,
+    rows: rows.map((row) => ({ ...row, values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) } })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText(/a sankey needs positive values/)).toBeInTheDocument()
+  },
+}
+
+/** All-equal values: the funnel is a column of full-width steps, every count equal. */
+export const FunnelAllEqual: Story = {
+  args: { config: view('v-funnel-eq', { kind: 'funnel', xProperty: 'p-month', series: [{ property: 'p-month', agg: 'count' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('list', { name: /funnel chart/ })).toBeInTheDocument()
+    await expect(canvas.getAllByText('2')).toHaveLength(4)
+  },
+}
+
+/** A sliver far thinner than the slice gap still sweeps forward (B1) — two inner slices, no inverted arc. */
+export const SunburstTinySlice: Story = {
+  args: {
+    config: view('v-sunburst-tiny', { kind: 'sunburst', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    schema,
+    rows: [
+      { id: 'big', title: 'Flat', values: { 'p-category': 'c-rent', 'p-out': 10000 } },
+      { id: 'tiny', title: 'Gum', values: { 'p-category': 'c-food', 'p-out': 10 } },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('img', { name: /sunburst chart/ })).toBeInTheDocument()
+    const paths = Array.from(canvasElement.querySelectorAll('svg[role="img"] path'))
+    await expect(paths).toHaveLength(4)
+    // Every arc is drawn with the small-arc flag except the one that genuinely spans > 180°.
+    await expect(paths.filter((p) => /A44,44 0 1 1/.test(p.getAttribute('d') ?? ''))).toHaveLength(1)
   },
 }
 

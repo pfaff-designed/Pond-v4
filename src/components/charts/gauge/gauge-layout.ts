@@ -18,9 +18,13 @@ export const GAUGE_BAND = 14
 const MOCKUP_RADIUS = 92
 const MOCKUP_WIDTH = 318
 
-/** The outer radius for a frame width: the mockup's 92 at card width, capped at 120. */
+/** Side margin the arc keeps from the frame edge, so the "0" label never bleeds out. */
+const EDGE_MARGIN = 16
+
+/** The outer radius for a frame width: the mockup's 92 at card width, 60…120, and never wider than the frame. */
 export function gaugeRadius(width: number): number {
-  return Math.round(Math.min(120, Math.max(60, (width / MOCKUP_WIDTH) * MOCKUP_RADIUS)))
+  const scaled = Math.min(120, Math.max(60, (width / MOCKUP_WIDTH) * MOCKUP_RADIUS))
+  return Math.round(Math.max(10, Math.min(scaled, width / 2 - EDGE_MARGIN)))
 }
 
 /** The frame height a gauge of this radius needs (150 at the mockup radius). */

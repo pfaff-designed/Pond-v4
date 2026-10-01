@@ -6,6 +6,12 @@ describe('gauge geometry', () => {
     expect(gaugeHeight(318)).toBe(150)
   })
 
+  it('never draws wider than its frame', () => {
+    const g = layoutGauge(1, 2, 100, gaugeHeight(100))
+    expect(g.cx - g.outer).toBeGreaterThanOrEqual(0)
+    expect(g.cx + g.outer).toBeLessThanOrEqual(100)
+  })
+
   it('clamps the fraction and skips the progress path at zero', () => {
     expect(layoutGauge(23, 30, 318, 150).fraction).toBeCloseTo(23 / 30)
     expect(layoutGauge(40, 30, 318, 150).fraction).toBe(1)

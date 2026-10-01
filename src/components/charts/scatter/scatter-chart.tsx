@@ -13,21 +13,23 @@ import {
   cartesianHeight,
 } from '../pond/pond-chart-style'
 import { seriesColor } from '../chart-ramp'
+import type { ReactNode } from 'react'
 import { layoutScatter } from './scatter-layout'
 
 export interface ScatterChartProps {
   points: readonly FigurePoint[]
   series: readonly string[]
   label?: string
+  fallback?: ReactNode
 }
 
 /**
  * Scatter: 3.2px ink dots (the .72 step), a dashed least-squares trend for the
  * first series, the y series named small at the top-left as the mockup does.
  */
-export function ScatterChart({ points, series, label = 'Scatter chart' }: ScatterChartProps) {
+export function ScatterChart({ points, series, label = 'Scatter chart', fallback }: ScatterChartProps) {
   return (
-    <PondChartSvg height={cartesianHeight} label={label}>
+    <PondChartSvg height={cartesianHeight} label={label} fallback={fallback}>
       {(width, height) => {
         const box = plotBox(width, height)
         const layout = layoutScatter(points, series, box.w, box.h)

@@ -1,2 +1,2 @@
 export { ComposedChart, type ComposedChartProps } from './composed-chart'
-export { layoutComposed, runningTotal, type ComposedLayout } from './composed-layout'
+export { layoutComposed, projectRunningTotal, runningTotal, type ComposedLayout } from './composed-layout'

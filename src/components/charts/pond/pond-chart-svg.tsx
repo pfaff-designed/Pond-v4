@@ -8,8 +8,10 @@ export interface PondChartSvgProps {
   height: number | ((width: number) => number)
   /** Accessible name for the drawing ("Bar chart of Hours by Month"). */
   label: string
-  /** The drawing, given the measured width and resolved height. */
-  children: (width: number, height: number) => ReactNode
+  /** The drawing, given the measured width and resolved height; null when there is nothing to draw. */
+  children: (width: number, height: number) => ReactNode | null
+  /** Rendered in the frame's place when the drawing returns null (an empty-state notice). */
+  fallback?: ReactNode
   className?: string
 }
 
@@ -21,12 +23,14 @@ export interface PondChartSvgProps {
  * `globals.css`. `overflow: visible` so edge labels (the mockups set theirs at
  * y=3.5 and y=148 of 150) are never clipped.
  */
-export function PondChartSvg({ height, label, children, className }: PondChartSvgProps) {
+export function PondChartSvg({ height, label, children, fallback, className }: PondChartSvgProps) {
   const [measure, width] = useMeasuredWidth<HTMLDivElement>()
   const h = typeof height === 'function' ? height(width) : height
+  const drawn = width > 0 ? children(width, h) : null
   return (
     <div ref={measure} className={['mn-arrive w-full', className].filter(Boolean).join(' ')}>
-      {width > 0 && (
+      {width > 0 && drawn === null && fallback}
+      {width > 0 && drawn !== null && (
         <svg
           width={width}
           height={h}
@@ -35,7 +39,7 @@ export function PondChartSvg({ height, label, children, className }: PondChartSv
           aria-label={label}
           style={{ display: 'block', overflow: 'visible' }}
         >
-          {children(width, h)}
+          {drawn}
         </svg>
       )}
     </div>
