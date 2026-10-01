@@ -89,7 +89,6 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
-import { PondMark } from '@/components/atoms/PondMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -759,15 +758,22 @@ export function RailView({
     >
       {/* The head is the pond's NAME (AUDIT C3, trimmed by ADR 0002 to a name
           only — the switcher chevron is M3 and the reminders bell is Phase 8, and
-          a dead affordance is worse than none). `PondRail` head: 0 16px 12px, the
-          pond's mark at 13 over currentColor, the name in the sans at 500 / 13 (the
-          mockup's 13.5, on-scale per ADR 0003). The serif display face is reserved
-          for reading prose, never chrome. */}
-      <div data-part="rail-head" className="flex items-center gap-2 px-4 pb-3">
-        <PondMark size={13} />
+          a dead affordance is worse than none).
+
+          Treatment comes from `Pond 05 Shell`, which renders the head identically
+          in all 18 of its frames: the name as a small-meta label — sans 500 / 11,
+          uppercase, .14em tracking — with NO mark before it. `Pond 02 Component
+          library`'s PondRail card disagrees (a mask glyph + a larger lowercase
+          name), so the two boards conflict; the shell board wins on three counts.
+          (1) It is the storyboard for THIS surface and is unanimous across frames.
+          (2) PROJECT_RULES scopes the mask-glyph register to area and page marks,
+          and a pond is neither. (3) ADR 0003 puts small meta at 11, and the
+          component board's 13.5 is off-scale besides. The serif display face is
+          reserved for reading prose, never chrome. */}
+      <div data-part="rail-head" className="flex items-center px-4 pb-3">
         <span
           data-part="pond-name"
-          className="min-w-0 truncate font-sans text-mn-13 font-medium text-foreground select-none"
+          className="min-w-0 truncate font-sans text-mn-11 font-medium tracking-[0.14em] uppercase text-foreground select-none"
         >
           {pondName}
         </span>

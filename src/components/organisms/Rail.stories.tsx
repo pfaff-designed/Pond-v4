@@ -254,8 +254,9 @@ export const KeyboardNav: Story = {
 
 /**
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
- * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's NAME with
- * the pond's mark at 13 — no switcher, no chevron (ADR 0002).
+ * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's NAME as a
+ * small-meta label — sans 500 / 11, uppercase, .14em tracking, and NO mark, per
+ * all 18 frames of `Pond 05 Shell`. No switcher, no chevron (ADR 0002).
  */
 export const PaperCardHead: Story = {
   play: async ({ canvasElement }) => {
@@ -266,7 +267,10 @@ export const PaperCardHead: Story = {
     await expect(aside).not.toHaveClass('mn-glass')
     await expect(aside.getBoundingClientRect().width).toBe(206)
     const head = aside.querySelector<HTMLElement>('[data-part="rail-head"]')!
-    await expect(head.querySelector('[data-pond-mark] [data-icon]')).toHaveStyle({ width: '13px' })
+    const name = head.querySelector<HTMLElement>('[data-part="pond-name"]')!
+    await expect(name).toHaveClass('text-mn-11')
+    await expect(name).toHaveClass('uppercase')
+    await expect(head.querySelector('[data-pond-mark]')).toBeNull()
     await expect(head.querySelector('button')).toBeNull()
   },
 }

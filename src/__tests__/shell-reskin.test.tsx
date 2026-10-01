@@ -263,13 +263,11 @@ function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
 }
 
 describe('RailView — the pond name header (AC3)', () => {
-  it('renders the pond name, outside the ARIA tree, with the pond glyph', () => {
+  it('renders the pond name, outside the ARIA tree', () => {
     const { container } = renderRail({ pondName: 'Red door guys' })
     const name = container.querySelector<HTMLElement>('[data-part="pond-name"]')!
     expect(name).toHaveTextContent('Red door guys')
     expect(name.closest('[role="tree"]')).toBeNull()
-    const head = name.closest<HTMLElement>('[data-part="rail-head"]')!
-    expect(head.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeInTheDocument()
   })
 
   it('has no switcher and no chevron — a name only (ADR 0002)', () => {
@@ -297,13 +295,23 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(RAIL_WIDTH_PX).toBe(206)
   })
 
-  it('the head draws the pond mark at 13 — the same PondMark the breadcrumb draws at 12', () => {
+  it('the head is a small-meta LABEL with no mark — `Pond 05 Shell`, all 18 frames', () => {
+    // The two boards conflict: `Pond 02 Component library`'s PondRail card draws
+    // a mask glyph + a larger lowercase name, while every one of `Pond 05 Shell`'s
+    // 18 frames renders the head as sans 500 / 11, uppercase, .14em tracking, with
+    // NO mark. The shell board wins — it is the storyboard for this surface and is
+    // unanimous; PROJECT_RULES scopes the mask-glyph register to AREA and PAGE
+    // marks and a pond is neither; and ADR 0003 puts small meta at 11.
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
-    const glyph = head.querySelector<HTMLElement>(`[data-pond-mark] [data-icon="${LIFE_GLYPH}"]`)!
-    expect(glyph).toBeInTheDocument()
-    expect(glyph.style.width).toBe('13px')
+    const name = container.querySelector<HTMLElement>('[data-part="pond-name"]')!
+    expect(name.className).toMatch(/\btext-mn-11\b/)
+    expect(name.className).toMatch(/\buppercase\b/)
+    expect(name.className).toMatch(/tracking-\[0\.14em\]/)
+    // No mark of any register in the head — not the pond mark, not an area mark.
+    expect(head.querySelector('[data-pond-mark]')).toBeNull()
     expect(head.querySelector('[data-area-mark]')).toBeNull()
+    expect(head.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
   })
 
   it('the foot carries "＋ new page" (PondRail foot), raising onNewPage', () => {
