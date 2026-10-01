@@ -148,6 +148,40 @@ export interface Database {
           after?: null
         }
       }
+      // The template store (#154, migration 0016). One row = one saved shape,
+      // scoped per pond (user + workspace). A template is a shape you copy,
+      // never a tie: no FK from pages, nothing cascades into pages. `kind` is
+      // the twelve-label vocabulary (TEMPLATE_KINDS in src/lib/templates/types.ts),
+      // `origin` is 'premade' | 'yours'. Read/write it through
+      // src/lib/templates/client.ts, never inline.
+      templates: {
+        Row: {
+          id: string
+          user_id: string
+          workspace: Workspace
+          name: string
+          kind: string
+          blocks: Json
+          origin: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          workspace?: Workspace
+          name: string
+          kind: string
+          blocks?: Json
+          origin: string
+        }
+        Update: {
+          name?: string
+          kind?: string
+          blocks?: Json
+          updated_at?: string
+        }
+      }
     }
   }
 }
