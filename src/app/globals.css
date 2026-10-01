@@ -346,13 +346,25 @@
   /* ══ Make Noise chart series — monochrome INK ramp (#94 chart pass) ══════════
      PondChart is single-hue: series read as ink strokes / translucent ink area
      fills over paper, NOT a rainbow. --chart-1 is the strongest ink; each step
-     lightens toward the paper ground. Where a chart truly needs to separate
-     stacked areas, the MN area marks (--mn-area-a/b/c: sage/mist/navy) apply. */
+     lightens toward the paper ground. This ramp is THE categorical/ranked ramp
+     for every chart kind (a second series, a sunburst slice, a funnel step).
+     PROJECT_RULES: area colours (sage/mist/navy) are for MARKS only — the area
+     glyph and page-kind dots — never chart series; signals never decorate. If a
+     chart seems to need another colour, the chart is wrong. */
   --chart-1: var(--raw-ink); /* strong ink stroke */
   --chart-2: rgb(27 29 20 / 0.72);
   --chart-3: rgb(27 29 20 / 0.5);
   --chart-4: rgb(27 29 20 / 0.32);
   --chart-5: rgb(27 29 20 / 0.18);
+  /* Single-job ink fills, read inline from PondChart.dc.html / pond-charts.js:
+     gauge progress + flow nodes (.85), radar area (.12), gauge track + sankey
+     flows (.07), the below-zero band of a net chart (.045), and the stronger
+     label tier for axis names (.8 = --mn-text-meta). */
+  --chart-fill-strong: rgb(27 29 20 / 0.85);
+  --chart-fill-area: rgb(27 29 20 / 0.12);
+  --chart-fill-soft: rgb(27 29 20 / 0.07);
+  --chart-fill-band: rgb(27 29 20 / 0.045);
+  --chart-label-strong: rgb(27 29 20 / 0.8); /* --mn-text-meta */
   --radius: 0.625rem;
   --sidebar: var(--mn-surface);
   --sidebar-foreground: var(--mn-text);
@@ -371,9 +383,12 @@
   --chart-crosshair: rgb(27 29 20 / 0.4); /* ink hairline, not blue */
   --chart-grid: rgb(27 29 20 / 0.09); /* --mn-line */
   --chart-brush-border: var(--chart-grid);
-  --chart-tooltip-background: rgb(27 29 20 / 0.9); /* ink glass */
-  --chart-tooltip-foreground: var(--raw-paper);
-  --chart-tooltip-muted: rgb(250 249 239 / 0.68);
+  /* Hover tip = the MN floating glass (PondChart.dc.html `tip`): white glass over
+     paper carrying INK text — the same values as --mn-glass-bg, flattened to its
+     start stop because this token feeds a background-color utility. */
+  --chart-tooltip-background: rgba(255, 255, 255, 0.86);
+  --chart-tooltip-foreground: var(--raw-ink);
+  --chart-tooltip-muted: rgb(27 29 20 / 0.68);
   --chart-marker-background: var(--raw-paper);
   --chart-marker-border: rgb(27 29 20 / 0.12);
   --chart-marker-foreground: var(--raw-ink);
@@ -434,6 +449,11 @@
   --chart-3: rgb(250 249 239 / 0.5);
   --chart-4: rgb(250 249 239 / 0.32);
   --chart-5: rgb(250 249 239 / 0.18);
+  --chart-fill-strong: rgb(250 249 239 / 0.85);
+  --chart-fill-area: rgb(250 249 239 / 0.12);
+  --chart-fill-soft: rgb(250 249 239 / 0.07);
+  --chart-fill-band: rgb(250 249 239 / 0.045);
+  --chart-label-strong: rgb(250 249 239 / 0.8);
   --chart-background: var(--raw-card-dark);
   --chart-foreground: var(--raw-paper);
   --chart-foreground-muted: rgb(250 249 239 / 0.68);

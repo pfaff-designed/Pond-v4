@@ -486,23 +486,25 @@ export const ChartPerRecord: Story = {
 }
 
 /**
- * A chart KIND with no renderer yet (#94 builds the remaining eight). Valid config —
- * it reads as a calm notice, so #94 lands renderers without touching this contract.
+ * Every #94 kind draws (see `view-chart-kinds.stories.tsx`); a kind whose data
+ * prerequisite is missing reads as a calm notice that says what to change — here a
+ * radar over a Stage field with only two options.
  */
-export const ChartKindNotDrawnYet: Story = {
+export const ChartRadarNeedsThreeCategories: Story = {
   args: {
     config: {
       id: 'v-chart-radar',
       type: 'view',
       mode: 'chart',
-      chart: { kind: 'radar', series: [{ property: 'p-priority', agg: 'sum' }] },
+      chart: { kind: 'radar', xProperty: 'p-stage', series: [{ property: 'p-priority', agg: 'sum' }] },
     },
     schema,
-    rows,
+    // Two staged records → two spokes; an untagged record would add a "No value" third.
+    rows: rows.slice(0, 2),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('A radar chart isn’t drawn yet.')).toBeInTheDocument()
+    await expect(canvas.getByText(/A radar needs at least three categories/)).toBeInTheDocument()
   },
 }
 

@@ -48,6 +48,8 @@ export interface ConfigureViewChart {
   kind: string
   xProperty?: string
   series: Array<{ property?: string; agg: string }>
+  /** A gauge goal / composed reference line (#94). */
+  target?: number
 }
 
 /** The proposed big-number config (#111), keyed by property NAME. */
@@ -164,6 +166,7 @@ export function ConfigureViewProposalCard({
         .map((s) => (s.property?.trim() ? `${s.property} (${s.agg})` : `records (${s.agg})`))
         .join(', '),
     })
+    if (typeof chart.target === 'number') clauses.push({ label: 'Target', value: String(chart.target) })
   }
   // #111 big-number mode: the single figure this page will lead with.
   if (bigNumber) {

@@ -21,14 +21,12 @@
  */
 import {
   coerceValue,
-  optionForValue,
   type PropertyDef,
   type PropertySchema,
 } from '@/lib/properties/schema'
 import type { ChartStatFlowFormat } from '@/components/charts/chart-stat-flow'
 import { statFormatOptions } from '../stat/format'
-import type { ChartPoint } from '../chart/data'
-import type { ViewChartConfig, ViewBigNumberConfig, ViewFigureFormat } from './schema'
+import type { ViewBigNumberConfig, ViewFigureFormat } from './schema'
 import type { CollectionRow } from './apply'
 
 /**
@@ -53,10 +51,9 @@ export const AGG_LABELS: Record<ViewAgg, string> = {
 
 /**
  * Every chart KIND a chart-mode view may name. The #94 kinds are `kind` VALUES here,
- * never new block types — that is the whole point of #111. Only a subset is DRAWN
- * today (`DRAWN_CHART_KINDS` below); the rest are accepted by the schema and render a
- * calm "not drawn yet" notice, so #94 can land renderers without touching the
- * persisted contract or re-migrating a single page.
+ * never new block types — that is the whole point of #111. All eleven draw
+ * (`collection-chart.tsx` → `src/components/charts/*`); the derivation that feeds
+ * them lives in `chart-data.ts`.
  */
 export const CHART_KINDS = [
   'line',
@@ -72,14 +69,6 @@ export const CHART_KINDS = [
   'funnel',
 ] as const
 export type ChartKind = (typeof CHART_KINDS)[number]
-
-/** The kinds with a renderer today (the three promoted Bklit visuals). #94 adds the rest. */
-export const DRAWN_CHART_KINDS = ['line', 'area', 'bar'] as const satisfies readonly ChartKind[]
-
-/** Is this kind drawable now, or is it an accepted-but-undrawn #94 kind? */
-export function isDrawnChartKind(kind: ChartKind): boolean {
-  return (DRAWN_CHART_KINDS as readonly string[]).includes(kind)
-}
 
 // ── Property lookup + numeric reading ────────────────────────────────────────
 
@@ -185,39 +174,8 @@ export function formatFigure(value: number | null, format?: ViewFigureFormat): s
 // pure and shared by the renderer and serialize, so both read the same figures.
 
 /** The first property whose values aggregate numerically (the obvious series/figure). */
-function firstNumericDef(schema: PropertySchema): PropertyDef | undefined {
+export function firstNumericDef(schema: PropertySchema): PropertyDef | undefined {
   return schema.find((d) => d.type === 'number' || d.type === 'rollup')
-}
-
-/** The first property that reads as a category/x axis: a date, then a choice, then text. */
-function firstCategoryDef(schema: PropertySchema): PropertyDef | undefined {
-  return (
-    schema.find((d) => d.type === 'date') ??
-    schema.find((d) => d.type === 'select' || d.type === 'status') ??
-    schema.find((d) => d.type === 'text')
-  )
-}
-
-/**
- * The chart config a chart-mode view actually renders with: the stored config, with
- * each missing piece inferred. An unresolvable `xProperty` falls back to the row
- * TITLE (`xProperty: undefined` means "one point per record, labelled by title") —
- * always drawable, never empty. A series whose property is gone is dropped; with no
- * series left, the count of records is charted, which is honest and non-empty.
- */
-export function resolveChartConfig(
-  schema: PropertySchema,
-  config: ViewChartConfig | undefined
-): { kind: ChartKind; xDef?: PropertyDef; series: { def?: PropertyDef; agg: ViewAgg }[]; stacked: boolean } {
-  const kind = config?.kind ?? 'bar'
-  const xDef = defById(schema, config?.xProperty) ?? (config ? undefined : firstCategoryDef(schema))
-  const declared = (config?.series ?? [])
-    .map((s) => ({ def: defById(schema, s.property), agg: s.agg }))
-    .filter((s) => s.def !== undefined || s.agg === 'count')
-  const series = declared.length
-    ? declared
-    : [{ def: firstNumericDef(schema), agg: (firstNumericDef(schema) ? 'sum' : 'count') as ViewAgg }]
-  return { kind, xDef, series, stacked: config?.stacked ?? false }
 }
 
 /** The big-number config a big-number view renders with, missing pieces inferred. */
@@ -233,91 +191,10 @@ export function resolveBigNumberConfig(
   return { def, agg, format: config?.format }
 }
 
-// ── The two derivations ──────────────────────────────────────────────────────
-
-/** One chart series' label + aggregated points, ready for the card legend. */
-export interface ChartSeriesSpec {
-  /** Legend/series name: the property name, qualified by its verb when not a plain sum. */
-  name: string
-}
-
-/** A chart view's drawable data: point-major rows plus the series/axis labels. */
-export interface ChartData {
-  kind: ChartKind
-  points: ChartPoint[]
-  series: ChartSeriesSpec[]
-  /** The x-axis label (the category property's name, or "Record" when bucketing by title). */
-  xLabel: string
-  stacked: boolean
-}
-
 /** The series' display name: "Hours" for a plain sum, "Hours (avg)" otherwise. */
-function seriesName(def: PropertyDef | undefined, agg: ViewAgg): string {
+export function seriesName(def: PropertyDef | undefined, agg: ViewAgg): string {
   if (!def) return 'Records'
   return agg === 'sum' ? def.name : `${def.name} (${agg})`
-}
-
-/** The category a row falls under, as a label. Empty/unset buckets under "No value". */
-function categoryOf(def: PropertyDef | undefined, row: CollectionRow): string {
-  if (!def) return row.title || 'Untitled'
-  const value = coerceValue(def, row.values[def.id])
-  if (value === null || value === '') return 'No value'
-  if (def.type === 'select' || def.type === 'status') {
-    return optionForValue(def, value)?.label ?? String(value)
-  }
-  if (def.type === 'checkbox') return value ? 'Yes' : 'No'
-  return String(value)
-}
-
-/**
- * Derive a chart's points from a collection's ROWS (#111) — the whole point of the
- * issue: no `points` are ever stored, they are computed here from the records every
- * time. Rows are bucketed by the x property (first-seen order preserved, so a sorted
- * view charts in its own order) and each series aggregates within its bucket.
- *
- * Pass the ALREADY filter/sort-applied rows (`applyView`): a chart must honour the
- * view's own filter and sort exactly as its table does, and `latest` depends on it.
- */
-export function chartDataFromRows(
-  rows: readonly CollectionRow[],
-  schema: PropertySchema,
-  config: ViewChartConfig | undefined
-): ChartData {
-  const { kind, xDef, series, stacked } = resolveChartConfig(schema, config)
-  const names = series.map((s) => seriesName(s.def, s.agg))
-
-  // Bucket rows by category, keeping first-seen order (the view's own row order).
-  const order: string[] = []
-  const buckets = new Map<string, CollectionRow[]>()
-  for (const row of rows) {
-    const key = categoryOf(xDef, row)
-    const bucket = buckets.get(key)
-    if (bucket) bucket.push(row)
-    else {
-      buckets.set(key, [row])
-      order.push(key)
-    }
-  }
-
-  const points: ChartPoint[] = order.map((x) => {
-    const bucketRows = buckets.get(x) ?? []
-    const values: Record<string, number> = {}
-    series.forEach((s, i) => {
-      const figure = aggregateRows(bucketRows, s.def, s.agg)
-      // A bucket with no participating value is a GAP, not a zero (chart/data.ts
-      // contract): an absent series key renders as a break in the line.
-      if (figure !== null) values[names[i]] = figure
-    })
-    return { x, values }
-  })
-
-  return {
-    kind,
-    points,
-    series: names.map((name) => ({ name })),
-    xLabel: xDef?.name ?? 'Record',
-    stacked,
-  }
 }
 
 /** A big-number view's drawable figure. */

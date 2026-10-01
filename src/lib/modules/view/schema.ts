@@ -1,14 +1,8 @@
 import { z } from 'zod'
 import type { ModuleDescriptor } from '../types'
 import type { PropertySchema } from '@/lib/properties/schema'
-import {
-  AGG_LABELS,
-  CHART_KINDS,
-  VIEW_AGGS,
-  bigNumberFromRows,
-  chartDataFromRows,
-  signedDelta,
-} from './aggregate'
+import { AGG_LABELS, CHART_KINDS, VIEW_AGGS, bigNumberFromRows, signedDelta } from './aggregate'
+import { chartDataFromRows } from './chart-data'
 
 /**
  * The `view` block (#19) — an inline block that DRAWS a collection's rows.
@@ -113,6 +107,12 @@ export const viewChartConfigSchema = z.object({
   series: z.array(viewChartSeriesSchema).min(1),
   /** Stack the series instead of grouping them (multi-series bar/area). */
   stacked: z.boolean().optional(),
+  /**
+   * A reference figure (#94): the goal a GAUGE fills toward (omitted → the record
+   * count, "14 of 24"), or the dashed target line on a COMPOSED chart. Never data —
+   * one number the person sets, like a filter value.
+   */
+  target: z.number().optional(),
 })
 export type ViewChartConfig = z.infer<typeof viewChartConfigSchema>
 
@@ -213,6 +213,12 @@ function serializeFigures(data: HydratedViewBlock): string | null {
 
   const chart = chartDataFromRows(rows, schema, data.chart)
   if (chart.points.length === 0) return 'no records to chart'
+  if (chart.gauge) {
+    const v = chart.gauge.value === null ? '—' : String(chart.gauge.value)
+    return `gauge: ${chart.series[0].name} ${v} of ${chart.gauge.target} over ${rows.length} record${
+      rows.length === 1 ? '' : 's'
+    }`
+  }
   const perSeries = chart.series.map((s) => {
     const pairs = chart.points
       .map((p) => {
