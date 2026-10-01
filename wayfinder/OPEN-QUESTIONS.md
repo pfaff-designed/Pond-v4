@@ -1,4 +1,17 @@
-# Open questions — decisions that need the user, tracked nowhere else
+# Open questions — M1 is CLOSED. Do not mine this file for questions.
+
+> **Status, 2026-10-01: every M1 question in this file is ruled.** See `docs/adr/0003-build-m1-autonomously-from-the-design-handoff.md`.
+>
+> §2 (type and spacing) — ruled: UI scale is 11 / 13 / 16 / 18 / 22 / 28 / 36 / 46; 12px resolves to **11** on the machine surface and small meta, **13** everywhere else; spacing is **px** (4/8/12/16/24/32 components, 48/80/120/160/240/320 layouts).
+> §4 (area hue) — ruled: **assigned by the user, ink is the default**. `PROJECT_RULES.md` already said so.
+> §7 (process) — ruled: full autonomy. Worktree → build → two-axis review → live-verify against the mockup → merge, no per-issue gate. All of M1's issues are filed up front.
+> §1 — already answered 2026-09-30 (ADR 0002).
+>
+> **The handoff is the spec.** `wayfinder/design_handoff_pond/` is complete and high-fidelity. Before writing a question here, check `PROJECT_RULES.md`, `AUDIT.md`'s "Decided, 26 sep" log, the inline values in the `.dc.html` markup, and `docs/adr/`. A value written in the markup is not an open question. Three sessions were lost to re-asking things the handoff had already answered.
+>
+> What may still legitimately land here: **M2 and M3 questions only** — collaboration, roles, multi-pond — and only once the handoff is genuinely silent on them.
+
+---
 
 _Created 2026-09-30, when `wayfinder/` was flattened into `_archive/`. This file holds
 **intent and unanswered questions only.** It is not a status board: shipped state lives in
