@@ -64,7 +64,11 @@ export async function getOrCreateHomePage(
       user_id: user.id,
       parent_id: null,
       type: HOME_TYPE,
-      title: 'Life',
+      // Lowercase, like every other page name Pond writes (#101 review): the rail
+      // and the breadcrumb render a title raw, and the AI reads this one in the
+      // workspace outline. A pond created before this keeps 'Life' until the
+      // one-off row correction lands (gated, batched with migration 0017).
+      title: 'life',
       blocks: [],
       props: {},
     })
@@ -78,7 +82,11 @@ export async function getOrCreateHomePage(
     return readHomeRow(supabase, user.id)
   }
 
-  return { id: data.id as string, title: (data.title as string) ?? 'Life', blocks: toBlocks(data.blocks) }
+  return {
+    id: data.id as string,
+    title: (data.title as string) ?? 'life',
+    blocks: toBlocks(data.blocks),
+  }
 }
 
 /** Read the user's existing home row, or null if none exists yet. */
@@ -98,5 +106,9 @@ async function readHomeRow(
   if (!data) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row = data as any
-  return { id: row.id as string, title: (row.title as string) ?? 'Life', blocks: toBlocks(row.blocks) }
+  return {
+    id: row.id as string,
+    title: (row.title as string) ?? 'life',
+    blocks: toBlocks(row.blocks),
+  }
 }

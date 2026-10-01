@@ -96,7 +96,11 @@ describe('0010_drop_area_type', () => {
     await db.close()
   })
 
-  it('seeds five top-level pages (no areas) for a new user', async () => {
+  // The titles are LOWERCASE from 0017 on (#101 review): the rail renders a title
+  // raw, and `Pond 05 Shell`'s rail copy is lowercase throughout — the capitals in
+  // the boards are a `text-transform`. Pinned exactly, not case-insensitively:
+  // the point is that what the seed WRITES is lowercase.
+  it('seeds five lowercase top-level pages (no areas) for a new user', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
@@ -108,18 +112,18 @@ describe('0010_drop_area_type', () => {
       [USER]
     )
     expect(rows.rows.map((r) => r.title)).toEqual([
-      'Personal',
-      'Professional',
-      'Health',
-      'Finances',
-      'Creativity',
+      'personal',
+      'professional',
+      'health',
+      'finances',
+      'creativity',
     ])
     expect(rows.rows.every((r) => r.type === 'page')).toBe(true)
 
     await db.close()
   })
 
-  it('seeds the sandbox fixture as pages, keeping Demo Page nested', async () => {
+  it('seeds the sandbox fixture as lowercase pages, keeping the demo page nested', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
 
@@ -136,8 +140,8 @@ describe('0010_drop_area_type', () => {
       [USER]
     )
     expect(rows.rows.every((r) => r.type === 'page')).toBe(true)
-    const a = rows.rows.find((r) => r.title === 'Sandbox Area A')!
-    const demo = rows.rows.find((r) => r.title === 'Demo Page')!
+    const a = rows.rows.find((r) => r.title === 'sandbox area a')!
+    const demo = rows.rows.find((r) => r.title === 'demo page')!
     expect(demo.parent_id).toBe(a.id)
 
     await db.close()
