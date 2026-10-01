@@ -89,7 +89,7 @@ export function QuestionCard({
               onChange={(e) => setFree(e.target.value)}
               placeholder="…or answer in your own words"
               aria-label="Free answer"
-              className="flex-1 border-0 border-b border-mn-line bg-transparent px-0 py-1 font-serif text-sm text-mn-text-meta outline-none transition-colors placeholder:text-mn-text-faint focus:border-mn-text"
+              className="flex-1 border-0 border-b border-mn-line bg-transparent px-0 py-1 font-serif text-sm text-mn-text-meta outline-none transition-colors placeholder:text-mn-text-secondary focus:border-mn-text"
             />
             <button
               type="submit"

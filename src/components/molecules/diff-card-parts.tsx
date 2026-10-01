@@ -107,7 +107,7 @@ export function NoteBox({
           if (e.key === 'Escape') onCancel()
         }}
         placeholder="what should change?"
-        className="w-full resize-none bg-transparent font-mono text-[12px] leading-[1.55] text-mn-text outline-none placeholder:text-mn-text-faint"
+        className="w-full resize-none bg-transparent font-mono text-[12px] leading-[1.55] text-mn-text outline-none placeholder:text-mn-text-secondary"
       />
       <div className="flex justify-end gap-[7px]">
         <Button

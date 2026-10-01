@@ -260,7 +260,7 @@ export function DocumentPanel() {
   if (!nodeId) return <LifeOverviewPanel />
   if (isLoading || rowsPending || !page) {
     return (
-      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-faint">
+      <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
         Loading…
       </div>
     )
@@ -320,14 +320,14 @@ export function DocumentPanel() {
         </ShellBreadcrumb>
         <div className="flex items-center justify-between gap-3 mt-2 mb-4">
           <input
-            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-faint"
+            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-secondary"
             value={viewTitle}
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
           />
           <span
-            className="font-mono lowercase tracking-wider text-mn-11 text-mn-text-faint flex-shrink-0"
+            className="font-mono lowercase text-mn-11 text-mn-text-secondary flex-shrink-0"
             aria-live="polite"
           >
             {saved ? 'saved' : 'saving…'}
@@ -339,7 +339,7 @@ export function DocumentPanel() {
           <button
             type="button"
             onClick={toggleChanges}
-            className="shrink-0 font-mono text-mn-11 lowercase tracking-wider text-mn-text-faint hover:text-mn-text-secondary"
+            className="shrink-0 font-mono text-mn-11 lowercase text-mn-text-secondary hover:text-mn-text"
           >
             changes
           </button>

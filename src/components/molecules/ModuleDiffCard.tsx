@@ -195,7 +195,11 @@ export function ModuleDiffCard({
                             // Ticket-30: the model INFERRED this change as a side-effect.
                             // The whole diff decides together now; the badge tells the
                             // person what to name in a request-changes note.
-                            <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 tracking-wider text-mn-text">
+                            // #220 review: no board draws this pill, so it takes the
+                            // .02em the surrounding machine-surface text carries on
+                            // `Pond 06.03` — never tracking-wider (.1em), which is
+                            // looser than anything measured on mono anywhere.
+                            <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 tracking-[0.02em] text-mn-text">
                               inferred
                             </span>
                           )}

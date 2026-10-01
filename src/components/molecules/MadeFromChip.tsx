@@ -35,7 +35,7 @@ export function MadeFromChip({ stamp, onOpen, onToggleHidden, className }: MadeF
         <button
           type="button"
           onClick={() => onToggleHidden(false)}
-          className="font-mono text-[10.5px] lowercase tracking-[0.02em] text-mn-text-faint transition-colors hover:text-mn-text-secondary"
+          className="font-mono text-[10.5px] lowercase tracking-[0.02em] text-mn-text-secondary transition-colors hover:text-mn-text"
         >
           made from · show
         </button>
@@ -60,7 +60,7 @@ export function MadeFromChip({ stamp, onOpen, onToggleHidden, className }: MadeF
       <button
         type="button"
         onClick={() => onToggleHidden(true)}
-        className="font-mono text-[10.5px] lowercase tracking-[0.02em] text-mn-text-faint transition-colors hover:text-mn-text-secondary"
+        className="font-mono text-[10.5px] lowercase tracking-[0.02em] text-mn-text-secondary transition-colors hover:text-mn-text"
       >
         hide
       </button>

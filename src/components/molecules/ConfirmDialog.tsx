@@ -52,7 +52,7 @@ export function ConfirmDialog({
           <AlertDialog.Description className="mt-2 text-sm text-mn-text-secondary">
             {blastRadius ? (
               <>
-                <span className="font-medium text-destructive">{blastRadius}</span> This can&apos;t
+                <span className="font-medium text-mn-text">{blastRadius}</span> This can&apos;t
                 be undone.
               </>
             ) : (
@@ -63,7 +63,7 @@ export function ConfirmDialog({
             <AlertDialog.Close className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
               {cancelLabel}
             </AlertDialog.Close>
-            <Button variant="destructive" size="sm" onClick={onConfirm}>
+            <Button size="sm" onClick={onConfirm}>
               {confirmLabel}
             </Button>
           </div>

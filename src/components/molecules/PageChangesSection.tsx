@@ -84,7 +84,7 @@ export function PageChangesSection({
     <section aria-label="Changes to this page" className={className}>
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className={cn(kickerClass, 'text-mn-text-secondary')}>Changes to this page</h2>
-        <span className="font-mono text-[0.65rem] text-mn-text-faint">⌥⌘H</span>
+        <span className="font-mono text-[0.65rem] text-mn-text-secondary">⌥⌘H</span>
       </div>
 
       {error && (
@@ -94,13 +94,13 @@ export function PageChangesSection({
       )}
 
       {loading && rows.length === 0 && (
-        <p className="font-mono text-xs text-mn-text-faint">loading…</p>
+        <p className="font-mono text-xs text-mn-text-secondary">loading…</p>
       )}
 
       {!loading && rows.length === 0 && (
         // Most pages have never been changed by Pond. Say so plainly rather than
         // showing an empty frame that looks broken.
-        <p className="font-mono text-xs text-mn-text-faint">nothing logged for this page yet</p>
+        <p className="font-mono text-xs text-mn-text-secondary">nothing logged for this page yet</p>
       )}
 
       <ul className="divide-y divide-mn-hair">
@@ -110,11 +110,11 @@ export function PageChangesSection({
           const outdated = record.action === 'revert' && record.status === 'outdated'
           return (
             <li key={record.id} className="flex items-center gap-3 py-2">
-              <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
+              <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
                 {timeOf(record.createdAt)}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-              <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
+              <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
                 {record.actor}
               </span>
               <Status status={record.status} />
@@ -139,7 +139,7 @@ export function PageChangesSection({
                 // revise. There is no revise verb on this surface yet, so say what
                 // the person can actually do: the change it reverts offers Revert
                 // again, and that re-plans against the page as it now stands.
-                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
+                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
                   out of date — revert it again
                 </span>
               )}
@@ -159,7 +159,7 @@ export function PageChangesSection({
               {revertBlockedBy === 'waiting' && (
                 // The revert exists already and is sitting in this same list —
                 // saying so beats a button that would refuse.
-                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-faint">
+                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
                   revert waiting
                 </span>
               )}

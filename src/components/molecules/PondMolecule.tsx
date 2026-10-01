@@ -34,6 +34,7 @@
 import type { ReactNode } from 'react'
 import { PondAtom, type PondAtomKind, type PondAtomState } from '@/components/atoms/PondAtom'
 import { KindDot } from '@/components/atoms/PondAtom'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 
 export const POND_MOLECULE_KINDS = [
@@ -397,7 +398,7 @@ export function PondMolecule({
             >
               {displayTitle}
             </span>
-            <span aria-hidden className="ml-auto text-[15px] text-mn-text/30">
+            <span aria-hidden className="ml-auto text-[15px] text-mn-mark-faint">
               ›
             </span>
           </span>
@@ -409,7 +410,7 @@ export function PondMolecule({
           </span>
           <span
             data-part="sub"
-            className="font-mono lowercase text-[11.5px] tracking-wider text-mn-text-secondary"
+            className="font-mono lowercase text-[11.5px] text-mn-text-secondary"
           >
             {sub}
           </span>
@@ -497,7 +498,7 @@ export function PondMolecule({
       >
         <span
           data-part="label"
-          className="text-[10.5px] font-medium tracking-wider uppercase text-mn-text-secondary"
+          className={pageEyebrowClass}
         >
           {label ?? 'kcal per serving'}
         </span>
@@ -556,7 +557,7 @@ export function PondMolecule({
         className={cn(
           'inline-flex items-center gap-1.5 rounded-mn-pill font-mono lowercase whitespace-nowrap ring-1 ring-inset',
           mobile ? 'min-h-8 px-[11px] text-[12px]' : 'min-h-[22px] px-[9px] text-[10.5px]',
-          selected || hover ? 'ring-mn-text/30' : 'ring-mn-text/20',
+          selected || hover ? 'ring-mn-mark-faint' : 'ring-mn-text/20',
           selected && 'bg-mn-hover-fill',
           error ? 'text-mn-text-secondary line-through' : 'text-mn-text-meta',
           wrap

@@ -2038,9 +2038,9 @@ export function AITerminal() {
   const messagesBody = (
     <div className="flex-1 overflow-y-auto py-4" onKeyDown={handleBodyKeyDown}>
       <div className="w-full space-y-5 px-8">
-        {!isReady && <p className="font-serif text-sm italic text-mn-text-faint">Loading…</p>}
+        {!isReady && <p className="font-serif text-sm italic text-mn-text-secondary">Loading…</p>}
         {isReady && messages.length === 0 && (
-          <p className="font-serif text-sm italic text-mn-text-faint">
+          <p className="font-serif text-sm italic text-mn-text-secondary">
             Talk with Pond — think out loud, ask, or compose.
           </p>
         )}
@@ -2769,7 +2769,7 @@ export function AITerminal() {
                 // baseline (motion-focus-draw), so no border-color flip here.
                 // MN: the composer is a machine surface — mono, lowercase, tight
                 // tracking (--voice-mono). Typed intent reads as machine input.
-                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-mn-13 text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
+                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-mn-13 text-mn-text-meta outline-none placeholder:text-mn-text-secondary disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>
@@ -2801,7 +2801,7 @@ export function AITerminal() {
               title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
               onClick={handleAttachClick}
               disabled={isStreaming || !isReady}
-              className="self-end mb-2 text-mn-text-faint hover:text-mn-text transition-colors disabled:opacity-40"
+              className="self-end mb-2 text-mn-text-secondary hover:text-mn-text transition-colors disabled:opacity-40"
             >
               <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
                 <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 0 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3Z" />
@@ -2816,8 +2816,8 @@ export function AITerminal() {
                 !isReady
               }
               // MN: the composer is a machine surface — its Send control speaks the
-              // mono machine voice (lowercase, tracking-wider), not the serif kicker.
-              className="self-end pb-2 font-mono lowercase tracking-wider text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
+              // mono machine voice (lowercase, no added tracking), not the serif kicker.
+              className="self-end pb-2 font-mono lowercase text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
             >
               send
             </button>

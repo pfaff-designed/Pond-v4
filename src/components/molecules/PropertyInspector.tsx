@@ -13,12 +13,14 @@
  * card (decision 17: direct user manipulation bypasses the AI gate).
  *
  * `relation` is defined this pass but not yet authorable (#20): its values render
- * as inert id chips with a quiet note. Press aesthetics — kicker header, hairline
- * rows, serif body, sage accent — no bespoke widgets.
+ * as inert id chips with a quiet note. Make Noise field-row (`PondMolecule.dc.html`
+ * `field-row`, read inline): the label is the page eyebrow (10.5 / 500 / .1em /
+ * uppercase / .68) and the value is a sans atom at 13.5 in full ink — a field value
+ * is not prose, so it is never serif (#220). No bespoke widgets.
  */
 
 import { cn } from '@/lib/utils'
-import { kickerClass } from '@/components/atoms/kicker'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
 import {
@@ -41,7 +43,7 @@ export interface PropertyInspectorProps {
 }
 
 const inputClass =
-  'w-full border-0 border-b border-mn-line bg-transparent px-0 py-1 font-serif text-sm text-mn-text-meta outline-none transition-colors placeholder:text-mn-text-faint focus:border-mn-text disabled:opacity-60'
+  'w-full border-0 border-b border-mn-line bg-transparent px-0 py-1 font-sans text-[13.5px] text-mn-text outline-none transition-colors placeholder:text-mn-text-secondary focus:border-mn-text disabled:opacity-60'
 
 export function PropertyInspector({
   schema,
@@ -52,7 +54,7 @@ export function PropertyInspector({
 }: PropertyInspectorProps) {
   if (schema.length === 0) {
     return (
-      <p className={cn('font-serif text-xs italic text-mn-text-secondary', className)}>
+      <p className={cn('font-sans text-[13.5px] text-mn-text-secondary', className)}>
         No properties on this page yet.
       </p>
     )
@@ -66,7 +68,7 @@ export function PropertyInspector({
     >
       {schema.map((def) => (
         <div key={def.id} className="contents">
-          <dt className={cn(kickerClass, 'pt-1 text-mn-text-secondary')}>{def.name}</dt>
+          <dt className={cn(pageEyebrowClass, 'pt-1')}>{def.name}</dt>
           <dd>
             <PropertyField
               def={def}

@@ -33,6 +33,7 @@ import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import type { NodeType } from '@/lib/supabase/types'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 /** Sentinel select value for the top-level (no parent) destination. */
 export const TOP_LEVEL_VALUE = '__top_level__'
@@ -102,13 +103,11 @@ export function CreatePageModalView({
               onChange={(e) => onTitleChange(e.target.value)}
               placeholder="Untitled"
               aria-label="Page title"
-              className="w-full text-lg font-semibold text-foreground outline-none bg-transparent border-b border-mn-line pb-1.5 placeholder:text-mn-text-faint focus:border-mn-text transition-colors"
+              className="w-full text-lg font-semibold text-foreground outline-none bg-transparent border-b border-mn-line pb-1.5 placeholder:text-mn-text-secondary focus:border-mn-text transition-colors"
             />
 
             <label className="flex flex-col gap-1.5">
-              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-mn-text-faint">
-                Save to
-              </span>
+              <span className={pageEyebrowClass}>Save to</span>
               <select
                 value={parentValue}
                 onChange={(e) => onParentChange(e.target.value)}

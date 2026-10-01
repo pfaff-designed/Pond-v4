@@ -38,14 +38,14 @@ function MatrixGrid({ size }: { size?: PondAtomProps['size'] }) {
       {POND_ATOM_STATES.map((state) => (
         <span
           key={state}
-          className="font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary"
+          className="font-mono lowercase text-[10.5px] text-mn-text-secondary"
         >
           {state}
         </span>
       ))}
       {POND_ATOM_KINDS.map((kind) => (
         <div key={kind} className="contents">
-          <span className="font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary">
+          <span className="font-mono lowercase text-[10.5px] text-mn-text-secondary">
             {kind}
           </span>
           {POND_ATOM_STATES.map((state) => (

@@ -37,18 +37,13 @@ function MatrixGrid({ size }: { size?: PondMoleculeProps['size'] }) {
     <div className="grid items-center gap-x-mn-4 gap-y-mn-2 overflow-x-auto p-mn-4 [grid-template-columns:auto_repeat(10,minmax(180px,auto))]">
       <span />
       {POND_MOLECULE_STATES.map((state) => (
-        <span
-          key={state}
-          className="font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary"
-        >
+        <span key={state} className="font-mono lowercase text-[10.5px] text-mn-text-secondary">
           {state}
         </span>
       ))}
       {POND_MOLECULE_KINDS.map((kind) => (
         <div key={kind} className="contents">
-          <span className="font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary">
-            {kind}
-          </span>
+          <span className="font-mono lowercase text-[10.5px] text-mn-text-secondary">{kind}</span>
           {POND_MOLECULE_STATES.map((state) => (
             <PondMolecule key={state} kind={kind} state={state} size={size} />
           ))}

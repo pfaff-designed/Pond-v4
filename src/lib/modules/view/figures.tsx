@@ -266,7 +266,7 @@ export function CollectionBigNumber({
       {figure.delta !== undefined && (
         <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">{signedDelta(figure.delta)}</span>
       )}
-      <span className="mt-0.5 text-xs text-mn-text-faint">{records}</span>
+      <span className="mt-0.5 text-xs text-mn-text-secondary">{records}</span>
     </div>
   )
 }

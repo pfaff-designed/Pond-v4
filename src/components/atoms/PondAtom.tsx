@@ -20,6 +20,7 @@
  */
 
 import { cn } from '@/lib/utils'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 export const POND_ATOM_KINDS = [
   'heading',
@@ -216,7 +217,7 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
         .filter(Boolean)
         .join(' ')
     case 'eyebrow':
-      return 'text-[10.5px] font-medium uppercase tracking-wider text-mn-text-secondary'
+      return pageEyebrowClass
     case 'prose':
       return cn('font-serif font-extralight leading-relaxed', mobile ? 'text-[17px]' : 'text-[17.5px]')
     case 'highlight':
@@ -236,12 +237,12 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
       )
     case 'link':
       return cn(
-        'underline decoration-mn-text/30 underline-offset-[3px]',
+        'underline decoration-mn-mark-faint underline-offset-[3px]',
         hover && 'opacity-75'
       )
     case 'file':
       return cn(
-        'font-mono lowercase tracking-wider text-mn-text-meta',
+        'font-mono lowercase text-mn-text-meta',
         mobile ? 'text-[12px]' : 'text-mn-11'
       )
     default:
@@ -319,7 +320,7 @@ export function PondAtom({
             </svg>
           </span>
         )}
-        <span className="whitespace-nowrap font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary">
+        <span className="whitespace-nowrap font-mono lowercase text-[10.5px] text-mn-text-secondary">
           {MEDIA_CAPTION[state](video)}
         </span>
       </span>
@@ -450,7 +451,7 @@ export function PondAtom({
           className={cn(
             'flex-none bg-current',
             mobile ? 'size-5' : 'size-4',
-            areaText ?? (empty ? 'text-mn-text/30' : 'text-mn-text')
+            areaText ?? (empty ? 'text-mn-mark-faint' : 'text-mn-text')
           )}
         />
       )}
@@ -466,7 +467,7 @@ export function PondAtom({
             numeric && 'font-medium',
             chip &&
               cn(
-                'font-mono lowercase tracking-wider rounded-mn-pill text-mn-text-meta',
+                'font-mono lowercase rounded-mn-pill text-mn-text-meta',
                 mobile ? 'px-[11px] py-[5px] text-[12px]' : 'px-[9px] py-[3px] text-[10.5px]',
                 empty || error
                   ? 'ring-[1px] ring-inset ring-mn-text/20'
@@ -498,7 +499,7 @@ export function PondAtom({
       {noteText && (
         <span
           data-part="note"
-          className="whitespace-nowrap font-mono lowercase tracking-wider text-[10.5px] text-mn-text-secondary"
+          className="whitespace-nowrap font-mono lowercase text-[10.5px] text-mn-text-secondary"
         >
           {noteText}
         </span>

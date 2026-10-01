@@ -235,9 +235,9 @@ export function TerminalDrawer({
           >
             {/* Header: context + visible controls (collapse toggle, clear).
                 MN: the composer is a machine surface, so its chrome speaks the mono
-                machine voice (lowercase, tracking-wider) — not the correspondence
+                machine voice (lowercase, no added tracking) — not the correspondence
                 serif. The context VALUE stays as-is (it's a page/area name). */}
-            <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase tracking-wider text-mn-11 text-mn-text-secondary">
+            <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase text-mn-11 text-mn-text-secondary">
               <button
                 type="button"
                 onClick={onToggleCollapsed}
@@ -264,7 +264,7 @@ export function TerminalDrawer({
                 disabled={!canClear}
                 aria-label="Clear conversation"
                 title="Clear conversation (/clear)"
-                className="text-mn-text-faint hover:text-raw-red transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
+                className="text-mn-text-secondary hover:text-mn-text transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
               >
                 clear
               </button>

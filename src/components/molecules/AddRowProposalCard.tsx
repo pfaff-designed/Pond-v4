@@ -89,7 +89,7 @@ export function AddRowProposalCard({
 
       {/* The row's title, set as the display-serif line. */}
       <p className="px-3 pt-2.5 font-serif text-sm text-mn-text-meta">
-        {title?.trim() ? title : <span className="italic text-mn-text-faint">Untitled row</span>}
+        {title?.trim() ? title : <span className="italic text-mn-text-secondary">Untitled row</span>}
       </p>
 
       {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}

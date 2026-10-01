@@ -25,7 +25,7 @@ const sampleFooter = (
 
 const sampleBody = (
   <div className="flex-1 overflow-y-auto px-8 py-4">
-    <p className="font-serif text-sm italic text-mn-text-faint">Start a conversation…</p>
+    <p className="font-serif text-sm italic text-mn-text-secondary">Start a conversation…</p>
   </div>
 )
 

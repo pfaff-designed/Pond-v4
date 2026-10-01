@@ -387,7 +387,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') setOpen(false)
         }}
-        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none placeholder:text-mn-text-faint"
+        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none placeholder:text-mn-text-secondary"
       />
       <select
         aria-label="New property type"
@@ -412,7 +412,7 @@ function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
         type="button"
         aria-label="Cancel adding property"
         onClick={() => setOpen(false)}
-        className="rounded-mn-chrome px-1 py-0.5 text-xs text-mn-text-faint transition-colors hover:text-mn-text"
+        className="rounded-mn-chrome px-1 py-0.5 text-xs text-mn-text-secondary transition-colors hover:text-mn-text"
       >
         ×
       </button>
@@ -462,7 +462,7 @@ function CollectionTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={schema.length + 2} className="py-2 text-mn-text-faint">
+              <td colSpan={schema.length + 2} className="py-2 text-mn-text-secondary">
                 No rows yet
               </td>
             </tr>
@@ -479,7 +479,7 @@ function CollectionTable({
                     value={row.title}
                     placeholder="Untitled"
                     onChange={(e) => onRenameRow(row.id, e.target.value)}
-                    className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-faint"
+                    className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
                   />
                 ) : (
                   row.title || 'Untitled'
@@ -503,7 +503,7 @@ function CollectionTable({
                     type="button"
                     aria-label={`Delete row: ${row.title || 'untitled'}`}
                     onClick={() => onRemoveRow(row.id)}
-                    className="rounded-mn-chrome px-1 leading-none text-mn-text-faint opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                    className="rounded-mn-chrome px-1 leading-none text-mn-text-secondary opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                   >
                     ×
                   </button>
@@ -658,9 +658,13 @@ function CollectionBoard({
                     <input
                       aria-label={`Column name: ${group.label}`}
                       value={group.label}
+                      placeholder="Untitled"
                       autoFocus={group.id === focusColId}
                       onChange={(e) => renameColumn(group.id as string, e.target.value)}
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase outline-none placeholder:text-mn-text-faint"
+                      // The typed name sits at full ink and the "Untitled" prompt a
+                      // tier below it (.68), so an unnamed column is legible AS unnamed.
+                      // Both tiers are legal; the two must never be the same one (#220).
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text uppercase outline-none placeholder:text-mn-text-secondary"
                     />
                   ) : (
                     <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
@@ -675,7 +679,7 @@ function CollectionBoard({
                       aria-label={`Move column left: ${group.label}`}
                       disabled={optIndex <= 0}
                       onClick={() => moveColumn(group.id as string, 'left')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-faint hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -692,7 +696,7 @@ function CollectionBoard({
                       aria-label={`Move column right: ${group.label}`}
                       disabled={optIndex < 0 || optIndex >= optCount - 1}
                       onClick={() => moveColumn(group.id as string, 'right')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-faint hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-faint"
+                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
@@ -759,7 +763,7 @@ function CollectionBoard({
                             autoFocus={row.id === focusRowId}
                             onChange={(e) => onRenameRow(row.id, e.target.value)}
                             // Leave room for the hover delete × so a long title never slides under it.
-                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-mn-text outline-none placeholder:text-mn-text-faint"
+                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
                           />
                         ) : (
                           <div className="font-medium text-mn-text">
@@ -794,7 +798,7 @@ function CollectionBoard({
                           type="button"
                           aria-label={`Delete card: ${row.title || 'untitled'}`}
                           onClick={() => onRemoveRow(row.id)}
-                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-mn-text-faint opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-mn-text-secondary opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ×
                         </button>
@@ -902,7 +906,7 @@ function CollectionCalendar({
 
   return (
     <div {...containerHandlers}>
-      {buckets.length === 0 && <p className="py-2 text-mn-text-faint">No rows yet</p>}
+      {buckets.length === 0 && <p className="py-2 text-mn-text-secondary">No rows yet</p>}
       <div className="space-y-4">
         {buckets.map((bucket) => {
           const key = laneKey(bucket.iso)
@@ -1004,7 +1008,7 @@ function CollectionCalendar({
  */
 function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
   if (rows.length === 0) {
-    return <p className="py-2 text-mn-text-faint">No rows yet</p>
+    return <p className="py-2 text-mn-text-secondary">No rows yet</p>
   }
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
@@ -1119,7 +1123,7 @@ function CollectionGantt({
     return <ViewNotice>This gantt needs a date property.</ViewNotice>
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
-    return <p className="py-2 text-mn-text-faint">No dated rows to chart</p>
+    return <p className="py-2 text-mn-text-secondary">No dated rows to chart</p>
   }
 
   const { bars, rangeStart } = layout
@@ -1304,7 +1308,7 @@ function Cell({
   }
 
   const cellInput =
-    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-mn-text-meta outline-none placeholder:text-mn-text-faint'
+    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-mn-text-meta outline-none placeholder:text-mn-text-secondary'
 
   switch (def.type) {
     case 'number':
@@ -1379,7 +1383,7 @@ function Cell({
 }
 
 function Dash() {
-  return <span className="text-mn-text-faint">—</span>
+  return <span className="text-mn-text-secondary">—</span>
 }
 
 /** A select/status value chip: a colored dot + the option label. */
@@ -1393,26 +1397,32 @@ function OptionChip({ label, color }: { label: string; color?: string }) {
 }
 
 // Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
-// the Make Noise system). Map each to its nearest MN house hue so option dots stay
-// distinguishable but on-brand — ~8 hues, all --raw-* tokens (issue: MN reskin #1).
-// A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
+// the Make Noise system). Each maps to the nearest MN house hue, all --raw-* tokens
+// (issue: MN reskin #1). Since #220 freed the three signals, the warm half of that
+// rainbow collapses: red / rose / rust / pink / orange / amber all land on rose, and
+// yellow / lime join the greens on sage. So these twenty-two names resolve to FIVE
+// swatches — olive-mid, rose, sage, mist, navy — plus ink for `accent`. Two option
+// colours can therefore draw the same dot; the label beside it is what distinguishes
+// them. A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
 const TOKEN_DOT: Record<string, string> = {
   // neutrals → the house neutral-400
   zinc: 'var(--raw-olive-mid)',
   gray: 'var(--raw-olive-mid)',
   slate: 'var(--raw-olive-mid)',
   stone: 'var(--raw-olive-mid)',
-  // reds → rust; pink → the dusty-rose swatch (kept distinct from rust)
-  red: 'var(--raw-red)',
-  rose: 'var(--raw-red)',
-  rust: 'var(--raw-red)',
+  // reds + warms → the dusty-rose swatch, the one warm the palette sanctions for
+  // option dots. Red is diff removals, burnt orange the ONE dated thing per screen
+  // and wheat highlighted passages only (PROJECT_RULES § Colors), so none of the
+  // three signals may tint a dot (#220). Six names share this one swatch.
+  red: 'var(--raw-rose)',
+  rose: 'var(--raw-rose)',
+  rust: 'var(--raw-rose)',
   pink: 'var(--raw-rose)',
-  // warms → burnt-orange
-  orange: 'var(--raw-burnt-orange)',
-  amber: 'var(--raw-burnt-orange)',
-  // yellows → wheat
-  yellow: 'var(--raw-wheat)',
-  lime: 'var(--raw-wheat)',
+  orange: 'var(--raw-rose)',
+  amber: 'var(--raw-rose)',
+  // yellows → sage (the nearest area mark to lime / yellow-green)
+  yellow: 'var(--raw-sage)',
+  lime: 'var(--raw-sage)',
   // greens → sage
   green: 'var(--raw-sage)',
   emerald: 'var(--raw-sage)',
