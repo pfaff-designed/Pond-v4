@@ -363,6 +363,7 @@ export function DocumentPanel() {
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}
+          pageTitle={viewTitle}
           onChange={commitLocalEdit}
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}

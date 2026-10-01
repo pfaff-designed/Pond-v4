@@ -112,21 +112,23 @@ function cellToValue(def: PropertyDef, cell: string | undefined): PropertyValue 
 
 /**
  * Map a table's rows onto page inputs against the inferred schema (AC2). Each row
- * becomes a page whose title is its first cell (kept identifiable in board/gallery/
- * gantt views, which render the title) and whose props hold every column's coerced
- * value keyed by the matching property's id. A short row's missing trailing cells
- * become empty values.
+ * becomes a page whose title is its `titleCol` cell — the first by default (kept
+ * identifiable in board/gallery/gantt views, which render the title; #101's list
+ * conversion names the record by its identifying text column instead) — and whose
+ * props hold every column's coerced value keyed by the matching property's id. A
+ * short row's missing trailing cells become empty values.
  */
 export function tableRowsToPageInputs(
   schema: PropertySchema,
-  rows: readonly TableRow[]
+  rows: readonly TableRow[],
+  titleCol = 0
 ): RowPageInput[] {
   return rows.map((row) => {
     const props: Record<string, PropertyValue> = {}
     schema.forEach((def, col) => {
       props[def.id] = cellToValue(def, row.cells[col])
     })
-    return { title: (row.cells[0] ?? '').trim(), props }
+    return { title: (row.cells[titleCol] ?? '').trim(), props }
   })
 }
 
