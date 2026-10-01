@@ -43,6 +43,7 @@
 import type { UIMessage } from 'ai'
 import { parseQuestionResolutions, type QuestionResolutions } from './parts'
 import { parseLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
+import { parsePageProposals, type PageProposals } from './page-proposals'
 
 export type ProposalDecision = 'accepted' | 'rejected'
 
@@ -96,6 +97,12 @@ export interface ConversationResolutions {
   /** The project lifecycle phase, so a returning session resumes mid-arc
    *  (ticket-39). Optional in persisted rows: absent ⇒ ordinary chat (idle). */
   lifecycle?: LifecycleState
+  /**
+   * make-this-a-page proposals (#97), keyed by proposal id. Additive & optional:
+   * absent ⇒ none. Unlike tool-card decisions, a `proposed` entry IS persisted —
+   * closing Pond with the card open leaves it pending in the thread (6d).
+   */
+  pageProposals?: PageProposals
 }
 
 export function emptyResolutions(): ConversationResolutions {
@@ -141,6 +148,9 @@ export function parseResolutions(value: unknown): ConversationResolutions {
   // flat note, so a legacy transcript stays byte-clean).
   const schemaInertRollups = pick('schemaInertRollups', isStringArray)
   const viewReplaced = pick('viewReplaced', isBool)
+  // #97 — page proposals ride the envelope only when there are any, so an
+  // ordinary transcript row stays byte-identical to before.
+  const pageProposals = parsePageProposals(v.pageProposals)
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
@@ -159,6 +169,7 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     // Only carry the lifecycle when a project is actually in flight — an idle
     // state is the default and stays off ordinary-chat rows.
     ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
+    ...(Object.keys(pageProposals).length > 0 ? { pageProposals } : {}),
   }
 }
 

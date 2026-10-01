@@ -53,6 +53,7 @@ import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
 import { emptyBlockForType } from '@/lib/modules/palette'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 
@@ -251,9 +252,7 @@ export function DocumentPanel() {
   const propSchema = page ? readSchema(page.props) : null
 
   // ── Root: the Life overview owns the panel (no more empty state) ──────────
-  if (!nodeId) {
-    return <LifeOverviewPanel />
-  }
+  if (!nodeId) return <LifeOverviewPanel />
   if (isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-faint">
@@ -341,6 +340,10 @@ export function DocumentPanel() {
           </button>
         </div>
 
+        {/* Provenance (#97, 6a frame 5): the thread moment this page was made
+            from, when it was. Hide keeps the stamp; nothing removes it. */}
+        <PageProvenance pageId={page.id} props={page.props} className="mb-5" />
+
         {/* Typed properties (#17): shown only when the page carries a schema (it
             is a collection). Edits write optimistically, bypassing the AI gate. */}
         {propSchema && (
@@ -364,6 +367,8 @@ export function DocumentPanel() {
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}
         />
+
+        <PageMentioned props={page.props} className="mt-8" />
 
         {/* Content above, children below — the page's own blocks stay primary; its
             sub-pages read as a quiet index beneath them (ticket-22). Collapses to

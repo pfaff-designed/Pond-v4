@@ -26,8 +26,10 @@ import { memo } from 'react'
 import ReactMarkdown, { type Components, type Options } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { answerComponents } from './markdown-answer'
 
-export type MarkdownVariant = 'reading' | 'terminal'
+export type MarkdownVariant = 'reading' | 'terminal' | 'answer'
 
 /** The shared Press serif voice both prose treatments are built from — one base,
  *  two scales, so the two variants cannot drift into different type worlds. */
@@ -47,14 +49,19 @@ export const READING_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[1.0625rem] leading
  */
 export const TERMINAL_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[0.95rem] leading-[1.6]`
 
+/** The composer answer voice (#97) — the sans at 13.5px / 1.55, never the serif.
+ *  Defined in markdown-answer.tsx; re-exported so the molecule stays the one import. */
+export { ANSWER_PROSE_CLASS } from './markdown-answer'
+
 /** Elements identical across variants (inline emphasis carries no size of its own). */
 const SHARED_COMPONENTS: Components = {
   strong: ({ children }) => <strong className="font-extrabold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
 }
 
-/** Per-variant Tailwind class map for each rendered markdown element. */
-const COMPONENTS: Record<MarkdownVariant, Components> = {
+/** Per-variant Tailwind class map for each rendered markdown element. The
+ *  `answer` map is derived from `terminal` just below the literal. */
+const BASE_COMPONENTS: Record<Exclude<MarkdownVariant, 'answer'>, Components> = {
   // ── Page reading view: the Press serif treatment ──────────────────────────
   reading: {
     ...SHARED_COMPONENTS,
@@ -72,6 +79,12 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
       <h3 className="font-serif text-lg font-extrabold leading-snug text-foreground mt-5 mb-2 first:mt-0">
         {children}
       </h3>
+    ),
+    // The smallest heading on a page is the eyebrow, not a tiny serif title: the
+    // sans label a section sits under (`Pond 06.01` 6a frame 5's "mentioned").
+    // Sans because it lives on the page — PROJECT_RULES § two registers.
+    h6: ({ children }) => (
+      <h6 className={`${pageEyebrowClass} mt-5 mb-2 first:mt-0`}>{children}</h6>
     ),
     p: ({ children }) => (
       <p className={`${READING_PROSE_CLASS} my-3 first:mt-0 last:mb-0`}>{children}</p>
@@ -207,10 +220,17 @@ const COMPONENTS: Record<MarkdownVariant, Components> = {
   },
 }
 
+// ── Composer answer (#97): the terminal map in the sans voice — see markdown-answer.
+const COMPONENTS: Record<MarkdownVariant, Components> = {
+  ...BASE_COMPONENTS,
+  answer: answerComponents(BASE_COMPONENTS.terminal),
+}
+
 /** remark-breaks only in `reading`: user notes keep plain line breaks as lines. */
 const PLUGINS: Record<MarkdownVariant, Options['remarkPlugins']> = {
   reading: [remarkGfm, remarkBreaks],
   terminal: [remarkGfm],
+  answer: [remarkGfm],
 }
 
 export const Markdown = memo(function Markdown({
@@ -223,7 +243,7 @@ export const Markdown = memo(function Markdown({
   className?: string
 }) {
   return (
-    <div className={className}>
+    <div className={className} data-variant={variant}>
       <ReactMarkdown remarkPlugins={PLUGINS[variant]} components={COMPONENTS[variant]}>
         {children}
       </ReactMarkdown>

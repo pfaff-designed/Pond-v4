@@ -22,11 +22,8 @@
  */
 import type { ProposalDecision, ProposalTarget, ConversationResolutions } from './resolutions'
 import type { QuestionResolution, QuestionResolutions } from './parts'
-import {
-  idleLifecycle,
-  isLifecycleActive,
-  type LifecycleState,
-} from './lifecycle'
+import type { PageProposal, PageProposals } from './page-proposals'
+import { idleLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 
 /** A card's settled decision, or `'pending'` — the reducer stores this; only
  *  settled decisions project (mirrors the terminal's old `settled()` filter and
@@ -44,13 +41,7 @@ export type ProposalStatus = ProposalDecision | 'pending'
  * type must be handled.
  */
 export type ProposalType =
-  | 'changes'
-  | 'creates'
-  | 'schemas'
-  | 'rows'
-  | 'promotions'
-  | 'views'
-  | 'links'
+  'changes' | 'creates' | 'schemas' | 'rows' | 'promotions' | 'views' | 'links'
 
 /**
  * A frozen promote_table preview (session-scoped, never projected). Typed
@@ -127,8 +118,14 @@ export interface ProposalState {
   viewReplaced: Record<string, boolean>
   /** The project lifecycle phase (ticket-39); projected only when active. */
   lifecycle: LifecycleState
+  /** make-this-a-page proposals (#97), by proposal id — every status, pending
+   *  included, so a card left open comes back after a reload (6d closing).
+   *  Projected only when non-empty. */
+  pageProposals: PageProposals
 
   // ── session-scoped aux (NEVER projected) ────────────────────────────────────
+  /** Failed make-page reasons, by proposal id (e.g. the parent was deleted). */
+  pageProposalErrors: Record<string, string>
   /** Per-batch human skip reasons for the current session's cards. */
   skipReasons: Record<string, string[]>
   /** Failed link_records accept reasons, by toolCallId. */
@@ -179,6 +176,24 @@ export type ProposalAction =
   | { kind: 'stampTarget'; id: string; target: ProposalTarget }
   | { kind: 'pickDestination'; type: ProposalType; id: string; destinationId: string }
   | { kind: 'advanceLifecycle'; lifecycle: LifecycleState }
+  /** #97 — open a `new page — proposed` card for an answer. Idempotent per
+   *  answer: a second proposal for a message that already has a PENDING one is
+   *  ignored (a double press opens one card, never two). */
+  | { kind: 'proposePage'; proposal: PageProposal }
+  /** Edit the card's name / under / kind in place (pending cards only). */
+  | {
+      kind: 'editPageProposal'
+      id: string
+      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind'>>
+    }
+  /** make page → accepted (with the made page's id); cancel → rejected. Only a
+   *  pending card settles — a second make page on a settled card is a no-op
+   *  (G9: a double ↵ must not make two pages). Clears any error. */
+  | { kind: 'settlePageProposal'; id: string; status: 'accepted' | 'rejected'; pageId?: string }
+  /** The write landed: stamp the made page's id on an accepted card. */
+  | { kind: 'notePageMade'; id: string; pageId: string }
+  /** The write failed: the card returns to pending, carrying the reason. */
+  | { kind: 'revertPageProposal'; id: string; error?: string }
   | { kind: 'reseed'; resolutions: ConversationResolutions }
   | { kind: 'reset' }
 
@@ -199,6 +214,8 @@ export function initialProposalState(): ProposalState {
     schemaInertRollups: {},
     viewReplaced: {},
     lifecycle: idleLifecycle(),
+    pageProposals: {},
+    pageProposalErrors: {},
     skipReasons: {},
     linkErrors: {},
     promotionSnapshot: {},
@@ -350,6 +367,77 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
       return { ...state, lifecycle: action.lifecycle }
     }
 
+    case 'proposePage': {
+      const { proposal } = action
+      const duplicate = Object.values(state.pageProposals).some(
+        (p) => p.messageId === proposal.messageId && p.status === 'proposed'
+      )
+      if (duplicate || state.pageProposals[proposal.id]) return state
+      return {
+        ...state,
+        pageProposals: {
+          ...state.pageProposals,
+          [proposal.id]: { ...proposal, status: 'proposed' },
+        },
+      }
+    }
+
+    case 'editPageProposal': {
+      const current = state.pageProposals[action.id]
+      if (!current || current.status !== 'proposed') return state
+      return {
+        ...state,
+        pageProposals: {
+          ...state.pageProposals,
+          [action.id]: { ...current, ...action.patch },
+        },
+      }
+    }
+
+    case 'settlePageProposal': {
+      const current = state.pageProposals[action.id]
+      if (!current || current.status !== 'proposed') return state
+      const settled: PageProposal = {
+        ...current,
+        status: action.status,
+        ...(action.pageId ? { pageId: action.pageId } : {}),
+      }
+      const pageProposalErrors = { ...state.pageProposalErrors }
+      delete pageProposalErrors[action.id]
+      return {
+        ...state,
+        pageProposals: { ...state.pageProposals, [action.id]: settled },
+        pageProposalErrors,
+      }
+    }
+
+    case 'notePageMade': {
+      const current = state.pageProposals[action.id]
+      if (!current || current.status !== 'accepted') return state
+      return {
+        ...state,
+        pageProposals: {
+          ...state.pageProposals,
+          [action.id]: { ...current, pageId: action.pageId },
+        },
+      }
+    }
+
+    case 'revertPageProposal': {
+      const current = state.pageProposals[action.id]
+      if (!current) return state
+      const { pageId: _drop, ...rest } = current
+      void _drop
+      const pageProposalErrors = { ...state.pageProposalErrors }
+      if (action.error) pageProposalErrors[action.id] = action.error
+      else delete pageProposalErrors[action.id]
+      return {
+        ...state,
+        pageProposals: { ...state.pageProposals, [action.id]: { ...rest, status: 'proposed' } },
+        pageProposalErrors,
+      }
+    }
+
     case 'reseed': {
       // Restore the persisted-derived fields from a loaded envelope (mirrors the
       // terminal's mount re-seed, AITerminal.tsx 840–855). Session-scoped aux is
@@ -372,6 +460,7 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         schemaInertRollups: r.schemaInertRollups ?? {},
         viewReplaced: r.viewReplaced ?? {},
         lifecycle: r.lifecycle ?? state.lifecycle,
+        pageProposals: r.pageProposals ?? {},
       }
     }
 
@@ -414,5 +503,7 @@ export function projectResolutions(state: ProposalState): ConversationResolution
       : {}),
     ...(Object.keys(state.viewReplaced).length > 0 ? { viewReplaced: state.viewReplaced } : {}),
     ...(isLifecycleActive(state.lifecycle) ? { lifecycle: state.lifecycle } : {}),
+    // #97 — every page proposal, PENDING INCLUDED (6d closing), only when any.
+    ...(Object.keys(state.pageProposals).length > 0 ? { pageProposals: state.pageProposals } : {}),
   }
 }
