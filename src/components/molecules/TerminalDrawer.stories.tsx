@@ -2,41 +2,30 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { useState } from 'react'
 
-import {
-  TerminalDrawer,
-  TERMINAL_COLLAPSED_HEIGHT,
-  TERMINAL_DEFAULT_HEIGHT,
-  RAIL_WIDTH_PX,
-} from './TerminalDrawer'
+import { TerminalDrawer, TERMINAL_COLLAPSED_HEIGHT, TERMINAL_DEFAULT_HEIGHT } from './TerminalDrawer'
 
-// ticket-42: footer confines its visible chrome (border + composer) to the
-// same column the transcript uses — no full-width hairline edge-to-edge.
+// #96: the card IS the column (534 wide, centred on the shell), so the footer
+// and body own only their inner gutter — no offsets, no re-centring.
 const sampleFooter = (
-  <div className="flex-shrink-0" style={{ paddingLeft: RAIL_WIDTH_PX }}>
-    <div className="mx-auto w-full max-w-2xl px-8">
-      <div className="border-t border-mn-hair">
-        <div className="flex items-end gap-4 py-3">
-          <textarea
-            placeholder="Talk to Pond…"
-            rows={2}
-            className="flex-1 resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono text-sm"
-          />
-          <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-mn-text">
-            Send
-          </button>
-        </div>
+  <div className="flex-shrink-0 px-8">
+    <div className="border-t border-mn-hair">
+      <div className="flex items-end gap-4 py-3">
+        <textarea
+          placeholder="Talk to Pond…"
+          rows={2}
+          className="flex-1 resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono text-sm"
+        />
+        <button className="self-end pb-2 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-mn-text">
+          Send
+        </button>
       </div>
     </div>
   </div>
 )
 
-// ticket-42: body also uses RAIL_WIDTH_PX via inline style so text + chrome
-// share the single metric and can't drift.
 const sampleBody = (
-  <div className="flex-1 overflow-y-auto py-4" style={{ paddingLeft: RAIL_WIDTH_PX }}>
-    <div className="mx-auto w-full max-w-2xl px-8">
-      <p className="font-serif text-sm italic text-mn-text-faint">Start a conversation…</p>
-    </div>
+  <div className="flex-1 overflow-y-auto px-8 py-4">
+    <p className="font-serif text-sm italic text-mn-text-faint">Start a conversation…</p>
   </div>
 )
 
@@ -122,17 +111,40 @@ export const GripVisible: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const handle = canvas.getByRole('separator', { name: 'Resize terminal' })
-    // ticket-42 follow-up: the handle stays a full-width drag target (flex +
-    // items-center), but the visible grip is centered WITHIN the column via an
-    // inner max-w-2xl wrapper (justify-center lives there, not on the handle).
+    // #96: the handle spans the composer COLUMN (not the window), and the
+    // visible grip is centred within it (justify-center on the inner wrapper).
     await expect(handle).toHaveClass('flex')
     await expect(handle).toHaveClass('items-center')
-    const columnWrap = handle.querySelector('span')
-    await expect(columnWrap).toBeTruthy()
-    await expect(columnWrap).toHaveClass('justify-center')
-    await expect(columnWrap).toHaveClass('max-w-2xl')
+    const column = handle.closest('[data-part="composer-column"]')
+    await expect(column).toBeTruthy()
+    await expect(column).toHaveClass('w-[534px]')
+    const grip = handle.querySelector('span')
+    await expect(grip).toBeTruthy()
+    await expect(grip).toHaveClass('justify-center')
     // the grip pill is the inner-inner span
-    await expect(columnWrap!.querySelector('span')).toBeTruthy()
+    await expect(grip!.querySelector('span')).toBeTruthy()
+  },
+}
+
+/**
+ * `Pond 05 Shell` (measured): the composer is centred on the WHOLE shell at
+ * calc(50% + 13px), 534 wide outside, 24px off the bottom — and the card's
+ * flanks click through while the card and handle take the pointer.
+ */
+export const ShellCentred: Story = {
+  play: async ({ canvasElement }) => {
+    const section = canvasElement.querySelector('section')!
+    await expect(section).toHaveClass('absolute')
+    await expect(section).toHaveClass('bottom-0')
+    await expect(section).toHaveClass('pointer-events-none')
+    const column = section.querySelector<HTMLElement>('[data-part="composer-column"]')!
+    await expect(column).toHaveClass('left-[calc(50%_+_13px)]')
+    await expect(column).toHaveClass('-translate-x-1/2')
+    await expect(column).toHaveClass('w-[534px]')
+    const card = section.querySelector<HTMLElement>('[data-part="composer-card"]')!
+    await expect(card).toHaveClass('mn-glass')
+    await expect(card).toHaveClass('pointer-events-auto')
+    await expect(card.getBoundingClientRect().width).toBe(534)
   },
 }
 

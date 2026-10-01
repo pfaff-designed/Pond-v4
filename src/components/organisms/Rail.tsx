@@ -62,6 +62,9 @@ import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pa
 import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/overview'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { usePondName } from '@/lib/pond/name'
+import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
+import { requestCreatePage } from '@/lib/shell-commands'
 import {
   LIFE_ID,
   buildTree,
@@ -409,6 +412,11 @@ const NO_PATH: ReadonlySet<string> = new Set()
 export interface RailViewProps {
   tree: RailNode[]
   /**
+   * The pond's name — the rail header (AUDIT C3, trimmed by ADR 0002 to a name
+   * only: no switcher, no chevron until M3). Resolved by `usePondName`.
+   */
+  pondName: string
+  /**
    * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
    * and every row falls back to its derived mark, which is what the rail did
    * before a mark could be chosen.
@@ -429,6 +437,8 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
+  /** The foot's "＋ new page" (PondRail): opens the name-first New page dialog. */
+  onNewPage: () => void
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -438,6 +448,9 @@ export interface RailViewProps {
 
 /** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
+
+/** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
+const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
 /**
  * An area row's leading mark. An unmapped area returns nothing and keeps its
@@ -485,6 +498,7 @@ function areaMark(node: RailNode, mark: PageMark): ReactNode {
 
 export function RailView({
   tree,
+  pondName,
   marks,
   selectedId,
   pathIds = NO_PATH,
@@ -499,6 +513,7 @@ export function RailView({
   onDelete,
   onLife,
   onToggleLife,
+  onNewPage,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -672,7 +687,7 @@ export function RailView({
         setSize={setSize}
         leading={LIFE_MARK}
         trailing={
-          <span className="font-mono text-[10px] tracking-wider lowercase text-mn-text/30 pr-1 select-none">
+          <span className="font-mono text-mn-11 tracking-wider lowercase text-mn-text/30 pr-1 select-none">
             all
           </span>
         }
@@ -727,41 +742,87 @@ export function RailView({
     )
   }
 
+  // #96 — the rail is a floating PAPER CARD over the canvas (`Pond 05 Shell` /
+  // `PondRail`, measured: 206 wide, inset 20px from the top, left and bottom,
+  // padding 18px 0 14px, radius 20, the card paper + the card shadow, no
+  // backdrop blur — the glass recipe is the breadcrumb's and the composer's,
+  // not the rail's), never a column docked to the window's edge. Light: one
+  // paper, so the card is the ground's own colour and reads by shadow alone;
+  // dark: the card steps up to #30312A. Both come from the --mn-card /
+  // --mn-shadow-card roles. Three bands: the head (the pond's name), the
+  // scrolling tree, and the foot.
   return (
-    <aside className="w-[252px] flex-shrink-0 h-full overflow-y-auto px-3 pb-[14px] font-sans">
-      {/* Pinned to the top-left: the wordmark stays put while the tree scrolls
-          beneath it (sticky, with the paper bg so rows pass under cleanly). The
-          wordmark is the calm sans title voice (PP Neue Montreal, weight 500,
-          13.5px, natural tracking) — the mockup `word` style. The serif display
-          face is reserved for reading prose (Make Noise voices), never chrome. */}
-      <div className="sticky top-0 z-10 flex items-center gap-2.5 bg-background px-2.5 pt-[18px] pb-3">
-        <span className="font-sans font-medium text-[13.5px] text-foreground select-none">
-          Pond
+    <aside
+      className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
+      style={{ width: RAIL_WIDTH_PX }}
+    >
+      {/* The head is the pond's NAME (AUDIT C3, trimmed by ADR 0002 to a name
+          only — the switcher chevron is M3 and the reminders bell is Phase 8, and
+          a dead affordance is worse than none).
+
+          Treatment comes from `Pond 05 Shell`, which renders the head identically
+          in all 18 of its frames: the name as a small-meta label — sans 500 / 11,
+          uppercase, .14em tracking — with NO mark before it. `Pond 02 Component
+          library`'s PondRail card disagrees (a mask glyph + a larger lowercase
+          name), so the two boards conflict; the shell board wins on three counts.
+          (1) It is the storyboard for THIS surface and is unanimous across frames.
+          (2) PROJECT_RULES scopes the mask-glyph register to area and page marks,
+          and a pond is neither. (3) ADR 0003 puts small meta at 11, and the
+          component board's 13.5 is off-scale besides. The serif display face is
+          reserved for reading prose, never chrome. */}
+      <div data-part="rail-head" className="flex items-center px-4 pb-3">
+        <span
+          data-part="pond-name"
+          className="min-w-0 truncate font-sans text-mn-11 font-medium tracking-[0.14em] uppercase text-foreground select-none"
+        >
+          {pondName}
         </span>
       </div>
 
-      <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-        {flat.map(renderRow)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+        <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
+          {flat.map(renderRow)}
+        </div>
+
+        {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
+            children (WAI-ARIA); a <p> inside it would be an illegal child.
+            Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
+        {isLoading && (
+          <div className="px-3 py-2" role="status">
+            <span className="sr-only">Loading pages…</span>
+            <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
+              {SKELETON_WIDTHS.map((w, i) => (
+                <span
+                  key={i}
+                  className="block h-[9px] rounded-[5px] bg-mn-text/[0.08]"
+                  style={{ width: `${w}%`, marginLeft: (i % 3) * 14 }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {!isLoading && isEmpty && (
+          <p
+            className="mt-2 mr-4 ml-[34px] text-mn-13 leading-[1.5] text-mn-text-secondary"
+            role="status"
+          >
+            No pages yet. ＋ new page, or ask Pond to start one.
+          </p>
+        )}
       </div>
 
-      {/* Status text lives OUTSIDE the tree — role="tree" only allows treeitem
-          children (WAI-ARIA); a <p> inside it would be an illegal child. */}
-      {isLoading && (
-        <p
-          className="px-2.5 py-2 font-mono text-[10px] tracking-wider lowercase text-mn-text/30"
-          role="status"
+      {/* The foot (PondRail): a hairline, then "＋ new page". The databases root
+          (3c) belongs here too, once the pond has one to list. */}
+      <div className="mt-auto border-t border-mn-line px-2 pt-2.5">
+        <button
+          type="button"
+          onClick={onNewPage}
+          aria-label="New page"
+          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-mn-13 text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
         >
-          loading…
-        </p>
-      )}
-      {!isLoading && isEmpty && (
-        <p
-          className="px-2.5 py-2 text-[12.5px] leading-relaxed text-mn-text-secondary"
-          role="status"
-        >
-          No pages yet. ＋ a page, or ask the pond to start one.
-        </p>
-      )}
+          ＋ new page
+        </button>
+      </div>
     </aside>
   )
 }
@@ -773,6 +834,7 @@ export function Rail() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondName = usePondName()
   const seededRef = useRef(false)
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
@@ -1060,6 +1122,7 @@ export function Rail() {
     <>
       <RailView
         tree={tree}
+        pondName={pondName}
         marks={marks}
         selectedId={selectedNodeId}
         pathIds={pathIds}
@@ -1074,6 +1137,7 @@ export function Rail() {
         onDelete={handleDelete}
         onLife={() => router.push(basePath)}
         onToggleLife={handleToggleLife}
+        onNewPage={requestCreatePage}
         canDrop={canDrop}
         onMove={handleMove}
       />

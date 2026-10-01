@@ -58,6 +58,7 @@ const meta = {
   ],
   args: {
     tree: TREE,
+    pondName: 'Life',
     selectedId: null,
     expanded: new Set<string>(),
     lifeExpanded: true,
@@ -70,6 +71,7 @@ const meta = {
     onDelete: fn(),
     onLife: fn(),
     onToggleLife: fn(),
+    onNewPage: fn(),
     canDrop: () => true,
     onMove: fn(),
   },
@@ -82,9 +84,12 @@ type Story = StoryObj<typeof meta>
 export const Resting: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Life is the root treeitem, and the whole thing is one tree.
-    await expect(canvas.getByRole('tree', { name: 'Workspace' })).toBeInTheDocument()
-    await expect(canvas.getByText('Life')).toBeInTheDocument()
+    // Life is the root treeitem, and the whole thing is one tree. (#96: the
+    // pond's NAME also reads "Life" in the head, so scope the row query to the tree.)
+    const tree = canvas.getByRole('tree', { name: 'Workspace' })
+    await expect(tree).toBeInTheDocument()
+    await expect(within(tree).getByText('Life')).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('Life')
     await expect(canvas.getByText('Health')).toBeInTheDocument()
     await expect(canvas.getByText('Scratchpad')).toBeInTheDocument()
     // collapsed folder — children not rendered
@@ -97,7 +102,7 @@ export const LifeCollapsed: Story = {
   args: { lifeExpanded: false },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Life')).toBeInTheDocument()
+    await expect(within(canvas.getByRole('tree')).getByText('Life')).toBeInTheDocument()
     // everything under Life is hidden
     await expect(canvas.queryByText('Health')).not.toBeInTheDocument()
     await expect(canvas.queryByText('Scratchpad')).not.toBeInTheDocument()
@@ -174,8 +179,8 @@ export const Interactions: Story = {
     await userEvent.click(canvas.getByText('Health'))
     await expect(args.onSelect).toHaveBeenCalledWith('health')
 
-    // Life label opens the root overview
-    await userEvent.click(canvas.getByText('Life'))
+    // Life label (the tree ROW, not the pond-name head) opens the root overview
+    await userEvent.click(within(canvas.getByRole('tree')).getByText('Life'))
     await expect(args.onLife).toHaveBeenCalled()
   },
 }
@@ -247,17 +252,58 @@ export const KeyboardNav: Story = {
   },
 }
 
-/** First-login states. */
-export const Loading: Story = {
-  args: { tree: [], isLoading: true },
+/**
+ * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
+ * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's NAME as a
+ * small-meta label — sans 500 / 11, uppercase, .14em tracking, and NO mark, per
+ * all 18 frames of `Pond 05 Shell`. No switcher, no chevron (ADR 0002).
+ */
+export const PaperCardHead: Story = {
+  play: async ({ canvasElement }) => {
+    const aside = canvasElement.querySelector('aside')!
+    await expect(aside).toHaveClass('bg-mn-card')
+    await expect(aside).toHaveClass('shadow-mn-card')
+    await expect(aside).toHaveClass('rounded-mn-card')
+    await expect(aside).not.toHaveClass('mn-glass')
+    await expect(aside.getBoundingClientRect().width).toBe(206)
+    const head = aside.querySelector<HTMLElement>('[data-part="rail-head"]')!
+    const name = head.querySelector<HTMLElement>('[data-part="pond-name"]')!
+    await expect(name).toHaveClass('text-mn-11')
+    await expect(name).toHaveClass('uppercase')
+    await expect(head.querySelector('[data-pond-mark]')).toBeNull()
+    await expect(head.querySelector('button')).toBeNull()
+  },
 }
 
+/** The foot (`PondRail`): a hairline, then "＋ new page" — the one New page affordance. */
+export const FootNewPage: Story = {
+  play: async ({ canvas, args }) => {
+    const plus = canvas.getByRole('button', { name: 'New page' })
+    await expect(plus).toHaveTextContent('＋ new page')
+    await userEvent.click(plus)
+    await expect(args.onNewPage).toHaveBeenCalledTimes(1)
+  },
+}
+
+/** First-login states. Loading = `PondRail`'s eight skeleton bars, behind an accessible status. */
+export const Loading: Story = {
+  args: { tree: [], isLoading: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('status')).toHaveTextContent(/loading/i)
+    await expect(
+      canvasElement.querySelectorAll('[data-part="rail-skeleton"] > span')
+    ).toHaveLength(8)
+  },
+}
+
+/** Empty = `PondRail`'s hint, pointing at the foot's ＋ and at Pond. */
 export const Empty: Story = {
   args: { tree: [], isEmpty: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      canvas.getByText('No pages yet. ＋ a page, or ask the pond to start one.')
-    ).toBeInTheDocument()
+    await expect(canvas.getByRole('status')).toHaveTextContent(
+      'No pages yet. ＋ new page, or ask Pond to start one.'
+    )
   },
 }

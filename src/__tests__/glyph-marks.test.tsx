@@ -197,6 +197,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
   return render(
     <RailView
       tree={TREE}
+      pondName="Life"
       marks={marks}
       selectedId={null}
       expanded={new Set(['health', 'personal'])}
@@ -210,6 +211,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
       onDelete={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onNewPage={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
     />
@@ -284,14 +286,16 @@ describe('Breadcrumb — the lead crumb carries the injected mark', () => {
     expect(sleep.parentElement!.querySelector('[data-icon]')).toBeNull()
   })
 
-  it('carries no mark at all when none is injected', () => {
+  it('carries no AREA mark at all when none is injected', () => {
     const { container } = render(
       <Breadcrumb
         crumbs={[{ id: 'health', type: 'page', title: 'Health' }]}
         onNavigate={jest.fn()}
       />
     )
-    expect(container.querySelector('[data-icon]')).toBeNull()
+    // #96: the pill leads with the pond's glyph (2t), which is not an area mark.
+    expect(container.querySelector('[data-area-mark]')).toBeNull()
+    expect(container.querySelectorAll('[data-icon]')).toHaveLength(1)
   })
 })
 
@@ -389,7 +393,9 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
     // open page — which is why the labels name their page.
     const crumbMark = getByRole('button', { name: 'Change the mark for Personal' })
     expect(crumbMark.querySelector('[data-icon="house"]')).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-icon]')).toHaveLength(1)
+    // #96: the breadcrumb pill leads with the pond's own glyph (2t); beyond it,
+    // the crumb mark is the only glyph on the surface.
+    expect(container.querySelectorAll('[data-icon]:not([data-icon="ring"])')).toHaveLength(1)
   })
 
   it('renders an explicit glyph and role over the derived ones', () => {
@@ -470,6 +476,7 @@ describe('Rail — the seed title resolves too', () => {
     const { getByRole } = render(
       <RailView
         tree={[node('fin', 'page', 'Financial')]}
+        pondName="Life"
         selectedId={null}
         expanded={new Set()}
         lifeExpanded
@@ -482,6 +489,7 @@ describe('Rail — the seed title resolves too', () => {
         onDelete={jest.fn()}
         onLife={jest.fn()}
         onToggleLife={jest.fn()}
+        onNewPage={jest.fn()}
         canDrop={() => true}
         onMove={jest.fn()}
       />

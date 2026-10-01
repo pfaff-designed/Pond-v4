@@ -15,7 +15,7 @@
  * real place to type, not the dead overview.
  *
  * Built on base-ui's Dialog (focus trap, Esc, initial focus) and styled to match
- * ConfirmDialog — Press paper popup, ink backdrop. Split like Rail/TopBar:
+ * ConfirmDialog — a paper popup over an ink backdrop. Split like Rail:
  * <CreatePageModalView> is presentational (all state raised as props) for
  * Storybook; <CreatePageModal> wires Supabase + React Query + navigation.
  */

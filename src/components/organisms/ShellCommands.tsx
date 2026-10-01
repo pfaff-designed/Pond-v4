@@ -1,16 +1,18 @@
 'use client'
 
 /**
- * The top-right glass cluster — v85 Clearing chrome, icon-only.
+ * The shell's command owner (#96; was `TopBar`). Renders NO chrome of its own.
  *
- *   ＋   opens the New page creation flow (ticket-26): a name-first dialog that
+ * The Make Noise shell has no top-right cluster: the ⌘K affordance sits in the
+ * breadcrumb pill (`Pond 02` 2t) and "＋ new page" in the rail foot
+ * (`PondRail`). Both surfaces raise a decoupled request (`lib/shell-commands`)
+ * and this organism answers it, owning the two dialogs once:
+ *
+ *   ⌘K   the command palette (ticket-40): search pages, quick actions, recents.
+ *        '/' stays local in the composer (F22 division). The old "focus
+ *        terminal" behaviour survives as the "Ask Pond" quick action.
+ *   ＋    the New page creation flow (ticket-26): a name-first dialog that
  *        defaults the destination to the page in view, then lands in the editor.
- *   ⌘K  opens the command palette (ticket-40): search pages, quick actions, recents.
- *        '/' stays local in the composer (F22 division). The old "focus terminal"
- *        behaviour is preserved as the "Ask Pond" quick action inside the palette.
- *
- * The notifications icon (◔) is deliberately omitted — no notifications system
- * exists yet, and a dead icon is worse than none.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -19,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { CREATE_PAGE_EVENT, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -40,7 +43,7 @@ function readRecents(): RecentEntry[] {
   }
 }
 
-export function writeRecent(entry: RecentEntry) {
+function writeRecent(entry: RecentEntry) {
   try {
     const prev = readRecents().filter((r) => r.id !== entry.id)
     window.localStorage.setItem(
@@ -52,41 +55,7 @@ export function writeRecent(entry: RecentEntry) {
   }
 }
 
-const iconBtn =
-  'mn-glass rounded-mn-pill px-3.5 py-[9px] leading-none text-foreground cursor-pointer hover:text-mn-text transition-colors disabled:opacity-40'
-
-export function TopBarView({
-  onCreate,
-  onCommandK,
-}: {
-  onCreate: () => void
-  onCommandK: () => void
-}) {
-  return (
-    <div className="fixed top-[22px] right-[26px] z-40 flex gap-2.5 font-sans">
-      <button
-        className={`${iconBtn} text-[15px]`}
-        title="New page"
-        aria-label="New page"
-        onClick={onCreate}
-      >
-        ＋
-      </button>
-      <button
-        className={iconBtn}
-        title="Command palette (⌘K)"
-        aria-label="Command palette (⌘K)"
-        onClick={onCommandK}
-      >
-        <span className="font-mono lowercase tracking-wider text-mn-11 px-[7px] py-0.5 rounded-mn-hair bg-mn-text/[0.03] text-mn-text-meta">
-          ⌘k
-        </span>
-      </button>
-    </div>
-  )
-}
-
-export function TopBar() {
+export function ShellCommands() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const currentNodeId = searchParams.get('nodeId')
@@ -95,14 +64,16 @@ export function TopBar() {
   const workspace = useWorkspace()
 
   // Pages for palette search.
-  const { data: pages = [] } = useQuery({ queryKey: ['pages', workspace], queryFn: () => fetchPages(workspace) })
+  const { data: pages = [] } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+  })
 
-  const openPalette = useCallback(() => setPaletteOpen(true), [])
   const closePalette = useCallback(() => setPaletteOpen(false), [])
 
-  // Global ⌘K/Ctrl-K → open the palette. Registered in the *capture*
-  // phase on the document so it fires before any focused editor/input can
-  // swallow the event.
+  // Global ⌘K/Ctrl-K → toggle the palette. Registered in the *capture* phase on
+  // the document so it fires before any focused editor/input can swallow it.
+  // The decoupled requests (breadcrumb ⌘K chip, rail ＋) arrive as window events.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
@@ -111,8 +82,16 @@ export function TopBar() {
         setPaletteOpen((prev) => !prev) // toggle
       }
     }
+    const openPalette = () => setPaletteOpen(true)
+    const openCreate = () => setCreateOpen(true)
     document.addEventListener('keydown', onKey, { capture: true })
-    return () => document.removeEventListener('keydown', onKey, { capture: true })
+    window.addEventListener(OPEN_PALETTE_EVENT, openPalette)
+    window.addEventListener(CREATE_PAGE_EVENT, openCreate)
+    return () => {
+      document.removeEventListener('keydown', onKey, { capture: true })
+      window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
+      window.removeEventListener(CREATE_PAGE_EVENT, openCreate)
+    }
   }, [])
 
   // Build palette items: quick actions first, then recents, then all pages.
@@ -168,7 +147,6 @@ export function TopBar() {
 
   return (
     <>
-      <TopBarView onCreate={() => setCreateOpen(true)} onCommandK={openPalette} />
       <CreatePageModal
         open={createOpen}
         onOpenChange={setCreateOpen}

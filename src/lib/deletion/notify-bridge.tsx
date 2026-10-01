@@ -5,7 +5,7 @@
  * (the AITerminal lives below the provider's content row in the app layout) fire
  * receipt toasts into the provider's single viewport.
  *
- * Mirrors the FOCUS_TERMINAL_EVENT pattern (TopBar → terminal): the caller
+ * Mirrors the FOCUS_TERMINAL_EVENT pattern (ShellCommands → terminal): the caller
  * dispatches a window CustomEvent via {@link requestNotify}; the {@link NotifyBridge}
  * component — mounted INSIDE the provider — listens and relays to `notify()`.
  * The toast then renders in the existing viewport, bottom-right of the content

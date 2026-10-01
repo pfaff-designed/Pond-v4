@@ -57,6 +57,7 @@ import {
   TERMINAL_MAX_HEIGHT,
   clampTerminalHeight,
 } from '@/components/molecules/TerminalDrawer'
+import { PROPOSAL_MIN_HEIGHT } from '@/lib/layout/terminal-height'
 import { Markdown } from '@/components/molecules/Markdown'
 import { StageText } from '@/components/molecules/StageText'
 import { kickerClass } from '@/components/atoms/kicker'
@@ -139,7 +140,6 @@ const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
 // for the letterpress skin (ticket-32): the create-page card's display-serif title
 // and roomier chrome added ~30px, and the whole card (header + preview + Save-to +
 // actions) must fit the floor — live-verified against a real create_page proposal.
-const PROPOSAL_MIN_HEIGHT = 500
 
 // Tiny persisted-state helpers: localStorage can throw (privacy modes, quota),
 // and the drawer must degrade to defaults rather than crash.
@@ -726,10 +726,11 @@ export function AITerminal() {
     onDismiss: handleGhostDismiss,
   })
 
-  // ── Drawer ergonomics (ticket-24) ─────────────────────────────────────────
+  // ── Drawer ergonomics (ticket-24, #96) ────────────────────────────────────
   // Height + collapse are user-controlled and remembered across sessions. The
-  // drawer is a flex sibling of the main panel, so shrinking/collapsing it hands
-  // the space back to the content above — it never overlays what's being read.
+  // drawer is an absolute overlay floating over the bottom of the shell (the
+  // page scrolls behind it); it publishes its real height to the shell and the
+  // surfaces pad against it, so what's being read can always scroll clear.
   const [drawerHeight, setDrawerHeight] = useState(TERMINAL_DEFAULT_HEIGHT)
   const [isCollapsed, setIsCollapsed] = useState(false)
   // The user resized *while* the auto-grow floor was pinning the drawer: their
@@ -1589,17 +1590,11 @@ export function AITerminal() {
     return hasActiveTool(last.parts as StagePart[])
   }, [messages])
 
-  // The transcript shares the document's own column — the drawer spans the full
-  // window while the document centers inside <main> (right of the Rail), so a
-  // matching paddingLeft: RAIL_WIDTH_PX here makes this max-w-2xl column center
-  // over the exact same region DocumentPanel centers in. One typeset object, not a
-  // console bolted under a document. RAIL_WIDTH_PX is the single shared metric
-  // (ticket-42) — imported from TerminalDrawer so the header chrome and transcript
-  // text are always coupled to the same value.
+  // The transcript lives inside the TerminalDrawer's composer card, which is
+  // itself the column (#96: 534 wide, centred on the shell) — so the body owns
+  // only its scroll + inner gutter and does no centring or offsetting of its
+  // own. One typeset object, not a console bolted under a document.
   const messagesBody = (
-    // ticket-42 follow-up: the TerminalDrawer card now provides the column
-    // (RAIL_WIDTH_PX offset + max-w-2xl centering), so the body only owns its
-    // scroll + inner gutter — no re-centering here.
     <div className="flex-1 overflow-y-auto py-4">
       <div className="w-full space-y-6 px-8">
         {!isReady && <p className="font-serif text-sm italic text-mn-text-faint">Loading…</p>}
@@ -2199,7 +2194,7 @@ export function AITerminal() {
                 // baseline (motion-focus-draw), so no border-color flip here.
                 // MN: the composer is a machine surface — mono, lowercase, tight
                 // tracking (--voice-mono). Typed intent reads as machine input.
-                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-sm text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
+                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-mn-13 text-mn-text-meta outline-none placeholder:text-mn-text-faint disabled:opacity-60"
                 disabled={isStreaming || !isReady}
               />
             </div>
@@ -2260,7 +2255,7 @@ export function AITerminal() {
   // The quiet phase indicator (ticket-39 §2): while a project is in flight the
   // context bar reads e.g. "Kiln Studio · charting"; otherwise just the base
   // context label. Derived from the lifecycle state (grilling → charting →
-  // building), kept Press-calm.
+  // building), kept quiet.
   const phaseContextLabel = lifecycleContextLabel(lifecycle, contextLabel)
 
   return (

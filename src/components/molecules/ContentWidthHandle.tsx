@@ -33,8 +33,10 @@ export interface ContentWidthHandleProps {
   onWidthChange: (width: number) => void
   /** Fired once when a gesture ends — persist here, not per move. */
   onWidthCommit?: (width: number) => void
-  /** Positioning within the column wrapper (e.g. absolute inset-y + right). */
+  /** Positioning within the column wrapper (e.g. absolute top + right). */
   className?: string
+  /** Inline positioning that needs a computed value (e.g. a `bottom` bound to the composer clearance). */
+  style?: React.CSSProperties
 }
 
 export function ContentWidthHandle({
@@ -42,6 +44,7 @@ export function ContentWidthHandle({
   onWidthChange,
   onWidthCommit,
   className,
+  style,
 }: ContentWidthHandleProps) {
   // Same pointer-capture drag state as TerminalDrawer: captured move/up/cancel
   // events reach the handle even off the thin strip, pointerId matching keeps a
@@ -148,11 +151,12 @@ export function ContentWidthHandle({
       onPointerCancel={endDrag}
       onKeyDown={onHandleKeyDown}
       className={`group w-4 cursor-ew-resize flex justify-center outline-none touch-none ${className ?? ''}`}
+      style={style}
       data-testid="content-width-handle"
     >
       {/* The grip pill — the terminal drawer's affordance rotated vertical.
           Sticky so it stays in view while a long page scrolls under it; quiet
-          until hover/focus, then the Press accent. */}
+          until hover/focus, then full ink. */}
       <span className="sticky top-[45%] h-10 w-1 rounded-full bg-mn-text-secondary/40 group-hover:bg-mn-text group-focus:bg-mn-text transition-colors" />
     </div>
   )

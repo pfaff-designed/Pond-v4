@@ -2,7 +2,8 @@
  * UI tests for the manual page-creation flow (ticket-26) and its neighbours.
  *
  * Tests:
- * 1. TopBar ＋ opens the CreatePageModal (no more instant dead-end create).
+ * 1. The rail's ＋ (via requestCreatePage → ShellCommands, #96) opens the
+ *    CreatePageModal (no more instant dead-end create).
  * 2. CreatePageModal creates a `page` (never an `area`) under the chosen parent
  *    and navigates into the editor.
  * 3. The destination defaults to the current context (?nodeId) with an override.
@@ -13,7 +14,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -128,7 +129,8 @@ global.fetch = jest.fn().mockResolvedValue({
 
 // ── Import components after mocks ─────────────────────────────────────────
 
-import { TopBar } from '@/components/organisms/TopBar'
+import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { requestCreatePage } from '@/lib/shell-commands'
 import { AITerminal } from '@/components/organisms/AITerminal'
 
 // ── Test helpers ──────────────────────────────────────────────────────────
@@ -148,9 +150,9 @@ function renderWithQuery(ui: React.ReactElement, queryClient = makeQueryClient()
   }
 }
 
-// ── TopBar ＋ opens the creation modal ─────────────────────────────────────
+// ── ＋ new page opens the creation modal ──────────────────────────────────
 
-describe('TopBar — ＋ opens the New page modal', () => {
+describe('ShellCommands — ＋ new page opens the New page modal', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
     mockCreatePage.mockClear().mockResolvedValue({ id: 'new-page-id', type: 'page', title: '' })
@@ -158,13 +160,13 @@ describe('TopBar — ＋ opens the New page modal', () => {
   })
 
   it('opens the New page dialog instead of instant-creating', async () => {
-    renderWithQuery(<TopBar />)
+    renderWithQuery(<ShellCommands />)
 
     // No dialog at rest, and no page created yet.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(mockCreatePage).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
+    act(() => requestCreatePage())
 
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -176,9 +178,9 @@ describe('TopBar — ＋ opens the New page modal', () => {
 
   it('creates a page (not an area) at top level and lands in the editor', async () => {
     const user = userEvent.setup()
-    renderWithQuery(<TopBar />)
+    renderWithQuery(<ShellCommands />)
 
-    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
+    act(() => requestCreatePage())
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     await user.type(screen.getByRole('textbox', { name: /page title/i }), 'Marathon Plan')
@@ -201,9 +203,9 @@ describe('TopBar — ＋ opens the New page modal', () => {
   it('defaults the destination to the current page (?nodeId)', async () => {
     mockNodeId = 'health-area'
     const user = userEvent.setup()
-    renderWithQuery(<TopBar />)
+    renderWithQuery(<ShellCommands />)
 
-    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
+    act(() => requestCreatePage())
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     await user.type(screen.getByRole('textbox', { name: /page title/i }), 'Sleep Log')
@@ -219,9 +221,9 @@ describe('TopBar — ＋ opens the New page modal', () => {
   })
 
   it("writes 'Untitled' (never an empty title) when created without a name", async () => {
-    renderWithQuery(<TopBar />)
+    renderWithQuery(<ShellCommands />)
 
-    fireEvent.click(screen.getByRole('button', { name: /new page/i }))
+    act(() => requestCreatePage())
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     // Submit with the title field untouched.
