@@ -6,7 +6,7 @@ import { SlashMenu } from './SlashMenu'
 const items = [
   { id: 'text', name: 'Text', description: 'A prose block written in markdown.' },
   { id: 'todo', name: 'Todo', description: 'A checklist of items, each toggleable done/undone.' },
-  { id: 'metric', name: 'Metric', description: 'A single labelled figure.' },
+  { id: 'view', name: 'View', description: 'A view of a database.' },
   { id: 'table', name: 'Table', description: 'A structured table of rows and columns.' },
 ]
 
@@ -55,7 +55,7 @@ export const FilterThenSelect: Story = {
     const input = canvas.getByLabelText('Filter blocks')
     await userEvent.type(input, 'tab')
     await expect(canvas.getByText('Table')).toBeInTheDocument()
-    await expect(canvas.queryByText('Metric')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('View')).not.toBeInTheDocument()
 
     await userEvent.keyboard('{Enter}')
     await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'table' }))
@@ -69,7 +69,7 @@ export const KeyboardNav: Story = {
     const input = canvas.getByLabelText('Filter blocks')
     input.focus()
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
-    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'metric' }))
+    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'view' }))
 
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalled()

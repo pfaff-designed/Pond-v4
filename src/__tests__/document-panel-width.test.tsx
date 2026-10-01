@@ -1,9 +1,13 @@
 /**
  * #58 — the resizable editor column, wired end-to-end through DocumentPanel:
  * the column's max-width is user-set via the ContentWidthHandle on its right
- * edge, persisted to localStorage (survives reload), clamped to the band, and
- * everything inside the column — the #57 timeline's %-positioned gantt bars
- * included — reflows because the width is applied at the column wrapper.
+ * edge, persisted to localStorage (survives reload) and clamped to the band.
+ *
+ * #111 deleted the standalone `timeline` block, and with it the case that pinned
+ * "a %-positioned gantt bar reflows with the column". Its replacement is the `view`
+ * block's gantt MODE, which needs a collection of dated records rather than inline
+ * items — a fixture this unit test has no business building — so the case is gone
+ * rather than faked.
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -43,12 +47,6 @@ jest.mock('@/lib/pages/commit', () => ({
 
 const blocks: Block[] = [
   { id: 'b-text', type: 'text', content: 'Notes on the workbench build' },
-  {
-    id: 'b-timeline',
-    type: 'timeline',
-    title: 'Renovation',
-    items: [{ label: 'Demo', start: '2026-09-01', end: '2026-09-05' }],
-  } as Block,
 ]
 
 function renderPanel() {
@@ -123,15 +121,5 @@ describe('DocumentPanel resizable content column (#58)', () => {
     expect(window.localStorage.getItem(CONTENT_WIDTH_KEY)).toBe(
       String(CONTENT_DEFAULT_WIDTH + 100)
     )
-  })
-
-  it('the #57 timeline lives inside the resized column, so its %-positioned bars reflow with it', async () => {
-    window.localStorage.setItem(CONTENT_WIDTH_KEY, '1000')
-    renderPanel()
-    const bar = await screen.findByRole('img', { name: 'Demo: 2026-09-01 – 2026-09-05' })
-    await waitFor(() => expect(getColumn().style.maxWidth).toBe('1000px'))
-    // The bar is positioned in % of the column-bound row, so the width cap on
-    // the column IS the reflow: containment is the load-bearing assertion.
-    expect(getColumn()).toContainElement(bar)
   })
 })

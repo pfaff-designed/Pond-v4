@@ -11,7 +11,6 @@ import {
   createPageBlockSchema,
   moduleCatalog,
 } from '@/lib/modules/ai-composition'
-import { metricSchema } from '@/lib/modules/metric/schema'
 
 describe('moduleDataSchema (AI-emitted module data)', () => {
   it('accepts a content block with no id', () => {
@@ -43,18 +42,6 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     expect(parsed.type === 'todo' && 'id' in parsed.items[0]).toBe(false)
   })
 
-  it('REJECTS a kanban block — retired from creation (#19 slice 6), superseded by view board mode', () => {
-    // Kanban stays renderable/persistable for read-tolerance, but the AI may no longer
-    // MINT one: it's absent from the composition union, so a kanban emit fails the gate
-    // (repairToolCall re-asks). A board of items is now a `view` with mode 'board'.
-    expect(
-      moduleDataSchema.safeParse({
-        type: 'kanban',
-        columns: [{ title: 'To do', cards: [{ title: 'Cut boards' }] }],
-      }).success
-    ).toBe(false)
-  })
-
   it('rejects a malformed content block (a table row must carry cells)', () => {
     expect(
       moduleDataSchema.safeParse({ type: 'table', columns: ['A'], rows: [{ label: 'x' }] }).success
@@ -62,18 +49,19 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
   })
 
   /**
-   * #111 — the eight data-HOLDING display blocks left the emit union, exactly as
-   * `kanban` did in #19 slice 6. Each held its own copy of the data; a chart or a
-   * headline figure is now a MODE of the `view` block, aggregated from the records.
+   * #111 — the nine data-HOLDING display blocks are DELETED. Each held its own copy of
+   * the data; a chart or a headline figure is a MODE of the `view` block, aggregated
+   * from the records, and a board is its board mode.
    *
-   * This replaces the ticket-23/31/38 metric-binding emit tests: the model can no
-   * longer author OR edit a metric, so the `source` union (same-page / cross-page /
-   * child-pages / same-batch ref) has no emit surface left to pin. The PERSISTED
-   * `metricSchema` — and its source forms — are still guarded below, because pages
-   * that already hold a bound metric must keep rendering it.
+   * This replaces the ticket-23/31/38 metric-binding emit tests: the metric block and
+   * its `source` union (same-page / cross-page / child-pages / same-batch ref) are gone
+   * outright, so there is no emit surface and no persisted schema left to pin. The
+   * emit gate is kept honest against the old names so a resurrection has to be
+   * deliberate rather than accidental.
    */
-  it('REJECTS every retired data-holding display block (#111 — read-tolerant, not composable)', () => {
+  it('REJECTS every deleted data-holding display block (#111)', () => {
     const retired: unknown[] = [
+      { type: 'kanban', columns: [{ title: 'To do', cards: [{ title: 'Cut boards' }] }] },
       { type: 'metric', label: 'Balance', value: 42 },
       { type: 'metric', label: 'Done', value: 0, source: { ref: 'chores', kind: 'checklist-checked' } },
       { type: 'metric-ring', label: 'Progress', pct: 0.4 },
@@ -83,7 +71,6 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
       { type: 'chart-area', title: 'Balance', points: [{ x: '2026-01', values: { Amount: 1 } }] },
       { type: 'heatmap', title: 'Streak', cells: [{ date: '2026-01-01', value: 1 }] },
       { type: 'timeline', title: 'Plan', items: [{ label: 'Frame', start: '2026-01-01' }] },
-      { type: 'kanban', columns: [] },
     ]
     for (const data of retired) {
       expect(moduleDataSchema.safeParse(data).success).toBe(false)
@@ -148,7 +135,7 @@ describe('proposeChangesSchema (the tool input)', () => {
   })
 
   it('accepts a keyed create (batch-local bindKey for same-batch binding, ticket-31)', () => {
-    // #111 retired the only module that BOUND to a bindKey (metric). The key itself is
+    // #111 deleted the only module that BOUND to a bindKey (metric). The key itself is
     // still carried on a create op — the accept path still resolves ref→minted id — so
     // this pins the envelope, not the (now absent) metric consumer.
     const r = proposeChangesSchema.safeParse({
@@ -254,20 +241,15 @@ describe('moduleCatalog (prompt teaching)', () => {
     expect(moduleCatalog.split('\n').some((l) => l.startsWith('- page:'))).toBe(false)
   })
 
-  it('omits kanban — retired from creation (#19 slice 6), so the prompt stops advertising it', () => {
-    expect(moduleCatalog.split('\n').some((l) => l.startsWith('- kanban:'))).toBe(false)
-  })
-
   /**
-   * #111 — the catalog stops advertising every data-HOLDING display block, not just
-   * kanban. This replaces the three ticket-23/31/38 metric-teaching tests: with metric
-   * out of the emit union, teaching its `source` binding would advertise a capability
-   * the gate rejects. The model is coached toward define_schema + add_row +
-   * configure_view instead (pinned in prompt-sections.test.ts).
+   * #111 — the catalog cannot advertise a block that no longer exists. The model is
+   * coached toward define_schema + add_row + configure_view instead (pinned in
+   * prompt-sections.test.ts).
    */
-  it('omits every retired data-holding display block (#111)', () => {
+  it('omits every deleted data-holding display block (#111)', () => {
     const lines = moduleCatalog.split('\n')
     for (const type of [
+      'kanban',
       'metric',
       'metric-ring',
       'stat',
@@ -290,38 +272,6 @@ describe('moduleCatalog (prompt teaching)', () => {
   })
 })
 
-describe('persisted metric source schema (ticket-38 — stable forms persist, ref does not)', () => {
-  const base = { id: 'm1', type: 'metric' as const, label: 'x', value: 0 }
-
-  it('PERSISTS the cross-page form, keeping pageId (a stable reference, unlike a ref)', () => {
-    const r = metricSchema.safeParse({
-      ...base,
-      source: { pageId: 'p', blockId: 'b', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(true)
-    if (r.success)
-      expect(r.data.source).toEqual({ pageId: 'p', blockId: 'b', kind: 'checklist-checked' })
-  })
-
-  it('PERSISTS the child-pages aggregate form', () => {
-    const r = metricSchema.safeParse({ ...base, source: { pages: 'children', kind: 'table-rows' } })
-    expect(r.success).toBe(true)
-    if (r.success) expect(r.data.source).toEqual({ pages: 'children', kind: 'table-rows' })
-  })
-
-  it('still REJECTS a raw ref source at persistence (the ticket-31 invariant is intact)', () => {
-    // The ephemeral `ref` must never reach storage: the persisted union has no ref
-    // branch, so hydration fails and the change is skipped rather than persisting a
-    // dangling binding. Cross-page/aggregate are stable and DO persist — that's the
-    // whole justification per the t31 precedent.
-    const r = metricSchema.safeParse({
-      ...base,
-      source: { ref: 'chores', kind: 'checklist-checked' },
-    })
-    expect(r.success).toBe(false)
-  })
-})
-
 describe('createPageBlockSchema (create_page block entries, ticket-31)', () => {
   it('preserves a bindKey on a block entry (a bare moduleDataSchema would strip it)', () => {
     const r = createPageBlockSchema.safeParse({
@@ -335,9 +285,9 @@ describe('createPageBlockSchema (create_page block entries, ticket-31)', () => {
 
   it('accepts an entry without a bindKey, and one that declares a bindKey', () => {
     expect(createPageBlockSchema.safeParse({ type: 'text', content: 'hi' }).success).toBe(true)
-    // #111: the metric that USED to bind to a bindKey is retired from creation, so the
-    // entry-level key is pinned on a live type instead. A scaffolded figure is a
-    // big-number view over the page's own records.
+    // #111: the metric that USED to bind to a bindKey is deleted, so the entry-level
+    // key is pinned on a live type instead. A scaffolded figure is a big-number view
+    // over the page's own records.
     expect(
       createPageBlockSchema.safeParse({
         type: 'todo',

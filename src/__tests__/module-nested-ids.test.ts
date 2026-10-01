@@ -13,15 +13,14 @@
 
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { stampDisplayIds } from '@/lib/modules/preview'
-import { moduleDescriptors, descriptorFor, RETIRED_FROM_CREATION } from '@/lib/modules/registry'
+import { moduleDescriptors, descriptorFor } from '@/lib/modules/registry'
 import { moduleDataSchema } from '@/lib/modules/ai-composition'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 
-// One AI-emitted (id-less) sample per COMPOSABLE content type. The completeness check
-// fails if a composable type has no sample here — add one when you add a module.
-// Retired-from-creation types (kanban, #19 slice 6; the eight data-holding display
-// blocks, #111) are NOT composable, so they live in `retiredSamples` below and only
-// exercise the read-tolerance (hydrate) path.
+// One AI-emitted (id-less) sample per content type. The completeness check fails if a
+// registered type has no sample here — add one when you add a module. #111 closed the
+// retired-but-registered tier (the nine data-holding display blocks are deleted), so
+// every content type is composable and this one table covers every loop below.
 const samples: Record<string, ModuleData> = {
   text: { type: 'text', content: 'Hello world' },
   todo: {
@@ -53,75 +52,6 @@ const samples: Record<string, ModuleData> = {
 }
 
 /**
- * Retired-from-creation samples (#19 slice 6): kanban is no longer in `moduleDataSchema`,
- * so its id-less shape isn't a `ModuleData` and can't be strip∘hydrate round-tripped
- * through the composition union. But a PERSISTED kanban must still hydrate + render, so
- * we keep an id-less sample here to exercise the read-tolerance hydrate path only.
- * Typed loosely (not `ModuleData`) precisely because the union no longer admits it.
- */
-const retiredSamples: Record<string, unknown> = {
-  // Kanban (ticket-35): two nested id levels — columns AND cards inside them.
-  kanban: {
-    type: 'kanban',
-    columns: [
-      {
-        title: 'To do',
-        cards: [{ title: 'Cut boards' }, { title: 'Sand', note: 'grit 120 then 220' }],
-      },
-      { title: 'Doing', cards: [{ title: 'Glue-up' }] },
-      { title: 'Done', cards: [] },
-    ],
-  },
-  // #111: the eight data-HOLDING display blocks. Each one's payload — a hand-set
-  // `value`, `points`, `cells`, `items` — WAS the violation: a copy of data the
-  // records already hold. They left `moduleDataSchema` with #111, so like kanban they
-  // only exercise the read-tolerance hydrate path from here on.
-  metric: { type: 'metric', label: 'Boards cut', value: 12 },
-  'metric-ring': { type: 'metric-ring', label: 'Overall Progress', pct: 0.2 },
-  stat: { type: 'stat', label: 'MRR', value: 12500, format: 'currency', delta: 0.12 },
-  'chart-line': {
-    type: 'chart-line',
-    title: 'Weekly mileage',
-    points: [
-      { x: '2026-01', values: { Miles: 32 } },
-      { x: '2026-02', values: { Miles: 38 } },
-    ],
-  },
-  'chart-bar': {
-    type: 'chart-bar',
-    title: 'Spend by category',
-    points: [
-      { x: 'Rent', values: { Amount: 1800 } },
-      { x: 'Food', values: { Amount: 420 } },
-    ],
-  },
-  'chart-area': {
-    type: 'chart-area',
-    title: 'Balance',
-    points: [
-      { x: '2026-01', values: { Balance: 1200 } },
-      { x: '2026-02', values: { Balance: 1650 } },
-    ],
-  },
-  heatmap: {
-    type: 'heatmap',
-    title: 'Workouts',
-    cells: [
-      { date: '2026-01-05', value: 1 },
-      { date: '2026-01-07', value: 2 },
-    ],
-  },
-  timeline: {
-    type: 'timeline',
-    title: 'Renovation',
-    items: [
-      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
-      { label: 'Inspection', start: '2026-09-30' },
-    ],
-  },
-}
-
-/**
  * Resolve a nested-id path (`'columns'` or the deep `'columns.cards'`, ticket-35)
  * to the flat list of id-bearing element objects it addresses — the collections a
  * strip must have emptied of `id`. Mirrors the walker in `hydrate.ts`.
@@ -139,19 +69,14 @@ function elementsAtPath(block: Record<string, unknown>, path: string): Record<st
   )
 }
 
-const retiredTypes = new Set<string>(RETIRED_FROM_CREATION)
 const contentTypes = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
-// Composable = content types the AI/palette may mint (have an id-less `ModuleData`
-// sample). Retired-from-creation types (kanban + the #111 display blocks) still hydrate on read but are not in
-// `moduleDataSchema`, so they're excluded from the composition round-trip + stamp loops.
-const composableTypes = contentTypes.filter((t) => !retiredTypes.has(t))
 
 /**
  * The block's ID-BEARING object-array collections — the ones the descriptor
- * DECLARES via `nestedIdPaths`. Not every object-array carries ids: a `chart-*`
- * block's `points` are plain `{ x, values }` with no id, and hydrate/stamp
- * deliberately leave them alone (ticket-36). Walking the declared paths (not every
- * array-of-objects on the block) keeps this fence honest for those modules.
+ * DECLARES via `nestedIdPaths`. Not every object-array carries ids: a chart-mode
+ * view's `chart.series` is a plain `{ property, agg }` list, and hydrate/stamp
+ * deliberately leave it alone. Walking the declared paths (not every array-of-objects
+ * on the block) keeps this fence honest for those modules.
  */
 function idBearingArrays(type: string, block: object): Record<string, unknown>[][] {
   const paths = descriptorFor(type)?.nestedIdPaths ?? []
@@ -164,29 +89,18 @@ function idBearingArrays(type: string, block: object): Record<string, unknown>[]
     )
 }
 
-// Every content type resolves to a sample for the read-tolerance hydrate path:
-// composable types from `samples`, retired-from-creation types from `retiredSamples`.
-const sampleFor = (type: string): unknown => samples[type] ?? retiredSamples[type]
-
 describe('registry completeness', () => {
-  it('every composable content type has an AI-emitted sample here', () => {
-    for (const type of composableTypes) {
+  it('every content type has an AI-emitted sample here', () => {
+    for (const type of contentTypes) {
       expect(samples[type]).toBeDefined()
-    }
-  })
-
-  it('every retired-from-creation type has a read-tolerance sample', () => {
-    for (const type of retiredTypes) {
-      expect(retiredSamples[type]).toBeDefined()
     }
   })
 })
 
 describe('hydrateBlock mints every nested id the schema demands', () => {
-  // Covers ALL content types, retired included — a persisted kanban must still hydrate.
   it.each(contentTypes)('%s hydrates to a valid block (no id left unminted)', (type) => {
     let n = 0
-    const block = hydrateBlock(sampleFor(type), 'blk-1', () => `mint-${n++}`)
+    const block = hydrateBlock(samples[type], 'blk-1', () => `mint-${n++}`)
     // null would mean blockSchema rejected the hydrated block — i.e. a nested id
     // the schema requires was not minted.
     expect(block).not.toBeNull()
@@ -214,7 +128,7 @@ describe('moduleDataSchema strips every id nestedIdPaths declares (ai-compositio
   // The strip site in ai-composition.ts hand-encodes each omit-chain; this pins it
   // to the descriptor's declared fact. Parse failure = the type is missing from the
   // union; a surviving id = its omit-chain doesn't cover a declared path.
-  it.each(composableTypes)('%s round-trips: strip(hydrate(sample)) === sample', (type) => {
+  it.each(contentTypes)('%s round-trips: strip(hydrate(sample)) === sample', (type) => {
     let n = 0
     const hydrated = hydrateBlock(samples[type], 'blk-1', () => `mint-${n++}`)
     const parsed = moduleDataSchema.safeParse(hydrated)
@@ -234,7 +148,7 @@ describe('moduleDataSchema strips every id nestedIdPaths declares (ai-compositio
 })
 
 describe('stampDisplayIds stamps the same collections for display', () => {
-  it.each(composableTypes)('%s gets a block id and an id on every nested element', (type) => {
+  it.each(contentTypes)('%s gets a block id and an id on every nested element', (type) => {
     const block = stampDisplayIds(samples[type], 'preview-0')
     expect(block.id).toBe('preview-0')
     for (const arr of idBearingArrays(type, block)) {
@@ -258,16 +172,20 @@ describe('stampDisplayIds stamps the same collections for display', () => {
     ).toEqual(['preview-2-0', 'preview-2-1'])
   })
 
-  it('a chart block keeps its point objects id-free (no nestedIdPaths declared)', () => {
+  it("a chart view keeps its series objects id-free (no nestedIdPaths declared)", () => {
     // The complement of the todo/table case: a module that DOESN'T declare
-    // nestedIdPaths must not have ids injected into its object-arrays. The chart
-    // sample now lives in `retiredSamples` (#111) — it is still stamped for DISPLAY,
-    // because a persisted chart block on an old page still renders.
-    const chart = stampDisplayIds(
-      retiredSamples['chart-line'] as Parameters<typeof stampDisplayIds>[0],
+    // nestedIdPaths must not have ids injected into its object-arrays. A chart-mode
+    // view's `chart.series` is the live instance of that — plain `{ property, agg }`.
+    const chartView = stampDisplayIds(
+      {
+        type: 'view',
+        mode: 'chart',
+        chart: { kind: 'bar', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }] },
+      },
       'preview-3'
     ) as Record<string, unknown>
-    const points = chart.points as Record<string, unknown>[]
-    expect(points.every((p) => !('id' in p))).toBe(true)
+    const chart = chartView.chart as Record<string, unknown>
+    const series = chart.series as Record<string, unknown>[]
+    expect(series.every((entry) => !('id' in entry))).toBe(true)
   })
 })

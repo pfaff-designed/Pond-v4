@@ -29,7 +29,13 @@ const morph: ChangePreview = {
 }
 const remove: ChangePreview = {
   op: 'remove',
-  before: { id: 'm', type: 'metric', label: 'Weekly mileage', value: 38, unit: 'mi' },
+  before: {
+    id: 'm',
+    type: 'table',
+    title: 'Weekly mileage',
+    columns: ['Week', 'Miles'],
+    rows: [{ id: 'r1', cells: ['1', '38'] }],
+  },
   after: null,
 }
 
