@@ -53,7 +53,7 @@ export const AGG_LABELS: Record<ViewAgg, string> = {
  * Every chart KIND a chart-mode view may name — the thirteen `PondChart.dc.html`
  * declares, in the board's own order. They are `kind` VALUES here, never block types:
  * that is the whole point of #111, and it is why `heatmap` and `ring` are kinds rather
- * than the retired `heatmap` / `metric-ring` blocks they replace. All thirteen draw
+ * than the deleted `heatmap` / `metric-ring` blocks they replace. All thirteen draw
  * (`collection-chart.tsx` → `src/components/charts/*`); the derivation that feeds
  * them lives in `chart-data.ts`.
  */

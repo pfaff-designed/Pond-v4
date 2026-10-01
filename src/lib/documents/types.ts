@@ -9,4 +9,3 @@
 export type { Block } from '@/lib/modules/content'
 export type { TextBlock } from '@/lib/modules/text/schema'
 export type { TodoBlock, TodoItem } from '@/lib/modules/todo/schema'
-export type { MetricBlock } from '@/lib/modules/metric/schema'

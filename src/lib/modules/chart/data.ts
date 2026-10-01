@@ -1,27 +1,23 @@
 import { z } from 'zod'
 
 /**
- * Shared chart DATA contract (ticket-36) — the small, hand-authorable +
- * AI-emittable shape behind every promoted Bklit chart (`chart-line`,
- * `chart-bar`, `chart-area`). Deliberately NOT the flat `Record<string,unknown>[]`
- * the Bklit visuals consume internally: that shape is wide, positional, and easy to
- * emit wrong. Instead each point pairs an x-label with a `{ seriesName: number }`
- * map, so a one-series chart is trivial to write by hand and a multi-series chart is
- * still a flat list. `toChartRows` transforms this into Bklit's row shape in the
- * view — the module boundary owns the mapping, not the AI.
+ * Shared chart DATA contract — the point-major shape the Bklit visuals are fed from.
+ * Deliberately NOT the flat `Record<string,unknown>[]` they consume internally: that
+ * shape is wide and positional. Instead each point pairs an x-label with a
+ * `{ seriesName: number }` map, and `toChartRows` transforms it into Bklit's row shape
+ * at the renderer — the module boundary owns the mapping.
  *
- * One base schema, three modules: the chart TYPES differ only in their `type`
- * literal and their view's renderer; the data is identical. Kept as a plain object
- * builder (not a single exported schema) so each module owns its own `type` literal
- * for the discriminated unions (content.ts / ai-composition.ts).
+ * #111 deleted the three standalone chart BLOCKS this contract was written for. It
+ * survives as the seam between the `chart` view mode's aggregation
+ * (`view/chart-data.ts`, which emits exactly this shape) and the Bklit renderers.
  */
 
 /**
  * One data point: an x-axis label plus a map of series-name → numeric value. A
  * missing series at a point is simply absent from `values` (rendered as a gap, not
- * zero). For time-series charts (`chart-line`, `chart-area`) `x` SHOULD be a
- * date-parseable string ("2026-01", "2026-01-15") so the axis reads chronologically;
- * for `chart-bar` `x` is any category label.
+ * zero). For the time-series kinds (line, area) `x` SHOULD be a date-parseable string
+ * ("2026-01", "2026-01-15") so the axis reads chronologically; for the categorical
+ * kinds `x` is any category label.
  */
 export const chartPointSchema = z.object({
   x: z.string(),

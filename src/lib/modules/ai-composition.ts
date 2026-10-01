@@ -18,7 +18,7 @@
  * Handler with no client bundle poison.
  */
 import { z } from 'zod'
-import { moduleDescriptors, RETIRED_FROM_CREATION } from './registry'
+import { moduleDescriptors } from './registry'
 import { textSchema } from './text/schema'
 import { todoSchema, todoItemSchema } from './todo/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
@@ -56,12 +56,14 @@ const todoData = todoSchema
   .omit({ id: true })
   .extend({ items: z.array(todoItemSchema.omit({ id: true })) })
 /**
- * #111 — the eight data-HOLDING display blocks (metric, metric-ring, stat, the three
- * charts, heatmap, timeline) are gone from the emit unions, exactly as `kanban` is.
- * Each carried its own copy of the data; a chart or a headline figure is now a MODE of
- * the `view` block, aggregated from the records ("nothing holds a copy"). Their
- * descriptors stay registered, so pages that already hold one still render — but the
- * model can no longer mint a new one, and `moduleCatalog` no longer advertises them.
+ * #111 is finished. The nine data-HOLDING display blocks (metric, metric-ring, stat,
+ * the three charts, heatmap, timeline, kanban) are DELETED, not merely absent from the
+ * emit unions. Each carried its own copy of the data, which the design forbids — "the
+ * record is the source of truth… nothing holds a copy" — so a chart, a board and a
+ * headline figure are MODES of the `view` block, aggregated from the records at read
+ * time. Production held zero blocks of those types across all 85 pages, so there was
+ * nothing to migrate and no read-tolerance left to keep.
+ *
  * The same-batch `bindKey`/`ref` plumbing stays in place (the accept path and the
  * create surfaces still carry it) for whatever binds next; nothing emits a ref today.
  */
@@ -214,8 +216,7 @@ export type ProposeChanges = z.infer<typeof proposeChangesSchema>
  * module. Derived from the registry so a new module auto-appears here. Excludes the
  * `page` container (see above): the AI composes flat content until t18.
  */
-const RETIRED = new Set<string>(RETIRED_FROM_CREATION)
 export const moduleCatalog = Object.values(moduleDescriptors)
-  .filter((d) => d.type !== 'page' && !RETIRED.has(d.type))
+  .filter((d) => d.type !== 'page')
   .map((d) => `- ${d.type}: ${d.description}`)
   .join('\n')

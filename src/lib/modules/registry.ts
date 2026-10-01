@@ -10,38 +10,16 @@
 import type { ModuleDescriptor, ResolvedDescriptor } from './types'
 import { textDescriptor } from './text/schema'
 import { todoDescriptor } from './todo/schema'
-import { metricDescriptor } from './metric/schema'
-import { metricRingDescriptor } from './metric-ring/schema'
 import { tableDescriptor } from './table/schema'
-import { kanbanDescriptor } from './kanban/schema'
 import { pageDescriptor } from './page/schema'
-import { chartLineDescriptor } from './chart-line/schema'
-import { chartBarDescriptor } from './chart-bar/schema'
-import { chartAreaDescriptor } from './chart-area/schema'
-import { heatmapDescriptor } from './heatmap/schema'
-import { statDescriptor } from './stat/schema'
-import { timelineDescriptor } from './timeline/schema'
 import { viewDescriptor } from './view/schema'
 import { imageDescriptor } from './image/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
   todo: todoDescriptor,
-  metric: metricDescriptor,
-  'metric-ring': metricRingDescriptor,
   table: tableDescriptor,
-  kanban: kanbanDescriptor,
   page: pageDescriptor,
-  // ticket-36: Bklit chart promotion (line / bar / area).
-  'chart-line': chartLineDescriptor,
-  'chart-bar': chartBarDescriptor,
-  'chart-area': chartAreaDescriptor,
-  // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
-  heatmap: heatmapDescriptor,
-  stat: statDescriptor,
-  // #11: standalone AI-composable timeline (Gantt) — read-only inline items, no
-  // collection (distinct from the #27 `view` block's gantt mode).
-  timeline: timelineDescriptor,
   // #19: an inline view of a collection's rows (table/board/calendar/gallery).
   view: viewDescriptor,
   // #61: an uploaded image / file attachment, referenced by storage URL.
@@ -51,35 +29,9 @@ export const moduleDescriptors = {
 export type DescriptorType = keyof typeof moduleDescriptors
 
 /**
- * Types kept in the registry for read/render/serialize tolerance but retired from
- * CREATION. Persisted blocks of these types still hydrate and render; neither the
- * human palette nor the AI may mint a new one.
- *
- * `kanban` (#19 slice 6) is superseded by the `view` block's board mode over a
- * collection.
- *
- * The eight data-holding display blocks (#111) are superseded by the `view` block's
- * `chart` and `big-number` modes. Each of them held its OWN copy of the data —
- * `points`, `cells`, `items`, a hand-set `value` — which the design forbids: "the
- * record is the source of truth… nothing holds a copy." A chart or a headline figure
- * is now a view of a database, aggregated from the records at read time. No data
- * migration: existing pages keep rendering through these descriptors (#111 AC 6).
- *
  * `table` is NOT retired — it remains the freeform-grid primitive (a genuine matrix,
  * not a set of records), and `promote_table` (#101) is how a table becomes a database.
  */
-export const RETIRED_FROM_CREATION = [
-  'kanban',
-  'chart-line',
-  'chart-bar',
-  'chart-area',
-  'heatmap',
-  'timeline',
-  'metric',
-  'metric-ring',
-  'stat',
-] as const
-export type RetiredType = (typeof RETIRED_FROM_CREATION)[number]
 
 /**
  * Look up a descriptor by persisted `type` string. Undefined only for a stale

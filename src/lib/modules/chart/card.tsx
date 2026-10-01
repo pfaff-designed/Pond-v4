@@ -5,17 +5,15 @@ import type { ChartPoint } from './data'
 import { seriesNames } from './data'
 
 /**
- * Shared chart-module CARD chrome (ticket-36) — the Press module-card wrapper every
- * promoted Bklit chart renders inside (w2-design-brief.md: "wrap each in the standard
- * module-card chrome — kicker title, caption line"). The Bklit VISUAL is untouched;
- * this only supplies the surrounding chrome so `chart-line` / `chart-bar` /
- * `chart-area` read as one family: a kicker title, a muted caption, axis + legend
+ * Shared chart CARD chrome — the module-card wrapper every chart KIND renders inside.
+ * The Bklit VISUAL is untouched; this only supplies the surrounding chrome so all
+ * thirteen kinds read as one family: a kicker title, a muted caption, axis + legend
  * labels in the small mono-kicker voice, and a calm empty state that never crashes on
  * degenerate data. Colours are the Make Noise chart tokens only (#94 retint).
  */
 
-/** The module-card kicker voice — exported (#12) so the promoted heatmap/stat
- *  modules share the exact chrome instead of restating the classes. Make Noise:
+/** The module-card kicker voice — exported so any surface that needs the block
+ *  eyebrow shares the exact chrome instead of restating the classes. Make Noise:
  *  the block eyebrow is the mono machine-surface voice (lowercase, tight
  *  tracking) in muted ink — the label over a data block. */
 export const KICKER =

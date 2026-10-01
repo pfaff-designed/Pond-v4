@@ -50,7 +50,7 @@ const tools = {
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 // A realistic recipe page: intro text, two todo blocks (ingredients + steps), a
-// metric, a progress metric-ring, a tips text block. Stable, human-shaped ids.
+// nutrition table, a tips text block. Stable, human-shaped ids.
 
 const RECIPE_BLOCKS: Block[] = [
   {
@@ -77,8 +77,16 @@ const RECIPE_BLOCKS: Block[] = [
       { id: 'it-bake', label: 'Bake 45 minutes', checked: false },
     ],
   },
-  { id: 'blk-cal-04', type: 'metric', label: 'Calories per serving', value: 520, unit: 'kcal' },
-  { id: 'blk-ring-05', type: 'metric-ring', label: 'Progress', sub: 'prep', pct: 0.2 },
+  {
+    id: 'blk-nutrition-04',
+    type: 'table',
+    title: 'Per serving',
+    columns: ['Nutrient', 'Amount'],
+    rows: [
+      { id: 'row-kcal', cells: ['Calories', '520 kcal'] },
+      { id: 'row-protein', cells: ['Protein', '31 g'] },
+    ],
+  },
   {
     id: 'blk-tips-06',
     type: 'text',
@@ -262,8 +270,8 @@ const SCENARIOS: Scenario[] = [
   },
 
   // 5 — multi-op in ONE batch: edit(intro) + create(a checklist), no other ops.
-  //     (#111 retired the `metric` block from creation — a figure is now a big-number
-  //     VIEW of a database, so this case pins the multi-op fence with a `todo` create.)
+  //     (#111 deleted the `metric` block — a figure is now a big-number VIEW of a
+  //     database, so this case pins the multi-op fence with a `todo` create.)
   {
     name: 'multi-op: reword intro AND add a shopping checklist',
     ctxData: RECIPE_CTX,
@@ -308,12 +316,11 @@ const SCENARIOS: Scenario[] = [
   },
 
   // 7 — RETIRED by #111. This case pinned "set the progress to 60%" → an edit of the
-  //     `metric-ring` block. The eight data-holding display blocks (metric,
-  //     metric-ring, stat, the charts, heatmap, timeline) left the AI's emit union with
-  //     #111, so the model can no longer author OR edit one: a figure is a big-number
-  //     view of a database, and a legacy block on a page stays read-only (the same
-  //     standing `kanban` has had since #19 slice 6). Kept as a note rather than
-  //     silently deleted, so the gap is visible if the stance is ever revisited.
+  //     `metric-ring` block. The nine data-holding display blocks (metric, metric-ring,
+  //     stat, the three charts, heatmap, timeline, kanban) are now DELETED, not merely
+  //     absent from the emit union: a figure is a big-number view of a database and a
+  //     board is a view's board mode. Kept as a note rather than silently deleted, so
+  //     the gap is visible if the stance is ever revisited.
 
   // 8 — GENUINE ambiguity: two similarly-titled text sections, vague "that section".
   //     The steward clarify-guard must hold: NO tool call, ask which one.

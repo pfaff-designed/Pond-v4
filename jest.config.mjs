@@ -21,14 +21,14 @@ const config = {
     '/__tests__/helpers/',
   ],
   moduleNameMapper: {
-    // ticket-36: the Bklit chart entry modules the promoted chart views import pull
-    // in @visx → d3-shape (pure ESM) which next/jest won't transpile. Stub them in
-    // jsdom (real render covered by the chart Storybook story tests). Matched on the
+    // The Bklit chart entry modules the `chart` view mode imports pull in @visx →
+    // d3-shape (pure ESM) which next/jest won't transpile. Stub them in jsdom (real
+    // render covered by the view chart-kind story tests). Matched on the
     // resolved path tail (not the `@/` alias, which next resolves before this map
     // sees it) and placed FIRST so it wins over the `^@/` catch-all below.
     'components/charts/(line-chart|bar-chart|area-chart|line|bar|area|grid|x-axis|bar-x-axis)$':
       '<rootDir>/src/__mocks__/charts.tsx',
-    // #12: same remedy for the heatmap entry barrel (index → HeatmapChart → @visx +
+    // Same remedy for the heatmap entry barrel (index → HeatmapChart → @visx +
     // motion). Anchored on the barrel only — deep imports like `heatmap/heatmap-utils`
     // (the pure week helpers the binning transform reuses) still resolve for real.
     'components/charts/heatmap$': '<rootDir>/src/__mocks__/heatmap.tsx',
@@ -39,7 +39,7 @@ const config = {
     '^react-markdown$': '<rootDir>/src/__mocks__/react-markdown.tsx',
     '^remark-(gfm|breaks)$': '<rootDir>/src/__mocks__/remark-plugin.ts',
     // @number-flow/react is a pure-ESM custom-element wrapper; stub it in jsdom.
-    // The count-up animation is covered by the metric Storybook story test, not jest.
+    // The count-up animation is covered by the view big-number story test, not jest.
     '^@number-flow/react$': '<rootDir>/src/__mocks__/number-flow.tsx',
   },
 }

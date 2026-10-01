@@ -1,12 +1,12 @@
 /**
- * Jest mock for the Bklit heatmap entry module (`@/components/charts/heatmap`,
- * #12). The real HeatmapChart pulls in `@visx/*` + `motion` (pure ESM) which
- * next/jest won't transpile — same situation, same remedy as the chart-line/bar/
- * area stubs in charts.tsx. The heatmap RENDER (grid, cells, axes) is asserted
- * in the heatmap Storybook story tests (vitest browser env, native ESM); jsdom
- * only needs the module graph to load. The BINNING transform is pure and jest-
- * covered directly (heatmap-data.test.ts) — it lives in heatmap-utils/data.ts,
- * which this stub does not shadow.
+ * Jest mock for the Bklit heatmap entry module (`@/components/charts/heatmap`), which
+ * the `heatmap` chart KIND draws through. The real HeatmapChart pulls in `@visx/*` +
+ * `motion` (pure ESM) which next/jest won't transpile — same situation, same remedy as
+ * the line/bar/area stubs in charts.tsx. The heatmap RENDER (grid, cells, axes) is
+ * asserted in the view chart-kind story tests (vitest browser env, native ESM); jsdom
+ * only needs the module graph to load. The BINNING transform is pure and jest-covered
+ * directly (`heatmap-data.test.ts`) — it lives in `view/heatmap-data.ts` and
+ * `heatmap/heatmap-utils`, neither of which this stub shadows.
  */
 import type { ReactNode } from 'react'
 
