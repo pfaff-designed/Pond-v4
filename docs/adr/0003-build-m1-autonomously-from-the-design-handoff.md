@@ -73,3 +73,19 @@ Two things stay gated, because they are not reversible by a revert:
 4. The machine surface is **mono, 10.5–12.5px, tight letterspacing.** The token layer's `--tracking-wider: 0.1em` applied to mono inverts this; that is a defect, not a spec.
 
 **The lesson, which matters more than the ruling:** I derived a rule from the README's prose and applied it over values measured from boards. `AGENTS.md`'s source order puts `PROJECT_RULES.md` above the mockups for **product law** — vocabulary, the diff model, colour roles — not for **values**. For a value the board is the most specific statement and it wins. This is the same disposition that let the row-delete `×` survive: treating what exists, or what reads as a general rule, as the baseline against which the design must argue. It is backwards.
+
+## Third instance of the same failure, 2026-10-01 — name the pattern
+
+The amendment above records one case: a type rule derived from the README's prose, applied over values measured from boards. It has now happened three times in one day, on the same axis:
+
+1. **Type scale.** "Snap off-scale values to 11/13/16/18/22/28/36/46" — but the component boards specify 13.5, 10.5, 12.5, 16.5, and `PondAtom`/`PondMolecule` transcribe them faithfully. The rule would have corrupted accurate work.
+2. **Mono letterspacing, attempt one.** "Mono carries no added letterspacing" — but board 6j's mono group labels are `.04em` and 6c's resolved status line is `.02em`.
+3. **Mono letterspacing, attempt two.** "No tracking ≥ .05em on mono" — but `machineEyebrowClass` is mono at `.1em`, and on `Pond 06.01` both `new page — proposed` and the `pond` attribution resolve to a `PP Neue Montreal Mono` ancestor at `10.5 / 500 / .1em / uppercase / .68`.
+
+The correct rule was only found by measuring: **the axis is uppercase eyebrow versus lowercase running mono.** The eyebrow carries `.1em` in _both_ mediums; what must stay tight is lowercase running mono.
+
+**The pattern:** a plausible-sounding generalisation, written from prose, applied across many call sites at once, each time condemning values that were already correct. Every instance was caught by someone measuring a board — twice by a builder checking my rule rather than obeying it.
+
+**The rule about rules:** before writing a constraint that will be applied in bulk, **measure at least three sites it will touch.** If any of them is already correct under the current code and wrong under the proposed rule, the rule is wrong. State constraints as the narrowest thing the measurements support, never as the tidy general principle they suggest.
+
+And when a builder reports that a stated rule contradicts a board, **believe the board.** That has been right every time it has come up.
