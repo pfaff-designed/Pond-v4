@@ -27,9 +27,28 @@ function firstCategoryDef(schema: PropertySchema): PropertyDef | undefined {
   )
 }
 
+/**
+ * What the x axis IS, decided ONCE from the property schema (never guessed from
+ * the labels): a `date` property reads chronologically; a `number`/`rollup`
+ * property is a measure; everything else — select, status, text, checkbox, the
+ * record title — is a CATEGORY whose labels are shown as given. The time-series
+ * renderers must never build a Date from a category (#94: `new Date('o-rent')` →
+ * `Intl.DateTimeFormat#format` → RangeError → the page died).
+ */
+export type ChartXAxis = 'date' | 'number' | 'category'
+
+export function classifyXAxis(def: PropertyDef | undefined): ChartXAxis {
+  if (!def) return 'category'
+  if (def.type === 'date') return 'date'
+  if (def.type === 'number' || def.type === 'rollup') return 'number'
+  return 'category'
+}
+
 export interface ResolvedChartConfig {
   kind: ChartKind
   xDef?: PropertyDef
+  /** The x axis's nature, from the schema (see `classifyXAxis`). */
+  xAxis: ChartXAxis
   series: { def?: PropertyDef; agg: ViewAgg }[]
   stacked: boolean
   target?: number
@@ -52,7 +71,7 @@ export function resolveChartConfig(schema: PropertySchema, config: ViewChartConf
   const series = declared.length
     ? declared
     : [{ def: firstNumericDef(schema), agg: (firstNumericDef(schema) ? 'sum' : 'count') as ViewAgg }]
-  return { kind, xDef, series, stacked: config?.stacked ?? false, target: config?.target }
+  return { kind, xDef, xAxis: classifyXAxis(xDef), series, stacked: config?.stacked ?? false, target: config?.target }
 }
 
 /** One chart series' label, ready for the card legend. */
@@ -67,6 +86,8 @@ export interface ChartData {
   series: ChartSeriesSpec[]
   /** The x-axis label (the category property's name, or "Record" when bucketing by title). */
   xLabel: string
+  /** Whether `points[].x` are dates, numbers or category labels — decides the x scale. */
+  xAxis: ChartXAxis
   stacked: boolean
   /** The configured reference (gauge goal / composed budget line). */
   target?: number
@@ -112,7 +133,7 @@ export function chartDataFromRows(
   schema: PropertySchema,
   config: ViewChartConfig | undefined
 ): ChartData {
-  const { kind, xDef, series, stacked, target } = resolveChartConfig(schema, config)
+  const { kind, xDef, xAxis, series, stacked, target } = resolveChartConfig(schema, config)
   const names = series.map((s) => seriesName(s.def, s.agg))
 
   // Bucket rows by category, keeping first-seen order (the view's own row order). A
@@ -133,7 +154,7 @@ export function chartDataFromRows(
   }
 
   const points = order.map((key) => pointOf(labels.get(key) ?? key, buckets.get(key) ?? [], series, names))
-  const data: ChartData = { kind, points, series: names.map((name) => ({ name })), xLabel: xDef?.name ?? 'Record', stacked }
+  const data: ChartData = { kind, points, series: names.map((name) => ({ name })), xLabel: xDef?.name ?? 'Record', xAxis, stacked }
   if (target !== undefined) data.target = target
 
   if (kind === 'sunburst') {

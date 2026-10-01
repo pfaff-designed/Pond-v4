@@ -6,7 +6,7 @@
  * with an extra reading (scatter per record, sunburst leaves, gauge figure) derive
  * it from the same rows.
  */
-import { chartDataFromRows, resolveChartConfig } from './chart-data'
+import { chartDataFromRows, classifyXAxis, resolveChartConfig } from './chart-data'
 import type { CollectionRow } from './apply'
 import type { PropertySchema } from '@/lib/properties/schema'
 
@@ -92,6 +92,33 @@ describe('chartDataFromRows', () => {
   it('carries the configured target through for gauge / composed', () => {
     expect(chartDataFromRows(rows, schema, { ...config, kind: 'composed', target: 100 }).target).toBe(100)
     expect(chartDataFromRows(rows, schema, config).target).toBeUndefined()
+  })
+})
+
+describe('x-axis classification (#94 crash regression)', () => {
+  const dateSchema: PropertySchema = [{ id: 'p-due', name: 'Due', type: 'date' }, ...schema]
+
+  it('classifies date / number / select / text / title x properties from the SCHEMA', () => {
+    expect(classifyXAxis(dateSchema[0])).toBe('date')
+    expect(classifyXAxis(schema[0])).toBe('number') // Hours
+    expect(classifyXAxis(schema[2])).toBe('category') // Status (select)
+    expect(classifyXAxis(schema[1])).toBe('category') // Month (text)
+    expect(classifyXAxis(undefined)).toBe('category') // record title
+  })
+
+  it('emits the classification with the data — the persisted config that crashed the real app reads as a category axis', () => {
+    // Exactly the config the mode switch persisted: a select x, counted, drawn as a line.
+    const data = chartDataFromRows(rows, schema, { kind: 'line', xProperty: 'p-status', series: [{ agg: 'count', property: 'p-status' }] })
+    expect(data.xAxis).toBe('category')
+    expect(data.points.map((p) => p.x)).toEqual(['Done', 'Open'])
+    expect(chartDataFromRows(rows, dateSchema, { kind: 'line', xProperty: 'p-due', series: [{ property: 'p-hours', agg: 'sum' }] }).xAxis).toBe('date')
+    expect(chartDataFromRows(rows, schema, { kind: 'scatter', xProperty: 'p-hours', series: [{ property: 'p-hours', agg: 'sum' }] }).xAxis).toBe('number')
+  })
+
+  it('defaults the x property to a DATE when the schema has one, else the first select/status, else text', () => {
+    expect(resolveChartConfig(dateSchema, undefined).xDef?.id).toBe('p-due')
+    expect(resolveChartConfig(schema, undefined).xDef?.id).toBe('p-status')
+    expect(resolveChartConfig([schema[0], schema[1]], undefined).xDef?.id).toBe('p-month')
   })
 })
 

@@ -209,6 +209,51 @@ export const Bar: Story = {
   },
 }
 
+// ── Categorical x on the time-series kinds (#94 crash regression) ──────────────
+// EXACTLY the config the real app's mode switch persisted for a select x property:
+// a line, counted, over a select. On main this threw `RangeError: Invalid time value`
+// from the time-series shell and the page degraded to "couldn't load".
+
+const selectCount: ViewChartConfig = { kind: 'line', xProperty: 'p-category', series: [{ agg: 'count', property: 'p-category' }] }
+
+export const LineCategoricalX: Story = {
+  args: { config: view('v-line-cat', selectCount), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // The category labels are read as given, never formatted as dates.
+    await expect(await canvas.findByText('Rent')).toBeInTheDocument()
+    await expect(canvas.getByText('Subs')).toBeInTheDocument()
+    await expect(canvas.getByText('Category')).toBeInTheDocument()
+    await expect(canvasElement.querySelector('svg')).not.toBeNull()
+  },
+}
+export const AreaCategoricalX: Story = {
+  args: { config: view('v-area-cat', { ...selectCount, kind: 'area' }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('Rent')).toBeInTheDocument()
+    await expect(canvas.getByText('Food')).toBeInTheDocument()
+    await expect(canvasElement.querySelector('svg')).not.toBeNull()
+  },
+}
+export const BarCategoricalX: Story = {
+  args: { config: view('v-bar-cat', { ...selectCount, kind: 'bar' }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('Rent')).toBeInTheDocument()
+    await expect(canvas.getByText('Transport')).toBeInTheDocument()
+  },
+}
+/** A text x (month names, the mockup's own axis) on a line — also categorical. */
+export const LineTextX: Story = {
+  args: { config: view('v-line-text', { kind: 'line', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('may')).toBeInTheDocument()
+    await expect(canvas.getByText('aug')).toBeInTheDocument()
+  },
+}
+
 // ── Degenerate datasets — where hand-rolled geometry is thinnest ──────────────
 
 /** One record: the net chart centres its single marker and draws no segment. */

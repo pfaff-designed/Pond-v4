@@ -185,6 +185,8 @@ export interface ChartContextValue extends ChartHoverContextValue {
   bandWidth?: number
   /** X accessor for bar charts (returns string instead of Date) */
   barXAccessor?: (d: Record<string, unknown>) => string
+  /** Categorical x on a time-series chart (#94): the label to READ for a point, instead of formatting its (ordinal) date. */
+  xLabelAccessor?: (d: Record<string, unknown>) => string
   /** Bar chart orientation */
   orientation?: 'vertical' | 'horizontal'
   /** Whether bars are stacked */
@@ -286,6 +288,7 @@ export function ChartProvider({
         barScale: value.barScale,
         bandWidth: value.bandWidth,
         barXAccessor: value.barXAccessor,
+        xLabelAccessor: value.xLabelAccessor,
         orientation: value.orientation,
         stacked: value.stacked,
         stackOffsets: value.stackOffsets,
@@ -332,6 +335,7 @@ export function ChartProvider({
       value.barScale,
       value.bandWidth,
       value.barXAccessor,
+      value.xLabelAccessor,
       value.orientation,
       value.stacked,
       value.stackOffsets,

@@ -16,7 +16,7 @@ import type { ViewBlock } from './schema'
 import type { CollectionRow } from './apply'
 import { chartDataFromRows, type ChartData } from './chart-data'
 import { ViewNotice } from './notice'
-import { toChartRows } from '../chart/data'
+import { toCategoricalChartRows, toChartRows } from '../chart/data'
 import { ChartCard, CHART_SERIES_COLORS } from '../chart/card'
 import { seriesColor } from '@/components/charts/chart-ramp'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -26,6 +26,8 @@ import { Area } from '@/components/charts/area'
 import { BarChart } from '@/components/charts/bar-chart'
 import { Bar } from '@/components/charts/bar'
 import { Grid } from '@/components/charts/grid'
+import { XAxis } from '@/components/charts/x-axis'
+import { BarXAxis } from '@/components/charts/bar-x-axis'
 import { ComposedChart } from '@/components/charts/composed'
 import { NetChart } from '@/components/charts/net'
 import { GaugeChart } from '@/components/charts/gauge'
@@ -35,18 +37,28 @@ import { SankeyChart } from '@/components/charts/sankey'
 import { SunburstChart } from '@/components/charts/sunburst'
 import { FunnelChart } from '@/components/charts/funnel'
 
-/** The three promoted Bklit visuals, fed the flat row shape they expect. */
+/**
+ * The three promoted Bklit visuals, fed the flat row shape they expect. Line and
+ * area run on a time scale: a DATE x passes through as dates; a category or number
+ * x (#94 — a select, a status, a day name, the record title) becomes evenly spaced
+ * ordinals with the label shown as given, so the shell never builds a Date from a
+ * category (the `Invalid time value` RangeError that took the page down). Bar is
+ * a band scale over the labels already.
+ */
 function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
+  const categorical = data.xAxis !== 'date'
   const common = {
-    data: toChartRows(data.points),
+    data: categorical ? toCategoricalChartRows(data.points) : toChartRows(data.points),
     xDataKey: 'x',
     aspectRatio: '5 / 2',
     margin: { top: 12, right: 12, bottom: 12, left: 12 },
   } as const
+  const timeSeries = categorical ? { xLabelKey: 'xLabel' } : {}
   if (data.kind === 'line') {
     return (
-      <LineChart {...common}>
+      <LineChart {...common} {...timeSeries}>
         <Grid />
+        <XAxis />
         {names.map((name, i) => (
           <Line key={name} dataKey={name} stroke={seriesColor(i)} animate={false} loading={false} />
         ))}
@@ -55,8 +67,9 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
   }
   if (data.kind === 'area') {
     return (
-      <AreaChart {...common}>
+      <AreaChart {...common} {...timeSeries}>
         <Grid />
+        <XAxis />
         {names.map((name, i) => (
           <Area key={name} dataKey={name} fill={seriesColor(i)} stroke={seriesColor(i)} animate={false} loading={false} />
         ))}
@@ -64,9 +77,11 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
     )
   }
   // `stacked` reaches the bar renderer: it is the one Bklit visual that stacks.
+  // Bars take the label strings straight (band scale) — no ordinal needed.
   return (
-    <BarChart {...common} stacked={data.stacked}>
+    <BarChart {...common} data={toChartRows(data.points)} stacked={data.stacked}>
       <Grid />
+      <BarXAxis />
       {names.map((name, i) => (
         <Bar key={name} dataKey={name} fill={seriesColor(i)} animate={false} />
       ))}
@@ -110,7 +125,15 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
       }
       return <RadarChart points={data.points} series={names} label={label} fallback={empty} />
     case 'scatter':
-      return <ScatterChart points={data.points} series={names} label={label} fallback={empty} />
+      return (
+        <ScatterChart
+          points={data.points}
+          series={names}
+          axis={data.xAxis === 'number' ? 'numeric' : data.xAxis === 'date' ? 'date' : undefined}
+          label={label}
+          fallback={empty}
+        />
+      )
     case 'sankey':
       return (
         <SankeyChart

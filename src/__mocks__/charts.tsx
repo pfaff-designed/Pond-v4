@@ -30,5 +30,7 @@ export const Line = SeriesStub
 export const Bar = SeriesStub
 export const Area = SeriesStub
 export const Grid = SeriesStub
+export const XAxis = SeriesStub
+export const BarXAxis = SeriesStub
 
 export default ChartStub

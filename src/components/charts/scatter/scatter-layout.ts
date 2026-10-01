@@ -100,11 +100,16 @@ export function layoutScatter(
   points: readonly FigurePoint[],
   series: readonly string[],
   plotW: number,
-  plotH: number
+  plotH: number,
+  /** The x property's nature from the schema; omitted (a category/text property) → read the labels. */
+  axisHint?: 'numeric' | 'date'
 ): ScatterLayout | null {
   if (points.length === 0 || series.length === 0 || plotW <= 0 || plotH <= 0) return null
   const labels = points.map((p) => p.x)
-  const axis = detectAxis(labels)
+  // A schema-typed date/number axis is taken as given; a text column that happens to
+  // hold numbers or dates is still read as such from its labels.
+  const detected = detectAxis(labels)
+  const axis: ScatterAxisKind = axisHint && detected === axisHint ? axisHint : detected
   const xRaw = labels.map((s, i) => (axis === 'numeric' ? Number(s) : axis === 'date' ? Date.parse(s) : i))
 
   const ys: number[] = []

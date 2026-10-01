@@ -78,6 +78,23 @@ export function toChartRows(points: readonly ChartPoint[], xKey = 'x'): ChartRow
 }
 
 /**
+ * Rows for the Bklit TIME-SERIES shell when the x axis is categorical (#94): the
+ * shell scales x with `scaleTime`, so each category becomes an ORDINAL instant
+ * (`0, 1, 2…` ms — always a valid Date, evenly spaced) under `xKey`, and the label
+ * the person should read rides `labelKey` for the shell's `xLabelKey` prop. A
+ * category label is never handed to `new Date()`.
+ */
+export function toCategoricalChartRows(points: readonly ChartPoint[], xKey = 'x', labelKey = 'xLabel'): ChartRow[] {
+  return points.map((p, i) => {
+    const row: ChartRow = { [xKey]: i, [labelKey]: p.x }
+    for (const [name, value] of Object.entries(p.values ?? {})) {
+      if (typeof value === 'number') row[name] = value
+    }
+    return row
+  })
+}
+
+/**
  * Honest text summary for `serialize` (the prompt body + embedding source): each
  * series' name with its value range and last value, so the AI's context matches
  * what the user sees without dumping every point. A `kind` word ("line"/"bar"/"area")

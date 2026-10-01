@@ -27,7 +27,7 @@ import {
 } from "./chart-child-passthrough";
 import { ChartProvider, type LineConfig, type Margin } from "./chart-context";
 import { isGradientDefComponent, isPatternDefComponent } from "./chart-defs";
-import { shortDateFmt } from "./chart-formatters";
+import { safeShortDate } from "./chart-formatters";
 import {
   type ChartPhase,
   type ChartStatus,
@@ -131,6 +131,12 @@ export interface TimeSeriesChartInnerProps {
   height: number;
   data: Record<string, unknown>[];
   xDataKey: string;
+  /**
+   * Categorical x (#94): the key holding the label to show for each point. When set,
+   * `xDataKey` carries an ordinal instant (0, 1, 2… ms) and NO date is ever formatted
+   * from the data — the mockup's line/area charts run over month and day names.
+   */
+  xLabelKey?: string;
   margin: Margin;
   animationDuration: number;
   animationEasing?: string;
@@ -181,6 +187,7 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
   height,
   data,
   xDataKey,
+  xLabelKey,
   margin,
   animationDuration,
   animationEasing = DEFAULT_ANIMATION_EASING,
@@ -398,9 +405,21 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
     scaleLinear({ range: [innerHeight, 0], domain: [0, 100], nice: true })
   );
 
+  // Categorical x reads its labels as given; a date x formats them — through the
+  // safe formatter, so an Invalid Date can never throw out of a render again.
+  const xLabelAccessor = useMemo(
+    () =>
+      xLabelKey
+        ? (d: Record<string, unknown>) => String(d[xLabelKey] ?? "")
+        : undefined,
+    [xLabelKey]
+  );
   const dateLabels = useMemo(
-    () => visiblePlotData.map((d) => shortDateFmt.format(xAccessor(d))),
-    [visiblePlotData, xAccessor]
+    () =>
+      visiblePlotData.map((d) =>
+        xLabelAccessor ? xLabelAccessor(d) : safeShortDate(xAccessor(d))
+      ),
+    [visiblePlotData, xAccessor, xLabelAccessor]
   );
 
   const canInteract = isLoaded && isChartInteractionPhase(chartPhase);
@@ -538,6 +557,7 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
       notifyLoadingPulseComplete,
       xAccessor,
       dateLabels,
+      xLabelAccessor,
       xDomain,
       xDomainSlotCount,
       selection,
@@ -581,6 +601,7 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
       notifyLoadingPulseComplete,
       xAccessor,
       dateLabels,
+      xLabelAccessor,
       xDomain,
       xDomainSlotCount,
       selection,

@@ -14,7 +14,7 @@ import {
   useChart,
   useChartStable,
 } from "../chart-context";
-import { weekdayDateFmt } from "../chart-formatters";
+import { safeWeekdayDate } from "../chart-formatters";
 import type { IndicatorFadeEdges } from "../indicator-fade";
 import { DateTicker } from "./date-ticker";
 import { TooltipBox } from "./tooltip-box";
@@ -134,6 +134,7 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
     containerRef,
     orientation,
     barXAccessor,
+    xLabelAccessor,
     bandWidth,
     squareSnap,
   } = useChart();
@@ -248,9 +249,13 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
     if (barXAccessor) {
       return barXAccessor(tooltipData.point);
     }
+    // Categorical x on a line/area chart (#94): the label as given.
+    if (xLabelAccessor) {
+      return xLabelAccessor(tooltipData.point);
+    }
     // For line/area charts, use the date
-    return weekdayDateFmt.format(xAccessor(tooltipData.point));
-  }, [tooltipData, barXAccessor, xAccessor]);
+    return safeWeekdayDate(xAccessor(tooltipData.point));
+  }, [tooltipData, barXAccessor, xLabelAccessor, xAccessor]);
 
   const tooltipContent = (
     <>
