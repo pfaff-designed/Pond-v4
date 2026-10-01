@@ -34,7 +34,13 @@ const create: ChangePreview = {
 }
 const remove: ChangePreview = {
   op: 'remove',
-  before: { id: 'm1', type: 'metric', label: 'Weekly mileage', value: 38, unit: 'mi' },
+  before: {
+    id: 'm1',
+    type: 'table',
+    title: 'Weekly mileage',
+    columns: ['Week', 'Miles'],
+    rows: [{ id: 'r1', cells: ['1', '38'] }],
+  },
   after: null,
 }
 

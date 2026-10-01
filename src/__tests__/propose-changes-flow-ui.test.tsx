@@ -49,9 +49,6 @@ jest.mock('@/lib/pages/tree', () => ({
   fetchPages: jest.fn().mockResolvedValue([]),
   insertPageOptimistic: jest.fn(),
 }))
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
 
 let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
 jest.mock('@/lib/conversation/client', () => ({
