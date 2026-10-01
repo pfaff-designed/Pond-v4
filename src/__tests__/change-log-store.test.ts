@@ -593,3 +593,41 @@ describe('the log only grows', () => {
     }
   })
 })
+
+// ── #98: the card reads its records back ─────────────────────────────────────
+
+describe('listRecordsByToolCalls (#98)', () => {
+  it('reads the pond’s records for a set of tool calls in one query', async () => {
+    const sb = makeSupabase({
+      list: [
+        row({ id: 'r1', tool_call_id: 'c1', status: 'outdated' }),
+        row({ id: 'r2', tool_call_id: 'c2' }),
+      ],
+    })
+    const records = await store.listRecordsByToolCalls(sb as never, {
+      userId: USER,
+      workspace: 'sandbox',
+      toolCallIds: ['c1', 'c2'],
+    })
+    expect(records.map((r) => r.id)).toEqual(['r1', 'r2'])
+    expect(records[0].status).toBe('outdated')
+    expect(sb._chain.eq.mock.calls).toContainEqual(['user_id', USER])
+    expect(sb._chain.eq.mock.calls).toContainEqual(['workspace', 'sandbox'])
+    expect(sb._chain.in).toHaveBeenCalledWith('tool_call_id', ['c1', 'c2'])
+  })
+
+  it('asks nothing for an empty set', async () => {
+    const sb = makeSupabase()
+    await expect(
+      store.listRecordsByToolCalls(sb as never, { userId: USER, toolCallIds: [] })
+    ).resolves.toEqual([])
+    expect(sb.from).not.toHaveBeenCalled()
+  })
+
+  it('raises on a failed query instead of reporting nothing', async () => {
+    const sb = makeSupabase({ listError: { message: 'boom' } })
+    await expect(
+      store.listRecordsByToolCalls(sb as never, { userId: USER, toolCallIds: ['c1'] })
+    ).rejects.toBeTruthy()
+  })
+})

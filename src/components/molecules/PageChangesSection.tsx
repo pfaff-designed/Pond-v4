@@ -23,6 +23,7 @@ import { ProposalActions } from '@/components/molecules/ProposalActions'
 import { kickerClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import type { PageChangeRow } from '@/lib/change-log/page-changes'
+import { labelForStatus } from '@/lib/change-log/status'
 import type { ChangeLogStatus } from '@/lib/change-log/types'
 
 export interface PageChangesSectionProps {
@@ -43,19 +44,17 @@ export interface PageChangesSectionProps {
 /** Statuses the design draws as an outlined pill rather than quiet mono text. */
 const PILLED: readonly ChangeLogStatus[] = ['proposed', 'outdated']
 
-function statusLabel(status: ChangeLogStatus): string {
-  return status === 'changes_requested' ? 'changes requested' : status
-}
-
 function Status({ status }: { status: ChangeLogStatus }) {
   if (PILLED.includes(status)) {
     return (
       <span className="rounded-mn-pill border border-mn-line px-2 py-0.5 font-mono text-[0.65rem]">
-        {statusLabel(status)}
+        {labelForStatus(status)}
       </span>
     )
   }
-  return <span className="font-mono text-[0.65rem] text-mn-text-meta">{statusLabel(status)}</span>
+  return (
+    <span className="font-mono text-[0.65rem] text-mn-text-meta">{labelForStatus(status)}</span>
+  )
 }
 
 /**

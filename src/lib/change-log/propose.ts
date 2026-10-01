@@ -38,8 +38,9 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { applyProposedChanges } from '@/lib/pages/edits'
-import { appendProposal } from './store'
-import type { ChangeLogAction } from './types'
+import { advanceStatus, appendProposal, getRecordByToolCall, reviseRecord } from './store'
+import { canRevise, isOpen } from './status'
+import { ACTOR_YOU, type ChangeLogAction, type ChangeLogRecord } from './types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 
 /**
@@ -71,6 +72,13 @@ export interface RecordProposalsInput {
   openPageId: string | null
   /** The conversation the proposal came from, when the caller knows it. */
   sourceThreadId?: string | null
+  /**
+   * #98 — this turn answers a request-changes note (or a revise on an outdated
+   * card) on the propose_changes call with this id. The propose_changes this
+   * turn emits is then recorded through `reviseRecord`, linked to the original
+   * via `links.revisedFrom`, instead of as an unrelated proposal.
+   */
+  revisesToolCallId?: string | null
   toolCalls: ProposalToolCall[]
 }
 
@@ -113,8 +121,41 @@ export async function recordProposedToolCalls(
   supabase: SupabaseClient<Database>,
   input: RecordProposalsInput
 ): Promise<number> {
-  const { userId, workspace, openPageId, sourceThreadId = null, toolCalls } = input
+  const {
+    userId,
+    workspace,
+    openPageId,
+    sourceThreadId = null,
+    revisesToolCallId = null,
+    toolCalls,
+  } = input
   let written = 0
+  // The record a revision answers, resolved once per turn (#98). Null when there
+  // is nothing to link — the revision is then recorded as a plain proposal.
+  let revised: ChangeLogRecord | null = null
+  if (revisesToolCallId) {
+    try {
+      revised = await getRecordByToolCall(supabase, {
+        userId,
+        workspace,
+        toolCallId: revisesToolCallId,
+      })
+      // The note IS the decision: if the browser's own advance has not landed
+      // yet, land it here, so the original never sits `proposed` beside its
+      // revision. Idempotent against the client's advance via `isOpen`.
+      if (revised && isOpen(revised.status)) {
+        revised = await advanceStatus(supabase, revised.id, 'changes_requested', ACTOR_YOU)
+      }
+      if (revised && !canRevise(revised.status)) revised = null
+    } catch (err) {
+      console.error(
+        '[change-log] could not resolve the record a revision answers',
+        revisesToolCallId,
+        err
+      )
+      revised = null
+    }
+  }
 
   for (const call of toolCalls) {
     const action = PROPOSAL_ACTIONS[call.toolName]
@@ -138,7 +179,7 @@ export async function recordProposedToolCalls(
         }).blocks
       }
 
-      await appendProposal(supabase, {
+      const record = {
         userId,
         workspace,
         action,
@@ -147,7 +188,15 @@ export async function recordProposedToolCalls(
         after,
         sourceThreadId,
         toolCallId: call.toolCallId,
-      })
+      }
+      // Only a propose_changes revises a propose_changes; anything else emitted
+      // in the same turn is its own proposal.
+      if (revised && call.toolName === 'propose_changes') {
+        await reviseRecord(supabase, revised, record)
+        revised = null
+      } else {
+        await appendProposal(supabase, record)
+      }
       written++
     } catch (err) {
       // Deliberately swallowed — see the contract above.

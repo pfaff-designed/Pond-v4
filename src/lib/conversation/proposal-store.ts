@@ -79,6 +79,9 @@ export interface ResolveAux {
   /** promote_table: the preview frozen at accept time, so the resolved card
    *  keeps its confirmation after the live table is replaced. Session-scoped. */
   snapshot?: PromotionSnapshot
+  /** propose_changes (#98): the request-changes note sent to the proposer. SET
+   *  when non-blank. Projected via `changeNotes` (carried only when non-empty). */
+  note?: string
 }
 
 /**
@@ -122,6 +125,12 @@ export interface ProposalState {
    *  included, so a card left open comes back after a reload (6d closing).
    *  Projected only when non-empty. */
   pageProposals: PageProposals
+  /** #98 — request-changes note per propose_changes batch, by toolCallId.
+   *  Projected only when non-empty. */
+  changeNotes: Record<string, string>
+  /** #98 — revised batch → the batch it answers, by toolCallId (write-once).
+   *  Projected only when non-empty. */
+  revisions: Record<string, string>
 
   // ── session-scoped aux (NEVER projected) ────────────────────────────────────
   /** Failed make-page reasons, by proposal id (e.g. the parent was deleted). */
@@ -174,6 +183,9 @@ export type ProposalAction =
   | { kind: 'noteLinkError'; id: string; error?: string }
   | { kind: 'answerQuestion'; id: string; answer: string; via: QuestionResolution['via'] }
   | { kind: 'stampTarget'; id: string; target: ProposalTarget }
+  /** #98 — mark a freshly streamed propose_changes batch as the revision of the
+   *  batch the user sent a request-changes note on. Write-once. */
+  | { kind: 'noteRevision'; id: string; revisedFrom: string }
   | { kind: 'pickDestination'; type: ProposalType; id: string; destinationId: string }
   | { kind: 'advanceLifecycle'; lifecycle: LifecycleState }
   /** #97 — open a `new page — proposed` card for an answer. Idempotent per
@@ -215,6 +227,8 @@ export function initialProposalState(): ProposalState {
     viewReplaced: {},
     lifecycle: idleLifecycle(),
     pageProposals: {},
+    changeNotes: {},
+    revisions: {},
     pageProposalErrors: {},
     skipReasons: {},
     linkErrors: {},
@@ -278,6 +292,11 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
               [id]: [...(state.skipReasons[id] ?? []), ...aux.skipReasons],
             }
           }
+          // #98 — the note rides the envelope so the card shows it after reload
+          // and the model reads what to revise. Blank notes are not notes.
+          if (aux.note !== undefined && aux.note.trim().length > 0) {
+            next.changeNotes = { ...state.changeNotes, [id]: aux.note.trim() }
+          }
         } else if (type === 'schemas') {
           // Carried only when non-empty (an absent map is the old flat note, so a
           // legacy transcript stays byte-clean).
@@ -339,6 +358,13 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
       // stamp, which makes Accept skip and must never fall back to the open page.
       if (state.targets[action.id]) return state
       return { ...state, targets: { ...state.targets, [action.id]: action.target } }
+    }
+
+    case 'noteRevision': {
+      // Write-once, like the target stamp: the first batch to arrive after the
+      // note is the revision; a later stamp must not relabel it.
+      if (state.revisions[action.id]) return state
+      return { ...state, revisions: { ...state.revisions, [action.id]: action.revisedFrom } }
     }
 
     case 'pickDestination': {
@@ -461,6 +487,8 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         viewReplaced: r.viewReplaced ?? {},
         lifecycle: r.lifecycle ?? state.lifecycle,
         pageProposals: r.pageProposals ?? {},
+        changeNotes: r.changeNotes ?? {},
+        revisions: r.revisions ?? {},
       }
     }
 
@@ -505,5 +533,8 @@ export function projectResolutions(state: ProposalState): ConversationResolution
     ...(isLifecycleActive(state.lifecycle) ? { lifecycle: state.lifecycle } : {}),
     // #97 — every page proposal, PENDING INCLUDED (6d closing), only when any.
     ...(Object.keys(state.pageProposals).length > 0 ? { pageProposals: state.pageProposals } : {}),
+    // #98 — notes + revision links, only when any.
+    ...(Object.keys(state.changeNotes).length > 0 ? { changeNotes: state.changeNotes } : {}),
+    ...(Object.keys(state.revisions).length > 0 ? { revisions: state.revisions } : {}),
   }
 }

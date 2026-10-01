@@ -268,6 +268,29 @@ export async function getRecordByToolCall(
 }
 
 /**
+ * The records behind a SET of tool calls, in one query (#98). The terminal
+ * reads its open cards back through this so a record the log has moved past —
+ * swept `outdated` when the target page was edited (G2), or withdrawn — reaches
+ * the card. Scoped to the pond like every other read. Raises on a failed query
+ * for the same reason `getRecordByToolCall` does.
+ */
+export async function listRecordsByToolCalls(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; workspace?: WorkspaceScope; toolCallIds: readonly string[] }
+): Promise<ChangeLogRecord[]> {
+  if (opts.toolCallIds.length === 0) return []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq('user_id', opts.userId)
+    .eq('workspace', opts.workspace ?? 'main')
+    .in('tool_call_id', [...opts.toolCallIds])
+  if (error) throw error
+  return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
+}
+
+/**
  * Advance one record's status. The ONLY mutation this module performs, and it
  * touches exactly three columns: `status`, `status_at`, and one APPENDED entry
  * on `transitions`. The edge is asserted against the state machine first, so an

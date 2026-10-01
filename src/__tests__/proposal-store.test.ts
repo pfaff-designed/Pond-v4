@@ -136,27 +136,32 @@ describe('initialProposalState / reset', () => {
 })
 
 describe('resolve — settles a decision per proposal type', () => {
-  const singleKeyTypes: { type: Exclude<ProposalType, 'changes'>; group: keyof ConversationResolutions }[] =
-    [
-      { type: 'creates', group: 'creates' },
-      { type: 'schemas', group: 'schemas' },
-      { type: 'rows', group: 'rows' },
-      { type: 'promotions', group: 'promotions' },
-      { type: 'views', group: 'views' },
-      { type: 'links', group: 'links' },
-    ]
+  const singleKeyTypes: {
+    type: Exclude<ProposalType, 'changes'>
+    group: keyof ConversationResolutions
+  }[] = [
+    { type: 'creates', group: 'creates' },
+    { type: 'schemas', group: 'schemas' },
+    { type: 'rows', group: 'rows' },
+    { type: 'promotions', group: 'promotions' },
+    { type: 'views', group: 'views' },
+    { type: 'links', group: 'links' },
+  ]
 
-  it.each(singleKeyTypes)('resolves $type by toolCallId (accepted + rejected)', ({ type, group }) => {
-    let s = proposalReducer(initialProposalState(), {
-      kind: 'resolve',
-      type,
-      id: 'a',
-      decision: 'accepted',
-    })
-    s = proposalReducer(s, { kind: 'resolve', type, id: 'b', decision: 'rejected' })
-    const projected = projectResolutions(s)[group] as Record<string, ProposalDecision>
-    expect(projected).toEqual({ a: 'accepted', b: 'rejected' })
-  })
+  it.each(singleKeyTypes)(
+    'resolves $type by toolCallId (accepted + rejected)',
+    ({ type, group }) => {
+      let s = proposalReducer(initialProposalState(), {
+        kind: 'resolve',
+        type,
+        id: 'a',
+        decision: 'accepted',
+      })
+      s = proposalReducer(s, { kind: 'resolve', type, id: 'b', decision: 'rejected' })
+      const projected = projectResolutions(s)[group] as Record<string, ProposalDecision>
+      expect(projected).toEqual({ a: 'accepted', b: 'rejected' })
+    }
+  )
 
   it('resolves propose_changes per-change via index (`${id}:${index}`)', () => {
     let s = proposalReducer(initialProposalState(), {
@@ -245,7 +250,11 @@ describe('resolve — per-type aux placement', () => {
       decision: 'accepted',
       aux: { snapshot: { columns: ['A', 'B'], rowCount: 3, tableTitle: 'Gear' } },
     })
-    expect(s.promotionSnapshot.pt1).toEqual({ columns: ['A', 'B'], rowCount: 3, tableTitle: 'Gear' })
+    expect(s.promotionSnapshot.pt1).toEqual({
+      columns: ['A', 'B'],
+      rowCount: 3,
+      tableTitle: 'Gear',
+    })
     expect(projectResolutions(s)).not.toHaveProperty('promotionSnapshot')
   })
 
@@ -367,7 +376,9 @@ describe('answerQuestion / pickDestination / advanceLifecycle / stampTarget', ()
       id: 'pc1',
       target: { nodeId: 'other', nodeName: '', missing: true },
     })
-    expect(projectResolutions(s).targets).toEqual({ pc1: { nodeId: 'n1', nodeName: 'Camera Gear' } })
+    expect(projectResolutions(s).targets).toEqual({
+      pc1: { nodeId: 'n1', nodeName: 'Camera Gear' },
+    })
   })
 })
 
@@ -466,5 +477,91 @@ describe('reseed', () => {
     expect(s.linkErrors).toEqual({})
     expect(s.promotionSnapshot).toEqual({})
     expect(s.createParent).toEqual({})
+  })
+})
+
+// ── #98: request-changes notes + revision links ride the envelope ────────────
+
+describe('#98 — notes and revisions', () => {
+  it('a request-changes decision carries its note, projected only when present', () => {
+    expect(projectResolutions(initialProposalState())).not.toHaveProperty('changeNotes')
+    let s = proposalReducer(initialProposalState(), {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'changes_requested',
+      aux: { note: 'keep the electrician, drop the worktop' },
+    })
+    s = proposalReducer(s, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 1,
+      decision: 'changes_requested',
+    })
+    const projected = projectResolutions(s)
+    expect(projected.changes).toEqual({
+      'pc1:0': 'changes_requested',
+      'pc1:1': 'changes_requested',
+    })
+    expect(projected.changeNotes).toEqual({ pc1: 'keep the electrician, drop the worktop' })
+  })
+
+  it('an empty note is not recorded', () => {
+    const s = proposalReducer(initialProposalState(), {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'changes_requested',
+      aux: { note: '   ' },
+    })
+    expect(projectResolutions(s)).not.toHaveProperty('changeNotes')
+  })
+
+  it('noteRevision links a revised card to the one it answers (write-once)', () => {
+    let s = proposalReducer(initialProposalState(), {
+      kind: 'noteRevision',
+      id: 'pc2',
+      revisedFrom: 'pc1',
+    })
+    s = proposalReducer(s, { kind: 'noteRevision', id: 'pc2', revisedFrom: 'pc9' })
+    expect(projectResolutions(s).revisions).toEqual({ pc2: 'pc1' })
+    expect(projectResolutions(initialProposalState())).not.toHaveProperty('revisions')
+  })
+
+  it('reseed restores notes and revisions; reset clears them', () => {
+    const seeded = proposalReducer(initialProposalState(), {
+      kind: 'reseed',
+      resolutions: {
+        ...richEnvelope,
+        changes: { 'pc1:0': 'outdated', 'pc1:1': 'outdated' },
+        changeNotes: { pc3: 'shorter' },
+        revisions: { pc2: 'pc1' },
+      },
+    })
+    expect(seeded.changes).toEqual({ 'pc1:0': 'outdated', 'pc1:1': 'outdated' })
+    expect(seeded.changeNotes).toEqual({ pc3: 'shorter' })
+    expect(seeded.revisions).toEqual({ pc2: 'pc1' })
+    expect(proposalReducer(seeded, { kind: 'reset' })).toEqual(initialProposalState())
+  })
+
+  it('every one of the seven settled statuses survives the reseed round-trip', () => {
+    const decisions: ProposalDecision[] = [
+      'accepted',
+      'rejected',
+      'changes_requested',
+      'outdated',
+      'withdrawn',
+      'undone',
+      'reverted',
+    ]
+    const changes = Object.fromEntries(decisions.map((d, i) => [`pc${i}:0`, d]))
+    const seeded = proposalReducer(initialProposalState(), {
+      kind: 'reseed',
+      resolutions: { ...richEnvelope, changes },
+    })
+    expect(projectResolutions(seeded).changes).toEqual(changes)
   })
 })

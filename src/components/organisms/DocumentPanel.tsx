@@ -187,7 +187,10 @@ export function DocumentPanel() {
       // keeping the sidebar rename immediate.
       const supabase = getSupabase()
       await updateTitle(supabase, id, nextTitle)
-      await commitBlocks(supabase, queryClient, id, nextBlocks, workspace)
+      // `ownEdit` (G2, #98): the page moved on under the person's own hand, so
+      // every pending block diff aimed at it goes outdated — its card greys out,
+      // drops accept and offers revise.
+      await commitBlocks(supabase, queryClient, id, nextBlocks, workspace, { ownEdit: true })
       // keep the ['page'] cache in step with what we just saved, so the
       // same-page adopt above only fires for genuinely external writes.
       queryClient.setQueryData(['page', id], (prev: typeof page) =>

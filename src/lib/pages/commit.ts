@@ -4,6 +4,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { saveBlocks } from './client'
+import { sweepOutdatedAfterOwnEdit } from '@/lib/change-log/own-edit'
 
 /**
  * Persist a page's blocks and propagate the write everywhere downstream: refresh
@@ -26,10 +27,19 @@ export async function commitBlocks(
   queryClient: QueryClient,
   pageId: string,
   blocks: Block[],
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  opts: {
+    /** The person's OWN typed edit (G2, #98): sweep the page's pending block diffs
+     *  to `outdated` once the blocks land. The accept path leaves this off — it
+     *  runs its own sweep with the accepted record excepted, and an all-skipped
+     *  accept re-saves unchanged blocks, which is no edit at all. */
+    ownEdit?: boolean
+  } = {}
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
   await propagateBlockWrite(queryClient, pageId, workspace)
+  // A side-record of the save, never a precondition for it (never throws).
+  if (opts.ownEdit) void sweepOutdatedAfterOwnEdit(supabase, { workspace, pageId })
 }
 
 /**

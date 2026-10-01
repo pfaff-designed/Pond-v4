@@ -69,6 +69,15 @@ export function canRevise(status: ChangeLogStatus): boolean {
   return status === 'changes_requested' || status === 'outdated'
 }
 
+/**
+ * The one human label per status (W6), shared by the diff card's status line
+ * and the "changes to this page" rows so the two can never drift. Lowercase —
+ * both are machine surfaces — with the underscore spelled out.
+ */
+export function labelForStatus(status: ChangeLogStatus): string {
+  return status === 'changes_requested' ? 'changes requested' : status
+}
+
 /** Is `from → to` an edge in the graph above? */
 export function canTransition(from: ChangeLogStatus, to: ChangeLogStatus): boolean {
   return LEGAL_TRANSITIONS[from].includes(to)

@@ -44,8 +44,21 @@ import type { UIMessage } from 'ai'
 import { parseQuestionResolutions, type QuestionResolutions } from './parts'
 import { parseLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 import { parsePageProposals, type PageProposals } from './page-proposals'
+import { isChangeLogStatus, type ChangeLogStatus } from '@/lib/change-log/types'
 
-export type ProposalDecision = 'accepted' | 'rejected'
+/**
+ * A card's settled decision — every change-log status except `proposed`, which
+ * is the card's `pending` (#98). The DB and the state machine carried all eight
+ * from migration 0011; until #98 the envelope admitted only accepted/rejected,
+ * so outdated, changes requested, withdrawn, undone and reverted had no way to
+ * reach the card. `changes_requested` and `outdated` are the two a person
+ * produces or meets in M1; the other three ride through from the log.
+ */
+export type ProposalDecision = Exclude<ChangeLogStatus, 'proposed'>
+
+export function isProposalDecision(x: unknown): x is ProposalDecision {
+  return isChangeLogStatus(x) && x !== 'proposed'
+}
 
 /** The page a propose_changes batch was made against, recorded when the part
  *  streams in — so Accept commits there, not to wherever the user is now.
@@ -103,6 +116,17 @@ export interface ConversationResolutions {
    * closing Pond with the card open leaves it pending in the thread (6d).
    */
   pageProposals?: PageProposals
+  /**
+   * #98 — the request-changes note per propose_changes batch, by toolCallId.
+   * Additive & optional: absent ⇒ none. Shown under the card after reload and
+   * stamped into the tool result so Pond reads what to revise.
+   */
+  changeNotes?: Record<string, string>
+  /**
+   * #98 — revised batch → the batch it answers (toolCallId → toolCallId), so a
+   * revised card is labelled as one across reload. Additive & optional.
+   */
+  revisions?: Record<string, string>
 }
 
 export function emptyResolutions(): ConversationResolutions {
@@ -133,7 +157,8 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     }
     return out
   }
-  const isDecision = (x: unknown): x is ProposalDecision => x === 'accepted' || x === 'rejected'
+  const isDecision = isProposalDecision
+  const isString = (x: unknown): x is string => typeof x === 'string' && x.length > 0
   const isCount = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x)
   const isStringArray = (x: unknown): x is string[] =>
     Array.isArray(x) && x.every((s) => typeof s === 'string')
@@ -151,6 +176,9 @@ export function parseResolutions(value: unknown): ConversationResolutions {
   // #97 — page proposals ride the envelope only when there are any, so an
   // ordinary transcript row stays byte-identical to before.
   const pageProposals = parsePageProposals(v.pageProposals)
+  // #98 — notes + revision links, carried only when non-empty for the same reason.
+  const changeNotes = pick('changeNotes', isString)
+  const revisions = pick('revisions', isString)
   return {
     changes: pick('changes', isDecision),
     creates: pick('creates', isDecision),
@@ -170,6 +198,8 @@ export function parseResolutions(value: unknown): ConversationResolutions {
     // state is the default and stays off ordinary-chat rows.
     ...(isLifecycleActive(lifecycle) ? { lifecycle } : {}),
     ...(Object.keys(pageProposals).length > 0 ? { pageProposals } : {}),
+    ...(Object.keys(changeNotes).length > 0 ? { changeNotes } : {}),
+    ...(Object.keys(revisions).length > 0 ? { revisions } : {}),
   }
 }
 
@@ -275,6 +305,25 @@ export function applyResolutions(
   })) as UIMessage[]
 }
 
+/**
+ * #98 — what the model reads on a propose_changes card that settled on one of
+ * the five statuses beyond accept/reject. `changes_requested` carries the note:
+ * the user is addressing Pond (M1's only proposer), and the reply must be a
+ * REVISED diff, not the original again and not a human handoff.
+ */
+const OTHER_STATUS_NOTES: Partial<Record<ProposalDecision, (note?: string) => string>> = {
+  changes_requested: (note) =>
+    `The user REQUESTED CHANGES to this proposal${note ? ` with the note: "${note}"` : ''}. Nothing was written. Reply with a REVISED propose_changes batch for the same page that addresses the note — do not re-propose the original unchanged, and do not claim anything landed.`,
+  outdated: () =>
+    'This proposal went OUTDATED: its target page was edited after it was proposed, so the diff no longer applies to the page as it stands. Nothing was written. Do not apply or re-propose it as-is; if the user asks you to revise it, read the page again and propose anew.',
+  withdrawn: () =>
+    'This proposal was WITHDRAWN by its proposer. Nothing was written. Do not re-propose it unless asked.',
+  undone: () =>
+    'This change was accepted and then UNDONE in the session. The page no longer carries it. Do not re-propose it unless asked.',
+  reverted: () =>
+    'This change was accepted and later REVERTED from the change log. The page no longer carries it. Do not re-propose it unless asked.',
+}
+
 function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): ToolPartLike {
   if (part.state !== 'input-available') return part
 
@@ -302,12 +351,18 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
     )
     if (!decisions.some((d) => d !== 'pending')) return part
     const skipped = resolutions.skipped[part.toolCallId] ?? 0
-    // An accepted-but-skipped change never reached its page. The note must say
-    // so explicitly, or the model reads the acceptance stamp as success and
-    // claims the dropped change landed (blank-slate findings BUG 2).
-    const note =
-      skipped > 0
-        ? `User decision per change, in order. Do not re-propose accepted or rejected changes. IMPORTANT: ${skipped} accepted change${skipped > 1 ? 's' : ''} could NOT be written and ${skipped > 1 ? 'were' : 'was'} NOT applied — do not claim ${skipped > 1 ? 'they' : 'it'} happened. Offer to re-propose when the user has the right page open.`
+    const requestedChanges = resolutions.changeNotes?.[part.toolCallId]
+    // #98 — the five statuses beyond accept/reject each need their own honest
+    // note, or the model reads any stamp as "this landed" (the BUG 2 lesson).
+    const settled = decisions.find((d) => d !== 'pending')
+    const statusNote = settled ? OTHER_STATUS_NOTES[settled] : undefined
+    const note = statusNote
+      ? statusNote(requestedChanges)
+      : skipped > 0
+        ? // An accepted-but-skipped change never reached its page. The note must
+          // say so explicitly, or the model reads the acceptance stamp as success
+          // and claims the dropped change landed (blank-slate findings BUG 2).
+          `User decision per change, in order. Do not re-propose accepted or rejected changes. IMPORTANT: ${skipped} accepted change${skipped > 1 ? 's' : ''} could NOT be written and ${skipped > 1 ? 'were' : 'was'} NOT applied — do not claim ${skipped > 1 ? 'they' : 'it'} happened. Offer to re-propose when the user has the right page open.`
         : 'User decision per change, in order. Do not re-propose accepted or rejected changes.'
     return {
       ...part,
@@ -316,6 +371,7 @@ function resolvePart(part: ToolPartLike, resolutions: ConversationResolutions): 
         note,
         decisions,
         ...(skipped > 0 ? { skippedOnApply: skipped } : {}),
+        ...(settled === 'changes_requested' && requestedChanges ? { requestedChanges } : {}),
       },
     } as ToolPartLike
   }
