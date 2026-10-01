@@ -19,7 +19,23 @@ import {
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
-import { FOCUS_TERMINAL_EVENT } from '@/lib/terminal-focus'
+import {
+  FOCUS_TERMINAL_EVENT,
+  OPEN_THREAD_MESSAGE_EVENT,
+  type OpenThreadMessageDetail,
+} from '@/lib/terminal-focus'
+import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
+import {
+  DEFAULT_PAGE_KIND,
+  derivePageName,
+  formatThreadTime,
+  openPageProposalIds,
+  readChips,
+  type PageProposal,
+} from '@/lib/conversation/page-proposals'
+import { ReadChips } from '@/components/molecules/ReadChips'
+import { AnswerActions } from '@/components/molecules/AnswerActions'
+import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
@@ -60,7 +76,6 @@ import {
 import { PROPOSAL_MIN_HEIGHT } from '@/lib/layout/terminal-height'
 import { Markdown } from '@/components/molecules/Markdown'
 import { StageText } from '@/components/molecules/StageText'
-import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalGroup } from '@/components/molecules/ProposalGroup'
 import { FollowupChips } from '@/components/molecules/FollowupChips'
 import { QuestionCard, type QuestionAnswerVia } from '@/components/molecules/QuestionCard'
@@ -483,6 +498,8 @@ export function AITerminal() {
     viewTarget,
     linkTarget,
     promotionTarget,
+    pageProposals,
+    pageProposalErrors,
   } = proposals
 
   // The persistable projection of the decision maps (ticket-19): saved with the
@@ -612,8 +629,17 @@ export function AITerminal() {
   // a proposal card below) — there is no create_node tool in this path, so useChat
   // needs no onToolCall handler. The manual creation gesture is the top bar's ＋
   // (CreatePageModal, ticket-26), not this terminal.
-  const { messages, sendMessage, setMessages, status } = useChat()
+  const { messages, sendMessage, setMessages, status, stop, error, clearError } = useChat()
   const [input, setInput] = useState('')
+  // 6a frame 2: "an error keeps nothing" — a turn that failed mid-stream drops
+  // its partial answer, so the thread never holds half an answer as if it were
+  // one. (Esc / stop is the opposite: it KEEPS what arrived — `stop` leaves the
+  // partial message in place.) The error line below offers ask again.
+  useEffect(() => {
+    if (!error) return
+    const last = messages[messages.length - 1]
+    if (last?.role === 'assistant') setMessages(messages.slice(0, -1))
+  }, [error, messages, setMessages])
   const [chatMenuOpen, setChatMenuOpen] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
@@ -798,6 +824,10 @@ export function AITerminal() {
   // the drawer's auto-grow open on every mount. Auto-grow is scoped to
   // proposals that arrive during THIS session.
   const [initialMessageIds, setInitialMessageIds] = useState<ReadonlySet<string>>(new Set())
+  // #97: likewise, the page proposals re-seeded from the saved envelope — a
+  // pending one is still in the thread (6d closing) but must not pin the drawer
+  // open on every mount; only a card opened THIS session does.
+  const [seededProposalIds, setSeededProposalIds] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
     // Async IIFE so an envless client construction (#38) rejects into the catch
     // below instead of throwing out of the effect and crashing the mount.
@@ -819,6 +849,7 @@ export function AITerminal() {
       // returning session resumes mid-arc. One dispatch; the reducer restores only
       // the persisted-derived fields and leaves session-scoped aux empty.
       dispatch({ kind: 'reseed', resolutions: conversation.resolutions })
+      setSeededProposalIds(new Set(Object.keys(conversation.resolutions.pageProposals ?? {})))
       setIsReady(true)
     })().catch(console.error)
   }, [setMessages, getSupabase, workspace])
@@ -882,8 +913,8 @@ export function AITerminal() {
   // shrink a user who's set a taller height, and once every proposal is
   // resolved the drawer returns to the remembered height (never persisted).
   const unresolvedIds = useMemo(
-    () =>
-      unresolvedProposalIds(
+    () => [
+      ...unresolvedProposalIds(
         messages as ProposalMessageLike[],
         changeDecisions,
         createDecisions,
@@ -894,6 +925,11 @@ export function AITerminal() {
         promotionDecisions,
         linkDecisions
       ),
+      // #97: an open `new page — proposed` card is a decision too. Scoped to
+      // this session's answers like the tool cards — a card re-seeded from a
+      // prior session is still in the thread, it just doesn't pin the drawer.
+      ...openPageProposalIds(pageProposals, seededProposalIds),
+    ],
     [
       messages,
       changeDecisions,
@@ -904,6 +940,8 @@ export function AITerminal() {
       viewDecisions,
       promotionDecisions,
       linkDecisions,
+      pageProposals,
+      seededProposalIds,
     ]
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
@@ -1050,13 +1088,20 @@ export function AITerminal() {
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
       const body = { nodeId, nodeType, workspace, resolutions: outgoing }
+      // #97: the thread shows when each line was said ("you · 07:12"), and a
+      // page made from the answer carries that moment on its made-from chip.
+      const metadata = { sentAt: new Date().toISOString() }
+      clearError?.()
       if (fileParts.length > 0) {
-        sendMessage(finalText ? { text: finalText, files: fileParts } : { files: fileParts }, {
-          body,
-        })
+        sendMessage(
+          finalText
+            ? { text: finalText, files: fileParts, metadata }
+            : { files: fileParts, metadata },
+          { body }
+        )
         clearAttachments()
       } else {
-        sendMessage({ text: finalText }, { body })
+        sendMessage({ text: finalText, metadata }, { body })
       }
       setInput('')
       setGhostDismissed(false)
@@ -1065,6 +1110,7 @@ export function AITerminal() {
       nextLifecycle,
       resolutions,
       sendMessage,
+      clearError,
       nodeId,
       nodeType,
       workspace,
@@ -1117,12 +1163,60 @@ export function AITerminal() {
     ghostKeyHandler(e)
     if (e.defaultPrevented) return
 
+    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"): stop a
+    // stream and keep what arrived; else close the / menu; else leave the field.
+    // It never clears what was typed (G1: a failed answer keeps what you typed).
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (isStreaming) stop()
+      else if (chatMenuOpen) setChatMenuOpen(false)
+      else e.currentTarget.blur()
+      return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       setChatMenuOpen(false)
       handleSend()
     }
   }
+
+  // The last step of Esc: with focus elsewhere in the composer (a chip, a card
+  // control), Esc closes the composer. The textarea handles its own Esc above.
+  const handleBodyKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if ((e.target as HTMLElement).tagName === 'TEXTAREA') return
+      if (isStreaming) {
+        stop()
+        return
+      }
+      setIsCollapsed(true)
+      writeStored(TERMINAL_COLLAPSED_KEY, '1')
+    },
+    [isStreaming, stop]
+  )
+
+  // Open the thread at a message (#97): a page's made-from chip asks for the
+  // moment its prose came from. Uncollapse, then scroll that line into view if
+  // the thread still holds it (a cleared thread simply opens).
+  useEffect(() => {
+    function onOpenThreadMessage(e: Event) {
+      const { messageId } = (e as CustomEvent<OpenThreadMessageDetail>).detail ?? {}
+      setIsCollapsed((prev) => {
+        if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
+        return false
+      })
+      requestAnimationFrame(() => {
+        const el = messageId
+          ? document.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
+          : null
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+    window.addEventListener(OPEN_THREAD_MESSAGE_EVENT, onOpenThreadMessage)
+    return () => window.removeEventListener(OPEN_THREAD_MESSAGE_EVENT, onOpenThreadMessage)
+  }, [])
 
   // ── propose_changes resolution (t16 Phase 5) ──────────────────────────────
   // The generalized Accept path: mint ids for the accepted batch, apply it, and
@@ -1563,6 +1657,146 @@ export function AITerminal() {
     [getSupabase, queryClient, workspace, nodeId, logDecision]
   )
 
+  // ── make this a page (#97, `Pond 06.01` 6a frames 3–5) ──────────────────
+  // An answer never lands on a page by itself. "make this a page" opens a
+  // `new page — proposed` card (one per answer — a second press is ignored by
+  // the reducer); the proposal is born as a `proposed` change-log record so it
+  // is in the proposed view; and it rides the resolutions envelope with the
+  // transcript, so closing Pond leaves it pending (6d closing).
+  const proposePage = useCallback(
+    (opts: {
+      messageId: string
+      question: string
+      askedAt: string | null
+      prose: string
+      read: string[]
+    }) => {
+      const proposal: PageProposal = {
+        id: crypto.randomUUID(),
+        messageId: opts.messageId,
+        question: opts.question,
+        askedAt: opts.askedAt,
+        prose: opts.prose,
+        read: opts.read,
+        name: derivePageName(opts.question, opts.prose),
+        // Placement defaults to the page the answer was about (6a frame 4);
+        // Life home is the pond's root, so it reads as top level.
+        parentId: nodeId && allPages.some((p) => p.id === nodeId) ? nodeId : null,
+        kind: DEFAULT_PAGE_KIND,
+        status: 'proposed',
+      }
+      // One card per answer: when a pending card already exists for this
+      // answer the reducer ignores the dispatch — and so must the record.
+      const already = Object.values(pageProposals).some(
+        (p) => p.messageId === opts.messageId && p.status === 'proposed'
+      )
+      if (already) return
+      dispatch({ kind: 'proposePage', proposal })
+      // The card opens under the answer — bring it into view with the drawer's grow.
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
+      void (async () => {
+        const supabase = getSupabase()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        await recordPageProposal(supabase, {
+          userId: user.id,
+          workspace,
+          threadId: conversationId,
+          proposal,
+        })
+      })()
+    },
+    [nodeId, allPages, pageProposals, getSupabase, workspace, conversationId]
+  )
+
+  const editPageProposal = useCallback(
+    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind'>>) => {
+      dispatch({ kind: 'editPageProposal', id, patch })
+    },
+    []
+  )
+
+  // Cancel returns to the thread and makes nothing (6a); the record is rejected.
+  const cancelPageProposal = useCallback(
+    (id: string) => {
+      if (pageProposals[id]?.status !== 'proposed') return
+      dispatch({ kind: 'settlePageProposal', id, status: 'rejected' })
+      logDecision(id, 'rejected')
+    },
+    [pageProposals, logDecision]
+  )
+
+  // make page: the ONLY write. The card settles optimistically BEFORE the await
+  // and an in-flight set guards the async gap, so a double ↵ makes one page
+  // (G9). A failed write reverts the card to pending with its reason — a parent
+  // deleted between proposal and make page resets the place to top level and
+  // asks for another; nothing is half-made either way.
+  const makingPages = useRef<Set<string>>(new Set())
+  const makePage = useCallback(
+    async (id: string) => {
+      const proposal = pageProposals[id]
+      if (!proposal || proposal.status !== 'proposed' || makingPages.current.has(id)) return
+      makingPages.current.add(id)
+      dispatch({ kind: 'settlePageProposal', id, status: 'accepted' })
+      try {
+        const made = await makePageFromAnswer(
+          getSupabase(),
+          { proposal, threadId: conversationId, pages: allPages, workspace },
+          () => crypto.randomUUID()
+        )
+        dispatch({ kind: 'notePageMade', id, pageId: made.id })
+        // Rail entry at once (the correct parent), reconciled in the background.
+        insertPageOptimistic(queryClient, workspace, {
+          id: made.id,
+          parentId: proposal.parentId,
+          type: 'page',
+          title: made.title,
+        })
+        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }, basePath))
+        // The write landed — only now may the record say so (the log only grows).
+        logDecision(id, 'accepted')
+      } catch (err) {
+        console.error('make page failed', err)
+        if (err instanceof ParentGoneError) {
+          dispatch({ kind: 'revertPageProposal', id, error: err.message })
+          dispatch({ kind: 'editPageProposal', id, patch: { parentId: null } })
+        } else {
+          dispatch({
+            kind: 'revertPageProposal',
+            id,
+            error: err instanceof Error ? err.message : 'pond could not make the page',
+          })
+        }
+      } finally {
+        makingPages.current.delete(id)
+      }
+    },
+    [
+      pageProposals,
+      getSupabase,
+      conversationId,
+      allPages,
+      workspace,
+      queryClient,
+      router,
+      basePath,
+      logDecision,
+    ]
+  )
+
+  const openMadePage = useCallback(
+    (proposal: PageProposal) => {
+      if (!proposal.pageId) return
+      router.push(
+        workspaceHref({ id: proposal.pageId, type: 'page', title: proposal.name }, basePath)
+      )
+    },
+    [router, basePath]
+  )
+
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────
   // A 25–30s generation used to show a bare "…". Derive a human stage line from the
   // tool-call parts already in the latest assistant message ("reading Ceramics
@@ -1595,20 +1829,64 @@ export function AITerminal() {
   // itself the column (#96: 534 wide, centred on the shell) — so the body owns
   // only its scroll + inner gutter and does no centring or offsetting of its
   // own. One typeset object, not a console bolted under a document.
+  // #97: the latest assistant message carries the actions row (make this a
+  // page / ask again, or stop while streaming) — the mockup's `hasActions`.
+  const lastAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'assistant') return i
+    return -1
+  })()
+  // The question a given answer replied to: the nearest user line above it.
+  const questionBefore = (index: number): { text: string; sentAt: string | null } => {
+    for (let i = index - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role !== 'user') continue
+      const text = m.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { type: 'text'; text: string }).text)
+        .join('')
+      const sentAt = (m.metadata as { sentAt?: unknown } | undefined)?.sentAt
+      return { text, sentAt: typeof sentAt === 'string' ? sentAt : null }
+    }
+    return { text: '', sentAt: null }
+  }
+  const lastQuestion = questionBefore(messages.length)
+
   const messagesBody = (
-    <div className="flex-1 overflow-y-auto py-4">
-      <div className="w-full space-y-6 px-8">
+    <div className="flex-1 overflow-y-auto py-4" onKeyDown={handleBodyKeyDown}>
+      <div className="w-full space-y-5 px-8">
         {!isReady && <p className="font-serif text-sm italic text-mn-text-faint">Loading…</p>}
         {isReady && messages.length === 0 && (
           <p className="font-serif text-sm italic text-mn-text-faint">
             Talk with Pond — think out loud, ask, or compose.
           </p>
         )}
-        {messages.map((message) => {
+        {messages.map((message, messageIndex) => {
           const text = message.parts
             .filter((p) => p.type === 'text')
             .map((p) => (p as { type: 'text'; text: string }).text)
             .join('')
+          const isLastAssistant = messageIndex === lastAssistantIndex
+          const answerStreaming = isLastAssistant && isStreaming
+          const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
+          const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
+          // S8: what Pond read before this answer — the context page first, then
+          // each read_page in the message, as chips under the answer.
+          const read =
+            message.role === 'assistant'
+              ? readChips({
+                  contextLabel,
+                  parts: message.parts as Array<{
+                    type: string
+                    state?: string
+                    input?: { pageId?: string }
+                  }>,
+                  resolvePageName,
+                })
+              : []
+          const cardsForMessage = Object.values(pageProposals).filter(
+            (p) => p.messageId === message.id
+          )
+          const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
           // Sent file attachments (#61): a user message's file parts render as
           // inert chips (no remove — the message is already out).
           const attachmentParts = (
@@ -1662,7 +1940,7 @@ export function AITerminal() {
             }))
 
           return (
-            <div key={message.id} className="space-y-3">
+            <div key={message.id} data-message-id={message.id} className="space-y-3">
               {message.role === 'user' && attachmentParts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {attachmentParts.map((p, i) => (
@@ -1677,38 +1955,103 @@ export function AITerminal() {
               )}
               {text &&
                 (message.role === 'user' ? (
-                  // The user's line is a quiet aside — left-aligned on the shared reading edge,
-                  // with a faint sage left border. NOT a chat bubble competing with the authored reply.
-                  <p className="whitespace-pre-wrap border-l-2 border-mn-text/40 bg-mn-wash pl-3.5 pr-2 py-2 font-serif text-[0.95rem] leading-[1.55] text-mn-text-meta">
-                    {text}
-                  </p>
+                  // The question sits in mono (`Pond 06.01` 6a frame 2, PondComposer
+                  // `youRow`): "you" · the line · when it was said, 12.5px at ink .8,
+                  // the words themselves in full ink. The machine surface is lowercase
+                  // chrome, but the person's words keep their own case.
+                  <div
+                    data-part="you-row"
+                    className="flex items-baseline gap-1.5 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-meta"
+                  >
+                    <span className="font-medium lowercase">you</span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">
+                      {text}
+                    </span>
+                    {sentLabel && <span className="text-[10.5px]">{sentLabel}</span>}
+                  </div>
                 ) : (
-                  // The AI reply is set as full typeset prose in the document's own
-                  // measure — letter-style correspondence, not a card in a console. A
-                  // mn-hair rule with a small-caps "Pond" attribution heads each
-                  // reply; the prose below is the same Press serif the page reads in.
-                  // Arrives with one calm breath (mn-arrive). Streaming-safe: `text`
-                  // grows token-by-token and react-markdown re-parses each partial
-                  // (ticket-20).
-                  <div className="mn-arrive">
-                    <div className="mb-2.5 flex items-center gap-3">
-                      <span className={kickerClass}>Pond</span>
-                      <span aria-hidden className="h-px flex-1 bg-mn-hair" />
+                  // The answer is Pond talking, not a page: the sans at reading scale
+                  // (13.5px / 1.55) under a "pond" eyebrow — never the serif, which is
+                  // for the page only (PROJECT_RULES "Where answers live"). Read chips
+                  // sit under every answer (S8). Arrives with one calm breath
+                  // (mn-arrive). Streaming-safe: `text` grows token-by-token and
+                  // react-markdown re-parses each partial (ticket-20); the caret shows
+                  // while this answer is still arriving.
+                  <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
+                    <span className="font-sans text-[10.5px] font-medium uppercase tracking-[0.1em] text-mn-text-secondary">
+                      pond
+                    </span>
+                    <div className="relative">
+                      <Markdown variant="answer">{text}</Markdown>
+                      {answerStreaming && (
+                        <span
+                          aria-hidden
+                          data-part="stream-caret"
+                          className="ml-[3px] inline-block h-[17px] w-[9px] translate-y-[2px] bg-mn-text/[0.22] align-baseline"
+                        />
+                      )}
                     </div>
-                    <Markdown variant="terminal">{text}</Markdown>
                     {sources.length > 0 && <SourceList sources={sources} />}
+                    <ReadChips read={read} />
                   </div>
                 ))}
               {/* Sources can arrive on an assistant message with no text (rare, but the
-                citation should still show) — same attributed-letter treatment. */}
+                citation should still show) — same attributed treatment. */}
               {message.role !== 'user' && !text && sources.length > 0 && (
-                <div className="mn-arrive">
-                  <div className="mb-2.5 flex items-center gap-3">
-                    <span className={kickerClass}>Pond</span>
-                    <span aria-hidden className="h-px flex-1 bg-mn-hair" />
-                  </div>
+                <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
+                  <span className="font-sans text-[10.5px] font-medium uppercase tracking-[0.1em] text-mn-text-secondary">
+                    pond
+                  </span>
                   <SourceList sources={sources} />
+                  <ReadChips read={read} />
                 </div>
+              )}
+              {/* #97: the `new page — proposed` card(s) for this answer. A pending card
+                  is editable in place; make page is the only write; cancel returns
+                  to the thread. Re-seeded pending cards (6d closing) render live. */}
+              {cardsForMessage.map((proposal) => (
+                <PageProposalCard
+                  key={proposal.id}
+                  className="mn-arrive"
+                  name={proposal.name}
+                  parentId={proposal.parentId}
+                  kind={proposal.kind}
+                  parentOptions={parentOptions}
+                  pondName={contextLabel === nodeName ? 'life' : contextLabel.toLowerCase()}
+                  status={proposal.status}
+                  error={pageProposalErrors[proposal.id]}
+                  onNameChange={(name) => editPageProposal(proposal.id, { name })}
+                  onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
+                  onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
+                  onMakePage={() => void makePage(proposal.id)}
+                  onCancel={() => cancelPageProposal(proposal.id)}
+                  onOpenPage={proposal.pageId ? () => openMadePage(proposal) : undefined}
+                />
+              ))}
+              {/* The actions under the latest answer (6a frames 2–3): make this a
+                  page / ask again — or stop while it streams. Nothing else (W4). */}
+              {message.role === 'assistant' && isLastAssistant && (text || isStreaming) && (
+                <AnswerActions
+                  streaming={answerStreaming}
+                  canMakePage={!!text && !hasOpenCard}
+                  onMakePage={() => {
+                    const q = questionBefore(messageIndex)
+                    proposePage({
+                      messageId: message.id,
+                      question: q.text,
+                      askedAt: q.sentAt,
+                      prose: text,
+                      read,
+                    })
+                  }}
+                  onAskAgain={() => {
+                    // "ask again" asks the same question as a NEW turn; the earlier
+                    // answer stays in the thread (threads keep every answer).
+                    const q = questionBefore(messageIndex).text
+                    if (q && !isStreaming) sendText(q)
+                  }}
+                  onStop={stop}
+                />
               )}
               {changeBatches.map((part) => {
                 // While the tool input is still streaming, `part.input` is partially
@@ -2066,6 +2409,26 @@ export function AITerminal() {
             active yet. */}
         {isStreaming && lastAssistantHasActiveTool && (
           <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+        )}
+        {/* An error keeps nothing (6a frame 2; PondComposer `errRow`): the partial
+            answer was dropped above; say so and offer the question again. */}
+        {error && !isStreaming && (
+          <div
+            role="alert"
+            data-part="error-row"
+            className="flex flex-wrap items-center gap-2.5 font-mono text-[12px] lowercase tracking-[0.02em] text-mn-text-meta"
+          >
+            <span>pond couldn’t finish this answer. nothing was kept.</span>
+            {lastQuestion.text && (
+              <button
+                type="button"
+                onClick={() => sendText(lastQuestion.text)}
+                className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-[11px] text-mn-text-meta transition-colors hover:text-foreground"
+              >
+                ask again
+              </button>
+            )}
+          </div>
         )}
         <div ref={bottomRef} />
       </div>
