@@ -123,10 +123,11 @@ describe('applyProposedChanges (t16 multi-op Accept path)', () => {
   })
 
   it('skips a malformed change (re-validated before write, branch 7)', () => {
-    // `value` should be a number; cast past the type to exercise the runtime gate.
+    // `rows` should be an array of cell objects; cast past the type to exercise the
+    // runtime gate.
     const change = {
       op: 'create',
-      data: { type: 'metric', label: 'bad', value: 'lots' },
+      data: { type: 'table', columns: ['A'], rows: 'lots' },
     } as unknown as ModuleChange
     const { blocks, applied, skipped } = applyProposedChanges(base, [change], counter())
     expect(applied).toBe(0)

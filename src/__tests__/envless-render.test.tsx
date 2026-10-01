@@ -36,9 +36,6 @@ jest.mock('@/lib/pages/tree', () => ({
 }))
 
 // AITerminal's chat transport + stream hook (same stubs as handoff-terminal).
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
 jest.mock('@ai-sdk/react', () => ({
   useChat: () => ({
     messages: [],

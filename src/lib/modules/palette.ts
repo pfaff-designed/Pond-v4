@@ -16,20 +16,17 @@
  * pages all open the SAME palette and insert the SAME empty states (ticket-44).
  */
 
-import { emptyKanban } from '@/lib/modules/kanban/schema'
-import { moduleDescriptors, RETIRED_FROM_CREATION } from '@/lib/modules/registry'
+import { moduleDescriptors } from '@/lib/modules/registry'
 import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 
-// Excludes 'page' (structural, not a content block a user drops into a page) and
-// every RETIRED_FROM_CREATION type — currently `kanban` (#19 slice 6): the standalone
-// kanban block is retired from creation (superseded by the `view` block's board mode
-// over a collection), so it is no longer offered here, though its descriptor and
-// renderer stay in the registry for read-tolerance of already-persisted kanban blocks.
-// The `view` block IS offered now (#19 slice 3): a picked view defaults to a table over
+// Excludes 'page' alone — structural, not a content block a user drops into a page.
+// Nothing else is withheld: the nine data-holding display blocks that used to be
+// retired-but-registered are deleted outright (#111), so the registry IS the palette.
+// The `view` block IS offered (#19 slice 3): a picked view defaults to a table over
 // the host page's rows, so it draws honestly on a collection and shows a calm "needs
 // a collection with properties" notice elsewhere (see `emptyBlockForType`).
-const EXCLUDED_FROM_PALETTE = new Set<string>(['page', ...RETIRED_FROM_CREATION])
+const EXCLUDED_FROM_PALETTE = new Set<string>(['page'])
 
 /**
  * The `/board` preset (board-authoring Slice 1). Not a distinct module type — it
@@ -61,8 +58,8 @@ const derivedItems: SlashMenuItem[] = Object.values(moduleDescriptors)
 export const paletteItems: SlashMenuItem[] = [boardPreset, ...derivedItems]
 
 /**
- * The manual-authoring empty state per module: todo = one blank item, table =
- * 2×2, metric = manual 0, kanban = its schema default, charts = no-data. Returns
+ * The manual-authoring empty state per module: todo = one blank item, table = 2×2,
+ * view = a table over the host page's rows, image = the upload affordance. Returns
  * null for a type with no local empty state — callers must guard null.
  */
 export function emptyBlockForType(type: string): Block | null {
@@ -86,30 +83,10 @@ export function emptyBlockForType(type: string): Block | null {
           { id: crypto.randomUUID(), cells: ['', ''] },
         ],
       }
-    case 'metric':
-      return { id, type: 'metric', label: '', value: 0 }
-    case 'metric-ring':
-      return { id, type: 'metric-ring', label: '', pct: 0 }
-    // Wave-2 modules (t35/t36), wired so a palette pick never no-ops.
-    case 'kanban':
-      return emptyKanban(id, () => crypto.randomUUID())
     // #19: a view defaults to a table over the host page's own rows (inline). No
     // groupBy/sort/filter yet — the user configures those (or the AI, slice 5).
     case 'view':
       return { id, type: 'view', mode: 'table' }
-    case 'chart-line':
-    case 'chart-bar':
-    case 'chart-area':
-      // ChartCard renders a calm "No data yet" for an empty points array.
-      return { id, type, title: '', points: [] }
-    // #12: Bklit promotion, wave 2 — same calm-empty / zero-value starts.
-    case 'heatmap':
-      return { id, type: 'heatmap', title: '', cells: [] }
-    case 'stat':
-      return { id, type: 'stat', label: '', value: 0 }
-    // #11: standalone timeline (Gantt) — a calm-empty start, like the charts.
-    case 'timeline':
-      return { id, type: 'timeline', title: '', items: [] }
     // #61: empty url = the authoring state; the view renders the upload
     // affordance until a file lands.
     case 'image':

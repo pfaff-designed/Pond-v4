@@ -118,7 +118,7 @@ describe('Life composite surface', () => {
   it('add → “/” summons the palette and inserts each module’s empty state onto the home row', async () => {
     // The new flow (UI-audit Slice 2a): the foot add drops a text block; typing `/`
     // as its first char summons the palette to swap type. One render per module keeps
-    // each assertion isolated on a fresh empty Life. Kanban is deliberately absent —
+    // each assertion isolated on a fresh empty Life. The board preset is deliberately absent —
     // retired from creation (#19 slice 6) — and so are the eight data-holding display
     // blocks (metric / metric-ring / stat / charts / heatmap / timeline, #111): a chart
     // or a headline figure is a MODE of the view block now, so `View` is what the

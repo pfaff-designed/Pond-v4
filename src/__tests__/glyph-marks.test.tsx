@@ -5,8 +5,9 @@
  * cache), applies it as a data-URI CSS mask over `background: currentColor`
  * (so the glyph inherits colour like text — colour via `color`, never `fill`),
  * stays SSR-safe (an empty sized `<span>` until painted) and quiet on a miss;
- * `KindDot` is the extracted page-kind mark (muted 7×7, 2px-radius rounded
- * square in an area colour) that PondMolecule now renders through; the
+ * `KindDot` is the one page-kind mark (muted 7×7, 2px-radius rounded square in an
+ * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
+ * rendered through by PondMolecule, the mark button and the overview kicker; the
  * `AREA_GLYPH` map resolves the six fixed defaults (Life→ring, Personal→house,
  * Professional→star-01, Health→leaf-01, Finances→stairs-01,
  * Creativity→flower-05); and the wiring holds — the Rail's Life root and every
@@ -17,7 +18,7 @@
 import React from 'react'
 import { render, waitFor, act } from '@testing-library/react'
 import { Icon, loadIcon } from '@/components/atoms/Icon'
-import { KindDot } from '@/components/atoms/KindDot'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
@@ -317,10 +318,10 @@ describe('OverviewSurface — the kicker mark', () => {
     expect(glyph).toBeInTheDocument()
     const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
     expect(slot.style.color).toBe('rgb(95, 115, 85)')
-    expect(container.querySelector('[data-part="kicker-dot"]')).toBeNull()
+    expect(container.querySelector('[data-part="dot"]')).toBeNull()
   })
 
-  it('without a glyph the accent square stays exactly as before', () => {
+  it('without a glyph the kicker carries the shared KindDot mark in the accent', () => {
     const { container } = render(
       <OverviewSurface
         kicker="Food"
@@ -331,8 +332,9 @@ describe('OverviewSurface — the kicker mark', () => {
       />
     )
     expect(container.querySelector('[data-icon]')).toBeNull()
-    const square = container.querySelector<HTMLElement>('[data-part="kicker-dot"]')!
+    const square = container.querySelector<HTMLElement>('[data-part="dot"]')!
     expect(square.style.background).toBe('rgb(95, 115, 85)')
+    expect(square.className).toContain('size-[7px]')
   })
 })
 
@@ -374,7 +376,7 @@ describe('AreaOverviewPanel — the container resolves the glyph from the title'
     // #134: a role, never a colour. `pageAccent`'s Press six tint no mark now —
     // switching theme re-colours this with no write and no stale value.
     expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
-    expect(container.querySelector('[data-part="kicker-dot"]')).toBeNull()
+    expect(container.querySelector('[data-part="dot"]')).toBeNull()
   })
 
   it('an unmapped area shows a CLICKABLE KindDot, coloured by its inherited role', () => {

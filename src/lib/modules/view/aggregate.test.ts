@@ -97,11 +97,24 @@ describe('formatFigure', () => {
 })
 
 describe('chart KINDS are config values, not block types', () => {
-  it('names all 11 kinds — the eight #94 kinds are values of the chart mode, never block types', () => {
-    expect(CHART_KINDS).toHaveLength(11)
-    expect(CHART_KINDS).toEqual(
-      expect.arrayContaining(['composed', 'net', 'gauge', 'radar', 'scatter', 'sankey', 'sunburst', 'funnel'])
-    )
+  it('names the thirteen PondChart kinds, in the board\'s order — every one a value of the chart mode', () => {
+    // `PondChart.dc.html` declares exactly these thirteen. `heatmap` and `ring` are
+    // among them, which is why the `heatmap` and `metric-ring` BLOCKS are gone (#111).
+    expect(CHART_KINDS).toEqual([
+      'line',
+      'area',
+      'bar',
+      'composed',
+      'net',
+      'heatmap',
+      'ring',
+      'gauge',
+      'radar',
+      'scatter',
+      'sankey',
+      'sunburst',
+      'funnel',
+    ])
   })
 })
 

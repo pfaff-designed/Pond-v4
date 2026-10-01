@@ -13,7 +13,7 @@ const items: SlashMenuItem[] = [
   { id: 'text', name: 'Text', description: 'A prose block.' },
   { id: 'todo', name: 'Todo', description: 'A checklist.' },
   { id: 'table', name: 'Table', description: 'A table of rows.' },
-  { id: 'metric', name: 'Metric', description: 'A single figure.' },
+  { id: 'view', name: 'View', description: 'A view of a database.' },
 ]
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -29,7 +29,7 @@ describe('SlashMenu', () => {
     expect(screen.getByText('Text')).toBeInTheDocument()
     expect(screen.getByText('Todo')).toBeInTheDocument()
     expect(screen.getByText('Table')).toBeInTheDocument()
-    expect(screen.getByText('Metric')).toBeInTheDocument()
+    expect(screen.getByText('View')).toBeInTheDocument()
   })
 
   it('shows descriptions under item names', () => {
@@ -43,9 +43,9 @@ describe('SlashMenu', () => {
     const input = screen.getByLabelText('Filter blocks')
     fireEvent.change(input, { target: { value: 'ta' } })
     expect(screen.getByText('Table')).toBeInTheDocument()
-    // Metric and Text should still show if they don't match... only "Table" matches "ta"
+    // Only "Table" matches "ta" — everything else drops out.
     expect(screen.queryByText('Todo')).not.toBeInTheDocument()
-    expect(screen.queryByText('Metric')).not.toBeInTheDocument()
+    expect(screen.queryByText('View')).not.toBeInTheDocument()
   })
 
   it('shows "No blocks match" when filter yields nothing', () => {
@@ -112,7 +112,7 @@ describe('SlashMenu', () => {
       fireEvent.keyDown(input, { key: 'ArrowDown' })
     }
     fireEvent.keyDown(input, { key: 'Enter' })
-    // Should land on last item (Metric)
+    // Should land on last item (View)
     expect(onSelect).toHaveBeenCalledWith(items[3])
   })
 

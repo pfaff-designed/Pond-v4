@@ -1,4 +1,4 @@
-import type { Block, TextBlock, TodoBlock, MetricBlock } from '@/lib/documents/types'
+import type { Block, TextBlock, TodoBlock } from '@/lib/documents/types'
 
 describe('Block types', () => {
   it('text block has expected shape', () => {
@@ -16,18 +16,14 @@ describe('Block types', () => {
     expect(block.items[0].checked).toBe(false)
   })
 
-  it('metric block has optional unit and trend', () => {
-    const block: MetricBlock = { id: 'ghi', type: 'metric', label: 'Revenue', value: 1000 }
-    expect(block.unit).toBeUndefined()
-    expect(block.trend).toBeUndefined()
-  })
-
-  it('Block union covers all three types', () => {
+  it('Block union covers the content types', () => {
     const blocks: Block[] = [
       { id: '1', type: 'text', content: 'x' },
       { id: '2', type: 'todo', items: [] },
-      { id: '3', type: 'metric', label: 'MRR', value: 500, unit: '$', trend: 'up' },
+      { id: '3', type: 'table', columns: ['A'], rows: [{ id: 'r1', cells: ['x'] }] },
+      { id: '4', type: 'view', mode: 'table' },
+      { id: '5', type: 'image', url: 'https://cdn.example/a.png' },
     ]
-    expect(blocks).toHaveLength(3)
+    expect(blocks).toHaveLength(5)
   })
 })

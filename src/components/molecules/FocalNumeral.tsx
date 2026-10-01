@@ -1,6 +1,9 @@
 /**
- * The one focal element of an overview surface: an oversized Instrument-Serif
- * numeral with a calm serif caption at its baseline — the Press signature.
+ * The one focal element of an overview surface: an oversized serif numeral with a
+ * calm serif caption at its baseline.
+ *
+ * Its surface still descends from the superseded "v85 Clearing" aesthetic and needs
+ * resolving against `Pond 05 Shell` — a separate issue, deliberately untouched here.
  */
 
 export function FocalNumeral({ value, caption }: { value: string; caption: string }) {

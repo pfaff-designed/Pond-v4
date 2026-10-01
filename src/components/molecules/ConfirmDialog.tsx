@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * A styled, in-app confirm dialog (ticket-27) — the Press-aesthetic replacement
- * for the native `window.confirm()`. Used for destructive actions that take more
+ * A styled, in-app confirm dialog (ticket-27) — the in-app replacement for the
+ * native `window.confirm()`. Used for destructive actions that take more
  * than the acting item with them, e.g. deleting a page that has a whole subtree
  * inside it: the dialog states the real blast radius ("Deletes 3 pages inside.")
  * so a subtree delete never reads the same as an empty-page delete.

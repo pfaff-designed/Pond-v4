@@ -27,14 +27,6 @@ const samples: Record<string, Block> = {
       { id: 't2', label: 'Sand it', checked: true },
     ],
   },
-  metric: { id: 'b1', type: 'metric', label: 'Boards cut', value: 12, unit: 'pcs' },
-  'metric-ring': {
-    id: 'b1',
-    type: 'metric-ring',
-    label: 'Overall Progress',
-    sub: 'Phase 1 of 5',
-    pct: 0.2,
-  },
   table: {
     id: 'b1',
     type: 'table',
@@ -45,87 +37,8 @@ const samples: Record<string, Block> = {
       { id: 'r2', cells: ['Bandsaw', 'Left wall'] },
     ],
   },
-  kanban: {
-    id: 'b1',
-    type: 'kanban',
-    title: 'Bookshelf build',
-    columns: [
-      { id: 'c1', title: 'To do', cards: [{ id: 'k1', title: 'Cut boards' }] },
-      {
-        id: 'c2',
-        title: 'Doing',
-        cards: [{ id: 'k2', title: 'Sand', note: 'to 220 grit' }],
-      },
-      { id: 'c3', title: 'Done', cards: [] },
-    ],
-  },
-  // ticket-36: Bklit chart promotion. serialize is an honest summary — series
-  // name + range + last value — not a per-point dump.
-  'chart-line': {
-    id: 'b1',
-    type: 'chart-line',
-    title: 'Weekly mileage',
-    points: [
-      { x: '2026-01', values: { Miles: 32 } },
-      { x: '2026-02', values: { Miles: 41 } },
-      { x: '2026-03', values: { Miles: 38 } },
-    ],
-  },
-  'chart-bar': {
-    id: 'b1',
-    type: 'chart-bar',
-    title: 'Spend by category',
-    points: [
-      { x: 'Rent', values: { Amount: 1800 } },
-      { x: 'Food', values: { Amount: 420 } },
-    ],
-  },
-  'chart-area': {
-    id: 'b1',
-    type: 'chart-area',
-    title: 'Balance',
-    points: [
-      { x: '2026-01', values: { Balance: 1200 } },
-      { x: '2026-02', values: { Balance: 1650 } },
-    ],
-  },
   // #19: config-only view. Serializes its config (no rows injected here → "no rows").
   view: { id: 'b1', type: 'view', mode: 'table' },
-  // #12: heatmap + stat promotions. Heatmap serializes an honest summary (span,
-  // total, peak) like the charts; stat serializes label + formatted value + delta.
-  heatmap: {
-    id: 'b1',
-    type: 'heatmap',
-    title: 'Workouts',
-    caption: 'This week',
-    cells: [
-      { date: '2026-01-05', value: 1 },
-      { date: '2026-01-06', value: 3 },
-      { date: '2026-01-07', value: 2 },
-    ],
-  },
-  stat: {
-    id: 'b1',
-    type: 'stat',
-    label: 'MRR',
-    value: 12500,
-    format: 'currency',
-    delta: 0.12,
-    caption: 'vs last month',
-  },
-  // #11: standalone timeline (Gantt) module. Serializes an honest summary — drawn
-  // bar count + inclusive date range — not a per-item dump.
-  timeline: {
-    id: 'b1',
-    type: 'timeline',
-    title: 'Renovation',
-    caption: 'Fall push',
-    items: [
-      { label: 'Demo', start: '2026-09-01', end: '2026-09-05' },
-      { label: 'Framing', start: '2026-09-08', end: '2026-09-24' },
-      { label: 'Inspection', start: '2026-09-30' },
-    ],
-  },
   // #61: image/file attachment — serialize carries filename, caption AND url
   // (full fidelity: the model must be able to re-emit the block on a wholesale
   // edit without losing the stored file reference).
@@ -158,80 +71,14 @@ describe('descriptor.serialize (full-fidelity body)', () => {
     expect(serialize(samples.todo)).toBe('- [ ] Buy wood\n- [x] Sand it')
   })
 
-  it('metric: label, value, unit', () => {
-    expect(serialize(samples.metric)).toBe('Boards cut: 12 pcs')
-  })
-
-  it('metric-ring: label, sub, percentage', () => {
-    expect(serialize(samples['metric-ring'])).toBe('Overall Progress (Phase 1 of 5): 20%')
-  })
-
   it('table: every column and every cell, not a summary', () => {
     expect(serialize(samples.table)).toBe(
       'Power Tools — columns: Tool | Location; rows: Table Saw | Centre of shop ; Bandsaw | Left wall'
     )
   })
 
-  it('chart-line: kind, title, point count, series range + last value', () => {
-    expect(serialize(samples['chart-line'])).toBe(
-      'Line chart "Weekly mileage" over 3 points; Miles: 32–41 (last 38)'
-    )
-  })
-
-  it('chart-bar: reads as a bar chart with the category series summarized', () => {
-    expect(serialize(samples['chart-bar'])).toBe(
-      'Bar chart "Spend by category" over 2 points; Amount: 420–1800 (last 420)'
-    )
-  })
-
-  it('chart-area: reads as an area chart', () => {
-    expect(serialize(samples['chart-area'])).toBe(
-      'Area chart "Balance" over 2 points; Balance: 1200–1650 (last 1650)'
-    )
-  })
-
-  it('an empty chart serializes to a calm "(no data)", not a crash', () => {
-    expect(
-      moduleDescriptors['chart-line'].serialize({ id: 'e1', type: 'chart-line', points: [] })
-    ).toBe('Line chart: (no data)')
-  })
-
   it('view: renders its config; "no rows" until the assemble seam injects them', () => {
     expect(serialize(samples.view)).toBe('View (table) — no rows')
-  })
-
-  it('heatmap: title, day count, caption, total, peak value + date', () => {
-    expect(serialize(samples.heatmap)).toBe(
-      'Heatmap "Workouts" over 3 days — This week; total 6, peak 3 on 2026-01-06'
-    )
-  })
-
-  it('an empty heatmap serializes to a calm "(no data)", not a crash', () => {
-    expect(moduleDescriptors.heatmap.serialize({ id: 'e1', type: 'heatmap', cells: [] })).toBe(
-      'Heatmap: (no data)'
-    )
-  })
-
-  it('stat: label, formatted value, signed delta, caption', () => {
-    expect(serialize(samples.stat)).toBe('MRR: $12,500 (+12%) — vs last month')
-  })
-
-  it('timeline: title, drawn item count, date range, caption', () => {
-    expect(serialize(samples.timeline)).toBe(
-      'Timeline "Renovation": 3 items, 2026-09-01–2026-09-30 — Fall push'
-    )
-  })
-
-  it('an empty timeline serializes to a calm "(no data)", not a crash', () => {
-    expect(moduleDescriptors.timeline.serialize({ id: 'e1', type: 'timeline', items: [] })).toBe(
-      'Timeline: (no data)'
-    )
-  })
-
-  it('stat without delta or caption: just label + formatted value', () => {
-    expect(
-      moduleDescriptors.stat.serialize({ id: 'e1', type: 'stat', label: 'Subscribers', value: 482 })
-    ).toBe('Subscribers: 482')
   })
 })
 
@@ -240,109 +87,18 @@ describe('descriptor.preview (one-line listing)', () => {
     expect(preview(samples.todo)).toBe('Buy wood, Sand it')
   })
 
-  it('every other content type falls back to serialize', () => {
-    for (const type of ['text', 'metric', 'metric-ring', 'table'] as const) {
-      expect(preview(samples[type])).toBe(serialize(samples[type]))
+  it('image overrides preview too: the filename alone, no caption or url', () => {
+    expect(preview(samples.image)).toBe('Attachment: board.png')
+  })
+
+  it('every type WITHOUT a preview facet falls back to serialize', () => {
+    const fallbacks = Object.values(moduleDescriptors).filter(
+      (d) => d.type !== 'page' && d.preview === undefined
+    )
+    expect(fallbacks.length).toBeGreaterThan(0)
+    for (const d of fallbacks) {
+      expect(preview(samples[d.type])).toBe(serialize(samples[d.type]))
     }
-  })
-})
-
-describe('bound metric serialize (ticket-23 — AI sees what the UI shows)', () => {
-  const checklist: Block = {
-    id: 'todo-1',
-    type: 'todo',
-    items: [
-      { id: 'i1', label: 'Dune', checked: true },
-      { id: 'i2', label: 'Hyperion', checked: true },
-      { id: 'i3', label: 'Neuromancer', checked: false },
-    ],
-  }
-  const bound: Extract<Block, { type: 'metric' }> = {
-    id: 'm1',
-    type: 'metric',
-    label: 'Books finished',
-    value: 99,
-    source: { blockId: 'todo-1', kind: 'checklist-checked' },
-  }
-  const metricSerialize = moduleDescriptors.metric.serialize
-
-  it('with siblings: emits the DERIVED value (matches the view), never the manual one', () => {
-    const out = metricSerialize(bound, [checklist, bound])
-    expect(out).toContain('Books finished: 2')
-    expect(out).not.toContain('99')
-    expect(out).toContain('todo-1') // the binding is visible to the model
-  })
-
-  it('with siblings but a missing source: manual value, flagged — not silently wrong', () => {
-    const out = metricSerialize(bound, [bound])
-    expect(out).toContain('99')
-    expect(out).toMatch(/missing/)
-  })
-
-  it('without siblings: states the binding + fallback instead of guessing a number', () => {
-    const out = metricSerialize(bound)
-    expect(out).toContain('derived live from block todo-1')
-    expect(out).toContain('manual fallback: 99')
-    expect(out).not.toMatch(/^Books finished: 99$/)
-  })
-
-  it('unbound metric output is unchanged with or without siblings', () => {
-    const unbound = samples.metric as Extract<Block, { type: 'metric' }>
-    expect(metricSerialize(unbound, [unbound])).toBe('Boards cut: 12 pcs')
-  })
-})
-
-describe('cross-page & aggregate metric serialize honesty (ticket-38)', () => {
-  const metricSerialize = moduleDescriptors.metric.serialize
-
-  const crossPage: Extract<Block, { type: 'metric' }> = {
-    id: 'm1',
-    type: 'metric',
-    label: 'Milestone tasks',
-    value: 7,
-    source: { pageId: 'page-A', blockId: 'todo-1', kind: 'checklist-checked' },
-  }
-  const aggregate: Extract<Block, { type: 'metric' }> = {
-    id: 'm2',
-    type: 'metric',
-    label: 'Tasks across milestones',
-    value: 42,
-    source: { pages: 'children', kind: 'checklist-checked' },
-  }
-
-  // The whole point: serialize can't reach OTHER pages (siblings hold only this page's
-  // blocks, and serialize is a pure server-safe facet). It must NEVER print a derived
-  // number it cannot compute — it states the binding + the manual fallback honestly, so
-  // the AI's context can never disagree with the UI by fabricating a value.
-  it('cross-page: never emits a fabricated number; names the page + block + fallback', () => {
-    // Even when THIS page happens to hold a same-id todo, the cross-page source must
-    // not be derived from it — honesty over a wrong guess.
-    const localDecoy: Block = {
-      id: 'todo-1',
-      type: 'todo',
-      items: [{ id: 'x', label: 'wrong', checked: true }],
-    }
-    const out = metricSerialize(crossPage, [localDecoy])
-    expect(out).toContain('page page-A')
-    expect(out).toContain('block todo-1')
-    expect(out).toContain('cross-page')
-    expect(out).toContain('manual fallback: 7')
-    // No bare "Milestone tasks: <number>" that would read as a live value.
-    expect(out).not.toMatch(/^Milestone tasks: \d/)
-  })
-
-  it('aggregate: states the rollup scope + fallback, never a computed sum', () => {
-    const out = metricSerialize(aggregate, [])
-    expect(out).toMatch(/child pages/)
-    expect(out).toContain('manual fallback: 42')
-    expect(out).not.toMatch(/^Tasks across milestones: \d/)
-  })
-
-  it('cross-page/aggregate honesty holds whether or not siblings are passed', () => {
-    // siblings can never resolve these forms, so the output must be identical with and
-    // without them — no accidental branch that emits a number when siblings are present.
-    expect(metricSerialize(crossPage)).toBe(metricSerialize(crossPage, []))
-    expect(metricSerialize(aggregate)).toBe(metricSerialize(aggregate, []))
   })
 })
 

@@ -15,7 +15,8 @@
  * at weight 200 (never 400); code/tag/relation/file = PP Neue Montreal Mono,
  * lowercase; everything else = PP Neue Montreal. Numeric kinds read tabular.
  * Area colour tints MARKS only — the icon glyph and the dot — never text or
- * ground.
+ * ground. The dot's own recipe lives here too (`KindDot`), so the bare mark the
+ * rail, cards and kicker carry and the atom's `dot` kind can never drift apart.
  */
 
 import { cn } from '@/lib/utils'
@@ -158,6 +159,46 @@ const FOCUS_RING = 'outline-2 outline-offset-2 outline-mn-area-b'
 
 /** Ink-on-ground pairing for filled marks (checkbox tick, avatar, play). */
 const INVERSE_INK = 'bg-mn-text text-raw-paper dark:text-raw-ink'
+
+export interface KindDotProps {
+  /** Raw area accent (hex or `var(--mn-area-*)`); paints the dot and drops the muted class. */
+  accent?: string
+  className?: string
+}
+
+/**
+ * The page-kind MARK (#91) — a 7×7px, 2px-radius square in muted ink or an area
+ * accent. Pond codes page kinds with a shape and a colour where another system
+ * would reach for a symbol (handoff readme §3); area glyphs are the other register
+ * (`Icon`), and the two never mix.
+ *
+ * ONE definition, two wearers. `PondAtom kind="dot"` renders it inside the inline
+ * chrome `PondAtom.dc.html` gives every inline kind (26px min-height, 6px side
+ * padding). The surfaces that carry the BARE mark — rail rows, list rows and cards
+ * through `PondMolecule`, the breadcrumb's mark button, the overview kicker — render
+ * it directly, because their own boards draw a 7px square flush in the row, not an
+ * atom in its padding. Folding those onto the full atom would push every rail label
+ * 12px right.
+ *
+ * Colour rule: an `accent` applies as an inline background and REPLACES the muted
+ * class — marks only, never text or ground. Variant classes (a selected
+ * `bg-mn-text`, an area role `bg-mn-area-a`, a smaller `size-1.5`) merge through
+ * `className`; tailwind-merge collapses the conflicting default.
+ */
+export function KindDot({ accent, className }: KindDotProps) {
+  return (
+    <span
+      data-part="dot"
+      aria-hidden="true"
+      className={cn(
+        'inline-block size-[7px] flex-none rounded-mn-hair',
+        !accent && 'bg-mn-text/50',
+        className
+      )}
+      style={accent ? { background: accent } : undefined}
+    />
+  )
+}
 
 /** Per-kind text-register classes; sizes come straight off the mockup. */
 function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover: boolean): string {
@@ -414,16 +455,7 @@ export function PondAtom({
         />
       )}
 
-      {kind === 'dot' && (
-        <span
-          data-part="kind-dot"
-          aria-hidden
-          className={cn(
-            'size-[7px] flex-none rounded-mn-hair',
-            areaBg ?? (selected ? 'bg-mn-text' : 'bg-mn-text/50')
-          )}
-        />
-      )}
+      {kind === 'dot' && <KindDot className={areaBg ?? (selected ? 'bg-mn-text' : undefined)} />}
 
       {showText && (
         <span

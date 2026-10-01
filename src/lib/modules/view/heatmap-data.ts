@@ -5,10 +5,12 @@ import { getHeatmapWeekStartSunday } from '@/components/charts/heatmap/heatmap-u
 import type { HeatmapColumn } from '@/components/charts/heatmap/heatmap-context'
 
 /**
- * `heatmap` DATA contract (#12) — mirrors chart/data.ts. The AI/persisted shape is
- * deliberately FLAT — one `{ date, value }` per active day — not the Bklit
- * column-of-bins grid, which is wide, positional, and easy to emit wrong. The
- * module boundary owns the grid mapping (`toHeatmapGrid`, below), not the AI.
+ * Heatmap DATA contract (#111) — the `heatmap` chart KIND's grid mapping. The
+ * reading a heatmap view derives is deliberately FLAT — one `{ date, value }` per
+ * active day — not the Bklit column-of-bins grid, which is wide, positional, and
+ * easy to get wrong. This file owns the mapping between the two; `chart-data.ts`
+ * derives the flat cells from the collection's records at read time, so nothing
+ * holds a copy.
  */
 
 /**
@@ -79,28 +81,4 @@ export function toHeatmapGrid(cells: readonly HeatmapCell[]): HeatmapGrid | null
   }
 
   return { columns, xDomain: [min, max] }
-}
-
-/**
- * Honest text summary for `serialize` (the prompt body + embedding source):
- * day count, total, and the peak day — so the AI's context matches what the user
- * sees without dumping every cell. Mirrors `summarizeChart` (chart/data.ts):
- * head + optional title, ` — caption`, then the figures.
- */
-export function summarizeHeatmap(data: {
-  title?: string
-  caption?: string
-  cells: readonly HeatmapCell[]
-}): string {
-  const head = `Heatmap${data.title ? ` "${data.title}"` : ''}`
-  if (data.cells.length === 0) return `${head}: (no data)`
-  let total = 0
-  let peak = data.cells[0]
-  for (const cell of data.cells) {
-    total += cell.value
-    if (cell.value > peak.value) peak = cell
-  }
-  const cap = data.caption ? ` — ${data.caption}` : ''
-  const days = `${data.cells.length} ${data.cells.length === 1 ? 'day' : 'days'}`
-  return `${head} over ${days}${cap}; total ${total}, peak ${peak.value} on ${peak.date}`
 }

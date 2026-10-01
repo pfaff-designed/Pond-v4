@@ -5,9 +5,9 @@ import { PageView } from './view'
 import { samplePage as page } from './sample'
 
 /**
- * The `page` container rendering a mixed block list — text, todo, metric, and the
- * harvested `metric-ring` — entirely through the registry (recursive composition,
- * t12 §6). No block type is hard-coded in the container.
+ * The `page` container rendering a mixed block list — text, todo, table and an image —
+ * entirely through the registry (recursive composition, t12 §6). No block type is
+ * hard-coded in the container.
  */
 const meta = {
   title: 'Modules/Page',
@@ -29,7 +29,7 @@ export const ReadOnly: Story = {
     ).toBeInTheDocument()
     await expect(canvas.getByText('Long run')).toBeInTheDocument()
     await expect(canvas.getByText('Weekly mileage')).toBeInTheDocument()
-    await expect(canvas.getByText('Miles')).toBeInTheDocument()
+    await expect(canvas.getByText('The long-run route')).toBeInTheDocument()
   },
 }
 

@@ -48,10 +48,6 @@ jest.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
-jest.mock('@/lib/ai/transports', () => ({
-  createMainTransport: () => ({ api: '/api/chat' }),
-}))
-
 jest.mock('@/lib/conversation/client', () => ({
   getOrCreateConversation: jest.fn().mockResolvedValue({
     id: 'conv-1',

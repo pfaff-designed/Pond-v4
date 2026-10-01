@@ -1,10 +1,11 @@
 'use client'
 
 /**
- * The shared overview surface — v85 Clearing's area-overview pattern,
- * data-driven: kicker header, one focal numeral, a card per child page, a
- * closing serif exhale. Used for both an area page and the Life root (slice 5);
- * the callers derive the model from real ['pages'] rows via lib/pages/overview.
+ * The shared overview surface, data-driven: kicker header, one focal numeral, a card
+ * per child page, a closing serif exhale. Used for both an area page and the Life
+ * root (slice 5); the callers derive the model from real ['pages'] rows via
+ * lib/pages/overview. The LAYOUT still descends from the superseded "v85 Clearing"
+ * aesthetic and needs resolving against `Pond 05 Shell` — a separate issue.
  *
  * Deliberately structural: no Pond note, no AI synthesis — that's a named
  * follow-up with its own grill.
@@ -15,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { updateTitle } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { getOrCreateHomePage } from '@/lib/pages/home'
@@ -240,15 +242,7 @@ export function OverviewSurface({
   // draft. Without a trail (Storybook) the kicker stands alone.
   const pillCluster = (
     <div className="flex items-center justify-center gap-2 min-w-0">
-      {markSlot ??
-        (accent && (
-          <span
-            data-part="kicker-dot"
-            aria-hidden
-            className="w-2 h-2 rounded-mn-hair flex-shrink-0"
-            style={{ background: accent }}
-          />
-        ))}
+      {markSlot ?? (accent && <KindDot accent={accent} />)}
       {showBreadcrumb ? (
         onRenameKicker ? (
           <Breadcrumb

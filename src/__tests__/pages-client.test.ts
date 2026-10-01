@@ -60,7 +60,7 @@ function makeSupabase(chain = makeChain()) {
 const sampleBlocks: Block[] = [
   { id: 'b1', type: 'text', content: '# Notes' },
   { id: 'b2', type: 'todo', items: [{ id: 'i1', label: 'Do thing', checked: false }] },
-  { id: 'b3', type: 'metric', label: 'MRR', value: 500, unit: '$', trend: 'up' },
+  { id: 'b3', type: 'table', columns: ['Metric', 'Value'], rows: [{ id: 'r1', cells: ['MRR', '500'] }] },
 ]
 
 function pageRow(overrides: Record<string, unknown> = {}) {

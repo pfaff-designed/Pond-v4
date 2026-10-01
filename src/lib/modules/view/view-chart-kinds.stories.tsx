@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 
 import { CollectionView } from './view'
 import type { CollectionRow } from './apply'
@@ -7,10 +7,10 @@ import type { ViewBlock, ViewChartConfig } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
 
 /**
- * The eleven chart KINDS of the `chart` view mode (#94 on the #111 contract): each
- * story is the SAME fixture database drawn a different way. No story holds chart
- * data — every figure below is aggregated from `rows` at render time, so editing a
- * record in any other view of this database moves these charts with it.
+ * The thirteen chart KINDS of the `chart` view mode (`PondChart.dc.html` on the #111
+ * contract): each story is the SAME fixture database drawn a different way. No story
+ * holds chart data — every figure below is aggregated from `rows` at render time, so
+ * editing a record in any other view of this database moves these charts with it.
  *
  * Colours are the Make Noise ink ramp only (`--chart-1…5` + the single-job fills);
  * check the dark theme too — ink flips to paper and nothing else moves.
@@ -44,19 +44,21 @@ const schema: PropertySchema = [
   { id: 'p-hours', name: 'Sleep hours', type: 'number' },
   { id: 'p-energy', name: 'Energy', type: 'number' },
   { id: 'p-reviewed', name: 'Reviewed', type: 'checkbox' },
+  // The heatmap's prerequisite: a calendar reads one cell a DAY, never a category.
+  { id: 'p-day', name: 'Day', type: 'date' },
 ]
 
 const r = (id: string, title: string, values: Record<string, unknown>): CollectionRow => ({ id, title, values })
 
 const rows: CollectionRow[] = [
-  r('t1', 'Flat', { 'p-month': 'may', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.2, 'p-energy': 2, 'p-reviewed': true }),
-  r('t2', 'Groceries', { 'p-month': 'may', 'p-category': 'c-food', 'p-out': 420, 'p-hours': 6.1, 'p-energy': 3, 'p-reviewed': true }),
-  r('t3', 'ISA', { 'p-month': 'jun', 'p-category': 'c-saved', 'p-in': 3200, 'p-out': 700, 'p-hours': 7.4, 'p-energy': 5, 'p-reviewed': false }),
-  r('t4', 'Rail card', { 'p-month': 'jun', 'p-category': 'c-transport', 'p-out': 180, 'p-hours': 7.9, 'p-energy': 6, 'p-reviewed': true }),
-  r('t5', 'Streaming', { 'p-month': 'jul', 'p-category': 'c-subs', 'p-in': 2900, 'p-out': 96, 'p-hours': 8.6, 'p-energy': 8, 'p-reviewed': false }),
-  r('t6', 'Market', { 'p-month': 'jul', 'p-category': 'c-food', 'p-out': 310, 'p-hours': 6.8, 'p-energy': 4, 'p-reviewed': true }),
-  r('t7', 'Flat', { 'p-month': 'aug', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.9, 'p-energy': 2, 'p-reviewed': false }),
-  r('t8', 'Bike repair', { 'p-month': 'aug', 'p-category': 'c-transport', 'p-out': 2400, 'p-hours': 9.1, 'p-energy': 9, 'p-reviewed': true }),
+  r('t1', 'Flat', { 'p-month': 'may', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.2, 'p-energy': 2, 'p-reviewed': true, 'p-day': '2026-01-05' }),
+  r('t2', 'Groceries', { 'p-month': 'may', 'p-category': 'c-food', 'p-out': 420, 'p-hours': 6.1, 'p-energy': 3, 'p-reviewed': true, 'p-day': '2026-01-06' }),
+  r('t3', 'ISA', { 'p-month': 'jun', 'p-category': 'c-saved', 'p-in': 3200, 'p-out': 700, 'p-hours': 7.4, 'p-energy': 5, 'p-reviewed': false, 'p-day': '2026-01-12' }),
+  r('t4', 'Rail card', { 'p-month': 'jun', 'p-category': 'c-transport', 'p-out': 180, 'p-hours': 7.9, 'p-energy': 6, 'p-reviewed': true, 'p-day': '2026-01-13' }),
+  r('t5', 'Streaming', { 'p-month': 'jul', 'p-category': 'c-subs', 'p-in': 2900, 'p-out': 96, 'p-hours': 8.6, 'p-energy': 8, 'p-reviewed': false, 'p-day': '2026-01-19' }),
+  r('t6', 'Market', { 'p-month': 'jul', 'p-category': 'c-food', 'p-out': 310, 'p-hours': 6.8, 'p-energy': 4, 'p-reviewed': true, 'p-day': '2026-01-20' }),
+  r('t7', 'Flat', { 'p-month': 'aug', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.9, 'p-energy': 2, 'p-reviewed': false, 'p-day': '2026-01-26' }),
+  r('t8', 'Bike repair', { 'p-month': 'aug', 'p-category': 'c-transport', 'p-out': 2400, 'p-hours': 9.1, 'p-energy': 9, 'p-reviewed': true, 'p-day': '2026-01-27' }),
 ]
 
 const view = (id: string, chart: ViewChartConfig): ViewBlock => ({ id, type: 'view', mode: 'chart', chart })
@@ -86,6 +88,74 @@ export const Net: Story = {
     await expect(canvas.getByText('below zero — dashed')).toBeInTheDocument()
     // aug: 3200 − 3550 = −350 → the one dashed segment pair and the hollow marker.
     await expect(canvasElement.querySelectorAll('line[stroke-dasharray="3 3"]')).toHaveLength(1)
+  },
+}
+
+/**
+ * Heatmap: the board's "workouts" reading — `sessions · date, minutes`. One cell a
+ * day over four Sunday-start week columns, binned from the records' Day field; the
+ * grid is derived at read time, so nothing holds a copy of the calendar.
+ */
+export const Heatmap: Story = {
+  args: { config: view('v-heatmap', { kind: 'heatmap', xProperty: 'p-day', series: [{ property: 'p-hours', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('img', { name: /heatmap chart of Sleep hours by Day/ })).toBeInTheDocument()
+    // Jan 5 → Jan 27 spans the weeks of Jan 4, 11, 18 and 25: four columns of seven.
+    // The grid sizes itself from the measured width, so the cells land a frame later.
+    await waitFor(() =>
+      expect(canvasElement.querySelectorAll('.visx-heatmap-rect').length).toBeGreaterThanOrEqual(28)
+    )
+    // The month label and the weekday initials portal into the chart container, so
+    // they arrive with the measurement too.
+    await expect(await canvas.findByText('Jan')).toBeInTheDocument()
+    // Weekday initials down the left — Mon / Wed / Fri, the GitHub convention.
+    await waitFor(() => expect(canvas.getByText('M')).toBeInTheDocument())
+    await expect(canvas.getByText('W')).toBeInTheDocument()
+    await expect(canvas.getByText('F')).toBeInTheDocument()
+  },
+}
+
+/** A heatmap can only read a DATE: a category x says so rather than drawing a lie. */
+export const HeatmapNeedsADate: Story = {
+  args: { config: view('v-heatmap-cat', { kind: 'heatmap', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText(/a heatmap reads one cell a day/i)).toBeInTheDocument()
+  },
+}
+
+/**
+ * Ring: the board's "budget share" reading — `transactions · category, £`. Each
+ * category is a part of the whole (one concentric ring against the same total), with
+ * the total in the centre and a legend of shares beside it.
+ */
+export const RingShare: Story = {
+  args: { config: view('v-ring', { kind: 'ring', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByRole('img', { name: /ring chart of Out by Category/ })).toBeInTheDocument()
+    // The legend reads the shares straight off the rows: Transport is 180 + 2,400.
+    for (const label of ['Rent', 'Food', 'Saved', 'Transport', 'Subs']) {
+      await expect(canvas.getByText(label)).toBeInTheDocument()
+    }
+    await expect(canvas.getByText('2,580')).toBeInTheDocument()
+    await expect(canvas.getByText('total')).toBeInTheDocument()
+    // A ring has no axes, so no ↕/↔ footer (B6).
+    await expect(canvas.queryByText('Category')).not.toBeInTheDocument()
+  },
+}
+
+/** Nothing positive to share out: a notice, not rings around an empty total. */
+export const RingNothingPositive: Story = {
+  args: {
+    config: view('v-ring-neg', { kind: 'ring', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    schema,
+    rows: rows.map((row) => ({ ...row, values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) } })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText(/a ring needs positive values/)).toBeInTheDocument()
   },
 }
 
@@ -184,7 +254,7 @@ export const Funnel: Story = {
   },
 }
 
-// ── The three Bklit kinds through the same seam, so all eleven sit in one place ──
+// ── The three Bklit cartesian kinds, so all thirteen sit in one place ──────────
 export const Line: Story = {
   args: { config: view('v-line', { kind: 'line', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }] }), schema, rows },
   play: async ({ canvasElement }) => {

@@ -25,7 +25,7 @@
  * is one and lays out correctly when there is not, so no row is ever half-drawn.
  */
 
-import { KindDot } from '@/components/atoms/KindDot'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import type { MentionedPage } from '@/lib/pages/mentioned'
 import { cn } from '@/lib/utils'

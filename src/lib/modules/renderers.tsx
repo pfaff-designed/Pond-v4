@@ -12,17 +12,8 @@ import type { ModuleRenderer, ModuleViewProps } from './types'
 import { TextView } from './text/view'
 import { TextDiffer } from './text/differ'
 import { TodoView } from './todo/view'
-import { MetricView } from './metric/view'
-import { MetricRingView } from './metric-ring/view'
 import { TableView } from './table/view'
-import { KanbanView } from './kanban/view'
 import { PageView } from './page/view'
-import { ChartLineView } from './chart-line/view'
-import { ChartBarView } from './chart-bar/view'
-import { ChartAreaView } from './chart-area/view'
-import { HeatmapView } from './heatmap/view'
-import { StatView } from './stat/view'
-import { TimelineView } from './timeline/view'
 import { ViewView } from './view/view'
 import { ImageView } from './image/view'
 
@@ -36,20 +27,8 @@ import { ImageView } from './image/view'
 export const moduleRenderers = {
   text: { view: TextView, differ: TextDiffer },
   todo: { view: TodoView },
-  metric: { view: MetricView },
-  'metric-ring': { view: MetricRingView },
   table: { view: TableView },
-  kanban: { view: KanbanView },
   page: { view: PageView },
-  // ticket-36: Bklit chart promotion. Read-only views (AI-maintained, like metric).
-  'chart-line': { view: ChartLineView },
-  'chart-bar': { view: ChartBarView },
-  'chart-area': { view: ChartAreaView },
-  // #12: Bklit promotion, wave 2. Read-only views (AI-maintained, like the charts).
-  heatmap: { view: HeatmapView },
-  stat: { view: StatView },
-  // #11: standalone timeline (Gantt). Read-only view (AI-maintained, like the charts).
-  timeline: { view: TimelineView },
   // #19: collection view. Slice-2 stub renderer; real renderers land in slices 3–4.
   view: { view: ViewView },
   // #61: uploaded image / file attachment. Editing folds into the view (the

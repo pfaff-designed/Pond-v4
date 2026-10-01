@@ -43,8 +43,8 @@ describe('module registry (t12)', () => {
     expect(screen.getByText(/Base build week/)).toBeInTheDocument() // text
     expect(screen.getByText('Long run')).toBeInTheDocument() // todo item
     expect(screen.getByText('Recovery swim')).toBeInTheDocument()
-    expect(screen.getByText('Weekly mileage')).toBeInTheDocument() // metric
-    expect(screen.getByText('Miles')).toBeInTheDocument() // metric-ring (the new module)
+    expect(screen.getByText('Weekly mileage')).toBeInTheDocument() // table title
+    expect(screen.getByText('The long-run route')).toBeInTheDocument() // image caption
   })
 
   it('an editable todo emits a new full block state via onChange', () => {
@@ -70,14 +70,12 @@ describe('module registry (t12)', () => {
   it('blockSchema (Zod SoT) accepts valid blocks and rejects malformed ones', () => {
     expect(blockSchema.safeParse(page.blocks[0]).success).toBe(true)
     expect(blockSchema.safeParse(page.blocks[3]).success).toBe(true)
-    // metric-ring pct out of range
-    expect(
-      blockSchema.safeParse({ id: 'x', type: 'metric-ring', label: '9', pct: 2 }).success
-    ).toBe(false)
+    // a view naming a mode outside the union
+    expect(blockSchema.safeParse({ id: 'x', type: 'view', mode: 'gantt-ish' }).success).toBe(false)
     // unknown type
     expect(blockSchema.safeParse({ id: 'x', type: 'gantt', cards: [] }).success).toBe(false)
-    // metric missing required value
-    expect(blockSchema.safeParse({ id: 'x', type: 'metric', label: 'X' }).success).toBe(false)
+    // table missing its required rows
+    expect(blockSchema.safeParse({ id: 'x', type: 'table', columns: ['A'] }).success).toBe(false)
   })
 
   it('an unregistered module type renders nothing instead of throwing', () => {

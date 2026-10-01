@@ -82,26 +82,6 @@ describe('blocksToText', () => {
     expect(text).toMatch(/\[[ x]\]/) // some checkbox marker rendered
   })
 
-  it('renders a metric block with label, value and unit', () => {
-    const blocks: Block[] = [
-      { id: 'b1', type: 'metric', label: 'Boards cut', value: 12, unit: 'pcs' },
-    ]
-    const text = blocksToText(blocks)
-    expect(text).toContain('Boards cut')
-    expect(text).toContain('12')
-    expect(text).toContain('pcs')
-  })
-
-  it('renders a metric-ring block with label, sub and percentage', () => {
-    const blocks: Block[] = [
-      { id: 'b1', type: 'metric-ring', label: 'Overall Progress', sub: 'Phase 1 of 5', pct: 0.2 },
-    ]
-    const text = blocksToText(blocks)
-    expect(text).toContain('Overall Progress')
-    expect(text).toContain('Phase 1 of 5')
-    expect(text).toContain('20')
-  })
-
   it('renders a table block with every row and cell, not a summary', () => {
     const blocks: Block[] = [
       {
@@ -122,29 +102,6 @@ describe('blocksToText', () => {
     expect(text).toContain('Centre of shop')
     expect(text).toContain('Bandsaw')
     expect(text).toContain('Left wall')
-  })
-
-  it('a bound metric renders its DERIVED value, matching the UI (ticket-23)', () => {
-    const blocks: Block[] = [
-      {
-        id: 'todo-1',
-        type: 'todo',
-        items: [
-          { id: 't1', label: 'Dune', checked: true },
-          { id: 't2', label: 'Hyperion', checked: false },
-        ],
-      },
-      {
-        id: 'm1',
-        type: 'metric',
-        label: 'Books finished',
-        value: 99,
-        source: { blockId: 'todo-1', kind: 'checklist-checked' },
-      },
-    ]
-    const text = blocksToText(blocks)
-    expect(text).toContain('Books finished: 1') // derived, not the manual 99
-    expect(text).not.toContain('99')
   })
 
   it('renders a view block with its config and injected row titles (#19 hydration)', () => {

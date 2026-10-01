@@ -1,12 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect } from 'storybook/test'
 
-import { KindDot } from './KindDot'
+import { KindDot } from './PondAtom'
 
 /**
  * The page-kind mark (#91): a 7×7px, 2px-radius square in muted ink or an area
- * accent. Extracted from PondMolecule's inline dot so the rail, cards and the
- * overview kicker share one mark. Colour tints MARKS only.
+ * accent. ONE definition, housed in `PondAtom` beside the `dot` kind that wears it:
+ * the rail, list rows, cards, the mark button and the overview kicker all render
+ * this bare mark. Colour tints MARKS only.
  */
 const meta = {
   title: 'Atoms/KindDot',

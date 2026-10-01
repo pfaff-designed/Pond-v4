@@ -61,8 +61,8 @@ describe('hydrateProposalBlocks', () => {
   })
 
   it('skips a malformed block rather than emitting corrupt JSON', () => {
-    // A metric missing its required numeric value fails blockSchema.
-    const data = [{ type: 'metric', label: 'Bad' }] as unknown as ModuleData[]
+    // A table missing its required rows fails blockSchema.
+    const data = [{ type: 'table', columns: ['A'] }] as unknown as ModuleData[]
     const blocks = hydrateProposalBlocks(data, mint)
     expect(blocks).toEqual([])
   })

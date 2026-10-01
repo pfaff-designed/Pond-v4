@@ -33,7 +33,7 @@
 
 import type { ReactNode } from 'react'
 import { PondAtom, type PondAtomKind, type PondAtomState } from '@/components/atoms/PondAtom'
-import { KindDot } from '@/components/atoms/KindDot'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { cn } from '@/lib/utils'
 
 export const POND_MOLECULE_KINDS = [
@@ -217,7 +217,7 @@ export function PondMolecule({
   const rowBg = selected ? 'bg-mn-hover-fill' : hover ? 'bg-mn-text/5' : undefined
   const editRing = editing && 'ring-[1.4px] ring-inset ring-mn-text'
 
-  /** The kind dot (the `KindDot` atom, #91) — area role class, or a raw accent
+  /** The kind dot (`KindDot`, housed in PondAtom, #91) — area role class, or a raw accent
    *  via style (marks only). `fallback` / `sizeCls` merge over the atom's muted
    *  7px default. */
   const kindDot = (fallback: string, sizeCls?: string) => (

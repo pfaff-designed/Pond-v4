@@ -26,9 +26,10 @@ const proposeChangesJsonSchema = zodSchema(proposeChangesSchema).jsonSchema
 // ── A fabricated schema-INVALID propose_changes tool call ────────────────────
 // It fails validation in several realistic ways at once:
 //  - op "update" is not in the union {create, edit, remove}
-//  - block type "table" is not a known module (closed data union)
+//  - block type "metric-ring" is not a known module (closed data union — #111
+//    deleted the nine data-holding display blocks)
 //  - a create op invents an id (the model must never mint ids)
-//  - a metric-ring pct of 1.5 is out of the [0,1] range
+//  - a table's rows are bare arrays rather than `{ cells }` objects
 // A real slightly-off model batch would trip one of these; we stack them.
 const invalidInput = {
   changes: [
@@ -41,13 +42,14 @@ const invalidInput = {
       op: 'create',
       id: 'block-i-invented', // must NOT mint ids
       data: {
-        type: 'table', // unknown block type
-        rows: [['a', 'b']],
+        type: 'table',
+        columns: ['A', 'B'],
+        rows: [['a', 'b']], // rows must be `{ cells: [...] }` objects
       },
     },
     {
       op: 'create',
-      data: { type: 'metric-ring', label: 'Progress', pct: 1.5 }, // pct out of range
+      data: { type: 'metric-ring', label: 'Progress', pct: 1.5 }, // unknown block type
     },
   ],
 }

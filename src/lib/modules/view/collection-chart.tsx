@@ -2,7 +2,7 @@
 
 /**
  * Chart mode — the collection's rows AGGREGATED into a chart at read time (#111),
- * drawn by whichever of the eleven kinds the view names (#94).
+ * drawn by whichever of the thirteen kinds `PondChart.dc.html` declares.
  *
  * Nothing is stored: `chartDataFromRows` buckets the (already filtered + sorted) rows
  * by the x property and aggregates each series within a bucket, so editing a record in
@@ -15,10 +15,12 @@ import { useMemo } from 'react'
 import type { ViewBlock } from './schema'
 import type { CollectionRow } from './apply'
 import { chartDataFromRows, type ChartData } from './chart-data'
+import { formatFigure } from './aggregate'
+import { toHeatmapGrid } from './heatmap-data'
 import { ViewNotice } from './notice'
 import { toCategoricalChartRows, toChartRows } from '../chart/data'
 import { ChartCard, CHART_SERIES_COLORS } from '../chart/card'
-import { seriesColor } from '@/components/charts/chart-ramp'
+import { rankColor, seriesColor } from '@/components/charts/chart-ramp'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { LineChart, Line } from '@/components/charts/line-chart'
 import { AreaChart } from '@/components/charts/area-chart'
@@ -36,6 +38,15 @@ import { ScatterChart } from '@/components/charts/scatter'
 import { SankeyChart } from '@/components/charts/sankey'
 import { SunburstChart } from '@/components/charts/sunburst'
 import { FunnelChart } from '@/components/charts/funnel'
+import { RingChart } from '@/components/charts/ring-chart'
+import { Ring } from '@/components/charts/ring'
+import { RingCenter } from '@/components/charts/ring-center'
+import {
+  HeatmapChart,
+  HeatmapCells,
+  HeatmapXAxis,
+  HeatmapYAxis,
+} from '@/components/charts/heatmap'
 
 /**
  * The three promoted Bklit visuals, fed the flat row shape they expect. Line and
@@ -89,11 +100,89 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
   )
 }
 
+/** The ring's drawn size — the mockup's 140 × 150 plot, squared off. */
+const RING_SIZE = 150
+
+/**
+ * The heatmap's cell PITCH, fixed rather than fluid: the mockup draws 26 weeks across
+ * 318px, so a column is ~12px — a 10px cell with a 2px gap. Left fluid, a four-week
+ * view would stretch one cell to 288px and stand 2,000px tall.
+ */
+const HEATMAP_CELL = 10
+const HEATMAP_CELL_GAP = 2
+
+/**
+ * Ring: the board's "budget share" — `transactions · category, £`. Every bucket is
+ * read as a PART OF THE WHOLE: one Bklit ring per share, each against the same total,
+ * with the total in the centre (the hovered share replaces it) and a legend beside it.
+ * Ranked ink fills, like the sunburst — a part-of-whole is ranked, never categorical.
+ */
+function RingKind({ data, names, label }: { data: ChartData; names: string[]; label: string }) {
+  const ring = data.ring
+  if (!ring || ring.slices.length === 0 || ring.total <= 0) {
+    return <ViewNotice>Nothing to share out yet — a ring needs positive values in “{names[0]}”.</ViewNotice>
+  }
+  const rings = ring.slices.map((slice) => ({ ...slice, maxValue: ring.total }))
+  return (
+    <div className="mn-arrive flex items-center gap-[18px]">
+      <div aria-label={label} className="flex-none" role="img" style={{ width: RING_SIZE, height: RING_SIZE }}>
+        <RingChart baseInnerRadius={42} data={rings} ringGap={4} size={RING_SIZE} strokeWidth={9}>
+          {rings.map((slice, i) => (
+            <Ring animate={false} color={rankColor(i)} index={i} key={slice.label} showGlow={false} />
+          ))}
+          <RingCenter defaultLabel="total" />
+        </RingChart>
+      </div>
+      <ul className="m-0 flex flex-1 list-none flex-col gap-[7px] p-0">
+        {rings.map((slice, i) => (
+          <li className="flex items-center gap-2 text-[12.5px] text-mn-text" key={slice.label}>
+            <span aria-hidden className="inline-block h-2 w-2 rounded-[2px]" style={{ background: rankColor(i) }} />
+            <span className="flex-1 text-mn-text-meta">{slice.label}</span>
+            <span className="font-medium tabular-nums">{formatFigure(slice.value)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * Heatmap: the board's "workouts" — `sessions · date, minutes`. One cell a day over
+ * the GitHub-contributions grid, binned from the derived `{ date, value }` cells by
+ * `toHeatmapGrid`. A calendar cannot be read off a category label, so a non-date x
+ * property reads as a notice that names the fix. Animation is off: the grid must be
+ * deterministic in story tests and calm on a dense page.
+ */
+function HeatmapKind({ data, label }: { data: ChartData; label: string }) {
+  const grid = toHeatmapGrid(data.heatmap?.cells ?? [])
+  if (grid === null) {
+    return <ViewNotice>A heatmap reads one cell a day — pick a date field for “By”.</ViewNotice>
+  }
+  return (
+    <div aria-label={label} role="img">
+      <HeatmapChart
+        animate={false}
+        binSize={HEATMAP_CELL}
+        data={grid.columns}
+        gap={HEATMAP_CELL_GAP}
+        margin={{ top: 24, right: 8, bottom: 0, left: 32 }}
+        sizingColumnCount={grid.columns.length}
+        xDomain={grid.xDomain}
+      >
+        <HeatmapCells />
+        <HeatmapXAxis />
+        <HeatmapYAxis labelFormat="initial" />
+      </HeatmapChart>
+    </div>
+  )
+}
+
 /**
  * One renderer per kind. Each PondChart kind reads the same point-major data; the
- * three that need an extra reading (scatter per record, sunburst leaves, gauge
- * figure) get it from `ChartData`, derived in `chart-data.ts`. A kind whose data
- * prerequisite is missing reads as a calm notice that says what to change.
+ * five that need an extra reading (scatter per record, sunburst leaves, gauge figure,
+ * ring shares, heatmap cells) get it from `ChartData`, derived in `chart-data.ts`. A
+ * kind whose data prerequisite is missing reads as a calm notice that says what to
+ * change.
  */
 export function ChartKind({ data, names }: { data: ChartData; names: string[] }) {
   const label = `${data.kind} chart of ${names.join(', ')} by ${data.xLabel}`
@@ -109,6 +198,10 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
       return <ComposedChart points={data.points} series={names} target={data.target} label={label} fallback={empty} />
     case 'net':
       return <NetChart points={data.points} series={names} label={label} fallback={empty} />
+    case 'heatmap':
+      return <HeatmapKind data={data} label={label} />
+    case 'ring':
+      return <RingKind data={data} names={names} label={label} />
     case 'gauge': {
       if (!data.gauge || data.gauge.value === null) {
         return <ViewNotice>Nothing to read for this gauge — plot a number field.</ViewNotice>

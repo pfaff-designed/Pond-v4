@@ -15,35 +15,14 @@
 import { z } from 'zod'
 import { textSchema } from './text/schema'
 import { todoSchema } from './todo/schema'
-import { metricSchema } from './metric/schema'
-import { metricRingSchema } from './metric-ring/schema'
 import { tableSchema } from './table/schema'
-import { kanbanSchema } from './kanban/schema'
-import { chartLineSchema } from './chart-line/schema'
-import { chartBarSchema } from './chart-bar/schema'
-import { chartAreaSchema } from './chart-area/schema'
-import { heatmapSchema } from './heatmap/schema'
-import { statSchema } from './stat/schema'
-import { timelineSchema } from './timeline/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
   todoSchema,
-  metricSchema,
-  metricRingSchema,
   tableSchema,
-  kanbanSchema,
-  // ticket-36: Bklit chart promotion (line / bar / area).
-  chartLineSchema,
-  chartBarSchema,
-  chartAreaSchema,
-  // #12: Bklit promotion, wave 2 (calendar heatmap / headline KPI stat).
-  heatmapSchema,
-  statSchema,
-  // #11: standalone timeline (Gantt) with inline AI-authored items.
-  timelineSchema,
   // #19: the inline collection view block (config only; rows are child pages).
   viewSchema,
   // #61: an uploaded image / file attachment, referenced by storage URL.
