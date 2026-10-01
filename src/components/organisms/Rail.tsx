@@ -719,7 +719,10 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
-        title="Life"
+        // Lowercase, like every other line of the rail's source copy in `Pond 05
+        // Shell` — the capitals in the boards are the eyebrow's own text-transform
+        // (#101 review). The pond NAME above reads `usePondName()`, also lowercase.
+        title="life"
         depth={0}
         isFolder
         isExpanded={lifeExpanded}

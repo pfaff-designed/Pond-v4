@@ -385,14 +385,20 @@ export function ancestorPath(rows: PageRow[], nodeId: string): Crumb[] {
  * `root` is the root AS A CRUMB when it is a real `pages` row (the databases
  * root, which a click can therefore open), and `null` for life, whose root is
  * synthetic — never a row — so the breadcrumb falls back to its `rootLabel` and
- * navigates to the pond's root overview. A node whose ancestry reaches neither
- * root (a top-level page, the databases root itself) keeps that life behaviour:
- * there is no third root to invent.
+ * navigates to the pond's root overview. The databases root PAGE is its own trail
+ * root, so it reads simply "databases" rather than being placed inside life; the
+ * surface then carries no tail, since the root crumb already names where you are.
+ * Any other node whose ancestry reaches neither root (a top-level page) keeps the
+ * life behaviour: there is no third root to invent.
  */
-export function crumbTrail(
-  rows: PageRow[],
-  nodeId: string
-): { root: Crumb | null; crumbs: Crumb[] } {
+export interface CrumbTrail {
+  /** The root the node descends from, as a crumb — null for life's synthetic root. */
+  root: Crumb | null
+  /** The ancestors BELOW that root, root-ward first. */
+  crumbs: Crumb[]
+}
+
+export function crumbTrail(rows: PageRow[], nodeId: string): CrumbTrail {
   const crumbs = ancestorPath(rows, nodeId)
   const top = crumbs[0]
   // `crumbs[0]` is the chain's own end, which is top-level unless the data is
@@ -400,6 +406,10 @@ export function crumbTrail(
   const topRow = top ? rows.find((r) => r.id === top.id) : undefined
   if (topRow && isDatabasesRoot({ parentId: topRow.parent_id, title: topRow.title })) {
     return { root: top, crumbs: crumbs.slice(1) }
+  }
+  const own = rows.find((r) => r.id === nodeId)
+  if (own && isDatabasesRoot({ parentId: own.parent_id, title: own.title })) {
+    return { root: { id: own.id, type: own.type, title: own.title || 'Untitled' }, crumbs: [] }
   }
   return { root: null, crumbs }
 }

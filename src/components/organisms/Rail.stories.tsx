@@ -58,7 +58,7 @@ const meta = {
   ],
   args: {
     tree: TREE,
-    pondName: 'Life',
+    pondName: 'life',
     selectedId: null,
     expanded: new Set<string>(),
     lifeExpanded: true,
@@ -84,12 +84,14 @@ type Story = StoryObj<typeof meta>
 export const Resting: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Life is the root treeitem, and the whole thing is one tree. (#96: the
-    // pond's NAME also reads "Life" in the head, so scope the row query to the tree.)
+    // life is the root treeitem, and the whole thing is one tree. (#96: the pond's
+    // NAME also reads "life" in the head, so scope the row query to the tree. #101:
+    // both are lowercase — the rail's source copy is, and the head's capitals are
+    // its own text-transform.)
     const tree = canvas.getByRole('tree', { name: 'Workspace' })
     await expect(tree).toBeInTheDocument()
-    await expect(within(tree).getByText('Life')).toBeInTheDocument()
-    await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('Life')
+    await expect(within(tree).getByText('life')).toBeInTheDocument()
+    await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
     await expect(canvas.getByText('Health')).toBeInTheDocument()
     await expect(canvas.getByText('Scratchpad')).toBeInTheDocument()
     // collapsed folder — children not rendered
@@ -102,7 +104,7 @@ export const LifeCollapsed: Story = {
   args: { lifeExpanded: false },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(within(canvas.getByRole('tree')).getByText('Life')).toBeInTheDocument()
+    await expect(within(canvas.getByRole('tree')).getByText('life')).toBeInTheDocument()
     // everything under Life is hidden
     await expect(canvas.queryByText('Health')).not.toBeInTheDocument()
     await expect(canvas.queryByText('Scratchpad')).not.toBeInTheDocument()
@@ -126,7 +128,7 @@ export const AriaCoordinates: Story = {
   args: { expanded: new Set(['health']) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const life = canvas.getByRole('treeitem', { name: /Life/ })
+    const life = canvas.getByRole('treeitem', { name: /life/ })
     await expect(life).toHaveAttribute('aria-level', '1')
     await expect(life).toHaveAttribute('aria-setsize', '1')
     const health = canvas.getByRole('treeitem', { name: /Health/ })
@@ -180,7 +182,7 @@ export const Interactions: Story = {
     await expect(args.onSelect).toHaveBeenCalledWith('health')
 
     // Life label (the tree ROW, not the pond-name head) opens the root overview
-    await userEvent.click(within(canvas.getByRole('tree')).getByText('Life'))
+    await userEvent.click(within(canvas.getByRole('tree')).getByText('life'))
     await expect(args.onLife).toHaveBeenCalled()
   },
 }
@@ -188,7 +190,7 @@ export const Interactions: Story = {
 /** The Life root's caret is a collapse-all for the whole tree. */
 export const LifeCaretCollapsesAll: Story = {
   play: async ({ canvas, args }) => {
-    const life = canvas.getByRole('treeitem', { name: /Life/ })
+    const life = canvas.getByRole('treeitem', { name: /life/ })
     const caret = life.querySelector('svg')?.closest('button') as HTMLButtonElement
     await userEvent.click(caret)
     await expect(args.onToggleLife).toHaveBeenCalled()
@@ -224,7 +226,7 @@ export const HoverCrud: Story = {
 export const KeyboardNav: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    const life = canvas.getByRole('treeitem', { name: /Life/ })
+    const life = canvas.getByRole('treeitem', { name: /life/ })
     const health = canvas.getByRole('treeitem', { name: /Health/ })
 
     // exactly one tab stop at rest: the Life root
@@ -291,9 +293,9 @@ export const Loading: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('status')).toHaveTextContent(/loading/i)
-    await expect(
-      canvasElement.querySelectorAll('[data-part="rail-skeleton"] > span')
-    ).toHaveLength(8)
+    await expect(canvasElement.querySelectorAll('[data-part="rail-skeleton"] > span')).toHaveLength(
+      8
+    )
   },
 }
 

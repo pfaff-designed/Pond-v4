@@ -440,9 +440,15 @@ describe('crumbTrail', () => {
     expect(trail.crumbs.map((c) => c.title)).toEqual(['Health', 'Marathon Training'])
   })
 
+  it('makes the databases root page its OWN trail root, so it reads just "databases"', () => {
+    expect(crumbTrail(DB_ROWS, 'root-db')).toEqual({
+      root: { id: 'root-db', type: 'page', title: 'databases' },
+      crumbs: [],
+    })
+  })
+
   it('invents no third root when the ancestry reaches neither (a top-level page)', () => {
     expect(crumbTrail(DB_ROWS, 'health')).toEqual({ root: null, crumbs: [] })
-    expect(crumbTrail(DB_ROWS, 'root-db')).toEqual({ root: null, crumbs: [] })
     expect(crumbTrail(DB_ROWS, 'nope')).toEqual({ root: null, crumbs: [] })
   })
 

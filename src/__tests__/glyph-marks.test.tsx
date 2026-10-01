@@ -221,7 +221,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
 describe('Rail — area marks ride the glyph system', () => {
   it('the Life root leads with the ring glyph in the area colour (LifeMark retired)', () => {
     const { getByRole } = renderRail()
-    const life = getByRole('treeitem', { name: /Life/ })
+    const life = getByRole('treeitem', { name: /life/ })
     const glyph = life.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
     expect(glyph).toBeInTheDocument()
     // No hand-drawn half-disc left.

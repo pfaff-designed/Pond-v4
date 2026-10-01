@@ -395,7 +395,7 @@ export function AITerminal() {
   const nodeName = searchParams.get('nodeName')
   const nodeId = searchParams.get('nodeId')
   const nodeType = searchParams.get('nodeType')
-  const contextLabel = nodeName ?? 'Life'
+  const contextLabel = nodeName ?? 'life'
 
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()

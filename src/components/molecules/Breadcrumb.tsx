@@ -21,10 +21,11 @@
  * page title verbatim — nothing here title-cases anything.
  *
  * #101 review / ADR 0003: WHICH root the pill starts at is the page's own
- * business, not this molecule's. `rootCrumb` carries it when that root is a real
- * page — the `databases` root, 3c's second root, which a click can then open —
- * and otherwise the root is life's synthetic workspace root: `rootLabel`, and a
- * `null` navigate. `lib/pages/overview`'s `crumbTrail` resolves it.
+ * business, not this molecule's. `root` carries it when that root is a real page
+ * — the `databases` root, 3c's second root, which a click can then open — and
+ * otherwise the root is life's synthetic workspace root: `rootLabel`, and a
+ * `null` navigate. `lib/pages/overview`'s `crumbTrail` resolves it, and its
+ * `CrumbTrail` is exactly `{ root, crumbs }` so a caller can spread one trail.
  *
  * The top-level crumb — the area the trail starts in — leads with that area's
  * mark; deeper crumbs carry none. (#108: there is no `type = 'area'` to test;
@@ -58,10 +59,10 @@ export interface BreadcrumbProps {
   /** Label for the root crumb when it is life's synthetic root. Lowercase, as drawn. */
   rootLabel?: string
   /**
-   * The root crumb as a real page — the `databases` root (3c). Given, the root
+   * The trail's root as a real page — the `databases` root (3c). Given, the root
    * reads its title and a click OPENS it; omitted (or null), the root is life's.
    */
-  rootCrumb?: Crumb | null
+  root?: Crumb | null
   /** The top-level crumb's mark (#134). Omit and the trail carries none. */
   leadMark?: ReactNode
   /** Opens the command palette. When given, the pill ends in the ⌘K chip (2t). */
@@ -80,7 +81,7 @@ export function Breadcrumb({
   current,
   tail,
   rootLabel = 'life',
-  rootCrumb,
+  root,
   leadMark,
   onCommandK,
 }: BreadcrumbProps) {
@@ -95,11 +96,11 @@ export function Breadcrumb({
           lead mark stays the only one. */}
       <PondMark size={12} />
       <button
-        onClick={() => onNavigate(rootCrumb ?? null)}
+        onClick={() => onNavigate(root ?? null)}
         className="text-mn-text-secondary hover:text-foreground transition-colors whitespace-nowrap"
-        title={rootCrumb?.title}
+        title={root?.title}
       >
-        {rootCrumb ? rootCrumb.title : rootLabel}
+        {root ? root.title : rootLabel}
       </button>
       {crumbs.map((c, i) => {
         return (

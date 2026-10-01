@@ -89,7 +89,7 @@ export const RootOnly: Story = {
  */
 export const DatabasesRoot: Story = {
   args: {
-    rootCrumb: { id: 'root-db', type: 'page', title: 'databases' },
+    root: { id: 'root-db', type: 'page', title: 'databases' },
     crumbs: [],
     current: 'ingredients',
   },

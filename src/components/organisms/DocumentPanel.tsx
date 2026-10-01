@@ -111,7 +111,7 @@ export function DocumentPanel() {
   // pill shows only the path down to (not including) this node, starting at the ROOT it
   // descends from (#101 review: `databases` is 3c's second root, not one of life's).
   // No node (or an unknown one) resolves to the empty life-rooted trail.
-  const { root: crumbRoot, crumbs } = useMemo(() => crumbTrail(rows, nodeId ?? ''), [rows, nodeId])
+  const trail = useMemo(() => crumbTrail(rows, nodeId ?? ''), [rows, nodeId])
 
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -309,10 +309,9 @@ export function DocumentPanel() {
             in it (ADR 0002). Rendered alone, it sits here in the flow. */}
         <ShellBreadcrumb>
           <Breadcrumb
-            crumbs={crumbs}
-            rootCrumb={crumbRoot}
+            {...trail}
             onNavigate={navigateCrumb}
-            leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
+            leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
             onCommandK={requestCommandPalette}
           />
         </ShellBreadcrumb>

@@ -398,9 +398,7 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
   it('starts at the databases root when given one, with no life ahead of it', () => {
     const onNavigate = jest.fn()
     const root = { id: 'root-db', type: 'page', title: 'databases' }
-    render(
-      <Breadcrumb crumbs={[]} rootCrumb={root} onNavigate={onNavigate} current="ingredients" />
-    )
+    render(<Breadcrumb crumbs={[]} root={root} onNavigate={onNavigate} current="ingredients" />)
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
     expect(within(nav).queryByText('life')).toBeNull()
     fireEvent.click(within(nav).getByText('databases'))
@@ -552,9 +550,13 @@ describe('composer clearance — the drawer publishes its real height, the surfa
 // ── The pond's name ─────────────────────────────────────────────────────────
 
 describe('defaultPondName — the M1 seam for the pond name', () => {
-  it('names the main pond and the sandbox', () => {
-    expect(defaultPondName('main')).toBe('Life')
-    expect(defaultPondName('sandbox')).toBe('Sandbox')
+  // #101 review: lowercase. The rail's source copy in `Pond 05 Shell` is lowercase
+  // throughout (life, personal, journal, notes); the capitals in the boards are the
+  // eyebrow's own `text-transform: uppercase`, which the head class already carries
+  // (asserted above). The data is lowercase; the transform is presentational.
+  it('names the main pond and the sandbox, both lowercase', () => {
+    expect(defaultPondName('main')).toBe('life')
+    expect(defaultPondName('sandbox')).toBe('sandbox')
   })
 })
 
@@ -575,7 +577,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
     expect(aside.className).not.toMatch(/\bmn-glass\b/)
-    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('Life')
+    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
 
     // One ⌘K affordance, inside the breadcrumb pill — the top-right cluster is gone.
     const kButtons = await screen.findAllByRole('button', { name: 'Command palette (⌘K)' })

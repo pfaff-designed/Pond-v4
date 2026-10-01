@@ -186,8 +186,8 @@ export interface OverviewSurfaceProps {
    * "life"). Omit `onNavigateCrumb` to keep the plain kicker (Storybook).
    */
   crumbs?: Crumb[]
-  /** The trail's root when it is a real page — see Breadcrumb's `rootCrumb` (#101). */
-  rootCrumb?: Crumb | null
+  /** The trail's root when it is a real page — see Breadcrumb's `root` (#101). */
+  root?: Crumb | null
   onNavigateCrumb?: (crumb: Crumb | null) => void
   /** The current node's title in the trail; when omitted, `kicker` is used. */
   current?: string
@@ -219,7 +219,7 @@ export function OverviewSurface({
   markSlot,
   leadMark,
   crumbs,
-  rootCrumb,
+  root,
   onNavigateCrumb,
   current,
   model,
@@ -253,7 +253,7 @@ export function OverviewSurface({
         onRenameKicker ? (
           <Breadcrumb
             crumbs={crumbs ?? []}
-            rootCrumb={rootCrumb}
+            root={root}
             onNavigate={onNavigateCrumb}
             leadMark={leadMark}
             tail={<EditableKicker key={kicker} value={kicker} onRename={onRenameKicker} />}
@@ -262,7 +262,7 @@ export function OverviewSurface({
         ) : (
           <Breadcrumb
             crumbs={crumbs ?? []}
-            rootCrumb={rootCrumb}
+            root={root}
             onNavigate={onNavigateCrumb}
             current={current}
             leadMark={leadMark}
@@ -395,7 +395,12 @@ export function AreaOverviewPanel({
   const accent = areaRoleColor(mark.role)
   // #101 review: the trail starts at the root this area descends from — a database
   // under `databases` reads "databases › …", never "life › databases › …" (3c).
-  const { root: crumbRoot, crumbs } = useMemo(() => crumbTrail(rows, areaId), [rows, areaId])
+  const trail = useMemo(() => crumbTrail(rows, areaId), [rows, areaId])
+  // When this page IS the root its own trail names — the reserved `databases` root
+  // (3c) — the root crumb already says where you are, so the pill carries NO tail
+  // (it would read "databases › databases") and offers no rename: that title is
+  // what `isDatabasesRoot` reads, and renaming it would orphan the root.
+  const isTrailRoot = trail.root?.id === areaId
 
   // Rename from the overview surface (ticket-26): same updateTitle path the
   // editor uses, then invalidate ['pages'] so the rail label updates and
@@ -411,14 +416,13 @@ export function AreaOverviewPanel({
   return (
     <OverviewSurface
       kicker={name}
-      onRenameKicker={handleRename}
+      onRenameKicker={isTrailRoot ? undefined : handleRename}
       accent={accent}
       markSlot={<PageMarkButton pageId={areaId} pageTitle={name} mark={mark} size={12} />}
-      leadMark={<CrumbMark rows={rows} crumbs={crumbs} />}
-      crumbs={crumbs}
-      rootCrumb={crumbRoot}
+      leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
+      {...trail}
       onNavigateCrumb={navigateCrumb}
-      current={name}
+      current={isTrailRoot ? undefined : name}
       model={model}
       closing={`That’s ${name} at a glance. Open any of it, or ask.`}
       onOpenCard={openCard}
