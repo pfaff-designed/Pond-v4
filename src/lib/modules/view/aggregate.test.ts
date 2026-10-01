@@ -9,12 +9,9 @@
 import {
   aggregateRows,
   bigNumberFromRows,
-  chartDataFromRows,
   formatFigure,
-  isDrawnChartKind,
   numericValue,
   resolveBigNumberConfig,
-  resolveChartConfig,
   signedDelta,
   CHART_KINDS,
 } from './aggregate'
@@ -100,76 +97,11 @@ describe('formatFigure', () => {
 })
 
 describe('chart KINDS are config values, not block types', () => {
-  it('accepts all 11 kinds and marks the eight #94 ones as not yet drawn', () => {
+  it('names all 11 kinds — the eight #94 kinds are values of the chart mode, never block types', () => {
     expect(CHART_KINDS).toHaveLength(11)
-    expect(CHART_KINDS.filter(isDrawnChartKind)).toEqual(['line', 'area', 'bar'])
-  })
-})
-
-describe('chartDataFromRows', () => {
-  const config = {
-    kind: 'bar' as const,
-    xProperty: 'p-month',
-    series: [{ property: 'p-hours', agg: 'sum' as const }],
-  }
-
-  it('buckets records by the x property and aggregates each bucket', () => {
-    const data = chartDataFromRows(rows, schema, config)
-    expect(data.xLabel).toBe('Month')
-    expect(data.series.map((s) => s.name)).toEqual(['Hours'])
-    expect(data.points).toEqual([
-      { x: 'Jan', values: { Hours: 8 } },
-      { x: 'Feb', values: { Hours: 2 } },
-    ])
-  })
-
-  it('MOVES when a record changes — nothing holds a copy (#111)', () => {
-    const before = chartDataFromRows(rows, schema, config)
-    // The same edit a table cell makes: one row's number changes.
-    const edited = rows.map((r) => (r.id === 'r1' ? row(r.id, r.title, { ...r.values, 'p-hours': 30 }) : r))
-    const after = chartDataFromRows(edited, schema, config)
-    expect(before.points[0].values.Hours).toBe(8)
-    expect(after.points[0].values.Hours).toBe(35)
-  })
-
-  it('labels choice buckets by option LABEL, not the stored option id', () => {
-    const data = chartDataFromRows(rows, schema, {
-      kind: 'bar',
-      xProperty: 'p-status',
-      series: [{ property: 'p-hours', agg: 'sum' }],
-    })
-    expect(data.points.map((p) => p.x)).toEqual(['Done', 'Open'])
-  })
-
-  it('buckets by record title when no x property is named', () => {
-    const data = chartDataFromRows(rows, schema, {
-      kind: 'line',
-      series: [{ property: 'p-hours', agg: 'latest' }],
-    })
-    expect(data.points.map((p) => p.x)).toEqual(['Mill the stock', 'Glue up', 'Finish'])
-    expect(data.series[0].name).toBe('Hours (latest)')
-  })
-
-  it('leaves a bucket with no participating value as a GAP, not a zero', () => {
-    const data = chartDataFromRows([...rows, row('r4', 'Unplanned', { 'p-month': 'Mar' })], schema, config)
-    expect(data.points[2]).toEqual({ x: 'Mar', values: {} })
-  })
-
-  it('infers a drawable config from the schema when the mode arrives unconfigured', () => {
-    const resolved = resolveChartConfig(schema, undefined)
-    expect(resolved.series[0].def?.id).toBe('p-hours')
-    const data = chartDataFromRows(rows, schema, undefined)
-    expect(data.points.length).toBeGreaterThan(0)
-  })
-
-  it('degrades a series whose property is gone into a record count', () => {
-    const data = chartDataFromRows(rows, schema, {
-      kind: 'bar',
-      xProperty: 'p-month',
-      series: [{ property: 'p-deleted', agg: 'sum' }],
-    })
-    expect(data.series[0].name).toBe('Hours')
-    expect(data.points[0].values).toEqual({ Hours: 8 })
+    expect(CHART_KINDS).toEqual(
+      expect.arrayContaining(['composed', 'net', 'gauge', 'radar', 'scatter', 'sankey', 'sunburst', 'funnel'])
+    )
   })
 })
 

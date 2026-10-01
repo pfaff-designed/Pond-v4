@@ -11,8 +11,7 @@ import { seriesNames } from './data'
  * this only supplies the surrounding chrome so `chart-line` / `chart-bar` /
  * `chart-area` read as one family: a kicker title, a muted caption, axis + legend
  * labels in the small mono-kicker voice, and a calm empty state that never crashes on
- * degenerate data. Colours are the Bklit palette (via the child chart) plus zinc for
- * chrome text; brand-token reconciliation is a later ticket, mirroring metric-ring.
+ * degenerate data. Colours are the Make Noise chart tokens only (#94 retint).
  */
 
 /** The module-card kicker voice — exported (#12) so the promoted heatmap/stat
@@ -128,14 +127,8 @@ export function ChartCard({
 }
 
 /**
- * The Press/Bklit series palette, in order. Kept small and derived from the chart
- * CSS vars the Bklit components already default to, so a single-series chart matches
- * the line/bar/area primary and multi-series charts stay within the palette.
+ * The chart series ramp, re-exported from the chart layer's single definition
+ * (`components/charts/chart-ramp.ts` ↔ `--chart-1…5` in globals.css) so the
+ * module cards and the kind renderers can never disagree on a colour.
  */
-export const CHART_SERIES_COLORS = [
-  'var(--chart-line-primary)',
-  'var(--chart-line-secondary)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-] as const
+export { CHART_SERIES_COLORS } from '@/components/charts/chart-ramp'

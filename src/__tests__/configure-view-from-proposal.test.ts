@@ -148,6 +148,17 @@ describe('resolveViewConfig', () => {
     })
   })
 
+  it('carries a gauge / composed target through as a plain number (#94)', () => {
+    const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
+    expect(
+      resolveViewConfig(withHours, {
+        pageId: 'c',
+        mode: 'chart',
+        chart: { kind: 'gauge', series: [{ property: 'Hours', agg: 'sum' }], target: 40 },
+      })
+    ).toEqual({ mode: 'chart', chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 40 } })
+  })
+
   it('drops an unresolved chart x property (one point per record) but keeps the series', () => {
     const withHours: PropertySchema = [...schema, { id: 'p-hours', name: 'Hours', type: 'number' }]
     expect(

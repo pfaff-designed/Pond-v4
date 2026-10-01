@@ -251,6 +251,7 @@ interface ConfigureViewPart {
       xProperty?: string
       series: Array<{ property: string; agg: ViewAggValue }>
       stacked?: boolean
+      target?: number
     }
     /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
     bigNumber?: {

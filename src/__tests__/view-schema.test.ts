@@ -126,6 +126,17 @@ describe('viewSchema — chart + big-number config (#111)', () => {
     expect(parsed.success && parsed.data).toEqual(block)
   })
 
+  it('accepts an optional numeric target (#94 gauge goal / composed budget) and rejects a non-number', () => {
+    const withTarget = { ...base, mode: 'chart', chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 30 } }
+    expect(viewSchema.safeParse(withTarget).success).toBe(true)
+    expect(
+      viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: '30' } }).success
+    ).toBe(false)
+    expect(
+      viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: Infinity } }).success
+    ).toBe(false)
+  })
+
   it('accepts every #94 chart KIND as a config value (no new block types)', () => {
     for (const kind of CHART_KINDS) {
       expect(

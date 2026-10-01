@@ -26,7 +26,7 @@ const config = {
     // jsdom (real render covered by the chart Storybook story tests). Matched on the
     // resolved path tail (not the `@/` alias, which next resolves before this map
     // sees it) and placed FIRST so it wins over the `^@/` catch-all below.
-    'components/charts/(line-chart|bar-chart|area-chart|line|bar|area|grid)$':
+    'components/charts/(line-chart|bar-chart|area-chart|line|bar|area|grid|x-axis|bar-x-axis)$':
       '<rootDir>/src/__mocks__/charts.tsx',
     // #12: same remedy for the heatmap entry barrel (index → HeatmapChart → @visx +
     // motion). Anchored on the barrel only — deep imports like `heatmap/heatmap-utils`

@@ -1,18 +1,14 @@
 'use client'
 
 /**
- * The two AGGREGATE view modes (#111) — `chart` and `big-number`, plus the controls
- * that configure them.
+ * The AGGREGATE view modes' controls and the big-number renderer (#111).
  *
  * They live beside `view.tsx` rather than inside it because they answer a different
  * question from the other modes: table / board / calendar / gallery / gantt all PLACE
- * records, while these two READ them — every number here is computed by `aggregate.ts`
- * from the collection's rows at render time. The design law is the reason there is
- * nothing else to keep: "the record is the source of truth… nothing holds a copy."
- *
- * Only line / area / bar have renderers today; the other eight #94 kinds are valid
- * config that reads as a calm notice, so #94 lands renderers without touching the
- * persisted contract.
+ * records, while chart and big-number READ them — every number is computed by
+ * `aggregate.ts` / `chart-data.ts` from the collection's rows at render time. The
+ * design law is the reason there is nothing else to keep: "the record is the source
+ * of truth… nothing holds a copy." The chart renderer itself is `collection-chart.tsx`.
  */
 
 import { useMemo } from 'react'
@@ -23,25 +19,18 @@ import {
   CHART_KINDS,
   VIEW_AGGS,
   bigNumberFromRows,
-  chartDataFromRows,
   figureFormatOptions,
-  isDrawnChartKind,
-  resolveChartConfig,
   signedDelta,
   type ChartKind,
   type ViewAgg,
 } from './aggregate'
-import { ViewNotice } from './notice'
-import { toChartRows } from '../chart/data'
-import { ChartCard, CHART_SERIES_COLORS, KICKER } from '../chart/card'
+import { resolveChartConfig } from './chart-data'
+import { KICKER } from '../chart/card'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { ChartStatFlow } from '@/components/charts/chart-stat-flow'
-import { LineChart, Line } from '@/components/charts/line-chart'
-import { AreaChart } from '@/components/charts/area-chart'
-import { Area } from '@/components/charts/area'
-import { BarChart } from '@/components/charts/bar-chart'
-import { Bar } from '@/components/charts/bar'
-import { Grid } from '@/components/charts/grid'
+
+const CONTROL_INPUT =
+  'rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none'
 
 /** The shared terse `<select>` shell every view control uses. */
 export function ControlSelect({
@@ -62,12 +51,7 @@ export function ControlSelect({
   return (
     <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
       {label}
-      <select
-        aria-label={aria ?? label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
-      >
+      <select aria-label={aria ?? label} value={value} onChange={(e) => onChange(e.target.value)} className={CONTROL_INPUT}>
         {children}
       </select>
     </label>
@@ -83,11 +67,14 @@ function aggOptions() {
   ))
 }
 
+/** The kinds that read a reference figure: a gauge's goal, a composed chart's target line. */
+const TARGET_KINDS: readonly ChartKind[] = ['gauge', 'composed']
+
 /**
  * Chart-mode config (#111): which KIND, which property buckets the x axis, and which
  * property is plotted with which verb. Single-series on purpose — the same restraint
  * as the single-clause filter (decision 15); a second series is a real multi-series
- * gesture, not a checkbox, and lands with the #94 renderers.
+ * gesture, not a checkbox. Gauge and composed add one number: the target (#94).
  *
  * Every change rewrites the whole `chart` config, so a half-configured chart can't
  * exist: the picker always emits a complete `{ kind, xProperty, series }`.
@@ -103,36 +90,29 @@ export function ChartControls({
 }) {
   const inferred = resolveChartConfig(schema, config.chart)
   const seriesProp = config.chart?.series[0]
+  const kind = config.chart?.kind ?? inferred.kind
   const write = (patch: Partial<NonNullable<ViewBlock['chart']>>) =>
     onConfigChange({
       chart: {
-        kind: config.chart?.kind ?? inferred.kind,
+        kind,
         xProperty: config.chart?.xProperty,
         series: config.chart?.series ?? [{ property: '', agg: 'count' }],
+        target: config.chart?.target,
         ...patch,
       },
     })
 
   return (
     <>
-      <ControlSelect
-        label="Chart"
-        value={config.chart?.kind ?? inferred.kind}
-        onChange={(v) => write({ kind: v as ChartKind })}
-      >
+      <ControlSelect label="Chart" value={kind} onChange={(v) => write({ kind: v as ChartKind })}>
         {CHART_KINDS.map((k) => (
           <option key={k} value={k}>
             {k.charAt(0).toUpperCase() + k.slice(1)}
-            {isDrawnChartKind(k) ? '' : ' (soon)'}
           </option>
         ))}
       </ControlSelect>
 
-      <ControlSelect
-        label="By"
-        value={config.chart?.xProperty ?? ''}
-        onChange={(v) => write({ xProperty: v || undefined })}
-      >
+      <ControlSelect label="By" value={config.chart?.xProperty ?? ''} onChange={(v) => write({ xProperty: v || undefined })}>
         <option value="">Each record</option>
         {schema.map((d) => (
           <option key={d.id} value={d.id}>
@@ -157,12 +137,27 @@ export function ChartControls({
       <ControlSelect
         label="as"
         value={seriesProp?.agg ?? 'sum'}
-        onChange={(v) =>
-          write({ series: [{ property: seriesProp?.property ?? '', agg: v as ViewAgg }] })
-        }
+        onChange={(v) => write({ series: [{ property: seriesProp?.property ?? '', agg: v as ViewAgg }] })}
       >
         {aggOptions()}
       </ControlSelect>
+
+      {TARGET_KINDS.includes(kind) && (
+        <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
+          Target
+          <input
+            type="number"
+            aria-label="Target"
+            placeholder={kind === 'gauge' ? 'records' : '—'}
+            value={config.chart?.target ?? ''}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              write({ target: e.target.value === '' || !Number.isFinite(n) ? undefined : n })
+            }}
+            className={`${CONTROL_INPUT} w-20 tabular-nums`}
+          />
+        </label>
+      )}
     </>
   )
 }
@@ -208,11 +203,7 @@ export function BigNumberControls({
         ))}
       </ControlSelect>
 
-      <ControlSelect
-        label="as"
-        value={current?.agg ?? 'sum'}
-        onChange={(v) => write({ agg: v as ViewAgg })}
-      >
+      <ControlSelect label="as" value={current?.agg ?? 'sum'} onChange={(v) => write({ agg: v as ViewAgg })}>
         {aggOptions()}
       </ControlSelect>
 
@@ -226,98 +217,6 @@ export function BigNumberControls({
         <option value="percent">Percent</option>
       </ControlSelect>
     </>
-  )
-}
-
-// ── Chart + big-number modes (#111) ───────────────────────────────────────────
-
-/**
- * Chart mode — the collection's rows AGGREGATED into a chart at read time.
- *
- * Nothing is stored: `chartDataFromRows` buckets the (already filtered + sorted) rows
- * by the x property and aggregates each series within a bucket, so editing a record in
- * the table view moves this chart on the next read. That is the #111 law — "the record
- * is the source of truth… nothing holds a copy".
- *
- * Only line / area / bar have renderers today; the other eight #94 kinds are valid
- * config that reads as a calm "not drawn yet" rather than a crash or a silent fallback
- * to the wrong shape — so #94 adds renderers without touching this contract.
- */
-export function CollectionChart({
-  schema,
-  rows,
-  chart,
-}: {
-  schema: PropertySchema
-  rows: CollectionRow[]
-  chart?: ViewBlock['chart']
-}) {
-  const data = useMemo(() => chartDataFromRows(rows, schema, chart), [rows, schema, chart])
-  const names = data.series.map((s) => s.name)
-  const chartRows = toChartRows(data.points)
-
-  if (!isDrawnChartKind(data.kind)) {
-    return <ViewNotice>A {data.kind} chart isn’t drawn yet.</ViewNotice>
-  }
-
-  const common = {
-    data: chartRows,
-    xDataKey: 'x',
-    aspectRatio: '5 / 2',
-    margin: { top: 12, right: 12, bottom: 12, left: 12 },
-  } as const
-
-  return (
-    <ChartCard
-      xLabel={data.xLabel}
-      yLabel={names.join(' · ')}
-      points={data.points}
-      seriesColors={CHART_SERIES_COLORS}
-    >
-      {data.kind === 'line' ? (
-        <LineChart {...common}>
-          <Grid />
-          {names.map((name, i) => (
-            <Line
-              key={name}
-              dataKey={name}
-              stroke={CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]}
-              animate={false}
-              loading={false}
-            />
-          ))}
-        </LineChart>
-      ) : data.kind === 'area' ? (
-        <AreaChart {...common}>
-          <Grid />
-          {names.map((name, i) => (
-            <Area
-              key={name}
-              dataKey={name}
-              fill={CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]}
-              stroke={CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]}
-              animate={false}
-              loading={false}
-            />
-          ))}
-        </AreaChart>
-      ) : (
-        // `stacked` only reaches the bar renderer: it is the one visual that supports
-        // stacking today. Line/area stacking arrives with #94's multi-series kinds, so
-        // the flag stays persisted config there rather than being silently honoured.
-        <BarChart {...common} stacked={data.stacked}>
-          <Grid />
-          {names.map((name, i) => (
-            <Bar
-              key={name}
-              dataKey={name}
-              fill={CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]}
-              animate={false}
-            />
-          ))}
-        </BarChart>
-      )}
-    </ChartCard>
   )
 }
 
@@ -365,9 +264,7 @@ export function CollectionBigNumber({
         )}
       </span>
       {figure.delta !== undefined && (
-        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">
-          {signedDelta(figure.delta)}
-        </span>
+        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">{signedDelta(figure.delta)}</span>
       )}
       <span className="mt-0.5 text-xs text-mn-text-faint">{records}</span>
     </div>

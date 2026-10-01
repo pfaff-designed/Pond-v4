@@ -36,13 +36,8 @@ import {
   type BarDates,
   type CollectionRow,
 } from './apply'
-import {
-  CollectionBigNumber,
-  CollectionChart,
-  ChartControls,
-  BigNumberControls,
-  ControlSelect,
-} from './figures'
+import { CollectionBigNumber, ChartControls, BigNumberControls, ControlSelect } from './figures'
+import { CollectionChart } from './collection-chart'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'

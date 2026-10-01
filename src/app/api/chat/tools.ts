@@ -302,7 +302,7 @@ const configureViewInput = z
     chart: z
       .object({
         kind: chartKindSchema.describe(
-          'Which chart shape. "line" / "area" / "bar" draw today; the others (composed, net, gauge, radar, scatter, sankey, sunburst, funnel) are accepted but not drawn yet, so prefer line/area/bar unless the user names another.'
+          'Which chart shape — all eleven draw. "line" (a value over time), "area" (a filled line), "bar" (categories compared), "composed" (bars + a running-total line, optional `target` budget line), "net" (a signed in-minus-out line against zero; give TWO series for in and out), "gauge" (ONE figure against a `target` goal — e.g. books read of a goal; omit target to read against the record count), "radar" (3+ categories as spokes), "scatter" (one dot per record; bucket by a NUMBER property for a true two-variable scatter), "sankey" (a total flowing into categories), "sunburst" (categories, then their records in an outer ring), "funnel" (ordered steps narrowing). Prefer the simplest shape the question needs; a single figure is the big-number MODE, not a gauge.'
         ),
         xProperty: z
           .string()
@@ -327,6 +327,13 @@ const configureViewInput = z
           .boolean()
           .optional()
           .describe('Stack multiple series instead of grouping them. Omit for one series.'),
+        target: z
+          .number()
+          .finite()
+          .optional()
+          .describe(
+            'For a GAUGE: the goal the figure fills toward (omit to read against the record count). For a COMPOSED chart: the dashed reference line (a budget). A number the user stated — never invent one.'
+          ),
       })
       .optional()
       .describe(

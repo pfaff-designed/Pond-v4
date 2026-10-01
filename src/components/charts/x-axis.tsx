@@ -4,7 +4,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useChart, useChartStable } from "./chart-context";
-import { shortDateFmt } from "./chart-formatters";
+import { safeShortDate } from "./chart-formatters";
 import { DEFAULT_Y_DOMAIN_TWEEN_MS } from "./chart-phase";
 import { LINE_LOADING_PULSE_EASE } from "./line-loading-timing";
 
@@ -181,7 +181,7 @@ function dedupeIndicesByLabel(
     if (!point) {
       continue;
     }
-    const label = dateLabels[index] ?? shortDateFmt.format(xAccessor(point));
+    const label = dateLabels[index] ?? safeShortDate(xAccessor(point));
     if (seenLabels.has(label)) {
       continue;
     }
@@ -415,7 +415,7 @@ function buildDataAlignedTicks({
       continue;
     }
     const date = xAccessor(point);
-    const label = dateLabels[index] ?? shortDateFmt.format(date);
+    const label = dateLabels[index] ?? safeShortDate(date);
     if (seenLabels.has(label)) {
       continue;
     }
@@ -460,7 +460,7 @@ function buildDomainTicks({
   for (let i = 0; i < tickCount; i++) {
     const t = i / (tickCount - 1);
     const date = new Date(startTime + t * timeRange);
-    const label = shortDateFmt.format(date);
+    const label = safeShortDate(date);
     if (seenLabels.has(label)) {
       continue;
     }
@@ -528,7 +528,7 @@ function appendProjectionTailTicks(
     const date = new Date(
       startTime + (i / (extraCount + 1)) * (endTime - startTime)
     );
-    const label = shortDateFmt.format(date);
+    const label = safeShortDate(date);
     if (seenLabels.has(label)) {
       continue;
     }
@@ -540,7 +540,7 @@ function appendProjectionTailTicks(
     });
   }
 
-  const endLabel = shortDateFmt.format(domainEnd);
+  const endLabel = safeShortDate(domainEnd);
   if (!seenLabels.has(endLabel)) {
     extras.push({
       date: domainEnd,
@@ -640,7 +640,7 @@ const XAxisInner = memo(function XAxisInner({
   const hoveredLabel =
     isHovering && tooltipData
       ? (dateLabels[tooltipData.index] ??
-        shortDateFmt.format(xAccessor(tooltipData.point)))
+        safeShortDate(xAccessor(tooltipData.point)))
       : null;
 
   return createPortal(

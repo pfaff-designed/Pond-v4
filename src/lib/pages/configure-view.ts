@@ -73,6 +73,8 @@ export interface ConfigureViewProposal {
     xProperty?: string
     series: Array<{ property: string; agg: ViewAggValue }>
     stacked?: boolean
+    /** A gauge goal / composed reference line (#94) — a plain number, nothing to resolve. */
+    target?: number
   }
   /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
   bigNumber?: {
@@ -207,6 +209,7 @@ export function resolveViewConfig(
         ...(xDef ? { xProperty: xDef.id } : {}),
         series,
         ...(proposal.chart.stacked ? { stacked: true } : {}),
+        ...(typeof proposal.chart.target === 'number' ? { target: proposal.chart.target } : {}),
       }
     }
   }
