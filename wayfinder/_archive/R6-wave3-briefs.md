@@ -19,9 +19,11 @@ variant renders full-viewport. Dev server on **:3000** (may bump to **:3002** if
 
 **Variant contract** — create a **folder** `src/app/proto/visual-language/variants/v8N-name/`
 (like `v80-board/`), `'use client'`, exporting from its `index.tsx`:
+
 ```ts
 export const variant: Variant = { id, name, pov, boldness, Component } // Component = full 100vh/100vw view
 ```
+
 - **DO NOT edit `variants/index.tsx`.** Central registration + browser verification happen AFTER,
   to avoid parallel-edit races. Your job: build the folder + make `npx tsc --noEmit` clean.
 - Reuse shared seed from `../../content` (`tree`, `openPage`, `transcript`, `diffCard`, `Block`,
@@ -44,6 +46,7 @@ label like `'W8'` (throws `RangeError: Invalid time value`). `BarChart` (categor
 **keys bars by the `name` value** → names must be **unique** (no duplicate day letters).
 
 **"Fleshed out" bar** — go well beyond wave-1 single-interaction sketches:
+
 - ≥3 genuinely wired interactions, each exercising real state (not a static picture of the idea).
 - Real seeded depth (believable multi-item content), plus **empty / hover / active / open** states.
 - Keyboard affordances where the pattern implies them (Esc to close, arrows, `/`, ⌘K, etc.).
@@ -57,12 +60,14 @@ screenshots after.)
 ---
 
 ## BRIEF v81 · READER — the document end of the spectrum, fully realized
+
 **Board cluster:** "Accessibility Reader / a new reading mode", the multi-column article shots, the
 highlighting pin ("Simply long-press and drag… or Apple Pencil"), the text-editor toolbars, "BOOKS".
 **Concept (Axis A/B):** Folio says a page with no modules is a flat **document**. Flesh that out into
-a first-class **reading & annotation surface** — where Pond reads *with* you.
+a first-class **reading & annotation surface** — where Pond reads _with_ you.
 **Build:** a real long-form page (use `openPage` prose + add ~5 seeded paragraphs) on warm paper,
 serif body, generous measure. Must wire:
+
 1. **Select-to-act** — selecting text (track via `window.getSelection`, or simulate with clickable
    sentence spans if selection is fragile in the harness) raises a floating **glass action bar**:
    Highlight · Annotate · Ask Pond · Copy. Highlight persists a colored mark; Annotate adds a
@@ -72,9 +77,10 @@ serif body, generous measure. Must wire:
 3. **Reading progress** — a slim progress indicator + estimated time; a right-margin outline of the
    article's headings that highlights the current section on scroll.
 4. **Pond ambient notes** — 2–3 pre-placed margin annotations from Pond (glass, dismiss/expand).
-**Feel:** editorial, calm, generous. Oversized display title; mono kicker for section labels.
+   **Feel:** editorial, calm, generous. Oversized display title; mono kicker for section labels.
 
 ## BRIEF v82 · CONSOLE — Pond's dark "operating shell" / power mode
+
 **Board cluster:** the dark terminal screens ("start session / view protocols / check recovery /
 system settings"), dark data readouts, radio dials, Modo/DTS brutalist type, mono everything.
 **Concept (Axis B/D):** a bold **dark inversion** of Press — same locked layout, inverted palette —
@@ -82,6 +88,7 @@ that tests whether Pond has a **command-driven night/power mode**. This is the o
 go dark. Invert: base `#1a1815`-ish ink-paper, `CARD` dark, text warm-white, keep `RUST`/`LIME`/`ACCENT`
 as accents; glass becomes dark frosted.
 **Build:** a monospace-forward console over the same rail/cluster/AI-bar layout. Must wire:
+
 1. **Command console** — a large mono prompt (`>`) that accepts typed commands (`open <page>`,
    `run <action>`, `status`, `focus`, `help`) with a subsequence/prefix filter and a live suggestion
    list; Enter executes and appends to a scrollback log. Full keyboard (↑ history, Esc).
@@ -89,13 +96,15 @@ as accents; glass becomes dark frosted.
    (Bklit line/area with explicit light stroke on dark) or hand-rolled sparkline/dials.
 3. **Protocols list** — a "system"-styled list of Pond routines/actions with status dots
    (active/idle), selectable, each runnable from the console.
-**Feel:** technical, brutalist, confident. Mono display numerals, tight uppercase labels, sparing accent.
+   **Feel:** technical, brutalist, confident. Mono display numerals, tight uppercase labels, sparing accent.
 
 ## BRIEF v83 · AGENDA — the time-based planner
+
 **Board cluster:** "Good morning" digests, "My Everyday" task lists, minimal calendars (March 2026),
 "Timeblok" timeboxing, week/day toggles, "Today".
 **Concept (Axis A/C):** the temporal home that Glance/Board (spatial) don't cover — place Pond's
 pages/tasks **in time**. Must wire:
+
 1. **Week ↔ Day toggle** — a segmented control swapping between a 7-column **week planner** and a
    single-day **timeline** (hour rows), animated.
 2. **Drag-to-schedule** — an "unscheduled" tray of pages/tasks (from `tree`/`openPage`); drag one onto
@@ -104,13 +113,15 @@ pages/tasks **in time**. Must wire:
    streak/receipt stat; "Plan my day" auto-arranges the unscheduled tray into the day (staggered).
 4. **Minimal month calendar** in the rail (or a peek) with the active day marked; clicking a day
    navigates the planner.
-**Feel:** Press paper, oversized date numerals, mono time labels, lime for "now"/primary.
+   **Feel:** Press paper, oversized date numerals, mono time labels, lime for "now"/primary.
 
 ## BRIEF v84 · PLAYER — a Focus-session player from the radio/dial aesthetic
+
 **Board cluster:** radio apps (`094.4`, `103.7`, big dials, play/pause, waveform), PaceBar `28`,
 workout timers (`17:20`), Apple-Watch giant numerals, "ANALYSE SLEEP PATTERN".
 **Concept (Axis A/D):** reframe the now-playing/radio-dial UI as a **Focus session player** — press
 play to run a focus block on a Pond page. Must wire:
+
 1. **Transport** — a big central **play/pause**; on play a session timer counts (use `setInterval`
    via `useEffect`; seed-safe — count up from 00:00, no wall-clock), with a circular progress dial and
    a live waveform/pulse. Pause/resume/stop.
@@ -120,12 +131,13 @@ play to run a focus block on a Pond page. Must wire:
    "protocols" checklist for the session) that visibly change state.
 4. **Post-session summary** — stopping reveals a summary card (time focused, page, a Pond note),
    Press-styled with oversized numerals.
-**Feel:** the boldest numerals in the set (session time at 68–84px), dial/ring motifs, rust progress,
-lime transport. Layout held.
+   **Feel:** the boldest numerals in the set (session time at 68–84px), dial/ring motifs, rust progress,
+   lime transport. Layout held.
 
 ---
 
 ## Registration + verify (central agent, after all four build)
+
 Add imports + array entries for v81–v84 to `variants/index.tsx` in one edit → `variants: […,v81,v82,v83,v84]`.
 Then per variant: `npx tsc --noEmit` clean · load `/proto/visual-language` · pip to it · exercise EACH
 "must wire" interaction live · **0 console errors** · screenshot(s) to `wayfinder/screens/r6-v8N-*.png`.

@@ -23,12 +23,13 @@ feel absent:
 
 `DocumentPanel` renders the handle ONLY on the editor branch. It short-circuits
 earlier for the surfaces the post-reshape shell lands on most:
+
 - `src/components/organisms/DocumentPanel.tsx:236` → `return <LifeOverviewPanel />`
 - `src/components/organisms/DocumentPanel.tsx:256-259` → `return <AreaOverviewPanel …/>`
-Neither renders `ContentWidthHandle`. Those surfaces use a **fixed**
-`max-w-[720px]` (`src/components/organisms/OverviewSurface.tsx:215`), independent
-of the user's `contentWidth`. So on Life home and area pages there is no grip at
-all, and the width the user set on editor pages isn't honored here.
+  Neither renders `ContentWidthHandle`. Those surfaces use a **fixed**
+  `max-w-[720px]` (`src/components/organisms/OverviewSurface.tsx:215`), independent
+  of the user's `contentWidth`. So on Life home and area pages there is no grip at
+  all, and the width the user set on editor pages isn't honored here.
 
 ## Gap 2 — the grip is under-discoverable
 

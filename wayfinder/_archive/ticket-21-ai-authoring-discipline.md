@@ -58,6 +58,7 @@ sees them at the create surface.
 
 **2. Emit-time lint (server, at the t16 validation gate).** Two pure heuristics in
 the new `src/lib/modules/authoring-lint.ts`:
+
 - `isMarkdownPipeTable(content)` — flags a text body containing a GFM pipe table
   (a `|---|` separator line PLUS a header row and ≥1 body row of ≥2 pipes each).
   Deliberately specific: prose that merely contains a `|` (or several) with no
@@ -122,5 +123,5 @@ and hand-typed user prose is never linted.
   title). Only relevant on create, which is where the anti-pattern was observed.
 - **Live eval run.** The new gauntlet cases were added but not executed against the
   API (jest is the proof, per ticket scope); run `node --env-file=.env.local
-  scripts/eval-routing.mts --runs 3` when spending eval budget to confirm the model
+scripts/eval-routing.mts --runs 3` when spending eval budget to confirm the model
   now clears them end-to-end.

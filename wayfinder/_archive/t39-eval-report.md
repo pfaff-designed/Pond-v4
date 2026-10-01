@@ -11,17 +11,17 @@ correspondence + brief sections).
 
 ## Deltas, run by run
 
-| eval run | prompt under test | result | failing case |
-|---|---|---|---|
-| pre-t39 baseline (t30-era) | monolithic slab | last known green (t30 shipped; t30 itself flagged the eval was not re-run since) | — |
-| t39 first pass | refactored sections + persona/lifecycle | **42/44** | `"add a recipe" while on an index page` — expected `propose_changes`, saw `create_page`, **0/2 consistent** |
-| t39 after review fix | + DESTINATION SURFACE routing rule | **44/44** | none |
+| eval run                   | prompt under test                       | result                                                                           | failing case                                                                                                |
+| -------------------------- | --------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| pre-t39 baseline (t30-era) | monolithic slab                         | last known green (t30 shipped; t30 itself flagged the eval was not re-run since) | —                                                                                                           |
+| t39 first pass             | refactored sections + persona/lifecycle | **42/44**                                                                        | `"add a recipe" while on an index page` — expected `propose_changes`, saw `create_page`, **0/2 consistent** |
+| t39 after review fix       | + DESTINATION SURFACE routing rule      | **44/44**                                                                        | none                                                                                                        |
 
 ## The regression and its fix
 
 The M2-tightened case pins exactly this class of prompt-growth drift: "add a
-recipe" while ON a Recipes index page must be read as *edit that page* (append to
-the index), not *mint a new recipe page*. After the t39 prompt rework the model
+recipe" while ON a Recipes index page must be read as _edit that page_ (append to
+the index), not _mint a new recipe page_. After the t39 prompt rework the model
 chose `create_page` on both runs — the persona framing ("substantive collaborator")
 plausibly nudged it toward the more substantial interpretation.
 

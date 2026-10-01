@@ -9,26 +9,27 @@
 
 Pond builds before it understands. Real examples from the user:
 
-- *"I need a grocery list"* → Pond invents a page full of **random groceries** — not the items the user actually wants to buy.
-- *"come up with a workout routine"* → Pond fabricates one **without asking goals, experience level, days/week, available equipment, or preferred exercises.**
+- _"I need a grocery list"_ → Pond invents a page full of **random groceries** — not the items the user actually wants to buy.
+- _"come up with a workout routine"_ → Pond fabricates one **without asking goals, experience level, days/week, available equipment, or preferred exercises.**
 
-The user's product intent: Pond is a **thinking partner**. Before it builds anything, it should **interrogate intent** the way `/grill-me` does — get to the heart of what the user is actually after — *then* build.
+The user's product intent: Pond is a **thinking partner**. Before it builds anything, it should **interrogate intent** the way `/grill-me` does — get to the heart of what the user is actually after — _then_ build.
 
 ### Why the current design produces this
 
-#59 (shipped today) deliberately made **"named subject → BUILD NOW, don't ask."** Only a *truly bare* request ("make me a page") draws scoping questions. A subject-carrying request ("an inventory page for my workshop tools", "a grocery list", "a workout routine") is routed straight to `create_page` with **invented defaults**.
+#59 (shipped today) deliberately made **"named subject → BUILD NOW, don't ask."** Only a _truly bare_ request ("make me a page") draws scoping questions. A subject-carrying request ("an inventory page for my workshop tools", "a grocery list", "a workout routine") is routed straight to `create_page` with **invented defaults**.
 
 ### Empirical evidence (diagnosis capture, 6 runs, M3 case)
 
 Input: `"make an inventory page for my workshop tools"` from a blank Home.
 
-| Outcome | Count | What the model said |
-|---|---|---|
+| Outcome                               | Count   | What the model said                                                                                         |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
 | `(no tool)` — asked scoping questions | **5/6** | "What kinds of tools? What do you want to track per tool? Is there a Workshop area this should live under?" |
-| `create_page` with a table | 1/6 | built with invented default columns |
+| `create_page` with a table            | 1/6     | built with invented default columns                                                                         |
 
 **Two findings:**
-1. The model *already wants to ask* for thin requests (5/6) — but the prompt tells it not to, so it's fighting itself and the result is inconsistent.
+
+1. The model _already wants to ask_ for thin requests (5/6) — but the prompt tells it not to, so it's fighting itself and the result is inconsistent.
 2. The behavior the user wants (**always grill first**) is the opposite of what #59 codified. This is a **direction change**, not a bug fix.
 
 ---
@@ -66,7 +67,7 @@ Once the user answers, Pond **builds the whole agreed structure in one continuou
 - **Not** removing the one-pass build after scoping.
 - **Not** changing the structural block discipline (STRUCTURE/ticket-21 lint stays).
 - **Not** touching the proposal-card / persistence envelope mechanics.
-- **Not** a full LIFECYCLE project-arc rework — this generalizes the *grill* step to all creation; wayfinding/build-out for big projects stays as-is.
+- **Not** a full LIFECYCLE project-arc rework — this generalizes the _grill_ step to all creation; wayfinding/build-out for big projects stays as-is.
 
 ---
 
@@ -82,16 +83,16 @@ The load-bearing change is in **STEWARD + SCOPING**. Today STEWARD says "explici
   - Keep and strengthen **"don't re-ask what's given"** (the anti-redundant-question rule).
   - Keep **"ANSWERED → BUILD IT ALL"** (one-pass build after answers).
   - Keep the **escape hatch**.
-- **LIFECYCLE**'s adaptive-grill language is the template — the grill for a grocery list is the same *kind* of act as the grill for a project, just lighter. Cross-reference rather than duplicate.
+- **LIFECYCLE**'s adaptive-grill language is the template — the grill for a grocery list is the same _kind_ of act as the grill for a project, just lighter. Cross-reference rather than duplicate.
 
 **Copy to write carefully:** the new SCOPING must not read as "always interrogate even trivial fully-specified asks" — the escape hatch and the don't-re-ask rule bound it. The test cases (§4.3) pin the boundary.
 
 ### 4.2 Deterministic floor (`src/app/api/chat/scoping.ts`)
 
-Today `needsScoping()` fires only on the *bare* regex (`BARE_CREATE`). Options:
+Today `needsScoping()` fires only on the _bare_ regex (`BARE_CREATE`). Options:
 
 - **(Recommended) Broaden the gate to build-intent generally.** Detect "the latest message is a creation/build request" (create/make/build/start/set up + artifact/subject) and, unless it's an escape hatch or an edit of the current page, inject a **`[Scoping]` note** instructing the adaptive grill. This is the hard floor under the prompt, symmetric with how #59 works today.
-- **Risk to manage:** over-firing on **edits** and **cross-page** requests ("add a step to my Ceramics plan", "mark the pottery wheel purchased"). The detector must distinguish *create* from *edit* intent. The existing ROUTING vocabulary (create vs change/add/rewrite/reword) is the signal; encode conservatively and pin with `scoping-gate.test.ts` (extend the existing matrix).
+- **Risk to manage:** over-firing on **edits** and **cross-page** requests ("add a step to my Ceramics plan", "mark the pottery wheel purchased"). The detector must distinguish _create_ from _edit_ intent. The existing ROUTING vocabulary (create vs change/add/rewrite/reword) is the signal; encode conservatively and pin with `scoping-gate.test.ts` (extend the existing matrix).
 - **Alternative:** leave the deterministic gate as-is (bare only) and rely on the prompt for the broader behavior. Weaker/stochastic, but smaller blast radius. **Decision needed — see §6.**
 
 ### 4.3 Eval restructuring (`scripts/eval-routing.impl.mts`)
@@ -99,22 +100,23 @@ Today `needsScoping()` fires only on the *bare* regex (`BARE_CREATE`). Options:
 This is the largest mechanical change. The eval is **single-turn** today (`stopWhen: stepCountIs(1)`, one user prompt → assert the tool). Under grill-before-build, a creation request's **turn 1 is a scoping/no-tool turn**, and the build lands on **turn 2** (after the user answers). The harness must support this.
 
 **Harness change:** add optional multi-turn scenarios — a scenario may carry a `followup` (the user's answer) and assert:
+
 - **Turn 1:** `(no tool)` AND the reply asks about the expected gaps (assert the reply is a question; optionally keyword-check it probes intent, e.g. contains a "?" and does not call a tool).
 - **Turn 2** (after `followup`): `create_page` with the required structure (`expectBlockType: 'table'`, no md table, etc.).
 
 **Case migration (create_page build-now cases → grill-then-build):**
 
-| Case | Today | After |
-|---|---|---|
-| M3 "inventory for workshop tools" (blank Home) | create_page + table | T1 no-tool (asks); T2 create_page + table |
-| #63 "start a workout log" | create_page + table | T1 no-tool (asks goals/fields); T2 create_page + table |
-| #63 "new tracker from Home" | create_page + table | T1 no-tool (asks); T2 create_page + table |
-| "make me a recipe page for lasagna" | create_page | T1 no-tool (asks servings/constraints?) **or** build if deemed fully-specified — see §6 |
-| "create a project called Website Redesign" | create_page (type=project) | T1 grill (LIFECYCLE) — likely already scopes |
-| T21 "reading list — table of books with title, author, status" | create_page + table | **Ambiguous:** columns given → may build now, or ask remaining intent (which books? sort?). See §6 |
-| T21 "standing desks — name, height, price" | create_page + table | Same ambiguity as above |
-| #28 "compare Free/Pro/Enterprise across features" | create_page + table | Same |
-| #28 "keyboard shortcuts cheat sheet" | create_page + table | Same |
+| Case                                                           | Today                      | After                                                                                              |
+| -------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------- |
+| M3 "inventory for workshop tools" (blank Home)                 | create_page + table        | T1 no-tool (asks); T2 create_page + table                                                          |
+| #63 "start a workout log"                                      | create_page + table        | T1 no-tool (asks goals/fields); T2 create_page + table                                             |
+| #63 "new tracker from Home"                                    | create_page + table        | T1 no-tool (asks); T2 create_page + table                                                          |
+| "make me a recipe page for lasagna"                            | create_page                | T1 no-tool (asks servings/constraints?) **or** build if deemed fully-specified — see §6            |
+| "create a project called Website Redesign"                     | create_page (type=project) | T1 grill (LIFECYCLE) — likely already scopes                                                       |
+| T21 "reading list — table of books with title, author, status" | create_page + table        | **Ambiguous:** columns given → may build now, or ask remaining intent (which books? sort?). See §6 |
+| T21 "standing desks — name, height, price"                     | create_page + table        | Same ambiguity as above                                                                            |
+| #28 "compare Free/Pro/Enterprise across features"              | create_page + table        | Same                                                                                               |
+| #28 "keyboard shortcuts cheat sheet"                           | create_page + table        | Same                                                                                               |
 
 The **STEWARD / musing / edit / cross-page / define_schema-on-existing / add_row / configure_view** cases are **unchanged** — they're not new-content builds from scratch.
 
@@ -139,12 +141,12 @@ The **STEWARD / musing / edit / cross-page / define_schema-on-existing / add_row
 
 ### 6.1 Follow-on decisions (session 3, 2026-09-11)
 
-5. **Pattern C — `define_schema` on a page that already exists.** "track my reading list with status and rating" while *on* a plain page (a text list, not yet a collection) must act immediately (`define_schema`), not grill. **Root cause:** the firewall clause said define_schema on *"an existing collection"* — the fixture page isn't a collection yet, so the model read it as from-scratch and grilled. **Fix (chosen: harden edit-firewall, narrow form):** broaden the existing firewall clause to *"giving columns to a page that ALREADY EXISTS — turning its existing list into a tracked collection, or adding columns to one it already has (define_schema)"*. Deliberately **not** a new loud "DO NOT GRILL" bullet: an earlier loud version fixed Pattern C but dampened grill propensity broadly (freeform-matrix 2/3→0/3, turn-into-project 3/3→2/3). The narrow clause fixes Pattern C **6/6 across 3 runs** with no touch to the grill-first rule. Verified by reverting-and-comparing against baseline.
+5. **Pattern C — `define_schema` on a page that already exists.** "track my reading list with status and rating" while _on_ a plain page (a text list, not yet a collection) must act immediately (`define_schema`), not grill. **Root cause:** the firewall clause said define_schema on _"an existing collection"_ — the fixture page isn't a collection yet, so the model read it as from-scratch and grilled. **Fix (chosen: harden edit-firewall, narrow form):** broaden the existing firewall clause to _"giving columns to a page that ALREADY EXISTS — turning its existing list into a tracked collection, or adding columns to one it already has (define_schema)"_. Deliberately **not** a new loud "DO NOT GRILL" bullet: an earlier loud version fixed Pattern C but dampened grill propensity broadly (freeform-matrix 2/3→0/3, turn-into-project 3/3→2/3). The narrow clause fixes Pattern C **6/6 across 3 runs** with no touch to the grill-first rule. Verified by reverting-and-comparing against baseline.
 6. **Freeform-matrix ("compare Free/Pro/Enterprise across price, seats, SSO, support").** Both axes (3 tiers × 4 features) are fully enumerated, so building on T1 is defensible under the don't-re-ask rule — it conflicts with the assert-must-grill expectation. **Decision:** mark the eval case **ambiguous** via `grillOptional: true` — accept a T1 build (still shape-checked → **table**, not collection) OR a T1 grill then T2 table. This flake was **pre-existing** (2/3 at baseline before any session-3 edit); `--runs 1` in pass-2 masked it. `turn-into-project` is left **strict** and documented as known-flaky.
 
 ### 6.2 Follow-on decisions (session 4, 2026-09-12)
 
-7. **Turn-1 probe strictness — the remaining 7/145 flake.** At `--runs 5` the only misses were `(no tool) (T1)` on five grill cases (new-recipe 3/5, separate-recipe 4/5, comparison-content 4/5, freeform-matrix 3/5, reference-grid 4/5). **Not product bugs** — captured T1 text confirmed the model *does* grill correctly; it opened with goal/usage framing ("What's the goal for this page — is it a recipe you're actively cooking from…") or restated the artifact type ("is this a reference/cheat-sheet grid…"), vocabulary the narrow per-case noun-lists didn't anticipate (`probeOk` tests the full reply, so these genuinely missed). **Decision (chosen: broaden the probes, evidence-based):** each `turn1Probe` is now the union of (a) the scenario's specific intent nouns and (b) the generic scoping framings grills legitimately open with — `goal|purpose|use` and artifact-type restatements (`reference|cheat|sheet|grid|plan|column|row|…`). Additions are all on-topic; deliberately **no** filler (`the`/`for`/`you`) that would collapse the check into "asked any question." Re-verified at `--runs 5`: all five former flakes now **5/5**; full suite green (`29/29` single run). Alternative considered — accepting + documenting the flake — rejected because the probe was over-fit, not the model under-grilling.
+7. **Turn-1 probe strictness — the remaining 7/145 flake.** At `--runs 5` the only misses were `(no tool) (T1)` on five grill cases (new-recipe 3/5, separate-recipe 4/5, comparison-content 4/5, freeform-matrix 3/5, reference-grid 4/5). **Not product bugs** — captured T1 text confirmed the model _does_ grill correctly; it opened with goal/usage framing ("What's the goal for this page — is it a recipe you're actively cooking from…") or restated the artifact type ("is this a reference/cheat-sheet grid…"), vocabulary the narrow per-case noun-lists didn't anticipate (`probeOk` tests the full reply, so these genuinely missed). **Decision (chosen: broaden the probes, evidence-based):** each `turn1Probe` is now the union of (a) the scenario's specific intent nouns and (b) the generic scoping framings grills legitimately open with — `goal|purpose|use` and artifact-type restatements (`reference|cheat|sheet|grid|plan|column|row|…`). Additions are all on-topic; deliberately **no** filler (`the`/`for`/`you`) that would collapse the check into "asked any question." Re-verified at `--runs 5`: all five former flakes now **5/5**; full suite green (`29/29` single run). Alternative considered — accepting + documenting the flake — rejected because the probe was over-fit, not the model under-grilling.
 
 ---
 

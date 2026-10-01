@@ -33,12 +33,12 @@ done; C3 is next in the recommended order.
 Four production call sites read descriptor facets. All go through
 `descriptorFor` and hand-roll the defaults:
 
-| # | Site | Current code | Idiom |
-|---|------|--------------|-------|
-| 1 | `src/lib/context/assemble.ts:94` | `descriptorFor(block.type)?.serialize(block, blocks) ?? ''` | serialize + `?? ''` |
-| 2 | `src/lib/context/assemble.ts:148,150` (`blockPreview`) | `const descriptor = descriptorFor(block.type); if (!descriptor) return ''; return (descriptor.preview ?? descriptor.serialize)(block, siblings)` | `preview ?? serialize` |
-| 3 | `src/lib/modules/hydrate.ts:24,26` (`hydrateBlock`) | `const descriptor = descriptorFor(d.type as string); ... for (const path of descriptor?.nestedIdPaths ?? [])` | `nestedIdPaths ?? []` |
-| 4 | `src/lib/modules/preview.ts:47,49` (`stampDisplayIds`) | `const descriptor = descriptorFor(data.type); ... for (const path of descriptor?.nestedIdPaths ?? [])` | `nestedIdPaths ?? []` (identical to #3) |
+| #   | Site                                                   | Current code                                                                                                                                     | Idiom                                   |
+| --- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| 1   | `src/lib/context/assemble.ts:94`                       | `descriptorFor(block.type)?.serialize(block, blocks) ?? ''`                                                                                      | serialize + `?? ''`                     |
+| 2   | `src/lib/context/assemble.ts:148,150` (`blockPreview`) | `const descriptor = descriptorFor(block.type); if (!descriptor) return ''; return (descriptor.preview ?? descriptor.serialize)(block, siblings)` | `preview ?? serialize`                  |
+| 3   | `src/lib/modules/hydrate.ts:24,26` (`hydrateBlock`)    | `const descriptor = descriptorFor(d.type as string); ... for (const path of descriptor?.nestedIdPaths ?? [])`                                    | `nestedIdPaths ?? []`                   |
+| 4   | `src/lib/modules/preview.ts:47,49` (`stampDisplayIds`) | `const descriptor = descriptorFor(data.type); ... for (const path of descriptor?.nestedIdPaths ?? [])`                                           | `nestedIdPaths ?? []` (identical to #3) |
 
 `descriptorFor` (`registry.ts:69`) returns `ModuleDescriptor | undefined`.
 `ModuleDescriptor` (`types.ts:38-82`): `serialize` required, `preview?` optional
@@ -50,7 +50,7 @@ stays exported for them and for anyone needing an existence check.
 
 No facet reads (`.serialize` / `.preview` / `.nestedIdPaths`) exist anywhere else
 in the codebase. Renderer dispatch (`renderers.tsx:72`, `ModuleDiffCard.tsx:87`)
-reads the *client* `moduleRenderers` map, a different runtime half — **out of
+reads the _client_ `moduleRenderers` map, a different runtime half — **out of
 scope** (see Out of Scope).
 
 ## Proposed Change
@@ -134,6 +134,7 @@ no other use remains), then:
 
 **`hydrate.ts`** — swap import to `resolveDescriptor`; in `hydrateBlock` remove
 the `const descriptor = descriptorFor(...)` line and write:
+
 ```ts
 for (const path of resolveDescriptor(d.type as string).nestedIdPaths) {
   mintNestedIds(withIds, path, () => mintId())
@@ -142,6 +143,7 @@ for (const path of resolveDescriptor(d.type as string).nestedIdPaths) {
 
 **`preview.ts`** — swap import to `resolveDescriptor`; in `stampDisplayIds`
 remove the `const descriptor = descriptorFor(...)` line and write:
+
 ```ts
 for (const path of resolveDescriptor(data.type).nestedIdPaths) {
   let n = 0
@@ -198,9 +200,9 @@ Targets the accessor directly (nothing does today). Covers:
 
 ## Testing Plan
 
-| Layer | What | Count |
-|-------|------|-------|
-| Unit | `resolveDescriptor`: known facets, preview fallback, `[]` default, unknown null-object | +4 |
+| Layer      | What                                                                                         | Count |
+| ---------- | -------------------------------------------------------------------------------------------- | ----- |
+| Unit       | `resolveDescriptor`: known facets, preview fallback, `[]` default, unknown null-object       | +4    |
 | Regression | Existing `module-serialize` / `module-nested-ids` / per-module suites (unchanged) unaffected | 0 new |
 
 ## Verification
@@ -219,14 +221,14 @@ call-site edits are mechanical.
 
 ## Files Reference
 
-| File | Change |
-|------|--------|
-| `src/lib/modules/types.ts` | + `ResolvedDescriptor` interface |
-| `src/lib/modules/registry.ts` | + `NULL_DESCRIPTOR`, + `resolveDescriptor()` |
-| `src/lib/context/assemble.ts:23,94,147-151` | import swap; migrate `:94` and `blockPreview` |
-| `src/lib/modules/hydrate.ts:19,24,26` | import swap; drop local `descriptor`; loop via accessor |
-| `src/lib/modules/preview.ts:19,47,49` | import swap; drop local `descriptor`; loop via accessor |
-| `src/__tests__/resolve-descriptor.test.ts` | new unit test (4 cases) |
+| File                                        | Change                                                  |
+| ------------------------------------------- | ------------------------------------------------------- |
+| `src/lib/modules/types.ts`                  | + `ResolvedDescriptor` interface                        |
+| `src/lib/modules/registry.ts`               | + `NULL_DESCRIPTOR`, + `resolveDescriptor()`            |
+| `src/lib/context/assemble.ts:23,94,147-151` | import swap; migrate `:94` and `blockPreview`           |
+| `src/lib/modules/hydrate.ts:19,24,26`       | import swap; drop local `descriptor`; loop via accessor |
+| `src/lib/modules/preview.ts:19,47,49`       | import swap; drop local `descriptor`; loop via accessor |
+| `src/__tests__/resolve-descriptor.test.ts`  | new unit test (4 cases)                                 |
 
 ## Effort
 
