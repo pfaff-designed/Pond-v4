@@ -342,6 +342,79 @@ describe('markOutdated (G2)', () => {
     expect(swept).toHaveLength(2)
   })
 
+  // #98 review, BLOCKING 3. The editor's debounced save commits the WHOLE page,
+  // title included, so renaming a page reached this sweep with byte-identical
+  // blocks and outdated every pending diff on it. `outdated` drops accept and is
+  // one-way, so a rename destroyed diffs the person had not decided yet.
+  describe('pageBlocks — a page write is not the same thing as a block change', () => {
+    const BLOCKS = [{ id: 'b1', type: 'text', content: 'old' }]
+
+    it('leaves a record whose before still matches the page alone (a rename)', async () => {
+      const sb = makeSupabase({
+        list: [row({ id: 'still-applies', before: BLOCKS, target_block_id: null })],
+        maybeSingle: row({ status: 'proposed' }),
+      })
+      const swept = await store.markOutdated(sb as never, {
+        userId: USER,
+        targetPageId: 'page-1',
+        pageBlocks: BLOCKS,
+      })
+      expect(swept).toEqual([])
+      expect(sb.rpc).not.toHaveBeenCalled()
+    })
+
+    it('still sweeps when the blocks really did move on', async () => {
+      const sb = makeSupabase({
+        list: [row({ id: 'stale', before: BLOCKS, target_block_id: null })],
+        maybeSingle: row({ status: 'proposed' }),
+      })
+      const swept = await store.markOutdated(sb as never, {
+        userId: USER,
+        targetPageId: 'page-1',
+        pageBlocks: [{ id: 'b1', type: 'text', content: 'the person typed this' }],
+      })
+      expect(swept).toHaveLength(1)
+      expect(sb.rpc).toHaveBeenCalledWith(
+        'advance_change_log_record',
+        expect.objectContaining({ p_to: 'outdated' })
+      )
+    })
+
+    it('compares structurally, not by JSON.stringify — JSONB reorders keys', async () => {
+      // The snapshot comes back from JSONB with its own key order; the blocks
+      // that just landed carry the client's. A string compare calls these
+      // different and every rename would sweep again.
+      const sb = makeSupabase({
+        list: [
+          row({
+            id: 'same-content',
+            before: [{ content: 'old', type: 'text', id: 'b1' }],
+            target_block_id: null,
+          }),
+        ],
+        maybeSingle: row({ status: 'proposed' }),
+      })
+      const swept = await store.markOutdated(sb as never, {
+        userId: USER,
+        targetPageId: 'page-1',
+        pageBlocks: BLOCKS,
+      })
+      expect(swept).toEqual([])
+    })
+
+    it('sweeps on the write alone when the caller names no blocks (the accept path)', async () => {
+      const sb = makeSupabase({
+        list: [row({ id: 'a', before: BLOCKS, target_block_id: null })],
+        maybeSingle: row({ status: 'proposed' }),
+      })
+      const swept = await store.markOutdated(sb as never, {
+        userId: USER,
+        targetPageId: 'page-1',
+      })
+      expect(swept).toHaveLength(1)
+    })
+  })
+
   it('reads only this pond’s still-proposed records for that page', async () => {
     const sb = makeSupabase({ list: [] })
     await store.markOutdated(sb as never, {

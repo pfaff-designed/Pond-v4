@@ -537,7 +537,12 @@ function LifeHomeCanvas() {
     savedRef.current = false
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
-      await commitBlocks(getSupabase(), queryClient, home.id, next)
+      // `ownEdit` (G2, #98) — the same reason DocumentPanel passes it: this is
+      // the person's own typed edit landing on the Life home row, so a pending
+      // diff aimed at it was written against blocks that have moved on and goes
+      // outdated. Without it, a diff proposed against Life stayed accept-able
+      // after the person had edited the very blocks it targets.
+      await commitBlocks(getSupabase(), queryClient, home.id, next, 'main', { ownEdit: true })
       serverSig.current = JSON.stringify(next)
       // Keep the ['home'] cache in step so the adopt above only fires for genuinely
       // external writes.

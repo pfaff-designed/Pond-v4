@@ -215,6 +215,24 @@ describe('ModuleDiffCard — reject leaves one line (6c frame 5)', () => {
     await user.click(screen.getByRole('button', { name: 'ask again' }))
     expect(h.onAskAgain).toHaveBeenCalledTimes(1)
   })
+
+  // #98 review. Unfolding a rejected card used to draw the status twice: the
+  // header's "rejected — nothing changed" AND a second `ProposalActions
+  // status="rejected"` in the footer. One decision, one status line.
+  it('says "rejected" ONCE, unfolded as well as folded', async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <ModuleDiffCard
+        changes={[edit, create]}
+        targetName="schedule"
+        status="rejected"
+        {...handlers()}
+      />
+    )
+    expect(container.querySelectorAll('[data-part="status"]')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'show proposal' }))
+    expect(container.querySelectorAll('[data-part="status"]')).toHaveLength(1)
+  })
 })
 
 describe('ModuleDiffCard — red is removals, and nothing else', () => {

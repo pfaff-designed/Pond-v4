@@ -38,8 +38,15 @@ export function nextAvailableTitle(desired: string, siblingTitles: Iterable<stri
  * The UI catches it and shows the message inline instead of persisting.
  */
 export class DuplicateTitleError extends Error {
-  constructor(public readonly title: string) {
+  // A plain field, not a `public readonly` constructor parameter property: the
+  // evals (scripts/eval-*.mts) import the app source through Node's strip-only
+  // TypeScript loader, which cannot compile a parameter property. One of them
+  // reaches this file via src/lib/pages/client.ts, so the sugar took the whole
+  // editing eval down with ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX.
+  readonly title: string
+  constructor(title: string) {
     super(`A page named “${title}” already exists here.`)
+    this.title = title
     this.name = 'DuplicateTitleError'
   }
 }

@@ -30,7 +30,6 @@ export interface ProposalGroupCard {
   revised?: boolean
   skippedCount?: number
   skippedReasons?: string[]
-  busy?: boolean
 }
 
 interface ProposalGroupProps {
@@ -94,7 +93,6 @@ export function ProposalGroup({
           revised={card.revised}
           skippedCount={card.skippedCount}
           skippedReasons={card.skippedReasons}
-          busy={card.busy}
           onAccept={() => onAccept(card.id)}
           onReject={() => onReject(card.id)}
           onRequestChanges={(note) => onRequestChanges(card.id, note)}

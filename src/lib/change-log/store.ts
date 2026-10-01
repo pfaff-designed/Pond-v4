@@ -26,6 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { assertTransition, canRevise } from './status'
+import { jsonEqual } from './revert-plan'
 import {
   ACTOR_YOU,
   isChangeLogStatus,
@@ -408,6 +409,23 @@ export async function markOutdated(
      *  about a pending `add_row` or `define_schema` on the same page, whose
      *  before/after live in the property schema and rows instead. */
     actions?: ChangeLogAction[]
+    /**
+     * The page's blocks as they NOW stand (#98 review): a record whose `before`
+     * snapshot still equals them is aimed at a page that has not actually moved,
+     * so it stays applicable.
+     *
+     * Needed because a page write is not the same thing as a block change. The
+     * editor's debounced save commits the whole page — title included — so
+     * renaming a page runs this sweep with byte-identical blocks. Without this
+     * guard a rename outdates every pending diff on the page, and `outdated` is
+     * one-way: it drops accept, so the person loses the diff for typing in the
+     * title field. Compared with `jsonEqual`, not `JSON.stringify`, because JSONB
+     * round-trips object keys in its own order.
+     *
+     * Omit to sweep on the write alone (the accept path, which knows the blocks
+     * changed because it just changed them).
+     */
+    pageBlocks?: unknown
     actor?: ChangeLogActor
   }
 ): Promise<ChangeLogRecord[]> {
@@ -431,6 +449,9 @@ export async function markOutdated(
   const blockIds = opts.blockIds ?? []
   const stale = rows.filter((r) => {
     if (r.id === opts.exceptId) return false
+    // The target did not move: the blocks this record was written against are
+    // still exactly the page's blocks. A title-only save lands here.
+    if (opts.pageBlocks !== undefined && jsonEqual(r.before, opts.pageBlocks)) return false
     if (blockIds.length === 0) return true
     // A page-level proposal (no block) is stale whenever the page moves on.
     return r.targetBlockId === null || blockIds.includes(r.targetBlockId)

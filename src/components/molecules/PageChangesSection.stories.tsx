@@ -59,7 +59,7 @@ export const AcceptedChange: Story = {
 
     // "Revert goes through accept like any change" — so an accepted record has no
     // accept/reject of its own to answer.
-    await expect(canvas.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'accept' })).not.toBeInTheDocument()
   },
 }
 
@@ -89,9 +89,9 @@ export const RevertWaiting: Story = {
     await expect(canvas.getByText('revert waiting')).toBeInTheDocument()
     await expect(canvas.queryByRole('button', { name: 'Revert' })).not.toBeInTheDocument()
 
-    await userEvent.click(canvas.getByRole('button', { name: 'Accept' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'accept' }))
     await expect(args.onAccept).toHaveBeenCalledWith('rev-1')
-    await userEvent.click(canvas.getByRole('button', { name: 'Reject' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'reject' }))
     await expect(args.onReject).toHaveBeenCalledWith('rev-1')
   },
 }
@@ -112,7 +112,7 @@ export const OutdatedRevert: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('outdated')).toBeInTheDocument()
-    await expect(canvas.queryByRole('button', { name: 'Accept' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'accept' })).not.toBeInTheDocument()
   },
 }
 

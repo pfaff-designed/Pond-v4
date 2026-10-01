@@ -25,6 +25,13 @@
  * show proposal / ask again (6c frame 5). "show original" is available alongside
  * the diff: it swaps the rows for the target blocks as they stand.
  *
+ * There is deliberately NO "busy while the write runs" state here (#98 review).
+ * The terminal settles a card the instant it is clicked — `decideChanges` runs
+ * before the write starts — so the card is never `pending` while anything is in
+ * flight, and a `disabled` on these buttons could not engage. `ProposalActions`
+ * keeps its `disabled` for `PageChangesSection`, whose rows do stay pending
+ * across their write.
+ *
  * Purely presentational — the terminal owns all state, the write path and the
  * send to Pond. `before`/`after` are full {@link Block}s (id-ful); a proposed
  * block carries a display-only placeholder id until accept mints the real one.
@@ -41,8 +48,6 @@ import {
   proposalButtonClass,
   type ProposalStatus,
 } from '@/components/molecules/ProposalActions'
-
-export type ChangeOp = ChangePreview['op']
 
 export interface ModuleDiffCardProps {
   /** Every change in the batch, in emission order. */
@@ -62,8 +67,6 @@ export interface ModuleDiffCardProps {
   /** Fix-1 (F1a): how many accepted changes could NOT be placed, with reasons. */
   skippedCount?: number
   skippedReasons?: string[]
-  /** Quieten the controls while a write is in flight. */
-  busy?: boolean
   onAccept: () => void
   onReject: () => void
   /** Request changes: the note typed under the card, addressed to the proposer. */
@@ -86,7 +89,6 @@ export function ModuleDiffCard({
   revised = false,
   skippedCount = 0,
   skippedReasons = [],
-  busy = false,
   onAccept,
   onReject,
   onRequestChanges,
@@ -211,14 +213,13 @@ export function ModuleDiffCard({
               <>
                 <ProposalActions
                   status="pending"
-                  disabled={busy || targetMissing}
+                  disabled={targetMissing}
                   onAccept={onAccept}
                   onReject={onReject}
                   onRequestChanges={noteOpen ? undefined : () => setNoteOpen(true)}
                 />
                 {noteOpen && (
                   <NoteBox
-                    disabled={busy}
                     onCancel={() => setNoteOpen(false)}
                     onSend={(text) => {
                       setNoteOpen(false)
@@ -245,7 +246,6 @@ export function ModuleDiffCard({
                     size="sm"
                     variant="default"
                     className={cn(proposalButtonClass, 'ml-auto')}
-                    disabled={busy}
                     onClick={onRevise}
                   >
                     revise
@@ -254,7 +254,12 @@ export function ModuleDiffCard({
               </div>
             ) : (
               <>
-                <ProposalActions status={status} onAccept={onAccept} onReject={onReject} />
+                {/* `rejected` already says so in the header line above (6c frame
+                    5, "rejected — nothing changed"); a second status element in
+                    the footer of an unfolded rejected card said it twice. */}
+                {status !== 'rejected' && (
+                  <ProposalActions status={status} onAccept={onAccept} onReject={onReject} />
+                )}
                 {status === 'changes_requested' && note && (
                   // The note that went to the proposer stays under the card.
                   <div

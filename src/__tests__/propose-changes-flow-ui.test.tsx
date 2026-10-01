@@ -84,13 +84,15 @@ let mockMessages: Array<{
   parts: Array<Record<string, unknown>>
 }> = []
 
+// The turn's lifecycle, under test control: 'ready' means the turn has settled.
+let mockStatus = 'ready'
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
     addToolOutput: mockAddToolOutput,
     setMessages: mockSetMessages,
-    status: 'ready',
+    status: mockStatus,
   })),
 }))
 
@@ -139,6 +141,7 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  mockStatus = 'ready'
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
 })
 
@@ -266,5 +269,40 @@ describe('AITerminal — propose_changes card (#98)', () => {
     )
     const revised = screen.getByRole('group', { name: /revised edit/ })
     expect(within(revised).getByText('first line of pc2')).toBeInTheDocument()
+  })
+
+  // #98 review. The "this is a revision of X" ref was set on send and cleared
+  // ONLY when a propose_changes batch arrived. A revision turn that answers with
+  // prose — a clarifying question, a refusal — left it set indefinitely, and the
+  // next unrelated batch, however many turns later, was stamped as a revision of
+  // that long-settled card and linked to it in the change log.
+  it('a revision turn that answers with PROSE does not label a later unrelated batch', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'request changes' }))
+    await user.type(screen.getByRole('textbox', { name: 'note to pond' }), 'shorter')
+    await user.click(within(noteBox()).getByRole('button', { name: 'send' }))
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+
+    // The turn runs and comes back as prose — no batch at all.
+    mockStatus = 'streaming'
+    rerender(<AITerminal />)
+    mockMessages = [
+      ...mockMessages,
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'which part did you mean?' }] },
+    ]
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+
+    // Much later, an unrelated question produces its own batch.
+    mockMessages = [...mockMessages, { id: 'm3', role: 'assistant', parts: [batch('pc9')] }]
+    rerender(<AITerminal />)
+
+    await waitFor(() => expect(screen.getByText('first line of pc9')).toBeInTheDocument())
+    const groups = screen.getAllByRole('group', { name: /edit/ })
+    const stamped = groups.find((g) => within(g).queryByText('first line of pc9'))
+    expect(stamped).toHaveAttribute('aria-label', expect.stringContaining('proposed edit'))
+    expect(screen.queryByRole('group', { name: /revised edit/ })).not.toBeInTheDocument()
   })
 })

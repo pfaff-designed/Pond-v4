@@ -37,9 +37,20 @@ export async function commitBlocks(
   } = {}
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
+  // The sweep is a side-record of the save (it never throws) — but it is AWAITED,
+  // and it runs BEFORE anything downstream is told the page moved.
+  //
+  // ORDER HERE IS THE BEHAVIOUR. A diff card learns it has gone outdated by
+  // re-reading the log, and that re-read is triggered by the page's blocks
+  // changing — `propagateBlockWrite` here, and the caller's own cache reconcile
+  // the moment this promise resolves. Firing the sweep with `void`, or after the
+  // propagation, races that re-read: the card reads the log before the sweep has
+  // written to it, finds the record still `proposed`, and keeps its accept
+  // button. That is exactly the state `outdated` exists to prevent, and it is
+  // what the person sees on nearly every own edit. Awaiting it first makes the
+  // outcome deterministic rather than a coin toss on two round-trips.
+  if (opts.ownEdit) await sweepOutdatedAfterOwnEdit(supabase, { workspace, pageId, blocks })
   await propagateBlockWrite(queryClient, pageId, workspace)
-  // A side-record of the save, never a precondition for it (never throws).
-  if (opts.ownEdit) void sweepOutdatedAfterOwnEdit(supabase, { workspace, pageId })
 }
 
 /**

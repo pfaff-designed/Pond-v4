@@ -9,6 +9,11 @@
  * to write (no stamp + no open node, or the target page was deleted), every
  * change counts as skipped: the caller's existing skipped machinery surfaces
  * the "couldn't apply" notice and the model reads the batch as NOT applied.
+ *
+ * Accepts aimed at the SAME page are serialised (`withPageWriteLock`). The write
+ * is a read-modify-write over the whole block array, so two in flight on one page
+ * silently lose a batch — which is what "accept all" does when one message raises
+ * several cards for the same page.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QueryClient } from '@tanstack/react-query'
@@ -54,7 +59,7 @@ export async function writeAcceptedChanges(opts: {
    *  per-change accept clicks so split accepts still bind (mutated). */
   refIds?: Record<string, string>
 }): Promise<AcceptWriteResult> {
-  const { supabase, queryClient, userId, resolutions, toolCallId, openNodeId, changes } = opts
+  const { resolutions, toolCallId, openNodeId, changes } = opts
   const workspace = opts.workspace ?? 'main'
   if (changes.length === 0) return { applied: 0, skipped: 0, skippedReasons: [], targetId: null }
 
@@ -67,6 +72,59 @@ export async function writeAcceptedChanges(opts: {
       targetId: null,
     }
   }
+
+  // Everything from the read to the write is one critical section per page —
+  // see `withPageWriteLock`. The target has to be resolved first to know which
+  // lock to take, and that resolution is pure, so nothing races ahead of it.
+  return withPageWriteLock(target, () => writeToTarget(target, workspace, opts))
+}
+
+/**
+ * Serialise writes per target page.
+ *
+ * `writeAcceptedChanges` is a read-modify-write: it reads the page, applies the
+ * batch, and saves the WHOLE block array back. Two of them in flight on the same
+ * page both read the pre-write state and the second `saveBlocks` overwrites the
+ * first — one batch's changes vanish with no error anywhere.
+ *
+ * That is not hypothetical: "accept all" fires one of these per pending card,
+ * and one assistant message can raise several cards aimed at the SAME page.
+ * Queueing by page id makes the second accept read what the first wrote, so both
+ * batches land. Different pages still go in parallel — the lock is per page, not
+ * global.
+ *
+ * Module-level by design: the queue has to outlive any one call and be shared by
+ * every caller (accept-all, a second click, two open panels), which is exactly
+ * what a per-process map of tails gives. Entries are dropped once their chain
+ * drains, so the map does not grow with the session.
+ */
+const pageWriteTails = new Map<string, Promise<unknown>>()
+
+function withPageWriteLock<T>(pageId: string, run: () => Promise<T>): Promise<T> {
+  const previous = pageWriteTails.get(pageId) ?? Promise.resolve()
+  // `.then(run, run)` so a failed predecessor does not wedge the queue: the next
+  // write still runs, it just runs after.
+  const result = previous.then(run, run)
+  const tail = result.then(
+    () => {},
+    () => {}
+  )
+  pageWriteTails.set(pageId, tail)
+  void tail.then(() => {
+    // Only the CURRENT tail may clear the slot; a later write has already
+    // replaced it and owns the queue now.
+    if (pageWriteTails.get(pageId) === tail) pageWriteTails.delete(pageId)
+  })
+  return result
+}
+
+/** The body of an accept, run under the target page's write lock. */
+async function writeToTarget(
+  target: string,
+  workspace: WorkspaceScope,
+  opts: Parameters<typeof writeAcceptedChanges>[0]
+): Promise<AcceptWriteResult> {
+  const { supabase, queryClient, userId, resolutions, toolCallId, changes } = opts
 
   const page = await getPage(supabase, target)
   if (!page) {

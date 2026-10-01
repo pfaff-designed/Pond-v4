@@ -487,7 +487,8 @@ export function AITerminal() {
   // writeAcceptedChanges mutates it in place across accept clicks; never rendered/projected/reseeded.
   const proposalRefIds = useRef<Record<string, Record<string, string>>>({})
   // #98 — the card a request-changes note (or an outdated revise) was sent on:
-  // the next propose_changes to stream in is Pond's revision of it.
+  // the next propose_changes to stream in is Pond's revision of it. It lives for
+  // exactly ONE turn; the effect below clears it when that turn settles.
   const pendingRevisionOf = useRef<string | null>(null)
   const {
     changes: changeDecisions,
@@ -935,6 +936,18 @@ export function AITerminal() {
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
   }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded, revisions])
+
+  // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
+  // `pendingRevisionOf` was set on send and cleared only when a propose_changes
+  // batch arrived. A revision turn that comes back as PROSE — "which part did
+  // you mean?", or a refusal — therefore left it set, and the next unrelated
+  // batch, however many questions later, was stamped as a revision of that old
+  // card and linked to it in the log. The note's turn is the ref's whole life:
+  // when the turn settles, it goes. Declared AFTER the stamping effect above so
+  // that effect still gets the ref on the commit the batch lands in.
+  useEffect(() => {
+    if (status === 'ready') pendingRevisionOf.current = null
+  }, [status])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {
@@ -2276,8 +2289,20 @@ export function AITerminal() {
                       if (q && !isStreaming) sendText(q)
                     }}
                     onAcceptAll={() => {
-                      for (const id of pendingDiffIds)
-                        void acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                      // Sequentially (#98 review). Each accept is a
+                      // read-modify-write of its target page's whole block
+                      // array, and two cards in one message can name the SAME
+                      // page — fired in parallel they both read the pre-write
+                      // blocks and the second save silently drops the first
+                      // batch. `writeAcceptedChanges` serialises per page as
+                      // well (the lock is the guarantee, since a second click
+                      // or another surface can race too); awaiting here also
+                      // keeps the toast receipts in card order.
+                      void (async () => {
+                        for (const id of pendingDiffIds) {
+                          await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                        }
+                      })()
                     }}
                     onRejectAll={() => {
                       for (const id of pendingDiffIds) decideChanges(id, allIndices(id), 'rejected')

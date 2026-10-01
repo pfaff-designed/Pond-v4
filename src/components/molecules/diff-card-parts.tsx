@@ -16,7 +16,7 @@ import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
-import { DiffRow } from '@/components/atoms/diff-row'
+import { DiffRow } from '@/components/atoms/DiffRow'
 import { Button } from '@/components/ui/button'
 import { proposalButtonClass } from '@/components/molecules/ProposalActions'
 
@@ -84,11 +84,9 @@ export function OriginalRows({ changes }: { changes: ChangePreview[] }) {
 export function NoteBox({
   onSend,
   onCancel,
-  disabled,
 }: {
   onSend: (note: string) => void
   onCancel: () => void
-  disabled?: boolean
 }) {
   const [draft, setDraft] = useState('')
   const trimmed = draft.trim()
@@ -124,7 +122,7 @@ export function NoteBox({
           size="sm"
           variant="default"
           className={proposalButtonClass}
-          disabled={disabled || trimmed.length === 0}
+          disabled={trimmed.length === 0}
           onClick={() => onSend(trimmed)}
         >
           send

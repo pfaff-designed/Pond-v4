@@ -1,7 +1,7 @@
 'use client'
 
 import { Markdown } from '@/components/molecules/Markdown'
-import { DiffRow } from '@/components/atoms/diff-row'
+import { DiffRow } from '@/components/atoms/DiffRow'
 import type { TextBlock } from './schema'
 
 /**

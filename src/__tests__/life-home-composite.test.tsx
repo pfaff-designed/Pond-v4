@@ -147,6 +147,10 @@ describe('Life composite surface', () => {
           const call = mockCommitBlocks.mock.calls.find(([, , pageId]) => pageId === 'home-1')
           expect(call).toBeTruthy()
           expect((call![3] as Block[]).some((b) => b.type === c.type)).toBe(true)
+          // G2 (#98 review): this is the person's own typed edit, so the save
+          // carries `ownEdit` and a pending diff aimed at Life goes outdated.
+          // It was the one debounced whole-array user save that did not.
+          expect(call![5]).toMatchObject({ ownEdit: true })
         },
         { timeout: 2000 }
       )
