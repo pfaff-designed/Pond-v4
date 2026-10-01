@@ -5,14 +5,31 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# Plan before building: grill, then spec
+# The design handoff is the spec. Build from it; do not re-litigate it.
 
-For any non-trivial change (new behavior, new module, a refactor — anything beyond a mechanical edit), before writing code:
+`wayfinder/design_handoff_pond/` is a complete, high-fidelity specification of the whole product, and `docs/adr/` holds the decisions made since. Together they are the plan. **Read them and build.**
 
-1. **Grill first.** Run the `/grill-me` skill (or, if it's unavailable, emulate it): state the plan step by step, hunt for holes — unverified assumptions, edge cases, seams with existing code (registry, chat route, persistence envelope) — and interrogate the user about every unresolved branch of the decision tree. Do not silently pick between interpretations that would produce different products. Keep going until there are no open questions.
-2. **Spec if it's needed.** When the grilling reveals real scope — multiple components touched, behavior that had to be resolved through questioning, or work that will outlive the session — turn the resolved answers into a written spec before implementing (use the `/spec` skill if available, otherwise a short document the user signs off on). A grill that resolves quickly with no surprises can skip straight to building.
+**Never ask the user to re-decide something already settled.** Before raising any question, check all four: `PROJECT_RULES.md`, `AUDIT.md`'s "Decided, 26 sep" log, the inline values in the `.dc.html` mockups, and `docs/adr/`. A value written in the markup is not an open question. A behaviour in the Decided log is not an open question. If the spec is silent on something small, **pick the option most consistent with `PROJECT_RULES.md`, state the choice in the PR or issue body, and keep going.**
+
+**Grill only when all three are true:** the handoff and the ADRs are genuinely silent; the choice would produce a materially different product; and getting it wrong would waste real work. That is rare. When it happens, ask once, in one batch, alongside delivered work — never as a gate that stops the build.
+
+**Spec when scope outlives the session** — multiple surfaces, or a decision reached by reasoning that the next agent would otherwise have to redo. Write it into the GitHub issue body, not a new `wayfinder/` doc.
 
 A clear, small, fully-specified request needs neither — act on it directly.
+
+## Definition of done: it looks like the mockup, or it is not done
+
+A slice is finished when the built surface **matches the mockup it came from** — layout, colour, type, spacing, radii, shadow, copy — and the features that storyboard commits to actually work. Rendering without errors is not done. Passing tests is not done.
+
+How to check, every time, before opening a PR:
+
+1. Serve the handoff: `npx serve wayfinder/design_handoff_pond` (the fonts, glyphs and child components need a static server; `support.js` is the mockup runtime — never port it).
+2. Open the mockup board and the built surface side by side at the same viewport, and screenshot both.
+3. Compare against the inline values in the markup. Every colour, size and spacing value is written there; read it rather than eyeballing.
+4. Check both themes. Light is **one** paper (`#FAF9EF` ground _and_ cards); dark is two (`#1B1D14` ground, `#30312A` cards).
+5. Walk the storyboard's frames in the real app and confirm each caption's rule holds.
+
+If it doesn't match, fix it and look again. Do not open a PR, and do not report the slice as shipped, on a surface that doesn't match its board. Exceptions, and only these: `Pond 09 Examples` is illustration, not spec, and on-screen numbers are fixtures (7h).
 
 # Pond product rules (Make Noise)
 
