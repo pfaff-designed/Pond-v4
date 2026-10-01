@@ -5,20 +5,17 @@ _Created 2026-09-30, when `wayfinder/` was flattened into `_archive/`. This file
 `git log` and closed issues (`AGENTS.md`). Delete an entry when it becomes a GitHub issue
 or an answered decision — do not let it accumulate._
 
-## 1. Scope: is Phase 7 (and Phase 6) in the product?
+## 1. ~~Scope: is Phase 7 in the product?~~ ANSWERED 2026-09-30
 
-`#120` Collaboration & multi-pond — roles, sharing, invites, comments, @mentions, presence,
-human↔human diffs. `#119` External sources (OAuth connectors) is the secondary half.
-Both are **placeholder epics with zero filed issues.**
+**Nothing is cut; the work is ordered.** Single-user complete → multi-user → multiple ponds and
+organizations, each finished before the next begins. Recorded in
+`docs/adr/0002-ship-single-user-first-then-multi-user-then-multi-pond.md`, which also resolves #112
+and lists the four surfaces that must be trimmed back to M1 (#96 ships a pond name not a switcher;
+presence/access, rail roles state and human↔human diffs all defer).
 
-The stated goal is "a second brain, a thinking partner that can collaborate with the user
-and manipulate the data on the user's behalf." One reading: **the AI is the collaborator,
-not other people** — which closes `#120` and defers `#119`, and moves the finish line from
-roughly a third done to roughly half. **Not yet accepted by the user.**
-
-This gates the decomposition run: it is the difference between ~150–220 issues and
-materially fewer. `#112` (workspace column overload vs a real multi-pond model) is the same
-question wearing a different hat.
+**Still open, inherited from that decision:** comment cards are specced with an **@pond reply**. A
+comment you leave and Pond answers is single-user; the same card with @mentions of other people is
+multi-user. Does the single-user half of comments pull forward into M1?
 
 ## 2. Type and spacing scale rulings (left open by `#139`)
 
@@ -70,9 +67,13 @@ deferred and is filed nowhere.
 
 ## 7. Process questions still unanswered
 
-- **Autonomy:** merge to `main` after review + live-verify, or park PRs for the user?
-- **Task store:** file all the decomposed issues up front, or stay one wave ahead?
-  (`.claude/workflows/ship-issue.mjs` takes an issue number, so issues must exist either way.)
+- **Autonomy:** merge to `main` after review + live-verify, or park PRs for the user? _Proposed
+  default, not yet confirmed: merge mechanical and single-surface slices after review +
+  browser-verify; park anything touching a migration, the data model, or a locked spec decision._
+- **Task store:** file all the decomposed issues up front, or stay one wave ahead? _Proposed
+  default, not yet confirmed: file one phase at a time — enough to see a phase's shape without
+  writing acceptance criteria against code that will have changed by the time it is built.
+  (`.claude/workflows/ship-issue.mjs` takes an issue number, so issues must exist either way.)_
 - **Board sync:** the Pond page `Creativity › Pond` holds 34 cards (collection page
   `e023a498-a711-4133-8b7f-afca1c00ddbd`; rows are child pages of `type='row'`, status value
   is the option **id**). Shipped work has not been moved to Done.
