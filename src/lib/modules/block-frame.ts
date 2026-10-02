@@ -284,7 +284,9 @@ const VIEW_HEADING: Record<ViewMode, string> = {
   'big-number': 'big number',
 }
 
-const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
+// `many` is explicit for an irregular plural (`entry` → `entries`), so every head
+// note in this file goes through one idiom instead of hand-rolling the next one.
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /**
  * Which collection a view block draws: a LINKED view names another collection
@@ -342,8 +344,11 @@ export function blockFrame(block: Block): BlockFrame | null {
       // `cooked 3 times`, both fixtures of the demo recipe; the eyebrow is the kind
       // (as highlight — the template LABEL `updates` / `entries` is 228e's data) and
       // the note is the true count.
-      const n = block.entries.length
-      return { kind: 'log', heading: 'entries', headNote: `${n} ${n === 1 ? 'entry' : 'entries'}` }
+      return {
+        kind: 'log',
+        heading: 'entries',
+        headNote: plural(block.entries.length, 'entry', 'entries'),
+      }
     }
   }
 }

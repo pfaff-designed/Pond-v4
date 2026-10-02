@@ -278,7 +278,7 @@ describe('PondBlock state="empty" — the box, the line, the offered action', ()
 
 // ── The pure insert ops the action calls ─────────────────────────────────────────
 
-describe('addTodoItem / addTableRow — engine-shaped inserts through the whole-block contract', () => {
+describe('addTodoItem / addTableRow / addEntry — engine-shaped inserts through the whole-block contract', () => {
   it('appends one unchecked, unlabelled step with its own id; the rest by reference', () => {
     const block = {
       id: 'c',

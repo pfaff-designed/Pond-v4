@@ -291,7 +291,14 @@ describe('EntriesView — read-only', () => {
     for (const d of datesOf(container)) has(d, ...DATE)
   })
 
-  it('a blank entry reads the board’s empty line, sans at .68 — EVEN on a serif block (`d.serif && filled`)', () => {
+  // `renderVals()`'s literal is `d.serif && filled`, which reads as "a blank row is
+  // sans even on a journal" — but `serif: 1` sits only on the journal's FILLED
+  // descriptor, so the two flip together and the board never renders a serif-flagged
+  // block through the non-filled branch. The board's idiom for an empty
+  // authored-prose block is KEEP THE MEDIUM, DROP THE INK (`text`, `highlight`), and
+  // the editable path wears the medium unconditionally — so a sans blank row would
+  // flip serif on focus and sans on blur. Rationale in full in `entries/view.tsx`.
+  it('a blank entry reads the board’s empty line at .68 in the BLOCK’S medium — serif on a journal', () => {
     const blank: EntriesBlock = {
       ...journal,
       entries: [{ id: 'b', date: 'today', text: '' }],
@@ -301,9 +308,20 @@ describe('EntriesView — read-only', () => {
     expect(t.textContent).toBe(ENTRIES_EMPTY_LINE)
     expect(ENTRIES_EMPTY_LINE).toBe('write the first entry')
     expect(t.dataset.empty).toBe('')
+    has(t, ...SERIF, 'text-mn-text-secondary')
+    lacks(t, 'text-mn-text')
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('a blank entry on a SANS block stays sans at .68', () => {
+    const blank: EntriesBlock = {
+      ...updates,
+      entries: [{ id: 'b', date: 'today', text: '' }],
+    }
+    const { container } = render(<EntriesView data={blank} />)
+    const [t] = textsOf(container)
     has(t, ...SANS, 'text-mn-text-secondary')
     lacks(t, 'font-serif', 'text-mn-text')
-    expect(screen.queryByRole('textbox')).toBeNull()
   })
 
   it('whitespace-only text is blank too', () => {

@@ -19,9 +19,19 @@ import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
  *
  * The serif is CONDITIONAL — on the block's own `serif` flag (schema.ts says why it
  * lives there), never on an ancestor template. The board's `filled` is read per row
- * here: an entry with prose is in the block's medium at full ink; a blank one reads
- * the board's empty line in sans at ink .68 — on a serif block too, exactly as the
- * board's `d.serif && filled` has it.
+ * here: an entry with prose is at full ink, a blank one at ink .68 — but BOTH keep
+ * the block's medium.
+ *
+ * The board's literal is `d.serif && filled`, which reads as "a blank row is sans
+ * even on a journal". It does not support that: `serif: 1` appears ONLY on the
+ * journal's FILLED descriptor, so the two flip together and the board never renders
+ * a serif-flagged block through the non-filled branch. It gives no evidence for this
+ * state. The same `renderVals()`'s idiom for an empty authored-prose block is KEEP
+ * THE MEDIUM, DROP THE INK — `text` is `fontFamily: serif … color: filled ? fg :
+ * a(.68)`, and `highlight`'s empty branch is serif 200 / 16 at `a(.68)`, which
+ * `highlight/view.tsx` follows. The deciding fact is ours, not the board's: the
+ * editable path below wears `medium(data.serif)` unconditionally, so a sans blank row
+ * would be serif while focused and sans on blur — a medium flip on every blur.
  *
  * NOT `PondMolecule kind="entry"` — ruled out in #250 (the 8th ADR 0004 ruling): that
  * row is `56px` / gap 14 / padded / fixed 420 / serif ALWAYS, so a block built on it
@@ -120,7 +130,11 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
                 {entry.text}
               </p>
             ) : (
-              <p data-part="text" data-empty="" className={`${SANS} text-mn-text-secondary`}>
+              <p
+                data-part="text"
+                data-empty=""
+                className={`${medium(data.serif)} text-mn-text-secondary`}
+              >
                 {ENTRIES_EMPTY_LINE}
               </p>
             )}

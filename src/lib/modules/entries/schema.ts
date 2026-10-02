@@ -50,6 +50,12 @@ export type EntriesBlock = z.infer<typeof entriesSchema>
  * The board's empty line for an entry (`PondTemplate.dc.html`, the journal's `e:`
  * row text) — lowercase, in the product's voice. Shown for a blank entry and as the
  * editing placeholder. (The project's `first update` is template copy, 228e's.)
+ *
+ * Byte-identical to `EMPTY_TITLE.entry` in `PondMolecule.tsx` by coincidence of two
+ * boards landing on the same sentence, not by sharing. They are deliberately two
+ * literals — `PondMolecule.dc.html` and `PondTemplate.dc.html` are different boards
+ * and a value in a board is final — so if one board's copy changes, change only that
+ * one. Noted here so the pair is a recorded decision rather than drift.
  */
 export const ENTRIES_EMPTY_LINE = 'write the first entry'
 
@@ -68,7 +74,15 @@ export const entriesDescriptor: ModuleDescriptor<EntriesBlock> = {
   serialize: (data) => {
     const head = data.serif ? 'Entries (serif):' : 'Entries:'
     if (data.entries.length === 0) return `${head} (no entries yet)`
-    return [head, ...data.entries.map((e) => `${e.date} — ${e.text}`)].join('\n')
+    // One entry per line, so the boundary survives: the view supports multi-line
+    // prose (`whitespace-pre-wrap`, an auto-growing textarea), and a raw newline would
+    // emit an entry's second paragraph as an unlabelled line that a wholesale re-emit
+    // could reattach to the wrong date. Newlines collapse to a space — whitespace is
+    // the only thing lost, and `serialize`'s contract (render every piece of user
+    // content) is kept. `todo` has the same shape without the hazard: its rows are
+    // single-line inputs.
+    const line = (text: string) => text.replace(/\s*\n+\s*/g, ' ')
+    return [head, ...data.entries.map((e) => `${e.date} — ${line(e.text)}`)].join('\n')
   },
   preview: (data) => data.entries.map((e) => e.date).join(', '),
   nestedIdPaths: ['entries'],

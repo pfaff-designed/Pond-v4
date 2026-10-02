@@ -119,6 +119,9 @@ async function assertDates(canvasElement: HTMLElement, ink68: string) {
 async function assertSans(cs: CSSStyleDeclaration, color: string) {
   await expect(cs.fontFamily).toContain('PP Neue Montreal')
   await expect(cs.fontFamily).not.toContain('PP Editorial New')
+  // 'PP Neue Montreal Mono' CONTAINS 'PP Neue Montreal', so without this a mono text
+  // column at 13.5 / 1.5 would pass every other assertion here.
+  await expect(cs.fontFamily).not.toContain('Mono')
   await expect(cs.fontSize).toBe('13.5px')
   await expect(cs.lineHeight).toBe('20.25px') // 1.5 × 13.5
   await expect(cs.textWrap).toBe('pretty')
@@ -147,13 +150,18 @@ async function assertJournal(canvasElement: HTMLElement, ink: string, ink68: str
   for (const t of textsOf(canvasElement)) await assertSerif(getComputedStyle(t), ink)
 }
 
-/** Empty: the board's line, sans at .68 — on a serif block, proving the conditional. */
+/**
+ * Empty: the board's line at .68, in the BLOCK'S OWN MEDIUM. The journal fixture is
+ * serif, so its blank row is serif at .68 — `keep the medium, drop the ink`, which is
+ * `renderVals()`'s idiom for an empty authored-prose block (`text`, `highlight`). See
+ * the fork's rationale in `entries/view.tsx`.
+ */
 async function assertBlank(canvasElement: HTMLElement, ink68: string) {
   await assertGeometry(canvasElement, 1)
   await assertDates(canvasElement, ink68)
   const [t] = textsOf(canvasElement)
   await expect(t.textContent).toBe(ENTRIES_EMPTY_LINE)
-  await assertSans(getComputedStyle(t), ink68)
+  await assertSerif(getComputedStyle(t), ink68)
 }
 
 // ── Sans: project → updates ─────────────────────────────────────────────────────
