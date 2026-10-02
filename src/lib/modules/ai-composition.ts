@@ -25,6 +25,7 @@ import { tableSchema, tableRowSchema } from './table/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
+import { entriesSchema, entrySchema } from './entries/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -84,6 +85,12 @@ const imageData = imageSchema.omit({ id: true })
 // collections, so a flat top-level id strip is the whole omit-chain. ADR 0006 names
 // this entry a work item: a block absent from this union is a block Pond cannot use.
 const highlightData = highlightSchema.omit({ id: true })
+// #250: a dated log's rows carry their own ids (`nestedIdPaths: ['entries']`), so
+// the omit-chain strips at both levels, as todo's. The optional `serif` flag rides
+// through untouched — a journal Pond composes stays a journal.
+const entriesData = entriesSchema
+  .omit({ id: true })
+  .extend({ entries: z.array(entrySchema.omit({ id: true })) })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -92,6 +99,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   viewData,
   imageData,
   highlightData,
+  entriesData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -163,6 +171,9 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   // #249: a page can be created WITH a kept passage (a reading list's `kept` line).
   // Nothing binds to it — parity with the persisted union.
   highlightData.extend({ bindKey }),
+  // #250: a page can be created WITH a dated log (a project's `updates`, a journal's
+  // `entries`). Nothing binds to it — parity with the persisted union.
+  entriesData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 

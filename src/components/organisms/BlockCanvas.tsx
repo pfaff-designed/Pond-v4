@@ -34,6 +34,7 @@ import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { applyView } from '@/lib/modules/view/apply'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
+import { addEntry } from '@/lib/modules/entries/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
@@ -382,6 +383,7 @@ export function BlockCanvas({
  *
  *   todo   → `addTodoItem` through onChange          `add a step`
  *   table  → `addTableRow` through onChange          `add a row`
+ *   entries→ `addEntry` through onChange             `write one`   (#250)
  *   view   → the collection's `addRow`               `add a row` / `add a record`
  *   view of kind `number` → none: `pick a field` has no engine path yet
  *          (`POND_BLOCK_EMPTY_ACTION_WIRED`), so the line renders alone.
@@ -412,6 +414,10 @@ function useBlockEmptyState(
     case 'table':
       return blockIsEmpty(block)
         ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+        : { state: 'rest' }
+    case 'entries':
+      return blockIsEmpty(block)
+        ? { state: 'empty', onEmptyAction: () => onChange(addEntry(block)) }
         : { state: 'rest' }
     case 'view': {
       if (isLoading || schema === null) return { state: 'rest' }

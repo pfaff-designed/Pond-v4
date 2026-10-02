@@ -74,7 +74,7 @@ describe('the deleted data-holding display blocks (#111)', () => {
 
   it('leaves the palette with the live authoring vocabulary only', () => {
     expect(paletteItems.map((i) => i.id).sort()).toEqual(
-      ['board', 'highlight', 'image', 'table', 'text', 'todo', 'view'].sort()
+      ['board', 'entries', 'highlight', 'image', 'table', 'text', 'todo', 'view'].sort()
     )
   })
 })

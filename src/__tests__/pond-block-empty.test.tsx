@@ -40,6 +40,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ChartCard, CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
+import { addEntry } from '@/lib/modules/entries/view'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -111,8 +112,12 @@ describe('POND_BLOCK_EMPTY — the board’s EL table, lowercase as authored', (
 
 // ── Which blocks are empty ────────────────────────────────────────────────────────
 
-describe('blockIsEmpty — pure read off the two block types that carry their own rows', () => {
-  it('a checklist with no items, a table with no rows', () => {
+describe('blockIsEmpty — pure read off the three block types that carry their own rows', () => {
+  it('a checklist with no items, a table with no rows, a log with no entries', () => {
+    expect(blockIsEmpty({ id: 'e', type: 'entries', entries: [] })).toBe(true)
+    expect(
+      blockIsEmpty({ id: 'e', type: 'entries', entries: [{ id: '1', date: 'today', text: '' }] })
+    ).toBe(false)
     expect(blockIsEmpty({ id: 'c', type: 'todo', items: [] })).toBe(true)
     expect(
       blockIsEmpty({ id: 'c', type: 'todo', items: [{ id: '1', label: 'soak', checked: false }] })
@@ -124,7 +129,7 @@ describe('blockIsEmpty — pure read off the two block types that carry their ow
   })
 
   // Prose, a file and a view are not in the parameter's union at all — `blockIsEmpty`
-  // answers only for `TodoBlock | TableBlock`, so passing one is a compile error
+  // answers only for `TodoBlock | TableBlock | EntriesBlock`, so passing one is a compile error
   // (no runtime `null`/`false` to misread). The canvas covers how those render below.
 })
 
@@ -273,7 +278,7 @@ describe('PondBlock state="empty" — the box, the line, the offered action', ()
 
 // ── The pure insert ops the action calls ─────────────────────────────────────────
 
-describe('addTodoItem / addTableRow — engine-shaped inserts through the whole-block contract', () => {
+describe('addTodoItem / addTableRow / addEntry — engine-shaped inserts through the whole-block contract', () => {
   it('appends one unchecked, unlabelled step with its own id; the rest by reference', () => {
     const block = {
       id: 'c',
@@ -295,6 +300,14 @@ describe('addTodoItem / addTableRow — engine-shaped inserts through the whole-
     expect(next.rows).toHaveLength(1)
     expect(next.rows[0].cells).toEqual(['', ''])
     expect(typeof next.rows[0].id).toBe('string')
+  })
+
+  it('prepends one blank entry dated today (#250 — newest first, as the board notes)', () => {
+    const block = { id: 'e', type: 'entries' as const, entries: [] }
+    const next = addEntry(block, new Date(2026, 9, 2))
+    expect(next.entries).toHaveLength(1)
+    expect(next.entries[0]).toMatchObject({ date: '2 oct', text: '' })
+    expect(typeof next.entries[0].id).toBe('string')
   })
 })
 
@@ -355,6 +368,42 @@ describe('BlockCanvas — the offered action does the thing it offers', () => {
     const next = onChange.mock.calls[0][0] as Block[]
     expect(next[0].type === 'table' && next[0].rows).toHaveLength(1)
     expect(next[0].type === 'table' && next[0].rows[0].cells).toEqual(['', ''])
+  })
+
+  it('an empty log: `write one` inserts one entry through onChange — the log card, reachable at last', () => {
+    const onChange = renderCanvas([{ id: 'b-log', type: 'entries', entries: [] }])
+    const card = cardOf('b-log')
+    expect(card.dataset.blockKind).toBe('log')
+    expect(card.dataset.blockState).toBe('empty')
+    expect(card.textContent).toContain('no entries yet')
+    expect(card.textContent).toContain('0 entries')
+    expect(card.querySelector('textarea')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'write one' }))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    const next = onChange.mock.calls[0][0] as Block[]
+    expect(next).toHaveLength(1)
+    expect(next[0].type === 'entries' && next[0].entries).toHaveLength(1)
+    expect(next[0].type === 'entries' && next[0].entries[0]).toMatchObject({ text: '' })
+  })
+
+  it('a non-empty log is at rest with its rows drawn: a date field and a prose field per entry', () => {
+    renderCanvas([
+      {
+        id: 'b-log',
+        type: 'entries',
+        serif: true,
+        entries: [{ id: '1', date: '25 oct', text: 'Slept badly, walked it off.' }],
+      },
+    ])
+    const card = cardOf('b-log')
+    expect(card.dataset.blockState).toBe('rest')
+    expect(card.textContent).toContain('1 entry')
+    expect(screen.getByRole('textbox', { name: 'Entry date' })).toHaveValue('25 oct')
+    expect(screen.getByRole('textbox', { name: 'Entry text' })).toHaveValue(
+      'Slept badly, walked it off.'
+    )
+    expect(screen.queryByRole('button', { name: 'write one' })).toBeNull()
   })
 
   it('a non-empty table is left exactly as it was: rest state, its own `+ Add row`, no empty box', () => {

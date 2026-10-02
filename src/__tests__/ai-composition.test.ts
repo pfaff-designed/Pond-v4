@@ -83,7 +83,7 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     }
   })
 
-  it('still lets the model compose the six live content types', () => {
+  it('still lets the model compose the seven live content types', () => {
     const live: unknown[] = [
       { type: 'text', content: 'prose' },
       { type: 'todo', items: [{ label: 'a', checked: false }] },
@@ -92,6 +92,8 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
       { type: 'image', url: 'https://example.test/a.png' },
       // #249: the kept passage — authored content, so a block (ADR 0007).
       { type: 'highlight', content: 'a line worth keeping' },
+      // #250: dated prose — authored content, so a block (ADR 0007).
+      { type: 'entries', entries: [{ date: '28 oct', text: 'Van booked.' }] },
     ]
     for (const data of live) {
       expect(moduleDataSchema.safeParse(data).success).toBe(true)
@@ -243,7 +245,7 @@ describe('proposeChangesSchema (the tool input)', () => {
 
 describe('moduleCatalog (prompt teaching)', () => {
   it('lists every composable content type', () => {
-    for (const type of ['text', 'todo', 'table', 'view', 'image', 'highlight']) {
+    for (const type of ['text', 'todo', 'table', 'view', 'image', 'highlight', 'entries']) {
       expect(moduleCatalog.split('\n').some((l) => l.startsWith(`- ${type}:`))).toBe(true)
     }
   })

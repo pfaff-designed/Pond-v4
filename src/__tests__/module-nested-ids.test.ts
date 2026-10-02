@@ -52,6 +52,15 @@ const samples: Record<string, ModuleData> = {
   // #249: a kept passage — authored text, no nested id-bearing collections, so a
   // flat top-level id strip is the whole omit-chain.
   highlight: { type: 'highlight', content: 'Three books at once is one too many.' },
+  // #250: dated prose. The rows carry their own ids (like todo's items), so the
+  // omit-chain strips at `nestedIdPaths: ['entries']` and hydrate mints them back.
+  entries: {
+    type: 'entries',
+    entries: [
+      { date: '28 oct', text: 'Van booked for the morning of the 14th.' },
+      { date: '24 oct', text: 'Landlord confirmed the inventory date.' },
+    ],
+  },
 }
 
 /**

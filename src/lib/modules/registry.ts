@@ -15,6 +15,7 @@ import { pageDescriptor } from './page/schema'
 import { viewDescriptor } from './view/schema'
 import { imageDescriptor } from './image/schema'
 import { highlightDescriptor } from './highlight/schema'
+import { entriesDescriptor } from './entries/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -27,6 +28,8 @@ export const moduleDescriptors = {
   image: imageDescriptor,
   // #249: a kept passage — authored content, so a block (ADR 0007).
   highlight: highlightDescriptor,
+  // #250: dated prose — authored content, so a block (ADR 0007).
+  entries: entriesDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors

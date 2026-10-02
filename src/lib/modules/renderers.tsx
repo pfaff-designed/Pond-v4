@@ -17,6 +17,7 @@ import { PageView } from './page/view'
 import { ViewView } from './view/view'
 import { ImageView } from './image/view'
 import { HighlightView } from './highlight/view'
+import { EntriesView } from './entries/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -38,6 +39,9 @@ export const moduleRenderers = {
   // #249: the kept passage. Click-to-edit folds into the view (as text); the diff
   // card renders it read-only through ModuleView, so no differ facet.
   highlight: { view: HighlightView },
+  // #250: dated prose. Editing folds into the view (a date field + a textarea per
+  // row, as todo); the diff card renders it read-only through ModuleView.
+  entries: { view: EntriesView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

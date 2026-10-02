@@ -4,9 +4,9 @@
  * `PondBlock.dc.html` draws the block family by KIND — list · checklist · table ·
  * gallery · number · log · properties — each with its own width and a head row
  * (eyebrow + mono note). The registry keys blocks by TYPE (text / todo / table /
- * view / image / highlight), so this is the one place a type is read into its board
- * kind. Pure data, no React: the frame component takes the result, the view
- * underneath it is untouched.
+ * view / image / highlight / entries), so this is the one place a type is read into
+ * its board kind. Pure data, no React: the frame component takes the result, the
+ * view underneath it is untouched.
  *
  * `null` means the block is BARE — no card. `PondTemplate.dc.html` draws a prose
  * block that way (`bare = k === 'text' && !label` → `padding: 2px 4px`, no card):
@@ -15,6 +15,7 @@
 import type { Block } from './content'
 import type { TodoBlock } from './todo/schema'
 import type { TableBlock } from './table/schema'
+import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 
@@ -132,19 +133,21 @@ export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
 
 /**
  * Whether a persisted block is EMPTY, read off the block alone (#239). A checklist
- * with no items and a table with no rows are. Only the two block types that carry
- * their own rows can answer — a view block is config only (its rows live with the
- * host collection, fetched by the canvas), and prose and a file are never empty —
- * so the parameter is narrowed to the two that can, and the switch stays exhaustive
- * over that union: a new row-carrying type is a compile error here, not a silent
- * `false`.
+ * with no items, a table with no rows and a log with no entries are. Only the block
+ * types that carry their own rows can answer — a view block is config only (its rows
+ * live with the host collection, fetched by the canvas), and prose and a file are
+ * never empty — so the parameter is narrowed to the three that can, and the switch
+ * stays exhaustive over that union: a new row-carrying type is a compile error here,
+ * not a silent `false`.
  */
-export function blockIsEmpty(block: TodoBlock | TableBlock): boolean {
+export function blockIsEmpty(block: TodoBlock | TableBlock | EntriesBlock): boolean {
   switch (block.type) {
     case 'todo':
       return block.items.length === 0
     case 'table':
       return (block.rows ?? []).length === 0
+    case 'entries':
+      return block.entries.length === 0
   }
 }
 
@@ -281,7 +284,9 @@ const VIEW_HEADING: Record<ViewMode, string> = {
   'big-number': 'big number',
 }
 
-const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
+// `many` is explicit for an irregular plural (`entry` → `entries`), so every head
+// note in this file goes through one idiom instead of hand-rolling the next one.
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /**
  * Which collection a view block draws: a LINKED view names another collection
@@ -331,5 +336,19 @@ export function blockFrame(block: Block): BlockFrame | null {
       // this block's: the eyebrow is the kind until templates carry labels. No note:
       // the board draws none for it.
       return { kind: 'list', heading: 'highlight', headNote: '' }
+    case 'entries': {
+      // #250: `PondBlock.dc.html`'s `log` kind (460) is a stack of `{ meta: date,
+      // title: prose }` rows — exactly a dated log — so this is the first block to
+      // reach that card, and `POND_BLOCK_EMPTY.log` (`no entries yet` / `write one`)
+      // becomes live with it. The board's `log` heading is `entry log` and its note
+      // `cooked 3 times`, both fixtures of the demo recipe; the eyebrow is the kind
+      // (as highlight — the template LABEL `updates` / `entries` is 228e's data) and
+      // the note is the true count.
+      return {
+        kind: 'log',
+        heading: 'entries',
+        headNote: plural(block.entries.length, 'entry', 'entries'),
+      }
+    }
   }
 }
