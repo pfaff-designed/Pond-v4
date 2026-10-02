@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * PondBlock (#237 frame · #238 states · #239 empty) — the card every block on a
- * page renders in, measured off `PondBlock.dc.html`'s inline `renderVals()`:
+ * PondBlock (#237 frame · #238 states · #239 empty · #240 deleted) — the card every
+ * block on a page renders in, measured off `PondBlock.dc.html`'s inline `renderVals()`:
  *
  *   block    width W · padding 16px 18px · radius 20 · gap 12 · card paper ·
  *            --mn-shadow-card · sans · full ink
@@ -42,7 +42,22 @@
  *             and the big number are all suppressed; the head keeps its NORMAL
  *             note. The action renders only when `onEmptyAction` is wired — a
  *             choice is offered or it is not drawn, never faked as a dead button.
- *   deleted   #240 (the tombstone) — falls through to rest here.
+ *   deleted   (#240) the tombstone — the ONE state that is not a card: `background:
+ *             transparent` and `boxShadow: inset 0 0 0 1.4px rgba(ink,.2)` — a SOLID
+ *             inset hairline ring (`ring-[1.4px] ring-inset ring-mn-text/20`, the
+ *             same hairline PondMolecule's empty record-card wears), no card paper,
+ *             no card shadow, NOT dashed. The object is gone, so its ground is gone.
+ *             Width is 460 for EVERY kind (`POND_BLOCK_TOMB_WIDTH`) — the only state
+ *             that overrides the kind's width. The head keeps the kind's heading and
+ *             its note becomes `database deleted`. The body → `tomb`: a column at
+ *             gap 12 holding `tombText` (mono 11 / 1.55 / ink .8 — the META tier,
+ *             not the note's .68) with the board's sentence, then `tombActions`
+ *             (flex, gap 8): `restore` as the secondary pill and `remove block` as
+ *             the ghost, both at 32px, each drawn only when its callback is wired
+ *             (7a: past the window, remove is the only action). Rows, gallery, big
+ *             number, skeleton, notice and empty box are all suppressed.
+ *             Presentation only: nothing in the schema can set it yet — the date,
+ *             window and the name of what was deleted ride props (#199).
  *
  * The module view renders as `children`, untouched: the card is chrome AROUND the
  * engine, never a rewrite of it.
@@ -55,8 +70,10 @@ import { Button } from '@/components/ui/button'
 import {
   blockEmptyCopy,
   blockErrorLine,
+  blockTombLine,
   POND_BLOCK_ROW_GAP,
   POND_BLOCK_SKELETON,
+  POND_BLOCK_TOMB_NOTE,
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -74,9 +91,13 @@ export {
   POND_BLOCK_SKELETON,
   POND_BLOCK_ROW_GAP,
   POND_BLOCK_ERROR_LINE,
+  POND_BLOCK_TOMB_WIDTH,
+  POND_BLOCK_TOMB_NOTE,
+  POND_BLOCK_TOMB_FIXTURE,
   blockEmptyCopy,
   blockErrorLine,
   blockRowState,
+  blockTombLine,
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -95,6 +116,9 @@ const WIDTH_CLASS: Record<PondBlockKind, string> = {
   log: 'w-[460px]',
   properties: 'w-[400px]',
 }
+
+/** `POND_BLOCK_TOMB_WIDTH` (460) as its literal class — the stories assert they agree. */
+const TOMB_WIDTH_CLASS = 'w-[460px]'
 
 /** The board's `headMeta`: the mono note on the right of the head row. */
 export const blockHeadNoteClass = 'font-mono text-[10.5px] text-mn-text-secondary'
@@ -152,7 +176,7 @@ export interface PondBlockProps {
   heading: string
   /** The mono note — a count, a source, a status. Omit for the board's `number`. */
   headNote?: string
-  /** @default 'rest' — `deleted` (#240) renders as rest for now. */
+  /** @default 'rest' */
   state?: PondBlockState
   /**
    * The next step the empty state offers (#239) — `add a row`, `add a step`… —
@@ -166,6 +190,22 @@ export interface PondBlockProps {
    * board's `EL` copy.
    */
   emptyLine?: string
+  /**
+   * The tombstone's facts (#240). What the view showed — the deleted DATABASE for a
+   * view block (7a), defaulting to `heading` — and when it went and for how long it
+   * can come back. All three are fixtures until #199 lands `deleted_at` and the
+   * trash window; the defaults are the board's `22 sep` / `30 days`.
+   */
+  deletedName?: string
+  deletedOn?: string
+  restoreWindow?: string
+  /**
+   * The tombstone's two ways out (7a): bring the database back, or take the stone
+   * off the page. Each button is drawn only when its callback is wired — past the
+   * window, `remove block` is the only action. #199 supplies the real paths.
+   */
+  onRestore?: () => void
+  onRemoveBlock?: () => void
   children: ReactNode
   className?: string
 }
@@ -177,6 +217,11 @@ export function PondBlock({
   state = 'rest',
   onEmptyAction,
   emptyLine,
+  deletedName,
+  deletedOn,
+  restoreWindow,
+  onRestore,
+  onRemoveBlock,
   children,
   className,
 }: PondBlockProps) {
@@ -184,10 +229,36 @@ export function PondBlock({
   const empty = state === 'empty'
   const loading = state === 'loading'
   const error = state === 'error'
+  const tombed = state === 'deleted'
   const disabled = state === 'disabled'
 
   let body: ReactNode
-  if (empty) {
+  if (tombed) {
+    body = (
+      <div data-part="tomb" className="flex flex-col gap-mn-3">
+        <span
+          data-part="tomb-line"
+          className="font-mono text-mn-11 leading-[1.55] text-mn-text-meta"
+        >
+          {blockTombLine(deletedName ?? heading, deletedOn, restoreWindow)}
+        </span>
+        {(onRestore || onRemoveBlock) && (
+          <div data-part="tomb-actions" className="flex gap-mn-2">
+            {onRestore && (
+              <Button variant="secondary" onClick={onRestore}>
+                restore
+              </Button>
+            )}
+            {onRemoveBlock && (
+              <Button variant="ghost" onClick={onRemoveBlock}>
+                remove block
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  } else if (empty) {
     body = <PondBlockEmpty kind={kind} line={emptyLine} onAction={onEmptyAction} />
   } else if (loading) {
     body = (
@@ -224,8 +295,12 @@ export function PondBlock({
       className={cn(
         // The column can be narrower than the kind (mobile, a dragged-in editor
         // width): clamp to it rather than overflow. Mobile's own 360 is a later slice.
-        'relative flex max-w-full flex-col gap-mn-3 rounded-mn-card bg-mn-card px-[18px] py-mn-4 font-sans text-mn-text shadow-mn-card',
-        WIDTH_CLASS[kind],
+        'relative flex max-w-full flex-col gap-mn-3 rounded-mn-card px-[18px] py-mn-4 font-sans text-mn-text',
+        // deleted: no paper, no shadow — a solid inset hairline on transparent, at
+        // 460 whatever the kind. Everything else is the card at its own width.
+        tombed
+          ? ['bg-transparent ring-[1.4px] ring-inset ring-mn-text/20', TOMB_WIDTH_CLASS]
+          : ['bg-mn-card shadow-mn-card', WIDTH_CLASS[kind]],
         // selected: the ring is PREPENDED to the card shadow (Tailwind composes
         // --tw-ring-shadow before --tw-shadow), so both paint — as the board draws.
         selected && 'ring-2 ring-mn-text',
@@ -235,7 +310,9 @@ export function PondBlock({
     >
       <div className="flex items-baseline justify-between gap-mn-3">
         <span className={pageEyebrowClass}>{heading}</span>
-        <span className={blockHeadNoteClass}>{loading ? BLOCK_LOADING_NOTE : headNote}</span>
+        <span className={blockHeadNoteClass}>
+          {loading ? BLOCK_LOADING_NOTE : tombed ? POND_BLOCK_TOMB_NOTE : headNote}
+        </span>
       </div>
       {body}
     </div>
