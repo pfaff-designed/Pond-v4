@@ -27,6 +27,58 @@ export const POND_BLOCK_KINDS = [
 ] as const
 export type PondBlockKind = (typeof POND_BLOCK_KINDS)[number]
 
+/**
+ * The board's `state` enum, verbatim and in its order (#238, PondBlock 2/4). The
+ * frame implements rest · hover · selected · loading · error · disabled; `empty`
+ * is #239 and `deleted` (the tombstone) is #240 — both fall through to rest until
+ * their slices land.
+ */
+export const POND_BLOCK_STATES = [
+  'rest',
+  'hover',
+  'selected',
+  'empty',
+  'loading',
+  'error',
+  'deleted',
+  'disabled',
+] as const
+export type PondBlockState = (typeof POND_BLOCK_STATES)[number]
+
+/**
+ * The board's `R` map: on `hover` the CARD does not change — exactly one child row
+ * goes into the molecule's `hover` state, at this index. `number` has no rows.
+ * (`gallery` indexes its record-cards.)
+ */
+export const POND_BLOCK_HOVER_ROW: Record<PondBlockKind, number | null> = {
+  list: 1,
+  checklist: 1,
+  table: 0,
+  log: 0,
+  properties: 0,
+  gallery: 0,
+  number: null,
+}
+
+/**
+ * The molecule state for the row (or gallery record-card) at `index` under a frame
+ * `state` — the board's two row rules, pure so a body can paint them without the
+ * frame handing anything down:
+ *
+ *   hover     the row at `POND_BLOCK_HOVER_ROW[kind]` → `hover`
+ *   selected  gallery's record-card 1 → `selected`
+ *   else      `rest`
+ */
+export function blockRowState(
+  kind: PondBlockKind,
+  state: PondBlockState,
+  index: number
+): 'rest' | 'hover' | 'selected' {
+  if (state === 'hover' && POND_BLOCK_HOVER_ROW[kind] === index) return 'hover'
+  if (state === 'selected' && kind === 'gallery' && index === 1) return 'selected'
+  return 'rest'
+}
+
 /** The board's `W` map, verbatim. Mobile's 360 is a later slice. */
 export const POND_BLOCK_WIDTHS: Record<PondBlockKind, number> = {
   list: 400,
@@ -75,7 +127,11 @@ export function blockFrame(block: Block): BlockFrame | null {
       return null
     case 'todo': {
       const done = block.items.filter((it) => it.checked).length
-      return { kind: 'checklist', heading: 'checklist', headNote: `${done} of ${block.items.length}` }
+      return {
+        kind: 'checklist',
+        heading: 'checklist',
+        headNote: `${done} of ${block.items.length}`,
+      }
     }
     case 'table':
       return {
