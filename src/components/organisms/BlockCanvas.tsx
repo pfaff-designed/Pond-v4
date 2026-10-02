@@ -21,6 +21,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
+import { blockFrame } from '@/lib/modules/block-frame'
+import { PondBlock } from '@/components/organisms/PondBlock'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
@@ -410,6 +412,30 @@ function BlockEditor({
 }) {
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
+  const frame = blockFrame(block)
+
+  const view = (
+    <ModuleView
+      type={block.type}
+      data={block}
+      editable
+      onChange={(next) => {
+        const nextBlock = next as Block
+        // `/` typed into an EMPTY text block opens the palette instead of
+        // persisting the slash (ticket-37). Only the empty→'/' transition fires.
+        if (
+          nextBlock.type === 'text' &&
+          block.type === 'text' &&
+          (block as { content: string }).content === '' &&
+          (nextBlock as { content: string }).content === '/'
+        ) {
+          onSlashKey?.()
+          return
+        }
+        onChange(nextBlock)
+      }}
+    />
+  )
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.altKey && e.key === 'ArrowUp') {
@@ -521,26 +547,17 @@ function BlockEditor({
         />
       )}
 
-      <ModuleView
-        type={block.type}
-        data={block}
-        editable
-        onChange={(next) => {
-          const nextBlock = next as Block
-          // `/` typed into an EMPTY text block opens the palette instead of
-          // persisting the slash (ticket-37). Only the empty→'/' transition fires.
-          if (
-            nextBlock.type === 'text' &&
-            block.type === 'text' &&
-            (block as { content: string }).content === '' &&
-            (nextBlock as { content: string }).content === '/'
-          ) {
-            onSlashKey?.()
-            return
-          }
-          onChange(nextBlock)
-        }}
-      />
+      {/* #237: the board's card around the module view — PondBlock.dc.html's
+          frame + head row, by kind (blockFrame). Prose is bare: PondTemplate draws
+          a text block with no label at `padding 2px 4px` and no card. The view
+          itself renders exactly as before — the frame is chrome, not a rewrite. */}
+      {frame ? (
+        <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote}>
+          {view}
+        </PondBlock>
+      ) : (
+        <div className="px-1 py-0.5">{view}</div>
+      )}
     </div>
   )
 }
