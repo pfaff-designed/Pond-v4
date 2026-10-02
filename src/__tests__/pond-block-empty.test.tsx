@@ -28,11 +28,16 @@ import {
   PondBlockEmpty,
   POND_BLOCK_KINDS,
   POND_BLOCK_EMPTY,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
   blockEmptyCopy,
 } from '@/components/organisms/PondBlock'
-import { blockIsEmpty } from '@/lib/modules/block-frame'
+import {
+  blockIsEmpty,
+  viewCollectionId,
+  POND_BLOCK_EMPTY_ACTION_WIRED,
+} from '@/lib/modules/block-frame'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
-import { ChartCard } from '@/lib/modules/chart/card'
+import { ChartCard, CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -106,7 +111,7 @@ describe('POND_BLOCK_EMPTY — the board’s EL table, lowercase as authored', (
 
 // ── Which blocks are empty ────────────────────────────────────────────────────────
 
-describe('blockIsEmpty — pure read off the persisted block', () => {
+describe('blockIsEmpty — pure read off the two block types that carry their own rows', () => {
   it('a checklist with no items, a table with no rows', () => {
     expect(blockIsEmpty({ id: 'c', type: 'todo', items: [] })).toBe(true)
     expect(
@@ -118,13 +123,33 @@ describe('blockIsEmpty — pure read off the persisted block', () => {
     ).toBe(false)
   })
 
-  it('prose and files are never empty blocks', () => {
-    expect(blockIsEmpty({ id: 'x', type: 'text', content: '' })).toBe(false)
-    expect(blockIsEmpty({ id: 'i', type: 'image', url: 'https://x/a.png' })).toBe(false)
-  })
+  // Prose, a file and a view are not in the parameter's union at all — `blockIsEmpty`
+  // answers only for `TodoBlock | TableBlock`, so passing one is a compile error
+  // (no runtime `null`/`false` to misread). The canvas covers how those render below.
+})
 
-  it('a view cannot say from config alone — its rows live with the host (null)', () => {
-    expect(blockIsEmpty({ id: 'v', type: 'view', mode: 'table' })).toBeNull()
+describe('POND_BLOCK_EMPTY_ACTION_WIRED — the no-action rule is per KIND, not per view mode', () => {
+  it('every row kind offers its insert; `number` alone has no engine path', () => {
+    expect(POND_BLOCK_EMPTY_ACTION_WIRED).toEqual({
+      list: true,
+      checklist: true,
+      table: true,
+      gallery: true,
+      number: false,
+      log: true,
+      properties: true,
+    })
+    expect(Object.keys(POND_BLOCK_EMPTY_ACTION_WIRED).sort()).toEqual([...POND_BLOCK_KINDS].sort())
+  })
+})
+
+describe('viewCollectionId — the one resolution the canvas and the view share', () => {
+  it('a linked view names its own collection; otherwise the host page', () => {
+    expect(
+      viewCollectionId({ id: 'v', type: 'view', mode: 'table', collectionId: 'c-9' }, 'page-1')
+    ).toBe('c-9')
+    expect(viewCollectionId({ id: 'v', type: 'view', mode: 'table' }, 'page-1')).toBe('page-1')
+    expect(viewCollectionId({ id: 'v', type: 'view', mode: 'table' }, undefined)).toBeUndefined()
   })
 })
 
@@ -198,6 +223,40 @@ describe('PondBlock state="empty" — the box, the line, the offered action', ()
   it('the box is also exported bare, for a surface under the frame that has its own degenerate case', () => {
     render(<PondBlockEmpty kind="table" />)
     expect(screen.getByText('no rows yet')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('`line` overrides the kind’s line when that line would be false; the kind still names the action', () => {
+    const onAction = jest.fn()
+    const { container } = render(
+      <PondBlockEmpty kind="table" line="nothing matches this filter" onAction={onAction} />
+    )
+    const box = container.querySelector<HTMLElement>('[data-part="empty"]')!
+    for (const cls of BOX_CLASSES) expect(box.className.split(' ')).toContain(cls)
+    expect(screen.getByText('nothing matches this filter')).toBeInTheDocument()
+    expect(screen.queryByText('no rows yet')).toBeNull()
+    expect(screen.getByRole('button', { name: 'add a row' })).toBeInTheDocument()
+  })
+
+  it('with a `line` and no kind there is no action to name — the line alone, even with a callback', () => {
+    render(<PondBlockEmpty line="no data yet" onAction={jest.fn()} />)
+    expect(screen.getByText('no data yet')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('the frame threads `emptyLine` into the box', () => {
+    render(
+      <PondBlock
+        kind="table"
+        heading="table"
+        state="empty"
+        emptyLine={POND_BLOCK_FILTERED_EMPTY_LINE}
+      >
+        <p>body</p>
+      </PondBlock>
+    )
+    expect(screen.getByText('nothing matches this filter')).toBeInTheDocument()
+    expect(screen.queryByText('no rows yet')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
@@ -374,22 +433,118 @@ describe('BlockCanvas — the offered action does the thing it offers', () => {
     expect(cardOf('b-view').dataset.blockState).toBe('rest')
     expect(screen.getByDisplayValue('Bench')).toBeInTheDocument()
   })
+
+  // Emptiness is decided off the SAME `applyView` the view draws from, so a filter
+  // that hides every row is an empty frame — not a `<thead>` with no body — and the
+  // line is TRUE: the rows exist, so `no rows yet` is not said, and no action is
+  // offered because clearing a filter is not wired through the frame.
+  it('a filter that matches nothing over rows that exist: `nothing matches this filter`, no action', () => {
+    collection.rows = [{ id: 'r1', title: 'Bench', values: { 'p-name': 'Bench' } }]
+    renderCanvas([
+      {
+        id: 'b-view',
+        type: 'view',
+        mode: 'table',
+        filter: { property: 'p-name', op: 'eq', value: 'Lathe' },
+      },
+    ])
+    const card = cardOf('b-view')
+    expect(card.dataset.blockState).toBe('empty')
+    expect(card.textContent).toContain('nothing matches this filter')
+    expect(card.textContent).not.toContain('no rows yet')
+    expect(card.querySelector('[data-part="empty"]')).not.toBeNull()
+    expect(card.querySelector('button')).toBeNull()
+    // The view is suppressed: no header-only table.
+    expect(card.querySelector('thead')).toBeNull()
+    expect(screen.queryByDisplayValue('Bench')).toBeNull()
+  })
+
+  it('the same filter in gallery mode: the line, not `no records yet`, and no `add a record`', () => {
+    collection.rows = [{ id: 'r1', title: 'Bench', values: { 'p-name': 'Bench' } }]
+    renderCanvas([
+      {
+        id: 'b-view',
+        type: 'view',
+        mode: 'gallery',
+        filter: { property: 'p-name', op: 'eq', value: 'Lathe' },
+      },
+    ])
+    const card = cardOf('b-view')
+    expect(card.dataset.blockKind).toBe('gallery')
+    expect(card.dataset.blockState).toBe('empty')
+    expect(card.textContent).toContain('nothing matches this filter')
+    expect(card.textContent).not.toContain('no records yet')
+    expect(screen.queryByRole('button', { name: 'add a record' })).toBeNull()
+  })
+
+  it('a filter that lets rows through is at rest with those rows drawn', () => {
+    collection.rows = [
+      { id: 'r1', title: 'Row one', values: { 'p-name': 'Bench' } },
+      { id: 'r2', title: 'Row two', values: { 'p-name': 'Lathe' } },
+    ]
+    renderCanvas([
+      {
+        id: 'b-view',
+        type: 'view',
+        mode: 'table',
+        filter: { property: 'p-name', op: 'eq', value: 'Lathe' },
+      },
+    ])
+    expect(cardOf('b-view').dataset.blockState).toBe('rest')
+    expect(screen.getByDisplayValue('Row two')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Row one')).toBeNull()
+  })
+
+  it('an empty collection with a filter set is still `no rows yet` + `add a row` — nothing is hidden, there is nothing', () => {
+    renderCanvas([
+      {
+        id: 'b-view',
+        type: 'view',
+        mode: 'table',
+        filter: { property: 'p-name', op: 'eq', value: 'Lathe' },
+      },
+    ])
+    const card = cardOf('b-view')
+    expect(card.dataset.blockState).toBe('empty')
+    expect(card.textContent).toContain('no rows yet')
+    expect(card.textContent).not.toContain('nothing matches this filter')
+    expect(screen.getByRole('button', { name: 'add a row' })).toBeInTheDocument()
+  })
+
+  it('a file block is never empty: rest, no box', () => {
+    renderCanvas([{ id: 'b-img', type: 'image', url: 'https://x/a.png', filename: 'a.png' }])
+    const card = cardOf('b-img')
+    expect(card.dataset.blockState).toBe('rest')
+    expect(card.querySelector('[data-part="empty"]')).toBeNull()
+  })
 })
 
 // ── The chart card’s degenerate case takes the shared treatment ──────────────────
 
-describe('ChartCard — no `No data yet`; the shared box, line alone', () => {
-  it('a degenerate chart draws the shared empty box', () => {
+describe('ChartCard — no `No data yet`; the shared box with its own TRUE line, alone', () => {
+  it('no points: the shared empty box reads `no data yet`', () => {
     const { container } = render(
       <ChartCard points={[]} seriesColors={['#000']}>
         <svg data-testid="plot" />
       </ChartCard>
     )
+    expect(CHART_EMPTY_LINE).toBe('no data yet')
     expect(screen.queryByText('No data yet')).toBeNull()
-    expect(screen.getByText('no rows yet')).toBeInTheDocument()
+    expect(screen.getByText('no data yet')).toBeInTheDocument()
     expect(container.querySelector('[data-part="empty"]')).not.toBeNull()
     expect(screen.queryByTestId('plot')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('points with no numeric series: `no data yet` is still true where `no rows yet` would not be', () => {
+    render(
+      <ChartCard points={[{ x: '2026-01', values: {} }]} seriesColors={['#000']}>
+        <svg data-testid="plot" />
+      </ChartCard>
+    )
+    expect(screen.getByText('no data yet')).toBeInTheDocument()
+    expect(screen.queryByText('no rows yet')).toBeNull()
+    expect(screen.queryByTestId('plot')).toBeNull()
   })
 })
 

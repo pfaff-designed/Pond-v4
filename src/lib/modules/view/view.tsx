@@ -23,6 +23,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import { VIEW_MODES, type ViewBlock, type ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
+import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
 import {
   applyView,
@@ -66,9 +67,10 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // Which collection's rows this view draws: a LINKED view names another collection
   // (data.collectionId, #41); otherwise it draws its HOST page's own rows, whose id
   // arrives from the page host (DocumentPanel) through SiblingBlocks — exactly as a
-  // cross-page metric reads it. `useCollectionRows` fetches + writes against whichever.
+  // cross-page metric reads it. `viewCollectionId` is the one resolution the canvas
+  // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
-  const collectionId = data.collectionId ?? pageId
+  const collectionId = viewCollectionId(data, pageId)
   const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
 
@@ -895,8 +897,9 @@ function CollectionCalendar({
 
   return (
     <div {...containerHandlers}>
-      {/* Undated rows land in the null lane, so no buckets means no rows — and the
-          frame owns that state (#239). */}
+      {/* Undated rows land in the null lane, so no buckets means no rows to draw —
+          none at all, or none the view's filter lets through — and the frame owns
+          both empty states (#239). */}
       <div className="space-y-4">
         {buckets.map((bucket) => {
           const key = laneKey(bucket.iso)

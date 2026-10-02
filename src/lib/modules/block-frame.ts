@@ -13,7 +13,9 @@
  * prose is the page, cards sit on it.
  */
 import type { Block } from './content'
-import type { ViewMode } from './view/schema'
+import type { TodoBlock } from './todo/schema'
+import type { TableBlock } from './table/schema'
+import type { ViewBlock, ViewMode } from './view/schema'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 
 export const POND_BLOCK_KINDS = [
@@ -104,22 +106,46 @@ export function blockEmptyCopy(kind: PondBlockKind): BlockEmptyCopy {
 }
 
 /**
- * Whether a persisted block is EMPTY, read off the block alone (#239). A checklist
- * with no items and a table with no rows are; prose and a file never are. A view
- * block is config only — its rows live with the host collection, fetched by the
- * canvas — so it answers `null`: the host decides from the rows it has.
+ * The one empty line no board row covers (#239 review): a view whose FILTER matches
+ * nothing over a collection that has rows. `no rows yet` would be false there — the
+ * rows exist — so the frame says what is true, lowercase in the product's voice,
+ * and offers no action: clearing a filter is not wired through the frame, and a
+ * dead button is never drawn.
  */
-export function blockIsEmpty(block: Block): boolean | null {
+export const POND_BLOCK_FILTERED_EMPTY_LINE = 'nothing matches this filter'
+
+/**
+ * Whether a kind's offered empty action has an engine path a host can wire it to.
+ * Every row kind's action is an INSERT (`add a row`, `add a step`…) that lands on
+ * the module's own add path. `number`'s `pick a field` is a configuration step with
+ * no engine path yet (#246), so its line renders alone — offered, never faked.
+ * Keyed by KIND, not view mode: a new mode mapping to `number` inherits the rule.
+ */
+export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
+  list: true,
+  checklist: true,
+  table: true,
+  gallery: true,
+  number: false,
+  log: true,
+  properties: true,
+}
+
+/**
+ * Whether a persisted block is EMPTY, read off the block alone (#239). A checklist
+ * with no items and a table with no rows are. Only the two block types that carry
+ * their own rows can answer — a view block is config only (its rows live with the
+ * host collection, fetched by the canvas), and prose and a file are never empty —
+ * so the parameter is narrowed to the two that can, and the switch stays exhaustive
+ * over that union: a new row-carrying type is a compile error here, not a silent
+ * `false`.
+ */
+export function blockIsEmpty(block: TodoBlock | TableBlock): boolean {
   switch (block.type) {
     case 'todo':
       return block.items.length === 0
     case 'table':
       return (block.rows ?? []).length === 0
-    case 'view':
-      return null
-    case 'text':
-    case 'image':
-      return false
   }
 }
 
@@ -132,6 +158,67 @@ export const POND_BLOCK_WIDTHS: Record<PondBlockKind, number> = {
   number: 400,
   log: 460,
   properties: 400,
+}
+
+/**
+ * The board's `skel` per kind (#238), as `[width, height]` literal class pairs
+ * (Tailwind needs the literals in source). `sk(w, h = 10)`:
+ *   number  → sk('60%', 52), sk('40%')
+ *   gallery → sk('100%', 120), sk('50%')
+ *   else    → sk('82%'), sk('64%'), sk('74%')
+ */
+export type SkeletonBar = readonly [width: string, height: string]
+const TEN_BARS: readonly SkeletonBar[] = [
+  ['w-[82%]', 'h-[10px]'],
+  ['w-[64%]', 'h-[10px]'],
+  ['w-[74%]', 'h-[10px]'],
+]
+export const POND_BLOCK_SKELETON: Record<PondBlockKind, readonly SkeletonBar[]> = {
+  list: TEN_BARS,
+  checklist: TEN_BARS,
+  table: TEN_BARS,
+  log: TEN_BARS,
+  properties: TEN_BARS,
+  number: [
+    ['w-[60%]', 'h-[52px]'],
+    ['w-[40%]', 'h-[10px]'],
+  ],
+  gallery: [
+    ['w-full', 'h-[120px]'],
+    ['w-[50%]', 'h-[10px]'],
+  ],
+}
+
+/**
+ * The board's row stack gap per kind — `gap: 0` for table (its rows draw their own
+ * rule), 2 for everything else. Literal class strings so Tailwind sees them; the
+ * skeleton and a demo body both read this one table.
+ */
+export const POND_BLOCK_ROW_GAP: Record<PondBlockKind, string> = {
+  list: 'gap-[2px]',
+  checklist: 'gap-[2px]',
+  table: 'gap-0',
+  gallery: 'gap-[2px]',
+  number: 'gap-[2px]',
+  log: 'gap-[2px]',
+  properties: 'gap-[2px]',
+}
+
+/** The board's `errLine` per kind, verbatim — curly apostrophes (U+2019) included. */
+const SHEET_ERROR = 'pond can’t reach this sheet any more · showing the last copy'
+const BLOCK_ERROR = 'this block couldn’t load'
+export const POND_BLOCK_ERROR_LINE: Record<PondBlockKind, string> = {
+  list: BLOCK_ERROR,
+  checklist: BLOCK_ERROR,
+  table: SHEET_ERROR,
+  gallery: SHEET_ERROR,
+  number: SHEET_ERROR,
+  log: BLOCK_ERROR,
+  properties: BLOCK_ERROR,
+}
+
+export function blockErrorLine(kind: PondBlockKind): string {
+  return POND_BLOCK_ERROR_LINE[kind]
 }
 
 export interface BlockFrame {
@@ -164,6 +251,16 @@ const VIEW_HEADING: Record<ViewMode, string> = {
 }
 
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
+
+/**
+ * Which collection a view block draws: a LINKED view names another collection
+ * (`collectionId`, #41); otherwise it draws its HOST page's own rows. One helper so
+ * the canvas (deciding emptiness) and the view (drawing) can never read different
+ * collections. `undefined` when there is neither — a view outside a page host.
+ */
+export function viewCollectionId(block: ViewBlock, pageId: string | undefined): string | undefined {
+  return block.collectionId ?? pageId
+}
 
 export function blockFrame(block: Block): BlockFrame | null {
   switch (block.type) {
