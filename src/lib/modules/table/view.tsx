@@ -7,6 +7,19 @@ import { MarkdownInline } from '@/components/molecules/Markdown'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 /**
+ * Append one empty row (a blank cell per column) — the table's insert path, pure,
+ * so the view's own `+ Add row` and the frame's empty-state action (#239) both go
+ * through the one whole-block `onChange` contract.
+ */
+export function addTableRow(data: TableBlock): TableBlock {
+  const columns = data.columns ?? []
+  return {
+    ...data,
+    rows: [...(data.rows ?? []), { id: crypto.randomUUID(), cells: columns.map(() => '') }],
+  }
+}
+
+/**
  * Table view. An interactive module like todo: editing is folded into the view
  * (inline cell inputs + add/remove row), so `table` declares no separate `editor`.
  * Every interaction emits a whole new block state via `onChange`.
@@ -41,10 +54,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
   }
 
   function addRow() {
-    onChange?.({
-      ...data,
-      rows: [...rows, { id: crypto.randomUUID(), cells: columns.map(() => '') }],
-    })
+    onChange?.(addTableRow(data))
   }
 
   function removeRow(rowIndex: number) {
@@ -63,10 +73,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
         <thead>
           <tr>
             {columns.map((col, i) => (
-              <th
-                key={i}
-                className={`${pageEyebrowClass} border-b border-mn-line py-1 pr-3`}
-              >
+              <th key={i} className={`${pageEyebrowClass} border-b border-mn-line py-1 pr-3`}>
                 {col}
               </th>
             ))}
@@ -74,13 +81,8 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 && !editable && (
-            <tr>
-              <td colSpan={columns.length} className="py-2 text-mn-text-secondary">
-                No entries yet
-              </td>
-            </tr>
-          )}
+          {/* No empty row of its own: on a page the frame owns the empty state
+              (PondBlock state="empty", #239); bare hosts show the headers alone. */}
           {rows.map((row, ri) => (
             <tr key={row.id} className="border-b border-mn-hair last:border-b-0">
               {columns.map((_, ci) => (
@@ -121,10 +123,7 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
               {columns.map((_, ci) => {
                 if (ci === 0) {
                   return (
-                    <td
-                      key={ci}
-                      className={`${pageEyebrowClass} py-1.5 pr-3`}
-                    >
+                    <td key={ci} className={`${pageEyebrowClass} py-1.5 pr-3`}>
                       Total
                     </td>
                   )

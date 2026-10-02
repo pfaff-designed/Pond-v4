@@ -1,5 +1,5 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 
 import {
   PondBlock,
@@ -9,6 +9,7 @@ import {
   POND_BLOCK_SKELETON,
   POND_BLOCK_ROW_GAP,
   BLOCK_LOADING_NOTE,
+  blockEmptyCopy,
   blockErrorLine,
   blockRowState,
   type PondBlockKind,
@@ -34,6 +35,10 @@ import { TableView } from '@/lib/modules/table/view'
  *   loading  headNote `loading…` · static bars (block · h · w · radius 5 · ink .08)
  *   error    PondMolecule notice · reconnect · the kind's errLine
  *   disabled opacity .4 · the card is `inert` (no clicks, typing or Tab reach the body)
+ *   empty    emptyBox flex · center · space-between · gap 12 · padding 14 · radius 14 ·
+ *            ink .035 — emptyText 13.5 / ink .68 sans — EL[kind] copy, lowercase —
+ *            a secondary button at 32px, wired · rows / gallery / big suppressed ·
+ *            the head keeps its normal note
  */
 
 /** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
@@ -196,7 +201,13 @@ function Body({ kind, state }: { kind: PondBlockKind; state: PondBlockState }) {
   }
 }
 
-function AllKinds({ state = 'rest' }: { state?: PondBlockState }) {
+function AllKinds({
+  state = 'rest',
+  onEmptyAction,
+}: {
+  state?: PondBlockState
+  onEmptyAction?: (kind: PondBlockKind) => void
+}) {
   return (
     <div className="flex min-w-[640px] flex-col items-start gap-mn-4">
       {POND_BLOCK_KINDS.map((kind) => (
@@ -206,6 +217,7 @@ function AllKinds({ state = 'rest' }: { state?: PondBlockState }) {
           heading={HEAD[kind][0]}
           headNote={HEAD[kind][1]}
           state={state}
+          onEmptyAction={onEmptyAction ? () => onEmptyAction(kind) : undefined}
         >
           <Body kind={kind} state={state} />
         </PondBlock>
@@ -550,6 +562,106 @@ export const DisabledInk: Story = {
   render: () => <AllKinds state="disabled" />,
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertDisabled(canvasElement, DARK),
+}
+
+// ── empty: the box, the line, the offered action (#239) ─────────────────────────
+
+/** The spy every empty story's action lands on — asserted per kind. */
+const onEmptyAction = fn()
+
+async function assertEmpty(canvasElement: HTMLElement, theme: Theme) {
+  onEmptyAction.mockClear()
+  for (const kind of POND_BLOCK_KINDS) {
+    const c = card(canvasElement, kind)
+    await expect(c.dataset.blockState).toBe('empty')
+    // The card itself is the rest card: paper, shadow, no ring, live.
+    await assertRestCard(c, theme)
+    // The head keeps the kind's own note — never `loading…`.
+    await expect(noteOf(c).textContent).toBe(HEAD[kind][1])
+    // Rows, the gallery grid and the big number are all suppressed.
+    await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
+    await expect(c.querySelector('[data-part="skeleton"]')).toBeNull()
+
+    // emptyBox: flex · center · space-between · gap 12 · padding 14 · radius 14 · ink .035
+    const box = c.querySelector<HTMLElement>('[data-part="empty"]')!
+    await expect(box).toBeTruthy()
+    const bs = getComputedStyle(box)
+    await expect(bs.display).toBe('flex')
+    await expect(bs.alignItems).toBe('center')
+    await expect(bs.justifyContent).toBe('space-between')
+    await expect(bs.columnGap).toBe('12px')
+    await expect(bs.paddingTop).toBe('14px')
+    await expect(bs.paddingRight).toBe('14px')
+    await expect(bs.paddingBottom).toBe('14px')
+    await expect(bs.paddingLeft).toBe('14px')
+    await expect(bs.borderTopLeftRadius).toBe('14px')
+    await expect(alphaOf(bs.backgroundColor)).toBeCloseTo(0.035, 3)
+    await expect(bs.borderTopWidth).toBe('0px')
+    // The box spans the content box of the card.
+    await expect(parseFloat(bs.width)).toBeCloseTo(contentWidth(c), 0)
+
+    // emptyText: 13.5 / ink .68 / sans inherited / lowercase as authored
+    const { line, action } = blockEmptyCopy(kind)
+    const [text, button] = Array.from(box.children) as HTMLElement[]
+    await expect(text.textContent).toBe(line)
+    await expect(text.textContent).toBe(line.toLowerCase())
+    const ts = getComputedStyle(text)
+    await expect(ts.fontSize).toBe('13.5px')
+    await expect(ts.color).toBe(theme.ink68)
+    await expect(ts.fontFamily).toContain('PP Neue Montreal')
+    await expect(ts.fontFamily).not.toContain('Mono')
+    await expect(ts.textTransform).toBe('none')
+
+    // The action: the existing secondary pill at the board's auto × 32.
+    await expect(button.tagName).toBe('BUTTON')
+    await expect(button.textContent).toBe(action)
+    await expect(button.hasAttribute('disabled')).toBe(false)
+    await expect(button.getAttribute('aria-disabled')).toBeNull()
+    const us = getComputedStyle(button)
+    await expect(us.height).toBe('32px')
+    await expect(us.paddingLeft).toBe('14px')
+    await expect(us.paddingRight).toBe('14px')
+    await expect(us.fontWeight).toBe('500')
+    await expect(us.fontFamily).toContain('PP Neue Montreal')
+    await expect(parseFloat(us.borderTopLeftRadius)).toBeGreaterThanOrEqual(16) // pill
+    await expect(us.textTransform).toBe('none')
+    // (The button's 14px `text-sm` vs the board's 12 is #221's — not asserted here.)
+
+    await userEvent.click(button)
+    await expect(onEmptyAction).toHaveBeenLastCalledWith(kind)
+  }
+  await expect(onEmptyAction).toHaveBeenCalledTimes(POND_BLOCK_KINDS.length)
+}
+
+/** empty — the board's EL copy per kind in its box, with the offered action wired. */
+export const Empty: Story = {
+  render: () => <AllKinds state="empty" onEmptyAction={onEmptyAction} />,
+  play: async ({ canvasElement }) => assertEmpty(canvasElement, LIGHT),
+}
+
+export const EmptyInk: Story = {
+  render: () => <AllKinds state="empty" onEmptyAction={onEmptyAction} />,
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertEmpty(canvasElement, DARK),
+}
+
+/**
+ * empty with NO action wired: the line renders alone. A choice is offered or it is
+ * not drawn — never a dead or disabled button (PROJECT_RULES: offered, never faked).
+ * The product does this for `number`, whose `pick a field` has no engine path yet.
+ */
+export const EmptyLineOnly: Story = {
+  render: () => <AllKinds state="empty" />,
+  play: async ({ canvasElement }) => {
+    for (const kind of POND_BLOCK_KINDS) {
+      const c = card(canvasElement, kind)
+      const box = c.querySelector<HTMLElement>('[data-part="empty"]')!
+      await expect(box.children).toHaveLength(1)
+      await expect(box.textContent).toBe(blockEmptyCopy(kind).line)
+      await expect(c.querySelector('button')).toBeNull()
+      await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
+    }
+  },
 }
 
 /**

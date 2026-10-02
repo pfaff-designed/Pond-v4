@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * PondBlock (#237 frame · #238 states) — the card every block on a page renders in,
- * measured off `PondBlock.dc.html`'s inline `renderVals()`:
+ * PondBlock (#237 frame · #238 states · #239 empty) — the card every block on a
+ * page renders in, measured off `PondBlock.dc.html`'s inline `renderVals()`:
  *
  *   block    width W · padding 16px 18px · radius 20 · gap 12 · card paper ·
  *            --mn-shadow-card · sans · full ink
@@ -34,7 +34,14 @@
  *             clicks, no text entry and no Tab — `inert` removes the subtree from
  *             hit-testing and the focus order together, which `pointer-events`
  *             alone would not.
- *   empty     #239 — falls through to rest here.
+ *   empty     (#239) the body → `emptyBox`: flex · center · space-between · gap 12 ·
+ *             padding 14 · radius 14 · rgba(ink,.035) ground, holding `emptyText`
+ *             (13.5 / ink .68, sans inherited) with the kind's lowercase line
+ *             (`POND_BLOCK_EMPTY`) and, on the right, the offered action as the
+ *             existing secondary pill at the board's 32px. Rows, the gallery grid
+ *             and the big number are all suppressed; the head keeps its NORMAL
+ *             note. The action renders only when `onEmptyAction` is wired — a
+ *             choice is offered or it is not drawn, never faked as a dead button.
  *   deleted   #240 (the tombstone) — falls through to rest here.
  *
  * The module view renders as `children`, untouched: the card is chrome AROUND the
@@ -44,14 +51,31 @@
 import type { ReactNode } from 'react'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import { type PondBlockKind, type PondBlockState } from '@/lib/modules/block-frame'
+import { Button } from '@/components/ui/button'
+import {
+  blockEmptyCopy,
+  blockErrorLine,
+  POND_BLOCK_ROW_GAP,
+  POND_BLOCK_SKELETON,
+  type PondBlockKind,
+  type PondBlockState,
+} from '@/lib/modules/block-frame'
 import { cn } from '@/lib/utils'
 
+// Every pure per-kind table lives in `block-frame.ts` (the React-free module);
+// re-exported here so the frame's call sites import one name.
 export {
   POND_BLOCK_KINDS,
   POND_BLOCK_WIDTHS,
   POND_BLOCK_STATES,
   POND_BLOCK_HOVER_ROW,
+  POND_BLOCK_EMPTY,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
+  POND_BLOCK_SKELETON,
+  POND_BLOCK_ROW_GAP,
+  POND_BLOCK_ERROR_LINE,
+  blockEmptyCopy,
+  blockErrorLine,
   blockRowState,
   type PondBlockKind,
   type PondBlockState,
@@ -79,64 +103,47 @@ export const blockHeadNoteClass = 'font-mono text-[10.5px] text-mn-text-secondar
 export const BLOCK_LOADING_NOTE = 'loading…'
 
 /**
- * The board's `skel` per kind, as `[width, height]` literal class pairs (Tailwind
- * needs the literals in source). `sk(w, h = 10)`:
- *   number  → sk('60%', 52), sk('40%')
- *   gallery → sk('100%', 120), sk('50%')
- *   else    → sk('82%'), sk('64%'), sk('74%')
+ * The board's `emptyBox` + `emptyText` (#239), bare: the ink-.035 ground at radius
+ * 14 and padding 14, the kind's lowercase line at 13.5 / ink .68, and — only when
+ * `onAction` is wired — the offered action as the existing secondary pill
+ * (`h-8` = the board's 32px). Exported so a surface rendering UNDER the frame with
+ * its own degenerate case (the chart card) draws the same box rather than a
+ * sentence-case line of its own. The ground is `bg-mn-text/[0.035]` — a wash,
+ * not an ink tier; the line sits on the third tier (`--mn-text-secondary`, .68).
+ *
+ * `line` overrides the kind's line when the kind's copy would be FALSE about the
+ * data — a filter matching nothing over rows that exist, a chart with points but no
+ * numeric series. `kind` still names the action; with no kind there is none.
  */
-type SkeletonBar = readonly [width: string, height: string]
-const TEN_BARS: readonly SkeletonBar[] = [
-  ['w-[82%]', 'h-[10px]'],
-  ['w-[64%]', 'h-[10px]'],
-  ['w-[74%]', 'h-[10px]'],
-]
-export const POND_BLOCK_SKELETON: Record<PondBlockKind, readonly SkeletonBar[]> = {
-  list: TEN_BARS,
-  checklist: TEN_BARS,
-  table: TEN_BARS,
-  log: TEN_BARS,
-  properties: TEN_BARS,
-  number: [
-    ['w-[60%]', 'h-[52px]'],
-    ['w-[40%]', 'h-[10px]'],
-  ],
-  gallery: [
-    ['w-full', 'h-[120px]'],
-    ['w-[50%]', 'h-[10px]'],
-  ],
-}
-
-/**
- * The board's row stack gap per kind — `gap: 0` for table (its rows draw their own
- * rule), 2 for everything else. Literal class strings so Tailwind sees them; the
- * skeleton and a demo body both read this one table.
- */
-export const POND_BLOCK_ROW_GAP: Record<PondBlockKind, string> = {
-  list: 'gap-[2px]',
-  checklist: 'gap-[2px]',
-  table: 'gap-0',
-  gallery: 'gap-[2px]',
-  number: 'gap-[2px]',
-  log: 'gap-[2px]',
-  properties: 'gap-[2px]',
-}
-
-/** The board's `errLine` per kind, verbatim — curly apostrophes (U+2019) included. */
-const SHEET_ERROR = 'pond can’t reach this sheet any more · showing the last copy'
-const BLOCK_ERROR = 'this block couldn’t load'
-export const POND_BLOCK_ERROR_LINE: Record<PondBlockKind, string> = {
-  list: BLOCK_ERROR,
-  checklist: BLOCK_ERROR,
-  table: SHEET_ERROR,
-  gallery: SHEET_ERROR,
-  number: SHEET_ERROR,
-  log: BLOCK_ERROR,
-  properties: BLOCK_ERROR,
-}
-
-export function blockErrorLine(kind: PondBlockKind): string {
-  return POND_BLOCK_ERROR_LINE[kind]
+export function PondBlockEmpty({
+  kind,
+  line,
+  onAction,
+  className,
+}: {
+  kind?: PondBlockKind
+  line?: string
+  onAction?: () => void
+  className?: string
+}) {
+  const copy = kind ? blockEmptyCopy(kind) : undefined
+  const text = line ?? copy?.line
+  return (
+    <div
+      data-part="empty"
+      className={cn(
+        'flex items-center justify-between gap-mn-3 rounded-mn-inner bg-mn-text/[0.035] p-[14px]',
+        className
+      )}
+    >
+      <span className="text-[13.5px] text-mn-text-secondary">{text}</span>
+      {onAction && copy && (
+        <Button variant="secondary" onClick={onAction}>
+          {copy.action}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export interface PondBlockProps {
@@ -145,8 +152,20 @@ export interface PondBlockProps {
   heading: string
   /** The mono note — a count, a source, a status. Omit for the board's `number`. */
   headNote?: string
-  /** @default 'rest' — `empty` (#239) and `deleted` (#240) render as rest for now. */
+  /** @default 'rest' — `deleted` (#240) renders as rest for now. */
   state?: PondBlockState
+  /**
+   * The next step the empty state offers (#239) — `add a row`, `add a step`… —
+   * wired by the host to the module's own insert path. Omit it and the empty
+   * line renders alone: an action is offered or it is not drawn, never disabled.
+   */
+  onEmptyAction?: () => void
+  /**
+   * Overrides the kind's empty line when that line would be false about the data —
+   * `nothing matches this filter` over rows the filter hides. Omit it for the
+   * board's `EL` copy.
+   */
+  emptyLine?: string
   children: ReactNode
   className?: string
 }
@@ -156,16 +175,21 @@ export function PondBlock({
   heading,
   headNote = '',
   state = 'rest',
+  onEmptyAction,
+  emptyLine,
   children,
   className,
 }: PondBlockProps) {
   const selected = state === 'selected'
+  const empty = state === 'empty'
   const loading = state === 'loading'
   const error = state === 'error'
   const disabled = state === 'disabled'
 
   let body: ReactNode
-  if (loading) {
+  if (empty) {
+    body = <PondBlockEmpty kind={kind} line={emptyLine} onAction={onEmptyAction} />
+  } else if (loading) {
     body = (
       <div data-part="skeleton" className={cn('flex flex-col', POND_BLOCK_ROW_GAP[kind])}>
         {POND_BLOCK_SKELETON[kind].map(([w, h], i) => (

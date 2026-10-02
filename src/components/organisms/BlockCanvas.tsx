@@ -17,11 +17,23 @@
  * surfaces share one editor.
  */
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
-import { blockFrame } from '@/lib/modules/block-frame'
+import {
+  blockFrame,
+  blockIsEmpty,
+  viewCollectionId,
+  POND_BLOCK_EMPTY_ACTION_WIRED,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
+  type BlockFrame,
+  type PondBlockState,
+} from '@/lib/modules/block-frame'
+import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { applyView } from '@/lib/modules/view/apply'
+import { addTodoItem } from '@/lib/modules/todo/view'
+import { addTableRow } from '@/lib/modules/table/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
@@ -282,6 +294,7 @@ export function BlockCanvas({
             <React.Fragment key={block.id}>
               <BlockEditor
                 block={block}
+                pageId={pageId}
                 settleOnMount={insertedIds?.has(block.id) ?? false}
                 onChange={(next) => setBlockAt(i, next)}
                 onRemove={() => removeBlockAt(i)}
@@ -352,6 +365,72 @@ export function BlockCanvas({
 // ── Per-block editor ───────────────────────────────────────────────────────────
 
 /**
+ * The frame's state, offered action and (when the kind's line would be false) the
+ * empty line for one block (#239). Emptiness is read off the block when it can be
+ * (`blockIsEmpty`); a view block's rows live with the host collection, so the canvas
+ * reads them through the SAME hook the view does (one shared React Query cache — no
+ * second fetch) and runs the SAME `applyView` the view draws from, so the frame and
+ * the view agree on what is on screen. Two empty causes, told apart because the
+ * board's line must be TRUE:
+ *
+ *   no rows at all              → the kind's `EL` copy + action (`no rows yet` · `add a row`)
+ *   rows, but the filter hides  → `nothing matches this filter`, no action — clearing a
+ *   every one                     filter is not wired through the frame, and a dead
+ *                                 button is never drawn
+ *
+ * The action is the module's EXISTING insert path, never a new persistence mechanism:
+ *
+ *   todo   → `addTodoItem` through onChange          `add a step`
+ *   table  → `addTableRow` through onChange          `add a row`
+ *   view   → the collection's `addRow`               `add a row` / `add a record`
+ *   view of kind `number` → none: `pick a field` has no engine path yet
+ *          (`POND_BLOCK_EMPTY_ACTION_WIRED`), so the line renders alone.
+ *
+ * A view still loading, or over a non-collection, is NOT empty — the view keeps its
+ * own notice. Wiring the frame's `loading` state to `isLoading` is a sibling
+ * concern, not this slice's.
+ */
+function useBlockEmptyState(
+  block: Block,
+  frame: BlockFrame | null,
+  pageId: string,
+  onChange: (next: Block) => void
+): { state: PondBlockState; onEmptyAction?: () => void; emptyLine?: string } {
+  const collectionId = block.type === 'view' ? viewCollectionId(block, pageId) : undefined
+  const { schema, rows, isLoading, addRow } = useCollectionRows(collectionId)
+  // The rows the view will actually draw — its filter (and sort) applied.
+  const processed = useMemo(
+    () => (block.type === 'view' && schema ? applyView(rows, schema, block) : rows),
+    [block, rows, schema]
+  )
+
+  switch (block.type) {
+    case 'todo':
+      return blockIsEmpty(block)
+        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)) }
+        : { state: 'rest' }
+    case 'table':
+      return blockIsEmpty(block)
+        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+        : { state: 'rest' }
+    case 'view': {
+      if (isLoading || schema === null) return { state: 'rest' }
+      if (rows.length > 0) {
+        return processed.length === 0
+          ? { state: 'empty', emptyLine: POND_BLOCK_FILTERED_EMPTY_LINE }
+          : { state: 'rest' }
+      }
+      // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
+      // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
+      if (frame && !POND_BLOCK_EMPTY_ACTION_WIRED[frame.kind]) return { state: 'empty' }
+      return { state: 'empty', onEmptyAction: () => void addRow() }
+    }
+    default:
+      return { state: 'rest' }
+  }
+}
+
+/**
  * One block row: drag handle + delete affordance + the module's own view, editable.
  * Rendering goes through the ModuleView registry — no per-type branches, so every
  * registered module (and any future one) is editable here with zero edits. Views
@@ -369,6 +448,7 @@ export function BlockCanvas({
  */
 function BlockEditor({
   block,
+  pageId,
   settleOnMount = false,
   onChange,
   onRemove,
@@ -390,6 +470,7 @@ function BlockEditor({
   onDrop,
 }: {
   block: Block
+  pageId: string
   settleOnMount?: boolean
   onChange: (next: Block) => void
   onRemove: () => void
@@ -413,6 +494,7 @@ function BlockEditor({
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
   const frame = blockFrame(block)
+  const { state, onEmptyAction, emptyLine } = useBlockEmptyState(block, frame, pageId, onChange)
 
   const view = (
     <ModuleView
@@ -550,9 +632,18 @@ function BlockEditor({
       {/* #237: the board's card around the module view — PondBlock.dc.html's
           frame + head row, by kind (blockFrame). Prose is bare: PondTemplate draws
           a text block with no label at `padding 2px 4px` and no card. The view
-          itself renders exactly as before — the frame is chrome, not a rewrite. */}
+          itself renders exactly as before — the frame is chrome, not a rewrite.
+          #239: an EMPTY block hands the frame its state and the module's own
+          insert path; the frame suppresses the view and offers that one action. */}
       {frame ? (
-        <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote}>
+        <PondBlock
+          kind={frame.kind}
+          heading={frame.heading}
+          headNote={frame.headNote}
+          state={state}
+          onEmptyAction={onEmptyAction}
+          emptyLine={emptyLine}
+        >
           {view}
         </PondBlock>
       ) : (

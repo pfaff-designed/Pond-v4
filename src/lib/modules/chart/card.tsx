@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import type { ChartPoint } from './data'
 import { seriesNames } from './data'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 
 /**
  * Shared chart CARD chrome — the module-card wrapper every chart KIND renders inside.
@@ -34,9 +35,17 @@ export interface ChartCardProps {
 
 /**
  * A degenerate chart (no points, or points with no numeric series) must read as a
- * quiet "no data yet" rather than a broken axis or a zero-height SVG. This is the
+ * quiet empty line rather than a broken axis or a zero-height SVG. This is the
  * single guard the ticket calls out: "Empty/degenerate data states never crash."
+ * It draws the shared PondBlock empty box (#239) with its own line, alone — no
+ * action is reachable from inside the card. The line is `no data yet`, not the
+ * table kind's `no rows yet`: `isEmpty` is also true when points EXIST but carry no
+ * numeric series, and the box must never state something false about the data.
+ * #227 gives the chart card its own chrome, including `no rows in {source} yet` +
+ * `add a row`.
  */
+export const CHART_EMPTY_LINE = 'no data yet'
+
 function isEmpty(points: readonly ChartPoint[]): boolean {
   return seriesNames(points).length === 0
 }
@@ -59,9 +68,7 @@ export function ChartCard({
       {caption && <div className="mt-0.5 text-xs text-mn-text-secondary">{caption}</div>}
 
       {empty ? (
-        <div className="mt-2 rounded-mn-inner bg-mn-wash py-6 text-center text-xs text-mn-text-secondary">
-          No data yet
-        </div>
+        <PondBlockEmpty line={CHART_EMPTY_LINE} className="mt-2" />
       ) : (
         <>
           <div className="mt-2">{children}</div>
