@@ -58,12 +58,15 @@ describe('module registry (t12)', () => {
     expect(next.items[0].checked).toBe(true) // untouched item preserved
   })
 
-  it('a read-only view does not emit and its checkboxes are disabled', () => {
+  it('a read-only view does not emit: its boxes are the inert checkbox atom, not controls (#219)', () => {
     const onChange = jest.fn()
-    render(<ModuleView type="todo" data={page.blocks[1]} onChange={onChange} />)
-    const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
-    expect(boxes[0].disabled).toBe(true)
-    fireEvent.click(boxes[1])
+    const { container } = render(
+      <ModuleView type="todo" data={page.blocks[1]} onChange={onChange} />
+    )
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    const atoms = container.querySelectorAll('[data-kind="checkbox"]')
+    expect(atoms).toHaveLength(2)
+    fireEvent.click(atoms[1])
     expect(onChange).not.toHaveBeenCalled()
   })
 

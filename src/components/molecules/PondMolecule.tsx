@@ -6,11 +6,16 @@
  * — a list row, a table row, a record card, a journal entry, a field row, a
  * notice, a provenance chip, a diff line, a reminder, a task card.
  *
- * Pure presentational — no handlers, no hooks. Interactive hosts (the rail's
+ * Pure presentational — no state, no hooks. Interactive hosts (the rail's
  * treeitem, a children-grid card's button, a kanban cell) wrap it and pass the
  * state they are in; the `leading` / `trailing` slots let a host dock its own
  * affordances (a caret, hover-CRUD, an open button) without the molecule ever
- * owning behaviour.
+ * owning behaviour. The one addition (issue 219): the two row kinds accept forwarded
+ * callbacks — `onTitleChange` turns the title into a text field wearing the
+ * title's own classes, `onToggle` makes the check-row's box a real control — so
+ * the `todo` block can edit a row without restating its geometry. The molecule
+ * still holds no state and decides nothing; the host owns the value and the row
+ * `state`.
  *
  * Every colour resolves through the Make Noise role tokens (`--color-mn-*` /
  * `--color-raw-*` / the `card` surface role): none of the retired Press
@@ -114,6 +119,21 @@ export interface PondMoleculeProps {
   /** Host affordance slots — a caret before, hover-CRUD/open after. */
   leading?: ReactNode
   trailing?: ReactNode
+  /**
+   * list-row / check-row — make the title a text field (issue 219). The molecule stays
+   * presentational: no state, no hook. The host owns the value and the row's
+   * `state` (hover / editing); this only swaps the title span for an `<input>`
+   * wearing the SAME classes, so a block never restates the row's geometry to
+   * edit it. `title` is the field's value; the kind's empty copy is its
+   * placeholder.
+   */
+  onTitleChange?: (next: string) => void
+  /**
+   * check-row — make the checkbox a real control (issue 219): the box becomes a
+   * `role="checkbox"` button with no geometry of its own. Absent, the atom is
+   * drawn inert, as the board's component card draws it.
+   */
+  onToggle?: () => void
   className?: string
 }
 
@@ -175,6 +195,8 @@ export function PondMolecule({
   emphasis = false,
   leading,
   trailing,
+  onTitleChange,
+  onToggle,
   className,
 }: PondMoleculeProps) {
   const mobile = size === 'mobile'
@@ -241,9 +263,63 @@ export function PondMolecule({
     </span>
   )
 
+  /**
+   * The row kinds' title (issue 219): a span, or — when a host wires `onTitleChange` —
+   * a text field wearing the identical classes (done strike, empty .68, the list's
+   * truncate), so the row looks the same at rest and under edit. The placeholder
+   * is the kind's own empty copy (`add a step` / `add an item`); the colour and
+   * `placeholder:` classes are colour tokens only, so `cn` cannot drop a size here.
+   */
+  const rowTitle = (rowClass: string) => {
+    if (!onTitleChange) {
+      return (
+        <span data-part="title" className={rowClass}>
+          {displayTitle}
+        </span>
+      )
+    }
+    return (
+      <input
+        data-part="title"
+        type="text"
+        aria-label={kind === 'check-row' ? 'Step' : 'Item'}
+        className={cn(rowClass, 'bg-transparent outline-none placeholder:text-mn-text-secondary')}
+        value={title ?? ''}
+        placeholder={EMPTY_TITLE[kind]}
+        onChange={(e) => onTitleChange(e.target.value)}
+      />
+    )
+  }
+
+  /**
+   * The row kinds' quiet `b` column, drawn only when there is something to say
+   * (`b: y || ''`). The register is `cellMeta` — PP Neue Montreal Mono 10.5 / ink
+   * .68 / nowrap — and that is a RULING (issue 219), recorded here so nobody
+   * "fixes" it back: `PondMolecule.dc.html` imports `PondAtom kind="date"` for
+   * this slot, and the atom's own board gives `date` no register (sans 13.5 at
+   * full ink, plus the due dot). Every COMPOSED date on the boards disagrees with
+   * that card — `PondTemplate.dc.html`'s `bStyle`, the table-row's `cellMeta`, the
+   * entry's `entryDate`, the record-card's `mStyle` are all mono 10.5 / a(.68) —
+   * so per ADR 0004 (the composed context outranks the isolated component card;
+   * prefer the value a second source corroborates) the row meta is mono 10.5 /
+   * .68. The one dated signal survives: the burnt-orange dot, on when the meta
+   * reads `today` (the mockup rule) or the host says `due`.
+   */
+  const rowMeta = displayMeta !== '' && (
+    <span data-part="meta" className={cn(cellMeta, 'inline-flex flex-none items-center gap-1.5')}>
+      {(due ?? displayMeta === 'today') && (
+        <span
+          data-part="due-dot"
+          aria-hidden
+          className="size-[7px] flex-none rounded-mn-hair bg-mn-signal-dated"
+        />
+      )}
+      {displayMeta}
+    </span>
+  )
+
   /* ── list-row: handle · dot · title · date atom ── */
   if (kind === 'list-row') {
-    const dueResolved = due ?? displayMeta === 'today'
     return (
       <div
         data-kind={kind}
@@ -260,33 +336,23 @@ export function PondMolecule({
         {dragHandle}
         {leading}
         {dot && kindDot(selected ? 'bg-mn-text' : 'bg-mn-text/50')}
-        <span
-          data-part="title"
-          className={cn(
+        {rowTitle(
+          cn(
             'min-w-0 flex-1 truncate',
             emphasis && 'font-medium',
             empty && 'text-mn-text-secondary'
-          )}
-        >
-          {displayTitle}
-        </span>
-        {displayMeta !== '' && (
-          <PondAtom
-            kind="date"
-            value={displayMeta}
-            due={dueResolved}
-            state={atomState}
-            size={size}
-          />
+          )
         )}
+        {rowMeta}
         {trailing}
       </div>
     )
   }
 
-  /* ── check-row: handle · checkbox atom · text ── */
+  /* ── check-row: handle · checkbox atom · text · (date atom) ── */
   if (kind === 'check-row') {
     const done = on || selected
+    const box = <PondAtom kind="checkbox" on={done} size={size} />
     return (
       <div
         data-kind={kind}
@@ -302,17 +368,33 @@ export function PondMolecule({
       >
         {dragHandle}
         {leading}
-        <PondAtom kind="checkbox" on={done} size={size} />
-        <span
-          data-part="title"
-          className={cn(
+        {onToggle ? (
+          // A real control around the atom, with no geometry of its own: the atom
+          // keeps the board's 26px box and the button adds nothing but behaviour.
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={title?.trim() ? title : EMPTY_TITLE[kind]}
+            className={cn(
+              'flex flex-none cursor-pointer appearance-none border-0 bg-transparent p-0 text-mn-text',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b'
+            )}
+            onClick={onToggle}
+          >
+            {box}
+          </button>
+        ) : (
+          box
+        )}
+        {rowTitle(
+          cn(
             'min-w-0 flex-1',
             (done || empty) && 'text-mn-text-secondary',
             done && 'line-through decoration-mn-text/40'
-          )}
-        >
-          {displayTitle}
-        </span>
+          )
+        )}
+        {rowMeta}
         {trailing}
       </div>
     )
@@ -496,10 +578,7 @@ export function PondMolecule({
           wrap
         )}
       >
-        <span
-          data-part="label"
-          className={pageEyebrowClass}
-        >
+        <span data-part="label" className={pageEyebrowClass}>
           {label ?? 'kcal per serving'}
         </span>
         <PondAtom

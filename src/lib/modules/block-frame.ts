@@ -18,7 +18,7 @@
  * ordinary card (`project → goal`, `meeting → notes`), not bare.
  */
 import type { Block } from './content'
-import type { TodoBlock } from './todo/schema'
+import { todoMarker, type TodoBlock, type TodoMarker } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
@@ -269,6 +269,26 @@ export interface BlockFrame {
   headNote: string
 }
 
+/**
+ * A `todo` block's card follows its marker (#219): boxes → the board's `checklist`
+ * kind; a dot or no marker → its `list` kind (same 400 card, `nothing due` / `add an
+ * item`). Exhaustive over `TodoMarker`, so a fourth marker is a compile error here.
+ * Exported so the view reads the same kind for its row gap (`POND_BLOCK_ROW_GAP`)
+ * rather than mapping the marker a second time.
+ */
+export const TODO_KIND: Record<TodoMarker, PondBlockKind> = {
+  check: 'checklist',
+  dot: 'list',
+  none: 'list',
+}
+
+/** The eyebrow when the block has no label of its own (#258) — the kind's name. */
+const TODO_HEADING: Record<TodoMarker, string> = {
+  check: 'checklist',
+  dot: 'list',
+  none: 'list',
+}
+
 /** A view block draws a database; its card is the board kind of its render mode. */
 const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
   table: 'table',
@@ -316,11 +336,18 @@ export function blockFrame(block: Block): BlockFrame | null {
       return label ? { kind: 'list', heading: label, headNote: '' } : null
     }
     case 'todo': {
+      // #219: the card follows the MARKER. A `check` todo is the board's `checklist`
+      // (`meeting › actions`, `note: '1 of 2'`); a `dot` / `none` todo is its `list`
+      // (`list › items`, `note: '5'`). The note is the count of DONE items only
+      // where there are boxes to tick — meaningless on a list, where the board
+      // writes the item count instead.
+      const marker = todoMarker(block)
+      const n = block.items.length
       const done = block.items.filter((it) => it.checked).length
       return {
-        kind: 'checklist',
-        heading: blockLabel(block) ?? 'checklist',
-        headNote: `${done} of ${block.items.length}`,
+        kind: TODO_KIND[marker],
+        heading: blockLabel(block) ?? TODO_HEADING[marker],
+        headNote: marker === 'check' ? `${done} of ${n}` : `${n}`,
       }
     }
     case 'table':

@@ -328,7 +328,10 @@ describe('BlockCanvas — every block renders inside the board card', () => {
     expect(todoCard.className.split(' ')).toContain('rounded-mn-card')
     // The head row sits on the card, the module view under it.
     expect(todoCard.textContent).toContain('1 of 2')
-    expect(todoCard.querySelector('input[type="checkbox"]')).not.toBeNull()
+    // #219: the rows are PondMolecule check-rows — the box is a `role="checkbox"`
+    // control around the checkbox atom, not a bare <input type="checkbox">.
+    expect(todoCard.querySelector('[data-kind="check-row"] [role="checkbox"]')).not.toBeNull()
+    expect(todoCard.querySelector('input[type="checkbox"]')).toBeNull()
 
     const tableCard = document.getElementById('block-b-table')!.querySelector('[data-block-kind]')!
     expect(tableCard.getAttribute('data-block-kind')).toBe('table')
