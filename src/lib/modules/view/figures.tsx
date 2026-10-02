@@ -12,7 +12,7 @@
  */
 
 import { useMemo } from 'react'
-import type { ViewBlock } from './schema'
+import { CHART_PRESENTATIONS, type ViewBlock, type ViewChartPresentation } from './schema'
 import type { CollectionRow } from './apply'
 import {
   AGG_LABELS,
@@ -25,6 +25,7 @@ import {
   type ViewAgg,
 } from './aggregate'
 import { resolveChartConfig } from './chart-data'
+import { COMPACT_CHART_MARK } from './chart-compact'
 import { KICKER } from '../chart/card'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { ChartStatFlow } from '@/components/charts/chart-stat-flow'
@@ -51,7 +52,12 @@ export function ControlSelect({
   return (
     <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
       {label}
-      <select aria-label={aria ?? label} value={value} onChange={(e) => onChange(e.target.value)} className={CONTROL_INPUT}>
+      <select
+        aria-label={aria ?? label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={CONTROL_INPUT}
+      >
         {children}
       </select>
     </label>
@@ -98,6 +104,9 @@ export function ChartControls({
         xProperty: config.chart?.xProperty,
         series: config.chart?.series ?? [{ property: '', agg: 'count' }],
         target: config.chart?.target,
+        // #259: the presentation rides every rewrite, or picking a kind would
+        // silently turn a compact strip back into a card.
+        presentation: config.chart?.presentation,
         ...patch,
       },
     })
@@ -112,7 +121,11 @@ export function ChartControls({
         ))}
       </ControlSelect>
 
-      <ControlSelect label="By" value={config.chart?.xProperty ?? ''} onChange={(v) => write({ xProperty: v || undefined })}>
+      <ControlSelect
+        label="By"
+        value={config.chart?.xProperty ?? ''}
+        onChange={(v) => write({ xProperty: v || undefined })}
+      >
         <option value="">Each record</option>
         {schema.map((d) => (
           <option key={d.id} value={d.id}>
@@ -137,10 +150,27 @@ export function ChartControls({
       <ControlSelect
         label="as"
         value={seriesProp?.agg ?? 'sum'}
-        onChange={(v) => write({ series: [{ property: seriesProp?.property ?? '', agg: v as ViewAgg }] })}
+        onChange={(v) =>
+          write({ series: [{ property: seriesProp?.property ?? '', agg: v as ViewAgg }] })
+        }
       >
         {aggOptions()}
       </ControlSelect>
+
+      {/* #259: only the kinds with a compact mark offer the choice — never a dead control. */}
+      {COMPACT_CHART_MARK[kind] && (
+        <ControlSelect
+          label="Show"
+          value={config.chart?.presentation ?? 'card'}
+          onChange={(v) => write({ presentation: v as ViewChartPresentation })}
+        >
+          {CHART_PRESENTATIONS.map((p) => (
+            <option key={p} value={p}>
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </option>
+          ))}
+        </ControlSelect>
+      )}
 
       {TARGET_KINDS.includes(kind) && (
         <label className="flex items-center gap-1 text-xs text-mn-text-secondary">
@@ -203,7 +233,11 @@ export function BigNumberControls({
         ))}
       </ControlSelect>
 
-      <ControlSelect label="as" value={current?.agg ?? 'sum'} onChange={(v) => write({ agg: v as ViewAgg })}>
+      <ControlSelect
+        label="as"
+        value={current?.agg ?? 'sum'}
+        onChange={(v) => write({ agg: v as ViewAgg })}
+      >
         {aggOptions()}
       </ControlSelect>
 
@@ -240,7 +274,10 @@ export function CollectionBigNumber({
   rows: CollectionRow[]
   bigNumber?: ViewBlock['bigNumber']
 }) {
-  const figure = useMemo(() => bigNumberFromRows(rows, schema, bigNumber), [rows, schema, bigNumber])
+  const figure = useMemo(
+    () => bigNumberFromRows(rows, schema, bigNumber),
+    [rows, schema, bigNumber]
+  )
   const records = `over ${figure.recordCount} record${figure.recordCount === 1 ? '' : 's'}`
 
   return (
@@ -264,7 +301,9 @@ export function CollectionBigNumber({
         )}
       </span>
       {figure.delta !== undefined && (
-        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">{signedDelta(figure.delta)}</span>
+        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">
+          {signedDelta(figure.delta)}
+        </span>
       )}
       <span className="mt-0.5 text-xs text-mn-text-secondary">{records}</span>
     </div>

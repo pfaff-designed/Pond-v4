@@ -22,6 +22,7 @@ import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
+  blockEmptyBox,
   blockFrame,
   blockIsEmpty,
   viewCollectionId,
@@ -32,6 +33,8 @@ import {
 } from '@/lib/modules/block-frame'
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { applyView } from '@/lib/modules/view/apply'
+import { COMPACT_MARK_EMPTY, compactChartMark } from '@/lib/modules/view/chart-compact'
+import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
@@ -421,11 +424,21 @@ function useBlockEmptyState(
         : { state: 'rest' }
     case 'view': {
       if (isLoading || schema === null) return { state: 'rest' }
+      // #259: a compact chart mark is empty its own way (`COMPACT_MARK_EMPTY`). The
+      // heat grid DRAWS its empty state — 84 cells at ink .07 — so the frame never
+      // takes it over, filtered or not. The bar strip is empty as the board's
+      // voidBox (`blockEmptyBox` → `void`), which has no action slot: the line
+      // renders alone, and it is the chart's own `no data yet` — true whether the
+      // rows are missing or carry no number — not the table kind's `no rows yet`.
+      const mark = compactChartMark(block)
+      const markEmpty = mark === null ? null : COMPACT_MARK_EMPTY[mark]
+      if (markEmpty === 'grid') return { state: 'rest' }
       if (rows.length > 0) {
         return processed.length === 0
           ? { state: 'empty', emptyLine: POND_BLOCK_FILTERED_EMPTY_LINE }
           : { state: 'rest' }
       }
+      if (markEmpty === 'void') return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
       // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
       // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
       if (frame && !POND_BLOCK_EMPTY_ACTION_WIRED[frame.kind]) return { state: 'empty' }
@@ -649,6 +662,7 @@ function BlockEditor({
           state={state}
           onEmptyAction={onEmptyAction}
           emptyLine={emptyLine}
+          emptyBox={blockEmptyBox(block)}
         >
           {view}
         </PondBlock>

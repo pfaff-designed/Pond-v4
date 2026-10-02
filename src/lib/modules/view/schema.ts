@@ -90,6 +90,23 @@ export type ViewFigureFormat = z.infer<typeof viewFigureFormatSchema>
 export const chartKindSchema = z.enum(CHART_KINDS)
 export type ViewChartKind = z.infer<typeof chartKindSchema>
 
+/**
+ * How a chart-mode view is DRAWN (#259): the chart card (axes, legend, the Bklit
+ * visual) or the board's compact inline mark — `PondTemplate.dc.html`'s `bars`
+ * strip for `kind: 'bar'` and its `heat` grid for `kind: 'heatmap'`. Neither is a
+ * block type: both aggregate the same records the card does (ADR 0007). Kinds with
+ * no compact mark draw the card whatever this says (`COMPACT_CHART_MARK`).
+ *
+ * A presentation flag, named for what it is in the product — not for the template
+ * that sets it: the tracker, dashboard and habit templates write `'compact'` at
+ * instantiation (#261) and the block never looks its template up again (ADR 0005).
+ * Optional, defaulting to the card, so every persisted chart view parses and draws
+ * exactly as before.
+ */
+export const CHART_PRESENTATIONS = ['card', 'compact'] as const
+export const chartPresentationSchema = z.enum(CHART_PRESENTATIONS)
+export type ViewChartPresentation = z.infer<typeof chartPresentationSchema>
+
 /** One plotted series: which property, read with which verb. */
 export const viewChartSeriesSchema = z.object({
   /** The id of the property to plot. `agg: 'count'` may name any property (it counts rows). */
@@ -113,6 +130,12 @@ export const viewChartConfigSchema = z.object({
    * one number the person sets, like a filter value.
    */
   target: z.number().finite().optional(),
+  /** The card or the board's compact inline mark (#259). Omitted → the card. */
+  presentation: chartPresentationSchema
+    .optional()
+    .describe(
+      'How the chart is drawn. Omit (or "card") for the full chart with axes and legend. "compact" draws the small inline mark a dashboard, tracker or habit page places beside its big number: a 72px bar strip for kind "bar", a 12-week grid of day cells for kind "heatmap". Other kinds ignore it.'
+    ),
 })
 export type ViewChartConfig = z.infer<typeof viewChartConfigSchema>
 
@@ -244,7 +267,7 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   paletteDescription:
     "An inline table, board, calendar, gallery, gantt, chart, or big number of a collection's pages.",
   description:
-    "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, gallery, gantt (a read-only timeline over Start→End date properties), chart, or big-number. Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids; `startDate`/`endDate` (date property ids) place gantt bars; `chart` (kind + xProperty + series) and `bigNumber` (property + agg) AGGREGATE the rows at read time — a chart or headline figure never holds its own copy of the data, which is why there are no standalone chart/stat blocks to create. Do not use to lay out ordinary prose — that's a text block.",
+    "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, gallery, gantt (a read-only timeline over Start→End date properties), chart, or big-number. Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids; `startDate`/`endDate` (date property ids) place gantt bars; `chart` (kind + xProperty + series) and `bigNumber` (property + agg) AGGREGATE the rows at read time — a chart or headline figure never holds its own copy of the data, which is why there are no standalone chart/stat blocks to create. `chart.presentation: 'compact'` draws kind 'bar' as a small inline bar strip and kind 'heatmap' as a 12-week grid of day cells, with no axes — the at-a-glance mark a dashboard, tracker or habit page places beside its big number; leave it off for a full chart card. Do not use to lay out ordinary prose — that's a text block.",
   // Serialize the CONFIG in full (the AI re-emits it, so every clause must be
   // visible) plus the hydrated row titles for context fidelity. Rows arrive on the
   // transient HydratedViewBlock the assemble seam builds; absent that injection
@@ -254,7 +277,13 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   serialize: (data) => {
     const rows = (data as HydratedViewBlock).rows ?? []
     const cfg: string[] = [data.mode]
-    if (data.mode === 'chart' && data.chart) cfg[0] = `chart ${data.chart.kind}`
+    // #259: the presentation rides serialize for the same reason `entries`' `serif`
+    // does (#250) — a flag the model cannot read here is silently dropped on the
+    // next wholesale `edit`, and a compact strip would come back as a full card.
+    if (data.mode === 'chart' && data.chart) {
+      const compact = data.chart.presentation === 'compact' ? ', compact' : ''
+      cfg[0] = `chart ${data.chart.kind}${compact}`
+    }
     if (data.groupBy) cfg.push(`grouped by ${data.groupBy}`)
     if (data.sort) cfg.push(`sorted by ${data.sort.key} ${data.sort.dir}`)
     if (data.filter)

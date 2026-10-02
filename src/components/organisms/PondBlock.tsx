@@ -74,6 +74,7 @@ import {
   POND_BLOCK_ROW_GAP,
   POND_BLOCK_SKELETON,
   POND_BLOCK_TOMB_NOTE,
+  type BlockEmptyBox,
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -95,9 +96,11 @@ export {
   POND_BLOCK_TOMB_NOTE,
   POND_BLOCK_TOMB_FIXTURE,
   blockEmptyCopy,
+  blockEmptyBox,
   blockErrorLine,
   blockRowState,
   blockTombLine,
+  type BlockEmptyBox,
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -138,36 +141,57 @@ export const BLOCK_LOADING_NOTE = 'loading…'
  * `line` overrides the kind's line when the kind's copy would be FALSE about the
  * data — a filter matching nothing over rows that exist, a chart with points but no
  * numeric series. `kind` still names the action; with no kind there is none.
+ *
+ * `box` (#259) picks which empty box the board draws. `PondBlock.dc.html` has one;
+ * `PondTemplate.dc.html` adds the `voidBox` for the compact chart marks that are
+ * empty as a hole: `height 72 · flex · center · center · radius 12 · inset 0 0 0
+ * 1.4px ink .14 · mono 11 / ink .68`. The void box has no action slot — the board
+ * centres its one line and draws nothing else — so an `onAction` is not drawn in
+ * it. One component, two boxes: not a second empty-state component.
  */
 export function PondBlockEmpty({
   kind,
   line,
+  box = 'box',
   onAction,
   className,
 }: {
   kind?: PondBlockKind
   line?: string
+  box?: BlockEmptyBox
   onAction?: () => void
   className?: string
 }) {
   const copy = kind ? blockEmptyCopy(kind) : undefined
   const text = line ?? copy?.line
+  const recipe = EMPTY_BOX[box]
   return (
-    <div
-      data-part="empty"
-      className={cn(
-        'flex items-center justify-between gap-mn-3 rounded-mn-inner bg-mn-text/[0.035] p-[14px]',
-        className
-      )}
-    >
-      <span className="text-[13.5px] text-mn-text-secondary">{text}</span>
-      {onAction && copy && (
+    <div data-part="empty" data-empty-box={box} className={cn(recipe.box, className)}>
+      <span className={recipe.text}>{text}</span>
+      {box === 'box' && onAction && copy && (
         <Button variant="secondary" onClick={onAction}>
           {copy.action}
         </Button>
       )}
     </div>
   )
+}
+
+/**
+ * The two empty boxes' class recipes. The `text` strings mix a SIZE with a COLOUR
+ * and are composed as plain literals, never through `cn` (#252: tailwind-merge
+ * cannot tell `text-[11px]` from `text-mn-text-secondary` in every form and
+ * drops one). `ring-mn-text/[0.14]` is the board's `inset 0 0 0 1.4px a(.14)`.
+ */
+const EMPTY_BOX: Record<BlockEmptyBox, { box: string; text: string }> = {
+  box: {
+    box: 'flex items-center justify-between gap-mn-3 rounded-mn-inner bg-mn-text/[0.035] p-[14px]',
+    text: 'text-[13.5px] text-mn-text-secondary',
+  },
+  void: {
+    box: 'flex h-[72px] items-center justify-center rounded-[12px] ring-[1.4px] ring-inset ring-mn-text/[0.14]',
+    text: 'font-mono text-[11px] text-mn-text-secondary',
+  },
 }
 
 export interface PondBlockProps {
@@ -190,6 +214,12 @@ export interface PondBlockProps {
    * board's `EL` copy.
    */
   emptyLine?: string
+  /**
+   * Which empty box the board draws (#259): the `emptyBox` (default) or, for a
+   * compact bar strip, `PondTemplate.dc.html`'s `voidBox`. `blockEmptyBox()` reads
+   * it off the block.
+   */
+  emptyBox?: BlockEmptyBox
   /**
    * The tombstone's facts (#240). What the view showed — the deleted DATABASE for a
    * view block (7a), defaulting to `heading` — and when it went and for how long it
@@ -217,6 +247,7 @@ export function PondBlock({
   state = 'rest',
   onEmptyAction,
   emptyLine,
+  emptyBox = 'box',
   deletedName,
   deletedOn,
   restoreWindow,
@@ -259,7 +290,7 @@ export function PondBlock({
       </div>
     )
   } else if (empty) {
-    body = <PondBlockEmpty kind={kind} line={emptyLine} onAction={onEmptyAction} />
+    body = <PondBlockEmpty kind={kind} line={emptyLine} box={emptyBox} onAction={onEmptyAction} />
   } else if (loading) {
     body = (
       <div data-part="skeleton" className={cn('flex flex-col', POND_BLOCK_ROW_GAP[kind])}>

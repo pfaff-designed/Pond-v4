@@ -39,6 +39,8 @@ import {
 } from './apply'
 import { CollectionBigNumber, ChartControls, BigNumberControls, ControlSelect } from './figures'
 import { CollectionChart } from './collection-chart'
+import { CompactChart } from './collection-chart-compact'
+import { compactChartMark } from './chart-compact'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
@@ -229,7 +231,13 @@ export function CollectionView({
           onEdit={onEdit}
         />
       ) : config.mode === 'chart' ? (
-        <CollectionChart schema={schema} rows={processed} chart={config.chart} />
+        // #259: the chart's PRESENTATION — the compact inline mark (the board's
+        // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
+        compactChartMark(config) && config.chart ? (
+          <CompactChart schema={schema} rows={processed} chart={config.chart} />
+        ) : (
+          <CollectionChart schema={schema} rows={processed} chart={config.chart} />
+        )
       ) : config.mode === 'big-number' ? (
         <CollectionBigNumber schema={schema} rows={processed} bigNumber={config.bigNumber} />
       ) : (
