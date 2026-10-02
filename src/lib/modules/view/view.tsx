@@ -292,9 +292,7 @@ function ViewControls({
               onClick={() => onConfigChange({ mode: m })}
               className={[
                 'rounded-mn-chrome px-2 py-0.5 text-xs transition-colors',
-                active
-                  ? 'bg-mn-wash text-mn-text'
-                  : 'text-mn-text-secondary hover:text-mn-text',
+                active ? 'bg-mn-wash text-mn-text' : 'text-mn-text-secondary hover:text-mn-text',
               ].join(' ')}
             >
               {MODE_LABELS[m]}
@@ -460,13 +458,8 @@ function CollectionTable({
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={schema.length + 2} className="py-2 text-mn-text-secondary">
-                No rows yet
-              </td>
-            </tr>
-          )}
+          {/* No empty row of its own: on a page the frame owns the empty state
+              (PondBlock state="empty", #239) and suppresses this view entirely. */}
           {rows.map((row) => (
             <tr
               key={row.id}
@@ -646,9 +639,7 @@ function CollectionBoard({
               ref={registerBucket(key)}
               className={[
                 'group/col min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
-                isOver
-                  ? 'bg-mn-wash shadow-mn-md'
-                  : 'bg-mn-card/40 shadow-mn-sm',
+                isOver ? 'bg-mn-wash shadow-mn-md' : 'bg-mn-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -766,9 +757,7 @@ function CollectionBoard({
                             className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
                           />
                         ) : (
-                          <div className="font-medium text-mn-text">
-                            {row.title || 'Untitled'}
-                          </div>
+                          <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
                         )}
                         {chipDefs.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
@@ -906,7 +895,8 @@ function CollectionCalendar({
 
   return (
     <div {...containerHandlers}>
-      {buckets.length === 0 && <p className="py-2 text-mn-text-secondary">No rows yet</p>}
+      {/* Undated rows land in the null lane, so no buckets means no rows — and the
+          frame owns that state (#239). */}
       <div className="space-y-4">
         {buckets.map((bucket) => {
           const key = laneKey(bucket.iso)
@@ -917,9 +907,7 @@ function CollectionCalendar({
               ref={registerBucket(key)}
               className={[
                 'rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
-                isOver
-                  ? 'bg-mn-wash shadow-mn-md'
-                  : 'bg-mn-card/40 shadow-mn-sm',
+                isOver ? 'bg-mn-wash shadow-mn-md' : 'bg-mn-card/40 shadow-mn-sm',
               ].join(' ')}
             >
               <header className="mb-2 flex items-center justify-between gap-2">
@@ -1007,16 +995,11 @@ function CollectionCalendar({
  * gallery is a browse surface (slice-4 grill).
  */
 function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
-  if (rows.length === 0) {
-    return <p className="py-2 text-mn-text-secondary">No rows yet</p>
-  }
+  // No empty line of its own: the frame owns the empty state (#239).
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
       {rows.map((row) => (
-        <article
-          key={row.id}
-          className="rounded-mn-row bg-mn-card px-3 py-2.5 shadow-mn-sm"
-        >
+        <article key={row.id} className="rounded-mn-row bg-mn-card px-3 py-2.5 shadow-mn-sm">
           <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
           <dl className="mt-2 space-y-1">
             {schema.map((def) => (

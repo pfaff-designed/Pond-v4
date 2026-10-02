@@ -21,7 +21,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
-import { blockFrame } from '@/lib/modules/block-frame'
+import { blockFrame, blockIsEmpty, type PondBlockState } from '@/lib/modules/block-frame'
+import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
+import { addTodoItem } from '@/lib/modules/todo/view'
+import { addTableRow } from '@/lib/modules/table/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
@@ -282,6 +285,7 @@ export function BlockCanvas({
             <React.Fragment key={block.id}>
               <BlockEditor
                 block={block}
+                pageId={pageId}
                 settleOnMount={insertedIds?.has(block.id) ?? false}
                 onChange={(next) => setBlockAt(i, next)}
                 onRemove={() => removeBlockAt(i)}
@@ -352,6 +356,51 @@ export function BlockCanvas({
 // ── Per-block editor ───────────────────────────────────────────────────────────
 
 /**
+ * The frame's state and offered action for one block (#239). Emptiness is read off
+ * the block when it can be (`blockIsEmpty`); a view block's rows live with the host
+ * collection, so the canvas reads them through the SAME hook the view does (one
+ * shared React Query cache — no second fetch) and decides from those. The action is
+ * the module's EXISTING insert path, never a new persistence mechanism:
+ *
+ *   todo   → `addTodoItem` through onChange          `add a step`
+ *   table  → `addTableRow` through onChange          `add a row`
+ *   view   → the collection's `addRow`               `add a row` / `add a record`
+ *   view in big-number mode → none: `pick a field` has no engine path yet, so the
+ *          line renders alone rather than a dead button (offered, never faked).
+ *
+ * A view still loading, or over a non-collection, is NOT empty — the view keeps its
+ * own notice. Wiring the frame's `loading` state to `isLoading` is a sibling
+ * concern, not this slice's.
+ */
+function useBlockEmptyState(
+  block: Block,
+  pageId: string,
+  onChange: (next: Block) => void
+): { state: PondBlockState; onEmptyAction?: () => void } {
+  const collectionId = block.type === 'view' ? (block.collectionId ?? pageId) : undefined
+  const { schema, rows, isLoading, addRow } = useCollectionRows(collectionId)
+
+  switch (block.type) {
+    case 'todo':
+      return blockIsEmpty(block)
+        ? { state: 'empty', onEmptyAction: () => onChange(addTodoItem(block)) }
+        : { state: 'rest' }
+    case 'table':
+      return blockIsEmpty(block)
+        ? { state: 'empty', onEmptyAction: () => onChange(addTableRow(block)) }
+        : { state: 'rest' }
+    case 'view': {
+      const empty = !isLoading && schema !== null && rows.length === 0
+      if (!empty) return { state: 'rest' }
+      if (block.mode === 'big-number') return { state: 'empty' }
+      return { state: 'empty', onEmptyAction: () => void addRow() }
+    }
+    default:
+      return { state: 'rest' }
+  }
+}
+
+/**
  * One block row: drag handle + delete affordance + the module's own view, editable.
  * Rendering goes through the ModuleView registry — no per-type branches, so every
  * registered module (and any future one) is editable here with zero edits. Views
@@ -369,6 +418,7 @@ export function BlockCanvas({
  */
 function BlockEditor({
   block,
+  pageId,
   settleOnMount = false,
   onChange,
   onRemove,
@@ -390,6 +440,7 @@ function BlockEditor({
   onDrop,
 }: {
   block: Block
+  pageId: string
   settleOnMount?: boolean
   onChange: (next: Block) => void
   onRemove: () => void
@@ -413,6 +464,7 @@ function BlockEditor({
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
   const frame = blockFrame(block)
+  const { state, onEmptyAction } = useBlockEmptyState(block, pageId, onChange)
 
   const view = (
     <ModuleView
@@ -550,9 +602,17 @@ function BlockEditor({
       {/* #237: the board's card around the module view — PondBlock.dc.html's
           frame + head row, by kind (blockFrame). Prose is bare: PondTemplate draws
           a text block with no label at `padding 2px 4px` and no card. The view
-          itself renders exactly as before — the frame is chrome, not a rewrite. */}
+          itself renders exactly as before — the frame is chrome, not a rewrite.
+          #239: an EMPTY block hands the frame its state and the module's own
+          insert path; the frame suppresses the view and offers that one action. */}
       {frame ? (
-        <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote}>
+        <PondBlock
+          kind={frame.kind}
+          heading={frame.heading}
+          headNote={frame.headNote}
+          state={state}
+          onEmptyAction={onEmptyAction}
+        >
           {view}
         </PondBlock>
       ) : (

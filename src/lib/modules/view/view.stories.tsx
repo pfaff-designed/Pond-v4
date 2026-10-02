@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fireEvent, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
 
 import { CollectionView } from './view'
+import { PondBlock } from '@/components/organisms/PondBlock'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
@@ -188,12 +189,35 @@ export const TableLegacyLabelValue: Story = {
   },
 }
 
-/** Empty collection (schema, no rows): the table shows its "No rows yet" line. */
+/**
+ * Empty collection (schema, no rows): the view draws NO empty line of its own
+ * (#239). On a page the frame owns it — this is the product composition: the
+ * table-kind card in state `empty`, its box offering `add a row`, the view
+ * suppressed underneath.
+ */
 export const TableEmpty: Story = {
+  args: { config: tableConfig, schema, rows: [] },
+  render: (args) => (
+    <PondBlock kind="table" heading="table" headNote="0 rows" state="empty" onEmptyAction={fn()}>
+      <CollectionView {...args} />
+    </PondBlock>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByText('No rows yet')).not.toBeInTheDocument()
+    await expect(canvas.getByText('no rows yet')).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'add a row' })).toBeInTheDocument()
+    await expect(canvas.queryByText('Name')).not.toBeInTheDocument()
+  },
+}
+
+/** The bare view with no rows: headers only, no placeholder of its own. */
+export const TableEmptyBare: Story = {
   args: { config: tableConfig, schema, rows: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('No rows yet')).toBeInTheDocument()
+    await expect(canvas.getByText('Name')).toBeInTheDocument()
+    await expect(canvas.queryByText('No rows yet')).not.toBeInTheDocument()
   },
 }
 
@@ -349,12 +373,25 @@ export const GalleryReadOnly: Story = {
   },
 }
 
-/** Empty collection in gallery mode: the "No rows yet" line, not a bare grid. */
+/** Empty collection in gallery mode under its frame (#239): `no records yet` · `add a record`. */
 export const GalleryEmpty: Story = {
   args: { config: galleryConfig, schema, rows: [] },
+  render: (args) => (
+    <PondBlock
+      kind="gallery"
+      heading="gallery"
+      headNote="0 records"
+      state="empty"
+      onEmptyAction={fn()}
+    >
+      <CollectionView {...args} />
+    </PondBlock>
+  ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('No rows yet')).toBeInTheDocument()
+    await expect(canvas.queryByText('No rows yet')).not.toBeInTheDocument()
+    await expect(canvas.getByText('no records yet')).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'add a record' })).toBeInTheDocument()
   },
 }
 
@@ -451,7 +488,11 @@ export const ChartByStage: Story = {
       id: 'v-chart',
       type: 'view',
       mode: 'chart',
-      chart: { kind: 'bar', xProperty: 'p-stage', series: [{ property: 'p-priority', agg: 'sum' }] },
+      chart: {
+        kind: 'bar',
+        xProperty: 'p-stage',
+        series: [{ property: 'p-priority', agg: 'sum' }],
+      },
     },
     schema,
     rows,
@@ -496,7 +537,11 @@ export const ChartRadarNeedsThreeCategories: Story = {
       id: 'v-chart-radar',
       type: 'view',
       mode: 'chart',
-      chart: { kind: 'radar', xProperty: 'p-stage', series: [{ property: 'p-priority', agg: 'sum' }] },
+      chart: {
+        kind: 'radar',
+        xProperty: 'p-stage',
+        series: [{ property: 'p-priority', agg: 'sum' }],
+      },
     },
     schema,
     // Two staged records → two spokes; an untagged record would add a "No value" third.

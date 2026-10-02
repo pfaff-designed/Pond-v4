@@ -5,6 +5,19 @@ import type { TodoBlock } from './schema'
 import { MarkdownInline } from '@/components/molecules/Markdown'
 
 /**
+ * Append one unchecked, unlabelled item — the checklist's insert path (#239), pure,
+ * through the same whole-block `onChange(nextBlock)` contract `patchItem` uses. The
+ * frame's empty state (`add a step`) is its one caller today: the view itself draws
+ * no add affordance, and whether it should is a separate question.
+ */
+export function addTodoItem(data: TodoBlock): TodoBlock {
+  return {
+    ...data,
+    items: [...data.items, { id: crypto.randomUUID(), label: '', checked: false }],
+  }
+}
+
+/**
  * Todo view. An interactive module: editing is folded into the view (checkbox +
  * label field), so `todo` declares no separate `editor`. Every interaction emits a
  * whole new block state via `onChange`. Read-only renders the same rows inert.

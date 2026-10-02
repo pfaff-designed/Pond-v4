@@ -32,6 +32,7 @@ import type { ChangePreview } from '@/lib/modules/preview'
 import { TodoView } from '@/lib/modules/todo/view'
 import { TableView } from '@/lib/modules/table/view'
 import { TextView } from '@/lib/modules/text/view'
+import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 jest.mock('@/lib/sandbox/reset', () => ({ resetSandbox: jest.fn() }))
@@ -523,15 +524,18 @@ describe('type sites that were on the fourth tier land on the board’s 68', () 
     expect(label?.className).not.toMatch(/mn-text-faint/)
   })
 
-  it('table: the empty row reads at .68', () => {
-    render(
+  it('table: the view draws no empty row of its own — the frame’s empty line reads at .68 / 13.5 (#239)', () => {
+    const { container } = render(
       <TableView
         data={{ id: 'tb', type: 'table', columns: ['date', 'recipe'], rows: [] }}
         editable={false}
       />
     )
-    const cell = screen.getByText('No entries yet')
-    expect(cell.className).toMatch(/text-mn-text-secondary/)
-    expect(cell.className).not.toMatch(/mn-text-faint/)
+    expect(container.textContent).not.toContain('No entries yet')
+    render(<PondBlockEmpty kind="table" />)
+    const line = screen.getByText('no rows yet')
+    expect(line.className).toMatch(/text-mn-text-secondary/)
+    expect(line.className).toMatch(/text-\[13\.5px\]/)
+    expect(line.className).not.toMatch(/mn-text-faint/)
   })
 })

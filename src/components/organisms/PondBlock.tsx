@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * PondBlock (#237 frame · #238 states) — the card every block on a page renders in,
- * measured off `PondBlock.dc.html`'s inline `renderVals()`:
+ * PondBlock (#237 frame · #238 states · #239 empty) — the card every block on a
+ * page renders in, measured off `PondBlock.dc.html`'s inline `renderVals()`:
  *
  *   block    width W · padding 16px 18px · radius 20 · gap 12 · card paper ·
  *            --mn-shadow-card · sans · full ink
@@ -34,7 +34,14 @@
  *             clicks, no text entry and no Tab — `inert` removes the subtree from
  *             hit-testing and the focus order together, which `pointer-events`
  *             alone would not.
- *   empty     #239 — falls through to rest here.
+ *   empty     (#239) the body → `emptyBox`: flex · center · space-between · gap 12 ·
+ *             padding 14 · radius 14 · rgba(ink,.035) ground, holding `emptyText`
+ *             (13.5 / ink .68, sans inherited) with the kind's lowercase line
+ *             (`POND_BLOCK_EMPTY`) and, on the right, the offered action as the
+ *             existing secondary pill at the board's 32px. Rows, the gallery grid
+ *             and the big number are all suppressed; the head keeps its NORMAL
+ *             note. The action renders only when `onEmptyAction` is wired — a
+ *             choice is offered or it is not drawn, never faked as a dead button.
  *   deleted   #240 (the tombstone) — falls through to rest here.
  *
  * The module view renders as `children`, untouched: the card is chrome AROUND the
@@ -44,7 +51,8 @@
 import type { ReactNode } from 'react'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import { type PondBlockKind, type PondBlockState } from '@/lib/modules/block-frame'
+import { Button } from '@/components/ui/button'
+import { blockEmptyCopy, type PondBlockKind, type PondBlockState } from '@/lib/modules/block-frame'
 import { cn } from '@/lib/utils'
 
 export {
@@ -52,6 +60,8 @@ export {
   POND_BLOCK_WIDTHS,
   POND_BLOCK_STATES,
   POND_BLOCK_HOVER_ROW,
+  POND_BLOCK_EMPTY,
+  blockEmptyCopy,
   blockRowState,
   type PondBlockKind,
   type PondBlockState,
@@ -139,14 +149,57 @@ export function blockErrorLine(kind: PondBlockKind): string {
   return POND_BLOCK_ERROR_LINE[kind]
 }
 
+/**
+ * The board's `emptyBox` + `emptyText` (#239), bare: the ink-.035 ground at radius
+ * 14 and padding 14, the kind's lowercase line at 13.5 / ink .68, and — only when
+ * `onAction` is wired — the offered action as the existing secondary pill
+ * (`h-8` = the board's 32px). Exported so a surface rendering UNDER the frame with
+ * its own degenerate case (the chart card) draws the same box rather than a
+ * sentence-case line of its own. The ground is `bg-mn-text/[0.035]` — a wash,
+ * not an ink tier; the line sits on the third tier (`--mn-text-secondary`, .68).
+ */
+export function PondBlockEmpty({
+  kind,
+  onAction,
+  className,
+}: {
+  kind: PondBlockKind
+  onAction?: () => void
+  className?: string
+}) {
+  const { line, action } = blockEmptyCopy(kind)
+  return (
+    <div
+      data-part="empty"
+      className={cn(
+        'flex items-center justify-between gap-mn-3 rounded-mn-inner bg-mn-text/[0.035] p-[14px]',
+        className
+      )}
+    >
+      <span className="text-[13.5px] text-mn-text-secondary">{line}</span>
+      {onAction && (
+        <Button variant="secondary" onClick={onAction}>
+          {action}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export interface PondBlockProps {
   kind: PondBlockKind
   /** The eyebrow — sans uppercase, the block's name or kind. */
   heading: string
   /** The mono note — a count, a source, a status. Omit for the board's `number`. */
   headNote?: string
-  /** @default 'rest' — `empty` (#239) and `deleted` (#240) render as rest for now. */
+  /** @default 'rest' — `deleted` (#240) renders as rest for now. */
   state?: PondBlockState
+  /**
+   * The next step the empty state offers (#239) — `add a row`, `add a step`… —
+   * wired by the host to the module's own insert path. Omit it and the empty
+   * line renders alone: an action is offered or it is not drawn, never disabled.
+   */
+  onEmptyAction?: () => void
   children: ReactNode
   className?: string
 }
@@ -156,16 +209,20 @@ export function PondBlock({
   heading,
   headNote = '',
   state = 'rest',
+  onEmptyAction,
   children,
   className,
 }: PondBlockProps) {
   const selected = state === 'selected'
+  const empty = state === 'empty'
   const loading = state === 'loading'
   const error = state === 'error'
   const disabled = state === 'disabled'
 
   let body: ReactNode
-  if (loading) {
+  if (empty) {
+    body = <PondBlockEmpty kind={kind} onAction={onEmptyAction} />
+  } else if (loading) {
     body = (
       <div data-part="skeleton" className={cn('flex flex-col', POND_BLOCK_ROW_GAP[kind])}>
         {POND_BLOCK_SKELETON[kind].map(([w, h], i) => (

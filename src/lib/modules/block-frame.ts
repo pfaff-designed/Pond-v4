@@ -29,9 +29,9 @@ export type PondBlockKind = (typeof POND_BLOCK_KINDS)[number]
 
 /**
  * The board's `state` enum, verbatim and in its order (#238, PondBlock 2/4). The
- * frame implements rest · hover · selected · loading · error · disabled; `empty`
- * is #239 and `deleted` (the tombstone) is #240 — both fall through to rest until
- * their slices land.
+ * frame implements rest · hover · selected · empty (#239) · loading · error ·
+ * disabled; `deleted` (the tombstone) is #240 and falls through to rest until its
+ * slice lands.
  */
 export const POND_BLOCK_STATES = [
   'rest',
@@ -77,6 +77,50 @@ export function blockRowState(
   if (state === 'hover' && POND_BLOCK_HOVER_ROW[kind] === index) return 'hover'
   if (state === 'selected' && kind === 'gallery' && index === 1) return 'selected'
   return 'rest'
+}
+
+/**
+ * The board's `EL` table (#239, PondBlock 3/4): the empty line and the offered
+ * action per kind, LOWERCASE as authored. One row is generalised: the board reads
+ * `no recipes yet` for gallery because its example collection is recipes — fixture
+ * copy, so it takes the board's own shape (`records`). Every other row is literal.
+ */
+export interface BlockEmptyCopy {
+  line: string
+  action: string
+}
+export const POND_BLOCK_EMPTY: Record<PondBlockKind, BlockEmptyCopy> = {
+  list: { line: 'nothing due', action: 'add an item' },
+  checklist: { line: 'no steps yet', action: 'add a step' },
+  table: { line: 'no rows yet', action: 'add a row' },
+  gallery: { line: 'no records yet', action: 'add a record' },
+  number: { line: 'no values this week', action: 'pick a field' },
+  log: { line: 'no entries yet', action: 'write one' },
+  properties: { line: 'no fields yet', action: 'add a field' },
+}
+
+export function blockEmptyCopy(kind: PondBlockKind): BlockEmptyCopy {
+  return POND_BLOCK_EMPTY[kind]
+}
+
+/**
+ * Whether a persisted block is EMPTY, read off the block alone (#239). A checklist
+ * with no items and a table with no rows are; prose and a file never are. A view
+ * block is config only — its rows live with the host collection, fetched by the
+ * canvas — so it answers `null`: the host decides from the rows it has.
+ */
+export function blockIsEmpty(block: Block): boolean | null {
+  switch (block.type) {
+    case 'todo':
+      return block.items.length === 0
+    case 'table':
+      return (block.rows ?? []).length === 0
+    case 'view':
+      return null
+    case 'text':
+    case 'image':
+      return false
+  }
 }
 
 /** The board's `W` map, verbatim. Mobile's 360 is a later slice. */

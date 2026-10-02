@@ -17,8 +17,8 @@
  *             no clicks, text entry or Tab
  *
  * The class recipe is asserted here (jsdom has no layout); computed values live in
- * `PondBlock.stories.tsx`. `empty` is #239 and `deleted` is #240 — both fall through
- * to rest here.
+ * `PondBlock.stories.tsx`. `empty` landed in #239 (`pond-block-empty.test.tsx`);
+ * `deleted` is #240 and falls through to rest here.
  */
 
 import React, { type ReactNode } from 'react'
@@ -88,8 +88,14 @@ describe('rest / hover — the card itself does not change', () => {
       expect(cls).not.toContain('opacity-40')
       expect(cls.some((c) => c.startsWith('hover:'))).toBe(false)
       expect(cls.some((c) => /translate|shadow-mn-(md|lg)/.test(c))).toBe(false)
-      // The body renders — empty (#239) and deleted (#240) fall through to rest here.
-      expect(screen.getByTestId('body')).toBeInTheDocument()
+      if (state === 'empty') {
+        // #239: the card is unchanged but the body is suppressed for the empty box.
+        expect(screen.queryByTestId('body')).toBeNull()
+        expect(card.querySelector('[data-part="empty"]')).not.toBeNull()
+      } else {
+        // The body renders — deleted (#240) falls through to rest here.
+        expect(screen.getByTestId('body')).toBeInTheDocument()
+      }
     }
   )
 

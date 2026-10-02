@@ -127,7 +127,12 @@ export const SumFooterLiveEdit: Story = {
   },
 }
 
-/** Empty table (columns only): read-only shows a quiet placeholder row. */
+/**
+ * Empty table (columns only) on a BARE host: the headers and nothing more. The
+ * view draws no empty line of its own — on a page the frame owns the empty state
+ * (`PondBlock` state="empty", #239), and bare hosts (diff cards, previews) show
+ * the shape without a placeholder.
+ */
 export const Empty: Story = {
   args: {
     data: { id: 'tbl-2', type: 'table', columns: ['Item', 'Qty'], rows: [] } as TableBlock,
@@ -135,6 +140,7 @@ export const Empty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText('Item')).toBeInTheDocument()
-    await expect(canvas.getByText('No entries yet')).toBeInTheDocument()
+    await expect(canvas.queryByText('No entries yet')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('+ Add row')).not.toBeInTheDocument()
   },
 }
