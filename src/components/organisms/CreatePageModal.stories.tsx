@@ -29,6 +29,7 @@ const meta = {
     parentValue: TOP_LEVEL_VALUE,
     onParentChange: fn(),
     parentOptions: PARENT_OPTIONS,
+    pondName: 'life',
     busy: false,
     error: null,
     onCreate: fn(),

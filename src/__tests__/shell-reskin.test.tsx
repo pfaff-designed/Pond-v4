@@ -68,7 +68,16 @@ jest.mock('@/lib/pages/client', () => ({
   createPage: jest.fn(),
   deletePage: jest.fn(),
   movePage: jest.fn(),
-  getPage: jest.fn(),
+  // #234: the root is a page — DocumentPanel reads the home row through the
+  // ordinary page read, so the shell's canvas renders a page at the root.
+  getPage: jest.fn().mockResolvedValue({
+    id: 'home-1',
+    parentId: null,
+    type: 'home',
+    title: 'Life',
+    blocks: [],
+    props: {},
+  }),
   setProperty: jest.fn(),
 }))
 
@@ -107,7 +116,6 @@ const TOUCHED = [
   'src/components/organisms/WorkspaceShell.tsx',
   'src/components/organisms/Rail.tsx',
   'src/components/organisms/DocumentPanel.tsx',
-  'src/components/organisms/OverviewSurface.tsx',
   'src/components/organisms/ShellCommands.tsx',
   'src/components/molecules/Breadcrumb.tsx',
   'src/components/molecules/TerminalDrawer.tsx',
@@ -607,8 +615,10 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(slot.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
     expect(slot.className.split(' ')).toContain('-translate-x-1/2')
     expect(main.contains(nav)).toBe(false)
-    // …and nothing sticky is left behind in the column.
-    expect(main.querySelector('.sticky')).toBeNull()
+    // …and no sticky breadcrumb is left behind in the column. (#234: the root is
+    // an ordinary page, so the column carries the #58 width handle, whose grip is
+    // the one legitimate sticky inside it — the guard is against a pill, not that.)
+    expect(main.querySelector('.sticky nav, nav.sticky')).toBeNull()
 
     // The composer is the shell's child too — its calc(50% + 13px) is against the shell.
     const terminal = screen.getByRole('region', { name: 'Pond terminal' })

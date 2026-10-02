@@ -19,6 +19,7 @@ import {
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
@@ -402,7 +403,10 @@ export function AITerminal() {
   const nodeName = searchParams.get('nodeName')
   const nodeId = searchParams.get('nodeId')
   const nodeType = searchParams.get('nodeType')
-  const contextLabel = nodeName ?? 'life'
+  // At the root the context is the pond itself — its name, never an assumed one
+  // (AUDIT W9: copy says "this pond", not "life").
+  const pondName = usePondName()
+  const contextLabel = nodeName ?? pondName
 
   const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()

@@ -16,7 +16,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json } | 
 // 'home' is the reserved Life home page (ticket-44) — one per user, top-level,
 // never a rail child and never counted; it holds the Life root's own blocks.
 // 'row' (#18) is a schema-bound child of a collection — a real, openable page that
-// is filtered out of the ['pages'] tree (rail / overview) and surfaced only
+// is filtered out of the ['pages'] tree (rail / children grid) and surfaced only
 // through a collection's views (#19).
 export type NodeType = 'routine' | 'project' | 'action' | 'page' | 'home' | 'row'
 

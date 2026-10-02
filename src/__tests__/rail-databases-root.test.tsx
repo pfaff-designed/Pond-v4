@@ -14,14 +14,30 @@ import React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
-import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
+import { DocumentPanel } from '@/components/organisms/DocumentPanel'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { PageRow } from '@/lib/pages/tree'
 
+// Which page the URL names, for the DocumentPanel-based breadcrumb tests below.
+let currentNodeId: string | null = null
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? currentNodeId : null) }),
 }))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+
+// The page surface's reads, stubbed: the open page by id, and the root page's
+// home row (whose title is the breadcrumb's root crumb).
+const PAGES: Record<string, Record<string, unknown>> = {}
+jest.mock('@/lib/pages/client', () => ({
+  getPage: (_sb: unknown, id: string) => Promise.resolve(PAGES[id] ?? null),
+  updateTitle: jest.fn().mockResolvedValue(undefined),
+  setProperty: jest.fn().mockResolvedValue(undefined),
+}))
+jest.mock('@/lib/pages/home', () => ({
+  HOME_TYPE: 'home',
+  getOrCreateHomePage: () => Promise.resolve({ id: 'home-1', title: 'life', blocks: [] }),
+}))
 
 const node = (
   id: string,
@@ -104,43 +120,54 @@ describe('breadcrumb — the trail starts at the root the page descends from', (
       updated_at: at,
     },
   ]
+  for (const r of ROWS) {
+    PAGES[r.id] = {
+      id: r.id,
+      parentId: r.parent_id,
+      type: r.type,
+      title: r.title,
+      blocks: [],
+      props: {},
+    }
+  }
 
   /** Seed ['pages'] so the panel renders from data without a fetch (envless). */
-  function renderPanel(areaId: string, title: string) {
+  function renderPanel(nodeId: string) {
+    currentNodeId = nodeId
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
     client.setQueryData(['pages', 'main'], ROWS)
     return render(
       <QueryClientProvider client={client}>
-        <AreaOverviewPanel areaId={areaId} title={title} />
+        <DeletionUndoProvider>
+          <DocumentPanel />
+        </DeletionUndoProvider>
       </QueryClientProvider>
     )
   }
 
-  it('the databases root page reads simply "databases" — no life, and no duplicate tail', () => {
-    const { getByRole } = renderPanel('root-db', 'databases')
-    const nav = getByRole('navigation', { name: 'Breadcrumb' })
-    // The root crumb IS this page, so it names the surface once and alone.
+  it('the databases root page reads simply "databases" — no life, and no duplicate tail', async () => {
+    const { findByRole } = renderPanel('root-db')
+    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
+    // The root crumb IS this page, so it names the surface once and alone; the
+    // title input below the pill is the page's tail, as on every page (#234).
     expect(within(nav).getAllByText('databases')).toHaveLength(1)
     expect(within(nav).queryByText('life')).toBeNull()
-    // No tail at all — and so no rename field on the reserved root, whose title is
-    // what `isDatabasesRoot` reads.
-    expect(within(nav).queryByRole('textbox')).toBeNull()
+    expect(screen.getByLabelText('Page title')).toHaveValue('databases')
   })
 
-  it('a database under the root starts at databases and keeps its own tail', () => {
-    const { getByRole } = renderPanel('db-1', 'ingredients')
-    const nav = getByRole('navigation', { name: 'Breadcrumb' })
+  it('a database under the root starts at databases and keeps its own tail', async () => {
+    const { findByRole } = renderPanel('db-1')
+    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
     expect(within(nav).getByText('databases')).toBeInTheDocument()
     expect(within(nav).queryByText('life')).toBeNull()
-    // The current page is the pill's editable tail, as on any other overview.
-    expect(within(nav).getByRole('textbox')).toHaveValue('ingredients')
+    expect(screen.getByLabelText('Page title')).toHaveValue('ingredients')
   })
 
-  it('a page under life still starts at life', () => {
-    const { getByRole } = renderPanel('health', 'Health')
-    const nav = getByRole('navigation', { name: 'Breadcrumb' })
+  it('a page under life still starts at life', async () => {
+    const { findByRole } = renderPanel('health')
+    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
     expect(within(nav).getByText('life')).toBeInTheDocument()
     expect(within(nav).queryByText('databases')).toBeNull()
   })

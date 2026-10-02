@@ -4,7 +4,7 @@
  * A linked kanban card holds a `pageId` reference; the page it points at is the
  * source of truth for the card's title. Both "what is this page's live title?" and
  * "which pages can I link to?" are answered from the already-loaded `['pages',
- * workspace]` rows cache the rail/overview surfaces read — no extra fetch. Kept pure
+ * workspace]` rows cache the rail/page surfaces read — no extra fetch. Kept pure
  * (no React) so the resolution logic is jest-testable and the context provider is a
  * thin shell over these.
  */

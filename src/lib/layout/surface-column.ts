@@ -9,8 +9,8 @@
  * drawer's height. Rendered outside a shell (Storybook, a surface alone), the
  * pill is in the flow, so the column starts at the plain 20px inset instead.
  *
- * Shared by the editor (DocumentPanel) and the overview (OverviewSurface) so
- * the two surfaces cannot drift; the editor also bounds its width handle to
+ * Owned by the page surface (DocumentPanel) — one column for every page, so
+ * pages cannot drift; it also bounds the width handle to
  * the READABLE column with `handle` — it stops where the content stops, never
  * running down through the composer's region.
  */

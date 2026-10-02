@@ -3,14 +3,14 @@
  *
  * The Life root is now a REAL page that holds its own blocks — a reserved,
  * per-user row of the `home` type (top-level, one per user; see migration 0005).
- * Its blocks render above the areas grid on the Life overview, with the full
- * editor (the `/` palette, `+` insert, reorder, bound metrics), and Pond can
+ * It renders through the ordinary page surface (DocumentPanel, #234) — the full
+ * editor (the `/` palette, `+` insert, reorder, bound metrics) — and Pond can
  * compose them through the normal propose_changes gate (the row is a real page,
  * so it appears in the workspace outline and `targetPageId` reaches it).
  *
- * It must NOT appear as a rail child or inflate the areas overview counts. That
+ * It must NOT appear as a rail child or as one of Life's own child cards. That
  * is enforced at ONE read boundary — `fetchPages` (lib/pages/tree.ts) strips the
- * home row from the `['pages']` cache the rail and overview surfaces read — so
+ * home row from the `['pages']` cache the rail and page surface read — so
  * every UI-tree consumer excludes it with no per-site guard. The home row is
  * reached only through this module (`getOrCreateHomePage`) and the AI outline.
  *
@@ -42,8 +42,8 @@ function toBlocks(value: unknown): Block[] {
  * insert fail, in which case we re-read the winner — so two tabs opening Life at
  * once never leave two home rows. Returns null only when unauthenticated.
  *
- * The row is created empty (no seeded blocks): an untouched Life shows just the
- * overview + the add affordance (ticket-44 §1), never phantom content.
+ * The row is created empty (no seeded blocks): an untouched Life shows just its
+ * nested pages + the add affordance (ticket-44 §1), never phantom content.
  */
 export async function getOrCreateHomePage(
   supabase: SupabaseClient<Database>
@@ -78,7 +78,7 @@ export async function getOrCreateHomePage(
   if (error || !data) {
     // Lost the create race (unique index) or a transient failure — re-read the
     // winning row. If that also comes back empty, surface null rather than throw
-    // so the Life overview still renders (just without an editable home surface).
+    // so the caller can show a loading state rather than crash.
     return readHomeRow(supabase, user.id)
   }
 

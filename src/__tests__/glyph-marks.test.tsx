@@ -7,13 +7,13 @@
  * stays SSR-safe (an empty sized `<span>` until painted) and quiet on a miss;
  * `KindDot` is the one page-kind mark (muted 7×7, 2px-radius rounded square in an
  * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
- * rendered through by PondMolecule, the mark button and the overview kicker; the
+ * rendered through by PondMolecule and the mark button; the
  * `AREA_GLYPH` map resolves the six fixed defaults (Life→ring, Personal→house,
  * Professional→star-01, Health→leaf-01, Finances→stairs-01,
  * Creativity→flower-05); and the wiring holds — the Rail's Life root and every
  * mapped area row lead with their glyph in the area hue (page-kind marks stay
- * KindDot, unmapped areas keep the dot), the area-overview kicker carries the
- * glyph, and an area crumb in the Breadcrumb shows its mark.
+ * KindDot, unmapped areas keep the dot), and an area crumb in the Breadcrumb
+ * shows its mark — resolved from the trail by the page surface (`CrumbMark`).
  */
 import React from 'react'
 import { render, waitFor, act } from '@testing-library/react'
@@ -25,17 +25,29 @@ import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import type { MarkSource } from '@/lib/pages/mark'
-import { OverviewSurface } from '@/components/organisms/OverviewSurface'
-import { AreaOverviewPanel } from '@/components/organisms/OverviewSurface'
+import { DocumentPanel } from '@/components/organisms/DocumentPanel'
+import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { OverviewModel } from '@/lib/pages/overview'
 import type { PageRow } from '@/lib/pages/tree'
 
-// The container tests (AreaOverviewPanel) reach useRouter through the crumb
-// navigation hook; the presentational RailView / Breadcrumb never touch it.
+// The page-surface tests (DocumentPanel) reach useRouter through crumb
+// navigation and read the open page from the URL; the presentational RailView /
+// Breadcrumb never touch either.
+let currentNodeId: string | null = null
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? currentNodeId : null) }),
+}))
+jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+const PAGES: Record<string, Record<string, unknown>> = {}
+jest.mock('@/lib/pages/client', () => ({
+  getPage: (_sb: unknown, id: string) => Promise.resolve(PAGES[id] ?? null),
+  updateTitle: jest.fn().mockResolvedValue(undefined),
+  setProperty: jest.fn().mockResolvedValue(undefined),
+}))
+jest.mock('@/lib/pages/home', () => ({
+  HOME_TYPE: 'home',
+  getOrCreateHomePage: () => Promise.resolve({ id: 'home-1', title: 'life', blocks: [] }),
 }))
 
 // ── fetch → data-URI harness ────────────────────────────────────────────────
@@ -300,115 +312,81 @@ describe('Breadcrumb — the lead crumb carries the injected mark', () => {
   })
 })
 
-describe('OverviewSurface — the kicker mark', () => {
-  const MODEL: OverviewModel = { focal: '7', focalCaption: '7 pages within.', cards: [] }
+// ── AC4 (integration): the page surface passes the glyph through ────────────
 
-  it('a mapped area leads its kicker with the glyph in the area hue (dot retired)', () => {
-    const { container } = render(
-      <OverviewSurface
-        kicker="Health"
-        accent="#5f7355"
-        markSlot={<AreaMark glyph="leaf-01" color="#5f7355" size={12} />}
-        model={MODEL}
-        closing="That’s Health at a glance."
-        onOpenCard={jest.fn()}
-      />
-    )
-    const glyph = container.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
-    expect(glyph).toBeInTheDocument()
-    const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toBe('rgb(95, 115, 85)')
-    expect(container.querySelector('[data-part="dot"]')).toBeNull()
-  })
-
-  it('without a glyph the kicker carries the shared KindDot mark in the accent', () => {
-    const { container } = render(
-      <OverviewSurface
-        kicker="Food"
-        accent="#5f7355"
-        model={MODEL}
-        closing="That’s Food at a glance."
-        onOpenCard={jest.fn()}
-      />
-    )
-    expect(container.querySelector('[data-icon]')).toBeNull()
-    const square = container.querySelector<HTMLElement>('[data-part="dot"]')!
-    expect(square.style.background).toBe('rgb(95, 115, 85)')
-    expect(square.className).toContain('size-[7px]')
-  })
-})
-
-// ── AC4 (integration): the containers pass the glyph through ────────────────
-
-describe('AreaOverviewPanel — the container resolves the glyph from the title', () => {
+describe('DocumentPanel — the trail’s lead crumb carries the area’s mark', () => {
   const at = '2026-01-01T00:00:00Z'
   const ROWS: PageRow[] = [
     { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
     { id: 'personal', parent_id: null, type: 'page', title: 'Personal', order: 1, updated_at: at },
     { id: 'food', parent_id: 'personal', type: 'page', title: 'Food', order: 0, updated_at: at },
   ]
+  for (const r of ROWS) {
+    PAGES[r.id] = {
+      id: r.id,
+      parentId: r.parent_id,
+      type: r.type,
+      title: r.title,
+      blocks: [],
+      props: {},
+    }
+  }
 
   /** Seed ['pages'] so the panel renders from data without a fetch (envless). */
   function renderPanel(
-    areaId: string,
-    title: string,
-    mark?: { glyph?: string | null; area_role?: string | null }
+    nodeId: string,
+    markOn?: { id: string; glyph?: string | null; area_role?: string | null }
   ) {
+    currentNodeId = nodeId
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
     client.setQueryData(
       ['pages', 'main'],
-      mark ? ROWS.map((r) => (r.id === areaId ? { ...r, ...mark } : r)) : ROWS
+      markOn ? ROWS.map((r) => (r.id === markOn.id ? { ...r, ...markOn } : r)) : ROWS
     )
     return render(
       <QueryClientProvider client={client}>
-        <AreaOverviewPanel areaId={areaId} title={title} />
+        <DeletionUndoProvider>
+          <DocumentPanel />
+        </DeletionUndoProvider>
       </QueryClientProvider>
     )
   }
 
-  it('a mapped area leads its kicker with the glyph in the area ROLE', () => {
-    const { container } = renderPanel('health', 'Health')
-    const glyph = container.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
+  it('a page inside a mapped area leads its trail with that area’s glyph, in the area ROLE', async () => {
+    const { container, findByRole } = renderPanel('food')
+    // The trail's Personal crumb carries the house glyph. Its mark is a control
+    // editing the AREA rather than the open page — which is why the label names it.
+    const crumbMark = await findByRole('button', { name: 'Change the mark for Personal' })
+    const glyph = crumbMark.querySelector<HTMLElement>('[data-icon="house"]')!
     expect(glyph).toBeInTheDocument()
-    const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    // #134: a role, never a colour. `pageAccent`'s Press six tint no mark now —
-    // switching theme re-colours this with no write and no stale value.
-    expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
-    expect(container.querySelector('[data-part="dot"]')).toBeNull()
-  })
-
-  it('an unmapped area shows a CLICKABLE KindDot, coloured by its inherited role', () => {
-    // #134: a page with no glyph is still its own mark — the other register of
-    // the same system. Returning nothing here meant only the six seeded areas
-    // could ever be given a glyph, which is not "any page".
-    const { container, getByRole } = renderPanel('food', 'Food')
-    const markBtn = getByRole('button', { name: 'Change the mark for Food' })
-    const dot = markBtn.querySelector<HTMLElement>('[data-part="dot"]')!
-    expect(dot).toBeInTheDocument()
-    // Inherited from the top-level ancestor, so a whole area still reads as one
-    // colour — now expressed as a role.
-    expect(dot.style.background).toMatch(/^var\(--mn-area-[abc]\)$/)
-    // The trail's Personal crumb carries the house glyph; nothing else does. Its
-    // mark is a SECOND control on this screen, editing the AREA rather than the
-    // open page — which is why the labels name their page.
-    const crumbMark = getByRole('button', { name: 'Change the mark for Personal' })
-    expect(crumbMark.querySelector('[data-icon="house"]')).toBeInTheDocument()
-    // #96: the breadcrumb pill leads with the pond's own glyph (2t); beyond it,
-    // the crumb mark is the only glyph on the surface.
+    // #134: a role, never a colour — switching theme re-colours this with no write.
+    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toMatch(
+      /^var\(--mn-area-[abc]\)$/
+    )
+    // #96: the pill leads with the pond's own glyph (2t); beyond it, the crumb
+    // mark is the only glyph on the surface.
     expect(container.querySelectorAll('[data-icon]:not([data-icon="ring"])')).toHaveLength(1)
   })
 
-  it('renders an explicit glyph and role over the derived ones', () => {
+  it('renders an explicit glyph and role over the derived ones', async () => {
     // The whole point of #134: a choice the person made beats the title hash.
-    const { container } = renderPanel('health', 'Health', {
+    const { findByRole } = renderPanel('food', {
+      id: 'personal',
       glyph: 'tulip-01',
       area_role: 'area-c',
     })
-    const glyph = container.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
+    const crumbMark = await findByRole('button', { name: 'Change the mark for Personal' })
+    const glyph = crumbMark.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
     expect(glyph).toBeInTheDocument()
     expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-c)')
+  })
+
+  it('a top-level page has no ancestors, so its trail carries no area mark', async () => {
+    const { container, findByRole } = renderPanel('health')
+    await findByRole('navigation', { name: 'Breadcrumb' })
+    expect(container.querySelector('[data-area-mark]')).toBeNull()
   })
 })
 

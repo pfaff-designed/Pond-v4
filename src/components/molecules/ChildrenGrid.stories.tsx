@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { ChildrenGrid } from './ChildrenGrid'
-import type { OverviewCardModel } from '@/lib/pages/overview'
+import type { ChildCardModel } from '@/lib/pages/child-cards'
 
-const CARDS: OverviewCardModel[] = [
+const CARDS: ChildCardModel[] = [
   {
     id: 'routine',
     type: 'page',
@@ -43,23 +43,13 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The default "Everything within" section: a card per child, one click target each. */
+/** A page's nested pages: a card per child, one click target each, no section label. */
 export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Everything within')).toBeInTheDocument()
+    await expect(canvas.getAllByRole('button')).toHaveLength(2)
     await userEvent.click(canvas.getByText('Workout Log'))
     await expect(args.onOpenCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'log' }))
-  },
-}
-
-/** Label omitted — the caller (OverviewSurface) owns its own rising label. */
-export const NoLabel: Story = {
-  args: { label: false },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.queryByText('Everything within')).not.toBeInTheDocument()
-    await expect(canvas.getByText('Workout Log')).toBeInTheDocument()
   },
 }
 
@@ -67,7 +57,6 @@ export const NoLabel: Story = {
 export const Empty: Story = {
   args: { cards: [] },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.queryByText('Everything within')).not.toBeInTheDocument()
+    await expect(canvasElement.querySelector('button')).toBeNull()
   },
 }

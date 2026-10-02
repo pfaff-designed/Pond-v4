@@ -181,7 +181,7 @@ export const Interactions: Story = {
     await userEvent.click(canvas.getByText('Health'))
     await expect(args.onSelect).toHaveBeenCalledWith('health')
 
-    // Life label (the tree ROW, not the pond-name head) opens the root overview
+    // Life label (the tree ROW, not the pond-name head) opens the root page
     await userEvent.click(within(canvas.getByRole('tree')).getByText('life'))
     await expect(args.onLife).toHaveBeenCalled()
   },

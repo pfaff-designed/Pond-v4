@@ -24,8 +24,8 @@ export const SCHEMA_KEY = '_schema' as const
 /**
  * The NodeType of a collection's schema-bound child (#18 decision 8). A `row` is a
  * real, openable page (own blocks + props) but is filtered out of the ['pages']
- * tree the rail and overview read (`fetchPages`), so it never appears as a rail
- * child or inflates an overview count — it is surfaced only through a view (#19).
+ * tree the rail and page surface read (`fetchPages`), so it never appears as a
+ * rail child or a children-grid card — it is surfaced only through a view (#19).
  */
 export const ROW_TYPE = 'row' as const
 

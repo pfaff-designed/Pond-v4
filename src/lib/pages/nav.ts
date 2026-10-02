@@ -1,5 +1,5 @@
 /**
- * The one way a node becomes a workspace URL. The rail, the overview cards,
+ * The one way a node becomes a workspace URL. The rail, the children-grid cards,
  * the breadcrumb, the New page modal, and the AI create_page accept path all
  * navigate by pushing this href, so the params a surface reads
  * (?nodeType, ?nodeId, ?nodeName) can never drift between entry points.

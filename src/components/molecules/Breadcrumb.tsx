@@ -10,10 +10,10 @@
  * shell's business (lib/layout/breadcrumb-slot), not this molecule's.
  *
  * Every crumb is a click target that navigates to that page; the root crumb
- * leads back to the root overview. The current node is either a quiet
- * non-clickable tail (`current`), a caller-supplied `tail` (the overview's
- * editable kicker), or omitted on the editor, where the title input is the tail
- * and the pill shows only the ANCESTOR path.
+ * leads back to the root page. The current node is either a quiet
+ * non-clickable tail (`current`), a caller-supplied `tail`, or omitted on the
+ * page surface, where the title input is the tail and the pill shows only the
+ * ANCESTOR path.
  *
  * On a root page (no ancestors, no current) it reads just "life", still
  * clickable so it stays a consistent home affordance. Every segment is written
@@ -24,7 +24,7 @@
  * business, not this molecule's. `root` carries it when that root is a real page
  * — the `databases` root, 3c's second root, which a click can then open — and
  * otherwise the root is life's synthetic workspace root: `rootLabel`, and a
- * `null` navigate. `lib/pages/overview`'s `crumbTrail` resolves it, and its
+ * `null` navigate. `lib/pages/crumbs`' `crumbTrail` resolves it, and its
  * `CrumbTrail` is exactly `{ root, crumbs }` so a caller can spread one trail.
  *
  * The top-level crumb — the area the trail starts in — leads with that area's
@@ -42,19 +42,19 @@
 
 import { Fragment, type ReactNode } from 'react'
 import { PondMark } from '@/components/atoms/PondMark'
-import type { Crumb } from '@/lib/pages/overview'
+import type { Crumb } from '@/lib/pages/crumbs'
 
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
   crumbs: Crumb[]
-  /** Navigate to a crumb (or, for life, to the root overview when `crumb` is null). */
+  /** Navigate to a crumb (or, for life, to the root page when `crumb` is null). */
   onNavigate: (crumb: Crumb | null) => void
   /**
    * The current node's title, rendered as a non-clickable tail. Omit on the
    * editor surface, where the title input is the tail instead.
    */
   current?: string
-  /** A custom tail rendered inside the pill in place of `current` (the overview's rename field). */
+  /** A custom tail rendered inside the pill in place of `current`. */
   tail?: ReactNode
   /** Label for the root crumb when it is life's synthetic root. Lowercase, as drawn. */
   rootLabel?: string

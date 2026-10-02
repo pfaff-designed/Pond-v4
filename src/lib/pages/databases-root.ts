@@ -12,7 +12,7 @@
  * The two roots are PEERS, so the root is not one of Life's areas on ANY surface.
  * One predicate (`isDatabasesRoot`) answers "is this it", and one filter
  * (`withoutDatabasesRoot`) is applied wherever Life's children are enumerated —
- * the rail's Life tree and the Life overview's cards and counts alike — so a
+ * the rail's Life tree and the root page's children grid alike — so a
  * page can never read as a root on one surface and an area on another.
  *
  * Framework-agnostic — takes a SupabaseClient, exercised directly in jest.
@@ -55,10 +55,10 @@ function isDatabasesRootRow(row: { parent_id: string | null; title: string }): b
  *
  * 3c's "one root beside life" means the databases root is a PEER of life, not one
  * of its areas — so every surface that enumerates Life's children (the rail's
- * Life tree, the Life overview's cards, and the "pages across your life" count
- * that reads the same rows) must subtract it. Applying it here, once, is what
+ * Life tree and the root page's children grid, which read the same rows)
+ * must subtract it. Applying it here, once, is what
  * keeps the two surfaces from disagreeing. The root's own page still reads
- * normally when opened — it is a page with pages inside it, i.e. an overview.
+ * normally when opened — it is a page with pages inside it.
  */
 export function withoutDatabasesRoot<
   T extends { id: string; parent_id: string | null; title: string },

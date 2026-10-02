@@ -29,6 +29,7 @@ import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondName } from '@/lib/pond/name'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import type { NodeType } from '@/lib/supabase/types'
@@ -56,6 +57,8 @@ export interface CreatePageModalViewProps {
   parentValue: string
   onParentChange: (value: string) => void
   parentOptions: CreatePageParentOption[]
+  /** The pond's name — the top-level place (AUDIT W9: never an assumed "Life"). */
+  pondName: string
   busy: boolean
   error?: string | null
   onCreate: () => void
@@ -69,6 +72,7 @@ export function CreatePageModalView({
   parentValue,
   onParentChange,
   parentOptions,
+  pondName,
   busy,
   error,
   onCreate,
@@ -114,7 +118,7 @@ export function CreatePageModalView({
                 aria-label="Destination"
                 className="w-full rounded-lg border border-mn-line bg-mn-surface px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-mn-text transition-colors"
               >
-                <option value={TOP_LEVEL_VALUE}>Life · top level</option>
+                <option value={TOP_LEVEL_VALUE}>{pondName} · top level</option>
                 {parentOptions.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.title}
@@ -155,6 +159,7 @@ export function CreatePageModal({
   const router = useRouter()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondName = usePondName()
   const [title, setTitle] = useState('')
   const [parentValue, setParentValue] = useState<string>(TOP_LEVEL_VALUE)
   const [busy, setBusy] = useState(false)
@@ -239,6 +244,7 @@ export function CreatePageModal({
       parentValue={parentValue}
       onParentChange={setParentValue}
       parentOptions={parentOptions}
+      pondName={pondName}
       busy={busy}
       error={error}
       onCreate={handleCreate}

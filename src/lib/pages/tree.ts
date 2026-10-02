@@ -1,11 +1,11 @@
 /**
  * The flat page rows behind the ['pages'] tree — shared by the rail and the
- * overview surfaces so both read (and invalidate) the same React Query cache.
+ * page surface so both read (and invalidate) the same React Query cache.
  *
  * The Life home row (ticket-44, `type='home'`) is stripped here — this is the ONE
- * boundary where it's excluded, so every UI-tree consumer (rail, overview counts
- * and cards, breadcrumb) never sees it: it can't become a rail child or inflate
- * the areas overview. Its blocks are reached only via lib/pages/home.ts.
+ * boundary where it's excluded, so every UI-tree consumer (rail, children-grid
+ * cards, breadcrumb) never sees it: it can't become a rail child or one of Life's
+ * own cards. Its blocks are reached only via lib/pages/home.ts.
  */
 
 import type { QueryClient } from '@tanstack/react-query'
@@ -42,16 +42,16 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
   const { data, error } = await supabase
     .from('pages')
     // #134: glyph + area_role ride along, so the ONE ['pages', workspace] cache
-    // the rail, breadcrumb and overview already share is enough to resolve every
+    // the rail, breadcrumb and page surface already share is enough to resolve every
     // mark — no surface fetches anything extra to draw one.
     .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
     .eq('user_id', user.id)
     .eq('workspace', workspace)
     // ticket-44: the reserved Life home row never enters the ['pages'] cache
-    // (rail / overview counts / breadcrumb) — home blocks are read separately.
+    // (rail / children grid / breadcrumb) — home blocks are read separately.
     .neq('type', HOME_TYPE)
     // #18: a collection's schema-bound `row` children are surfaced only through
-    // views, never as rail children or overview cards — this is the ONE boundary
+    // views, never as rail children or children-grid cards — this is the ONE boundary
     // that keeps them out of the tree. They stay directly openable via getPage.
     .neq('type', ROW_TYPE)
     .order('order')

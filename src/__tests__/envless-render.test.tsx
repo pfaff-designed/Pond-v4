@@ -2,14 +2,13 @@
  * Issue #38 — envless CI/Storybook must be able to MOUNT the surfaces that talk
  * to Supabase. The REAL `@/lib/supabase/client` is used here (not mocked): with
  * NEXT_PUBLIC_SUPABASE_* deleted, `createClient()` throws at construction, so
- * these tests fail if any of the five formerly-eager sites still constructs the
+ * these tests fail if any of the four formerly-eager sites still constructs the
  * client at render:
  *
  *   - use-collection-rows.ts   (useCollectionRows)
  *   - use-capabilities.ts      (usePageLinkCapabilities)
  *   - AITerminal.tsx
- *   - OverviewSurface.tsx      (LifeHomeCanvas, via LifeOverviewPanel)
- *   - DocumentPanel.tsx
+ *   - DocumentPanel.tsx        (the page query, and the root's home-row query — #234)
  *
  * Construction is deferred into the queryFn / handler: a query that actually
  * RUNS envless settles as a query error (not a render crash), and a handler
@@ -49,7 +48,6 @@ jest.mock('@ai-sdk/react', () => ({
 import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { AITerminal } from '@/components/organisms/AITerminal'
-import { LifeOverviewPanel } from '@/components/organisms/OverviewSurface'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 
@@ -123,14 +121,7 @@ describe('envless mounts (#38): no render-time createClient()', () => {
     expect(String(consoleError.mock.calls.flat()[0])).toMatch(/URL and API key are required/)
   })
 
-  it('LifeOverviewPanel mounts past loading — LifeHomeCanvas home-row query fails as a query error, not a crash', async () => {
-    render(<LifeOverviewPanel />, { wrapper: wrapper(freshClient()) })
-    // Past the loading gate: the overview surface (and the LifeHomeCanvas child,
-    // whose ['home'] query fails on envless construction) has mounted.
-    await screen.findByText(/That’s the whole of it/)
-  })
-
-  it('DocumentPanel mounts with no node selected', async () => {
+  it('DocumentPanel mounts at the root — the home-row query fails as a query error, not a crash (#234)', async () => {
     const { container } = render(
       <DeletionUndoProvider>
         <DocumentPanel />
@@ -138,5 +129,9 @@ describe('envless mounts (#38): no render-time createClient()', () => {
       { wrapper: wrapper(freshClient()) }
     )
     await waitFor(() => expect(container.firstChild).not.toBeNull())
+    // The root resolves its page through getOrCreateHomePage, whose client is
+    // constructed inside the queryFn: envless, that settles as a query error and
+    // the panel stays on its loading state rather than throwing at render.
+    expect(await screen.findByText('Loading…')).toBeInTheDocument()
   })
 })
