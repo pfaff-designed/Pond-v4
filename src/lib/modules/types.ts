@@ -11,11 +11,50 @@
  *   - `ModuleRenderer` — client: `{ view, editor?, differ? }`. Assembled in
  *     `renderers.ts`; read only in client React.
  *
- * These are TYPE declarations only — the `import type` React references below are
- * erased at compile, so this file stays server-safe.
+ * These are TYPE declarations — the `import type` React references below are
+ * erased at compile, so this file stays server-safe — plus ONE runtime value,
+ * `labelledBlockFields` (#258): the zod mixin every labelled schema extends. It
+ * lives here because this is the one module every schema already imports, and
+ * `content.ts` (which imports every schema) cannot be imported by one. Pure zod,
+ * no React: still server-safe.
  */
 import type { ComponentType } from 'react'
-import type { ZodType } from 'zod'
+import { z, type ZodType } from 'zod'
+
+/**
+ * A label is a block's OWN persisted, optional field — not its type's name (#258).
+ * `PondTemplate.dc.html`'s `renderVals()`:
+ *
+ *   const v = filled ? d.f : d.e, bare = k === 'text' && !label;
+ *   const b = { label, …, hasEyebrow: !!label, … };
+ *
+ * A block draws an eyebrow when it HAS a label, and only an unlabelled `text`
+ * block escapes the card. The board's `T` table labels every block in the twelve
+ * templates except the three bare `text` blocks (`page`, `notes`): `text → goal` /
+ * `notes`, `highlight → kept`, `check → actions` / `today`, `kanban → tasks — board`,
+ * `entries → updates`. So the label is persisted on the block and `blockFrame()`
+ * reads it — the eyebrow is the label when there is one, else the type/mode name.
+ *
+ * Declared ONCE and applied per schema with `.extend(labelledBlockFields)`, rather
+ * than widening `blockSchema`'s discriminated union: type-safe, greppable, and every
+ * existing fence (`ai-composition`, `module-nested-ids`) keeps working unchanged.
+ * Applied to `text`, `highlight`, `todo`, `view` and `entries`. NOT to `table` —
+ * its existing `title` IS its label (persisted rows carry it; a rename would need a
+ * migration) — nor to `image`, which no template labels.
+ *
+ * Nothing authors a label yet, and that is correct: the `/` palette mints
+ * unlabelled blocks (the board draws no label field on a fresh block) and #228e's
+ * templates are what set labels. No board in the handoff draws a rename
+ * affordance, so none is built.
+ */
+export const labelledBlockFields = {
+  label: z
+    .string()
+    .optional()
+    .describe(
+      'An optional short name for this block, shown as its eyebrow (e.g. "goal", "actions", "kept"). Omit it for an ordinary prose block; a text block with no label renders bare, without a card.'
+    ),
+}
 
 /**
  * The AI-facing, server-safe half of a module. One Zod `schema` (the single source

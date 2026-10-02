@@ -1,14 +1,30 @@
 import { useState } from 'react'
-import type { Meta, StoryObj } from '@storybook/nextjs-vite'
+import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, userEvent, within, waitFor } from 'storybook/test'
 
 import { TextView } from './view'
 import type { TextBlock } from './schema'
+import { PondBlock } from '@/components/organisms/PondBlock'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
 
 /**
  * The `text` content block (ticket-20) — rendered reading by default, click-to-edit
  * source. Read-only always typesets markdown; editable starts in the rendered view
  * and drops into a source textarea on click (extends the ticket-10 edit loop).
+ *
+ * #258 — the bare/carded fork, from `PondTemplate.dc.html`'s `renderVals()`:
+ *
+ *   bare = k === 'text' && !label                       → { padding: '2px 4px' }
+ *   else { background: card, borderRadius: 20, boxShadow: shadow, padding: '14px 16px' }
+ *   hasEyebrow: !!label
+ *
+ * So an UNLABELLED text block is bare prose on the page, and a LABELLED one
+ * (`project → goal`, `meeting → notes`) is an ordinary card with the label as its
+ * eyebrow. The two stories below render both side by side exactly as `BlockCanvas`
+ * does — `blockFrame()` → `PondBlock` or the bare `px-1 py-0.5` wrapper — in each
+ * theme, and assert the computed card against the board (its frames render under a
+ * transform, so the literals in that script are the source, never DOM geometry).
  */
 const meta = {
   title: 'Modules/Text',
@@ -122,4 +138,96 @@ export const EmptyStartsEditing: Story = {
     await userEvent.click(trigger)
     await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
   },
+}
+
+// ── #258: labelled → card, unlabelled → bare ───────────────────────────────────
+
+/** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
+const inkTheme: Decorator = (Story) => (
+  <div className="dark rounded-mn-inner bg-raw-ink p-mn-6">
+    <Story />
+  </div>
+)
+
+/** The board's `project → goal` fixture: a LABELLED text block. */
+const goal: TextBlock = {
+  id: 'txt-goal',
+  type: 'text',
+  label: 'goal',
+  content: 'Out of the flat by the 14th, with every box labelled by room.',
+}
+
+/** The board's `notes` fixture: an UNLABELLED text block — bare. */
+const bareNote: TextBlock = {
+  id: 'txt-bare',
+  type: 'text',
+  content: 'A shelf above the desk for the radio. Ask about the allotment waiting list.',
+}
+
+/** Exactly `BlockCanvas`'s fork: a frame → `PondBlock`; none → the bare wrapper. */
+function Framed({ data }: { data: TextBlock }) {
+  const frame = blockFrame(data)
+  const view = <TextView data={data} />
+  return frame ? (
+    <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote}>
+      {view}
+    </PondBlock>
+  ) : (
+    <div data-bare className="px-1 py-0.5">
+      {view}
+    </div>
+  )
+}
+
+const LIGHT = { card: 'rgb(250, 249, 239)', ink68: 'rgba(27, 29, 20, 0.68)' }
+const DARK = { card: 'rgb(48, 49, 42)', ink68: 'rgba(250, 249, 239, 0.68)' }
+
+async function assertFork(canvasElement: HTMLElement, theme: typeof LIGHT) {
+  // The labelled block: ONE card, the `list` kind at 400, the label as its eyebrow.
+  const cards = canvasElement.querySelectorAll<HTMLElement>('[data-block-kind]')
+  await expect(cards).toHaveLength(1)
+  const card = cards[0]
+  await expect(card.dataset.blockKind).toBe('list')
+  const cs = getComputedStyle(card)
+  await expect(cs.width).toBe(`${POND_BLOCK_WIDTHS.list}px`)
+  await expect(cs.backgroundColor).toBe(theme.card)
+  await expect(cs.borderTopLeftRadius).toBe('20px')
+  const eyebrow = within(card).getByText('goal')
+  await expect(eyebrow.className).toBe(pageEyebrowClass)
+  const es = getComputedStyle(eyebrow)
+  await expect(es.textTransform).toBe('uppercase')
+  await expect(es.color).toBe(theme.ink68)
+  await expect(card.textContent).toContain('Out of the flat by the 14th')
+
+  // The unlabelled block: no card at all — bare at the board's `2px 4px`.
+  const bare = canvasElement.querySelector<HTMLElement>('[data-bare]')!
+  await expect(bare.querySelector('[data-block-kind]')).toBeNull()
+  const bs = getComputedStyle(bare)
+  await expect(bs.paddingTop).toBe('2px')
+  await expect(bs.paddingLeft).toBe('4px')
+  await expect(bs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  await expect(bs.boxShadow).toBe('none')
+  await expect(bare.textContent).toContain('A shelf above the desk')
+}
+
+/**
+ * A labelled text block (card + eyebrow) beside an unlabelled one (bare), paper.
+ * The label is the block's own persisted field; nothing but the label differs.
+ */
+export const LabelledBesideBare: Story = {
+  args: { data: goal },
+  render: (args) => (
+    <div className="flex flex-col items-start gap-mn-4">
+      <Framed data={args.data} />
+      <Framed data={bareNote} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => assertFork(canvasElement, LIGHT),
+}
+
+/** The same pair on ink: the card is the dark card paper, the eyebrow ink .68. */
+export const LabelledBesideBareInk: Story = {
+  ...LabelledBesideBare,
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertFork(canvasElement, DARK),
 }

@@ -113,8 +113,26 @@ describe('PondBlock — the card frame', () => {
 // ── Which card a block gets ───────────────────────────────────────────────────────
 
 describe('blockFrame — maps a persisted block to its board kind + head', () => {
-  it('a text block is bare prose, not a card (PondTemplate: `bare = text && !label`)', () => {
+  // #258: `PondTemplate.dc.html` — `bare = k === 'text' && !label`, `hasEyebrow:
+  // !!label`. `null` means exactly one thing: an UNLABELLED text block, bare at
+  // `padding 2px 4px`. Assert the unlabelled case stays bare so a future default
+  // can never quietly card every paragraph in the product.
+  it('an unlabelled text block is bare prose, not a card (`bare = text && !label`)', () => {
     expect(blockFrame({ id: 't', type: 'text', content: 'hello' })).toBeNull()
+    // An empty or whitespace label is no label — the board's `!label` is falsy.
+    expect(blockFrame({ id: 't', type: 'text', label: '', content: 'hello' })).toBeNull()
+    expect(blockFrame({ id: 't', type: 'text', label: '  ', content: 'hello' })).toBeNull()
+  })
+
+  it('a labelled text block is the `list` card with the label as its eyebrow (project → goal)', () => {
+    // The board gives a text block no width of its own, so — as highlight — it sits
+    // in the standard 400 card. No note: the board draws none for prose.
+    expect(
+      blockFrame({ id: 't', type: 'text', label: 'goal', content: 'Out of the flat by the 14th.' })
+    ).toEqual({ kind: 'list', heading: 'goal', headNote: '' })
+    expect(
+      blockFrame({ id: 't', type: 'text', label: 'notes', content: 'Launch moves a week.' })
+    ).toEqual({ kind: 'list', heading: 'notes', headNote: '' })
   })
 
   it('todo → checklist, headNote "done of total"', () => {
@@ -129,6 +147,20 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
         ],
       })
     ).toEqual({ kind: 'checklist', heading: 'checklist', headNote: '1 of 3' })
+  })
+
+  it('a labelled todo keeps the checklist card and note; the label is the eyebrow (meeting → actions)', () => {
+    expect(
+      blockFrame({
+        id: 'c',
+        type: 'todo',
+        label: 'actions',
+        items: [
+          { id: '1', label: 'Sam — final copy', checked: false },
+          { id: '2', label: 'Ana — book the room', checked: true },
+        ],
+      })
+    ).toEqual({ kind: 'checklist', heading: 'actions', headNote: '1 of 2' })
   })
 
   it('table → table, the title as the eyebrow, a row count as the note', () => {
@@ -164,6 +196,24 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
     }
   })
 
+  it('a labelled view keeps its mode’s card; the label replaces the mode name (project → tasks — board)', () => {
+    expect(blockFrame({ id: 'v', type: 'view', label: 'tasks — board', mode: 'board' })).toEqual({
+      kind: 'table',
+      heading: 'tasks — board',
+      headNote: '',
+    })
+    expect(blockFrame({ id: 'v', type: 'view', label: 'records', mode: 'gallery' })).toEqual({
+      kind: 'gallery',
+      heading: 'records',
+      headNote: '',
+    })
+    expect(blockFrame({ id: 'v', type: 'view', label: 'streak', mode: 'big-number' })).toEqual({
+      kind: 'number',
+      heading: 'streak',
+      headNote: '',
+    })
+  })
+
   it('highlight → the default 400 card, its kind as the eyebrow, no note (#249)', () => {
     // PondBlock.dc.html has no highlight kind; PondTemplate.dc.html draws it in the
     // normal block card with the standard head row and gives it no width of its own.
@@ -172,6 +222,17 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
       heading: 'highlight',
       headNote: '',
     })
+  })
+
+  it('a labelled highlight’s eyebrow is its label (reading → kept)', () => {
+    expect(
+      blockFrame({
+        id: 'h',
+        type: 'highlight',
+        label: 'kept',
+        content: 'Three books at once is one too many.',
+      })
+    ).toEqual({ kind: 'list', heading: 'kept', headNote: '' })
   })
 
   it('entries → the `log` card (460), its kind as the eyebrow, the entry count as the note (#250)', () => {
@@ -192,6 +253,25 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
       heading: 'entries',
       headNote: '0 entries',
     })
+  })
+
+  it('a labelled entries block keeps the log card and count; the label is the eyebrow (project → updates)', () => {
+    expect(
+      blockFrame({
+        id: 'e',
+        type: 'entries',
+        label: 'updates',
+        entries: [{ id: '1', date: '28 oct', text: 'Van booked.' }],
+      })
+    ).toEqual({ kind: 'log', heading: 'updates', headNote: '1 entry' })
+  })
+
+  it('table’s `title` IS its label — unchanged, no second field (#258)', () => {
+    // `log` is the tracker's label for its table; persisted rows carry `title`, and
+    // a rename would need a migration this slice must not have.
+    expect(
+      blockFrame({ id: 'tb', type: 'table', title: 'log', columns: ['date', 'value'], rows: [] })
+    ).toEqual({ kind: 'table', heading: 'log', headNote: '0 rows' })
   })
 
   it('image → the default 400 card, the filename as the note', () => {
@@ -223,6 +303,8 @@ const blocks: Block[] = [
     columns: ['Tool', 'Location'],
     rows: [{ id: 'r1', cells: ['Table Saw', 'Centre of shop'] }],
   },
+  // #258: the board's `project → goal` — a LABELLED text block is a card.
+  { id: 'b-goal', type: 'text', label: 'goal', content: 'Out of the flat by the 14th.' },
 ]
 
 function renderCanvas(onChange = jest.fn()) {
@@ -263,12 +345,27 @@ describe('BlockCanvas — every block renders inside the board card', () => {
     expect(document.getElementById('block-b-text')!.querySelector('[data-block-kind]')).toBeNull()
   })
 
+  it('a labelled text block gets the list card with its label as the eyebrow; unlabelled prose stays bare (#258)', () => {
+    renderCanvas()
+    const goalCard = document.getElementById('block-b-goal')!.querySelector('[data-block-kind]')!
+    expect(goalCard.getAttribute('data-block-kind')).toBe('list')
+    expect(goalCard.className.split(' ')).toContain('w-[400px]')
+    expect(goalCard.className.split(' ')).toContain('rounded-mn-card')
+    const eyebrow = screen.getByText('goal')
+    expect(eyebrow.className).toBe(pageEyebrowClass)
+    expect(goalCard.contains(eyebrow)).toBe(true)
+    // The prose renders under the head row, inside the card — the view is untouched.
+    expect(goalCard.textContent).toContain('Out of the flat by the 14th.')
+    // The sibling with no label is still bare: same type, different frame.
+    expect(document.getElementById('block-b-text')!.querySelector('[data-block-kind]')).toBeNull()
+  })
+
   it('an edit inside the card still emits the whole next array (the onChange wiring survives)', () => {
     const onChange = renderCanvas()
     fireEvent.change(screen.getByDisplayValue('Table Saw'), { target: { value: 'Mitre Saw' } })
     expect(onChange).toHaveBeenCalledTimes(1)
     const next = onChange.mock.calls[0][0] as Block[]
-    expect(next).toHaveLength(3)
+    expect(next).toHaveLength(4)
     const table = next[2]
     expect(table.type === 'table' && table.rows[0].cells).toEqual(['Mitre Saw', 'Centre of shop'])
     // Untouched siblings come through by reference.

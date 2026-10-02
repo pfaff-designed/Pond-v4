@@ -40,6 +40,12 @@ import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lin
  *
  * Each omit-chain must strip the ids at the descriptor's `nestedIdPaths` — jest
  * fence in `module-nested-ids.test.ts` (strip∘hydrate round-trip per type).
+ *
+ * The optional block `label` (#258, `labelledBlockFields` on text / highlight /
+ * todo / view / entries) rides through every omit-chain untouched — it is the
+ * block's own eyebrow, not an id — so Pond can emit a labelled block (ADR 0006: a
+ * block Pond cannot label is a template Pond cannot write). `block-label.test.ts`
+ * pins it on both unions.
  */
 /**
  * Text data with the ticket-21 emit-time lint attached: reject a body that is

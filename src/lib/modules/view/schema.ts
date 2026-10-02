@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ModuleDescriptor } from '../types'
+import { labelledBlockFields, type ModuleDescriptor } from '../types'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { AGG_LABELS, CHART_KINDS, VIEW_AGGS, bigNumberFromRows, signedDelta } from './aggregate'
 import { chartDataFromRows } from './chart-data'
@@ -137,25 +137,32 @@ export const viewBigNumberConfigSchema = z.object({
 })
 export type ViewBigNumberConfig = z.infer<typeof viewBigNumberConfigSchema>
 
-export const viewSchema = z.object({
-  id: z.string(),
-  type: z.literal('view'),
-  mode: viewModeSchema,
-  /** Board group-by: the id of the select/status property to bucket rows under. */
-  groupBy: z.string().optional(),
-  sort: viewSortSchema.optional(),
-  filter: viewFilterSchema.optional(),
-  /** Gantt (#27): the id of the `date` property a bar STARTS at. Omitted → inferred (1st date prop). */
-  startDate: z.string().optional(),
-  /** Gantt (#27): the id of the `date` property a bar ENDS at. Omitted → inferred (2nd date prop); none → single-day bars. */
-  endDate: z.string().optional(),
-  /** Chart mode (#111): which kind, bucketed by which property, plotting which series. */
-  chart: viewChartConfigSchema.optional(),
-  /** Big-number mode (#111): the one figure this view leads with. */
-  bigNumber: viewBigNumberConfigSchema.optional(),
-  /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
-  collectionId: z.string().optional(),
-})
+// `label` (#258) is the shared mixin from `types.ts`: the board's eyebrow for the view
+// (`kanban → tasks — board`, `gantt → tasks — timeline`, `number → this week`,
+// `gallery → records`, `bars → by week`, `heat → every day`) — every view-shaped
+// block in the twelve templates carries one. `blockFrame()` reads it over the
+// mode's name. It is config like everything else here: no id, nothing to strip.
+export const viewSchema = z
+  .object({
+    id: z.string(),
+    type: z.literal('view'),
+    mode: viewModeSchema,
+    /** Board group-by: the id of the select/status property to bucket rows under. */
+    groupBy: z.string().optional(),
+    sort: viewSortSchema.optional(),
+    filter: viewFilterSchema.optional(),
+    /** Gantt (#27): the id of the `date` property a bar STARTS at. Omitted → inferred (1st date prop). */
+    startDate: z.string().optional(),
+    /** Gantt (#27): the id of the `date` property a bar ENDS at. Omitted → inferred (2nd date prop); none → single-day bars. */
+    endDate: z.string().optional(),
+    /** Chart mode (#111): which kind, bucketed by which property, plotting which series. */
+    chart: viewChartConfigSchema.optional(),
+    /** Big-number mode (#111): the one figure this view leads with. */
+    bigNumber: viewBigNumberConfigSchema.optional(),
+    /** A linked view over ANOTHER collection (#41) — draws that collection's rows instead of the host page's. */
+    collectionId: z.string().optional(),
+  })
+  .extend(labelledBlockFields)
 export type ViewBlock = z.infer<typeof viewSchema>
 
 /**
