@@ -1,4 +1,18 @@
-# ADR 0006 — The Core milestone: blocks, templates, and Pond designing pages
+# ADR 0006 — M0: blocks, templates, and Pond designing pages
+
+> **Naming, settled 2026-10-02.** This milestone is **M0**. It sits _before_ M1, which ADR 0002 defines as
+> the entire single-user product (phases 1–6 and 8). The full ladder:
+>
+> |        |                                                                                                                                                              |
+> | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+> | **M0** | the usable spine — component library, block library, templates, Pond designing pages                                                                         |
+> | **M1** | the whole single-user product — onboarding, settings and themes, sources, zen, freeform, comments, reminders, trash, deep research, agents and skills, tasks |
+> | **M2** | multi-user — sharing, roles, presence, the human↔human diff path                                                                                             |
+> | **M3** | multiple ponds and organizations                                                                                                                             |
+>
+> M0 was previously called "the Core milestone", which caused a real confusion in conversation: "milestone 1"
+> read as _this_ milestone when ADR 0002 already meant something several times larger. M0 is roughly 20
+> slices; M1's remainder is roughly 70.
 
 - **Status:** Accepted
 - **Date:** 2026-10-01
