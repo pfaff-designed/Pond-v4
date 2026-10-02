@@ -7,7 +7,7 @@
  * Life home, and area pages all supply the same capabilities with no per-caller
  * wiring — each just passes the `pageId` it already owns as the parent for new child
  * pages. Resolution/search read the already-loaded `['pages', workspace]` cache the
- * rail/overview surfaces populate (no extra fetch); create/rename reuse the same
+ * rail/page surfaces populate (no extra fetch); create/rename reuse the same
  * `createPage`/`updateTitle` + optimistic-insert tail `CreatePageModal` uses.
  */
 
@@ -30,7 +30,7 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
   const router = useRouter()
-  // Reads the rail/overview cache — this query is already populated, so it's a cache
+  // Reads the rail/page cache — this query is already populated, so it's a cache
   // hit, not a second fetch.
   const { data: rows = [] } = useQuery({
     queryKey: ['pages', workspace],

@@ -7,8 +7,8 @@
  * Mirrors `BacklinksPanel` / `PageChangesPanel`: this organism touches data, the
  * `MarkPicker` molecule stays presentational.
  *
- * WHERE THIS IS USED, AND WHERE IT IS NOT. The breadcrumb and the overview
- * kicker, both of which sit on the OPEN page, where "this page's mark" is
+ * WHERE THIS IS USED, AND WHERE IT IS NOT. The breadcrumb's lead crumb (via
+ * `CrumbMark`), which sits on the OPEN page, where "this area's mark" is
  * unambiguous. Not the rail: a rail row is a navigation target end to end, and a
  * click zone inside it either steals the navigation or needs a modifier — a
  * click 2px left of a page name doing something entirely different from a click
@@ -22,9 +22,9 @@
  * themselves — would have had no icon to click and therefore no way to ever get
  * one. "Any page" has to mean any page.
  *
- * THE POPOVER IS PORTALLED, and has to be. Every `Rise` wrapper on an overview
- * surface carries `animation: … both`, so it keeps its final transform and is
- * permanently its own STACKING CONTEXT. A child of an earlier Rise therefore
+ * THE POPOVER IS PORTALLED, and has to be. An animated ancestor that carries
+ * `animation: … both` keeps its final transform and is permanently its own
+ * STACKING CONTEXT. A child of an earlier Rise therefore
  * cannot paint above a later sibling Rise whatever z-index it is given: an
  * absolutely-positioned popover rendered in place sat UNDER the focal numeral's
  * caption, which silently swallowed every click on the glyph grid. Found by
@@ -62,10 +62,9 @@ export interface PageMarkButtonProps {
   /**
    * The page this mark belongs to, for the button's label.
    *
-   * An overview carries TWO of these at once — the kicker's, for the open page,
-   * and the breadcrumb's, for the area the trail starts in — and they edit
-   * different pages. Both said "Change this page's mark", which is ambiguous to
-   * a screen reader and was outright wrong on the breadcrumb.
+   * The breadcrumb's mark edits the AREA the trail starts in, not the open
+   * page. It once said "Change this page's mark", which is ambiguous to a
+   * screen reader and was outright wrong there.
    */
   pageTitle: string
   /** The resolved mark, from `resolveMark`. */
@@ -216,9 +215,8 @@ export function PageMarkButton({
  * The breadcrumb's lead mark — the top-level crumb's, since that is the area the
  * trail starts in and the mark the trail has always shown.
  *
- * Here rather than at each call site because both the editor and the area
- * overview render a `Breadcrumb`, and two copies of "resolve the first crumb's
- * mark" would be two places to get the inheritance walk wrong.
+ * Here rather than at the call site so "resolve the first crumb's mark" has one
+ * home, and the inheritance walk one place to be wrong.
  */
 export function CrumbMark({
   rows,

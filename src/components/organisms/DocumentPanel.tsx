@@ -1,9 +1,17 @@
 'use client'
 
 /**
- * The main-panel page editor. Reads the open page id from the URL (?nodeId=),
+ * The main-panel page renderer. Reads the open page id from the URL (?nodeId=),
  * loads the page, and lets you edit its title and content blocks. Everything is
- * a page, so this is the editor for areas, sub-pages, projects — all of them.
+ * a page, so this is the one surface for Life, areas, sub-pages, projects — all
+ * of them (`Pond 03 Concepts`: "The only container. A page holds blocks, and
+ * pages nest inside pages… Life is the page at the top.").
+ *
+ * The root (#234): no ?nodeId means Life, whose blocks live on the reserved
+ * per-user home row (lib/pages/home). The row is resolved here and then takes
+ * the SAME path as any other page — no bespoke surface, no distinct area kind
+ * (#108). Its nested pages are the top-level pages, shown through the same
+ * children grid every page uses.
  *
  * Saves are debounced and write the whole block array (per the spec, blocks are
  * never partially persisted). Renaming refreshes the sidebar via the ['pages']
@@ -11,17 +19,17 @@
  *
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
  * the AI. The editor body — the `/` palette, hover `+` insert, reorder, and the
- * always-visible palette-first "+ Add a block" foot affordance — is the shared
- * <BlockCanvas>, so the Life home page, area pages, and document pages all author
- * identically. This panel owns the title header, the debounced save, and the
- * children grid; BlockCanvas owns the blocks.
+ * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
+ * so every page authors identically. This panel owns the title header, the
+ * debounced save, and the children grid; BlockCanvas owns the blocks.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
+import { getOrCreateHomePage } from '@/lib/pages/home'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
@@ -34,12 +42,6 @@ import {
   ROW_TYPE,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import {
-  AreaOverviewPanel,
-  LifeOverviewPanel,
-  useNavigateCrumb,
-  useOpenCard,
-} from '@/components/organisms/OverviewSurface'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { Breadcrumb } from '@/components/molecules/Breadcrumb'
@@ -48,16 +50,17 @@ import { useContentWidth } from '@/lib/layout/content-width'
 import { ShellBreadcrumb } from '@/lib/layout/breadcrumb-slot'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { requestCommandPalette } from '@/lib/shell-commands'
-import { childCards, crumbTrail } from '@/lib/pages/overview'
+import { childCards } from '@/lib/pages/child-cards'
+import { crumbTrail } from '@/lib/pages/crumbs'
+import { workspaceBasePath, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
-import { emptyBlockForType } from '@/lib/modules/palette'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
-import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 
 export function DocumentPanel() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const nodeId = searchParams.get('nodeId')
   // Lazily created on first use, not at render — so an envless mount (Storybook,
@@ -66,16 +69,28 @@ export function DocumentPanel() {
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const basePath = workspaceBasePath(workspace)
   const { flushScope } = useDeletionUndo()
   // #58: the editor column's user-set width — persisted, clamped, adjusted by
   // the ContentWidthHandle on the column's right edge. Hook lives above the
-  // early returns (rules of hooks); only the editor branch below renders it.
+  // early returns (rules of hooks).
   const { width: contentWidth, setWidth: setContentWidth, commitWidth } = useContentWidth()
   // #96: the column's insets — 76 under the floating pill, the composer's
-  // published clearance below — shared with the overview (lib/layout/surface-column).
+  // published clearance below (lib/layout/surface-column).
   const { column, handle } = useSurfaceColumn(contentWidth)
 
-  // The panel is layout-level, so it does NOT unmount when ?nodeId changes.
+  // The root page (#234). Life's blocks live on the reserved home row, created on
+  // first access; it is read for every page because the breadcrumb's root crumb
+  // is that page's own title — "Breadcrumb starts at the root page" (AUDIT W9),
+  // not an assumed name.
+  const { data: home, isPending: homePending } = useQuery({
+    queryKey: ['home'],
+    queryFn: () => getOrCreateHomePage(getSupabase()),
+  })
+  // The page this panel shows: the URL's node, or — at the root — the home row.
+  const pageId = nodeId ?? home?.id ?? null
+
+  // The panel is layout-level, so it does NOT unmount when the page changes.
   // Flush pending block toasts (staged by BlockCanvas) when leaving a page — a
   // surviving toast's Undo would otherwise re-insert the old page's block into
   // the newly-opened page.
@@ -83,35 +98,38 @@ export function DocumentPanel() {
     return () => {
       flushScope('block')
     }
-  }, [nodeId, flushScope])
+  }, [pageId, flushScope])
 
   const { data: page, isLoading } = useQuery({
-    queryKey: ['page', nodeId],
-    queryFn: () => (nodeId ? getPage(getSupabase(), nodeId) : Promise.resolve(null)),
-    enabled: !!nodeId,
+    queryKey: ['page', pageId],
+    queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
+    enabled: !!pageId,
   })
 
-  // The flat page tree — the same cache the rail and overview surfaces read — so
-  // this node's own children can be shown alongside its blocks (ticket-22).
-  // `new Date()` is captured per rows/nodeId change, so the cards' "updated Xd
-  // ago" captions refresh with the data rather than the wall clock — the same
-  // coarse recency the overview surfaces accept (AreaOverviewPanel does likewise).
-  // #108: the surface switch now reads CHILDREN, not a type tag, so these rows are
-  // load-bearing for *which* surface renders — `rowsPending` holds the panel on the
-  // loading state until they land, rather than flashing the editor at a container
-  // page whose children hadn't arrived yet.
+  // The flat page tree — the same cache the rail reads — so this page's own
+  // children can be shown below its blocks (ticket-22). `new Date()` is captured
+  // per rows/node change, so the cards' "updated Xd ago" captions refresh with
+  // the data rather than the wall clock. `rowsPending` holds the panel on the
+  // loading state until they land, so a page never paints without its children.
   const { data: rows = [], isPending: rowsPending } = useQuery({
     queryKey: ['pages', workspace],
     queryFn: () => fetchPages(workspace),
   })
-  const openCard = useOpenCard()
-  const navigateCrumb = useNavigateCrumb()
-  const cards = useMemo(() => (nodeId ? childCards(rows, nodeId, new Date()) : []), [rows, nodeId])
-  // The ancestor trail for the editor header — the title input stays the tail, so the
-  // pill shows only the path down to (not including) this node, starting at the ROOT it
-  // descends from (#101 review: `databases` is 3c's second root, not one of life's).
-  // No node (or an unknown one) resolves to the empty life-rooted trail.
+  // The root's children are the top-level pages (`null` parent); the home row is
+  // never among the rows (fetchPages strips it), so it is never its own child.
+  const cards = useMemo(() => childCards(rows, nodeId, new Date()), [rows, nodeId])
+  // The ancestor trail for the header — the title input stays the tail, so the
+  // pill shows only the path down to (not including) this node, starting at the
+  // ROOT it descends from (#101 review: `databases` is 3c's second root, not one
+  // of life's). The root itself (or an unknown node) resolves to the empty
+  // life-rooted trail, so the pill reads just the root page's name.
   const trail = useMemo(() => crumbTrail(rows, nodeId ?? ''), [rows, nodeId])
+  // Card → page and crumb → page are the one navigation (lib/pages/nav): a `null`
+  // crumb is the root, and a card or crumb carries its own id/type/title, so the
+  // URL gets the same params a rail click would.
+  function goTo(ref: WorkspaceNodeRef | null) {
+    router.push(workspaceUrl(ref, basePath))
+  }
 
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -162,14 +180,14 @@ export function DocumentPanel() {
         setBlocks(page.blocks)
       }
     }
-    if (!nodeId) loadedId.current = null
-  }, [page, nodeId, saved])
+    if (!pageId) loadedId.current = null
+  }, [page, pageId, saved])
 
   // Until the seeding effect above has run for THIS page, the local title/blocks
   // state still holds the previous node's values (effects run after paint). Every
   // read below — the type-switch branch included — goes through these derived
   // values so the correct surface and content paint on the very first frame: no
-  // overview→editor flash on an area with blocks, no one-frame leak of the
+  // flash of the previous page's surface, no one-frame leak of the
   // previous page's state on node change (ticket-22 review).
   const seeded = !!page && page.id === seededId
   const viewBlocks: Block[] = seeded ? blocks : (page?.blocks ?? [])
@@ -195,6 +213,10 @@ export function DocumentPanel() {
       // same-page adopt above only fires for genuinely external writes.
       queryClient.setQueryData(['page', id], (prev: typeof page) =>
         prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
+      )
+      // The root page's title is also the breadcrumb's root crumb on every page.
+      queryClient.setQueryData(['home'], (prev: typeof home) =>
+        prev && prev.id === id ? { ...prev, title: nextTitle } : prev
       )
       setSaved(true)
     }, 600)
@@ -239,26 +261,14 @@ export function DocumentPanel() {
     })
   }
 
-  // The area "+ Add content" pick (ticket-44 §2): the overview surface now opens
-  // the palette directly, so this inserts the CHOSEN module's empty state (not a
-  // bare text block), flipping the pure area to the composite editor below.
-  function addContentFromPalette(item: SlashMenuItem) {
-    const nb = emptyBlockForType(item.id)
-    if (!nb) return
-    insertedIds.add(nb.id)
-    commitLocalEdit([...viewBlocks, nb])
-  }
-
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel.
-  const { toggle: toggleChanges, overlay: changesOverlay } = usePageChangesPanel(nodeId)
+  const { toggle: toggleChanges, overlay: changesOverlay } = usePageChangesPanel(pageId)
   // Typed properties (#17): present only when the page carries a schema (it is
   // a collection). Read here, above the early returns, so the JSX below stays flat.
   const propSchema = page ? readSchema(page.props) : null
 
-  // ── Root: the Life overview owns the panel (no more empty state) ──────────
-  if (!nodeId) return <LifeOverviewPanel />
-  if (isLoading || rowsPending || !page) {
+  if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
         Loading…
@@ -266,25 +276,10 @@ export function DocumentPanel() {
     )
   }
 
-  // ── Surface switch (ticket-22, #108) ──────────────────────────────────────
-  // "Everything is a page": a node may hold BOTH its own blocks AND children.
-  // Nothing here reads a type tag any more — a page is a container because it HAS
-  // children, per the design ("an area is a page with pages inside it").
-  //   • A pure container (children, no blocks of its own) keeps the calm overview
-  //     — its focal treatment earns its place. A "+ Add content" affordance
-  //     (palette-first, ticket-44) lets it gain blocks, which flips it to the
-  //     composite below.
-  //   • Any node WITH blocks, and any childless leaf, shows the full editor — with
-  //     the "Everything within" children grid *below* it when it has children. So
-  //     an accepted edit is immediately visible, and no page can ever hide its own
-  //     content behind a folder view.
-  if (viewBlocks.length === 0 && cards.length > 0) {
-    return (
-      <AreaOverviewPanel areaId={page.id} title={page.title} onAddContent={addContentFromPalette} />
-    )
-  }
-
-  // ── Editor (+ children grid when the node has sub-pages) ──────────────────────
+  // ── The page (+ children grid when it has nested pages) ───────────────────────
+  // "Everything is a page": a page may hold BOTH its own blocks AND children, and
+  // nothing here reads a type tag — a page with pages inside it is simply a page
+  // with a children grid under its content (#108, #234).
   return (
     <div className="h-full overflow-y-auto">
       {/* #58: the column's max-width is user-set (was a fixed max-w-2xl) — the
@@ -313,7 +308,8 @@ export function DocumentPanel() {
         <ShellBreadcrumb>
           <Breadcrumb
             {...trail}
-            onNavigate={navigateCrumb}
+            rootLabel={home?.title}
+            onNavigate={goTo}
             leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
             onCommandK={requestCommandPalette}
           />
@@ -377,11 +373,11 @@ export function DocumentPanel() {
         <PageMentioned props={page.props} className="mt-8" />
 
         {/* Content above, children below — the page's own blocks stay primary; its
-            sub-pages read as a quiet index beneath them (ticket-22). Collapses to
-            nothing when the node has no children. */}
+            nested pages read as a quiet index beneath them (ticket-22). Collapses
+            to nothing when the page has no children. */}
         {cards.length > 0 && (
           <div className="mt-12 border-t border-mn-hair pt-6">
-            <ChildrenGrid cards={cards} onOpenCard={openCard} />
+            <ChildrenGrid cards={cards} onOpenCard={goTo} />
           </div>
         )}
 

@@ -1,8 +1,8 @@
 /**
  * A page's mark — which glyph it shows and in which colour (issue #134).
  *
- * ONE function owns the whole rule, because three surfaces render the mark (the
- * rail row, the breadcrumb crumb, the overview kicker) and they must never
+ * ONE function owns the whole rule, because several surfaces render the mark (the
+ * rail row, the breadcrumb crumb, the children-grid card) and they must never
  * disagree about the same page.
  *
  * THE RULE, in order:
@@ -74,7 +74,7 @@ export function derivedRole(id: string): AreaRole {
  * Resolve the mark for `pageId` against the pond's pages.
  *
  * `byId` is every page the caller knows about — in practice the `['pages',
- * workspace]` cache the rail, breadcrumb and overview already share, so no
+ * workspace]` cache the rail, breadcrumb and page surface already share, so no
  * surface fetches anything new to draw a mark.
  *
  * An unknown `pageId` with no `fallback` still returns a mark — a derived role

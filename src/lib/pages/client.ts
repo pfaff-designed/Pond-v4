@@ -358,7 +358,7 @@ export async function setPageMark(
   // `updated_at` is deliberately NOT stamped. The other writers here stamp it
   // because they change CONTENT (`blocks`) or the page's name (`title`); a mark is
   // neither. Nothing in the app sorts by it — the rail orders by `order` then
-  // title — and the one reader is `subtreeLatest`, which feeds the overview cards'
+  // title — and the one reader is `subtreeLatest`, which feeds the children-grid cards'
   // "updated …" caption. Stamping it made picking a colour read as an edit to the
   // page AND to every ancestor above it, with no change-log record behind the
   // claim. (Round one asked for the stamp; round two probed the consequence.)

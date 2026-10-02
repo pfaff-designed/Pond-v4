@@ -60,7 +60,7 @@ import { useWorkspace } from '@/lib/workspace/context'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
-import { ancestorPath } from '@/lib/pages/overview'
+import { ancestorPath } from '@/lib/pages/crumbs'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
@@ -947,7 +947,7 @@ export function Rail() {
   )
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
-  // When the selection changes — via a rail click, an overview card, the
+  // When the selection changes — via a rail click, a children-grid card, the
   // breadcrumb, or a page created through chat / ＋ — auto-expand every folder on
   // the path to the current node (and Life itself) so it's revealed and its
   // ancestors highlight. We reveal a given selection exactly once (tracked by

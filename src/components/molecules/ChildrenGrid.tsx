@@ -1,44 +1,32 @@
 'use client'
 
 /**
- * The "Everything within" section of an overview: a quiet mono label over a
- * two-up grid of child-page cards. Extracted from OverviewSurface so a page that
- * holds BOTH its own blocks AND children can show the same children grid *below*
- * its content (ticket-22) — the surface and the editor share one grid, so they
- * can't drift.
+ * A page's nested pages: a two-up grid of child-page cards under the page's own
+ * content. One grid for every page — Life, an area, a project — so the way
+ * nested pages read can't drift between pages (ticket-22, #234).
+ *
+ * No section label: no board draws one. The boards describe nesting only in
+ * prose ("a page with pages inside it"), and the one storyboard that shows a
+ * nested page on its parent (`Pond 06.11`) places it in the flow with no heading
+ * over it. The hairline the caller draws above the grid is the whole separation;
+ * each card says what it is.
  *
  * Renders nothing when there are no cards, so a content section collapses to
  * nothing on a childless page.
  */
 
-import { Fragment } from 'react'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import { pageEyebrowClass } from '@/components/atoms/kicker'
-import type { OverviewCardModel } from '@/lib/pages/overview'
+import type { ChildCardModel } from '@/lib/pages/child-cards'
 
 /**
- * The grid's section label — one component so the label can't drift between
- * ChildrenGrid's inline rendering and OverviewSurface's rise-animated copy. It
- * lives on a page, so it is the sans page eyebrow (10.5 / .1em / .68), not a
- * mono label at a fourth ink tier (#220).
+ * The interactive host around a `record-card` PondMolecule in stat mode (#95):
+ * the whole card is one calm click target. ticket-41: hover lift + pressed-state
+ * settle, token-timed — the active state presses the card back to rest (a
+ * physical "click") so the tap reads as cause, not just a hover flourish.
+ * Reduced-motion still gets the visual change instantly (no travel is
+ * perceptible at the token durations).
  */
-export function ChildrenGridLabel({
-  children = 'Everything within',
-}: {
-  children?: React.ReactNode
-}) {
-  return <div className={`${pageEyebrowClass} mb-3.5`}>{children}</div>
-}
-
-/**
- * The interactive host around a `record-card` PondMolecule in stat mode (#95,
- * the OverviewCard absorption): the whole card is one calm click target.
- * ticket-41: hover lift + pressed-state settle, token-timed — the active state
- * presses the card back to rest (a physical "click") so the tap reads as
- * cause, not just a hover flourish. Reduced-motion still gets the visual
- * change instantly (no travel is perceptible at the token durations).
- */
-function OverviewCardButton({ card, onOpen }: { card: OverviewCardModel; onOpen: () => void }) {
+function ChildCardButton({ card, onOpen }: { card: ChildCardModel; onOpen: () => void }) {
   return (
     <button
       type="button"
@@ -58,38 +46,17 @@ function OverviewCardButton({ card, onOpen }: { card: OverviewCardModel; onOpen:
 }
 
 export interface ChildrenGridProps {
-  cards: OverviewCardModel[]
-  onOpenCard: (card: OverviewCardModel) => void
-  /**
-   * Wrapper for each cell — lets the surface apply its staggered rise-on-mount.
-   * Each cell is keyed internally (a keyed Fragment per card), so wrappers do NOT
-   * need to supply their own key.
-   */
-  cell?: (card: OverviewCardModel, node: React.ReactNode) => React.ReactNode
-  /**
-   * The mono section label. A string renders the standard label; `false` omits it
-   * so a caller (OverviewSurface) can own the label with its own rise animation.
-   */
-  label?: string | false
+  cards: ChildCardModel[]
+  onOpenCard: (card: ChildCardModel) => void
 }
 
-export function ChildrenGrid({
-  cards,
-  onOpenCard,
-  cell = (_card, node) => node,
-  label = 'Everything within',
-}: ChildrenGridProps) {
+export function ChildrenGrid({ cards, onOpenCard }: ChildrenGridProps) {
   if (cards.length === 0) return null
   return (
-    <div>
-      {label !== false && <ChildrenGridLabel>{label}</ChildrenGridLabel>}
-      <div className="grid grid-cols-2 gap-3.5">
-        {cards.map((card) => (
-          <Fragment key={card.id}>
-            {cell(card, <OverviewCardButton card={card} onOpen={() => onOpenCard(card)} />)}
-          </Fragment>
-        ))}
-      </div>
+    <div className="grid grid-cols-2 gap-3.5">
+      {cards.map((card) => (
+        <ChildCardButton key={card.id} card={card} onOpen={() => onOpenCard(card)} />
+      ))}
     </div>
   )
 }

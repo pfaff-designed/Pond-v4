@@ -176,7 +176,7 @@ export interface KindDotProps {
  * ONE definition, two wearers. `PondAtom kind="dot"` renders it inside the inline
  * chrome `PondAtom.dc.html` gives every inline kind (26px min-height, 6px side
  * padding). The surfaces that carry the BARE mark — rail rows, list rows and cards
- * through `PondMolecule`, the breadcrumb's mark button, the overview kicker — render
+ * through `PondMolecule`, the breadcrumb's mark button — render
  * it directly, because their own boards draw a 7px square flush in the row, not an
  * atom in its padding. Folding those onto the full atom would push every rail label
  * 12px right.

@@ -154,8 +154,8 @@ const childRow = nodeRow({
 })
 const quote: Block[] = [{ id: 'b-quote', type: 'text', content: 'Consistency beats intensity' }]
 
-describe('DocumentPanel surface switch (ticket-22, #108): blocks and children both render', () => {
-  it('an area WITH blocks renders the editor (its content) plus the children grid', async () => {
+describe('every page is the one page surface (ticket-22, #108, #234): blocks and children both render', () => {
+  it('an area WITH blocks renders its content plus the children grid', async () => {
     renderWith({ id: 'page-1', type: 'page', title: 'Workout Routines', blocks: quote }, [
       nodeRow({}),
       childRow,
@@ -164,72 +164,55 @@ describe('DocumentPanel surface switch (ticket-22, #108): blocks and children bo
     expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
     expect(await screen.findByRole('button', { name: 'Edit text block' })).toBeInTheDocument()
     // And its children still show, below, as the shared grid.
-    expect(await screen.findByText('Everything within')).toBeInTheDocument()
-    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-    // No pure-overview affordance — this is the composite surface.
-    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
-  })
-
-  it('a page WITH children renders the editor plus the children grid', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Workout Routines', blocks: quote }, [
-      nodeRow({}),
-      childRow,
-    ])
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
-    expect(await screen.findByText('Everything within')).toBeInTheDocument()
-    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-  })
-
-  it('a pure container (children, no blocks) keeps the overview, with a "+ Add content" affordance', async () => {
-    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
-      nodeRow({ title: 'Health' }),
-      childRow,
-    ])
-    expect(await screen.findByRole('button', { name: '+ Add content' })).toBeInTheDocument()
     expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-    // No editor chrome on the pure overview.
-    expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
   })
 
-  it('"+ Add content" opens the palette, then a pick promotes the area and persists that block', async () => {
+  it('a page with children and no blocks is the SAME page — title, add affordance, children', async () => {
     renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
       nodeRow({ title: 'Health' }),
       childRow,
     ])
-    // ticket-44 §2: "+ Add content" is palette-first — it opens the block picker
-    // rather than dropping a text block.
-    fireEvent.click(await screen.findByRole('button', { name: '+ Add content' }))
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
+    expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Add a block' })).toBeInTheDocument()
+    // #234: no bespoke container surface, no affordance of its own.
+    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/at a glance/)).not.toBeInTheDocument()
+  })
+
+  it('a page with children persists a picked block to itself, with its children still below', async () => {
+    renderWith({ id: 'page-1', type: 'page', title: 'Health', blocks: [] }, [
+      nodeRow({ title: 'Health' }),
+      childRow,
+    ])
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    const editor = await screen.findByPlaceholderText('Write something…')
+    fireEvent.change(editor, { target: { value: '/' } })
     const filterInput = await screen.findByLabelText('Filter blocks')
     fireEvent.change(filterInput, { target: { value: 'Todo' } })
     fireEvent.click(await screen.findByText('Todo'))
 
-    // The node flips to the composite editor…
-    expect(await screen.findByLabelText('Page title')).toHaveValue('Health')
-    expect(await screen.findByText('Everything within')).toBeInTheDocument()
-    // …and the picked module (not a bare text block) rides the debounced save.
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
-    const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]
-    expect(savedBlocks).toHaveLength(1)
-    expect(savedBlocks[0].type).toBe('todo')
+    const call = mockCommitBlocks.mock.calls.find(([, , pageId]) => pageId === 'page-1')!
+    expect((call[3] as Block[]).some((b) => b.type === 'todo')).toBe(true)
+    expect(screen.getByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
   })
 
-  // #108 — the switch is keyed on children, never on a type tag.
-  it('a childless page with no blocks renders the EDITOR, not the overview', async () => {
+  // #108 — nothing is keyed on a type tag, and nothing on children either.
+  it('a childless page with no blocks renders the page, with no grid', async () => {
     renderWith({ id: 'page-1', type: 'page', title: 'Fresh page', blocks: [] }, [
       nodeRow({ title: 'Fresh page' }),
     ])
     expect(await screen.findByLabelText('Page title')).toHaveValue('Fresh page')
-    expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Everything within')).not.toBeInTheDocument()
+    expect(screen.queryByText('3-Day Full-Body Dumbbell Routine')).not.toBeInTheDocument()
   })
 
-  it('a project with children and no blocks gets the same overview a page would', async () => {
+  it('a project with children and no blocks gets the same page a page would', async () => {
     renderWith({ id: 'page-1', type: 'project', title: 'Bench build', blocks: [] }, [
       nodeRow({ type: 'project', title: 'Bench build' }),
       childRow,
     ])
-    expect(await screen.findByRole('button', { name: '+ Add content' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('Page title')).toHaveValue('Bench build')
     expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Page title')).not.toBeInTheDocument()
   })
 })

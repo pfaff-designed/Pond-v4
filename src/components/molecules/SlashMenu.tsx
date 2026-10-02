@@ -19,7 +19,7 @@ export interface SlashMenuProps {
   /**
    * When set, the panel renders in a portal on `document.body` at a FIXED
    * position just below the anchor — escaping every parent stacking context
-   * (the areas overview grid, the terminal region) so an open palette always
+   * (the children grid, the terminal region) so an open palette always
    * floats above page content. Without it the panel positions inline via
    * `className` (the chat command menu, which lives at the top of its own
    * stack, uses that path).
@@ -169,7 +169,7 @@ export function SlashMenu({ items, onSelect, onClose, className, anchorEl }: Sla
     </div>
   )
 
-  // Portal the panel to document.body so it escapes the overview grid + terminal
+  // Portal the panel to document.body so it escapes the children grid + terminal
   // stacking contexts; inline callers (chat command menu) render in place.
   if (anchorEl && typeof document !== 'undefined') {
     return createPortal(panel, document.body)

@@ -7,7 +7,7 @@
  * notice, a provenance chip, a diff line, a reminder, a task card.
  *
  * Pure presentational — no handlers, no hooks. Interactive hosts (the rail's
- * treeitem, an overview card's button, a kanban cell) wrap it and pass the
+ * treeitem, a children-grid card's button, a kanban cell) wrap it and pass the
  * state they are in; the `leading` / `trailing` slots let a host dock its own
  * affordances (a caret, hover-CRUD, an open button) without the molecule ever
  * owning behaviour.
@@ -93,7 +93,7 @@ export interface PondMoleculeProps {
   variant?: 'add' | 'remove'
   /** Area colour — tints MARKS ONLY (the dot), never text/ground. */
   color?: 'ink' | 'sage' | 'mist' | 'navy'
-  /** A raw accent for the dot mark (the rail/overview page-accent set) —
+  /** A raw accent for the dot mark (the rail/page-kind accent set) —
    *  applied as an inline style so it, too, touches marks only. */
   accent?: string
   /** list-row / task-card — the burnt-orange dated signal on the date atom.

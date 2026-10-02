@@ -6,7 +6,7 @@ import { KindDot } from './PondAtom'
 /**
  * The page-kind mark (#91): a 7×7px, 2px-radius square in muted ink or an area
  * accent. ONE definition, housed in `PondAtom` beside the `dot` kind that wears it:
- * the rail, list rows, cards, the mark button and the overview kicker all render
+ * the rail, list rows, cards and the mark button all render
  * this bare mark. Colour tints MARKS only.
  */
 const meta = {

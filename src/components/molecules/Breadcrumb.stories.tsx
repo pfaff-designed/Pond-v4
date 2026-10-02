@@ -85,7 +85,7 @@ export const RootOnly: Story = {
 /**
  * The pond's SECOND root (#101 review / ADR 0003 / 3c): a page under `databases`
  * starts its trail AT databases — no "life" ahead of it — and that root crumb is
- * the real page, so a click opens it rather than the life overview.
+ * the real page, so a click opens it rather than the root page.
  */
 export const DatabasesRoot: Story = {
   args: {
@@ -135,7 +135,7 @@ export const WithoutCommandK: Story = {
 }
 
 /**
- * The overview's editable tail (ticket-26): a `tail` node renders inside the
+ * An editable tail (ticket-26): a `tail` node renders inside the
  * pill in place of `current`, so a rename happens in the trail itself.
  */
 export const EditableTail: Story = {

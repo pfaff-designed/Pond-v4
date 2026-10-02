@@ -1,6 +1,6 @@
 /**
  * An area's glyph in the area's hue (#91) — the `data-area-mark` slot the
- * rail rows, breadcrumb crumbs and the overview kicker all lead with. The slot
+ * rail rows and breadcrumb crumbs lead with. The slot
  * carries the hue as an inline `color`, so the masked `Icon` inside inherits
  * it through `currentColor` exactly as the retired dot carried it through
  * `background`: area colour tints MARKS only, never text or ground.
