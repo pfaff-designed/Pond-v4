@@ -94,6 +94,8 @@ Before finishing, run FROM ${setup.worktree} and make all green:
 - the jest suite (note: if the repo's jest config ignores /.claude-worktrees/, run \`npx jest --testPathIgnorePatterns "/node_modules/" "/\\.claude/"\` so the worktree's own tests run) → all green
 - lint if present → clean (explain any residual warnings)
 
+NEVER START A DEV SERVER OR ANY LONG-RUNNING PROCESS. No \`npm run dev\`, no \`next dev\`, no watch mode, no Playwright, no \`serve\`. They do not exit, and the run stalls until it is killed — this cost ~1.6M tokens across two abandoned builds on 2026-10-02. Many issue bodies carry a "browser-verified against the board" criterion: that one is the ORCHESTRATOR's, not yours. Leave it unticked and put the steps in manual_verify_notes.
+
 Commit once green: \`feat: <summary> (#${issue})\` (conventional). Return the structured build report, including concrete browser steps the orchestrator should live-verify.`,
   { phase: 'Build', label: `build:#${issue}`, model: 'fable', schema: BUILD_SCHEMA },
 )
