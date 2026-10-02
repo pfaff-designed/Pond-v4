@@ -53,7 +53,12 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
 
   return (
     <div className="text-sm text-mn-text">
-      {data.title && <div className="mb-1 text-mn-text-secondary">{data.title}</div>}
+      {/* On a page the block's `title` is the card's eyebrow (PondBlock, #237), so
+          under a frame (`[data-block-kind]`) the caption hides rather than reading twice.
+          Bare hosts — diff cards, proposal previews, the card preview — keep it. */}
+      {data.title && (
+        <div className="mb-1 text-mn-text-secondary [[data-block-kind]_&]:hidden">{data.title}</div>
+      )}
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>

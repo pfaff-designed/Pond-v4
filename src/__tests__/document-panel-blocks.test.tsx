@@ -93,7 +93,9 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
     expect(await screen.findByDisplayValue('Table Saw')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Centre of shop')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Bandsaw')).toBeInTheDocument()
-    expect(screen.getByText('Power Tools')).toBeInTheDocument()
+    // #237: the title is the block card's eyebrow (the view's own caption is
+    // CSS-hidden under the frame, so both nodes exist in jsdom).
+    expect(screen.getAllByText('Power Tools').length).toBeGreaterThan(0)
   })
 
   it('persists a table cell edit through the debounced save', async () => {
