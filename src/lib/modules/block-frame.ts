@@ -4,7 +4,8 @@
  * `PondBlock.dc.html` draws the block family by KIND — list · checklist · table ·
  * gallery · number · log · properties — each with its own width and a head row
  * (eyebrow + mono note). The registry keys blocks by TYPE (text / todo / table /
- * view / image), so this is the one place a type is read into its board kind. Pure
+ * view / image / highlight), so this is the one place a type is read into its board
+ * kind. Pure
  * data, no React: the frame component takes the result, the view underneath it is
  * untouched.
  *
@@ -323,5 +324,13 @@ export function blockFrame(block: Block): BlockFrame | null {
         headNote: block.filename ?? '',
       }
     }
+    case 'highlight':
+      // #249: `PondBlock.dc.html` has no highlight kind and `PondTemplate.dc.html`
+      // gives the block no width of its own — it sits in the normal block card with
+      // the standard head row (the reading list labels it `kept`). So the default
+      // 400 card, as image. The board's template LABEL is template data (228e), not
+      // this block's: the eyebrow is the kind until templates carry labels. No note:
+      // the board draws none for it.
+      return { kind: 'list', heading: 'highlight', headNote: '' }
   }
 }

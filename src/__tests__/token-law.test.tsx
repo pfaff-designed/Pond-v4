@@ -387,13 +387,18 @@ describe('source sweep — no single line pairs mono with a wide tracking', () =
 // ── Wheat and burnt orange doing extra jobs ────────────────────────────────
 
 describe('source sweep — wheat is highlighted passages, burnt orange the dated thing', () => {
-  it('raw-wheat / signal-highlight are consumed only by the highlight atom', () => {
+  it('raw-wheat / signal-highlight are consumed only by the highlight atom and the highlight block', () => {
     const hits = linesMatching(/raw-wheat|signal-highlight/)
-    const strays = hits.filter(
-      (h) =>
-        !h.startsWith('src/app/globals.css') && !h.startsWith('src/components/atoms/PondAtom.tsx')
-    )
-    expect(strays).toEqual([])
+    // Two legitimate owners (#249): the INLINE highlight atom (a marked span inside
+    // prose, `PondAtom.dc.html`) and the BLOCK-level kept passage
+    // (`PondTemplate.dc.html`). Both are "highlighted passages" — the use the rule
+    // exists to permit. Different boards, different measurements, the same tokens.
+    const owners = [
+      'src/app/globals.css',
+      'src/components/atoms/PondAtom.tsx',
+      'src/lib/modules/highlight/view.tsx',
+    ]
+    expect(hits.filter((h) => !owners.some((f) => h.startsWith(f)))).toEqual([])
   })
 
   it('raw-burnt-orange / signal-dated are consumed only by the due-dot', () => {

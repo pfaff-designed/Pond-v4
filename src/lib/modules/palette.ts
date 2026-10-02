@@ -59,7 +59,8 @@ export const paletteItems: SlashMenuItem[] = [boardPreset, ...derivedItems]
 
 /**
  * The manual-authoring empty state per module: todo = one blank item, table = 2×2,
- * view = a table over the host page's rows, image = the upload affordance. Returns
+ * view = a table over the host page's rows, image = the upload affordance,
+ * highlight = an empty passage. Returns
  * null for a type with no local empty state — callers must guard null.
  */
 export function emptyBlockForType(type: string): Block | null {
@@ -91,6 +92,10 @@ export function emptyBlockForType(type: string): Block | null {
     // affordance until a file lands.
     case 'image':
       return { id, type: 'image', url: '' }
+    // #249: empty content = the authoring state; the view shows the board's empty
+    // line with no wheat until a passage lands.
+    case 'highlight':
+      return { id, type: 'highlight', content: '' }
     default:
       return null
   }

@@ -23,7 +23,8 @@ describe('Block types', () => {
       { id: '3', type: 'table', columns: ['A'], rows: [{ id: 'r1', cells: ['x'] }] },
       { id: '4', type: 'view', mode: 'table' },
       { id: '5', type: 'image', url: 'https://cdn.example/a.png' },
+      { id: '6', type: 'highlight', content: 'a line worth keeping' },
     ]
-    expect(blocks).toHaveLength(5)
+    expect(blocks).toHaveLength(6)
   })
 })

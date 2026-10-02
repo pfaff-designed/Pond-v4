@@ -63,7 +63,12 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     const retired: unknown[] = [
       { type: 'kanban', columns: [{ title: 'To do', cards: [{ title: 'Cut boards' }] }] },
       { type: 'metric', label: 'Balance', value: 42 },
-      { type: 'metric', label: 'Done', value: 0, source: { ref: 'chores', kind: 'checklist-checked' } },
+      {
+        type: 'metric',
+        label: 'Done',
+        value: 0,
+        source: { ref: 'chores', kind: 'checklist-checked' },
+      },
       { type: 'metric-ring', label: 'Progress', pct: 0.4 },
       { type: 'stat', label: 'Revenue', value: 1200 },
       { type: 'chart-line', title: 'Miles', points: [{ x: '2026-01', values: { Miles: 3 } }] },
@@ -78,13 +83,15 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     }
   })
 
-  it('still lets the model compose the five live content types', () => {
+  it('still lets the model compose the six live content types', () => {
     const live: unknown[] = [
       { type: 'text', content: 'prose' },
       { type: 'todo', items: [{ label: 'a', checked: false }] },
       { type: 'table', columns: ['A'], rows: [{ cells: ['1'] }] },
       { type: 'view', mode: 'table' },
       { type: 'image', url: 'https://example.test/a.png' },
+      // #249: the kept passage — authored content, so a block (ADR 0007).
+      { type: 'highlight', content: 'a line worth keeping' },
     ]
     for (const data of live) {
       expect(moduleDataSchema.safeParse(data).success).toBe(true)
@@ -96,7 +103,11 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
       moduleDataSchema.safeParse({
         type: 'view',
         mode: 'chart',
-        chart: { kind: 'line', xProperty: 'p-date', series: [{ property: 'p-weight', agg: 'latest' }] },
+        chart: {
+          kind: 'line',
+          xProperty: 'p-date',
+          series: [{ property: 'p-weight', agg: 'latest' }],
+        },
       }).success
     ).toBe(true)
     expect(
@@ -232,7 +243,7 @@ describe('proposeChangesSchema (the tool input)', () => {
 
 describe('moduleCatalog (prompt teaching)', () => {
   it('lists every composable content type', () => {
-    for (const type of ['text', 'todo', 'table', 'view', 'image']) {
+    for (const type of ['text', 'todo', 'table', 'view', 'image', 'highlight']) {
       expect(moduleCatalog.split('\n').some((l) => l.startsWith(`- ${type}:`))).toBe(true)
     }
   })
