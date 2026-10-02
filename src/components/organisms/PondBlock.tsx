@@ -16,34 +16,35 @@
  *
  *   hover     the CARD does not change — `block.boxShadow` is `cardShadow`, same as
  *             rest. One child row goes into the molecule's `hover` state at the
- *             board's `R` index (`POND_BLOCK_HOVER_ROW`), surfaced to the body via
- *             `rowState(i)`. The product never sets this: PondMolecule's own row
- *             hover is already live — `state="hover"` is a board-parity demo state.
+ *             board's `R` index (`POND_BLOCK_HOVER_ROW`); a body reads which via the
+ *             pure `blockRowState(kind, state, i)`. The product never sets this:
+ *             PondMolecule's own row hover is already live — `state="hover"` is a
+ *             board-parity demo state.
  *   selected  boxShadow `0 0 0 2px ${fg}, ${cardShadow}` — a 2px FULL-INK ring
  *             prepended to the card shadow, both present (`ring-2 ring-mn-text`
  *             composes with `shadow-mn-card`). Gallery's record-card 1 goes `selected`.
  *   loading   headNote → `loading…`; the body → a STATIC skeleton (no sweep, pulse
  *             or shimmer): bars `display block · height h · width w · radius 5 ·
- *             rgba(ink,.08)` in a column with gap 2 (0 for table).
+ *             rgba(ink,.08)` in a column with gap 2 (0 for table). The card root
+ *             carries `aria-busy` — it is the region being updated.
  *   error     the body → PondMolecule's `notice` with `action="reconnect"` and the
  *             kind's exact copy (`blockErrorLine`). The head keeps its normal note.
- *   disabled  `opacity: .4`. Nothing else changes.
+ *   disabled  `opacity: .4` is the only pixel change. The card is also `inert`:
+ *             the body is a LIVE module view, so a disabled block must take no
+ *             clicks, no text entry and no Tab — `inert` removes the subtree from
+ *             hit-testing and the focus order together, which `pointer-events`
+ *             alone would not.
  *   empty     #239 — falls through to rest here.
  *   deleted   #240 (the tombstone) — falls through to rest here.
  *
  * The module view renders as `children`, untouched: the card is chrome AROUND the
- * engine, never a rewrite of it. A body may also be a function of the frame's
- * state so a demo can paint the board's hover/selected row.
+ * engine, never a rewrite of it.
  */
 
 import type { ReactNode } from 'react'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
-import {
-  POND_BLOCK_HOVER_ROW,
-  type PondBlockKind,
-  type PondBlockState,
-} from '@/lib/modules/block-frame'
+import { type PondBlockKind, type PondBlockState } from '@/lib/modules/block-frame'
 import { cn } from '@/lib/utils'
 
 export {
@@ -51,6 +52,7 @@ export {
   POND_BLOCK_WIDTHS,
   POND_BLOCK_STATES,
   POND_BLOCK_HOVER_ROW,
+  blockRowState,
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -105,24 +107,37 @@ export const POND_BLOCK_SKELETON: Record<PondBlockKind, readonly SkeletonBar[]> 
   ],
 }
 
-/** The board's `errLine`, verbatim — curly apostrophes (U+2019) included. */
+/**
+ * The board's row stack gap per kind — `gap: 0` for table (its rows draw their own
+ * rule), 2 for everything else. Literal class strings so Tailwind sees them; the
+ * skeleton and a demo body both read this one table.
+ */
+export const POND_BLOCK_ROW_GAP: Record<PondBlockKind, string> = {
+  list: 'gap-[2px]',
+  checklist: 'gap-[2px]',
+  table: 'gap-0',
+  gallery: 'gap-[2px]',
+  number: 'gap-[2px]',
+  log: 'gap-[2px]',
+  properties: 'gap-[2px]',
+}
+
+/** The board's `errLine` per kind, verbatim — curly apostrophes (U+2019) included. */
+const SHEET_ERROR = 'pond can’t reach this sheet any more · showing the last copy'
+const BLOCK_ERROR = 'this block couldn’t load'
+export const POND_BLOCK_ERROR_LINE: Record<PondBlockKind, string> = {
+  list: BLOCK_ERROR,
+  checklist: BLOCK_ERROR,
+  table: SHEET_ERROR,
+  gallery: SHEET_ERROR,
+  number: SHEET_ERROR,
+  log: BLOCK_ERROR,
+  properties: BLOCK_ERROR,
+}
+
 export function blockErrorLine(kind: PondBlockKind): string {
-  return kind === 'table' || kind === 'gallery' || kind === 'number'
-    ? 'pond can’t reach this sheet any more · showing the last copy'
-    : 'this block couldn’t load'
+  return POND_BLOCK_ERROR_LINE[kind]
 }
-
-/** What the frame tells a body about its state. */
-export interface PondBlockBodyContext {
-  state: PondBlockState
-  /**
-   * The molecule state for the row (or gallery card) at `index`: the board's
-   * hover row on `hover`, gallery card 1 on `selected`, otherwise rest.
-   */
-  rowState: (index: number) => 'rest' | 'hover' | 'selected'
-}
-
-export type PondBlockBody = ReactNode | ((ctx: PondBlockBodyContext) => ReactNode)
 
 export interface PondBlockProps {
   kind: PondBlockKind
@@ -132,7 +147,7 @@ export interface PondBlockProps {
   headNote?: string
   /** @default 'rest' — `empty` (#239) and `deleted` (#240) render as rest for now. */
   state?: PondBlockState
-  children: PondBlockBody
+  children: ReactNode
   className?: string
 }
 
@@ -145,25 +160,14 @@ export function PondBlock({
   className,
 }: PondBlockProps) {
   const selected = state === 'selected'
-  const hover = state === 'hover'
   const loading = state === 'loading'
   const error = state === 'error'
   const disabled = state === 'disabled'
 
-  const rowState: PondBlockBodyContext['rowState'] = (index) => {
-    if (hover && POND_BLOCK_HOVER_ROW[kind] === index) return 'hover'
-    if (selected && kind === 'gallery' && index === 1) return 'selected'
-    return 'rest'
-  }
-
   let body: ReactNode
   if (loading) {
     body = (
-      <div
-        data-part="skeleton"
-        aria-busy
-        className={cn('flex flex-col', kind === 'table' ? 'gap-0' : 'gap-[2px]')}
-      >
+      <div data-part="skeleton" className={cn('flex flex-col', POND_BLOCK_ROW_GAP[kind])}>
         {POND_BLOCK_SKELETON[kind].map(([w, h], i) => (
           <span key={i} aria-hidden className={cn('block rounded-[5px] bg-mn-text/[0.08]', w, h)} />
         ))}
@@ -181,13 +185,18 @@ export function PondBlock({
       />
     )
   } else {
-    body = typeof children === 'function' ? children({ state, rowState }) : children
+    body = children
   }
 
   return (
     <div
       data-block-kind={kind}
       data-block-state={state}
+      // `aria-busy` marks the region being updated — the card, not the skeleton
+      // (whose children are all aria-hidden).
+      aria-busy={loading || undefined}
+      // A real boolean attribute (React 19): present when disabled, absent otherwise.
+      inert={disabled || undefined}
       className={cn(
         // The column can be narrower than the kind (mobile, a dragged-in editor
         // width): clamp to it rather than overflow. Mobile's own 360 is a later slice.

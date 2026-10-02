@@ -7,9 +7,10 @@ import {
   POND_BLOCK_WIDTHS,
   POND_BLOCK_HOVER_ROW,
   POND_BLOCK_SKELETON,
+  POND_BLOCK_ROW_GAP,
   BLOCK_LOADING_NOTE,
   blockErrorLine,
-  type PondBlockBodyContext,
+  blockRowState,
   type PondBlockKind,
   type PondBlockState,
 } from './PondBlock'
@@ -32,7 +33,7 @@ import { TableView } from '@/lib/modules/table/view'
  *   selected boxShadow `0 0 0 2px fg, cardShadow` · gallery card 1 → molecule selected
  *   loading  headNote `loading…` · static bars (block · h · w · radius 5 · ink .08)
  *   error    PondMolecule notice · reconnect · the kind's errLine
- *   disabled opacity .4
+ *   disabled opacity .4 · the card is `inert` (no clicks, typing or Tab reach the body)
  */
 
 /** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
@@ -64,12 +65,13 @@ const HEAD: Record<PondBlockKind, [string, string]> = {
 }
 
 /**
- * The board's body per kind (`R` / `cards` / `big`), built from PondMolecule so the
- * frame's `rowState(i)` paints the hover/selected row exactly where the board does.
- * These are demo fixtures: in the product the module view is the body.
+ * The board's body per kind (`R` / `cards` / `big`), built from PondMolecule so
+ * `blockRowState(kind, state, i)` paints the hover/selected row exactly where the
+ * board does. These are demo fixtures: in the product the module view is the body.
  */
-function Body({ kind, rowState }: { kind: PondBlockKind } & Pick<PondBlockBodyContext, 'rowState'>) {
-  const stack = kind === 'table' ? 'flex flex-col gap-0' : 'flex flex-col gap-[2px]'
+function Body({ kind, state }: { kind: PondBlockKind; state: PondBlockState }) {
+  const rowState = (i: number) => blockRowState(kind, state, i)
+  const stack = `flex flex-col ${POND_BLOCK_ROW_GAP[kind]}`
   switch (kind) {
     case 'list':
       return (
@@ -183,7 +185,7 @@ function Body({ kind, rowState }: { kind: PondBlockKind } & Pick<PondBlockBodyCo
     case 'number':
       return (
         <div className="flex flex-col gap-1.5">
-          <span className="text-[76px] leading-[.9] font-bold tracking-[-0.03em] tabular-nums">
+          <span className="text-[76px] leading-[0.9] font-bold tracking-[-0.03em] tabular-nums">
             11,240
           </span>
           <span className="font-mono text-mn-11 text-mn-text-secondary">
@@ -205,7 +207,7 @@ function AllKinds({ state = 'rest' }: { state?: PondBlockState }) {
           headNote={HEAD[kind][1]}
           state={state}
         >
-          {({ rowState }) => <Body kind={kind} rowState={rowState} />}
+          <Body kind={kind} state={state} />
         </PondBlock>
       ))}
     </div>
@@ -264,7 +266,7 @@ const contentWidth = (c: HTMLElement) => {
   return c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
 }
 
-/** The rest card: paper + the two-layer card shadow and nothing more. */
+/** The rest card: paper + the two-layer card shadow and nothing more — and live. */
 async function assertRestCard(c: HTMLElement, theme: Theme) {
   const cs = getComputedStyle(c)
   await expect(cs.backgroundColor).toBe(theme.card)
@@ -272,6 +274,7 @@ async function assertRestCard(c: HTMLElement, theme: Theme) {
   await expect(cs.boxShadow).not.toContain('0px 0px 0px 2px')
   await expect(cs.transform).toBe('none')
   await expect(cs.opacity).toBe('1')
+  await expect(c.hasAttribute('inert')).toBe(false)
 }
 
 /** Every card on the canvas measures to the board, in the given theme. */
@@ -431,15 +434,19 @@ const BAR_PCT: Record<string, number> = {
 const BAR_PX: Record<string, number> = { 'h-[10px]': 10, 'h-[52px]': 52, 'h-[120px]': 120 }
 
 async function assertLoading(canvasElement: HTMLElement, theme: Theme) {
+  // The board's note, pinned once: a one-character ellipsis (U+2026).
+  await expect(BLOCK_LOADING_NOTE).toBe('loading…')
   for (const kind of POND_BLOCK_KINDS) {
     const c = card(canvasElement, kind)
     await assertRestCard(c, theme)
+    await expect(c.getAttribute('aria-busy')).toBe('true')
+    await expect(c.hasAttribute('inert')).toBe(false)
     await expect(noteOf(c).textContent).toBe(BLOCK_LOADING_NOTE)
-    await expect(noteOf(c).textContent).toBe('loading…')
     // Rows, the gallery and the big number are all suppressed.
     await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
 
     const stack = c.querySelector<HTMLElement>('[data-part="skeleton"]')!
+    await expect(stack.hasAttribute('aria-busy')).toBe(false)
     const ss = getComputedStyle(stack)
     await expect(ss.display).toBe('flex')
     await expect(ss.flexDirection).toBe('column')
@@ -514,22 +521,26 @@ export const ErrorNoticeInk: Story = {
   play: async ({ canvasElement }) => assertError(canvasElement, DARK),
 }
 
-// ── disabled: opacity .4 ────────────────────────────────────────────────────────
+// ── disabled: opacity .4, and the card is inert ─────────────────────────────────
 
 async function assertDisabled(canvasElement: HTMLElement, theme: Theme) {
   for (const kind of POND_BLOCK_KINDS) {
     const c = card(canvasElement, kind)
     const cs = getComputedStyle(c)
     await expect(cs.opacity).toBe('0.4')
-    // Nothing else changes: same paper, same shadow, no ring.
+    // No pixel but the opacity changes: same paper, same shadow, no ring.
     await expect(cs.backgroundColor).toBe(theme.card)
     for (const layer of theme.shadow) await expect(cs.boxShadow).toContain(layer)
     await expect(cs.boxShadow).not.toContain('0px 0px 0px 2px')
     await expect(cs.transform).toBe('none')
+    // Disabled means disabled: the live body under the card takes no clicks, no
+    // typing and no Tab — `inert` as a real boolean attribute, not a styling hint.
+    await expect(c.hasAttribute('inert')).toBe(true)
+    await expect(c.getAttribute('aria-disabled')).toBeNull()
   }
 }
 
-/** disabled — the whole card at opacity .4, nothing else changed. */
+/** disabled — the whole card at opacity .4 and inert; no other pixel changes. */
 export const Disabled: Story = {
   render: () => <AllKinds state="disabled" />,
   play: async ({ canvasElement }) => assertDisabled(canvasElement, LIGHT),

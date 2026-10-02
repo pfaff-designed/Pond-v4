@@ -60,6 +60,25 @@ export const POND_BLOCK_HOVER_ROW: Record<PondBlockKind, number | null> = {
   number: null,
 }
 
+/**
+ * The molecule state for the row (or gallery record-card) at `index` under a frame
+ * `state` — the board's two row rules, pure so a body can paint them without the
+ * frame handing anything down:
+ *
+ *   hover     the row at `POND_BLOCK_HOVER_ROW[kind]` → `hover`
+ *   selected  gallery's record-card 1 → `selected`
+ *   else      `rest`
+ */
+export function blockRowState(
+  kind: PondBlockKind,
+  state: PondBlockState,
+  index: number
+): 'rest' | 'hover' | 'selected' {
+  if (state === 'hover' && POND_BLOCK_HOVER_ROW[kind] === index) return 'hover'
+  if (state === 'selected' && kind === 'gallery' && index === 1) return 'selected'
+  return 'rest'
+}
+
 /** The board's `W` map, verbatim. Mobile's 360 is a later slice. */
 export const POND_BLOCK_WIDTHS: Record<PondBlockKind, number> = {
   list: 400,
@@ -108,7 +127,11 @@ export function blockFrame(block: Block): BlockFrame | null {
       return null
     case 'todo': {
       const done = block.items.filter((it) => it.checked).length
-      return { kind: 'checklist', heading: 'checklist', headNote: `${done} of ${block.items.length}` }
+      return {
+        kind: 'checklist',
+        heading: 'checklist',
+        headNote: `${done} of ${block.items.length}`,
+      }
     }
     case 'table':
       return {
