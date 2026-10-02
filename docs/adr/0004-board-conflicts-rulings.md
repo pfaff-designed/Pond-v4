@@ -51,3 +51,110 @@ This is the inverse of the mistake in ADR 0003's original type ruling, where pro
 
 - The rebuilds of PondPicker, the chart card and PondTemplate, and the patches to PondRail and PondComposer, all start from settled ground.
 - One board instruction is deliberately not implemented (#6) and that is recorded here so it is not "fixed" later by someone measuring the board and finding the code wrong.
+
+---
+
+## Amendment, 2026-10-02 — rulings 7, 8 and 9, plus the principle that decides this whole family
+
+The six rulings above were made in one sitting from one audit. Three more have been made since, during M0's
+block-layer slices, and they had been recorded **only in code comments** — which is the thing this ADR exists
+to prevent. Its stated purpose is that _"one board instruction is deliberately not implemented and that is
+recorded here so it is not 'fixed' later by someone measuring the board and finding the code wrong."_ A comment
+in one file does not do that job.
+
+### The principle first, because 8 and 9 both fall out of it: the level ladder
+
+`Pond 02 Component library` states its own hierarchy, and it resolves most board-vs-board conflicts in the
+component layer:
+
+| level | component      | the board's words                                          |
+| ----- | -------------- | ---------------------------------------------------------- |
+| 2     | `PondMolecule` | "atoms composed into items: rows, cards, entries"          |
+| 3     | `PondBlock`    | "molecules composed into **the blocks a page is made of**" |
+| 4     | `PondTemplate` | "**blocks arranged into a page** with placeholders"        |
+
+**A level-4 layout composes level-3 blocks; it does not redefine them.** The board proves this itself:
+`PondTemplate.dc.html`'s `kanban` case **imports** `PondMolecule kind="task-card"` rather than redrawing it.
+Where it draws a row inline instead, that is shorthand for the composed block at the layout's own tighter
+scale — not a competing specification.
+
+So, stated as narrowly as the measurements support:
+
+> Where a block's rows exist as a `PondMolecule` kind **and** the molecule can express every case the twelve
+> templates need, the block renders **the molecule**. Where the molecule **cannot** express a case the
+> templates need, `PondTemplate`'s inline row is the specification for that block.
+
+This is why the template's card padding (`14px 16px` / `gap 10`) and `PondBlock`'s (`16px 18px` / `gap 12`)
+are **both final and not reconciled**, and the same for the template's block head (`gap 10`) against
+`PondBlock`'s (`gap 12`).
+
+### 7. The error `notice`'s 440px hint-size inside a 400px card — **clamp it** (`max-w-full`)
+
+`PondBlock.dc.html` gives the error state's `notice` a fixed **440px** hint-size inside cards as narrow as
+**400** — a 76px overflow.
+
+**Evidence:** every _other_ hint-size in that board is fitted to its host content box — list rows 360 in a 400
+card, table rows 460 in a 500, log entries 420 in a 460, record-cards 170. The notice's 440 is its own
+intrinsic width restated from `PondMolecule.dc.html` and is the one value pasted in unreconciled. The `W` map
+does not widen on `error`, so the card cannot grow, and a card whose content overflows its edge contradicts the
+paper-and-shadow language. `table` and `gallery`, being wider, still get the full 440.
+
+Shipped in #238.
+
+### 8. `PondMolecule kind="entry"` is **not** the `entries` block's row
+
+The molecule exists, and `PondBlock.dc.html`'s `log` card imports it at a 420px hint-size — so the reflex is to
+build the `entries` block on it.
+
+**Evidence that it cannot be:** the molecule is **always serif 16.5 / 1.6 at a fixed 420px width**, while
+`PondTemplate.dc.html`'s `entries` row is **conditional** — serif `200 / 16 / 1.55` when the kind sets
+`serif: 1` (the journal), else sans `13.5 / 1.5` (the project's `updates`). A block built on the molecule
+**cannot render `project › updates` at all**, which would fail ADR 0005's falsifiable check on the very slice
+meant to satisfy it. Its fixed 420 is also wrong inside a 460 card, per ruling 7.
+
+So `entries` follows `PondTemplate` — the only board covering both the serif and the sans case, and therefore
+the only one that can be internally consistent. **The molecule is untouched and is not a duplicate to delete:**
+a board describes it and the `log` demo card imports it.
+
+**The cost, accepted and recorded:** `entries` renders journal prose at serif 16 / 1.55 while
+`PondMolecule entry` renders 16.5 / 1.6 — two registers for the same kind of content. Shipped in #250.
+
+### 9. A row's meta column is `PondAtom kind="date"` — **sans 13.5 at full ink**, not mono 10.5
+
+This one is recorded because **the orchestrator got it wrong first** and a builder caught it by measuring.
+
+The claim was that `PondMolecule`'s `cellMeta` and `PondAtom kind="date"` are the same register, mono `10.5` at
+ink `.68`. They are not. From `PondAtom.dc.html`'s `renderVals()`: `date` is not a chip
+(`isChip = kind === 'relation' || kind === 'tag'`), is not numeric
+(`['number','money','percent','duration','time']`), and the per-kind `T` table has **no `date` entry** — so it
+falls through to the base `text` style: **sans, `fs` = 13.5 desktop, weight 400, `color: fg` (full ink)**,
+nowrap, tabular-nums, plus an orange `#D96629` dot when `due`. `cellMeta` appears **nowhere** in
+`PondMolecule.dc.html`; it is an invention of `PondMolecule.tsx` for `table-row`, `entry` and `record-card`.
+
+**Ruling: `list-row`'s meta is the atom**, and a `check-row`'s meta — which `PondMolecule.dc.html` does not draw
+at all — takes the same atom.
+
+**Evidence:** `PondMolecule.dc.html`'s `list-row` markup _explicitly imports_ it and passes `due` into it, so
+the atom **is** what the composed board draws. And the due dot is semantic work a mono span cannot express,
+which is _why_ the board composes an atom rather than writing a span. `PondTemplate`'s mono-10.5 `bStyle` is the
+level-4 rendering and stays unreconciled, per the principle above. Four other molecules agreeing with each
+other on mono 10.5 is not evidence about a fifth row type.
+
+Shipped in #219.
+
+## The failure mode these three share, and the one rule that catches it
+
+Rulings 8 and 9 were both nearly decided the wrong way, and in both cases the thing that settled it was
+**reading the board's markup to see what it composes**, not reading a sibling's values and generalising.
+Ruling 9 in particular is the **fourth** instance of the pattern ADR 0003's third amendment names — _a
+plausible generalisation, written from partial reading, applied across call sites, condemning values that were
+already correct_ — and the second instance where the author of the wrong rule was the orchestrator rather than
+a builder.
+
+**So, for anyone resolving the next one of these:** before ruling that a component's value is wrong, open the
+`.dc.html` and read what that component's own frame **composes**. A `dc-import` is the board telling you which
+part owns the value, and it outranks any number of siblings that happen to agree with each other.
+
+And ADR 0003's rule continues to hold without exception: **when a builder reports that a stated rule
+contradicts a board, believe the board.** It has now been right five times out of five, including twice
+against the orchestrator.
