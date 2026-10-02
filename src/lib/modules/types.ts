@@ -47,6 +47,33 @@ import { z, type ZodType } from 'zod'
  * templates are what set labels. No board in the handoff draws a rename
  * affordance, so none is built.
  */
+/**
+ * A trimmed non-empty string, or `undefined`. The board's own test for a label is
+ * `!label`, so `''` and whitespace are NO label — the same `trim() ||` idiom
+ * `table`'s `title` already uses. Takes `unknown` so the one implementation serves
+ * both a typed field and `ResolvedDescriptor`'s `unknown`-typed facets.
+ */
+export function trimmedOrNone(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
+/**
+ * A block's label, read off the block itself (#258) — `undefined` when it has none,
+ * and the caller falls back to the type name.
+ *
+ * One reader for the one field, so the two consumers can never disagree about what
+ * counts as "labelled": `blockFrame()` uses it for the eyebrow, and
+ * `resolveDescriptor` (registry.ts) uses it to prefix the model-facing text.
+ *
+ * `unknown` in, because `ResolvedDescriptor`'s facets are typed over `unknown` (the
+ * registry is heterogeneous by construction). The `in` guard makes the narrowing
+ * sound rather than asserted.
+ */
+export function blockLabel(data: unknown): string | undefined {
+  if (typeof data !== 'object' || data === null || !('label' in data)) return undefined
+  return trimmedOrNone((data as { label: unknown }).label)
+}
+
 export const labelledBlockFields = {
   label: z
     .string()

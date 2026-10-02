@@ -18,16 +18,15 @@
  * round-trip. `blockFrame()`'s reading of the label is in `pond-block-frame.test.tsx`.
  */
 import { blockSchema } from '@/lib/modules/content'
+import { moduleDescriptors } from '@/lib/modules/registry'
+// The per-schema imports are gone on purpose: the labelled list is DERIVED from the
+// registry below, so a sixth labelled module needs no edit here. `tableSchema` stays
+// because the exception is specifically about that one schema NOT carrying the field.
 import { labelledBlockFields } from '@/lib/modules/types'
 import { moduleDataSchema, createPageBlockSchema } from '@/lib/modules/ai-composition'
 import type { ModuleData } from '@/lib/modules/ai-composition'
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { stampDisplayIds } from '@/lib/modules/preview'
-import { textSchema } from '@/lib/modules/text/schema'
-import { highlightSchema } from '@/lib/modules/highlight/schema'
-import { todoSchema } from '@/lib/modules/todo/schema'
-import { viewSchema } from '@/lib/modules/view/schema'
-import { entriesSchema } from '@/lib/modules/entries/schema'
 import { tableSchema } from '@/lib/modules/table/schema'
 
 /** The board's own labels, one per labelled type, as AI-emitted (id-less) data. */
@@ -52,14 +51,26 @@ describe('labelledBlockFields — declared once, applied per schema', () => {
     expect(labelledBlockFields.label.safeParse(3).success).toBe(false)
   })
 
-  it.each([
-    ['text', textSchema],
-    ['highlight', highlightSchema],
-    ['todo', todoSchema],
-    ['view', viewSchema],
-    ['entries', entriesSchema],
-  ] as const)('%s carries the shared `label` field', (_type, schema) => {
-    expect(schema.shape.label).toBe(labelledBlockFields.label)
+  // DERIVED from the registry, not hand-kept: a sixth module that extends the mixin
+  // is covered automatically, and one that extends it with a SECOND
+  // `z.string().optional()` instead of the shared field fails here. Both sibling
+  // fences (`module-nested-ids`, `module-serialize`) use the same completeness
+  // pattern, which is the house answer to a list that silently stops being complete.
+  const registryLabelled = Object.entries(moduleDescriptors)
+    .filter(([, d]) => 'label' in (d.schema as unknown as { shape: Record<string, unknown> }).shape)
+    .map(([type]) => type)
+
+  it('is carried by exactly the types this slice labels, per the registry', () => {
+    expect([...registryLabelled].sort()).toEqual([...labelledTypes].sort())
+  })
+
+  it.each(registryLabelled)('%s carries the SHARED `label` field, not a copy', (type) => {
+    const shape = (
+      moduleDescriptors[type as keyof typeof moduleDescriptors].schema as unknown as {
+        shape: Record<string, unknown>
+      }
+    ).shape
+    expect(shape.label).toBe(labelledBlockFields.label)
   })
 
   it('table keeps `title` as its label and gets NO second field (no migration)', () => {

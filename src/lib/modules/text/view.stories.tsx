@@ -164,7 +164,11 @@ const bareNote: TextBlock = {
   content: 'A shelf above the desk for the radio. Ask about the allotment waiting list.',
 }
 
-/** Exactly `BlockCanvas`'s fork: a frame → `PondBlock`; none → the bare wrapper. */
+/**
+ * `BlockCanvas`'s fork: a frame → `PondBlock`; none → the bare wrapper. The
+ * `data-bare` hook is story-local — the canvas has no such attribute — so the
+ * assertions can address the bare sibling.
+ */
 function Framed({ data }: { data: TextBlock }) {
   const frame = blockFrame(data)
   const view = <TextView data={data} />
@@ -179,8 +183,16 @@ function Framed({ data }: { data: TextBlock }) {
   )
 }
 
-const LIGHT = { card: 'rgb(250, 249, 239)', ink68: 'rgba(27, 29, 20, 0.68)' }
-const DARK = { card: 'rgb(48, 49, 42)', ink68: 'rgba(250, 249, 239, 0.68)' }
+// Hex beside each value so a reader can check it against the board without
+// converting, as `entries/view.stories.tsx` and `highlight/view.stories.tsx` do.
+const LIGHT = {
+  card: 'rgb(250, 249, 239)', // #FAF9EF — light is ONE paper, ground and cards
+  ink68: 'rgba(27, 29, 20, 0.68)', // ink .68
+}
+const DARK = {
+  card: 'rgb(48, 49, 42)', // #30312A — dark is TWO papers; this is the card
+  ink68: 'rgba(250, 249, 239, 0.68)', // paper .68
+}
 
 async function assertFork(canvasElement: HTMLElement, theme: typeof LIGHT) {
   // The labelled block: ONE card, the `list` kind at 400, the label as its eyebrow.

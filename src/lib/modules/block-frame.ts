@@ -22,6 +22,7 @@ import type { TodoBlock } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
+import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 
 export const POND_BLOCK_KINDS = [
@@ -303,19 +304,6 @@ export function viewCollectionId(block: ViewBlock, pageId: string | undefined): 
   return block.collectionId ?? pageId
 }
 
-/**
- * A block's label as the board tests it — `!label` — so an empty or whitespace
- * string is NO label (the same `trim() ||` idiom `table`'s title already uses).
- * `undefined` when the block has none; the caller falls back to its type name.
- */
-const blockLabel = (label: string | undefined): string | undefined => label?.trim() || undefined
-
-/**
- * The exception to the shared `label` field (#258): `table`'s existing `title` IS
- * its label — the tracker's `log`, the database's `records`, the reading list's
- * `books`. It is NOT renamed and gets NO second field: persisted rows carry `title`,
- * and a rename needs a migration this slice must not have. Do not "harmonise" it.
- */
 export function blockFrame(block: Block): BlockFrame | null {
   switch (block.type) {
     case 'text': {
@@ -324,21 +312,27 @@ export function blockFrame(block: Block): BlockFrame | null {
       // A labelled one (`project → goal`, `meeting → notes`) is the `list` card:
       // `PondTemplate.dc.html` gives a text block no width of its own, so — as
       // highlight — it sits in the standard 400 card. No note: none is drawn for prose.
-      const label = blockLabel(block.label)
+      const label = blockLabel(block)
       return label ? { kind: 'list', heading: label, headNote: '' } : null
     }
     case 'todo': {
       const done = block.items.filter((it) => it.checked).length
       return {
         kind: 'checklist',
-        heading: blockLabel(block.label) ?? 'checklist',
+        heading: blockLabel(block) ?? 'checklist',
         headNote: `${done} of ${block.items.length}`,
       }
     }
     case 'table':
+      // The ONE exception to the shared `label` field (#258): `table`'s existing
+      // `title` IS its label — the tracker's `log`, the database's `records`, the
+      // reading list's `books`. It is NOT renamed and gets NO second field, because
+      // persisted rows carry `title` and a rename needs a migration. So this reads
+      // `title` through the same trimmer every label goes through, not a second
+      // `trim() ||` of its own. Do not "harmonise" it onto `label`.
       return {
         kind: 'table',
-        heading: block.title?.trim() || 'table',
+        heading: trimmedOrNone(block.title) ?? 'table',
         headNote: plural((block.rows ?? []).length, 'row'),
       }
     case 'view':
@@ -346,7 +340,7 @@ export function blockFrame(block: Block): BlockFrame | null {
       // frame can't name it from config alone, so the note stays empty here.
       return {
         kind: VIEW_KIND[block.mode],
-        heading: blockLabel(block.label) ?? VIEW_HEADING[block.mode],
+        heading: blockLabel(block) ?? VIEW_HEADING[block.mode],
         headNote: '',
       }
     case 'image': {
@@ -363,7 +357,7 @@ export function blockFrame(block: Block): BlockFrame | null {
       // the standard head row. So the default 400 card, as image. #258: the eyebrow
       // is the block's own persisted LABEL (the reading list's `kept`), falling back
       // to the kind when it has none. No note: the board draws none for it.
-      return { kind: 'list', heading: blockLabel(block.label) ?? 'highlight', headNote: '' }
+      return { kind: 'list', heading: blockLabel(block) ?? 'highlight', headNote: '' }
     case 'entries': {
       // #250: `PondBlock.dc.html`'s `log` kind (460) is a stack of `{ meta: date,
       // title: prose }` rows — exactly a dated log — so this is the first block to
@@ -374,7 +368,7 @@ export function blockFrame(block: Block): BlockFrame | null {
       // falling back to the kind; the note is the true count.
       return {
         kind: 'log',
-        heading: blockLabel(block.label) ?? 'entries',
+        heading: blockLabel(block) ?? 'entries',
         headNote: plural(block.entries.length, 'entry', 'entries'),
       }
     }

@@ -7,6 +7,7 @@
  * pulling any client view component into the server bundle. The client half lives in
  * `renderers.ts`, joined to this by the `type` string.
  */
+import { blockLabel } from './types'
 import type { ModuleDescriptor, ResolvedDescriptor } from './types'
 import { textDescriptor } from './text/schema'
 import { todoDescriptor } from './todo/schema'
@@ -67,14 +68,56 @@ const NULL_DESCRIPTOR: ResolvedDescriptor = {
  * Never returns undefined. The one place those defaults + the missing-type policy
  * live, so the two id-stampers (hydrate + preview) can no longer drift.
  */
+/**
+ * Prefix a block's model-facing text with its label (#258), or return the text
+ * unchanged when the block has none — so every block without a label is
+ * byte-identical to before and no prompt or eval output moves.
+ *
+ * The label LEADS, because that is what it is on the surface: the block's eyebrow.
+ * `sep` is `':\n'` for the full body and `' — '` for the one-line preview.
+ *
+ * A LABELLED block with empty content surfaces as its label alone rather than as the
+ * empty string. That is deliberate: `blocksToText` drops empty lines, so otherwise a
+ * block the person had deliberately named would be invisible to the model and the
+ * next wholesale re-emit would delete it — the very failure this fix exists to
+ * prevent, just with no content yet. An UNLABELLED empty block is still dropped.
+ */
+function withLabel(data: unknown, text: string, sep = ':\n'): string {
+  const label = blockLabel(data)
+  if (!label) return text
+  return text.length > 0 ? `${label}${sep}${text}` : `${label}:`
+}
+
 export function resolveDescriptor(type: string): ResolvedDescriptor {
   const d = descriptorFor(type)
   if (!d) return NULL_DESCRIPTOR
   return {
     // Forward via arrows (not raw method refs) so a descriptor that reads `this`
     // keeps working; none do today, but this keeps the accessor honest.
-    serialize: (data, siblings) => d.serialize(data, siblings),
-    preview: (data, siblings) => (d.preview ?? d.serialize)(data, siblings),
+    //
+    // #258: the LABEL is emitted HERE, not in each module's `serialize`. Three
+    // reasons, in order of weight:
+    //
+    //   1. `serialize`'s contract (types.ts) is that "a block the model cannot read
+    //      here is silently destroyed on the next wholesale `edit`" — and the label
+    //      is model-WRITABLE from this commit (it rides both emit unions and its
+    //      `.describe()` reaches the tool JSON schema), so the loss is live now, not
+    //      gated on #261.
+    //   2. A label is a CROSS-TYPE field — one `labelledBlockFields` mixin over five
+    //      schemas — so a per-module prefix would be five copies of one rule plus a
+    //      standing obligation on every future module. That is the work item ADR 0006
+    //      warns is forgotten, and #250's review is the evidence that one gets missed.
+    //   3. This is the single seam both model-facing readers go through — `blocksToText`
+    //      and `blockPreview` (context/assemble.ts) are the only non-test `.serialize(`
+    //      / `.preview(` call sites in `src/` — and it already owns cross-cutting facet
+    //      resolution (`preview ?? serialize`, `nestedIdPaths ?? []`). The embeddings
+    //      reuse `blocksToText` on purpose so retrieval and prompt text cannot diverge,
+    //      so one fix covers those too. A sixth labelled type is covered for free.
+    //
+    // `NULL_DESCRIPTOR` is returned above and never wrapped, so an unregistered type
+    // still serializes to '' exactly as before.
+    serialize: (data, siblings) => withLabel(data, d.serialize(data, siblings)),
+    preview: (data, siblings) => withLabel(data, (d.preview ?? d.serialize)(data, siblings), ' — '),
     nestedIdPaths: d.nestedIdPaths ?? [],
   }
 }
