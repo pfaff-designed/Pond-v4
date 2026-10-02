@@ -27,7 +27,7 @@
 import { useMemo, type ComponentType } from 'react'
 import type { PropertySchema } from '@/lib/properties/schema'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { CHART_EMPTY_LINE } from '../chart/card'
+import { CHART_EMPTY_LINE, HEATMAP_DATE_NOTICE } from '../chart/card'
 import type { ViewChartConfig } from './schema'
 import type { CollectionRow } from './apply'
 import { chartDataFromRows, type ChartData } from './chart-data'
@@ -38,6 +38,7 @@ import {
   type CompactChartMark,
   type HeatLevel,
 } from './chart-compact'
+import {} from './collection-chart'
 import { ViewNotice } from './notice'
 
 /** `bars`: flex · flex-end · gap 5 · height 72. */
@@ -86,7 +87,6 @@ function BarsMark({ data, name }: { data: ChartData; name: string }) {
           key={data.points[i].x}
           data-part="bar"
           data-current={bar.current || undefined}
-          title={`${data.points[i].x}: ${figures[i] ?? '—'}`}
           className={`${BAR} ${bar.current ? BAR_INK.current : BAR_INK.past}`}
           style={{ height: `${bar.height}%` }}
         />
@@ -104,7 +104,7 @@ function BarsMark({ data, name }: { data: ChartData; name: string }) {
 function HeatMark({ data, name, today }: { data: ChartData; name: string; today?: Date }) {
   const cells = useMemo(() => heatGrid(data.heatmap?.cells ?? [], today), [data, today])
   if (data.xAxis !== 'date') {
-    return <ViewNotice>A heatmap reads one cell a day — pick a date field for “By”.</ViewNotice>
+    return <ViewNotice>{HEATMAP_DATE_NOTICE}</ViewNotice>
   }
   return (
     <div
@@ -118,7 +118,6 @@ function HeatMark({ data, name, today }: { data: ChartData; name: string; today?
           key={cell.date}
           data-part="cell"
           data-level={cell.level}
-          title={`${cell.date}: ${cell.value}`}
           className={`${CELL} ${CELL_INK[cell.level]}`}
         />
       ))}

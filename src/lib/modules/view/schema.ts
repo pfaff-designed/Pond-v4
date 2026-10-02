@@ -281,8 +281,12 @@ export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
     // does (#250) — a flag the model cannot read here is silently dropped on the
     // next wholesale `edit`, and a compact strip would come back as a full card.
     if (data.mode === 'chart' && data.chart) {
-      const compact = data.chart.presentation === 'compact' ? ', compact' : ''
-      cfg[0] = `chart ${data.chart.kind}${compact}`
+      // A CLAUSE, not a separator baked into cfg[0]: `cfg` is joined with ', '
+      // below, so writing the separator in here would silently break if that join
+      // ever changed (#259 review). Absent or 'card' adds nothing, which is what
+      // keeps a legacy view's serialized string byte-identical.
+      cfg[0] = `chart ${data.chart.kind}`
+      if (data.chart.presentation === 'compact') cfg.push('compact')
     }
     if (data.groupBy) cfg.push(`grouped by ${data.groupBy}`)
     if (data.sort) cfg.push(`sorted by ${data.sort.key} ${data.sort.dir}`)

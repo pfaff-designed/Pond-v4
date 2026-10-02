@@ -97,16 +97,17 @@ export function ChartControls({
   const inferred = resolveChartConfig(schema, config.chart)
   const seriesProp = config.chart?.series[0]
   const kind = config.chart?.kind ?? inferred.kind
+  // SPREAD the existing config, never an explicit field list. This rebuilds the
+  // whole `chart` object, so any field left out is ERASED by the next control
+  // change — `stacked` was, which silently un-stacked a stacked view, and `#259`'s
+  // `presentation` would have been next. Spreading makes that whole class of bug
+  // impossible rather than fixing one instance. Covered by `chart-controls.test.tsx`.
   const write = (patch: Partial<NonNullable<ViewBlock['chart']>>) =>
     onConfigChange({
       chart: {
+        ...config.chart,
         kind,
-        xProperty: config.chart?.xProperty,
         series: config.chart?.series ?? [{ property: '', agg: 'count' }],
-        target: config.chart?.target,
-        // #259: the presentation rides every rewrite, or picking a kind would
-        // silently turn a compact strip back into a card.
-        presentation: config.chart?.presentation,
         ...patch,
       },
     })

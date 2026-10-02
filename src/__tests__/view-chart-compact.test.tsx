@@ -23,6 +23,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PondBlock, PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { isoDay } from '@/lib/modules/view/heatmap-data'
 import { blockEmptyBox } from '@/lib/modules/block-frame'
 import { moduleCatalog, moduleDataSchema } from '@/lib/modules/ai-composition'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
@@ -326,10 +327,7 @@ describe('BlockCanvas — a compact chart’s empty state is the board’s, not 
   })
 
   it('a compact heat grid with a record today lights today at full ink and nothing else', () => {
-    const now = new Date()
-    const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`
+    const iso = isoDay(new Date())
     collection.rows = [row('r1', { 'p-day': iso, 'p-km': 3 })]
     renderCanvas([heat])
     const c = cardOf('v-heat')
@@ -339,7 +337,20 @@ describe('BlockCanvas — a compact chart’s empty state is the board’s, not 
     expect(lit).toHaveLength(1)
     expect(lit[0].dataset.level).toBe('recent')
     expect(lit[0].className.split(' ')).toContain('bg-mn-text')
-    expect(lit[0].title).toBe(`${iso}: 3`)
+    // The lit cell is TODAY's, so in column-major order it falls in the LAST column
+    // (cells 77-83). Its exact index inside that column is today's weekday, since the
+    // columns are Sunday-start weeks — so assert the column, not a fixed index, or the
+    // test passes only on a Saturday.
+    const index = cells.indexOf(lit[0])
+    expect(index).toBeGreaterThanOrEqual(77)
+    expect(index).toBeLessThanOrEqual(83)
+    expect(index - 77).toBe(new Date().getDay())
+    // No `title` tooltip: a hover tooltip is an affordance and no board draws one on
+    // these marks (#259 review). The grid carries its reading as an accessible name.
+    expect(lit[0].title).toBe('')
+    expect(c.querySelector('[data-part="heat"]')?.getAttribute('aria-label')).toContain(
+      'the last twelve weeks'
+    )
   })
 
   it('the default card presentation is untouched: a bar chart with no flag still draws the card', () => {

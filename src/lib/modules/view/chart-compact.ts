@@ -24,7 +24,7 @@
 import { getHeatmapWeekStartSunday } from '@/components/charts/heatmap/heatmap-utils'
 import type { ChartKind } from './aggregate'
 import type { ViewBlock } from './schema'
-import { parseIsoDateLocal, type HeatmapCell } from './heatmap-data'
+import { isoDay, parseIsoDateLocal, type HeatmapCell } from './heatmap-data'
 
 /** The board's two inline chart marks, in `PondTemplate.dc.html`'s own names. */
 export const COMPACT_CHART_MARKS = ['bars', 'heat'] as const
@@ -59,8 +59,22 @@ export const COMPACT_CHART_MARK: Record<ChartKind, CompactChartMark | null> = {
  * block at instantiation, #261).
  */
 export function compactChartMark(block: ViewBlock): CompactChartMark | null {
-  if (block.mode !== 'chart' || !block.chart || block.chart.presentation !== 'compact') return null
-  return COMPACT_CHART_MARK[block.chart.kind]
+  if (block.mode !== 'chart') return null
+  return compactMarkForChart(block.chart)
+}
+
+/**
+ * The same question asked of a chart config alone, for a caller that already knows
+ * it is in `chart` mode and holds only the config — so it does not have to
+ * fabricate a `ViewBlock` to reach the table (#259 review). `undefined` config, or
+ * the default `card` presentation, or a kind the board draws no compact mark for,
+ * all mean "draw the card".
+ */
+export function compactMarkForChart(
+  chart: ViewBlock['chart'] | undefined
+): CompactChartMark | null {
+  if (!chart || chart.presentation !== 'compact') return null
+  return COMPACT_CHART_MARK[chart.kind]
 }
 
 /**
@@ -129,14 +143,6 @@ export interface HeatCell {
   /** The day's aggregated figure (duplicate dates sum, as `toHeatmapGrid`). */
   value: number
   level: HeatLevel
-}
-
-/** A local date as ISO `YYYY-MM-DD` — the inverse of `parseIsoDateLocal`. */
-function isoDay(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
 }
 
 /**

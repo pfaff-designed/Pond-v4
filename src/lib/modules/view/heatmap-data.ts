@@ -34,6 +34,19 @@ export function parseIsoDateLocal(iso: string): Date {
   return new Date(y, m - 1, d)
 }
 
+/**
+ * The inverse of `parseIsoDateLocal`: a local `Date` back to its `YYYY-MM-DD`
+ * calendar day. Kept beside its inverse on purpose — the pair has to agree about
+ * what "a day" means, and three separate copies of these four lines had started to
+ * appear (#259 review).
+ */
+export function isoDay(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 /** The render-ready grid: Bklit columns plus the derived visible time range. */
 export interface HeatmapGrid {
   columns: HeatmapColumn[]
