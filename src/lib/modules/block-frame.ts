@@ -5,9 +5,8 @@
  * gallery · number · log · properties — each with its own width and a head row
  * (eyebrow + mono note). The registry keys blocks by TYPE (text / todo / table /
  * view / image / highlight), so this is the one place a type is read into its board
- * kind. Pure
- * data, no React: the frame component takes the result, the view underneath it is
- * untouched.
+ * kind. Pure data, no React: the frame component takes the result, the view
+ * underneath it is untouched.
  *
  * `null` means the block is BARE — no card. `PondTemplate.dc.html` draws a prose
  * block that way (`bare = k === 'text' && !label` → `padding: 2px 4px`, no card):

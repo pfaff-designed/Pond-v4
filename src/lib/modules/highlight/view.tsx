@@ -32,6 +32,8 @@ import { HIGHLIGHT_EMPTY_LINE, type HighlightBlock } from './schema'
  * The board's serif register, shared by the passage, its empty line and the textarea.
  * Composed as plain strings, never through `cn`: tailwind-merge cannot tell the
  * `text-mn-16` SIZE token from the `text-mn-*` COLOUR tokens and silently drops one.
+ * That is **#252** — once `cn` is taught the `--text-mn-*` scale via
+ * `extendTailwindMerge`, this can go back to `cn` and this note can be deleted.
  */
 const REGISTER = 'font-serif font-extralight text-mn-16'
 
