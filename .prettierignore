@@ -1,0 +1,6 @@
+# Generated: wayfinder/board-values.generated.json is written by
+# `npm run board-values` with a deliberate layout — one element's whole spec per
+# line, so a single grep returns all of its values. Prettier would explode it over
+# ~80k lines and the regeneration guard (src/__tests__/board-values.test.ts) would
+# then fail on a file nobody edited.
+wayfinder/board-values.generated.json
