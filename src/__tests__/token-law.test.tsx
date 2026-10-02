@@ -446,22 +446,20 @@ describe('PropertyInspector — sans values, board field-row label', () => {
   })
 
   it('the field-row label is the page eyebrow — 10.5 / 500 / .1em / uppercase / .68, sans', () => {
+    // #260: the row IS `PondMolecule kind="field-row"`, so the label is the molecule's.
     const { container } = render(
       <PropertyInspector schema={schema} values={{}} onChange={() => {}} />
     )
-    const dt = container.querySelector('dt')
-    expect(dt).not.toBeNull()
-    for (const cls of pageEyebrowClass.split(' ')) expect(dt!.className).toContain(cls)
-    expect(dt!.className).not.toMatch(/tracking-\[0\.14em\]/)
-    expect(dt!.className).not.toMatch(/0\.65rem/)
+    const label = container.querySelector('[data-kind="field-row"] [data-part="label"]')
+    expect(label).not.toBeNull()
+    for (const cls of pageEyebrowClass.split(' ')) expect(label!.className).toContain(cls)
+    expect(label!.className).not.toMatch(/tracking-\[0\.14em\]/)
+    expect(label!.className).not.toMatch(/0\.65rem/)
   })
 
-  it('the empty notice is sans at the board’s 13.5 / .68, not serif', () => {
-    render(<PropertyInspector schema={[]} values={{}} onChange={() => {}} />)
-    const p = screen.getByText('No properties on this page yet.')
-    expect(p.className).not.toMatch(/font-serif/)
-    expect(p.className).toMatch(/text-\[13\.5px\]/)
-    expect(p.className).toMatch(/text-mn-text-secondary/)
+  it('an empty schema draws no notice of its own — the properties card’s empty state is the frame’s (#260)', () => {
+    const { container } = render(<PropertyInspector schema={[]} values={{}} onChange={() => {}} />)
+    expect(container.textContent).toBe('')
   })
 })
 

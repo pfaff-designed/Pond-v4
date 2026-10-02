@@ -1,57 +1,118 @@
-import { addDays } from './apply'
+import { addDays, displayValue, type CollectionRow } from './apply'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 /**
- * Shared gantt-rendering fragments (#11) — the pieces the #27 collection gantt
- * VIEW MODE (view/view.tsx) and the standalone read-only `timeline` MODULE
- * (timeline/view.tsx) must draw identically. Kept in ONE place so the two
- * renderers can never drift: the axis tick label, the tick-selection math, and
- * the bar rectangle's look.
+ * The gantt view mode's pure half (#260, child 228d of #228) — the board's
+ * geometry and the two readings the drawing needs, kept React-free beside the
+ * renderer in `view.tsx` (the shape `chart-compact.ts` / `collection-chart-compact.tsx`
+ * set in #259). Measured off `PondTemplate.dc.html`'s `renderVals()`:
+ *
+ *   gHead   { display: 'grid', gridTemplateColumns: '120px minmax(0,1fr)', gap: 10,
+ *             paddingBottom: 6, borderBottom: '1px solid ' + a(.09) }
+ *   gTicks  { display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))' }
+ *   gTick   { fontFamily: mono, fontSize: 10, color: a(.68) }
+ *   gRow    { display: 'grid', gridTemplateColumns: '120px minmax(0,1fr)', gap: 10,
+ *             alignItems: 'center', padding: '4px 0', borderBottom: '1px solid ' + a(.055) }
+ *   gTrack  { position: 'relative', height: 18,
+ *             backgroundImage: 'linear-gradient(90deg,' + a(.06) + ' 1px,transparent 1px)',
+ *             backgroundSize: '25% 100%' }
+ *   lStyle  { fontSize: 12, color: done ? a(.68) : fg, whiteSpace: 'nowrap',
+ *             overflow: 'hidden', textOverflow: 'ellipsis' }
+ *   bar     { position: 'absolute', top: 4, bottom: 4, left: s + '%', width: (e - s) + '%',
+ *             borderRadius: 4, background: done ? a(.22) : fg }
+ *
+ * TWO hairlines, deliberately: the head's is ink .09 and each row's is ink .055.
+ * Neither is `--mn-hair` — that token happens to be .055 light, but it is .07 dark,
+ * and the head's .09 is a different value altogether. Both are written as literal
+ * alphas so neither can be "snapped" to the token later.
+ *
+ * The axis is FOUR ticks at the range's quarters: `gTicks` is `repeat(4)` and the
+ * track's gridlines repeat at `25%`, so each label owns a grid cell and the board's
+ * fixture (`20 oct · 27 oct · 3 nov · 10 nov` over 28 days) is exactly the quarters.
+ * That retires #57's `buildTicks` — a weekly series thinned against the measured
+ * track so labels would not collide — because a label per cell cannot collide.
+ * (`gantt-shared.ts` once also served the standalone `timeline` block, which #111
+ * deleted; the name stays so the file's history reads.)
+ *
+ * Mobile (`96px` label column, 70-high tile elsewhere) is the frame's later slice:
+ * `PondBlock` has no size axis yet, so the card's content is desktop with it.
  */
 
-/** Minimum on-screen px between tick labels before neighbours collide (#57):
- *  a "Sep 22"-shaped label (~34px at text-[0.6rem]) plus breathing room. */
-export const MIN_TICK_SPACING_PX = 44
+/** `gTicks: repeat(4, …)` — the axis has four labels, whatever the range. */
+export const GANTT_TICK_COUNT = 4
 
-/** One axis tick: its ISO day and its % offset from the track's left edge. */
-export interface GanttTick {
-  iso: string
-  left: number
+/**
+ * The four tick days: the range start and its ¼, ½, ¾ points, rounded to whole
+ * days (calendar stepping via `addDays`, never millisecond arithmetic — a DST day
+ * would shear the axis). A one-day range repeats its day: four cells, no crash.
+ */
+export function quarterTicks(rangeStart: string, totalDays: number): string[] {
+  const last = Math.max(0, totalDays - 1)
+  return Array.from({ length: GANTT_TICK_COUNT }, (_, i) =>
+    addDays(rangeStart, Math.min(last, Math.round((totalDays * i) / GANTT_TICK_COUNT)))
+  )
 }
 
 /**
- * The axis ticks both renderers draw (#57): every 7th day off the range start,
- * THINNED to the smallest weekly multiple whose on-screen spacing clears
- * MIN_TICK_SPACING_PX at the measured track width — so date labels never
- * overlap, however narrow the card — and with any tick dropped whose centred
- * label would spill past the track's right edge and get cut off. An unmeasured
- * track (0 — first render, jsdom) keeps the weekly baseline unthinned.
+ * A tick label in the board's own form — `20 oct`: day, then the lowercase short
+ * month (the mono machine register is lowercase). Built at UTC noon and read in
+ * UTC so a day never drifts across a timezone. The month is `en-US`'s three-letter
+ * short form, pinned: `en-GB` writes `sept`, and the handoff's dates are `19 sep`.
  */
-export function buildTicks(rangeStart: string, totalDays: number, trackPx: number): GanttTick[] {
-  let stepDays = 7
-  if (trackPx > 0) {
-    while (stepDays < totalDays && (stepDays / totalDays) * trackPx < MIN_TICK_SPACING_PX) {
-      stepDays += 7
-    }
-  }
-  const ticks: GanttTick[] = []
-  for (let d = 0; d < totalDays; d += stepDays) {
-    const left = (d / totalDays) * 100
-    // The label is centred on its gridline (-translate-x-1/2): within half a
-    // label of the right edge it would render clipped, so the tick goes.
-    if (trackPx > 0 && (left / 100) * trackPx > trackPx - MIN_TICK_SPACING_PX / 2) continue
-    ticks.push({ iso: addDays(rangeStart, d), left })
-  }
-  return ticks
-}
-
-/** A short "Sep 8" tick label for a gridline, built at UTC noon so it never drifts. */
 export function formatTick(iso: string): string {
   const d = new Date(`${iso}T12:00:00Z`)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }).toLowerCase()
+  return `${d.getUTCDate()} ${month}`
 }
 
-/** The bar rectangle's shared look — the gantt view mode's editable wrapper, its
- *  read-only bar, and the timeline module's bar all draw the same shape (position +
- *  fill), differing only in what they carry (grab zones vs an aria label). */
-export const GANTT_BAR_SHELL =
-  'absolute top-0.5 bottom-0.5 min-w-[0.5rem] rounded-sm bg-mn-text/80'
+/**
+ * The board's `done` bar — `['book the van', 0, 8, 1]` — is the task the kanban
+ * beside it files under its `done` lane (`project › tasks — board`), so a row is
+ * done when a status/select property resolves to an option labelled `done`,
+ * case-insensitive. The first status/select property decides, the same one a
+ * `/board` groups by (`ensureBoardGroupBy`). No such property → nothing is done.
+ */
+export function ganttRowDone(schema: PropertySchema, row: CollectionRow): boolean {
+  const def = schema.find((d) => d.type === 'status' || d.type === 'select')
+  return def !== undefined && displayValue(def, row.values[def.id]).toLowerCase() === 'done'
+}
+
+/** The voidBox copy for a gantt with nothing dated — the template's `e` for `gantt`, verbatim. */
+export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
+
+// ── Class recipes — literal strings, never through `cn` (#252) ──────────────────
+
+/** `gHead`: grid · 120px label column · gap 10 · pb 6 · the .09 hairline. */
+export const GANTT_HEAD =
+  'grid grid-cols-[120px_minmax(0,1fr)] gap-[10px] border-b border-mn-text/[0.09] pb-[6px]'
+/** `gTicks`: four equal cells. */
+export const GANTT_TICKS = 'grid grid-cols-[repeat(4,minmax(0,1fr))]'
+/** `gTick`: mono 10 / ink .68. */
+export const GANTT_TICK = 'font-mono text-[10px] text-mn-text-secondary'
+/** `gRow`: grid · 120px label column · gap 10 · centred · py 4 · the .055 hairline. */
+export const GANTT_ROW =
+  'grid grid-cols-[120px_minmax(0,1fr)] items-center gap-[10px] border-b border-mn-text/[0.055] py-[4px]'
+/** `lStyle` minus its ink: 12px, one line, ellipsis. The ink is `GANTT_LABEL_INK`. */
+export const GANTT_LABEL = 'truncate text-[12px]'
+export const GANTT_LABEL_INK = { live: 'text-mn-text', done: 'text-mn-text-secondary' } as const
+/** `gTrack`: 18 high; the gridlines are the inline `GANTT_TRACK_STYLE`. */
+export const GANTT_TRACK = 'relative h-[18px]'
+/**
+ * The track's gridlines as the board draws them — a 1px line repeating every 25%,
+ * in ink at .06. Inline because a hard-stop gradient over a role token needs
+ * `color-mix`, which Tailwind's gradient utilities do not compose for a stop.
+ */
+export const GANTT_TRACK_STYLE = {
+  backgroundImage:
+    'linear-gradient(90deg, color-mix(in srgb, var(--color-mn-text) 6%, transparent) 1px, transparent 1px)',
+  backgroundSize: '25% 100%',
+} as const
+/**
+ * The bar rectangle's shell — `top 4 · bottom 4 · radius 4`, %-positioned by its
+ * inline `left`/`width`. The min-width is a legibility floor the board does not
+ * need at its fixture scale: a one-day bar on a long range would otherwise vanish,
+ * and the editable bar's grab zones need something to sit on. Ink is `GANTT_BAR_INK`.
+ */
+export const GANTT_BAR_SHELL = 'absolute top-[4px] bottom-[4px] min-w-[0.5rem] rounded-[4px]'
+/** `background: done ? a(.22) : fg`. */
+export const GANTT_BAR_INK = { live: 'bg-mn-text', done: 'bg-mn-text/[0.22]' } as const

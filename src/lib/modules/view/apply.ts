@@ -548,3 +548,19 @@ export function displayValue(def: PropertyDef, raw: unknown): string {
       return String(value)
   }
 }
+
+/**
+ * A gallery card's one meta line (#260). `PondTemplate.dc.html`'s `gcard` draws a
+ * title and ONE mono line (`['monstera', 'water weekly']`); which field that is
+ * belongs to the card layout (#253), which does not exist yet. Until it does, the
+ * card shows the first field, in schema order, that has anything to show —
+ * resolved through `displayValue`, so a select reads as its label. `''` when no
+ * field does; the card draws the board's `—` for that.
+ */
+export function galleryCardMeta(schema: PropertySchema, row: CollectionRow): string {
+  for (const def of schema) {
+    const text = displayValue(def, row.values[def.id])
+    if (text !== '') return text
+  }
+  return ''
+}

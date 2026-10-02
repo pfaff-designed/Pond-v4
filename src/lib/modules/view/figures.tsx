@@ -19,16 +19,13 @@ import {
   CHART_KINDS,
   VIEW_AGGS,
   bigNumberFromRows,
-  figureFormatOptions,
   signedDelta,
   type ChartKind,
   type ViewAgg,
 } from './aggregate'
 import { resolveChartConfig } from './chart-data'
 import { COMPACT_CHART_MARK } from './chart-compact'
-import { KICKER } from '../chart/card'
 import type { PropertySchema } from '@/lib/properties/schema'
-import { ChartStatFlow } from '@/components/charts/chart-stat-flow'
 
 const CONTROL_INPUT =
   'rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none'
@@ -255,6 +252,13 @@ export function BigNumberControls({
   )
 }
 
+/** `bigStyle`, minus its ink: 52 / 700 / -.03em / line-height .95 / tabular-nums. */
+const BIG_FIGURE = 'text-[52px] font-bold leading-[0.95] tracking-[-0.03em] tabular-nums'
+/** `color: filled ? fg : a(.68)` — a figure with nothing to read sits on the third tier. */
+const BIG_FIGURE_INK = { filled: 'text-mn-text', empty: 'text-mn-text-secondary' } as const
+/** `sub`: mono 11 / ink .68. */
+const BIG_SUB = 'font-mono text-[11px] text-mn-text-secondary'
+
 /**
  * Big-number mode — ONE oversized figure aggregated from the collection's records.
  *
@@ -262,9 +266,23 @@ export function BigNumberControls({
  * This is that surface, and it is a VIEW, so the figure is always live: change a row's
  * number in the table and this reads the new total, because there is no copy.
  *
- * The plain formatted value rides an aria-label (like the retired `stat` block) so
- * assistive tech and story tests read one stable string while NumberFlow animates the
- * digits underneath.
+ * Drawn to `PondTemplate.dc.html`'s `number` block (#260), which ADR 0004 §5 settled
+ * as drawn — 52px at weight 700 is off the README's scale and is final:
+ *
+ *   numWrap  { display: 'flex', flexDirection: 'column', gap: 6 }
+ *   bigStyle { fontSize: 52, fontWeight: 700, letterSpacing: '-.03em', lineHeight: .95,
+ *              color: filled ? fg : a(.68), fontVariantNumeric: 'tabular-nums' }
+ *   sub      { fontFamily: mono, fontSize: 11, color: a(.68) }
+ *
+ * (`PondBlock.dc.html`'s own `number` demo draws 76 / .9; the ruling is the
+ * template's value, and it is recorded there so this is not "corrected" later.)
+ * The board's sub is ONE mono line (`3 runs`, `62% of budget`, `best 31`), so the
+ * figure's name, its compare and the record count ride it together, ` · `-joined —
+ * the card's eyebrow already names the block, and the old kicker under the figure
+ * read the name twice. The plain formatted value rides an aria-label (like the
+ * retired `stat` block) so assistive tech and the stories read one stable string.
+ * The digits are static: the Bklit stat stack that animated them cannot take the
+ * board's sub line, and no board draws a digit roll.
  */
 export function CollectionBigNumber({
   schema,
@@ -279,34 +297,26 @@ export function CollectionBigNumber({
     () => bigNumberFromRows(rows, schema, bigNumber),
     [rows, schema, bigNumber]
   )
-  const records = `over ${figure.recordCount} record${figure.recordCount === 1 ? '' : 's'}`
+  const sub = [
+    figure.label,
+    figure.delta === undefined ? null : signedDelta(figure.delta),
+    `over ${figure.recordCount} record${figure.recordCount === 1 ? '' : 's'}`,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
 
   return (
-    <div className="flex flex-col items-start py-1 text-mn-text">
-      <span role="status" aria-label={`${figure.label}: ${figure.formatted}`}>
-        {figure.value === null ? (
-          <span aria-hidden className="flex flex-col items-start">
-            <span className="text-4xl font-bold tracking-tight tabular-nums text-mn-text">—</span>
-            <span className={KICKER}>{figure.label}</span>
-          </span>
-        ) : (
-          <span aria-hidden className="flex flex-col items-start">
-            <ChartStatFlow
-              value={figure.value}
-              label={figure.label}
-              formatOptions={figureFormatOptions(bigNumber?.format)}
-              valueClassName="text-4xl font-bold tracking-tight text-mn-text tabular-nums"
-              labelClassName={KICKER}
-            />
-          </span>
-        )}
+    <div data-part="number" className="flex flex-col gap-[6px]">
+      <span
+        role="status"
+        aria-label={`${figure.label}: ${figure.formatted}`}
+        className={`${BIG_FIGURE} ${figure.value === null ? BIG_FIGURE_INK.empty : BIG_FIGURE_INK.filled}`}
+      >
+        {figure.formatted}
       </span>
-      {figure.delta !== undefined && (
-        <span className="mt-1 font-mono text-xs tabular-nums text-mn-text-secondary">
-          {signedDelta(figure.delta)}
-        </span>
-      )}
-      <span className="mt-0.5 text-xs text-mn-text-secondary">{records}</span>
+      <span data-part="sub" className={BIG_SUB}>
+        {sub}
+      </span>
     </div>
   )
 }

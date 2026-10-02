@@ -35,6 +35,7 @@ import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { applyView } from '@/lib/modules/view/apply'
 import { COMPACT_MARK_EMPTY, compactChartMark } from '@/lib/modules/view/chart-compact'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
+import { GANTT_EMPTY_LINE } from '@/lib/modules/view/gantt-shared'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
@@ -390,6 +391,8 @@ export function BlockCanvas({
  *   view   → the collection's `addRow`               `add a row` / `add a record`
  *   view of kind `number` → none: `pick a field` has no engine path yet
  *          (`POND_BLOCK_EMPTY_ACTION_WIRED`), so the line renders alone.
+ *   view in `gantt` mode → none: the board's voidBox has no action slot (#260);
+ *          the line is the template's `tasks with a start and a due date draw here`.
  *
  * A view still loading, or over a non-collection, is NOT empty — the view keeps its
  * own notice. Wiring the frame's `loading` state to `isLoading` is a sibling
@@ -439,6 +442,8 @@ function useBlockEmptyState(
           : { state: 'rest' }
       }
       if (markEmpty === 'void') return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
+      // #260: a gantt is empty as the same voidBox, with the template's own line.
+      if (block.mode === 'gantt') return { state: 'empty', emptyLine: GANTT_EMPTY_LINE }
       // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
       // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
       if (frame && !POND_BLOCK_EMPTY_ACTION_WIRED[frame.kind]) return { state: 'empty' }

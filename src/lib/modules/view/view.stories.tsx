@@ -358,12 +358,16 @@ export const CalendarNeedsDate: Story = {
 
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
-/** Read-only card grid: one card per row, title over resolved property values. */
+/**
+ * Read-only card grid: one card per row — a tile, the title and ONE meta line (the
+ * first field with a value, until a card layout names it, #253). The board's
+ * geometry is asserted in `view-mapped-modes.stories.tsx` (#260).
+ */
 export const GalleryReadOnly: Story = {
   args: { config: galleryConfig, schema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Every row is a card; values resolve (status id → "Doing" chip label).
+    // Every row is a card; the meta resolves (status id → "Doing" label).
     await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
     await expect(canvas.getByText('Kiln maintenance')).toBeInTheDocument()
     await expect(canvas.getByText('Doing')).toBeInTheDocument()
@@ -401,6 +405,7 @@ export const GalleryEmpty: Story = {
  * Read-only gantt: one bar per dated row over a single adaptive timeline, ordered by
  * start ascending. The end-less row (Glaze day) is a single-day tick; the start-less
  * row (Someday idea) is omitted. Date properties auto-infer (1st=Start, 2nd=End).
+ * The board's geometry is asserted in `view-mapped-modes.stories.tsx` (#260).
  */
 export const GanttReadOnly: Story = {
   args: { config: ganttConfig, schema: ganttSchema, rows: ganttRows },
@@ -573,7 +578,8 @@ export const BigNumberSum: Story = {
     const canvas = within(canvasElement)
     // 2 + 1 + 3 = 6 (the fourth record carries no priority and simply doesn't count).
     await expect(canvas.getByRole('status', { name: 'Priority: 6' })).toBeInTheDocument()
-    await expect(canvas.getByText('over 4 records')).toBeInTheDocument()
+    // #260: the record count rides the board's one mono sub line, after the figure's name.
+    await expect(canvas.getByText('Priority · over 4 records')).toBeInTheDocument()
   },
 }
 
@@ -605,7 +611,7 @@ export const BigNumberNoValues: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('status', { name: 'Priority (avg): —' })).toBeInTheDocument()
-    await expect(canvas.getByText('over 1 record')).toBeInTheDocument()
+    await expect(canvas.getByText('Priority (avg) · over 1 record')).toBeInTheDocument()
   },
 }
 
