@@ -6,10 +6,13 @@ B=/private/tmp/claude-501/-Users-charlespfaff/82bbdec6-bb80-45d8-8e3e-063cffcc92
 printf '\n\033[1mM0 — components · blocks · templates\033[0m\n\n'
 
 done=0; left=0
+# #228 is an umbrella; its children are the real slices (see its body). 228f folded into #261.
 for n in 220:"token layer" 237:"block frame" 238:"block states" 239:"empty state" 240:"tombstone" \
-         249:"highlight block" 250:"entries block" 228:"twelve templates" 221:"PondControl" \
-         226:"PondPicker" 227:"chart card" 229:"PondRail" 230:"PondComposer" \
-         234:"Life is a page" 219:"check row"; do
+         249:"highlight block" 234:"Life is a page" \
+         250:"entries block" 258:"labels on blocks" 219:"check row + list block" \
+         259:"bars + heat (228c)" 260:"map gallery/gantt/number/props (228d)" \
+         261:"twelve templates (228e)" \
+         221:"PondControl" 226:"PondPicker" 227:"chart card" 229:"PondRail" 230:"PondComposer"; do
   num=${n%%:*}; name=${n#*:}
   st=$(gh issue view "$num" --json state --jq .state 2>/dev/null)
   if [ "$st" = "CLOSED" ]; then printf '  \033[32m✓\033[0m  #%-4s %s\n' "$num" "$name"; done=$((done+1))
