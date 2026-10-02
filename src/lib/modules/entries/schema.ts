@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ModuleDescriptor } from '../types'
+import { labelledBlockFields, type ModuleDescriptor } from '../types'
 
 /**
  * `entries` (#250, child 228b of #228) — dated prose: a log of short things the
@@ -21,6 +21,12 @@ import type { ModuleDescriptor } from '../types'
  * the mono column, not a typed date — a dated log is prose with a date beside it,
  * and anything that needs date arithmetic is a database's job. Rows carry their own
  * ids for targeted edits, like `todo`'s items.
+ *
+ * The block-level `label` (#258) is the board's eyebrow — `updates` in `project`,
+ * `entries` in `journal` — and follows the same reasoning as `serif`: template data
+ * with no live tie back to the template, so it is persisted on the block, set by
+ * 228e at instantiation. The shared mixin from `types.ts`; `blockFrame()` reads it
+ * over the kind.
  */
 export const entrySchema = z.object({
   id: z.string(),
@@ -30,18 +36,20 @@ export const entrySchema = z.object({
   text: z.string(),
 })
 
-export const entriesSchema = z.object({
-  id: z.string(),
-  type: z.literal('entries'),
-  /** Newest first, as the board's `note: 'newest first'` and both its fixtures read. */
-  entries: z.array(entrySchema),
-  /**
-   * The board's `serif` flag: the text is serif 200 / 16 / 1.55 when set, sans
-   * 13.5 / 1.5 otherwise. Set by the journal template at instantiation; absent means
-   * sans. See the module doc-comment for why it lives here.
-   */
-  serif: z.boolean().optional(),
-})
+export const entriesSchema = z
+  .object({
+    id: z.string(),
+    type: z.literal('entries'),
+    /** Newest first, as the board's `note: 'newest first'` and both its fixtures read. */
+    entries: z.array(entrySchema),
+    /**
+     * The board's `serif` flag: the text is serif 200 / 16 / 1.55 when set, sans
+     * 13.5 / 1.5 otherwise. Set by the journal template at instantiation; absent means
+     * sans. See the module doc-comment for why it lives here.
+     */
+    serif: z.boolean().optional(),
+  })
+  .extend(labelledBlockFields)
 
 export type Entry = z.infer<typeof entrySchema>
 export type EntriesBlock = z.infer<typeof entriesSchema>

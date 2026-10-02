@@ -8,15 +8,21 @@
  * its board kind. Pure data, no React: the frame component takes the result, the
  * view underneath it is untouched.
  *
- * `null` means the block is BARE — no card. `PondTemplate.dc.html` draws a prose
- * block that way (`bare = k === 'text' && !label` → `padding: 2px 4px`, no card):
- * prose is the page, cards sit on it.
+ * `null` means the block is BARE — no card. `PondTemplate.dc.html` draws exactly one
+ * block that way: an UNLABELLED text block (`bare = k === 'text' && !label` →
+ * `padding: 2px 4px`, no card). Prose is the page, cards sit on it.
+ *
+ * The eyebrow is the block's own LABEL when it has one (#258) — the board's
+ * `hasEyebrow: !!label`, a property of the block, not of its type — and falls back
+ * to the type/mode name when it does not. A labelled text block is therefore an
+ * ordinary card (`project → goal`, `meeting → notes`), not bare.
  */
 import type { Block } from './content'
 import type { TodoBlock } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
+import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 
 export const POND_BLOCK_KINDS = [
@@ -300,26 +306,43 @@ export function viewCollectionId(block: ViewBlock, pageId: string | undefined): 
 
 export function blockFrame(block: Block): BlockFrame | null {
   switch (block.type) {
-    case 'text':
-      return null
+    case 'text': {
+      // `bare = k === 'text' && !label`. `null` keeps meaning exactly one thing: an
+      // UNLABELLED text block, bare at `padding 2px 4px` (#237) — now conditional.
+      // A labelled one (`project → goal`, `meeting → notes`) is the `list` card:
+      // `PondTemplate.dc.html` gives a text block no width of its own, so — as
+      // highlight — it sits in the standard 400 card. No note: none is drawn for prose.
+      const label = blockLabel(block)
+      return label ? { kind: 'list', heading: label, headNote: '' } : null
+    }
     case 'todo': {
       const done = block.items.filter((it) => it.checked).length
       return {
         kind: 'checklist',
-        heading: 'checklist',
+        heading: blockLabel(block) ?? 'checklist',
         headNote: `${done} of ${block.items.length}`,
       }
     }
     case 'table':
+      // The ONE exception to the shared `label` field (#258): `table`'s existing
+      // `title` IS its label — the tracker's `log`, the database's `records`, the
+      // reading list's `books`. It is NOT renamed and gets NO second field, because
+      // persisted rows carry `title` and a rename needs a migration. So this reads
+      // `title` through the same trimmer every label goes through, not a second
+      // `trim() ||` of its own. Do not "harmonise" it onto `label`.
       return {
         kind: 'table',
-        heading: block.title?.trim() || 'table',
+        heading: trimmedOrNone(block.title) ?? 'table',
         headNote: plural((block.rows ?? []).length, 'row'),
       }
     case 'view':
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
-      return { kind: VIEW_KIND[block.mode], heading: VIEW_HEADING[block.mode], headNote: '' }
+      return {
+        kind: VIEW_KIND[block.mode],
+        heading: blockLabel(block) ?? VIEW_HEADING[block.mode],
+        headNote: '',
+      }
     case 'image': {
       const mediaType = block.mediaType ?? mediaTypeForFilename(block.url) ?? ''
       return {
@@ -331,22 +354,21 @@ export function blockFrame(block: Block): BlockFrame | null {
     case 'highlight':
       // #249: `PondBlock.dc.html` has no highlight kind and `PondTemplate.dc.html`
       // gives the block no width of its own — it sits in the normal block card with
-      // the standard head row (the reading list labels it `kept`). So the default
-      // 400 card, as image. The board's template LABEL is template data (228e), not
-      // this block's: the eyebrow is the kind until templates carry labels. No note:
-      // the board draws none for it.
-      return { kind: 'list', heading: 'highlight', headNote: '' }
+      // the standard head row. So the default 400 card, as image. #258: the eyebrow
+      // is the block's own persisted LABEL (the reading list's `kept`), falling back
+      // to the kind when it has none. No note: the board draws none for it.
+      return { kind: 'list', heading: blockLabel(block) ?? 'highlight', headNote: '' }
     case 'entries': {
       // #250: `PondBlock.dc.html`'s `log` kind (460) is a stack of `{ meta: date,
       // title: prose }` rows — exactly a dated log — so this is the first block to
       // reach that card, and `POND_BLOCK_EMPTY.log` (`no entries yet` / `write one`)
       // becomes live with it. The board's `log` heading is `entry log` and its note
-      // `cooked 3 times`, both fixtures of the demo recipe; the eyebrow is the kind
-      // (as highlight — the template LABEL `updates` / `entries` is 228e's data) and
-      // the note is the true count.
+      // `cooked 3 times`, both fixtures of the demo recipe. #258: the eyebrow is the
+      // block's own persisted LABEL (`updates` in project, `entries` in journal),
+      // falling back to the kind; the note is the true count.
       return {
         kind: 'log',
-        heading: 'entries',
+        heading: blockLabel(block) ?? 'entries',
         headNote: plural(block.entries.length, 'entry', 'entries'),
       }
     }

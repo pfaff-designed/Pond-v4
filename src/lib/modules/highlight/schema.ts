@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ModuleDescriptor } from '../types'
+import { labelledBlockFields, type ModuleDescriptor } from '../types'
 
 /**
  * `highlight` (#249, child 228a of #228) — a passage the person kept. Wheat's one
@@ -16,13 +16,20 @@ import type { ModuleDescriptor } from '../types'
  * NOT the inline `highlight` atom in `PondAtom.tsx` — that is a marked span inside
  * prose from `PondAtom.dc.html` (`px-[3px]`, 17.5px, leading-relaxed). The two share
  * the tokens and nothing else; a value in a board is final, so do not reconcile them.
+ *
+ * `label` (#258): the reading list labels this block `kept` (`['highlight', 'kept',
+ * …]` in the board's `T` table), and `hasEyebrow: !!label` — so the label is the
+ * block's own persisted field and `blockFrame()` reads it as the eyebrow, falling
+ * back to the kind. The shared mixin, declared once in `types.ts`.
  */
-export const highlightSchema = z.object({
-  id: z.string(),
-  type: z.literal('highlight'),
-  /** The kept passage, plain text. Empty string = nothing kept yet. */
-  content: z.string(),
-})
+export const highlightSchema = z
+  .object({
+    id: z.string(),
+    type: z.literal('highlight'),
+    /** The kept passage, plain text. Empty string = nothing kept yet. */
+    content: z.string(),
+  })
+  .extend(labelledBlockFields)
 
 export type HighlightBlock = z.infer<typeof highlightSchema>
 
