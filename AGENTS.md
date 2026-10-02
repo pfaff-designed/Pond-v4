@@ -5,6 +5,23 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# If you stall, leave the loop. Do not retry the same approach.
+
+**Two attempts at the same approach is the limit.** If the second fails the same way, stop: the approach is wrong, not unlucky. Diagnose, then take a different route.
+
+This is expensive to get wrong. On 2026-10-02 two builds retried a blocked step **six times each** — ~1.6M tokens, ten hours, nothing produced. The cause was a foreground `npm run dev` that never exits. No number of retries would ever have worked, and the sixth attempt cost exactly as much as the first.
+
+**The signature of a stall is repetition without a new error.** "No progress for N seconds", the same failure text twice, a command that has not returned. That is a blocked process or a wrong premise — never something to wait out.
+
+When you see it:
+
+1. **Stop immediately.** Do not retry.
+2. **Look for a hung process first** — `ps aux | grep -E "next dev|serve|watch"`. A long-running command is the most common cause, and a leftover dev server also holds its worktree directory open against `rm -rf`.
+3. **Check whether the work actually finished.** `git log main..<branch>` — twice now a build had completed and committed before the hang, and was reported as a failure.
+4. **Then change the approach**, not the parameters. Smaller slice, different tool, do it in-session instead of delegating, or ask what the real obstacle is.
+
+The same rule applies to a fix that does not take, a test that will not go green, and a rule that keeps condemning correct values: **the second identical failure is the signal to change tactic.**
+
 # Refactoring means gut and replace, not patch toward.
 
 When a surface diverges from its board, **delete the implementation and build the board's version.** Do not migrate it, do not patch it value by value, do not keep its shape and retint it.
