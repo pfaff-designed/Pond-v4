@@ -24,7 +24,8 @@ describe('Block types', () => {
       { id: '4', type: 'view', mode: 'table' },
       { id: '5', type: 'image', url: 'https://cdn.example/a.png' },
       { id: '6', type: 'highlight', content: 'a line worth keeping' },
+      { id: '7', type: 'entries', entries: [{ id: 'e1', date: '28 oct', text: 'Van booked.' }] },
     ]
-    expect(blocks).toHaveLength(6)
+    expect(blocks).toHaveLength(7)
   })
 })

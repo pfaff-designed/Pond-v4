@@ -19,6 +19,7 @@ import { tableSchema } from './table/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
+import { entriesSchema } from './entries/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -30,6 +31,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   imageSchema,
   // #249: a kept passage — wheat's one legal job (ADR 0005 / 0007).
   highlightSchema,
+  // #250: dated prose — serif only when the block's own flag says so (ADR 0005 / 0007).
+  entriesSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

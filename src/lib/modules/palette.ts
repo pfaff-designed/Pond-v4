@@ -60,8 +60,9 @@ export const paletteItems: SlashMenuItem[] = [boardPreset, ...derivedItems]
 /**
  * The manual-authoring empty state per module: todo = one blank item, table = 2×2,
  * view = a table over the host page's rows, image = the upload affordance,
- * highlight = an empty passage. Returns
- * null for a type with no local empty state — callers must guard null.
+ * highlight = an empty passage, entries = no rows (the frame's `log` empty state
+ * offers `write one`). Returns null for a type with no local empty state — callers
+ * must guard null.
  */
 export function emptyBlockForType(type: string): Block | null {
   const id = crypto.randomUUID()
@@ -96,6 +97,11 @@ export function emptyBlockForType(type: string): Block | null {
     // line with no wheat until a passage lands.
     case 'highlight':
       return { id, type: 'highlight', content: '' }
+    // #250: no rows = the authoring state. The `log` card's empty state (#239) is the
+    // designed one — `no entries yet` / `write one` — and `write one` prepends the
+    // first entry through `addEntry`, so nothing is minted blank here.
+    case 'entries':
+      return { id, type: 'entries', entries: [] }
     default:
       return null
   }

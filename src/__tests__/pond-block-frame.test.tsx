@@ -174,6 +174,26 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
     })
   })
 
+  it('entries → the `log` card (460), its kind as the eyebrow, the entry count as the note (#250)', () => {
+    // PondBlock.dc.html's `log` kind is a stack of { meta: date, title: prose } rows —
+    // exactly a dated log. This mapping makes the log card reachable for the first time.
+    expect(
+      blockFrame({
+        id: 'e',
+        type: 'entries',
+        entries: [
+          { id: '1', date: '28 oct', text: 'Van booked.' },
+          { id: '2', date: '24 oct', text: 'Inventory date confirmed.' },
+        ],
+      })
+    ).toEqual({ kind: 'log', heading: 'entries', headNote: '2 entries' })
+    expect(blockFrame({ id: 'e', type: 'entries', entries: [] })).toEqual({
+      kind: 'log',
+      heading: 'entries',
+      headNote: '0 entries',
+    })
+  })
+
   it('image → the default 400 card, the filename as the note', () => {
     expect(
       blockFrame({ id: 'i', type: 'image', url: 'https://x/a.png', filename: 'a.png' })

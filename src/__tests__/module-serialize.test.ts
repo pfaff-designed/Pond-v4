@@ -53,6 +53,15 @@ const samples: Record<string, Block> = {
   // #249: a kept passage. Serializes with a `Highlight:` marker — `blocksToText`
   // joins lines with no type label, so bare content would read as prose.
   highlight: { id: 'b1', type: 'highlight', content: 'Three books at once is one too many.' },
+  // #250: dated prose. Serializes every row (date — text) behind an `Entries:` marker.
+  entries: {
+    id: 'b1',
+    type: 'entries',
+    entries: [
+      { id: 'e1', date: '28 oct', text: 'Van booked for the morning of the 14th.' },
+      { id: 'e2', date: '24 oct', text: 'Landlord confirmed the inventory date.' },
+    ],
+  },
 }
 
 function serialize(block: Block): string {
@@ -87,6 +96,12 @@ describe('descriptor.serialize (full-fidelity body)', () => {
   it('highlight: the passage behind a Highlight: marker, so it is never mistaken for prose', () => {
     expect(serialize(samples.highlight)).toBe('Highlight: Three books at once is one too many.')
   })
+
+  it('entries: every row, date then prose, behind an Entries: marker', () => {
+    expect(serialize(samples.entries)).toBe(
+      'Entries:\n28 oct — Van booked for the morning of the 14th.\n24 oct — Landlord confirmed the inventory date.'
+    )
+  })
 })
 
 describe('descriptor.preview (one-line listing)', () => {
@@ -96,6 +111,10 @@ describe('descriptor.preview (one-line listing)', () => {
 
   it('image overrides preview too: the filename alone, no caption or url', () => {
     expect(preview(samples.image)).toBe('Attachment: board.png')
+  })
+
+  it('entries overrides preview: the dates alone, comma-joined', () => {
+    expect(preview(samples.entries)).toBe('28 oct, 24 oct')
   })
 
   it('every type WITHOUT a preview facet falls back to serialize', () => {

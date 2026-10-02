@@ -1,0 +1,266 @@
+import { useState } from 'react'
+import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
+import { expect, userEvent, within } from 'storybook/test'
+
+import { EntriesView } from './view'
+import { ENTRIES_EMPTY_LINE, type EntriesBlock } from './schema'
+import { PondBlock } from '@/components/organisms/PondBlock'
+import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
+
+/**
+ * The `entries` block (#250) — dated prose, serif only for the journal. The play
+ * functions assert the COMPUTED values against `PondTemplate.dc.html`'s
+ * `renderVals()` (`k === 'entries'`; its frames render under a transform, so the
+ * literals in that script are the source, never DOM geometry read off the board):
+ *
+ *   stack   flex column · gap 8
+ *   entry   grid 52px minmax(0,1fr) · gap 12 · align-items baseline
+ *   edate   PP Neue Montreal Mono 10.5 · ink .68
+ *   sans    PP Neue Montreal 13.5 / 1.5 · full ink              (project → updates)
+ *   serif   PP Editorial New 200 / 16 / 1.55 · full ink          (journal → entries)
+ *   empty   sans 13.5 / 1.5 · ink .68 — even on a serif block (`d.serif && filled`)
+ *   both    text-wrap: pretty
+ */
+
+/** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
+const inkTheme: Decorator = (Story) => (
+  <div className="dark rounded-mn-inner bg-raw-ink p-mn-6">
+    <Story />
+  </div>
+)
+
+const meta = {
+  title: 'Modules/Entries',
+  component: EntriesView,
+  parameters: { layout: 'padded' },
+} satisfies Meta<typeof EntriesView>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+/** The board's `project` → `updates` fixture (no flag → sans). */
+const updates: EntriesBlock = {
+  id: 'e1',
+  type: 'entries',
+  entries: [
+    { id: 'u1', date: '28 oct', text: 'Van booked for the morning of the 14th.' },
+    { id: 'u2', date: '24 oct', text: 'Landlord confirmed the inventory date.' },
+  ],
+}
+
+/** The board's `journal` → `entries` fixture (`serif: 1`). */
+const journal: EntriesBlock = {
+  id: 'e2',
+  type: 'entries',
+  serif: true,
+  entries: [
+    {
+      id: 'j1',
+      date: '25 oct',
+      text: 'Slept badly, walked it off. The light on the canal was worth getting up for.',
+    },
+    { id: 'j2', date: '24 oct', text: 'Quiet day. Finished the chapter and started the next.' },
+    {
+      id: 'j3',
+      date: '23 oct',
+      text: 'Long call with Mum. She has decided on the trip after all.',
+    },
+  ],
+}
+
+/** A serif block whose one entry has no prose yet — the board's empty row. */
+const blankJournal: EntriesBlock = {
+  ...journal,
+  entries: [{ id: 'b1', date: 'today', text: '' }],
+}
+
+const INK = 'rgb(27, 29, 20)' // #1B1D14
+const PAPER = 'rgb(250, 249, 239)' // #FAF9EF
+const INK_68 = 'rgba(27, 29, 20, 0.68)'
+const PAPER_68 = 'rgba(250, 249, 239, 0.68)'
+
+const rowsOf = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-part="date"]')).map((d) => d.parentElement!)
+const datesOf = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-part="date"]'))
+const textsOf = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll<HTMLElement>('[data-part="text"]'))
+
+/** The stack and the row grid, common to every medium and state. */
+async function assertGeometry(canvasElement: HTMLElement, count: number) {
+  const rows = rowsOf(canvasElement)
+  await expect(rows).toHaveLength(count)
+  const stack = rows[0].parentElement!
+  const ss = getComputedStyle(stack)
+  await expect(ss.display).toBe('flex')
+  await expect(ss.flexDirection).toBe('column')
+  await expect(ss.rowGap).toBe('8px')
+  for (const row of rows) {
+    const cs = getComputedStyle(row)
+    await expect(cs.display).toBe('grid')
+    // A laid-out grid resolves its tracks to px: the first is the board's 52.
+    await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
+    await expect(cs.columnGap).toBe('12px')
+    await expect(cs.alignItems).toBe('baseline')
+  }
+}
+
+/** `edate`: mono 10.5 at ink .68 (paper .68 on ink). */
+async function assertDates(canvasElement: HTMLElement, ink68: string) {
+  for (const d of datesOf(canvasElement)) {
+    const cs = getComputedStyle(d)
+    await expect(cs.fontFamily).toContain('PP Neue Montreal Mono')
+    await expect(cs.fontSize).toBe('10.5px')
+    await expect(cs.color).toBe(ink68)
+  }
+}
+
+/** The sans branch: 13.5 / 1.5, `text-wrap: pretty`, the given colour. */
+async function assertSans(cs: CSSStyleDeclaration, color: string) {
+  await expect(cs.fontFamily).toContain('PP Neue Montreal')
+  await expect(cs.fontFamily).not.toContain('PP Editorial New')
+  await expect(cs.fontSize).toBe('13.5px')
+  await expect(cs.lineHeight).toBe('20.25px') // 1.5 × 13.5
+  await expect(cs.textWrap).toBe('pretty')
+  await expect(cs.color).toBe(color)
+}
+
+/** The serif branch: PP Editorial New 200 / 16 / 1.55, `text-wrap: pretty`, full ink. */
+async function assertSerif(cs: CSSStyleDeclaration, ink: string) {
+  await expect(cs.fontFamily).toContain('PP Editorial New')
+  await expect(cs.fontWeight).toBe('200')
+  await expect(cs.fontSize).toBe('16px')
+  await expect(cs.lineHeight).toBe('24.8px') // 1.55 × 16
+  await expect(cs.textWrap).toBe('pretty')
+  await expect(cs.color).toBe(ink)
+}
+
+async function assertUpdates(canvasElement: HTMLElement, ink: string, ink68: string) {
+  await assertGeometry(canvasElement, 2)
+  await assertDates(canvasElement, ink68)
+  for (const t of textsOf(canvasElement)) await assertSans(getComputedStyle(t), ink)
+}
+
+async function assertJournal(canvasElement: HTMLElement, ink: string, ink68: string) {
+  await assertGeometry(canvasElement, 3)
+  await assertDates(canvasElement, ink68)
+  for (const t of textsOf(canvasElement)) await assertSerif(getComputedStyle(t), ink)
+}
+
+/** Empty: the board's line, sans at .68 — on a serif block, proving the conditional. */
+async function assertBlank(canvasElement: HTMLElement, ink68: string) {
+  await assertGeometry(canvasElement, 1)
+  await assertDates(canvasElement, ink68)
+  const [t] = textsOf(canvasElement)
+  await expect(t.textContent).toBe(ENTRIES_EMPTY_LINE)
+  await assertSans(getComputedStyle(t), ink68)
+}
+
+// ── Sans: project → updates ─────────────────────────────────────────────────────
+
+export const Updates: Story = {
+  args: { data: updates },
+  play: async ({ canvasElement }) => assertUpdates(canvasElement, INK, INK_68),
+}
+
+export const UpdatesDark: Story = {
+  args: { data: updates },
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertUpdates(canvasElement, PAPER, PAPER_68),
+}
+
+// ── Serif: journal → entries ────────────────────────────────────────────────────
+
+export const Journal: Story = {
+  args: { data: journal },
+  play: async ({ canvasElement }) => assertJournal(canvasElement, INK, INK_68),
+}
+
+export const JournalDark: Story = {
+  args: { data: journal },
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertJournal(canvasElement, PAPER, PAPER_68),
+}
+
+// ── Empty: a blank entry on a serif block is still sans .68 ─────────────────────
+
+export const Empty: Story = {
+  args: { data: blankJournal },
+  play: async ({ canvasElement }) => assertBlank(canvasElement, INK_68),
+}
+
+export const EmptyDark: Story = {
+  args: { data: blankJournal },
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertBlank(canvasElement, PAPER_68),
+}
+
+// ── Editable ────────────────────────────────────────────────────────────────────
+
+/** Stateful host so the editable play test exercises a real onChange round-trip. */
+function Stateful({ data }: { data: EntriesBlock }) {
+  const [state, setState] = useState(data)
+  return <EntriesView data={state} editable onChange={setState} />
+}
+
+/** Editable journal: the textarea wears the serif register; typing lands in the block. */
+export const EditableJournal: Story = {
+  args: { data: journal },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const texts = canvas.getAllByRole('textbox', { name: 'Entry text' })
+    await expect(texts).toHaveLength(3)
+    await assertSerif(getComputedStyle(texts[0]), INK)
+    const dates = canvas.getAllByRole('textbox', { name: 'Entry date' })
+    const ds = getComputedStyle(dates[0])
+    await expect(ds.fontFamily).toContain('PP Neue Montreal Mono')
+    await expect(ds.fontSize).toBe('10.5px')
+    await userEvent.type(texts[1], ' Early night.')
+    await expect(texts[1]).toHaveValue(
+      'Quiet day. Finished the chapter and started the next. Early night.'
+    )
+  },
+}
+
+/** Editable updates: the textarea is sans — the flag, not editing, picks the medium. */
+export const EditableUpdates: Story = {
+  args: { data: updates },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    for (const t of canvas.getAllByRole('textbox', { name: 'Entry text' })) {
+      await assertSans(getComputedStyle(t), INK)
+    }
+  },
+}
+
+// ── In the log card ─────────────────────────────────────────────────────────────
+
+/**
+ * The block as the product frames it: `blockFrame()` maps `entries` to the board's
+ * `log` kind (460, `PondBlock.dc.html`) — the first block to reach that card. The
+ * eyebrow is the kind, the note the entry count.
+ */
+export const InLogCard: Story = {
+  args: { data: journal },
+  render: (args) => {
+    const frame = blockFrame(args.data)!
+    return (
+      <PondBlock kind={frame.kind} heading={frame.heading} headNote={frame.headNote}>
+        <EntriesView data={args.data} />
+      </PondBlock>
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
+    await expect(card.dataset.blockKind).toBe('log')
+    await expect(card.getBoundingClientRect().width).toBe(POND_BLOCK_WIDTHS.log)
+    await expect(card.textContent).toContain('3 entries')
+    await assertJournal(canvasElement, INK, INK_68)
+    // The rows fill the card's content box — fluid, not the molecule's fixed 420.
+    const row = rowsOf(canvasElement)[0]
+    const body = row.parentElement!
+    await expect(row.getBoundingClientRect().width).toBe(body.getBoundingClientRect().width)
+  },
+}
