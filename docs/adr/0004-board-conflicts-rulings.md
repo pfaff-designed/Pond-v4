@@ -158,3 +158,68 @@ part owns the value, and it outranks any number of siblings that happen to agree
 And ADR 0003's rule continues to hold without exception: **when a builder reports that a stated rule
 contradicts a board, believe the board.** It has now been right five times out of five, including twice
 against the orchestrator.
+
+---
+
+## Ruling 10, 2026-10-02 — what selects a heat cell's full ink, and the divergence it leaves
+
+### The conflict
+
+`PondTemplate.dc.html` draws the compact `heat` grid's 84 cells at three levels:
+
+```js
+const on = filled && (i > 71 || (i * 37) % 11 > 3)
+background: on ? (i > 71 ? fg : a(0.45)) : a(0.07)
+```
+
+The grid is **`grid-auto-flow: column`** over 12 columns × 7 rows, so cells 0–6 are column 0, 7–13 column 1, and
+so on. **`i > 71` is cells 72–83 — column 11 plus the last five cells of column 10.** It straddles two columns,
+which is not a calendar unit of anything, and paired with `on`'s pseudo-random term it makes all twelve of those
+cells full ink _regardless of the data_. It is fixture noise of the same kind as `(i * 37) % 11 > 3`.
+
+So the literal cannot ship, and ADR 0005's `heat` bullet records only the three **levels** — never what selects
+the top one. That inference is what this ruling fixes in place.
+
+### The ruling
+
+**Full ink marks the current period; the mark's geometry carries the value.**
+
+For `heat`: an active day in the **current week's column** is full ink, an active day earlier is `ink .45`, an
+inactive day is `ink .07`. Seven cells, a clean unit in a column-major week grid.
+
+### Why, and it is the sibling that decides it
+
+The obvious alternative is intensity — a heatmap conventionally colours by value, `heatmap-data.ts`'s
+`HeatmapCell` carries a `value`, and the Bklit **card** feeds `count` to `HeatmapCells`. I was about to rule
+that way. **The board's other compact mark settles it the other way:**
+
+```js
+// bars
+background: i === v.length - 1 ? fg : a(0.28)
+```
+
+**The last bar is full ink** — recency — while the bar's **height** carries the value. So within this family the
+board's own convention is: geometry encodes the value, full ink marks the current period. `heat` has no height
+to spend, so its value becomes on/off and recency takes the ink. Internal consistency with the board's sibling
+mark is stronger evidence than a convention imported from outside the handoff.
+
+### The consequence, recorded rather than treated as a defect
+
+**The Bklit heatmap card colours by intensity, so the same view reads differently when a person toggles
+`Show: Card ↔ Compact`.** That is a genuine divergence and it is deliberate for now, because the card's scale
+comes from **Bklit**, not from any handoff value — no board specifies it. If the handoff ever does, the two
+should converge, and that is **#227**'s territory (the chart card's chrome and states), not the compact mark's.
+
+### A precision correction to ADR 0007 while this is open
+
+#259's body states that ADR 0007 is "wrong" to call `heat` _"a new `view` mode"_. That is overstated: ADR 0007's
+own text reads **"a new `view` mode (or chart kind)"**, so the shipped reading — `heat` is the existing `chart`
+mode at the existing `heatmap` kind — is inside the ADR's text and needs no amendment. What was genuinely
+unrecorded is only the full-ink selector above. **ADR 0007 stands as written.**
+
+### The pattern, for the fifth time
+
+This would have been the fifth instance of the failure ADR 0003's third amendment names, and the third with the
+orchestrator as the author of the wrong rule. The check that caught it is the one appended with rulings 7–9
+today, and it generalises past `dc-import`: **before ruling a value wrong, read what the board does for the
+sibling case.** A board's internal consistency is evidence; a convention from outside it is not.
