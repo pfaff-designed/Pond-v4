@@ -46,6 +46,19 @@ export interface ChartCardProps {
  */
 export const CHART_EMPTY_LINE = 'no data yet'
 
+/**
+ * A heatmap's one configuration prerequisite, stated once: a calendar cannot be read
+ * off a category label. Owned here, beside the other shared chart copy, and read by
+ * #259's compact grid so the same misconfiguration cannot read two different ways.
+ *
+ * `collection-chart.tsx`'s `HeatmapKind` still holds its own identical literal. That
+ * is deliberate for now, not an oversight: the file is prettier-dirty on `main`, so
+ * the husky hook reformats the whole thing on any commit that touches it, and the
+ * reformat alone pushes it past `max-lines`. Adopt this constant there in a slice
+ * already touching that file.
+ */
+export const HEATMAP_DATE_NOTICE = 'A heatmap reads one cell a day — pick a date field for “By”.'
+
 function isEmpty(points: readonly ChartPoint[]): boolean {
   return seriesNames(points).length === 0
 }

@@ -22,6 +22,7 @@ import { todoMarker, type TodoBlock, type TodoMarker } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
+import { COMPACT_MARK_EMPTY, compactChartMark } from './view/chart-compact'
 import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 
@@ -119,6 +120,28 @@ export function blockEmptyCopy(kind: PondBlockKind): BlockEmptyCopy {
  * dead button is never drawn.
  */
 export const POND_BLOCK_FILTERED_EMPTY_LINE = 'nothing matches this filter'
+
+/**
+ * Which box the frame's empty state draws (#259). `PondBlock.dc.html` draws ONE,
+ * the `emptyBox` (#239); `PondTemplate.dc.html` draws a second for the chart marks
+ * that are empty as a hole rather than a line — its `voidBox`:
+ *
+ *   voidBox { height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center',
+ *             borderRadius: 12, boxShadow: `inset 0 0 0 1.4px ${a(.14)}`,
+ *             fontFamily: mono, fontSize: 11, color: a(.68) }
+ *
+ * Only the compact `bars` strip (and #260's `gantt`) is empty as the voidBox; the
+ * compact `heat` grid draws its own empty state (84 cells at ink .07) and never
+ * hands the frame an empty state at all (`COMPACT_MARK_EMPTY`). Every other block
+ * is the board's `emptyBox`. Read off the block alone, like `blockFrame()`.
+ */
+export type BlockEmptyBox = 'box' | 'void'
+
+export function blockEmptyBox(block: Block): BlockEmptyBox {
+  if (block.type !== 'view') return 'box'
+  const mark = compactChartMark(block)
+  return mark !== null && COMPACT_MARK_EMPTY[mark] === 'void' ? 'void' : 'box'
+}
 
 /**
  * Whether a kind's offered empty action has an engine path a host can wire it to.
