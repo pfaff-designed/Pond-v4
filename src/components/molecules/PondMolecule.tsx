@@ -6,11 +6,24 @@
  * — a list row, a table row, a record card, a journal entry, a field row, a
  * notice, a provenance chip, a diff line, a reminder, a task card.
  *
- * Pure presentational — no handlers, no hooks. Interactive hosts (the rail's
+ * Pure presentational — no state, no hooks. Interactive hosts (the rail's
  * treeitem, a children-grid card's button, a kanban cell) wrap it and pass the
  * state they are in; the `leading` / `trailing` slots let a host dock its own
  * affordances (a caret, hover-CRUD, an open button) without the molecule ever
- * owning behaviour.
+ * owning behaviour. The one addition (issue 219): the two row kinds accept forwarded
+ * callbacks — `onTitleChange` turns the title into a text field wearing the
+ * title's own classes, `onToggle` makes the check-row's box a real control — so
+ * the `todo` block can edit a row without restating its geometry. The molecule
+ * still holds no state and decides nothing; the host owns the value and the row
+ * `state`. A check-row without `onToggle` still tells assistive tech what it is:
+ * the inert atom sits inside a `role="checkbox"` span with `aria-checked` and
+ * `aria-readonly` (the board cannot draw "announced as checked", but a static
+ * mockup has no way to express an ARIA tree, and that tree is engine logic that
+ * survives a gut per AGENTS.md). Related, deliberately NOT fixed: the `todo`
+ * view's `<ul>`/`<li>` stack became a `div` stack whose per-row listener wrapper
+ * is `display: contents`, and `role="list"` / `listitem` are not reinstated on it
+ * — `display: contents` drops roled elements from the accessibility tree in some
+ * engines, so a role there would be announced inconsistently rather than reliably.
  *
  * Every colour resolves through the Make Noise role tokens (`--color-mn-*` /
  * `--color-raw-*` / the `card` surface role): none of the retired Press
@@ -96,8 +109,11 @@ export interface PondMoleculeProps {
   /** A raw accent for the dot mark (the rail/page-kind accent set) —
    *  applied as an inline style so it, too, touches marks only. */
   accent?: string
-  /** list-row / task-card — the burnt-orange dated signal on the date atom.
-   *  Defaults on for a list-row whose meta is "today" (the mockup rule). */
+  /** list-row / check-row / task-card — the burnt-orange dated signal on the
+   *  date atom. Unset, it follows the board: on for a LIST-ROW whose meta is
+   *  "today" (`PondMolecule.dc.html`: `due: p.due ?? (kind === 'list-row' &&
+   *  meta === 'today')`), never inferred on a check-row — no board draws a dated
+   *  check row, and PROJECT_RULES allows one dated thing per screen. */
   due?: boolean
   /** check-row / task-card — done. */
   on?: boolean
@@ -114,6 +130,22 @@ export interface PondMoleculeProps {
   /** Host affordance slots — a caret before, hover-CRUD/open after. */
   leading?: ReactNode
   trailing?: ReactNode
+  /**
+   * list-row / check-row — make the title a text field (issue 219). The molecule stays
+   * presentational: no state, no hook. The host owns the value and the row's
+   * `state` (hover / editing); this only swaps the title span for an `<input>`
+   * wearing the SAME classes, so a block never restates the row's geometry to
+   * edit it. `title` is the field's value; the kind's empty copy is its
+   * placeholder.
+   */
+  onTitleChange?: (next: string) => void
+  /**
+   * check-row — make the checkbox a real control (issue 219): the box becomes a
+   * `role="checkbox"` button with no geometry of its own. Absent, the atom is
+   * drawn inert, as the board's component card draws it — inside a read-only
+   * `role="checkbox"` span so a done step is still announced as checked.
+   */
+  onToggle?: () => void
   className?: string
 }
 
@@ -175,6 +207,8 @@ export function PondMolecule({
   emphasis = false,
   leading,
   trailing,
+  onTitleChange,
+  onToggle,
   className,
 }: PondMoleculeProps) {
   const mobile = size === 'mobile'
@@ -241,9 +275,64 @@ export function PondMolecule({
     </span>
   )
 
+  /**
+   * The row kinds' title (issue 219): a span, or — when a host wires `onTitleChange` —
+   * a text field wearing the identical classes (done strike, empty .68, the list's
+   * truncate), so the row looks the same at rest and under edit. The placeholder
+   * is the kind's own empty copy (`add a step` / `add an item`); the colour and
+   * `placeholder:` classes are colour tokens only, so `cn` cannot drop a size here.
+   */
+  const rowTitle = (rowClass: string) => {
+    if (!onTitleChange) {
+      return (
+        <span data-part="title" className={rowClass}>
+          {displayTitle}
+        </span>
+      )
+    }
+    return (
+      <input
+        data-part="title"
+        type="text"
+        aria-label={kind === 'check-row' ? 'Step' : 'Item'}
+        className={cn(rowClass, 'bg-transparent outline-none placeholder:text-mn-text-secondary')}
+        value={title ?? ''}
+        placeholder={EMPTY_TITLE[kind]}
+        onChange={(e) => onTitleChange(e.target.value)}
+      />
+    )
+  }
+
+  /**
+   * The row kinds' meta column — the date ATOM, drawn only when there is
+   * something to say (the board's `b: y || ''`). Measured, not assumed (issue 219):
+   * `PondMolecule.dc.html`'s `list-row` markup literally imports
+   * `PondAtom kind="date" value="{{ meta }}" due="{{ due }}"`, so the atom IS what
+   * the composed board draws here. What that atom renders, from
+   * `PondAtom.dc.html`'s `renderVals()`: `date` is not a chip and not numeric, and
+   * the per-kind `T` table has no `date` entry, so it falls to the base `text`
+   * style — sans 13.5 / weight 400 / full ink / nowrap / tabular-nums — plus the
+   * burnt-orange due dot (`mn-signal-dated`) when `due`. It is NOT the mono-10.5 `cellMeta`
+   * that `table-row` / `entry` / `record-card` use: those are three other
+   * molecules, and `PondTemplate.dc.html`'s mono-10.5 `bStyle` is a level-4
+   * layout's own tighter rendering of the same content, left unreconciled exactly
+   * like the card padding (`14px 16px` vs `16px 18px`). The due dot is the tell —
+   * semantic work a mono span cannot express, which is why the board imports the
+   * atom rather than writing a span.
+   *
+   * `check-row` draws no meta on the board (`isCheck` is handle · checkbox · text),
+   * so its column has no board of its own and takes the sibling row's recipe: one
+   * shared element, not two copies. The `due` default keeps the board's kind gate
+   * (`p.due ?? (kind === 'list-row' && meta === 'today')`): a check-row whose meta
+   * reads `today` draws no dot unless the host says `due`.
+   */
+  const dueResolved = due ?? (kind === 'list-row' && displayMeta === 'today')
+  const metaAtom = displayMeta !== '' && (
+    <PondAtom kind="date" value={displayMeta} due={dueResolved} state={atomState} size={size} />
+  )
+
   /* ── list-row: handle · dot · title · date atom ── */
   if (kind === 'list-row') {
-    const dueResolved = due ?? displayMeta === 'today'
     return (
       <div
         data-kind={kind}
@@ -260,33 +349,24 @@ export function PondMolecule({
         {dragHandle}
         {leading}
         {dot && kindDot(selected ? 'bg-mn-text' : 'bg-mn-text/50')}
-        <span
-          data-part="title"
-          className={cn(
+        {rowTitle(
+          cn(
             'min-w-0 flex-1 truncate',
             emphasis && 'font-medium',
             empty && 'text-mn-text-secondary'
-          )}
-        >
-          {displayTitle}
-        </span>
-        {displayMeta !== '' && (
-          <PondAtom
-            kind="date"
-            value={displayMeta}
-            due={dueResolved}
-            state={atomState}
-            size={size}
-          />
+          )
         )}
+        {metaAtom}
         {trailing}
       </div>
     )
   }
 
-  /* ── check-row: handle · checkbox atom · text ── */
+  /* ── check-row: handle · checkbox atom · text · (date atom) ── */
   if (kind === 'check-row') {
     const done = on || selected
+    const box = <PondAtom kind="checkbox" on={done} size={size} />
+    const boxLabel = title?.trim() ? title : EMPTY_TITLE[kind]
     return (
       <div
         data-kind={kind}
@@ -302,17 +382,48 @@ export function PondMolecule({
       >
         {dragHandle}
         {leading}
-        <PondAtom kind="checkbox" on={done} size={size} />
-        <span
-          data-part="title"
-          className={cn(
+        {onToggle ? (
+          // A real control around the atom, with no geometry of its own: the atom
+          // keeps the board's 26px box and the button adds nothing but behaviour.
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={boxLabel}
+            className={cn(
+              'flex flex-none cursor-pointer appearance-none border-0 bg-transparent p-0 text-mn-text',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b'
+            )}
+            onClick={onToggle}
+          >
+            {box}
+          </button>
+        ) : (
+          // Read-only: the same atom, no behaviour, but still a checkbox to
+          // assistive tech — the strike is CSS-only, so without this nothing
+          // announces "done". A static board cannot draw an ARIA tree; the tree
+          // is behaviour the board assumes, not an affordance it omits (issue 238).
+          // Zero pixels: the span is the same geometry-less flex item the button
+          // is — NOT `display: contents`, which some engines drop from the
+          // accessibility tree along with the role this exists to carry.
+          <span
+            role="checkbox"
+            aria-checked={done}
+            aria-readonly="true"
+            aria-label={boxLabel}
+            className="flex flex-none"
+          >
+            {box}
+          </span>
+        )}
+        {rowTitle(
+          cn(
             'min-w-0 flex-1',
             (done || empty) && 'text-mn-text-secondary',
             done && 'line-through decoration-mn-text/40'
-          )}
-        >
-          {displayTitle}
-        </span>
+          )
+        )}
+        {metaAtom}
         {trailing}
       </div>
     )
@@ -496,10 +607,7 @@ export function PondMolecule({
           wrap
         )}
       >
-        <span
-          data-part="label"
-          className={pageEyebrowClass}
-        >
+        <span data-part="label" className={pageEyebrowClass}>
           {label ?? 'kcal per serving'}
         </span>
         <PondAtom

@@ -427,7 +427,8 @@ describe('BlockCanvas — the offered action does the thing it offers', () => {
     ])
     const card = cardOf('b-todo')
     expect(card.dataset.blockState).toBe('rest')
-    expect(card.querySelector('input[type="checkbox"]')).not.toBeNull()
+    // #219: the row is a PondMolecule check-row; its box is a `role="checkbox"` control.
+    expect(card.querySelector('[data-kind="check-row"] [role="checkbox"]')).not.toBeNull()
     expect(screen.queryByRole('button', { name: 'add a step' })).toBeNull()
   })
 
