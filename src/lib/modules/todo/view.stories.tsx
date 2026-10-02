@@ -23,7 +23,9 @@ import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
  *   hover    rgba(27,29,20,.05)
  *   dragging paper #FAF9EF + lift shadow
  *   empty    `add a step` / `add an item` at ink .68
- *   meta     `bStyle`: PP Neue Montreal Mono 10.5 · ink .68 · nowrap
+ *   meta     the date atom (`PondAtom.dc.html`, base text): PP Neue Montreal 13.5 · 400 ·
+ *            full ink · nowrap — `PondTemplate`'s mono-10.5 `bStyle` is the level-4
+ *            layout's own tighter rendering and stays unreconciled
  *   check    the checkbox atom · label 400
  *   dot      the ink-.5 dot · label 400
  *   none     no dot · label 500 (`fontWeight: d.links ? 500 : 400`)
@@ -168,18 +170,26 @@ async function assertRow(row: HTMLElement) {
   await expect(getComputedStyle(handleOf(row)).width).toBe('12px')
 }
 
-/** `bStyle`: PP Neue Montreal Mono 10.5 · ink .68 · nowrap — the molecule's `cellMeta`. */
+/**
+ * The meta column is the DATE ATOM `PondMolecule.dc.html`'s `list-row` imports, and
+ * `PondAtom.dc.html` gives `date` the base text style: PP Neue Montreal 13.5 · 400 ·
+ * full ink · nowrap · tabular-nums. Not mono, not .68 — those belong to the other
+ * row molecules' `cellMeta` and to `PondTemplate`'s level-4 `bStyle`.
+ */
 async function assertMeta(row: HTMLElement, text: string, ink: Ink) {
-  const date = row.querySelector<HTMLElement>('[data-part="meta"]')!
+  const date = row.querySelector<HTMLElement>('[data-kind="date"]')!
   await expect(date).not.toBeNull()
   await expect(date.textContent).toBe(text)
-  // Not `today`, so no dated signal.
+  // Not `today` (and never inferred on a check-row), so no dated signal.
   await expect(row.querySelector('[data-part="due-dot"]')).toBeNull()
-  const cs = getComputedStyle(date)
-  await expect(cs.fontFamily).toContain('PP Neue Montreal Mono')
-  await expect(cs.fontSize).toBe('10.5px')
-  await expect(cs.color).toBe(ink.a68)
+  const cs = getComputedStyle(date.querySelector<HTMLElement>('[data-part="text"]')!)
+  await expect(cs.fontFamily).toContain('PP Neue Montreal')
+  await expect(cs.fontFamily).not.toContain('Mono')
+  await expect(cs.fontSize).toBe('13.5px')
+  await expect(cs.fontWeight).toBe('400')
+  await expect(cs.color).toBe(ink.fg)
   await expect(cs.whiteSpace).toBe('nowrap')
+  await expect(cs.fontVariantNumeric).toBe('tabular-nums')
 }
 
 async function assertRest(row: HTMLElement, ink: Ink) {
@@ -244,7 +254,7 @@ async function assertGroceries(canvasElement: HTMLElement, ink: Ink) {
     await expect(row.dataset.kind).toBe('list-row')
     await assertRest(row, ink)
     await expect(row.querySelector('[data-kind="checkbox"]')).toBeNull()
-    await expect(row.querySelector('[data-part="meta"]')).toBeNull()
+    await expect(row.querySelector('[data-kind="date"]')).toBeNull()
     const dot = row.querySelector<HTMLElement>('[data-part="dot"]')!
     await expect(dot).not.toBeNull()
     await expect(getComputedStyle(dot).backgroundColor).toBe(ink.a50)
@@ -356,6 +366,23 @@ export const EmptyListItem: Story = {
   },
 }
 
+/**
+ * A blank read-only row UNDER THE POINTER keeps its `add a step`: the board models
+ * hover and empty as independent states, not a precedence, and the view tests
+ * `empty` before `hover`. (Hover-first rendered the row blank under the pointer —
+ * no coverage, so it shipped; this story is the coverage.)
+ */
+export const EmptyHovered: Story = {
+  args: { data: blank },
+  play: async ({ canvasElement }) => {
+    const [row] = rowsOf(canvasElement)
+    await userEvent.hover(row)
+    await assertEmpty(row, 'add a step', onPaper())
+    await userEvent.unhover(row)
+    await assertEmpty(row, 'add a step', onPaper())
+  },
+}
+
 // ── Meta: the `b` column on a check row, and the done + meta combination ─────────
 
 export const WithMeta: Story = {
@@ -366,7 +393,7 @@ export const WithMeta: Story = {
     await expect(due.children).toHaveLength(4)
     await assertMeta(due, '27 oct', onPaper())
     await assertDone(done, onPaper())
-    await expect(done.querySelector('[data-part="meta"]')).toBeNull()
+    await expect(done.querySelector('[data-kind="date"]')).toBeNull()
     await expect(done.children).toHaveLength(3)
   },
 }

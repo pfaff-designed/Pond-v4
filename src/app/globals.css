@@ -558,23 +558,6 @@
   }
 }
 
-/* Checkbox mark — the tick DRAWS in rather than appearing, so the completion
-   reads as an authored stroke, then the box settles from a hair over-scale back
-   to rest. Paired with the bound metric's count-up, the two land together as
-   one cause→effect (60fps: CRED paid-check — checkmark trim-draw + spring
-   settle to 1.0; 1Password Watchtower — draw synchronized with a count ticker). */
-@keyframes motion-check-settle {
-  0% {
-    transform: scale(0.86);
-  }
-  60% {
-    transform: scale(1.06);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
 @layer components {
   /* Staggered rise-on-mount — the Make Noise rise idiom (delay set inline).
      ticket-41: sourced from --motion-slow (a page's worth of surfaces). */
@@ -604,13 +587,6 @@
     animation: motion-menu-in var(--motion-quick) var(--ease-out) both;
   }
 
-  /* Checkbox mark settle (todo). Quick — a change the user just caused. Applied
-     to the box when it flips to checked; the paired bound-metric NumberFlow tick
-     lands in the same beat so the pair reads causal. */
-  .motion-check {
-    animation: motion-check-settle var(--motion-quick) var(--ease-mn) both;
-  }
-
   /* Card resolve (ModuleDiffCard / ProposalGroup). Settle tier — the card eases
      down to inert as it dims, never snaps. Transition (not keyframe) so it rides
      the status → resolved class flip both directions cleanly. */
@@ -637,7 +613,6 @@
     .mn-arrive,
     .motion-toast,
     .motion-menu,
-    .motion-check,
     .motion-settle-in {
       animation: none;
     }

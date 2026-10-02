@@ -282,6 +282,32 @@ export const TODO_KIND: Record<TodoMarker, PondBlockKind> = {
   none: 'list',
 }
 
+/**
+ * Which molecule row a `todo` item draws under each marker, and how (#219) —
+ * `PondTemplate.dc.html`'s `renderVals()`:
+ *
+ *   hasBox: k === 'check'              →  check  `check-row`
+ *   hasDot: k === 'list' && !d.links   →  dot    `list-row`, the ink-.5 dot
+ *   fontWeight: d.links ? 500 : 400    →  none   `list-row`, no dot, the raised voice
+ *
+ * A table, not a chain of `marker === …` booleans in the view: a boolean chain
+ * would let a fourth marker compile and silently render a bare `list-row` with no
+ * dot and no emphasis. Here it is a compile error — the same rule `blockIsEmpty`
+ * states for a new row-carrying type. The head note stays a boolean in
+ * `blockFrame()` on purpose: its axis is "has boxes", and a fourth marker
+ * inheriting the item count is the right default.
+ */
+export interface TodoRowSpec {
+  row: 'check-row' | 'list-row'
+  dot: boolean
+  emphasis: boolean
+}
+export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
+  check: { row: 'check-row', dot: false, emphasis: false },
+  dot: { row: 'list-row', dot: true, emphasis: false },
+  none: { row: 'list-row', dot: false, emphasis: true },
+}
+
 /** The eyebrow when the block has no label of its own (#258) — the kind's name. */
 const TODO_HEADING: Record<TodoMarker, string> = {
   check: 'checklist',

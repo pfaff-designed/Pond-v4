@@ -13,6 +13,10 @@
  *             textDecorationColor: a(.4), fontWeight: d.links ? 500 : 400 },
  *   bStyle: { fontFamily: mono, fontSize: 10.5, color: a(.68), whiteSpace: 'nowrap' }
  *
+ * (`bStyle` is the level-4 layout's own tighter rendering of the `b` column; the
+ * molecule draws it as the date atom `PondMolecule.dc.html` imports — sans 13.5 at
+ * full ink — and that is what the view's meta tests assert.)
+ *
  * So one persisted type, `todo`, with a block-level `marker` (`check` · `dot` ·
  * `none`, default `check`) and an optional `meta` per item — both optional so every
  * persisted checklist parses and renders exactly as before, with no migration.
@@ -270,17 +274,33 @@ describe('TodoView — read-only', () => {
     lacks(open, 'line-through', 'text-mn-text-secondary')
   })
 
-  it('an item’s meta renders as the row’s mono `b` column when non-empty, and not at all when empty', () => {
+  it('an item’s meta renders as the row’s date atom when non-empty, and not at all when empty', () => {
     const { container } = render(<TodoView data={actions} editable={false} />)
     const [withMeta, without] = rowsOf(container)
-    const meta = withMeta.querySelector<HTMLElement>('[data-part="meta"]')!
+    const meta = withMeta.querySelector<HTMLElement>('[data-kind="date"]')!
     expect(meta).not.toBeNull()
     expect(meta.textContent).toBe('27 oct')
-    // `bStyle`: mono 10.5 / ink .68 / nowrap — the molecule's cellMeta.
-    has(meta, 'font-mono', 'text-[10.5px]', 'text-mn-text-secondary', 'whitespace-nowrap')
-    expect(without.querySelector('[data-part="meta"]')).toBeNull()
+    // `PondAtom.dc.html` gives `date` the base text style: sans 13.5 / full ink /
+    // nowrap — not the mono 10.5 `cellMeta` of the other row molecules.
+    const text = meta.querySelector<HTMLElement>('[data-part="text"]')!
+    has(text, 'text-[13.5px]', 'truncate')
+    lacks(text, 'font-mono', 'text-[10.5px]', 'text-mn-text-secondary')
+    // `27 oct` is not `today`, and no board draws a dated check row: no dot.
+    expect(meta.querySelector('[data-part="due-dot"]')).toBeNull()
+    expect(without.querySelector('[data-kind="date"]')).toBeNull()
     // A fixture meta must never leak in: the view passes '' for an absent meta.
     expect(container.textContent).not.toContain('today')
+  })
+
+  it('a read-only box is still a checkbox to assistive tech — role, aria-checked, aria-readonly, the label', () => {
+    render(<TodoView data={legacy} editable={false} />)
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(2)
+    expect(boxes[0]).toHaveAttribute('aria-checked', 'false')
+    expect(boxes[1]).toHaveAttribute('aria-checked', 'true')
+    expect(boxes[1]).toHaveAttribute('aria-readonly', 'true')
+    expect(boxes[1]).toHaveAttribute('aria-label', 'Sand it')
+    expect(boxes[1].tagName).toBe('SPAN')
   })
 
   it('the stack is the board’s row gap (2px), not the old space-y-1; the listener wrapper is `display: contents`', () => {
@@ -334,7 +354,7 @@ describe('TodoView — read-only', () => {
       expect(row.querySelector('[data-kind="checkbox"]')).toBeNull()
       has(titleOf(row), 'font-medium')
     }
-    expect(rows[0].querySelector('[data-part="meta"]')!.textContent).toBe('18.4 km this week')
+    expect(rows[0].querySelector('[data-kind="date"]')!.textContent).toBe('18.4 km this week')
   })
 
   it('a list does not strike or dim a `checked` item: there is no box to have ticked', () => {
@@ -353,6 +373,25 @@ describe('TodoView — read-only', () => {
     expect(a.dataset.state).toBe('rest')
     fireEvent.mouseLeave(b)
     expect(b.dataset.state).toBe('rest')
+  })
+
+  it('a blank read-only row under the pointer keeps its `add a step` — empty outranks hover', () => {
+    // `empty` and `hover` are independent on the board, not a precedence. The
+    // molecule reaches its empty copy only under `state === 'empty'` (`''` is not
+    // nullish, so the fixture fallback does not fire), so hover-first would blank
+    // the row under the pointer. This had no coverage, which is why it shipped.
+    const blank: TodoBlock = {
+      id: 'e',
+      type: 'todo',
+      items: [{ id: '1', label: '', checked: false }],
+    }
+    const { container } = render(<TodoView data={blank} editable={false} />)
+    const [row] = rowsOf(container)
+    fireEvent.mouseEnter(row)
+    expect(row.dataset.state).toBe('empty')
+    expect(titleOf(row).textContent).toBe('add a step')
+    fireEvent.mouseLeave(row)
+    expect(row.dataset.state).toBe('empty')
   })
 })
 

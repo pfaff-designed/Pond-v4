@@ -58,15 +58,20 @@ describe('module registry (t12)', () => {
     expect(next.items[0].checked).toBe(true) // untouched item preserved
   })
 
-  it('a read-only view does not emit: its boxes are the inert checkbox atom, not controls (#219)', () => {
+  it('a read-only view does not emit, and its boxes are READ-ONLY checkboxes to assistive tech (#219)', () => {
     const onChange = jest.fn()
-    const { container } = render(
-      <ModuleView type="todo" data={page.blocks[1]} onChange={onChange} />
-    )
-    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
-    const atoms = container.querySelectorAll('[data-kind="checkbox"]')
-    expect(atoms).toHaveLength(2)
-    fireEvent.click(atoms[1])
+    render(<ModuleView type="todo" data={page.blocks[1]} onChange={onChange} />)
+    // Not `<input>`s any more (the molecule's inert atom), but still announced:
+    // a done step must read as checked even though its strike is CSS-only.
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(2)
+    for (const box of boxes) {
+      expect(box.tagName).toBe('SPAN')
+      expect(box).toHaveAttribute('aria-readonly', 'true')
+    }
+    expect(boxes[0]).toHaveAttribute('aria-checked', 'true')
+    expect(boxes[1]).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(boxes[1])
     expect(onChange).not.toHaveBeenCalled()
   })
 

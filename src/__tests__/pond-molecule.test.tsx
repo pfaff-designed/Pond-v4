@@ -295,29 +295,41 @@ describe('AC6 — interaction states', () => {
 // ── Kind anatomy from the mockup ────────────────────────────────────────────
 
 describe('kind anatomy', () => {
-  it('list-row draws its meta as the quiet mono `b` column — cellMeta, not the sans date atom (issue 219 ruling)', () => {
+  it('list-row composes a date atom from its meta', () => {
     const { container } = render(<PondMolecule kind="list-row" meta="19 sep" />)
-    expect(container.querySelector('[data-kind="date"]')).not.toBeInTheDocument()
-    const meta = container.querySelector<HTMLElement>('[data-part="meta"]')!
-    expect(meta).toBeInTheDocument()
-    expect(meta.textContent).toBe('19 sep')
-    for (const c of ['font-mono', 'text-[10.5px]', 'text-mn-text-secondary', 'whitespace-nowrap']) {
-      expect(meta.className.split(' ')).toContain(c)
-    }
-    // An undated meta carries no due dot.
-    expect(container.querySelector('[data-part="due-dot"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-kind="date"]')).toBeInTheDocument()
   })
 
-  it('meta="" suppresses the list-row meta column (rail rows)', () => {
+  it('meta="" suppresses the list-row date atom (rail rows)', () => {
     const { container } = render(<PondMolecule kind="list-row" meta="" />)
-    expect(container.querySelector('[data-part="meta"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-kind="date"]')).not.toBeInTheDocument()
   })
 
-  it("check-row draws the same meta column when it has one, and none when it does not (the board’s `b: y || ''`)", () => {
+  it("check-row composes the same date atom when it has a meta, and none when it does not (the board’s `b: y || ''`)", () => {
     const { container } = render(<PondMolecule kind="check-row" meta="27 oct" />)
-    expect(container.querySelector('[data-part="meta"]')?.textContent).toBe('27 oct')
+    expect(container.querySelector('[data-kind="date"]')?.textContent).toBe('27 oct')
     const { container: bare } = render(<PondMolecule kind="check-row" />)
-    expect(bare.querySelector('[data-part="meta"]')).not.toBeInTheDocument()
+    expect(bare.querySelector('[data-kind="date"]')).not.toBeInTheDocument()
+  })
+
+  it("the `today` due default is gated to list-row (`due: p.due ?? (kind === 'list-row' && meta === 'today')`)", () => {
+    const { container: list } = render(<PondMolecule kind="list-row" meta="today" />)
+    expect(list.querySelector('[data-part="due-dot"]')).toBeInTheDocument()
+    // No board draws a dated check row, and the host can still say `due`.
+    const { container: check } = render(<PondMolecule kind="check-row" meta="today" />)
+    expect(check.querySelector('[data-part="due-dot"]')).not.toBeInTheDocument()
+    const { container: forced } = render(<PondMolecule kind="check-row" meta="27 oct" due />)
+    expect(forced.querySelector('[data-part="due-dot"]')).toBeInTheDocument()
+  })
+
+  it('a read-only check-row is still a checkbox to assistive tech: role, aria-checked, aria-readonly', () => {
+    const { getByRole } = render(<PondMolecule kind="check-row" title="soak overnight" on />)
+    const box = getByRole('checkbox')
+    expect(box.tagName).toBe('SPAN')
+    expect(box).toHaveAttribute('aria-checked', 'true')
+    expect(box).toHaveAttribute('aria-readonly', 'true')
+    expect(box).toHaveAttribute('aria-label', 'soak overnight')
+    expect(box.querySelector('[data-kind="checkbox"]')).toBeInTheDocument()
   })
 
   it('check-row composes a checkbox atom', () => {
