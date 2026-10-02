@@ -49,6 +49,9 @@ const samples: Record<string, ModuleData> = {
     mediaType: 'image/png',
     caption: 'The workbench',
   },
+  // #249: a kept passage — authored text, no nested id-bearing collections, so a
+  // flat top-level id strip is the whole omit-chain.
+  highlight: { type: 'highlight', content: 'Three books at once is one too many.' },
 }
 
 /**
@@ -172,7 +175,7 @@ describe('stampDisplayIds stamps the same collections for display', () => {
     ).toEqual(['preview-2-0', 'preview-2-1'])
   })
 
-  it("a chart view keeps its series objects id-free (no nestedIdPaths declared)", () => {
+  it('a chart view keeps its series objects id-free (no nestedIdPaths declared)', () => {
     // The complement of the todo/table case: a module that DOESN'T declare
     // nestedIdPaths must not have ids injected into its object-arrays. A chart-mode
     // view's `chart.series` is the live instance of that — plain `{ property, agg }`.

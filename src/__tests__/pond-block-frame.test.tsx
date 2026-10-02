@@ -164,6 +164,16 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
     }
   })
 
+  it('highlight → the default 400 card, its kind as the eyebrow, no note (#249)', () => {
+    // PondBlock.dc.html has no highlight kind; PondTemplate.dc.html draws it in the
+    // normal block card with the standard head row and gives it no width of its own.
+    expect(blockFrame({ id: 'h', type: 'highlight', content: 'a line worth keeping' })).toEqual({
+      kind: 'list',
+      heading: 'highlight',
+      headNote: '',
+    })
+  })
+
   it('image → the default 400 card, the filename as the note', () => {
     expect(
       blockFrame({ id: 'i', type: 'image', url: 'https://x/a.png', filename: 'a.png' })

@@ -18,6 +18,7 @@ import { todoSchema } from './todo/schema'
 import { tableSchema } from './table/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
+import { highlightSchema } from './highlight/schema'
 
 export const blockSchema = z.discriminatedUnion('type', [
   textSchema,
@@ -27,6 +28,8 @@ export const blockSchema = z.discriminatedUnion('type', [
   viewSchema,
   // #61: an uploaded image / file attachment, referenced by storage URL.
   imageSchema,
+  // #249: a kept passage — wheat's one legal job (ADR 0005 / 0007).
+  highlightSchema,
 ])
 
 /** A content module persisted in a page's `blocks` array. */

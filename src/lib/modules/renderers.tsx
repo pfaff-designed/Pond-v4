@@ -16,6 +16,7 @@ import { TableView } from './table/view'
 import { PageView } from './page/view'
 import { ViewView } from './view/view'
 import { ImageView } from './image/view'
+import { HighlightView } from './highlight/view'
 
 /**
  * `type → { view, editor?, differ? }`. A plain keyed object literal — no framework,
@@ -34,6 +35,9 @@ export const moduleRenderers = {
   // #61: uploaded image / file attachment. Editing folds into the view (the
   // empty state IS the upload affordance), so no separate editor facet.
   image: { view: ImageView },
+  // #249: the kept passage. Click-to-edit folds into the view (as text); the diff
+  // card renders it read-only through ModuleView, so no differ facet.
+  highlight: { view: HighlightView },
 }
 // Correctness is enforced at each view's definition (every view is typed as a
 // ModuleRenderer for its own data). A homogeneous `satisfies Record<…>` can't be

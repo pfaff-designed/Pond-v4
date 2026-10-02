@@ -14,6 +14,7 @@ import { tableDescriptor } from './table/schema'
 import { pageDescriptor } from './page/schema'
 import { viewDescriptor } from './view/schema'
 import { imageDescriptor } from './image/schema'
+import { highlightDescriptor } from './highlight/schema'
 
 export const moduleDescriptors = {
   text: textDescriptor,
@@ -24,6 +25,8 @@ export const moduleDescriptors = {
   view: viewDescriptor,
   // #61: an uploaded image / file attachment, referenced by storage URL.
   image: imageDescriptor,
+  // #249: a kept passage — authored content, so a block (ADR 0007).
+  highlight: highlightDescriptor,
 } satisfies Record<string, ModuleDescriptor>
 
 export type DescriptorType = keyof typeof moduleDescriptors

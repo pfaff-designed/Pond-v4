@@ -50,6 +50,9 @@ const samples: Record<string, Block> = {
     mediaType: 'image/png',
     caption: 'The workbench',
   },
+  // #249: a kept passage. Serializes with a `Highlight:` marker — `blocksToText`
+  // joins lines with no type label, so bare content would read as prose.
+  highlight: { id: 'b1', type: 'highlight', content: 'Three books at once is one too many.' },
 }
 
 function serialize(block: Block): string {
@@ -79,6 +82,10 @@ describe('descriptor.serialize (full-fidelity body)', () => {
 
   it('view: renders its config; "no rows" until the assemble seam injects them', () => {
     expect(serialize(samples.view)).toBe('View (table) — no rows')
+  })
+
+  it('highlight: the passage behind a Highlight: marker, so it is never mistaken for prose', () => {
+    expect(serialize(samples.highlight)).toBe('Highlight: Three books at once is one too many.')
   })
 })
 

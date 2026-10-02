@@ -24,6 +24,7 @@ import { todoSchema, todoItemSchema } from './todo/schema'
 import { tableSchema, tableRowSchema } from './table/schema'
 import { viewSchema } from './view/schema'
 import { imageSchema } from './image/schema'
+import { highlightSchema } from './highlight/schema'
 import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lint'
 
 /**
@@ -79,6 +80,10 @@ const viewData = viewSchema.omit({ id: true })
 // omit-chain (the module-nested-ids fence pins it). The catalog description
 // tells the model to only use URLs it has actually seen, never invented ones.
 const imageData = imageSchema.omit({ id: true })
+// #249: a highlight is one kept passage — authored text with no nested id-bearing
+// collections, so a flat top-level id strip is the whole omit-chain. ADR 0006 names
+// this entry a work item: a block absent from this union is a block Pond cannot use.
+const highlightData = highlightSchema.omit({ id: true })
 
 export const moduleDataSchema = z.discriminatedUnion('type', [
   textData,
@@ -86,6 +91,7 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
   tableData,
   viewData,
   imageData,
+  highlightData,
 ])
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
@@ -154,6 +160,9 @@ export const createPageBlockSchema = z.discriminatedUnion('type', [
   // #61: a page can be created WITH an image/file block (an attachment the
   // user already uploaded). Nothing binds to it — parity with the persisted union.
   imageData.extend({ bindKey }),
+  // #249: a page can be created WITH a kept passage (a reading list's `kept` line).
+  // Nothing binds to it — parity with the persisted union.
+  highlightData.extend({ bindKey }),
 ])
 export type CreatePageBlock = z.infer<typeof createPageBlockSchema>
 
