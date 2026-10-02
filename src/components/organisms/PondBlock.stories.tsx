@@ -698,7 +698,7 @@ async function assertDeleted(canvasElement: HTMLElement, theme: Theme) {
     const cs = getComputedStyle(c)
 
     // W = 460 for every kind — the one state that overrides the kind's width.
-    await expect(cs.width).toBe('460px')
+    await expect(cs.width).toBe(`${POND_BLOCK_TOMB_WIDTH}px`)
     // The frame's own geometry survives.
     await expect(cs.paddingTop).toBe('16px')
     await expect(cs.paddingLeft).toBe('18px')
@@ -717,6 +717,8 @@ async function assertDeleted(canvasElement: HTMLElement, theme: Theme) {
     await expect(cs.borderTopWidth).toBe('0px')
     await expect(cs.borderTopStyle).not.toBe('dashed')
     await expect(cs.opacity).toBe('1')
+    // No lift: the tombstone is flat, like every other state (the board moves nothing).
+    await expect(cs.transform).toBe('none')
     await expect(c.hasAttribute('inert')).toBe(false)
     await expect(c.getAttribute('aria-busy')).toBeNull()
 

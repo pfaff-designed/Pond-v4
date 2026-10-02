@@ -93,7 +93,7 @@ describe('rest / hover — the card itself does not change', () => {
         expect(screen.queryByTestId('body')).toBeNull()
         expect(card.querySelector('[data-part="empty"]')).not.toBeNull()
       } else {
-        // The body renders — deleted (#240) falls through to rest here.
+        // The body renders — rest and hover draw the module view untouched.
         expect(screen.getByTestId('body')).toBeInTheDocument()
       }
     }

@@ -248,7 +248,12 @@ describe('PondBlock — the tombstone’s two ways out', () => {
     expect(onRestore).toHaveBeenCalledTimes(1)
   })
 
-  it('an action is offered or it is not drawn — never a dead button (7a: past the window, remove is the only action)', () => {
+  // NB: this asserts only that an unwired action is not drawn. 7a's real
+  // past-the-window frame also shortens the copy to a single line naming the
+  // database and drops the "can be restored" promise — `blockTombLine` always
+  // emits it, so that variant is unbuilt and is #199's (nothing can compute
+  // "past the window" without `deleted_at`).
+  it('an action is offered or it is not drawn — never a dead button', () => {
     const { container } = render(
       <PondBlock kind="list" heading="notifications" state="deleted" onRemoveBlock={() => {}}>
         <p>the view</p>
