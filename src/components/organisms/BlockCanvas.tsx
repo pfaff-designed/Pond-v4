@@ -28,6 +28,7 @@ import {
   viewCollectionId,
   POND_BLOCK_EMPTY_ACTION_WIRED,
   POND_BLOCK_FILTERED_EMPTY_LINE,
+  VIEW_EMPTY,
   type BlockFrame,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
@@ -35,7 +36,6 @@ import { useCollectionRows } from '@/lib/modules/view/use-collection-rows'
 import { applyView } from '@/lib/modules/view/apply'
 import { COMPACT_MARK_EMPTY, compactChartMark } from '@/lib/modules/view/chart-compact'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
-import { GANTT_EMPTY_LINE } from '@/lib/modules/view/gantt-shared'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
@@ -442,8 +442,12 @@ function useBlockEmptyState(
           : { state: 'rest' }
       }
       if (markEmpty === 'void') return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
-      // #260: a gantt is empty as the same voidBox, with the template's own line.
-      if (block.mode === 'gantt') return { state: 'empty', emptyLine: GANTT_EMPTY_LINE }
+      // #260: a mode that owns its own empty line takes it from `VIEW_EMPTY`, the
+      // one table that also decides the mode's box — so the box and the line it
+      // holds cannot disagree. Today only `gantt` sets one: the template's voidBox
+      // copy, beside the `void` that draws it.
+      const modeEmptyLine = VIEW_EMPTY[block.mode].line
+      if (modeEmptyLine !== undefined) return { state: 'empty', emptyLine: modeEmptyLine }
       // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
       // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
       if (frame && !POND_BLOCK_EMPTY_ACTION_WIRED[frame.kind]) return { state: 'empty' }

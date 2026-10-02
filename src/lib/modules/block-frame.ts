@@ -139,9 +139,47 @@ export const POND_BLOCK_FILTERED_EMPTY_LINE = 'nothing matches this filter'
  */
 export type BlockEmptyBox = 'box' | 'void'
 
+/**
+ * The gantt mode's empty line — `PondTemplate.dc.html`'s `gantt` `e:` value verbatim
+ * (#260). Declared here, with the rest of the per-kind block copy, rather than in the
+ * view layer: this file is server-safe, so a host reaches the string without pulling
+ * in a React module, and `VIEW_EMPTY` below can hold it beside the box that draws it.
+ */
+export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
+
+/**
+ * How each view mode is empty: which box the frame draws, and the line that goes in
+ * it when the mode owns one (#260). **Exhaustive over `ViewMode`, so an eighth mode
+ * is a compile error here** rather than silently inheriting the default box — the
+ * defect this file exists to prevent, and the reason `VIEW_KIND` and `VIEW_HEADING`
+ * above are tables too.
+ *
+ * `chart` is the one mode whose box is not static — a compact `bar` is empty as the
+ * voidBox and the card presentation is not — so it reads `'per-mark'` and
+ * `blockEmptyBox()` asks `compactChartMark`. The marker is in the table rather than a
+ * `mode === 'chart'` test outside it so the table never STATES something false about
+ * a mode: a caller reading `.box` directly gets `'per-mark'`, not a wrong answer.
+ * `chart` carries no `line` for the same reason — its copy is `CHART_EMPTY_LINE`,
+ * which lives in the React module `chart/card.tsx` and cannot be reached from here.
+ *
+ * Both consumers read THIS — `blockEmptyBox()` takes `.box` and `BlockCanvas`'s
+ * `useBlockEmptyState` takes `.line`. Before this they each tested `mode === 'gantt'`
+ * separately, so one fact about one mode lived in two files keyed off a raw string.
+ */
+export const VIEW_EMPTY: Record<ViewMode, { box: BlockEmptyBox | 'per-mark'; line?: string }> = {
+  table: { box: 'box' },
+  board: { box: 'box' },
+  calendar: { box: 'box' },
+  gallery: { box: 'box' },
+  'big-number': { box: 'box' },
+  gantt: { box: 'void', line: GANTT_EMPTY_LINE },
+  chart: { box: 'per-mark' },
+}
+
 export function blockEmptyBox(block: Block): BlockEmptyBox {
   if (block.type !== 'view') return 'box'
-  if (block.mode === 'gantt') return 'void'
+  const { box } = VIEW_EMPTY[block.mode]
+  if (box !== 'per-mark') return box
   const mark = compactChartMark(block)
   return mark !== null && COMPACT_MARK_EMPTY[mark] === 'void' ? 'void' : 'box'
 }

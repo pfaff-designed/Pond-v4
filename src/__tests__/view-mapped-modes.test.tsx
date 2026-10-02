@@ -35,15 +35,11 @@ import { galleryCardMeta } from '@/lib/modules/view/apply'
 import {
   blockEmptyBox,
   blockFrame,
+  GANTT_EMPTY_LINE,
   POND_BLOCK_WIDTHS,
   propertiesFrame,
 } from '@/lib/modules/block-frame'
-import {
-  GANTT_BAR_INK,
-  GANTT_EMPTY_LINE,
-  GANTT_TICK_COUNT,
-  ganttRowDone,
-} from '@/lib/modules/view/gantt-shared'
+import { GANTT_BAR_INK, GANTT_TICK_COUNT, ganttRowDone } from '@/lib/modules/view/gantt-shared'
 import { POND_BLOCK_FILTERED_EMPTY_LINE } from '@/components/organisms/PondBlock'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'

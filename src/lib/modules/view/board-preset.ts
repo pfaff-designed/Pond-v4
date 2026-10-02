@@ -16,7 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { getPage, defineSchema } from '@/lib/pages/client'
-import { readSchema, type PropertyDef } from '@/lib/properties/schema'
+import { firstGroupingDef, readSchema, type PropertyDef } from '@/lib/properties/schema'
 
 /** The default status column set a fresh board seeds. */
 export const DEFAULT_STATUS_OPTIONS = ['To do', 'Doing', 'Done'] as const
@@ -43,7 +43,7 @@ export async function ensureBoardGroupBy(
 ): Promise<string> {
   const page = await getPage(supabase, pageId)
   const schema = readSchema(page?.props) ?? []
-  const existing = schema.find((d) => d.type === 'status' || d.type === 'select')
+  const existing = firstGroupingDef(schema)
   if (existing) return existing.id
 
   const statusProp = makeStatusProperty(newId)

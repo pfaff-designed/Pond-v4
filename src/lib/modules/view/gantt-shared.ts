@@ -1,5 +1,5 @@
 import { addDays, displayValue, type CollectionRow } from './apply'
-import type { PropertySchema } from '@/lib/properties/schema'
+import { firstGroupingDef, type PropertySchema } from '@/lib/properties/schema'
 
 /**
  * The gantt view mode's pure half (#260, child 228d of #228) — the board's
@@ -73,12 +73,9 @@ export function formatTick(iso: string): string {
  * `/board` groups by (`ensureBoardGroupBy`). No such property → nothing is done.
  */
 export function ganttRowDone(schema: PropertySchema, row: CollectionRow): boolean {
-  const def = schema.find((d) => d.type === 'status' || d.type === 'select')
+  const def = firstGroupingDef(schema)
   return def !== undefined && displayValue(def, row.values[def.id]).toLowerCase() === 'done'
 }
-
-/** The voidBox copy for a gantt with nothing dated — the template's `e` for `gantt`, verbatim. */
-export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
 
 // ── Class recipes — literal strings, never through `cn` (#252) ──────────────────
 

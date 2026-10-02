@@ -51,7 +51,6 @@ import {
   quarterTicks,
   GANTT_BAR_INK,
   GANTT_BAR_SHELL,
-  GANTT_EMPTY_LINE,
   GANTT_HEAD,
   GANTT_LABEL,
   GANTT_LABEL_INK,
@@ -62,6 +61,7 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
+import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
   coerceValue,
   optionForValue,
