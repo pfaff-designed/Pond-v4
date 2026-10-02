@@ -20,7 +20,8 @@
     "test-storybook": "vitest --project=storybook run",
     "prepare": "husky",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "m0": "bash scripts/m0-status.sh"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
