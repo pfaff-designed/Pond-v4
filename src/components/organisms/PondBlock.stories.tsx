@@ -8,10 +8,13 @@ import {
   POND_BLOCK_HOVER_ROW,
   POND_BLOCK_SKELETON,
   POND_BLOCK_ROW_GAP,
+  POND_BLOCK_TOMB_WIDTH,
+  POND_BLOCK_TOMB_NOTE,
   BLOCK_LOADING_NOTE,
   blockEmptyCopy,
   blockErrorLine,
   blockRowState,
+  blockTombLine,
   type PondBlockKind,
   type PondBlockState,
 } from './PondBlock'
@@ -39,6 +42,12 @@ import { TableView } from '@/lib/modules/table/view'
  *            ink .035 — emptyText 13.5 / ink .68 sans — EL[kind] copy, lowercase —
  *            a secondary button at 32px, wired · rows / gallery / big suppressed ·
  *            the head keeps its normal note
+ *   deleted  W 460 for EVERY kind · background transparent · boxShadow is ONE layer,
+ *            `inset 0 0 0 1.4px ink .2` (solid, not dashed; no card shadow) · the
+ *            head keeps its heading, note → `database deleted` · tomb column gap 12 ·
+ *            tombText mono 11 / 1.55 / ink .8 (META tier) · the board's sentence
+ *            naming the kind's heading · restore (secondary) + remove block (ghost)
+ *            at gap 8 / 32px, wired · rows / gallery / big / skeleton / notice suppressed
  */
 
 /** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
@@ -204,9 +213,13 @@ function Body({ kind, state }: { kind: PondBlockKind; state: PondBlockState }) {
 function AllKinds({
   state = 'rest',
   onEmptyAction,
+  onRestore,
+  onRemoveBlock,
 }: {
   state?: PondBlockState
   onEmptyAction?: (kind: PondBlockKind) => void
+  onRestore?: (kind: PondBlockKind) => void
+  onRemoveBlock?: (kind: PondBlockKind) => void
 }) {
   return (
     <div className="flex min-w-[640px] flex-col items-start gap-mn-4">
@@ -218,6 +231,8 @@ function AllKinds({
           headNote={HEAD[kind][1]}
           state={state}
           onEmptyAction={onEmptyAction ? () => onEmptyAction(kind) : undefined}
+          onRestore={onRestore ? () => onRestore(kind) : undefined}
+          onRemoveBlock={onRemoveBlock ? () => onRemoveBlock(kind) : undefined}
         >
           <Body kind={kind} state={state} />
         </PondBlock>
@@ -230,12 +245,14 @@ const LIGHT = {
   card: 'rgb(250, 249, 239)',
   ink: 'rgb(27, 29, 20)',
   ink68: 'rgba(27, 29, 20, 0.68)',
+  ink80: 'rgba(27, 29, 20, 0.8)',
   shadow: ['rgba(40, 34, 24, 0.04) 0px 1px 2px', 'rgba(40, 34, 24, 0.06) 0px 8px 24px'],
 }
 const DARK = {
   card: 'rgb(48, 49, 42)',
   ink: 'rgb(250, 249, 239)',
   ink68: 'rgba(250, 249, 239, 0.68)',
+  ink80: 'rgba(250, 249, 239, 0.8)',
   shadow: ['rgba(0, 0, 0, 0.3) 0px 1px 2px', 'rgba(0, 0, 0, 0.34) 0px 8px 24px'],
 }
 type Theme = typeof LIGHT
@@ -662,6 +679,126 @@ export const EmptyLineOnly: Story = {
       await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
     }
   },
+}
+
+// ── deleted: the tombstone — not a card (#240) ──────────────────────────────────
+
+const onRestore = fn()
+const onRemoveBlock = fn()
+
+async function assertDeleted(canvasElement: HTMLElement, theme: Theme) {
+  onRestore.mockClear()
+  onRemoveBlock.mockClear()
+  // The width constant and its literal class agree, pinned once.
+  await expect(POND_BLOCK_TOMB_WIDTH).toBe(460)
+  await expect(POND_BLOCK_TOMB_NOTE).toBe('database deleted')
+  for (const kind of POND_BLOCK_KINDS) {
+    const c = card(canvasElement, kind)
+    await expect(c.dataset.blockState).toBe('deleted')
+    const cs = getComputedStyle(c)
+
+    // W = 460 for every kind — the one state that overrides the kind's width.
+    await expect(cs.width).toBe(`${POND_BLOCK_TOMB_WIDTH}px`)
+    // The frame's own geometry survives.
+    await expect(cs.paddingTop).toBe('16px')
+    await expect(cs.paddingLeft).toBe('18px')
+    await expect(cs.borderTopLeftRadius).toBe('20px')
+    await expect(cs.rowGap).toBe('12px')
+
+    // Not a card: transparent ground, and the box-shadow is exactly ONE layer — a
+    // solid 1.4px INSET hairline at ink .2. No card shadow underneath, no border.
+    await expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    const layers = shadowLayers(cs.boxShadow)
+    await expect(layers).toHaveLength(1)
+    const ring = layers[0].match(/^(.+?) 0px 0px 0px 1\.4px inset$/)
+    await expect(ring).not.toBeNull()
+    await expect(alphaOf(ring![1])).toBeCloseTo(0.2, 2)
+    for (const layer of theme.shadow) await expect(cs.boxShadow).not.toContain(layer)
+    await expect(cs.borderTopWidth).toBe('0px')
+    await expect(cs.borderTopStyle).not.toBe('dashed')
+    await expect(cs.opacity).toBe('1')
+    // No lift: the tombstone is flat, like every other state (the board moves nothing).
+    await expect(cs.transform).toBe('none')
+    await expect(c.hasAttribute('inert')).toBe(false)
+    await expect(c.getAttribute('aria-busy')).toBeNull()
+
+    // The head keeps the kind's heading; only the note is replaced.
+    const head = c.firstElementChild as HTMLElement
+    const [eyebrow, note] = Array.from(head.children) as HTMLElement[]
+    await expect(eyebrow.textContent).toBe(HEAD[kind][0])
+    await expect(note.textContent).toBe(POND_BLOCK_TOMB_NOTE)
+    const ns = getComputedStyle(note)
+    await expect(ns.fontFamily).toContain('PP Neue Montreal Mono')
+    await expect(ns.fontSize).toBe('10.5px')
+    await expect(ns.color).toBe(theme.ink68)
+
+    // Everything else is suppressed: rows, gallery, big number, skeleton, notice, empty.
+    await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
+    await expect(c.querySelector('[data-part="skeleton"]')).toBeNull()
+    await expect(c.querySelector('[data-part="empty"]')).toBeNull()
+    await expect(c.children).toHaveLength(2)
+
+    // tomb: column, gap 12.
+    const tomb = c.querySelector<HTMLElement>('[data-part="tomb"]')!
+    const ts = getComputedStyle(tomb)
+    await expect(ts.display).toBe('flex')
+    await expect(ts.flexDirection).toBe('column')
+    await expect(ts.rowGap).toBe('12px')
+
+    // tombText: mono 11 / 1.55 / ink .8 — the META tier, a step darker than the note.
+    const line = tomb.querySelector<HTMLElement>('[data-part="tomb-line"]')!
+    await expect(line.textContent).toBe(blockTombLine(HEAD[kind][0]))
+    await expect(line.textContent).toBe(
+      `This view showed ${HEAD[kind][0]}, which was deleted on 22 sep. It can be restored for 30 days.`
+    )
+    const ls = getComputedStyle(line)
+    await expect(ls.fontFamily).toContain('PP Neue Montreal Mono')
+    await expect(ls.fontSize).toBe('11px')
+    await expect(parseFloat(ls.lineHeight)).toBeCloseTo(11 * 1.55, 1)
+    await expect(ls.color).toBe(theme.ink80)
+    await expect(ls.textTransform).toBe('none')
+
+    // tombActions: flex, gap 8; restore (secondary) then remove block (ghost), 32px.
+    const actions = tomb.querySelector<HTMLElement>('[data-part="tomb-actions"]')!
+    const as = getComputedStyle(actions)
+    await expect(as.display).toBe('flex')
+    await expect(as.columnGap).toBe('8px')
+    const [restore, remove] = Array.from(actions.querySelectorAll('button'))
+    await expect(restore.textContent).toBe('restore')
+    await expect(remove.textContent).toBe('remove block')
+    for (const b of [restore, remove]) {
+      await expect(b.hasAttribute('disabled')).toBe(false)
+      const bs = getComputedStyle(b)
+      await expect(bs.height).toBe('32px')
+      await expect(bs.fontWeight).toBe('500')
+      await expect(bs.fontFamily).toContain('PP Neue Montreal')
+      await expect(parseFloat(bs.borderTopLeftRadius)).toBeGreaterThanOrEqual(16) // pill
+    }
+    // secondary carries a ground; ghost carries only the inset hairline.
+    await expect(alphaOf(getComputedStyle(restore).backgroundColor)).toBeGreaterThan(0)
+    await expect(alphaOf(getComputedStyle(remove).backgroundColor)).toBe(0)
+    await expect(getComputedStyle(remove).boxShadow).toContain('inset')
+    // (The buttons' 14px `text-sm` vs the board's 12 is #221's — not asserted here.)
+
+    await userEvent.click(restore)
+    await expect(onRestore).toHaveBeenLastCalledWith(kind)
+    await userEvent.click(remove)
+    await expect(onRemoveBlock).toHaveBeenLastCalledWith(kind)
+  }
+  await expect(onRestore).toHaveBeenCalledTimes(POND_BLOCK_KINDS.length)
+  await expect(onRemoveBlock).toHaveBeenCalledTimes(POND_BLOCK_KINDS.length)
+}
+
+/** deleted — 460 for every kind, transparent, one solid inset hairline; both ways out wired. */
+export const Deleted: Story = {
+  render: () => <AllKinds state="deleted" onRestore={onRestore} onRemoveBlock={onRemoveBlock} />,
+  play: async ({ canvasElement }) => assertDeleted(canvasElement, LIGHT),
+}
+
+export const DeletedInk: Story = {
+  render: () => <AllKinds state="deleted" onRestore={onRestore} onRemoveBlock={onRemoveBlock} />,
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertDeleted(canvasElement, DARK),
 }
 
 /**

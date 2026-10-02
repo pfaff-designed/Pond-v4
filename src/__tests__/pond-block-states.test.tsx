@@ -18,7 +18,7 @@
  *
  * The class recipe is asserted here (jsdom has no layout); computed values live in
  * `PondBlock.stories.tsx`. `empty` landed in #239 (`pond-block-empty.test.tsx`);
- * `deleted` is #240 and falls through to rest here.
+ * `deleted` (the tombstone) landed in #240 (`pond-block-deleted.test.tsx`).
  */
 
 import React, { type ReactNode } from 'react'
@@ -78,7 +78,7 @@ describe('PondBlockState — the board’s eight, one source of truth', () => {
 })
 
 describe('rest / hover — the card itself does not change', () => {
-  it.each(['rest', 'hover', 'empty', 'deleted'] as const)(
+  it.each(['rest', 'hover', 'empty'] as const)(
     '%s keeps the card shadow with no ring, lift or opacity',
     (state) => {
       const card = renderCard('list', state)
@@ -93,7 +93,7 @@ describe('rest / hover — the card itself does not change', () => {
         expect(screen.queryByTestId('body')).toBeNull()
         expect(card.querySelector('[data-part="empty"]')).not.toBeNull()
       } else {
-        // The body renders — deleted (#240) falls through to rest here.
+        // The body renders — rest and hover draw the module view untouched.
         expect(screen.getByTestId('body')).toBeInTheDocument()
       }
     }

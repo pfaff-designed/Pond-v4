@@ -31,9 +31,8 @@ export type PondBlockKind = (typeof POND_BLOCK_KINDS)[number]
 
 /**
  * The board's `state` enum, verbatim and in its order (#238, PondBlock 2/4). The
- * frame implements rest · hover · selected · empty (#239) · loading · error ·
- * disabled; `deleted` (the tombstone) is #240 and falls through to rest until its
- * slice lands.
+ * frame implements all eight: rest · hover · selected · empty (#239) · loading ·
+ * error · deleted (#240, the tombstone) · disabled.
  */
 export const POND_BLOCK_STATES = [
   'rest',
@@ -147,6 +146,38 @@ export function blockIsEmpty(block: TodoBlock | TableBlock): boolean {
     case 'table':
       return (block.rows ?? []).length === 0
   }
+}
+
+/**
+ * The tombstone (#240, PondBlock 4/4): `W = tombed ? 460 : W[kind]`. The ONE state
+ * that overrides the kind's width, and it is a single number, not a per-kind map —
+ * a deleted database leaves the same stone wherever a view of it stood, so a gallery
+ * tombstone narrows 580 -> 460 like every other kind. (Do NOT cite `Pond 07 Edges`
+ * 7a's "keeps its place and size class" for this: that caption argues the opposite,
+ * and `PondBlock.dc.html`'s literal is what rules here.) The head keeps the kind's
+ * heading and swaps only its note (`H = [H0[0], 'database deleted']`).
+ */
+export const POND_BLOCK_TOMB_WIDTH = 460
+export const POND_BLOCK_TOMB_NOTE = 'database deleted'
+
+/**
+ * The board's fixture date and window for `tombLine`. On-screen numbers are
+ * fixtures (7h); the real `deleted_at` and the trash window are #199's — a host
+ * passes them through the frame's props and these are only the defaults.
+ */
+export const POND_BLOCK_TOMB_FIXTURE = { deletedOn: '22 sep', restoreWindow: '30 days' } as const
+
+/**
+ * The board's `tombLine`, verbatim — a real sentence (capital, full stop), unlike
+ * the lowercase empty copy. `name` is `H0[0]`: what the view SHOWED, which for a
+ * view block is the database (7a: "kitchen costs was deleted"), not the view's mode.
+ */
+export function blockTombLine(
+  name: string,
+  deletedOn: string = POND_BLOCK_TOMB_FIXTURE.deletedOn,
+  restoreWindow: string = POND_BLOCK_TOMB_FIXTURE.restoreWindow
+): string {
+  return `This view showed ${name}, which was deleted on ${deletedOn}. It can be restored for ${restoreWindow}.`
 }
 
 /** The board's `W` map, verbatim. Mobile's 360 is a later slice. */
