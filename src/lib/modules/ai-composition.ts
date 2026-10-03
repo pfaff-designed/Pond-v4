@@ -110,6 +110,20 @@ export const moduleDataSchema = z.discriminatedUnion('type', [
 export type ModuleData = z.infer<typeof moduleDataSchema>
 
 /**
+ * The registered modules that are deliberately NOT in `moduleDataSchema`, each with
+ * the reason (#261, folding in ADR 0007's "228f" parity pass as a guard). The
+ * registry's keys must equal the emit union's types PLUS these — a ninth module is a
+ * test failure (`template-emit-parity.test.ts`) unless it is either emitted or
+ * declared here with a reason. One documented map, not a hand-kept skip list in a
+ * test: the exclusion lives beside the union it excludes from, and `moduleCatalog`
+ * below reads the same map, so the prompt and the tool schema cannot disagree.
+ */
+export const NON_EMITTABLE_MODULES = {
+  page: 'the container module — composition stays a flat ordered content list until `section` lands (t18, branch 3)',
+} as const satisfies Partial<Record<keyof typeof moduleDescriptors, string>>
+export type NonEmittableType = keyof typeof NON_EMITTABLE_MODULES
+
+/**
  * One composition operation. `op` is composition-level (which blocks exist) — NOT a
  * within-module ops grammar (t12 kept that closed). The AI references existing
  * blocks by `blockId` (from the injected context) and never invents one; `after`
@@ -243,6 +257,6 @@ export type ProposeChanges = z.infer<typeof proposeChangesSchema>
  * `page` container (see above): the AI composes flat content until t18.
  */
 export const moduleCatalog = Object.values(moduleDescriptors)
-  .filter((d) => d.type !== 'page')
+  .filter((d) => !(d.type in NON_EMITTABLE_MODULES))
   .map((d) => `- ${d.type}: ${d.description}`)
   .join('\n')
