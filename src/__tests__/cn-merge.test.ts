@@ -68,12 +68,29 @@ describe('cn() — a font size must not clobber leading (the half that prevents 
   it('two leadings still collapse to the last', () => {
     expect(cn('leading-tight', 'leading-snug')).toBe('leading-snug')
   })
+
+  // A STOCK named size does carry its own line-height, and ~166 call sites in this
+  // repo still use one (the named-size ban reaches only shell-reskin's 12-file
+  // whitelist). Keeping both is correct: Tailwind v4 resolves the size's paired
+  // leading through `@property --tw-leading`, so the explicit utility wins either way.
+  it.each([
+    ['leading-tight', 'text-lg'],
+    ['leading-snug', 'text-xl'],
+  ])('keeps %s with the stock size %s, in BOTH orders', (leading, size) => {
+    expect(has(cn(leading, size), leading, size)).toBe(true)
+    expect(has(cn(size, leading), leading, size)).toBe(true)
+  })
 })
 
 describe('the scale tailwind-merge is taught matches the token layer', () => {
   it('equals every --text-mn-* token in globals.css', () => {
     const css = readFileSync(join(process.cwd(), 'src/app/globals.css'), 'utf8')
-    const tokens = [...css.matchAll(/--text-(mn-[\w-]+)\s*:/g)].map((m) => m[1])
+    const all = [...css.matchAll(/--text-(mn-[\w-]+?)\s*:/g)].map((m) => m[1])
+    const paired = all.filter((t) => t.includes('--'))
+    // A `--text-mn-*--line-height` token would make a size carry its own leading,
+    // which is exactly the premise departure 2 rests on. Fail loudly, and say why.
+    expect(paired).toEqual([])
+    const tokens = all.filter((t) => !t.includes('--'))
 
     expect(tokens.length).toBeGreaterThan(0)
     // Sorted compare: order in the config is irrelevant, membership is not. A new

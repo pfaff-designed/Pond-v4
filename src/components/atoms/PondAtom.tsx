@@ -226,7 +226,12 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
       return pageEyebrowClass
     case 'prose':
       return cn(
-        'font-serif font-extralight leading-relaxed',
+        // leading-[1.6] is the board's own value (`kind=prose` lineHeight 1.6), NOT
+        // the house `--leading-relaxed: 1.7`. Before issue 252 this leading was
+        // dropped by cn() and prose inherited 1.5 — which is why the wrong token sat
+        // here unnoticed. (Issue refs are spelled out: this file's token-hygiene
+        // guard reads a `#` plus three digits as a hex colour.)
+        'font-serif font-extralight leading-[1.6]',
         mobile ? 'text-[17px]' : 'text-[17.5px]'
       )
     case 'highlight':

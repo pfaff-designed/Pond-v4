@@ -30,20 +30,29 @@ export const MN_TEXT_SCALE = [
  *    `notice` title (so `PondBlock`'s error state) at the wrong ink tier, and it is
  *    why a `record-card` title lost its 13px in `empty`.
  *
- * 2. **A font size does NOT clobber `leading-*` here.** Stock Tailwind's `text-lg`
- *    carries its own line-height, so tailwind-merge treats the two as conflicting.
- *    This repo's sizes never do — every `--text-mn-*` compiles to `font-size` alone
- *    (and bracket sizes likewise), with leading carried by separate `--leading-*`
- *    tokens. Left stock, fixing (1) would have STARTED dropping `leading-tight` from
- *    `leading-tight text-mn-22`, which works today only because of the bug in (1).
- *    Trading one silent drop for another is not a fix.
+ * 2. **A font size does NOT clobber `leading-*` here.** tailwind-merge drops a
+ *    preceding `leading-*` when a size follows it, because stock Tailwind's
+ *    `text-lg` carries its own line-height. Left stock, fixing (1) would have
+ *    STARTED dropping `leading-tight` from `leading-tight text-mn-22`, which works
+ *    today only because of the bug in (1) — trading one silent drop for another is
+ *    not a fix.
  *
- * Measured and deliberately NOT configured: `bg-mn-*` and `border-mn-*` already
- * dedupe correctly (they are genuine colour groups). `rounded-mn-*`, `p-mn-*` and
- * `gap-mn-*` do the opposite — tailwind-merge does not know those custom scales, so
- * it keeps BOTH classes and the stylesheet's own order decides. That is a real
- * hazard but a different one from #252's silent drop, so it is reported rather than
- * patched in speculatively.
+ *    Safe because an explicit leading wins at any order: `--text-mn-*` and bracket
+ *    sizes compile to `font-size` alone, and even for a size that DOES carry one,
+ *    Tailwind v4 resolves it through `@property --tw-leading`, so a `leading-*`
+ *    utility beats the size's paired value. NOT because named sizes are banned —
+ *    that ban covers only `shell-reskin`'s 12-file whitelist, and stock sizes are
+ *    live in ~166 places. `cn-merge.test.ts` pins the `text-lg` case for that
+ *    reason.
+ *
+ * Measured and deliberately NOT configured: `bg-mn-*`, `border-mn-*`, `ring-mn-*`
+ * and `shadow-mn-*` already behave correctly — same-family pairs dedupe, and
+ * `ring-mn-area-b` + `ring-2` rightly keeps both (a colour and a width). `rounded-mn-*`, `p-mn-*`
+ * and `gap-mn-*` do the opposite — tailwind-merge does not know those custom scales,
+ * so it keeps BOTH classes and the stylesheet's own order decides. A real hazard,
+ * but a different one from this issue's silent drop, so it is deferred rather than
+ * patched in speculatively. **ADR 0004 ruling 13 is the decision of record, with the
+ * measurements — not this comment.**
  */
 const twMerge = extendTailwindMerge({
   extend: {

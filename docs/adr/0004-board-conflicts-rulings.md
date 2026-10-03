@@ -374,3 +374,57 @@ Same shape as rulings 7–11, one step earlier in the chain: this time the plaus
 would have condemned correct values was **the issue text itself**, not a README or a derived rule. A split
 issue inherits its parent's conventions along with its words. **When a child issue and the board disagree,
 the board is the spec and the parent holds it.**
+
+## Ruling 13, 2026-10-03 — `cn()` is configured, because tailwind-merge cannot read this design system
+
+### The conflict
+
+Not board-vs-prose this time: **code-vs-library**. `cn()` was bare `twMerge(clsx(...))`, and tailwind-merge
+has no way to know that `text-mn-16` is a FONT SIZE while `text-mn-text-secondary` is a COLOUR — both match
+its `text-*` pattern. It dropped one, silently, by argument order. `PondBlock`'s error notice has therefore
+rendered at full ink instead of the board's ink `.8` since #238, and its story passed throughout because it
+asserted the title's font and size but never its colour.
+
+### The ruling
+
+`cn()` is configured with two departures from stock tailwind-merge. Both were measured against `twMerge`
+directly, never inferred.
+
+**1. `text-mn-*` is a font size.** The filed fix.
+
+**2. A font size does not clobber `leading-*`.** NOT in the issue, and required: with (1) alone,
+`cn('leading-tight','text-mn-22')` starts returning `text-mn-22`, dropping the leading. That pair works
+TODAY only because of the bug in (1) — so shipping (1) alone trades one silent drop for another and breaks
+every `leading-* text-mn-*` pair in the repo.
+
+Safe because an explicit leading wins at any order. `--text-mn-*` and bracket sizes compile to `font-size`
+alone (`.text-mn-22{font-size:22px}`), and where a size DOES carry its own leading, Tailwind v4 resolves it
+through `@property --tw-leading`, so the `leading-*` utility beats the paired value.
+
+**It is NOT safe because "named sizes are banned."** That was the first justification written here and it is
+false: the ban is enforced only across `shell-reskin`'s twelve-file `TOUCHED` whitelist, while stock named
+sizes are live in roughly 166 places, several already paired with a leading
+(`CreatePageProposalCard.tsx:111`, `Markdown.tsx:81`). The `text-lg` case is pinned in `cn-merge.test.ts` for
+exactly that reason. **Do not restore the stock conflict on the strength of a ban that does not exist.**
+
+### The deferred half, with its measurements
+
+Measured across every `*-mn-*` family, since the fix invites "while you are in there":
+
+| family                                               | behaviour                                                                                                   | verdict            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------ |
+| `bg-mn-*`, `border-mn-*`, `ring-mn-*`, `shadow-mn-*` | same-family pairs dedupe; `ring-mn-area-b` + `ring-2` keeps both (colour vs width)                          | correct, no config |
+| `text-mn-<step>` vs `text-mn-<role>`                 | dropped one, silently                                                                                       | **fixed**          |
+| `rounded-mn-*`, `p-mn-*`, `gap-mn-*`                 | keeps BOTH — tailwind-merge does not know those scales, so the stylesheet's order decides, not the author's | **real, deferred** |
+
+The last row is the inverse hazard: not a silent drop but a silent non-override. It is a different defect
+from the one this issue names, and #252's own acceptance criteria say "config added only where a real
+collision exists", so it is recorded here rather than patched in speculatively. **It is still armed.**
+
+### The pattern
+
+Rulings 7–12 were all "a plausible general statement condemned a correct value". This one is the inverse and
+worth naming separately: **a correct value never reached the DOM at all**, because a tool silently discarded
+it. Boards, measurements and review all pass in that case — the class is right there in the source. Only
+executing the real merge chain, or asserting the computed style in a browser, catches it. When a measured
+value looks correct in the code and wrong on screen, suspect `cn()` before suspecting the board.
