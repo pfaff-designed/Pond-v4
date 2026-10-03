@@ -120,7 +120,7 @@ export function NoteBox({
         </Button>
         <Button
           size="sm"
-          variant="default"
+          variant="primary"
           className={proposalButtonClass}
           disabled={trimmed.length === 0}
           onClick={() => onSend(trimmed)}

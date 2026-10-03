@@ -207,7 +207,7 @@ describe('PondBlock state="empty" — the box, the line, the offered action', ()
     expect(button.getAttribute('aria-disabled')).toBeNull()
     // The existing secondary pill at the board's 32px (`h-8`).
     expect(button.className.split(' ')).toContain('h-8')
-    expect(button.className.split(' ')).toContain('bg-secondary')
+    expect(button.className.split(' ')).toContain('bg-mn-text/[0.07]') // the board's secondary ground (#221)
     expect(button.className.split(' ')).toContain('rounded-mn-pill')
 
     fireEvent.click(button)

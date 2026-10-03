@@ -60,6 +60,7 @@ import {
   GANTT_TRACK,
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
+import { PondControl } from '@/components/atoms/PondControl'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
@@ -1363,13 +1364,16 @@ function Cell({
         />
       )
     case 'checkbox':
+      // `PondControl kind="checkbox"` (#221) — the standalone control of
+      // `PondControl.dc.html` (14 / 4 / .68), alone in a table cell; not the
+      // check-row's `PondAtom` box, not `PondTemplate`'s row box.
       return (
-        <input
-          type="checkbox"
-          className="h-4 w-4 accent-mn-text"
+        <PondControl
+          kind="checkbox"
+          label={null}
           aria-label={label}
-          checked={value === true}
-          onChange={(e) => onChange(e.target.checked)}
+          on={value === true}
+          onCheckedChange={(next) => onChange(next)}
         />
       )
     case 'select':

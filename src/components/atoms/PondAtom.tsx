@@ -20,6 +20,7 @@
  */
 
 import { cn } from '@/lib/utils'
+import { FOCUS_RING } from '@/components/atoms/focus-ring'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 export const POND_ATOM_KINDS = [
@@ -155,9 +156,6 @@ const MARK_ONLY: readonly PondAtomKind[] = ['checkbox', 'icon', 'dot']
 const AREA_TEXT = { sage: 'text-mn-area-a', mist: 'text-mn-area-b', navy: 'text-mn-area-c' }
 const AREA_BG = { sage: 'bg-mn-area-a', mist: 'bg-mn-area-b', navy: 'bg-mn-area-c' }
 
-/** The mist focus ring (mn-area-b stays mist on every theme). */
-const FOCUS_RING = 'outline-2 outline-offset-2 outline-mn-area-b'
-
 /** Ink-on-ground pairing for filled marks (checkbox tick, avatar, play). */
 const INVERSE_INK = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 
@@ -209,8 +207,16 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
         'font-bold uppercase tracking-[-0.01em] leading-none',
         mobile ? 'text-[30px]' : 'text-[38px]',
         level === 2 && cn('leading-tight', mobile ? 'text-[20px]' : 'text-mn-22'),
-        level === 3 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-mn-18'),
-        level === 4 && cn('normal-case font-medium tracking-normal leading-snug', mobile ? 'text-[15px]' : 'text-mn-16'),
+        level === 3 &&
+          cn(
+            'normal-case font-medium tracking-normal leading-snug',
+            mobile ? 'text-[15px]' : 'text-mn-18'
+          ),
+        level === 4 &&
+          cn(
+            'normal-case font-medium tracking-normal leading-snug',
+            mobile ? 'text-[15px]' : 'text-mn-16'
+          ),
         level === 5 && 'normal-case font-medium tracking-normal leading-[1.4] text-[13.5px]',
         level === 6 && 'font-medium tracking-wider leading-[1.4] text-mn-11',
       ]
@@ -219,7 +225,10 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
     case 'eyebrow':
       return pageEyebrowClass
     case 'prose':
-      return cn('font-serif font-extralight leading-relaxed', mobile ? 'text-[17px]' : 'text-[17.5px]')
+      return cn(
+        'font-serif font-extralight leading-relaxed',
+        mobile ? 'text-[17px]' : 'text-[17.5px]'
+      )
     case 'highlight':
       return cn(
         'font-serif font-extralight px-[3px] bg-mn-signal-highlight text-mn-signal-highlight-ink',
@@ -236,15 +245,9 @@ function kindRegister(kind: PondAtomKind, level: number, mobile: boolean, hover:
         mobile ? 'text-mn-13' : 'text-[12px]'
       )
     case 'link':
-      return cn(
-        'underline decoration-mn-mark-faint underline-offset-[3px]',
-        hover && 'opacity-75'
-      )
+      return cn('underline decoration-mn-mark-faint underline-offset-[3px]', hover && 'opacity-75')
     case 'file':
-      return cn(
-        'font-mono lowercase text-mn-text-meta',
-        mobile ? 'text-[12px]' : 'text-mn-11'
-      )
+      return cn('font-mono lowercase text-mn-text-meta', mobile ? 'text-[12px]' : 'text-mn-11')
     default:
       return ''
   }
@@ -347,7 +350,8 @@ export function PondAtom({
             : null
       : null
 
-  const noteText = error && note ? (ERROR_NOTE[kind] ?? (numeric ? 'not a number' : 'too long')) : null
+  const noteText =
+    error && note ? (ERROR_NOTE[kind] ?? (numeric ? 'not a number' : 'too long')) : null
 
   const areaText = color !== 'ink' ? AREA_TEXT[color] : null
   const areaBg = color !== 'ink' ? AREA_BG[color] : null
@@ -416,6 +420,9 @@ export function PondAtom({
         </svg>
       )}
 
+      {/* PondAtom.dc.html's checkbox — the INLINE atom (12 / radius 3 / inset .68, 18 mobile) the
+          check-row composes. Not PondControl.dc.html's standalone control (14 / 4 / .68) and not
+          PondTemplate.dc.html's row box (13 / 3 / .4): three boards, three checkboxes, unreconciled (issue 221). */}
       {kind === 'checkbox' && (
         <span
           data-part="box"
@@ -469,9 +476,7 @@ export function PondAtom({
               cn(
                 'font-mono lowercase rounded-mn-pill text-mn-text-meta',
                 mobile ? 'px-[11px] py-[5px] text-[12px]' : 'px-[9px] py-[3px] text-[10.5px]',
-                empty || error
-                  ? 'ring-[1px] ring-inset ring-mn-text/20'
-                  : 'bg-mn-hover-fill'
+                empty || error ? 'ring-[1px] ring-inset ring-mn-text/20' : 'bg-mn-hover-fill'
               ),
             kindRegister(kind, level, mobile, hover),
             (empty || loading) &&

@@ -29,6 +29,7 @@
  * is the frame's (#239), and DocumentPanel sets it off the schema (`propertiesFrame`).
  */
 
+import { PondControl } from '@/components/atoms/PondControl'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RelationValueField } from '@/components/organisms/RelationValueField'
 import { RollupValueField } from '@/components/organisms/RollupValueField'
@@ -133,14 +134,18 @@ function PropertyField({
       )
 
     case 'checkbox':
+      // `PondControl kind="checkbox"` (#221) — the STANDALONE control of
+      // `PondControl.dc.html` (14 / radius 4 / inset .68): a property value sitting
+      // alone in the field-row's value slot, not a list row (that is the check-row's
+      // `PondAtom` box) and not a template row (`PondTemplate`'s 13 / 3 / .4).
       return (
-        <input
-          type="checkbox"
-          className="h-4 w-4 accent-mn-text"
+        <PondControl
+          kind="checkbox"
+          label={null}
           aria-label={label}
           disabled={!editable}
-          checked={value === true}
-          onChange={(e) => onChange(def.id, e.target.checked)}
+          on={value === true}
+          onCheckedChange={(next) => onChange(def.id, next)}
         />
       )
 

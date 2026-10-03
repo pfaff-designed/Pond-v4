@@ -1,56 +1,93 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { cva, type VariantProps } from 'class-variance-authority'
 
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
 
-// Make Noise controls (PondControl.dc.html): text buttons are pills (radius 999),
-// sans / weight 500 / tracked-normal. Primary is ink-on-paper (foundation maps
-// --primary to ink, --primary-foreground to paper). Ghost carries a hairline
-// inset ring instead of a hard border — paper-not-frames. Icon buttons are round.
+// The shadcn/base-ui button primitive, reconciled with `PondControl.dc.html`
+// (#221). It is the PRIMITIVE layer: press semantics, `aria-haspopup` /
+// `aria-expanded` wiring the menus style against, focus management. The board's
+// appearance rides on top; `PondControl kind="button"` is the Pond-level wrapper.
 //
-// There is NO `destructive` variant. `PondControl.dc.html` draws none, and once
-// red went back to diff removals only (#220) the variant resolved to ink — a
-// "delete" button indistinguishable from a quiet one, which is worse than having
-// no variant at all. A destructive confirm is the PRIMARY action of its dialog
-// and takes `default`; the warning lives in the dialog's words (#221).
+// Every value is a literal from `wayfinder/board-values.generated.json`
+// (`.components.PondControl`), the board's own `renderVals()` output:
+//
+//   btn        inline-flex · gap 6 · h32 / px14 / 12px (mobile h44 / px20 / 14) ·
+//              radius 999 · sans 500 · nowrap
+//   primary    ink ground, paper label · hover opacity .9 (NOT a colour change)
+//   secondary  ink .07 ground, ink .8 label · hover/selected .12
+//   ghost      transparent · inset 1px ink .2 · hover/selected .07
+//   quiet      transparent · inset 1px ink .4 · hover .07
+//   focus      the mist ring (`focus-ring.ts`) — not shadcn's 3px `--ring` ink
+//   disabled   opacity .4 + inert
+//
+// The washes are written as literals (`bg-mn-text/[0.07]`), NOT routed through
+// `--secondary` / `--mn-hair`: those are shared role tokens (`--mn-wash` is
+// "cards, chips, code"; `--mn-hair` is the repo's hairline) and both were measured
+// divergent — `--secondary` is .06 light and PAPER .1 dark; `--mn-hair` is .055,
+// ~4× fainter than the board's ring. A board value is final for its component, not
+// for a global role.
+//
+// Variants: the board's four and nothing else. `default`, `outline`, `link` and
+// `destructive` are gone — no board draws them, and `destructive` resolved to ink
+// once red went back to diff removals (#220): a destructive confirm is the PRIMARY
+// action of its dialog and the warning lives in the dialog's words.
+//
+// Sizes: `desktop` / `mobile` are the board's own axis. `sm` and `xs` are NOT this
+// board's — they are the composer's diff-card actions (`PondComposer.dc.html`
+// `diffActions`, fontSize 10.5 / gap 8 — #230) and the dialog/modal surfaces
+// `Pond 02` does not draw. They stay until those boards rule on them; forcing them
+// to 32px would be ADR 0003's third-amendment mistake. `lg` and the four `icon-*`
+// sizes had zero call sites and no board — deleted.
+
+/** The board's per-variant hover / selected grounds (`vb`), as the bare classes
+ *  `PondControl` forces for its `state` matrix. The cva below wears the same
+ *  values under `hover:` / `aria-expanded:` — two spellings because Tailwind's
+ *  scanner needs each full literal, one fact. */
+export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
+
+export const buttonStateGround: Record<ButtonVariant, { hover: string; selected: string }> = {
+  primary: { hover: 'opacity-90', selected: '' },
+  secondary: { hover: 'bg-mn-text/[0.12]', selected: 'bg-mn-text/[0.12]' },
+  ghost: { hover: 'bg-mn-text/[0.07]', selected: 'bg-mn-text/[0.07]' },
+  quiet: { hover: 'bg-mn-text/[0.07]', selected: '' },
+}
+
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-mn-pill border border-transparent bg-clip-padding font-sans text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  `group/button box-border inline-flex shrink-0 items-center justify-center gap-1.5 rounded-mn-pill font-sans font-medium whitespace-nowrap transition-all select-none ${FOCUS_VISIBLE_RING} active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`,
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        outline:
-          'border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
+        primary:
+          'bg-mn-text text-raw-paper hover:opacity-90 aria-expanded:opacity-90 dark:text-raw-ink',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-mn-text/[0.07] text-mn-text/80 hover:bg-mn-text/[0.12] aria-expanded:bg-mn-text/[0.12]',
         ghost:
-          'shadow-[inset_0_0_0_1px_var(--mn-hair)] hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50',
-        link: 'rounded-none text-primary underline-offset-4 hover:underline',
+          'bg-transparent text-mn-text ring-1 ring-mn-text/20 ring-inset hover:bg-mn-text/[0.07] aria-expanded:bg-mn-text/[0.07]',
+        quiet:
+          'bg-transparent text-mn-text ring-1 ring-mn-text/40 ring-inset hover:bg-mn-text/[0.07] aria-expanded:bg-mn-text/[0.07]',
       },
       size: {
-        default:
-          'h-8 gap-1.5 px-3.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
-        xs: "h-6 gap-1 px-2.5 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
+        desktop:
+          'h-8 px-3.5 text-[12px] has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
+        mobile:
+          'h-11 px-5 text-[14px] has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4',
+        // Not PondControl's — the composer's diff actions (#230) and the dialogs.
+        xs: "h-6 gap-1 px-2.5 text-[12px] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-7 gap-1 px-3 text-[0.8rem] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: 'h-9 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3',
-        icon: 'size-8 rounded-full',
-        'icon-xs':
-          "size-6 rounded-full [&_svg:not([class*='size-'])]:size-3",
-        'icon-sm': 'size-7 rounded-full',
-        'icon-lg': 'size-9 rounded-full',
       },
     },
     defaultVariants: {
-      variant: 'default',
-      size: 'default',
+      variant: 'primary',
+      size: 'desktop',
     },
   }
 )
 
 function Button({
   className,
-  variant = 'default',
-  size = 'default',
+  variant = 'primary',
+  size = 'desktop',
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (

@@ -88,7 +88,7 @@ export function ProposalActions({
     >
       <Button
         size="sm"
-        variant="default"
+        variant="primary"
         className={proposalButtonClass}
         disabled={disabled}
         onClick={onAccept}
