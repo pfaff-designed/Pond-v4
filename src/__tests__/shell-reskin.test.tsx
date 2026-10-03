@@ -215,12 +215,14 @@ describe('touched files — type scale and supersession guards (AC5, AC6)', () =
     expect(read(file)).not.toMatch(/press-/)
   })
 
+  // Bracket type is correct and deliberately NOT asserted against: ADR 0003's
+  // 2026-10-01 amendment superseded the "snap to the 8-step scale" ruling, and
+  // ADR 0004 ruling 12 records why this guard was narrowed. The named-size ban
+  // is the half that survives — `text-sm`/`text-lg` appear in no board.
   it.each(TOUCHED.filter((f) => f.endsWith('.tsx')))(
-    '%s sets no off-scale type size (11/13/16/18/22/28/36/46 only)',
+    '%s uses no Tailwind named type size (board values go in as bracket notation)',
     (file) => {
-      const src = read(file)
-      expect(src).not.toMatch(/\btext-(xs|sm|base|lg|xl|\dxl)\b/)
-      expect(src).not.toMatch(/text-\[[0-9.]+(px|rem|em)\]/)
+      expect(read(file)).not.toMatch(/\btext-(xs|sm|base|lg|xl|\dxl)\b/)
     }
   )
 
@@ -339,7 +341,7 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
   it('empty shows the PondRail hint', () => {
     renderRail({ tree: [], isEmpty: true })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'No pages yet. ＋ new page, or ask Pond to start one.'
+      'no pages yet. ＋ new page, or ask pond to start one.'
     )
   })
 })
