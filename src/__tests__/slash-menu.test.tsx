@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
-import { slashRows, mintPreset, BOARD_ORDER, WITHHELD } from '@/lib/modules/palette'
+import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
@@ -154,6 +154,25 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(mintPreset('nope')).toBeNull()
   })
 
+  // #281: `heading` is a face of `text`, not a ninth block kind — the one of the
+  // board's five factory-less rows that needed no new type. It opens the block on
+  // the second markdown level, which `Markdown.tsx` already typesets.
+  it('`heading` mints a text block already opened on a markdown heading', () => {
+    expect(mintPreset('heading')).toEqual({
+      id: expect.any(String),
+      type: 'text',
+      content: HEADING_PREFIX,
+    })
+    expect(HEADING_PREFIX).toBe('## ')
+    // Not a block kind: nothing new is registered, and the row carries the board's
+    // own key hint.
+    expect(slashRows.find((r) => r.id === 'heading')).toMatchObject({
+      type: 'text',
+      group: 'text',
+      key: '#',
+    })
+  })
+
   it('the board draws no `board` row, so the menu offers none', () => {
     expect(slashRows.some((r) => r.id === 'board' || r.label === 'board')).toBe(false)
   })
@@ -161,6 +180,7 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
   it('rows follow the board’s order within the board’s groups', () => {
     expect(slashRows.map((r) => `${r.group}/${r.label}`)).toEqual([
       'text/text',
+      'text/heading',
       'text/highlight',
       'text/embed / file',
       'blocks/list',
@@ -331,9 +351,10 @@ describe('keys arrive from the field the person is typing in', () => {
     fireEvent.keyDown(anchor, { key: 'ArrowDown' })
     fireEvent.keyDown(anchor, { key: 'ArrowDown' })
     fireEvent.keyDown(anchor, { key: 'ArrowUp' })
-    expect(labelOf(selected())).toBe('highlight')
+    // Index 1 — the board's second row, which is `heading` since #281.
+    expect(labelOf(selected())).toBe('heading')
     fireEvent.keyDown(anchor, { key: 'Enter' })
-    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'highlight' }))
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'heading' }))
   })
 
   it('↑ at the first row and ↓ at the last both stay put', () => {

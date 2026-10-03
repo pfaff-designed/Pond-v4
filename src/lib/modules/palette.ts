@@ -17,8 +17,9 @@
  * `highlight` (#249) and `entries` (#250) appear for free, and
  * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * Board rows with no factory yet — `heading`, `page link`, `pond — update`,
- * `page`, `nested page` — are NOT invented here (ADR 0005). They are #281.
+ * Board rows with no factory yet — `page link`, `pond — update`, `page`,
+ * `nested page` — are NOT invented here (ADR 0005). They are #281. `heading` left
+ * that list: it needed no new block type, only the `text` block's own markdown.
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
@@ -71,8 +72,34 @@ const VIEW_ROWS = [
   },
 ] satisfies readonly (SlashRow & { id: ViewMode })[]
 
+/**
+ * What `/heading` types for you — the second markdown level, with its trailing
+ * space, so the caret lands on the words. One owner, read by `mintPreset` and by
+ * the guard that holds the row to it.
+ */
+export const HEADING_PREFIX = '## '
+
 /** A type's other faces — the same block at another marker or mode. */
 const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
+  // `heading` is the `text` block opened on a markdown heading, not a block kind:
+  // `PondBlock` and ADR 0007 name none, the descriptor's own words are "prose on a
+  // page… notes, explanations, headings", and `Markdown.tsx` already typesets
+  // `h1`–`h3`. `Pond 03` 3a's `section` — "a heading and the blocks under it,
+  // stored as one group" — is a CONTAINER, which is a different thing and not this
+  // row. The level is `##` because a page's own title is its `h1` (the title field
+  // in `DocumentPanel`), so the first heading inside a page is the second level;
+  // the board's `#` is the key you press, not the level you get.
+  text: [
+    {
+      id: 'heading',
+      type: 'text',
+      group: 'text',
+      label: 'heading',
+      description: 'a line that names what follows',
+      key: '#',
+      icon: ICON.heading,
+    },
+  ],
   todo: [
     {
       id: 'list',
@@ -106,6 +133,7 @@ export const WITHHELD = {
  */
 export const BOARD_ORDER: readonly string[] = [
   'text',
+  'heading',
   'highlight',
   'embed-file',
   'list',
@@ -224,6 +252,7 @@ export function mintPreset(rowId: string): Block | null {
   if (!row?.type) return null
   const block = emptyBlockForType(row.type)
   if (!block) return null
+  if (block.type === 'text' && rowId === 'heading') return { ...block, content: HEADING_PREFIX }
   if (block.type === 'todo' && rowId === 'list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
     const mode = viewModeSchema.safeParse(rowId)
