@@ -211,19 +211,22 @@ describe('CollectionBoard — card click opens the preview (AC 1 seam)', () => {
     expect(onOpenCard).toHaveBeenCalledWith('row-2')
   })
 
-  it('does NOT open from the delete × or the title input (editable board)', () => {
-    const onRemoveRow = jest.fn()
+  // #223 deleted the per-card × — no board draws one — so the card's only own
+  // control left is the title input. The isolation rule it guards is unchanged:
+  // a click on a card's control is that control's, never the preview's.
+  it('does NOT open from the title input (editable board)', () => {
     const { onOpenCard } = renderBoard({
       editable: true,
-      onRemoveRow,
       onRenameRow: jest.fn(),
     })
 
-    fireEvent.click(screen.getByLabelText('Delete card: Trim the rim'))
-    expect(onRemoveRow).toHaveBeenCalledWith('row-1')
-
     fireEvent.click(screen.getAllByLabelText('Card title')[0])
     expect(onOpenCard).not.toHaveBeenCalled()
+  })
+
+  it('draws no per-card delete affordance, even on an editable board', () => {
+    renderBoard({ editable: true, onRenameRow: jest.fn() })
+    expect(screen.queryByRole('button', { name: /Delete card/ })).not.toBeInTheDocument()
   })
 
   it('renders cards without the open affordance when onOpenCard is absent', () => {

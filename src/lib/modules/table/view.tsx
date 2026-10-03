@@ -57,10 +57,6 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
     onChange?.(addTableRow(data))
   }
 
-  function removeRow(rowIndex: number) {
-    onChange?.({ ...data, rows: rows.filter((_, i) => i !== rowIndex) })
-  }
-
   return (
     <div className="text-sm text-mn-text">
       {/* On a page the block's `title` is the card's eyebrow (PondBlock, #237), so
@@ -77,7 +73,6 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                 {col}
               </th>
             ))}
-            {editable && <th className="w-6 border-b border-mn-line" aria-hidden />}
           </tr>
         </thead>
         <tbody>
@@ -102,18 +97,6 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                   )}
                 </td>
               ))}
-              {editable && (
-                <td className="w-6 py-1 text-right">
-                  <button
-                    type="button"
-                    aria-label={`Remove row ${ri + 1}`}
-                    className="text-mn-text-secondary hover:text-mn-text-meta"
-                    onClick={() => removeRow(ri)}
-                  >
-                    ×
-                  </button>
-                </td>
-              )}
             </tr>
           ))}
         </tbody>
@@ -137,7 +120,6 @@ export function TableView({ data, editable, onChange }: ModuleViewProps<TableBlo
                 }
                 return <td key={ci} className="py-1.5 pr-3" aria-hidden />
               })}
-              {editable && <td className="w-6" aria-hidden />}
             </tr>
           </tfoot>
         )}

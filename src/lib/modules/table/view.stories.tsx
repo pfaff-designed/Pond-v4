@@ -69,19 +69,21 @@ export const Editable: Story = {
   },
 }
 
-/** Editable: add-row appends an empty row; remove-row deletes only its row. */
-export const AddAndRemoveRows: Story = {
+/** Editable: add-row appends an empty row, and no row carries a delete affordance.
+ *  #223 removed the per-row × — no board draws one. The table module has no row
+ *  menu of its own, so row removal is a real gap to take to the boards rather
+ *  than a × to reinstate here. */
+export const AddRows: Story = {
   args: { data: inventory },
   render: (args) => <StatefulTable data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByText('+ Add row'))
     await expect(canvas.getByLabelText('Tool, row 5')).toHaveValue('')
-    await userEvent.click(canvas.getByLabelText('Remove row 2'))
-    // Circular saw's row is gone; the rest survive.
-    await expect(canvas.queryByDisplayValue('Circular saw')).not.toBeInTheDocument()
+    // The existing rows survive, and none of them offers a delete.
     await expect(canvas.getByDisplayValue('Cordless drill')).toBeInTheDocument()
     await expect(canvas.getByDisplayValue('Chisel set')).toBeInTheDocument()
+    await expect(canvas.queryByLabelText(/Remove row/)).not.toBeInTheDocument()
   },
 }
 

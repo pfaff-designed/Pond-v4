@@ -93,7 +93,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, isLoading, isError, setValue, addRow, removeRow, renameRow, updateSchema } =
+  const { schema, rows, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
@@ -129,7 +129,6 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         linked={!!data.collectionId}
         onEdit={setValue}
         onAddRow={addRow}
-        onRemoveRow={removeRow}
         onRenameRow={renameRow}
         onConfigChange={onConfigChange}
         onUpdateSchema={editable ? updateSchema : undefined}
@@ -163,7 +162,6 @@ export interface CollectionViewProps {
   /** Manual card/row authoring (board-authoring Slice 2). Present only on the live
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
-  onRemoveRow?: (rowId: string) => void
   onRenameRow?: (rowId: string, title: string) => void
   /** Rewrite the view block's own config — the mode switcher + group-by picker
    *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
@@ -189,7 +187,6 @@ export function CollectionView({
   linked,
   onEdit,
   onAddRow,
-  onRemoveRow,
   onRenameRow,
   onConfigChange,
   onUpdateSchema,
@@ -264,7 +261,6 @@ export function CollectionView({
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
-          onRemoveRow={onRemoveRow}
           onRenameRow={onRenameRow}
           onUpdateSchema={onUpdateSchema}
           onOpenCard={onOpenCard}
@@ -318,7 +314,6 @@ export function CollectionView({
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
-          onRemoveRow={onRemoveRow}
           onRenameRow={onRenameRow}
         />
       )}
@@ -507,7 +502,6 @@ function CollectionTable({
   editable,
   onEdit,
   onAddRow,
-  onRemoveRow,
   onRenameRow,
 }: {
   schema: PropertySchema
@@ -515,7 +509,6 @@ function CollectionTable({
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
-  onRemoveRow?: (rowId: string) => void
   onRenameRow?: (rowId: string, title: string) => void
 }) {
   return (
@@ -534,8 +527,6 @@ function CollectionTable({
                 {def.name}
               </th>
             ))}
-            {/* Trailing gutter for the per-row delete affordance. */}
-            <th className="w-6 border-b border-mn-hair" aria-hidden />
           </tr>
         </thead>
         <tbody>
@@ -571,18 +562,6 @@ function CollectionTable({
                   />
                 </td>
               ))}
-              <td className="py-1.5 text-right align-middle">
-                {editable && onRemoveRow && (
-                  <button
-                    type="button"
-                    aria-label={`Delete row: ${row.title || 'untitled'}`}
-                    onClick={() => onRemoveRow(row.id)}
-                    className="rounded-mn-chrome px-1 leading-none text-mn-text-secondary opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-mn-text focus-visible:opacity-100"
-                  >
-                    ×
-                  </button>
-                )}
-              </td>
             </tr>
           ))}
         </tbody>
@@ -614,7 +593,6 @@ function CollectionBoard({
   editable,
   onEdit,
   onAddRow,
-  onRemoveRow,
   onRenameRow,
   onUpdateSchema,
   onOpenCard,
@@ -625,7 +603,6 @@ function CollectionBoard({
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
-  onRemoveRow?: (rowId: string) => void
   onRenameRow?: (rowId: string, title: string) => void
   onUpdateSchema?: (next: PropertySchema) => void
   onOpenCard?: (rowId: string) => void
@@ -861,16 +838,6 @@ function CollectionBoard({
                           className="mt-0.5 shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ↗
-                        </button>
-                      )}
-                      {editable && onRemoveRow && (
-                        <button
-                          type="button"
-                          aria-label={`Delete card: ${row.title || 'untitled'}`}
-                          onClick={() => onRemoveRow(row.id)}
-                          className="absolute top-1 right-1 rounded-mn-chrome px-1 leading-none text-mn-text-secondary opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
-                        >
-                          ×
                         </button>
                       )}
                     </li>

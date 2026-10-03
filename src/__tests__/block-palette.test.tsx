@@ -98,11 +98,11 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    // Find the delete button for block b1 (it's in the group/relative container)
-    // We'll trigger the keydown on the wrapping block div
-    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
-    // The first delete button is associated with b1
-    const blockDiv = deleteButtons[0].closest('[id]')
+    // Find the gutter handle for block b1 (it's in the group/relative container);
+    // the keydown goes to the wrapping block div.
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    // The first handle is associated with b1
+    const blockDiv = handles[0].closest('[id]')
     expect(blockDiv).toBeTruthy()
     fireEvent.keyDown(blockDiv!, { key: 'ArrowDown', altKey: true })
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
@@ -118,9 +118,9 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
-    // The second delete button is for b2
-    const blockDiv = deleteButtons[1].closest('[id]')
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    // The second handle is for b2
+    const blockDiv = handles[1].closest('[id]')
     expect(blockDiv).toBeTruthy()
     fireEvent.keyDown(blockDiv!, { key: 'ArrowUp', altKey: true })
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
@@ -136,8 +136,8 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
-    const blockDiv = deleteButtons[0].closest('[id]')
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const blockDiv = handles[0].closest('[id]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowUp', altKey: true })
     // No commit should be made — order didn't change
     await new Promise((r) => setTimeout(r, 100))
@@ -150,8 +150,8 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
-    const blockDiv = deleteButtons[1].closest('[id]')
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    const blockDiv = handles[1].closest('[id]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowDown', altKey: true })
     await new Promise((r) => setTimeout(r, 100))
     expect(mockCommitBlocks).not.toHaveBeenCalled()
@@ -183,9 +183,12 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
 
-    // Delete b1 (the first block).
-    const deleteButtons = await screen.findAllByRole('button', { name: 'Delete block' })
-    fireEvent.click(deleteButtons[0])
+    // Delete b1 (the first block) — #223 removed the gutter ×, so deletion now
+    // goes the way the boards draw it: the handle opens the block menu, and
+    // `delete block` is the item that removes it.
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    fireEvent.click(handles[0])
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'delete block' }))
 
     // Now edit the surviving block (b2): drop into its textarea and change it.
     const editTrigger = await screen.findByRole('button', { name: 'Edit text block' })
