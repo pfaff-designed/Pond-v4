@@ -450,7 +450,8 @@ const VIEW_HEADING: Record<ViewMode, string> = {
 
 // `many` is explicit for an irregular plural (`entry` → `entries`), so every head
 // note in this file goes through one idiom instead of hand-rolling the next one.
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+export const plural = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`
 
 /**
  * Which collection a view block draws: a LINKED view names another collection

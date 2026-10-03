@@ -185,11 +185,12 @@ describe('Life is a page (#234)', () => {
   })
 
   it('add → “/” summons the palette and persists the pick to the home row', async () => {
-    // #278: rows speak Pond's words — `checklist` is the todo type, `gallery` a view mode.
+    // #278: rows speak Pond's words — `checklist` is the todo type.
+    // `table`, `gallery` and `chart` are NOT here: since #280 they open the source
+    // picker instead of minting a block, which the next test pins.
     const cases: Array<{ name: string; type: string }> = [
       { name: 'checklist', type: 'todo' },
-      { name: 'table', type: 'table' },
-      { name: 'gallery', type: 'view' },
+      { name: 'highlight', type: 'highlight' },
     ]
     for (const c of cases) {
       HOME_BLOCKS = []
@@ -221,6 +222,37 @@ describe('Life is a page (#234)', () => {
       unmount()
     }
   })
+
+  // `Pond 02` 2e: "the source picker, shared by table, gallery and chart —
+  // /table · /gallery · /chart". Those three rows no longer mint a block: a table
+  // is a view of a database, so the person chooses the source first (#280).
+  it.each(['table', 'gallery', 'chart'])(
+    '“/%s” summons the source picker rather than inserting a block',
+    async (name) => {
+      HOME_BLOCKS = []
+      mockCommitBlocks.mockClear()
+      renderPanel()
+      fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+      const editor = await screen.findByPlaceholderText('Write something…')
+      fireEvent.change(editor, { target: { value: '/' } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      fireEvent.change(editor, { target: { value: `/${name}` } })
+      fireEvent.click(within(menu).getByText(name))
+
+      await waitFor(() => {
+        const glass = document.querySelector('[data-part="glass"][data-kind="source"]')
+        expect(glass).toBeTruthy()
+        expect(glass).toHaveAttribute('data-step', 'source')
+      })
+      // Nothing is written until a source is picked — the pick is the person's
+      // gesture, and it has not been made yet.
+      expect(
+        mockCommitBlocks.mock.calls.some(([, , , blocks]) =>
+          (blocks as Block[]).some((b) => b.type === 'view')
+        )
+      ).toBe(false)
+    }
+  )
 })
 
 describe('an area is the same page (#108, #234)', () => {

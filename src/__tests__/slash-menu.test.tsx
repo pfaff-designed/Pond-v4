@@ -380,9 +380,14 @@ describe('keys arrive from the field the person is typing in', () => {
 // ── Source law ─────────────────────────────────────────────────────────────────
 
 describe('the component’s own source', () => {
-  // The glass and the row it draws (`slash-row.tsx`, shared with #280) — one law for both.
+  // The glass, the shared mono chrome (`picker-chrome.ts`, lifted out of this file by
+  // #280 for the source picker) and the row it draws (`slash-row.tsx`, also shared with
+  // #280) — one law for all three. The chrome moved; the law did not, so the source set
+  // follows the strings rather than the file they used to live in.
   const source =
-    read('src/components/molecules/SlashMenu.tsx') + read('src/components/molecules/slash-row.tsx')
+    read('src/components/molecules/SlashMenu.tsx') +
+    read('src/components/molecules/picker-chrome.ts') +
+    read('src/components/molecules/slash-row.tsx')
 
   it('consumes `.mn-glass` rather than writing a second glass recipe', () => {
     expect(source).not.toMatch(/rgba\(255,\s*255,\s*255/)

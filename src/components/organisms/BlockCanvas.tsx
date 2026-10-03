@@ -38,6 +38,8 @@ import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { SlashMenu, type SlashRow, type TemplatePick } from '@/components/molecules/SlashMenu'
+import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
+import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
 import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
@@ -49,11 +51,15 @@ import {
   previewListTable,
 } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
-import { createPage, defineSchema, deletePage } from '@/lib/pages/client'
-import { insertPageOptimistic } from '@/lib/pages/tree'
+import { createPage, defineSchema, deletePage, getPage } from '@/lib/pages/client'
+import { createDatabase } from '@/lib/pages/create-database'
+import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
+import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { readSchema } from '@/lib/properties/schema'
+import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
@@ -158,6 +164,42 @@ export function BlockCanvas({
   const [slashMenuOpenAt, setSlashMenuOpenAt] = useState<number | null>(null)
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  // The source picker (#280): which `/` pick summoned it, and where its block
+  // lands — `at` replaces the `/…` block that opened the menu, or inserts
+  // between. `Pond 02` 2e: table, gallery and chart all open the same picker.
+  const [sourcePicker, setSourcePicker] = useState<{
+    block: SourceBlock
+    at: number
+    replace: boolean
+    anchor: Element | null
+  } | null>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  // What the picker lists, read only while it is open: the databases root's
+  // children off the shared ['pages'] cache, and one count query over the pond's
+  // records (`source-databases.ts`). Counts refetch on each open, so a record
+  // added through a view is reflected the next time the picker is summoned.
+  const { data: pageRows = [] } = useQuery({
+    queryKey: ['pages', workspace],
+    queryFn: () => fetchPages(workspace),
+    enabled: sourcePicker !== null,
+  })
+  const { data: recordCounts } = useQuery({
+    queryKey: ['record-counts', workspace],
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      return user ? fetchRecordCounts(supabase, user.id, workspace) : new Map<string, number>()
+    },
+    enabled: sourcePicker !== null,
+    staleTime: 0,
+  })
+  const databases = useMemo(
+    () => sourceDatabases(pageRows, recordCounts ?? new Map()),
+    [pageRows, recordCounts]
+  )
+
   // Which block index has the handle menu open (null = closed) — #101.
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
 
@@ -237,10 +279,128 @@ export function BlockCanvas({
   // — `list` is `todo` at the dot marker, `chart` is `view` in chart mode — so the
   // palette mints it; a row with no factory is a no-op, never a crash.
   function insertBlockAt(at: number, row: SlashRow) {
+    const source = sourceBlockOf(row.id)
+    if (source) {
+      openSourcePicker(source, at, false)
+      return
+    }
     const nb = mintPreset(row.id)
     if (!nb) return
     markInserted(nb.id)
     onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
+  }
+
+  /**
+   * `/table`, `/gallery`, `/chart` open the source picker rather than minting a
+   * block (#280; PROJECT_RULES: "a table is always a view of a database"). The
+   * glass hangs off the block that summoned it — the `/…` block itself, or the
+   * one above an insert-between (the canvas for the top slot). AUDIT C9, decided:
+   * a chart auto-wires "when one table is nearby" — the nearest linked view on
+   * the page becomes its source and the picker opens on the chart types;
+   * otherwise it opens on the sources.
+   */
+  function openSourcePicker(block: SourceBlock, at: number, replace: boolean) {
+    const host = blocks[replace ? at : at - 1]
+    const anchor = host ? document.getElementById(blockDomId(host.id)) : canvasRef.current
+    setSourcePicker({ block, at, replace, anchor })
+  }
+
+  function nearestSource(at: number): string | null {
+    for (let d = 0; d < blocks.length; d++) {
+      for (const i of [at - d, at + d]) {
+        const b = blocks[i]
+        if (b?.type === 'view' && b.collectionId) return b.collectionId
+      }
+    }
+    return null
+  }
+
+  /** The chosen source's fields, for the chart step — its schema, read on demand. */
+  async function loadFields(databaseId: string) {
+    const page = await getPage(getSupabase(), databaseId)
+    return (page ? (readSchema(page.props) ?? []) : []).map((d) => ({
+      name: d.name,
+      type: d.type,
+    }))
+  }
+
+  /** Put the picked view block where the `/` was (replace) or between (insert). */
+  function placeView(view: ViewBlock, at: number, replace: boolean) {
+    markInserted(view.id)
+    const current = blocksRef.current
+    onChange(
+      replace
+        ? current.map((b, i) => (i === at ? view : b))
+        : [...current.slice(0, at), view, ...current.slice(at)]
+    )
+  }
+
+  /**
+   * The picker's pick is the person's own gesture, so it applies at once through
+   * the caller's ordinary save — no proposal card; only Pond's changes arrive as
+   * diffs (the same reading as `turnIntoTable`, #101). An existing database is a
+   * linked view of it. A new one is written through `createDatabase` (filed under
+   * the databases root, named after this page), with an undo that puts the `/…`
+   * block back and removes the database it made.
+   */
+  async function onSourcePick(pick: SourcePick) {
+    const open = sourcePicker
+    setSourcePicker(null)
+    if (!open) return
+    const chart =
+      pick.chart !== undefined
+        ? { kind: pick.chart, series: [{ property: '', agg: 'count' as const }] }
+        : undefined
+    if (pick.kind === 'existing') {
+      const view: ViewBlock = {
+        id: crypto.randomUUID(),
+        type: 'view',
+        mode: pick.mode,
+        collectionId: pick.database.id,
+        ...(chart ? { chart } : {}),
+      }
+      placeView(view, open.at, open.replace)
+      return
+    }
+    const replaced = open.replace ? blocksRef.current[open.at] : undefined
+    try {
+      const made = await createDatabase(
+        getSupabase(),
+        {
+          title: pick.title,
+          schema: pick.fields.map((f) => ({ id: crypto.randomUUID(), name: f.name, type: f.type })),
+          mode: pick.mode,
+          chart,
+          workspace,
+        },
+        () => crypto.randomUUID()
+      )
+      placeView(made.view, open.at, open.replace)
+      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      queryClient.invalidateQueries({ queryKey: ['record-counts', workspace] })
+      stageDeletion({
+        message: 'Made a database',
+        scope: 'block',
+        commit: () => {},
+        undo: async () => {
+          const current = blocksRef.current
+          onChange(
+            replaced
+              ? current.map((b) => (b.id === made.view.id ? replaced : b))
+              : current.filter((b) => b.id !== made.view.id)
+          )
+          try {
+            await deletePage(getSupabase(), made.databaseId)
+          } catch (err) {
+            console.error('Failed to remove the database after undo', err)
+          }
+          queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        },
+      })
+    } catch (err) {
+      console.error('Failed to make the database', err)
+      notify("Couldn't make the database")
+    }
   }
 
   // `page from template › ↵ new nested page` (#278): make the page the template
@@ -305,7 +465,7 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div className="space-y-0">
+        <div ref={canvasRef} className="space-y-0">
           <InsertBetween
             onInsert={(row) => insertBlockAt(0, row)}
             onPickTemplate={(pick) => void makeNestedPageFromTemplate(pick, null)}
@@ -324,8 +484,14 @@ export function BlockCanvas({
                 slashMenuOpen={slashMenuOpenAt === i}
                 onSlashSelect={(row) => {
                   // Replace the `/…` text block at i with the picked row's block
-                  // (the `/` gesture: text block → chosen block).
+                  // (the `/` gesture: text block → chosen block). The three
+                  // source rows go through the picker first (#280).
                   setSlashMenuOpenAt(null)
+                  const source = sourceBlockOf(row.id)
+                  if (source) {
+                    openSourcePicker(source, i, true)
+                    return
+                  }
                   const nb = mintPreset(row.id)
                   if (!nb) return
                   markInserted(nb.id)
@@ -375,6 +541,26 @@ export function BlockCanvas({
       {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
           in it summons the palette to swap type. */}
       <AddBlockButton onAdd={addTextBlock} />
+      {/* The source picker (#280), hung off the block that summoned it. */}
+      {sourcePicker && (
+        <SourcePicker
+          block={sourcePicker.block}
+          pageTitle={pageTitle || 'Untitled'}
+          databases={databases}
+          loadFields={loadFields}
+          defaultStep={
+            sourcePicker.block === 'chart' && nearestSource(sourcePicker.at) ? 'type' : 'source'
+          }
+          defaultSource={
+            sourcePicker.block === 'chart'
+              ? databases.find((d) => d.id === nearestSource(sourcePicker.at))
+              : undefined
+          }
+          anchor={sourcePicker.anchor}
+          onPick={(pick) => void onSourcePick(pick)}
+          onClose={() => setSourcePicker(null)}
+        />
+      )}
     </PageLinkProvider>
   )
 }
