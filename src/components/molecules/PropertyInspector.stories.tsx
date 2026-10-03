@@ -69,8 +69,11 @@ export const Default: Story = {
     await expect(title).toHaveValue('Build a workbench')
     await expect(canvas.getByLabelText('Count value')).toHaveValue(3)
     await expect(canvas.getByLabelText('Stage value')).toHaveValue('doing')
-    const done = canvas.getByLabelText('Done value') as HTMLInputElement
-    await expect(done.checked).toBe(false)
+    // The checkbox property is `PondControl kind="checkbox"` (#221): a base-ui
+    // `role="checkbox"` span, so its state is `aria-checked`, not `.checked`.
+    const done = canvas.getByLabelText('Done value')
+    await expect(done).toHaveAttribute('role', 'checkbox')
+    await expect(done).toHaveAttribute('aria-checked', 'false')
 
     // Editing text raises onChange with the new string.
     await userEvent.type(title, '!')

@@ -49,6 +49,7 @@ import { PondAtom, type PondAtomKind, type PondAtomState } from '@/components/at
 import { KindDot } from '@/components/atoms/PondAtom'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
+import { FOCUS_RING } from '@/components/atoms/focus-ring'
 
 export const POND_MOLECULE_KINDS = [
   'list-row',
@@ -183,9 +184,6 @@ const EMPTY_TITLE: Partial<Record<PondMoleculeKind, string>> = {
 
 /** Area marks resolve through the mn-area roles so dark flips navy→mist. */
 const AREA_BG = { sage: 'bg-mn-area-a', mist: 'bg-mn-area-b', navy: 'bg-mn-area-c' }
-
-/** The mist focus ring (mn-area-b stays mist on every theme). */
-const FOCUS_RING = 'outline-2 outline-offset-2 outline-mn-area-b'
 
 /** The dragging lift: card ground, deep shadow, the -0.6° tilt — which
  *  collapses under prefers-reduced-motion. */

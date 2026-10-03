@@ -17,3 +17,23 @@ if (typeof window !== 'undefined' && typeof window.ResizeObserver === 'undefined
     disconnect() {}
   } as unknown as typeof ResizeObserver
 }
+
+// jsdom does not implement PointerEvent — base-ui's Switch and Checkbox roots
+// (under `PondControl`, #221) forward a click to their hidden <input> as a
+// PointerEvent, so without this a `fireEvent.click` on a role="switch" /
+// role="checkbox" throws and never toggles. A MouseEvent carrying the pointer
+// fields is all the primitives read.
+if (typeof window !== 'undefined' && typeof window.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    readonly pointerId: number
+    readonly pointerType: string
+    readonly isPrimary: boolean
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 0
+      this.pointerType = init.pointerType ?? 'mouse'
+      this.isPrimary = init.isPrimary ?? true
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent
+}

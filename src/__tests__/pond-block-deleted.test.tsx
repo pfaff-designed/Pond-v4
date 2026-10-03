@@ -233,9 +233,10 @@ describe('PondBlock — the tombstone’s two ways out', () => {
       expect(classes(b)).toContain('rounded-mn-pill')
       expect(b.hasAttribute('disabled')).toBe(false)
     }
-    expect(classes(buttons[0])).toContain('bg-secondary')
-    expect(classes(buttons[1])).toContain('shadow-[inset_0_0_0_1px_var(--mn-hair)]')
-    expect(classes(buttons[1])).not.toContain('bg-secondary')
+    // PondControl.dc.html's literals (#221): secondary = ink .07 ground, ghost = inset 1px ink .2.
+    expect(classes(buttons[0])).toContain('bg-mn-text/[0.07]')
+    expect(classes(buttons[1])).toContain('ring-mn-text/20')
+    expect(classes(buttons[1])).not.toContain('bg-mn-text/[0.07]')
   })
 
   it('both are wired: each click reaches its own callback and nothing else', () => {

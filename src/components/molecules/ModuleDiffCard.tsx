@@ -248,7 +248,7 @@ export function ModuleDiffCard({
                 {onRevise && (
                   <Button
                     size="sm"
-                    variant="default"
+                    variant="primary"
                     className={cn(proposalButtonClass, 'ml-auto')}
                     onClick={onRevise}
                   >

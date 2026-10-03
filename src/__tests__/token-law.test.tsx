@@ -170,7 +170,7 @@ describe('source sweep — red appears only where a diff removal is drawn', () =
     const source = read('src/components/ui/button.tsx')
     expect(source).not.toMatch(/^\s*destructive:/m)
     expect(linesMatching(/variant="destructive"|variant: 'destructive'/)).toEqual([])
-    for (const variant of ['default', 'outline', 'secondary', 'ghost', 'link'] as const) {
+    for (const variant of ['primary', 'secondary', 'ghost', 'quiet'] as const) {
       expect(buttonVariants({ variant })).not.toMatch(/raw-red|signal-removal/)
     }
   })
