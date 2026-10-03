@@ -26,9 +26,9 @@ const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's dark frames (globals.css:462). The picker board's
-  // own ink delta reads `.09`; ADR 0004's principle (the composed context outranks
-  // the component card) keeps the one shared recipe. Recorded in #278's PR body.
+  // `.mn-glass`, dark — the Shell's dark frames. The picker board's own ink delta
+  // reads `.09`; ADR 0004 ruling 11 keeps the one shared recipe for the whole
+  // floating-glass family (the composed context outranks the component card).
   glassBorder: 'rgba(250, 249, 239, 0.2)',
 }
 type Palette = typeof PAPER

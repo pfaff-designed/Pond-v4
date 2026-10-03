@@ -9,7 +9,6 @@
  * its hint and nothing underlined (the board's `entry log · dated table`).
  */
 
-import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { TEMPLATE_KINDS, type TemplateKind } from '@/lib/templates/types'
 
 export interface SlashIcon {
@@ -17,6 +16,9 @@ export interface SlashIcon {
   d: string
   filled?: boolean
 }
+
+/** The board's group labels for the slash kind (`PondPicker.dc.html`'s `G(…)` calls). */
+export type SlashGroup = 'text' | 'blocks' | 'templates'
 
 export interface SlashRow {
   id: string
@@ -27,8 +29,8 @@ export interface SlashRow {
   /** The board's shortcut hint at rest — `#`, `"`, `-`, `[]`, `proposes`. */
   key?: string
   icon?: SlashIcon
-  /** `text` · `blocks` · `templates` · `pages`; omitted rows list ungrouped. */
-  group?: string
+  /** Omitted rows list ungrouped. */
+  group?: SlashGroup
   /** The registered module type this row mints — read by the derived registry guard. */
   type?: string
   /** The row opens a pane rather than inserting. */
@@ -63,7 +65,8 @@ export type SlashEntry =
 export type SlashPane = 'rows' | 'templates'
 
 const PAGE_ICON: SlashIcon = { d: 'M3.5 2h5l2.5 2.5V12h-7.5zM8.5 2v2.5H11' }
-const TPL_ICON: SlashIcon = { d: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z' }
+/** The board's `tpl` mark — a template row's, and the fallback for a row with no mark of its own. */
+export const TPL_ICON: SlashIcon = { d: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z' }
 
 /** The board's split: the first occurrence of `q` in `label`, or the whole label as `pre`. */
 export function splitMatch(label: string, q: string): { pre: string; hit: string; post: string } {
@@ -135,17 +138,17 @@ export function rowEntries(rows: readonly SlashRow[], query: string): SlashEntry
 /** The `templates` pane: the twelve premade shapes (#261), then the person's own. */
 export function templateEntries(yours: readonly YourTemplate[] = []): SlashEntry[] {
   const out: SlashEntry[] = [{ kind: 'group', label: 'premade' }]
-  TEMPLATE_KINDS.forEach((kind, i) => {
-    const label = PREMADE_TEMPLATES[kind].kind
+  for (const kind of TEMPLATE_KINDS) {
     out.push({
       kind: 'row',
       id: `premade:${kind}`,
-      label,
-      ...splitMatch(label, ''),
-      icon: i === 0 ? PAGE_ICON : TPL_ICON,
+      label: kind,
+      ...splitMatch(kind, ''),
+      // The blank `page` carries the page mark; every shaped template the `tpl` mark.
+      icon: kind === 'page' ? PAGE_ICON : TPL_ICON,
       template: { origin: 'premade', kind },
     })
-  })
+  }
   if (yours.length) {
     out.push({ kind: 'group', label: 'yours' })
     for (const t of yours) {

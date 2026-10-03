@@ -50,6 +50,7 @@ import {
 } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
 import { createPage, defineSchema, deletePage } from '@/lib/pages/client'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
 import { useQueryClient } from '@tanstack/react-query'
@@ -267,6 +268,12 @@ export function BlockCanvas({
       })
       if (made.schema) await defineSchema(supabase, created.id, made.schema)
       if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
+      insertPageOptimistic(queryClient, workspace, {
+        id: created.id,
+        parentId: pageId,
+        type: created.type,
+        title: created.title,
+      })
       void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
     } catch (err) {

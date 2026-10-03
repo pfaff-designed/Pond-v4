@@ -143,11 +143,13 @@ export type PropertyValue = string | number | boolean | string[] | null
 
 /**
  * The ONE property a collection buckets by: the first `status` or `select` in schema
- * order. Both callers assert they pick the same one — `ensureBoardGroupBy` columns a
- * board by it, and `ganttRowDone` reads a gantt bar's done-ink off it, so a gantt's
- * done bars are exactly the cards in the board's `done` lane. That claim was written
- * twice and enforced nowhere (#260 review): changing the preference in one would have
- * silently diverged the two. `undefined` → the page has nothing to group by.
+ * order. `ganttRowDone` reads a gantt bar's done-ink off it, and a board's lanes
+ * must column by the same one, so a gantt's done bars are exactly the cards in the
+ * board's `done` lane. That claim was once written twice and enforced nowhere (#260
+ * review): changing the preference in one would have silently diverged the two. The
+ * `/board` row that seeded a board's `groupBy` left with #278 (the board draws no
+ * such row); when the view's board-mode switch seeds one, it reads this function.
+ * `undefined` → the page has nothing to group by.
  */
 export function firstGroupingDef(schema: PropertySchema): PropertyDef | undefined {
   return schema.find((d) => d.type === 'status' || d.type === 'select')

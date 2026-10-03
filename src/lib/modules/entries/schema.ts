@@ -72,7 +72,9 @@ export const entriesDescriptor: ModuleDescriptor<EntriesBlock> = {
   // The board's `entry log` row.
   label: 'entry log',
   schema: entriesSchema,
-  paletteDescription: 'short dated entries, newest first',
+  // The board's own hint for this row (`PondPicker.dc.html`, filtered: `entry log ·
+  // dated table`) — it is what makes the board's `/ta` exemplar reproducible.
+  paletteDescription: 'dated table',
   description:
     'A dated log of short written entries, newest first — journal entries, project updates, a record of what happened on which day. ' +
     'Each entry is a date label (lowercase, like "28 oct" or "today") and a few sentences of prose the person wrote. ' +

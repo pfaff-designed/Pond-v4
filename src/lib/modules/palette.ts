@@ -22,13 +22,12 @@
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
+import { TPL_ICON, type SlashGroup } from '@/components/molecules/slash-entries'
 import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
-import type { ViewMode } from '@/lib/modules/view/schema'
+import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 
-type Group = 'text' | 'blocks' | 'templates'
-
-/** `PondPicker.dc.html`'s `I` table — the hand-drawn 14-grid marks, by row. */
+/** `PondPicker.dc.html`'s `I` table — the hand-drawn 14-grid marks, by row (`tpl` is `TPL_ICON`). */
 const ICON: Record<string, SlashIcon> = {
   text: { d: 'M3 3.5h8M7 3.5v7.5' },
   quote: { d: 'M5.6 3.4C4 4 3 5.2 3 7v3.2h2.8V7.4H4M11 3.4C9.4 4 8.4 5.2 8.4 7v3.2h2.8V7.4H9.4' },
@@ -42,19 +41,51 @@ const ICON: Record<string, SlashIcon> = {
   chart: { d: 'M2.5 11.5h9M4.2 11.5V7.5M7 11.5V3.5M9.8 11.5V8.8' },
   number: { d: 'M5.4 2.5 4.4 11.5M9.6 2.5l-1 9M2.6 5.4h9M2.2 8.6h9' },
   log: { d: 'M2 7a5 5 0 1 0 10 0a5 5 0 1 0-10 0M7 4.4V7l1.9 1.2' },
-  tpl: { d: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z' },
 }
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
-const ROW_CHROME: Partial<Record<DescriptorType, { group: Group; icon: SlashIcon; key?: string }>> =
+const ROW_CHROME: Partial<
+  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string }>
+> = {
+  text: { group: 'text', icon: ICON.text },
+  highlight: { group: 'text', icon: ICON.quote, key: '"' },
+  image: { group: 'text', icon: ICON.file },
+  todo: { group: 'blocks', icon: ICON.check, key: '[]' },
+  table: { group: 'blocks', icon: ICON.table },
+  entries: { group: 'blocks', icon: ICON.log },
+}
+
+/**
+ * The `view` rows are the view's own modes: each id IS the `ViewMode` it opens in
+ * (`mintPreset` parses it with `viewModeSchema`), so a row here that names no mode
+ * does not compile, and a new mode's row needs no second table.
+ */
+const VIEW_ROWS = [
   {
-    text: { group: 'text', icon: ICON.text },
-    highlight: { group: 'text', icon: ICON.quote, key: '"' },
-    image: { group: 'text', icon: ICON.file },
-    todo: { group: 'blocks', icon: ICON.check, key: '[]' },
-    table: { group: 'blocks', icon: ICON.table },
-    entries: { group: 'blocks', icon: ICON.log },
-  }
+    id: 'gallery',
+    type: 'view',
+    group: 'blocks',
+    label: 'gallery',
+    description: 'a database’s records as cards with an image',
+    icon: ICON.gallery,
+  },
+  {
+    id: 'chart',
+    type: 'view',
+    group: 'blocks',
+    label: 'chart',
+    description: 'figures from a database, drawn over time',
+    icon: ICON.chart,
+  },
+  {
+    id: 'big-number',
+    type: 'view',
+    group: 'blocks',
+    label: 'big number',
+    description: 'one figure from a database, oversized',
+    icon: ICON.number,
+  },
+] satisfies readonly (SlashRow & { id: ViewMode })[]
 
 /** A type's other faces — the same block at another marker or mode. */
 const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
@@ -69,53 +100,27 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       icon: ICON.list,
     },
   ],
-  view: [
-    {
-      id: 'gallery',
-      type: 'view',
-      group: 'blocks',
-      label: 'gallery',
-      description: 'a database’s records as cards with an image',
-      icon: ICON.gallery,
-    },
-    {
-      id: 'chart',
-      type: 'view',
-      group: 'blocks',
-      label: 'chart',
-      description: 'figures from a database, drawn over time',
-      icon: ICON.chart,
-    },
-    {
-      id: 'big-number',
-      type: 'view',
-      group: 'blocks',
-      label: 'big number',
-      description: 'one figure from a database, oversized',
-      icon: ICON.number,
-    },
-  ],
+  view: VIEW_ROWS,
 }
 
-/** The `view` mode each of its rows opens in. */
-const VIEW_MODE_BY_ROW: Record<string, ViewMode | undefined> = {
-  gallery: 'gallery',
-  chart: 'chart',
-  'big-number': 'big-number',
-}
+/**
+ * Types whose plain row is withheld, each with the reason — the
+ * `NON_EMITTABLE_MODULES` shape (#261). `slash-menu.test.tsx` asserts every
+ * registered type is either reached by a row or named here with a reason, so a
+ * type added to this map cannot vanish from the menu unremarked. A type may be
+ * both withheld and reached: `view` is, through `VIEW_ROWS`.
+ */
+export const WITHHELD = {
+  page: 'structural — a page is made through the rail or `page from template`, not inserted as a block',
+  view: 'wholly covered by its variants — gallery, chart and big number are the rows a person picks',
+} as const satisfies Partial<Record<DescriptorType, string>>
 
-/** Row ids where the board's name differs from the type's. */
-const ROW_ID: Record<string, string | undefined> = {
-  todo: 'checklist',
-  image: 'embed-file',
-  entries: 'entry-log',
-}
-
-/** Types whose plain row is withheld: structural, or wholly covered by variants. */
-const WITHHELD: ReadonlySet<DescriptorType> = new Set<DescriptorType>(['page', 'view'])
-
-/** The board's row order; a row it does not draw (a new type) follows, in registry order. */
-const BOARD_ORDER = [
+/**
+ * The board's row order. A row not placed here (a new type's) still lists — last,
+ * in the `blocks` group, with the fallback mark — but `slash-menu.test.tsx` asserts
+ * every row is ranked, so it fails loudly there rather than drifting to the end.
+ */
+export const BOARD_ORDER: readonly string[] = [
   'text',
   'highlight',
   'embed-file',
@@ -128,15 +133,21 @@ const BOARD_ORDER = [
   'entry-log',
   'page-from-template',
 ]
-const GROUP_ORDER: Group[] = ['text', 'blocks', 'templates']
+const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates']
+
+/** A row's id is its board label as a slug: `embed / file` → `embed-file`, `entry log` → `entry-log`. */
+const slug = (label: string) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
 
 const ownRows: SlashRow[] = Object.values(moduleDescriptors)
-  .filter((d) => !WITHHELD.has(d.type as DescriptorType))
+  .filter((d) => !(d.type in WITHHELD))
   .map((d) => {
-    const chrome = ROW_CHROME[d.type as DescriptorType] ?? { group: 'blocks', icon: ICON.tpl }
+    const chrome = ROW_CHROME[d.type as DescriptorType] ?? { group: 'blocks', icon: TPL_ICON }
     return {
-      // The board's row names as ids, where they differ from the type.
-      id: ROW_ID[d.type] ?? d.type,
+      id: slug(d.label),
       type: d.type,
       group: chrome.group,
       label: d.label,
@@ -151,7 +162,7 @@ const templateRow: SlashRow = {
   group: 'templates',
   label: 'page from template',
   description: 'one of the twelve shapes, or one of yours, as a nested page',
-  icon: ICON.tpl,
+  icon: TPL_ICON,
   submenu: 'templates',
 }
 
@@ -159,17 +170,15 @@ const rank = (row: SlashRow) => {
   const i = BOARD_ORDER.indexOf(row.id)
   return i === -1 ? BOARD_ORDER.length : i
 }
+const groupRank = (row: SlashRow) =>
+  row.group === undefined ? GROUP_ORDER.length : GROUP_ORDER.indexOf(row.group)
 
 /** Every row of the `/` menu, in the board's groups and order. */
 export const slashRows: readonly SlashRow[] = [
   ...ownRows,
   ...Object.values(VARIANT_ROWS).flat(),
   templateRow,
-].sort(
-  (a, b) =>
-    GROUP_ORDER.indexOf(a.group as Group) - GROUP_ORDER.indexOf(b.group as Group) ||
-    rank(a) - rank(b)
-)
+].sort((a, b) => groupRank(a) - groupRank(b) || rank(a) - rank(b))
 
 /**
  * The manual-authoring empty state per module: todo = one blank item, table = 2×2,
@@ -233,8 +242,8 @@ export function mintPreset(rowId: string): Block | null {
   if (!block) return null
   if (block.type === 'todo' && rowId === 'list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
-    const mode = VIEW_MODE_BY_ROW[rowId]
-    return mode ? { ...block, mode } : block
+    const mode = viewModeSchema.safeParse(rowId)
+    return mode.success ? { ...block, mode: mode.data } : block
   }
   return block
 }

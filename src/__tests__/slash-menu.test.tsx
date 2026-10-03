@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
-import { slashRows, mintPreset } from '@/lib/modules/palette'
+import { slashRows, mintPreset, BOARD_ORDER, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
@@ -128,12 +128,17 @@ describe('the / menu speaks Pond’s words only', () => {
 // ── Rows are presets; the registry derivation survives ─────────────────────────
 
 describe('a row is a preset, and every registered type reaches the menu', () => {
-  it('every `moduleDescriptors` type but the structural `page` is minted by at least one row — derived, not listed', () => {
+  it('every `moduleDescriptors` type is reached by a row or withheld with a reason — derived, not listed', () => {
     const reached = new Set(slashRows.map((r) => r.type).filter(Boolean))
+    const withheld: Partial<Record<string, string>> = WITHHELD
     for (const type of Object.keys(moduleDescriptors)) {
-      if (type === 'page') continue
-      expect(reached.has(type)).toBe(true)
+      const reason = withheld[type]
+      if (!reached.has(type)) expect(reason).toEqual(expect.any(String))
+      if (reason !== undefined) expect(reason.length).toBeGreaterThan(0)
     }
+    for (const type of Object.keys(WITHHELD)) expect(moduleDescriptors).toHaveProperty(type)
+    // `view` is withheld AND reached (through its variant rows); `page` is only withheld.
+    expect(reached.has('view')).toBe(true)
     expect(reached.has('page')).toBe(false)
   })
 
@@ -168,6 +173,10 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'templates/page from template',
     ])
   })
+
+  it('every row is ranked by the board’s order — an unranked row fails here, it does not drift to the end', () => {
+    for (const row of slashRows) expect(BOARD_ORDER).toContain(row.id)
+  })
 })
 
 // ── States ─────────────────────────────────────────────────────────────────────
@@ -185,6 +194,15 @@ describe('open', () => {
       '↑↓ move↵ insertesc keep as text'
     )
     expect(glass().querySelector('[data-part="head"]')).toBeNull()
+  })
+
+  it('anchored above the composer (`side="top"`) the glass grows from its bottom edge', () => {
+    const { unmount } = renderMenu()
+    expect(glass()).toHaveClass('motion-menu')
+    expect(glass().className).not.toContain('--motion-menu-origin')
+    unmount()
+    renderMenu({ side: 'top' })
+    expect(glass()).toHaveClass('motion-menu', '[--motion-menu-origin:bottom_left]')
   })
 
   it('a selected row shows ↵ in place of its key hint; an unselected row shows the hint', () => {
@@ -362,7 +380,9 @@ describe('keys arrive from the field the person is typing in', () => {
 // ── Source law ─────────────────────────────────────────────────────────────────
 
 describe('the component’s own source', () => {
-  const source = read('src/components/molecules/SlashMenu.tsx')
+  // The glass and the row it draws (`slash-row.tsx`, shared with #280) — one law for both.
+  const source =
+    read('src/components/molecules/SlashMenu.tsx') + read('src/components/molecules/slash-row.tsx')
 
   it('consumes `.mn-glass` rather than writing a second glass recipe', () => {
     expect(source).not.toMatch(/rgba\(255,\s*255,\s*255/)
@@ -370,11 +390,13 @@ describe('the component’s own source', () => {
     expect(source).toMatch(/mn-glass/)
   })
 
-  it('uses no Tailwind named type size, no cn(), and never pairs outline-none with the ring', () => {
+  it('uses no Tailwind named type size, no cn(), no outline-none, and writes no focus ring of its own', () => {
     expect(source).not.toMatch(/\btext-(xs|sm|base|lg|xl)\b/)
     expect(source).not.toMatch(/from '@\/lib\/utils'/)
     expect(source).not.toMatch(/outline-none/)
-    expect(source).toMatch(/from '@\/components\/atoms\/focus-ring'/)
+    // Nothing in the glass takes focus (the keys arrive from the host's field), so a
+    // ring here could never paint; one written anyway would be a second recipe.
+    expect(source).not.toMatch(/focus-visible:(outline|ring)/)
   })
 
   it('keeps the .04em group label and the .01em row tracking the board draws', () => {

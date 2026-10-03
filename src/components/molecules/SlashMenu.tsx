@@ -35,29 +35,24 @@
  * outside it closes. base-ui's `Popover` was tried first and does this job, but
  * under jsdom every test that mounts it pays ~15–20 s of teardown, which would
  * stall six suites; measured twice, so the primitive is not used here.
+ *
+ * The row and its mark live in `slash-row.tsx` — the source picker (#280) draws
+ * the same row, so it is one file, not a restatement.
  */
 
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
-import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import {
   footItems,
   rowEntries,
   templateEntries,
-  type SlashEntry,
   type SlashPane,
   type SlashRow,
   type TemplatePick,
   type YourTemplate,
 } from './slash-entries'
+import { Row, type RowEntry } from './slash-row'
 
 export type { SlashIcon, SlashRow, TemplatePick, YourTemplate } from './slash-entries'
 
@@ -84,20 +79,18 @@ export interface SlashMenuProps {
   container?: HTMLElement | null
 }
 
-const GLASS = `mn-glass rounded-mn-card motion-menu fixed z-[100] box-border flex w-[300px] flex-col gap-[1px] p-[8px] font-mono text-mn-text ${FOCUS_VISIBLE_RING}`
+const GLASS =
+  'mn-glass rounded-mn-card motion-menu fixed z-[100] box-border flex w-[300px] flex-col gap-[1px] p-[8px] font-mono text-mn-text'
+// Anchored above the composer, the glass grows from its bottom edge (ticket-41);
+// `.motion-menu` reads this origin and falls back to top left.
+const GLASS_ABOVE = `${GLASS} [--motion-menu-origin:bottom_left]`
 const HEAD =
   'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[10px] pt-[8px] pb-[10px] font-mono text-[12px]'
 const GROUP = 'px-[10px] pt-[8px] pb-[5px] text-[10.5px] tracking-[.04em] text-mn-text-secondary'
-const ROW =
-  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] py-[7px] font-mono text-[12.5px] tracking-[.01em] text-mn-text'
-const HINT =
-  'min-w-0 max-w-[45%] flex-[0_1_auto] truncate font-mono text-[10.5px] text-mn-text-secondary'
 const NOTE =
   'px-[10px] py-[10px] font-mono text-[12px] leading-[1.55] text-mn-text-meta [text-wrap:pretty]'
 const FOOT =
   'mt-[4px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[10px] pt-[9px] pb-[4px] text-[10.5px] text-mn-text-secondary'
-
-type RowEntry = Extract<SlashEntry, { kind: 'row' }>
 
 export function SlashMenu({
   rows,
@@ -183,7 +176,7 @@ export function SlashMenu({
       data-part="glass"
       data-kind="slash"
       data-pane={pane}
-      className={GLASS}
+      className={side === 'top' ? GLASS_ABOVE : GLASS}
       style={style}
     >
       {pane === 'templates' && (
@@ -266,72 +259,4 @@ function useAnchoredBox(
     }
   }, [anchor, side])
   return box
-}
-
-function Row({
-  entry,
-  selected,
-  onHover,
-  onPick,
-}: {
-  entry: RowEntry
-  selected: boolean
-  onHover: () => void
-  onPick: () => void
-}) {
-  return (
-    <div
-      role="option"
-      aria-selected={selected}
-      data-part="row"
-      className={`${ROW} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
-      onMouseEnter={onHover}
-      onClick={onPick}
-    >
-      {entry.icon && (
-        <span data-part="icon" className="flex text-mn-text-meta">
-          <Mark d={entry.icon.d} filled={entry.icon.filled} />
-        </span>
-      )}
-      <span data-part="label" className="min-w-0 truncate font-normal">
-        <span data-part="pre">{entry.pre}</span>
-        <span data-part="hit" className="underline decoration-[1px] underline-offset-[3px]">
-          {entry.hit}
-        </span>
-        <span data-part="post">{entry.post}</span>
-      </span>
-      <span className="flex-1" />
-      {selected ? (
-        <span data-part="enter" className="font-mono text-[10.5px] text-mn-text-meta">
-          ↵
-        </span>
-      ) : (
-        entry.hint && (
-          <span data-part="hint" className={HINT}>
-            {entry.hint}
-          </span>
-        )
-      )}
-    </div>
-  )
-}
-
-/** The board's hand-drawn mark: 13 × 13 on a 14 grid, stroke 1.4, round caps — or filled. */
-function Mark({ d, filled }: { d: string; filled?: boolean }): ReactNode {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 14 14"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke={filled ? 'none' : 'currentColor'}
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="flex-none"
-      aria-hidden
-    >
-      <path d={d} />
-    </svg>
-  )
 }

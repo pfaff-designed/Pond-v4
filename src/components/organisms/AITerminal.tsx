@@ -1218,13 +1218,16 @@ export function AITerminal() {
     ghostKeyHandler(e)
     if (e.defaultPrevented) return
 
-    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"): stop a
-    // stream and keep what arrived; else close the / menu; else leave the field.
-    // It never clears what was typed (G1: a failed answer keeps what you typed).
+    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"), innermost
+    // layer first. While the / menu is open it is that layer: SlashMenu takes esc
+    // on the document in the capture phase and stops it, so it closes — keeping
+    // the typed text (the board's `esc keep as text`) — and this handler never
+    // sees that press. The next esc reaches here: stop a stream and keep what
+    // arrived; else leave the field. It never clears what was typed (G1: a
+    // failed answer keeps what you typed).
     if (e.key === 'Escape') {
       e.preventDefault()
       if (isStreaming) stop()
-      else if (chatMenuOpen) setChatMenuOpen(false)
       else e.currentTarget.blur()
       return
     }
