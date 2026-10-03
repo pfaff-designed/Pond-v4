@@ -191,9 +191,35 @@ describe('blockFrame — maps a persisted block to its board kind + head', () =>
       heading: 'big number',
       headNote: '',
     })
-    for (const mode of ['table', 'board', 'calendar', 'gantt', 'chart'] as const) {
+    for (const mode of ['table', 'board', 'calendar', 'gantt'] as const) {
       expect(blockFrame({ id: 'v', type: 'view', mode })).toMatchObject({ kind: 'table' })
     }
+  })
+
+  it('a chart drawn as the CARD takes no block card — it is its own (PondChart, #227); a compact mark keeps the table card', () => {
+    const series = [{ property: 'p', agg: 'sum' as const }]
+    expect(blockFrame({ id: 'v', type: 'view', mode: 'chart' })).toBeNull()
+    expect(
+      blockFrame({ id: 'v', type: 'view', mode: 'chart', chart: { kind: 'line', series } })
+    ).toBeNull()
+    expect(
+      blockFrame({
+        id: 'v',
+        type: 'view',
+        mode: 'chart',
+        label: 'by week',
+        chart: { kind: 'bar', series, presentation: 'compact' },
+      })
+    ).toMatchObject({ kind: 'table', heading: 'by week' })
+    // A compact flag on a kind with no mark falls back to the card — and no frame.
+    expect(
+      blockFrame({
+        id: 'v',
+        type: 'view',
+        mode: 'chart',
+        chart: { kind: 'line', series, presentation: 'compact' },
+      })
+    ).toBeNull()
   })
 
   it('a labelled view keeps its mode’s card; the label replaces the mode name (project → tasks — board)', () => {

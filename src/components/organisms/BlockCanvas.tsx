@@ -919,8 +919,12 @@ function BlockEditor({
         >
           {view}
         </PondBlock>
-      ) : (
+      ) : block.type === 'text' ? (
+        // Bare prose: `padding 2px 4px`, no card.
         <div className="px-1 py-0.5">{view}</div>
+      ) : (
+        // #227: a block that is its OWN card — the chart card — sits on the page as it is.
+        view
       )}
     </div>
   )

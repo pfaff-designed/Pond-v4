@@ -19,6 +19,7 @@
  */
 
 import { CHART_KINDS, type ChartKind } from '@/lib/modules/view/aggregate'
+import { CHART_TYPE_TAG } from '@/lib/modules/chart/chrome'
 import { plural } from '@/lib/modules/block-frame'
 import type { ViewMode } from '@/lib/modules/view/schema'
 import type { PropertyType } from '@/lib/properties/schema'
@@ -194,29 +195,20 @@ export function chartSuggestions(fields: readonly SourceField[] | undefined): {
 }
 
 /**
- * Pond's word for every chart kind. A `ChartKind` is an ENGINE key, never a label:
- * `net` and `composed` are not words the product says. The thirteen words are the
- * boards' own — `pond-charts.js`'s `type` for each kind, except `area`, which this
- * surface's own board (`PondPicker.dc.html`, the `fits` group) calls `area + target`
- * where the chart card's type tag calls it `area + reference area`. Two boards, two
- * contexts; the picker takes the picker's word so the suggested row and the full
- * list agree with each other. `Record<ChartKind, string>` so a fourteenth kind
- * cannot arrive unnamed.
+ * Pond's word for every chart kind, as the PICKER says it. A `ChartKind` is an
+ * ENGINE key, never a label: `net` and `composed` are not words the product says.
+ * The thirteen words have ONE owner — `CHART_TYPE_TAG` in the chart layer
+ * (`lib/modules/chart/chrome.ts`), `pond-charts.js`'s own `type` per kind, which is
+ * also what the chart card's type tag renders (#227) — so a kind renamed there is
+ * renamed here. The single exception is `area`: this surface's own board
+ * (`PondPicker.dc.html`, the `fits` group) calls it `area + target` where the chart
+ * card's board calls it `area + reference area`. Two boards, two values, both final
+ * (ADR 0003 amendment) — the picker takes the picker's word so the suggested row
+ * and the full list agree with each other, and the override is written once, here.
  */
 export const CHART_LABEL: Record<ChartKind, string> = {
-  line: 'line',
+  ...CHART_TYPE_TAG,
   area: 'area + target',
-  bar: 'bar',
-  composed: 'composed + projection',
-  net: 'profit / loss line',
-  heatmap: 'heatmap',
-  ring: 'ring',
-  gauge: 'gauge',
-  radar: 'radar',
-  scatter: 'scatter',
-  sankey: 'sankey',
-  sunburst: 'sunburst',
-  funnel: 'funnel',
 }
 
 /** The three kinds the board draws a mark for; every other kind takes the `chart` mark. */

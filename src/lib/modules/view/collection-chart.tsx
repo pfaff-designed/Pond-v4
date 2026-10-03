@@ -1,8 +1,9 @@
 'use client'
 
 /**
- * Chart mode — the collection's rows AGGREGATED into a chart at read time (#111),
- * drawn by whichever of the thirteen kinds `PondChart.dc.html` declares.
+ * Chart mode — the PLOTS: the collection's rows AGGREGATED into a chart at read time
+ * (#111), drawn by whichever of the thirteen kinds `PondChart.dc.html` declares.
+ * The card around them is `collection-chart-card.tsx` → `chart/card.tsx` (#227).
  *
  * Nothing is stored: `chartDataFromRows` buckets the (already filtered + sorted) rows
  * by the x property and aggregates each series within a bucket, so editing a record in
@@ -11,17 +12,12 @@
  * config, never a block type; switching kinds touches only `chart.kind`.
  */
 
-import { useMemo } from 'react'
-import type { ViewBlock } from './schema'
-import type { CollectionRow } from './apply'
-import { chartDataFromRows, type ChartData } from './chart-data'
+import type { ChartData } from './chart-data'
 import { formatFigure } from './aggregate'
 import { toHeatmapGrid } from './heatmap-data'
 import { ViewNotice } from './notice'
 import { toCategoricalChartRows, toChartRows } from '../chart/data'
-import { ChartCard, CHART_SERIES_COLORS } from '../chart/card'
 import { rankColor, seriesColor } from '@/components/charts/chart-ramp'
-import type { PropertySchema } from '@/lib/properties/schema'
 import { LineChart, Line } from '@/components/charts/line-chart'
 import { AreaChart } from '@/components/charts/area-chart'
 import { Area } from '@/components/charts/area'
@@ -41,12 +37,7 @@ import { FunnelChart } from '@/components/charts/funnel'
 import { RingChart } from '@/components/charts/ring-chart'
 import { Ring } from '@/components/charts/ring'
 import { RingCenter } from '@/components/charts/ring-center'
-import {
-  HeatmapChart,
-  HeatmapCells,
-  HeatmapXAxis,
-  HeatmapYAxis,
-} from '@/components/charts/heatmap'
+import { HeatmapChart, HeatmapCells, HeatmapXAxis, HeatmapYAxis } from '@/components/charts/heatmap'
 
 /**
  * The three promoted Bklit visuals, fed the flat row shape they expect. Line and
@@ -82,7 +73,14 @@ function BklitKind({ data, names }: { data: ChartData; names: string[] }) {
         <Grid />
         <XAxis />
         {names.map((name, i) => (
-          <Area key={name} dataKey={name} fill={seriesColor(i)} stroke={seriesColor(i)} animate={false} loading={false} />
+          <Area
+            key={name}
+            dataKey={name}
+            fill={seriesColor(i)}
+            stroke={seriesColor(i)}
+            animate={false}
+            loading={false}
+          />
         ))}
       </AreaChart>
     )
@@ -120,15 +118,30 @@ const HEATMAP_CELL_GAP = 2
 function RingKind({ data, names, label }: { data: ChartData; names: string[]; label: string }) {
   const ring = data.ring
   if (!ring || ring.slices.length === 0 || ring.total <= 0) {
-    return <ViewNotice>Nothing to share out yet — a ring needs positive values in “{names[0]}”.</ViewNotice>
+    return (
+      <ViewNotice>
+        Nothing to share out yet — a ring needs positive values in “{names[0]}”.
+      </ViewNotice>
+    )
   }
   const rings = ring.slices.map((slice) => ({ ...slice, maxValue: ring.total }))
   return (
     <div className="mn-arrive flex items-center gap-[18px]">
-      <div aria-label={label} className="flex-none" role="img" style={{ width: RING_SIZE, height: RING_SIZE }}>
+      <div
+        aria-label={label}
+        className="flex-none"
+        role="img"
+        style={{ width: RING_SIZE, height: RING_SIZE }}
+      >
         <RingChart baseInnerRadius={42} data={rings} ringGap={4} size={RING_SIZE} strokeWidth={9}>
           {rings.map((slice, i) => (
-            <Ring animate={false} color={rankColor(i)} index={i} key={slice.label} showGlow={false} />
+            <Ring
+              animate={false}
+              color={rankColor(i)}
+              index={i}
+              key={slice.label}
+              showGlow={false}
+            />
           ))}
           <RingCenter defaultLabel="total" />
         </RingChart>
@@ -136,7 +149,11 @@ function RingKind({ data, names, label }: { data: ChartData; names: string[]; la
       <ul className="m-0 flex flex-1 list-none flex-col gap-[7px] p-0">
         {rings.map((slice, i) => (
           <li className="flex items-center gap-2 text-[12.5px] text-mn-text" key={slice.label}>
-            <span aria-hidden className="inline-block h-2 w-2 rounded-[2px]" style={{ background: rankColor(i) }} />
+            <span
+              aria-hidden
+              className="inline-block h-2 w-2 rounded-[2px]"
+              style={{ background: rankColor(i) }}
+            />
             <span className="flex-1 text-mn-text-meta">{slice.label}</span>
             <span className="font-medium tabular-nums">{formatFigure(slice.value)}</span>
           </li>
@@ -188,14 +205,24 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
   const label = `${data.kind} chart of ${names.join(', ')} by ${data.xLabel}`
   // AGENTS.md G6: a kind with nothing drawable reads as a notice, never card chrome
   // around a blank. Each says what the records would need.
-  const empty = <ViewNotice>Nothing to draw yet — these records carry no number in “{names[0]}”.</ViewNotice>
+  const empty = (
+    <ViewNotice>Nothing to draw yet — these records carry no number in “{names[0]}”.</ViewNotice>
+  )
   switch (data.kind) {
     case 'line':
     case 'area':
     case 'bar':
       return <BklitKind data={data} names={names} />
     case 'composed':
-      return <ComposedChart points={data.points} series={names} target={data.target} label={label} fallback={empty} />
+      return (
+        <ComposedChart
+          points={data.points}
+          series={names}
+          target={data.target}
+          label={label}
+          fallback={empty}
+        />
+      )
     case 'net':
       return <NetChart points={data.points} series={names} label={label} fallback={empty} />
     case 'heatmap':
@@ -210,11 +237,17 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
       // omitted ("12,500 of 20,000"): a series name is rarely a plural noun, and the
       // chart has no access to the collection's own word for its records.
       const unit = data.target === undefined ? 'records' : undefined
-      return <GaugeChart value={data.gauge.value} target={data.gauge.target} unit={unit} label={label} />
+      return (
+        <GaugeChart value={data.gauge.value} target={data.gauge.target} unit={unit} label={label} />
+      )
     }
     case 'radar':
       if (data.points.length < RADAR_MIN_AXES) {
-        return <ViewNotice>A radar needs at least three categories — pick a “By” field with more values.</ViewNotice>
+        return (
+          <ViewNotice>
+            A radar needs at least three categories — pick a “By” field with more values.
+          </ViewNotice>
+        )
       }
       return <RadarChart points={data.points} series={names} label={label} fallback={empty} />
     case 'scatter':
@@ -233,7 +266,11 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
           points={data.points}
           series={names[0]}
           label={label}
-          fallback={<ViewNotice>Nothing to flow yet — a sankey needs positive values in “{names[0]}”.</ViewNotice>}
+          fallback={
+            <ViewNotice>
+              Nothing to flow yet — a sankey needs positive values in “{names[0]}”.
+            </ViewNotice>
+          }
         />
       )
     case 'sunburst':
@@ -244,37 +281,14 @@ export function ChartKind({ data, names }: { data: ChartData; names: string[] })
           leaves={data.leaves}
           leafLabel="records"
           label={label}
-          fallback={<ViewNotice>Nothing to share out yet — a sunburst needs positive values in “{names[0]}”.</ViewNotice>}
+          fallback={
+            <ViewNotice>
+              Nothing to share out yet — a sunburst needs positive values in “{names[0]}”.
+            </ViewNotice>
+          }
         />
       )
     case 'funnel':
       return <FunnelChart points={data.points} series={names[0]} label={label} fallback={empty} />
   }
-}
-
-/** The kinds with axes — only these show the ↕ series / ↔ category footer the mockup gives them. */
-const CARTESIAN_KINDS = new Set<ChartData['kind']>(['line', 'area', 'bar', 'composed', 'net', 'scatter'])
-
-export function CollectionChart({
-  schema,
-  rows,
-  chart,
-}: {
-  schema: PropertySchema
-  rows: CollectionRow[]
-  chart?: ViewBlock['chart']
-}) {
-  const data = useMemo(() => chartDataFromRows(rows, schema, chart), [rows, schema, chart])
-  const names = data.series.map((s) => s.name)
-  const axes = CARTESIAN_KINDS.has(data.kind)
-  return (
-    <ChartCard
-      xLabel={axes ? data.xLabel : undefined}
-      yLabel={axes ? names.join(' · ') : undefined}
-      points={data.points}
-      seriesColors={CHART_SERIES_COLORS}
-    >
-      <ChartKind data={data} names={names} />
-    </ChartCard>
-  )
 }

@@ -39,9 +39,11 @@ import {
   type CollectionRow,
 } from './apply'
 import { CollectionBigNumber, ChartControls, BigNumberControls, ControlSelect } from './figures'
-import { CollectionChart } from './collection-chart'
+import { CollectionChart } from './collection-chart-card'
 import { CompactChart } from './collection-chart-compact'
 import { compactChartMark } from './chart-compact'
+import { useChartProvenance } from './use-chart-provenance'
+import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
@@ -93,6 +95,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   const collectionId = viewCollectionId(data, pageId)
   const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
+  // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
+  const chartProvenance = useChartProvenance(pageId, collectionId)
 
   // Config edits (mode/group-by) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
@@ -129,6 +133,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         onConfigChange={onConfigChange}
         onUpdateSchema={editable ? updateSchema : undefined}
         onOpenCard={openCard}
+        chartProvenance={chartProvenance}
       />
       <CardPreviewModal
         rowId={preview?.id ?? null}
@@ -167,6 +172,8 @@ export interface CollectionViewProps {
    *  row id. Present on the live host (ViewView mounts the modal); absent on
    *  Storybook/static renders, where cards stay plain (no dead affordance). */
   onOpenCard?: (rowId: string) => void
+  /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
+  chartProvenance?: ChartProvenance
 }
 
 export function CollectionView({
@@ -183,14 +190,29 @@ export function CollectionView({
   onConfigChange,
   onUpdateSchema,
   onOpenCard,
+  chartProvenance,
 }: CollectionViewProps) {
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
     [rows, schema, config]
   )
 
+  // #227: the chart CARD owns its loading state (the board's four-bar skeleton) —
+  // every other mode shares the calm notice until its rows arrive.
+  const chartCard = config.mode === 'chart' && compactChartMark(config) === null
   if (isLoading) {
-    return <ViewNotice>Loading rows…</ViewNotice>
+    return chartCard ? (
+      <CollectionChart
+        config={config}
+        schema={null}
+        rows={[]}
+        totalRows={0}
+        isLoading
+        provenance={chartProvenance}
+      />
+    ) : (
+      <ViewNotice>Loading rows…</ViewNotice>
+    )
   }
 
   // No schema → not really a collection. A LINKED view whose target was deleted (or
@@ -254,7 +276,14 @@ export function CollectionView({
         compactChartMark(config) && config.chart ? (
           <CompactChart schema={schema} rows={processed} chart={config.chart} />
         ) : (
-          <CollectionChart schema={schema} rows={processed} chart={config.chart} />
+          <CollectionChart
+            config={config}
+            schema={schema}
+            rows={processed}
+            totalRows={rows.length}
+            provenance={chartProvenance}
+            onAddRow={onAddRow ? () => void onAddRow() : undefined}
+          />
         )
       ) : config.mode === 'big-number' ? (
         <CollectionBigNumber schema={schema} rows={processed} bigNumber={config.bigNumber} />
