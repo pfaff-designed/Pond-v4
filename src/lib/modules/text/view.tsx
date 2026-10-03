@@ -12,12 +12,29 @@ import type { TextBlock } from './schema'
  * When `editable` (the document panel), it's a **click-to-edit** block: the
  * rendered reading view by default, one click drops into the source textarea with
  * the caret placed and content intact (extends the ticket-10 edit loop). Blur or
- * Escape returns to the rendered view. An empty block starts in edit mode so a
- * freshly-added "+ Add text" block is immediately typeable, and the accepted-AI-edit
- * path can focus straight into the source (see `data-text-edit-trigger`).
+ * Escape returns to the rendered view. A block with nothing written in it starts in
+ * edit mode so a freshly-added "+ Add text" block is immediately typeable, and the
+ * accepted-AI-edit path can focus straight into the source (see
+ * `data-text-edit-trigger`).
+ *
+ * "Nothing written" is {@link isUnwritten}, not `content === ''`: `/heading` (#281)
+ * mints the block already opened on `'## '`, which has no words in it but is not an
+ * empty string. Keyed on emptiness alone, that block mounted in READ mode and drew
+ * an empty `<h2>` — a blank strip with no caret and no placeholder, worse than
+ * `/text`, which opens typeable. The marker is scaffolding the person is about to
+ * type into, so it counts as unwritten.
  */
+
+/**
+ * Has nothing been written here yet? Blank, or only markdown scaffolding the row
+ * that minted the block typed for you — today a heading's `#` run. The rendered
+ * view draws nothing for either, so both need the caret and the placeholder.
+ */
+export function isUnwritten(content: string): boolean {
+  return content.replace(/^#{1,6}\s*/, '').trim() === ''
+}
 export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock>) {
-  const [editing, setEditing] = useState(() => editable === true && data.content.trim() === '')
+  const [editing, setEditing] = useState(() => editable === true && isUnwritten(data.content))
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // On entering edit mode, focus the textarea and drop the caret at the end so
@@ -61,7 +78,7 @@ export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock
   // land on a link navigate (new tab, per the atom's anchor mapping) instead of
   // entering edit. An empty block keeps a visible placeholder + min-height so mouse
   // users can re-enter after blurring out of a blank textarea.
-  const isEmpty = data.content.trim() === ''
+  const isEmpty = isUnwritten(data.content)
   const isLink = (target: EventTarget) => target instanceof Element && target.closest('a') !== null
   return (
     <div

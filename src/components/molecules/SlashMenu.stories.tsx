@@ -323,8 +323,10 @@ export const Keys: Story = {
     const canvas = within(canvasElement)
     const field = canvas.getByLabelText('page')
     field.focus()
+    // Two rows down from `text` — `heading` then `highlight`, the board's order
+    // since #281 gave `heading` its factory.
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
-    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'embed-file' }))
+    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'highlight' }))
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalled()
     await expect((field as HTMLTextAreaElement).value).toBe('/')
