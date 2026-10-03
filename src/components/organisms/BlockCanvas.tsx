@@ -17,7 +17,7 @@
  * surfaces share one editor.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { ModuleView } from '@/lib/modules/renderers'
@@ -169,8 +169,11 @@ export function BlockCanvas({
   // between. `Pond 02` 2e: table, gallery and chart all open the same picker.
   const [sourcePicker, setSourcePicker] = useState<{
     block: SourceBlock
-    at: number
+    /** The block the view lands against — the `/…` block it replaces, or the one above an insert. */
+    hostId: string | undefined
     replace: boolean
+    /** Where to look for a nearby source (AUDIT C9) — a position, read once at open. */
+    at: number
     anchor: Element | null
   } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -302,7 +305,7 @@ export function BlockCanvas({
   function openSourcePicker(block: SourceBlock, at: number, replace: boolean) {
     const host = blocks[replace ? at : at - 1]
     const anchor = host ? document.getElementById(blockDomId(host.id)) : canvasRef.current
-    setSourcePicker({ block, at, replace, anchor })
+    setSourcePicker({ block, hostId: host?.id, replace, at, anchor })
   }
 
   function nearestSource(at: number): string | null {
@@ -315,24 +318,53 @@ export function BlockCanvas({
     return null
   }
 
-  /** The chosen source's fields, for the chart step — its schema, read on demand. */
-  async function loadFields(databaseId: string) {
-    const page = await getPage(getSupabase(), databaseId)
-    return (page ? (readSchema(page.props) ?? []) : []).map((d) => ({
-      name: d.name,
-      type: d.type,
-    }))
-  }
+  /**
+   * The chosen source's fields, for the chart step — its schema, read on demand.
+   * `useCallback` because the picker's effect depends on this identity: a plain
+   * function declaration changes on every render of this page and would refetch
+   * the schema on every keystroke. A failure yields NO fields, which the picker
+   * already draws as "nothing fits" — `all charts` alone, never a stuck glass.
+   * The `id` rides along: a chart config names fields by schema id, not by name.
+   */
+  const loadFields = useCallback(
+    async (databaseId: string) => {
+      try {
+        const page = await getPage(getSupabase(), databaseId)
+        return (page ? (readSchema(page.props) ?? []) : []).map((d) => ({
+          id: d.id,
+          name: d.name,
+          type: d.type,
+        }))
+      } catch (err) {
+        console.error('Failed to read the source’s fields', err)
+        return []
+      }
+    },
+    [getSupabase]
+  )
 
-  /** Put the picked view block where the `/` was (replace) or between (insert). */
-  function placeView(view: ViewBlock, at: number, replace: boolean) {
+  /**
+   * Put the picked view block where the `/` was (replace) or between (insert).
+   * Keyed on the HOST BLOCK'S ID, not the index the picker opened at: making a
+   * database is an await, and a block inserted or removed meanwhile would move
+   * that index under us. With no host (an insert at the top, or a block that went
+   * away while the glass was open) the view lands at the end, which is where an
+   * append belongs.
+   */
+  function placeView(view: ViewBlock, hostId: string | undefined, replace: boolean) {
     markInserted(view.id)
     const current = blocksRef.current
-    onChange(
-      replace
-        ? current.map((b, i) => (i === at ? view : b))
-        : [...current.slice(0, at), view, ...current.slice(at)]
-    )
+    const at = hostId ? current.findIndex((b) => b.id === hostId) : -1
+    if (replace) {
+      // The `/…` block went away while the glass was open — append rather than
+      // drop the thing the person asked for; the undo takes it back.
+      onChange(at === -1 ? [...current, view] : current.map((b, i) => (i === at ? view : b)))
+      return
+    }
+    // An insert-between hangs off the block ABOVE the slot, so no host means the
+    // top slot.
+    const insertAt = at === -1 ? 0 : at + 1
+    onChange([...current.slice(0, insertAt), view, ...current.slice(insertAt)])
   }
 
   /**
@@ -347,10 +379,20 @@ export function BlockCanvas({
     const open = sourcePicker
     setSourcePicker(null)
     if (!open) return
-    const chart =
-      pick.chart !== undefined
-        ? { kind: pick.chart, series: [{ property: '', agg: 'count' as const }] }
-        : undefined
+    // The kind the person chose, over the two fields the row promised. An empty
+    // `property` with `agg: 'count'` would plot 1 per record, and a config with no
+    // `xProperty` buckets by record TITLE — `resolveChartConfig` infers an x axis
+    // only when there is no stored config at all. So each half is written only
+    // when the picker actually knows it, and the engine infers the rest.
+    const chart = pick.chart
+      ? {
+          kind: pick.chart.kind,
+          ...(pick.chart.xProperty ? { xProperty: pick.chart.xProperty } : {}),
+          ...(pick.chart.yProperty
+            ? { series: [{ property: pick.chart.yProperty, agg: 'sum' as const }] }
+            : { series: [] }),
+        }
+      : undefined
     if (pick.kind === 'existing') {
       const view: ViewBlock = {
         id: crypto.randomUUID(),
@@ -359,10 +401,10 @@ export function BlockCanvas({
         collectionId: pick.database.id,
         ...(chart ? { chart } : {}),
       }
-      placeView(view, open.at, open.replace)
+      placeView(view, open.hostId, open.replace)
       return
     }
-    const replaced = open.replace ? blocksRef.current[open.at] : undefined
+    const replaced = open.replace ? blocksRef.current.find((b) => b.id === open.hostId) : undefined
     try {
       const made = await createDatabase(
         getSupabase(),
@@ -375,7 +417,7 @@ export function BlockCanvas({
         },
         () => crypto.randomUUID()
       )
-      placeView(made.view, open.at, open.replace)
+      placeView(made.view, open.hostId, open.replace)
       queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       queryClient.invalidateQueries({ queryKey: ['record-counts', workspace] })
       stageDeletion({
@@ -545,17 +587,29 @@ export function BlockCanvas({
       {sourcePicker && (
         <SourcePicker
           block={sourcePicker.block}
-          pageTitle={pageTitle || 'Untitled'}
+          /* Lowercase on the machine surface — see `sourceDatabases`. */
+          pageTitle={pageTitle || 'untitled'}
           databases={databases}
           loadFields={loadFields}
-          defaultStep={
-            sourcePicker.block === 'chart' && nearestSource(sourcePicker.at) ? 'type' : 'source'
-          }
-          defaultSource={
-            sourcePicker.block === 'chart'
-              ? databases.find((d) => d.id === nearestSource(sourcePicker.at))
-              : undefined
-          }
+          /* ONE expression decides both: the step is `type` exactly when there IS
+             a source to open it on. Deriving them separately opened the chart step
+             with no source whenever the nearby view pointed at a collection that is
+             not a child of the databases root (`promote-table.ts` files one under
+             its own page) or the `['pages']` cache had not warmed — and the picker
+             reads both props once, in `useState`, so it never recovered: finishing
+             there wrote a brand-new empty database instead of charting the table
+             the person was standing next to. AUDIT C9 wires a chart to a nearby
+             database; it does not invent one. */
+          {...(() => {
+            const near =
+              sourcePicker.block === 'chart'
+                ? databases.find((d) => d.id === nearestSource(sourcePicker.at))
+                : undefined
+            return {
+              defaultStep: near ? ('type' as const) : ('source' as const),
+              defaultSource: near,
+            }
+          })()}
           anchor={sourcePicker.anchor}
           onPick={(pick) => void onSourcePick(pick)}
           onClose={() => setSourcePicker(null)}

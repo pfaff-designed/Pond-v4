@@ -13,6 +13,7 @@ import path from 'node:path'
 
 import {
   chartSuggestions,
+  CHART_LABEL,
   FIELD_WORD,
   footFor,
   headFor,
@@ -193,7 +194,12 @@ describe('type — pick a chart type', () => {
   it('expanded, `all charts` lists every kind in CHART_KINDS order — one row per kind, no more', () => {
     const entries = typeEntries(CALORIES, true)
     expect(entries[0]).toEqual({ kind: 'group', label: 'all charts' })
-    expect(labels(entries)).toEqual([...CHART_KINDS])
+    // Pond's word per kind, not the engine key — `net` is `profit / loss line`.
+    // `CHART_LABEL` is `Record<ChartKind, string>`, so a fourteenth kind cannot
+    // arrive unnamed, and nothing here can drift back to the raw enum.
+    expect(labels(entries)).toEqual(CHART_KINDS.map((k) => CHART_LABEL[k]))
+    expect(labels(entries)).not.toContain('net')
+    expect(labels(entries)).not.toContain('composed')
     const ids = entries.flatMap((e) => (e.kind === 'row' ? [e.id] : []))
     expect(ids).toEqual(CHART_KINDS.map((k) => `kind:${k}`))
   })

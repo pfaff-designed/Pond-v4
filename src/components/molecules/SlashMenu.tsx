@@ -188,7 +188,12 @@ export function SlashMenu({
         {entries.map((entry, i) => {
           if (entry.kind === 'group') {
             return (
-              <div key={`g-${entry.label}-${i}`} data-part="group" className={GROUP}>
+              <div
+                role="presentation"
+                key={`g-${entry.label}-${i}`}
+                data-part="group"
+                className={GROUP}
+              >
                 {entry.label}
               </div>
             )

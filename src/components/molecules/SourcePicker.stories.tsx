@@ -5,6 +5,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { SourcePicker, type SourcePickerProps } from './SourcePicker'
 import type { SourceDatabase, SourceField } from './source-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
+import { CHART_LABEL } from './source-entries'
 
 /**
  * The source picker — `PondPicker kind="source"` (#280): its three states, both
@@ -331,6 +332,35 @@ export const TypeInk: Story = {
     ink: true,
   },
   play: async ({ canvasElement }) => assertType(canvasElement, INK),
+}
+
+/**
+ * ↵ on `all charts` unfolds the thirteen in place. This frame exists so the chrome
+ * guard's lowercase check actually SEES those thirteen rows: a `ChartKind` is an
+ * engine key, and `net` / `composed` would reach the glass as build vocabulary if
+ * anything ever rendered the enum instead of `CHART_LABEL`.
+ */
+export const AllCharts: Story = {
+  args: {
+    block: 'chart',
+    defaultStep: 'type',
+    defaultSource: DATABASES[1],
+    loadFields,
+  },
+  play: async ({ canvasElement }) => {
+    const glass = glassOf(canvasElement)
+    await waitFor(() => expect(labels(canvasElement)).toContain('all charts'))
+    await userEvent.click(
+      [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find((r) =>
+        r.textContent?.startsWith('all charts')
+      )!
+    )
+    await waitFor(() => expect(groups(canvasElement)).toEqual(['all charts']))
+    await assertChrome(canvasElement, PAPER)
+    await expect(labels(canvasElement)).toEqual(CHART_KINDS.map((k) => CHART_LABEL[k]))
+    await expect(labels(canvasElement)).not.toContain('net')
+    await expect(labels(canvasElement)).not.toContain('composed')
+  },
 }
 
 // ── new ────────────────────────────────────────────────────────────────────────

@@ -50,10 +50,33 @@ export interface SourceDatabase {
   recordsAre: RecordsAre
 }
 
-/** A field as the picker shows it: its name and its engine type (the word is `FIELD_WORD`). */
+/**
+ * A field as the picker shows it: its name, its engine type (the word is
+ * `FIELD_WORD`) and — for a field that already exists in a database's schema —
+ * its **id**. The id is what a chart config names (`xProperty`, `series[].property`
+ * are `PropertyDef` ids, `view/chart-data.ts`), so a suggestion that says
+ * `kcal by day` can hand the host the two fields it read rather than a kind alone.
+ * A field being typed on the `new` step has no id yet; the host mints one.
+ */
 export interface SourceField {
+  id?: string
   name: string
   type: PropertyType
+}
+
+/**
+ * The chart a `type` pick commits to: the kind, plus the two fields the suggestion
+ * was derived from. **Both ids matter** — `resolveChartConfig` only infers an x
+ * axis when there is NO stored config at all, so a config carrying a kind and
+ * nothing else silently buckets by record title. Naming the fields is what makes
+ * the row's promise (`line · kcal by day`) true of the block it makes.
+ */
+export interface ChartPick {
+  kind: ChartKind
+  /** The date field the suggestion read, when there was one. */
+  xProperty?: string
+  /** The number field the suggestion read, when there was one. */
+  yProperty?: string
 }
 
 export type SourceEntry =
@@ -142,6 +165,8 @@ export interface ChartSuggestion {
  */
 export function chartSuggestions(fields: readonly SourceField[] | undefined): {
   fits: PropertyType[]
+  /** The two fields every suggested kind reads — what a pick must carry (`ChartPick`). */
+  axes?: { xProperty?: string; yProperty?: string }
   rows: ChartSuggestion[]
 } {
   const date = fields?.find((f) => f.type === 'date')
@@ -149,17 +174,49 @@ export function chartSuggestions(fields: readonly SourceField[] | undefined): {
   if (!date || !number) return { fits: [], rows: [] }
   return {
     fits: ['date', 'number'],
+    axes: { xProperty: date.id, yProperty: number.id },
     rows: [
-      { kind: 'line', label: 'line', sub: `${number.name} by ${date.name}`, icon: ICON.line },
+      {
+        kind: 'line',
+        label: CHART_LABEL.line,
+        sub: `${number.name} by ${date.name}`,
+        icon: ICON.line,
+      },
       {
         kind: 'area',
-        label: 'area + target',
+        label: CHART_LABEL.area,
         sub: `${number.name} against a target`,
         icon: ICON.area,
       },
-      { kind: 'heatmap', label: 'heatmap', sub: 'one cell a day', icon: ICON.heat },
+      { kind: 'heatmap', label: CHART_LABEL.heatmap, sub: 'one cell a day', icon: ICON.heat },
     ],
   }
+}
+
+/**
+ * Pond's word for every chart kind. A `ChartKind` is an ENGINE key, never a label:
+ * `net` and `composed` are not words the product says. The thirteen words are the
+ * boards' own — `pond-charts.js`'s `type` for each kind, except `area`, which this
+ * surface's own board (`PondPicker.dc.html`, the `fits` group) calls `area + target`
+ * where the chart card's type tag calls it `area + reference area`. Two boards, two
+ * contexts; the picker takes the picker's word so the suggested row and the full
+ * list agree with each other. `Record<ChartKind, string>` so a fourteenth kind
+ * cannot arrive unnamed.
+ */
+export const CHART_LABEL: Record<ChartKind, string> = {
+  line: 'line',
+  area: 'area + target',
+  bar: 'bar',
+  composed: 'composed + projection',
+  net: 'profit / loss line',
+  heatmap: 'heatmap',
+  ring: 'ring',
+  gauge: 'gauge',
+  radar: 'radar',
+  scatter: 'scatter',
+  sankey: 'sankey',
+  sunburst: 'sunburst',
+  funnel: 'funnel',
 }
 
 /** The three kinds the board draws a mark for; every other kind takes the `chart` mark. */
@@ -177,7 +234,9 @@ export function typeEntries(
   if (expanded) {
     return [
       { kind: 'group', label: 'all charts' },
-      ...CHART_KINDS.map((k) => row(kindId(k), k, { icon: KIND_ICON[k] ?? ICON.chart })),
+      ...CHART_KINDS.map((k) =>
+        row(kindId(k), CHART_LABEL[k], { icon: KIND_ICON[k] ?? ICON.chart })
+      ),
     ]
   }
   const { fits, rows } = chartSuggestions(fields)
@@ -189,6 +248,22 @@ export function typeEntries(
   }
   out.push(row(ALL_CHARTS_ID, 'all charts', { icon: ICON.chart, hint: String(CHART_KINDS.length) }))
   return out
+}
+
+/**
+ * The chart a pick of `kind` commits to, over this source's fields. The SAME rule
+ * the suggestions are drawn from, so a kind chosen off `all charts` reads the same
+ * two fields a suggested one would — the board puts `all charts` one row from the
+ * fits group, not in a different world. A source with no date + number pair yields
+ * the kind alone, which is the honest answer: the person chose only a kind.
+ */
+export function chartPick(kind: ChartKind, fields: readonly SourceField[] | undefined): ChartPick {
+  const { axes } = chartSuggestions(fields)
+  return {
+    kind,
+    ...(axes?.xProperty ? { xProperty: axes.xProperty } : {}),
+    ...(axes?.yProperty ? { yProperty: axes.yProperty } : {}),
+  }
 }
 
 /** The kind a `type` row stands for, or null for `all charts`. */

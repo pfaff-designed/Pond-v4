@@ -45,7 +45,6 @@ import { Toggle } from '@base-ui/react/toggle'
 import { ToggleGroup } from '@base-ui/react/toggle-group'
 
 import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
-import type { ChartKind } from '@/lib/modules/view/aggregate'
 
 import {
   FOOT,
@@ -65,6 +64,7 @@ import { Row, type RowEntry } from './slash-row'
 import {
   ADD_FIELD_ID,
   ALL_CHARTS_ID,
+  chartPick,
   footFor,
   headFor,
   kindOf,
@@ -73,6 +73,7 @@ import {
   RECORDS_ARE,
   sourceEntries,
   typeEntries,
+  type ChartPick,
   type RecordsAre,
   type SourceBlock,
   type SourceDatabase,
@@ -82,6 +83,7 @@ import {
 import { useAnchoredBox, type PickerAnchor, type PickerSide } from './use-anchored-box'
 
 export type {
+  ChartPick,
   RecordsAre,
   SourceBlock,
   SourceDatabase,
@@ -91,7 +93,7 @@ export type {
 
 /** What the person chose — the host makes the block (and, for `new`, the database). */
 export type SourcePick =
-  | { kind: 'existing'; database: SourceDatabase; mode: SourceBlock; chart?: ChartKind }
+  | { kind: 'existing'; database: SourceDatabase; mode: SourceBlock; chart?: ChartPick }
   | {
       kind: 'new'
       /** Named after the page it started on. */
@@ -100,7 +102,7 @@ export type SourcePick =
       fields: readonly SourceField[]
       recordsAre: RecordsAre
       mode: SourceBlock
-      chart?: ChartKind
+      chart?: ChartPick
     }
 
 export interface SourcePickerProps {
@@ -150,7 +152,12 @@ export function SourcePicker({
   onClose,
   container,
 }: SourcePickerProps) {
-  const [step, setStep] = useState<SourceStep>(defaultStep)
+  // `type` without a source is not a state this picker can finish from — ↵ there
+  // would fall through to the `new` branch and write an empty database nobody
+  // asked for. A host that wires one without the other gets the `source` step.
+  const [step, setStep] = useState<SourceStep>(
+    defaultStep === 'type' && !defaultSource ? 'source' : defaultStep
+  )
   // The chosen source: a database, or `null` for the new one being defined.
   const [source, setSource] = useState<SourceDatabase | null>(defaultSource ?? null)
   const [fields, setFields] = useState<readonly SourceField[]>([])
@@ -194,7 +201,7 @@ export function SourcePicker({
     }
   }, [step, source, loadFields])
 
-  const finish = (chart?: ChartKind) => {
+  const finish = (chart?: ChartPick) => {
     if (source) onPick({ kind: 'existing', database: source, mode: block, chart })
     else onPick({ kind: 'new', title: pageTitle, fields, recordsAre, mode: block, chart })
   }
@@ -220,7 +227,11 @@ export function SourcePicker({
         return
       }
       const kind = kindOf(item.id)
-      if (kind) finish(kind)
+      // The pick names the two fields the row's `sub` promised, through the one
+      // rule the suggestions are drawn from — a kind alone makes a chart bucketed
+      // by record title (`resolveChartConfig` infers an x axis only when there is
+      // no stored config at all), which is not what `line · kcal by day` offered.
+      if (kind) finish(chartPick(kind, source ? sourceFields : fields))
     } else if (item?.id === ADD_FIELD_ID) {
       setFields((f) => [...f, { name: nextFieldName(f), type: 'text' }])
     } else if (block === 'chart') {
@@ -232,6 +243,11 @@ export function SourcePicker({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // The seg is a real toggle group with its own keys. Swallowing Enter here
+      // would make Enter on a focused option create the database instead of
+      // choosing the option — a control that takes focus and then ignores it.
+      const target = e.target as Element | null
+      if (target?.closest?.('[data-part="seg"]')) return
       let handled = true
       if (e.key === 'ArrowDown') select(Math.min(active + 1, items.length - 1))
       else if (e.key === 'ArrowUp') select(Math.max(active - 1, first))
@@ -297,7 +313,12 @@ export function SourcePicker({
         {listEntries.map((entry, i) => {
           if (entry.kind === 'group') {
             return (
-              <div key={`g-${entry.label}-${i}`} data-part="group" className={GROUP}>
+              <div
+                role="presentation"
+                key={`g-${entry.label}-${i}`}
+                data-part="group"
+                className={GROUP}
+              >
                 {entry.label}
               </div>
             )

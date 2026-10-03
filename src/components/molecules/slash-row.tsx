@@ -43,14 +43,11 @@ export const ENTER = 'font-mono text-[10.5px] text-mn-text-meta'
 export const MATCH = 'underline decoration-[1px] underline-offset-[3px]'
 
 export function Row({
-  id,
   entry,
   selected,
   onHover,
   onPick,
 }: {
-  /** For `aria-activedescendant` on a host that tracks the active row by id. */
-  id?: string
   entry: RowEntry
   selected: boolean
   onHover: () => void
@@ -59,7 +56,6 @@ export function Row({
   const ink = entry.faint ? 'text-mn-text-meta' : 'text-mn-text'
   return (
     <div
-      id={id}
       role="option"
       aria-selected={selected}
       data-part="row"

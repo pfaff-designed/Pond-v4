@@ -42,7 +42,7 @@ describe('databasesOf', () => {
 })
 
 describe('sourceDatabases', () => {
-  it('pairs each database with its count; an uncounted one holds 0 and an untitled one reads Untitled', () => {
+  it('pairs each database with its count; an uncounted one holds 0 and an untitled one reads lowercase', () => {
     const counts = new Map([
       ['recipes', 18],
       ['calories', 412],
@@ -50,7 +50,8 @@ describe('sourceDatabases', () => {
     expect(sourceDatabases(ROWS, counts)).toEqual([
       { id: 'calories', title: 'calories', records: 412, recordsAre: 'pages' },
       { id: 'recipes', title: 'recipes', records: 18, recordsAre: 'pages' },
-      { id: 'untitled', title: 'Untitled', records: 0, recordsAre: 'pages' },
+      // Lowercase — the picker is the machine surface (`PROJECT_RULES.md`).
+      { id: 'untitled', title: 'untitled', records: 0, recordsAre: 'pages' },
     ])
   })
 })

@@ -11,6 +11,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { SourcePicker, type SourcePickerProps } from '@/components/molecules/SourcePicker'
 import type { SourceDatabase, SourceField } from '@/components/molecules/source-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
+import { CHART_LABEL } from '@/components/molecules/source-entries'
 
 const RECIPES: SourceDatabase = {
   id: 'recipes',
@@ -25,9 +26,11 @@ const CALORIES: SourceDatabase = {
   recordsAre: 'rows',
 }
 const DATABASES = [RECIPES, CALORIES]
+// Ids, because a chart config names fields by schema id — a pick that carried
+// only the kind made a chart bucketed by record title plotting a constant 1.
 const CALORIE_FIELDS: SourceField[] = [
-  { name: 'day', type: 'date' },
-  { name: 'kcal', type: 'number' },
+  { id: 'f-day', name: 'day', type: 'date' },
+  { id: 'f-kcal', name: 'kcal', type: 'number' },
 ]
 
 function renderPicker(overrides: Partial<SourcePickerProps> = {}) {
@@ -226,7 +229,7 @@ describe('type — pick a chart type', () => {
       kind: 'existing',
       database: CALORIES,
       mode: 'chart',
-      chart: 'area',
+      chart: { kind: 'area', xProperty: 'f-day', yProperty: 'f-kcal' },
     })
   })
 
@@ -236,10 +239,21 @@ describe('type — pick a chart type', () => {
     await waitFor(() => expect(options()).toHaveLength(4))
     fireEvent.click(options()[3])
     expect(groups()).toEqual(['all charts'])
-    expect(options().map(labelOf)).toEqual([...CHART_KINDS])
+    // The ROWS carry Pond's word, the IDS carry the engine key. `net` renders as
+    // `profit / loss line` and `composed` as `composed + projection`; asserting the
+    // keys here would have pinned build vocabulary onto a product surface.
+    expect(options().map(labelOf)).toEqual(CHART_KINDS.map((k) => CHART_LABEL[k]))
+    expect(options().map(labelOf)).not.toContain('net')
+    expect(options().map(labelOf)).not.toContain('composed')
     expect(glass().querySelector('[data-part="rule"]')).toBeNull()
     fireEvent.click(options()[CHART_KINDS.indexOf('sankey')])
-    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ chart: 'sankey' }))
+    // A kind off `all charts` reads the SAME two fields a suggested one does —
+    // the board puts the full list one row from the fits group, not in another world.
+    expect(onPick).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chart: { kind: 'sankey', xProperty: 'f-day', yProperty: 'f-kcal' },
+      })
+    )
   })
 
   it('a source with no date + number pair offers only `all charts`', async () => {
@@ -267,7 +281,9 @@ describe('type — pick a chart type', () => {
       fields: [],
       recordsAre: 'pages',
       mode: 'chart',
-      chart: 'bar',
+      // A database being defined has no fields with ids yet, so the pick is the
+      // kind alone and the engine infers the axes — never an empty count series.
+      chart: { kind: 'bar' },
     })
   })
 

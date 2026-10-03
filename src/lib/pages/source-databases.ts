@@ -38,7 +38,10 @@ export function databasesOf(rows: readonly PageRow[]): PageRow[] {
 export function sourceDatabases(rows: readonly PageRow[], counts: RecordCounts): SourceDatabase[] {
   return databasesOf(rows).map((r) => ({
     id: r.id,
-    title: r.title || 'Untitled',
+    // Lowercase: the picker is the machine surface (`PROJECT_RULES.md`: mono,
+    // lowercase), so an untitled database reads `untitled` here even though the
+    // rail and the editor capitalise it.
+    title: r.title || 'untitled',
     records: counts.get(r.id) ?? 0,
     recordsAre: 'pages',
   }))

@@ -74,12 +74,19 @@ describe('createDatabase', () => {
         title: 'calories',
         schema: TITLE_ONLY,
         mode: 'chart',
-        chart: { kind: 'line', series: [{ property: '', agg: 'count' }] },
+        chart: { kind: 'line', xProperty: 'f-day', series: [{ property: 'f-kcal', agg: 'sum' }] },
       },
       counter()
     )
     expect(chart.view.mode).toBe('chart')
     expect(chart.view.chart?.kind).toBe('line')
+    // The config names BOTH fields. `resolveChartConfig` infers an x axis only
+    // when there is no stored config at all, and a series of `{property: '',
+    // agg: 'count'}` plots a constant 1 — so a config carrying the kind alone,
+    // or an empty count series, would make the chart a flat line against record
+    // titles whatever the picker's row promised.
+    expect(chart.view.chart?.xProperty).toBe('f-day')
+    expect(chart.view.chart?.series).toEqual([{ property: 'f-kcal', agg: 'sum' }])
   })
 
   it('writes nothing when unauthenticated', async () => {

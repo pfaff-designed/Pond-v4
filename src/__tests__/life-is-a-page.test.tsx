@@ -270,4 +270,35 @@ describe('an area is the same page (#108, #234)', () => {
     expect(within(nav).getByText('life')).toBeInTheDocument()
     expect(within(nav).queryByText('Health')).toBeNull()
   })
+  // AUDIT C9 wires a chart to a nearby database; it does not invent one. The
+  // nearby view here points at a collection that is NOT a child of the databases
+  // root — which is what `promote-table.ts` writes — so there is no source to
+  // open the chart step on, and the picker must stay on `source`. Deriving the
+  // step and the source from separate expressions opened `type` with no source,
+  // where ↵ wrote a brand-new empty database instead of charting the table.
+  it('“/chart” beside a view the picker cannot offer stays on the source step', async () => {
+    HOME_BLOCKS = [{ id: 'v1', type: 'view', mode: 'table', collectionId: 'not-a-database' }]
+    renderPanel()
+    await screen.findByRole('button', { name: 'Add a block' })
+    fireEvent.click(screen.getByRole('button', { name: 'Add a block' }))
+    const editor = await screen.findByPlaceholderText('Write something…')
+    fireEvent.change(editor, { target: { value: '/' } })
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.change(editor, { target: { value: '/chart' } })
+    fireEvent.click(within(menu).getByText('chart'))
+
+    await waitFor(() => {
+      const glass = document.querySelector('[data-part="glass"][data-kind="source"]')
+      expect(glass).toBeTruthy()
+      expect(glass).toHaveAttribute('data-step', 'source')
+    })
+    expect(mockCommitBlocks).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.arrayContaining([expect.objectContaining({ type: 'view', mode: 'chart' })]),
+      expect.anything(),
+      expect.anything()
+    )
+  })
 })
