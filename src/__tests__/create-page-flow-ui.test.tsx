@@ -127,6 +127,8 @@ global.fetch = jest.fn().mockResolvedValue({
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { requestCreatePage } from '@/lib/shell-commands'
+import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { fetchPages } from '@/lib/pages/tree'
 import { AITerminal } from '@/components/organisms/AITerminal'
 
 // ── Test helpers ──────────────────────────────────────────────────────────
@@ -235,6 +237,61 @@ describe('ShellCommands — ＋ new page opens the New page modal', () => {
   })
 })
 
+// ── ⌘K `new page “q”` — the parent it names is the parent it uses (#279) ──
+
+describe('ShellCommands — the palette’s `new page “q” under <parent>` files under that parent', () => {
+  const pages = [
+    { id: 'health', parent_id: null, type: 'area', title: 'Health', order: 0, updated_at: '' },
+    {
+      id: 'sleep',
+      parent_id: 'health',
+      type: 'page',
+      title: 'Sleep log',
+      order: 0,
+      updated_at: '',
+    },
+  ]
+  beforeEach(() => {
+    mockCreatePage.mockClear().mockResolvedValue({ id: 'new-page-id', type: 'page', title: '' })
+    ;(fetchPages as jest.Mock).mockResolvedValue(pages)
+  })
+  afterEach(() => {
+    ;(fetchPages as jest.Mock).mockResolvedValue([])
+    mockNodeId = null
+  })
+
+  it('on a leaf page (no scope), the row names the leaf and the dialog creates under it', async () => {
+    mockNodeId = 'sleep'
+    const user = userEvent.setup()
+    renderWithQuery(<ShellCommands />)
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    // A leaf has no children, so the palette opens unscoped — the #239 shape
+    // was "under life" here while the dialog filed under the leaf.
+    expect(document.querySelector('[data-part="scope"]')).toBeNull()
+    await user.type(input, 'zzz')
+
+    const make = await screen.findByRole('option', { name: /^> ?new page “zzz” under / })
+    const named = make.textContent!.match(/under (.+?)↵?$/)![1]
+    const namedPage = pages.find((p) => p.title === named)!
+    expect(namedPage.id).toBe('sleep')
+
+    fireEvent.click(make)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    expect(screen.getByRole('textbox', { name: /page title/i })).toHaveValue('zzz')
+    fireEvent.click(screen.getByRole('button', { name: /create page/i }))
+
+    await waitFor(() => {
+      expect(mockCreatePage).toHaveBeenCalledWith(
+        expect.anything(),
+        'user-1',
+        expect.objectContaining({ title: 'zzz', parentId: namedPage.id })
+      )
+    })
+  })
+})
+
 // ── AITerminal — create_page contract (M1) ────────────────────────────────
 // The chat AI no longer emits create_node: the terminal wires NO onToolCall
 // handler and instead renders a create_page proposal card for a
@@ -285,6 +342,31 @@ describe('AITerminal — create_page contract', () => {
     expect(screen.getByText(/new page · recipe/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create page/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /destination/i })).toBeInTheDocument()
+  })
+})
+
+// ── AITerminal — ⌘K `ask pond about “q”` never clobbers a draft (#279) ────
+
+describe('AITerminal — the palette’s question lands in an empty composer only', () => {
+  beforeEach(() => {
+    mockMessages = []
+    mockStatus = 'ready'
+  })
+
+  it('prefills an empty composer, and leaves a draft in progress alone', async () => {
+    const user = userEvent.setup()
+    renderWithQuery(<AITerminal />)
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
+
+    act(() => requestTerminalFocus('ask pond about “cabinets”'))
+    await waitFor(() => expect(textarea).toHaveValue('ask pond about “cabinets”'))
+
+    await user.clear(textarea)
+    await user.type(textarea, 'half a thought')
+    act(() => requestTerminalFocus('ask pond about “sleep”'))
+    expect(textarea).toHaveValue('half a thought')
+    expect(textarea).toHaveFocus()
   })
 })
 

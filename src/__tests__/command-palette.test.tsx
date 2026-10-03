@@ -21,11 +21,11 @@ import {
   PALETTE_FOOT,
   paletteEntries,
   type PaletteEntry,
-  type PaletteItem,
 } from '@/components/molecules/palette-entries'
-import { paletteItems, paletteScope } from '@/lib/pages/palette-items'
+import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import type { PageRow } from '@/lib/pages/tree'
+import { PALETTE_ITEMS, PALETTE_SUGGESTED, paletteChrome } from './helpers/palette-fixture'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 
@@ -42,71 +42,7 @@ const boardFoot = () => {
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
 }
 
-// The board's own rows, as items.
-const ITEMS: PaletteItem[] = [
-  {
-    id: 'kitchen',
-    label: 'kitchen renovation',
-    kind: 'page',
-    sub: 'creativity',
-    glyph: 'star-01',
-    recent: true,
-    path: ['creativity'],
-  },
-  {
-    id: 'budget',
-    label: 'budget',
-    kind: 'page',
-    sub: 'money',
-    glyph: 'ring',
-    recent: true,
-    path: ['money'],
-  },
-  {
-    id: 'journal',
-    label: 'journal',
-    kind: 'page',
-    sub: 'personal',
-    glyph: 'house',
-    recent: true,
-    path: ['personal'],
-  },
-  {
-    id: 'subscriptions',
-    label: 'subscriptions',
-    kind: 'page',
-    sub: 'money',
-    glyph: 'ring',
-    path: ['money'],
-  },
-  {
-    id: 'cabinet-plan',
-    label: 'cabinet plan',
-    kind: 'page',
-    sub: 'creativity',
-    glyph: 'star-01',
-    path: ['creativity', 'kitchen'],
-  },
-  { id: 'transactions', label: 'transactions', kind: 'database', sub: 'money', path: ['money'] },
-  { id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' },
-  {
-    id: 'adobe',
-    label: 'adobe creative cloud',
-    kind: 'record',
-    sub: 'subscriptions · renews 28 sep',
-  },
-  {
-    id: 'make-noise',
-    label: 'make noise',
-    kind: 'pond',
-    sub: 'pond · switch',
-    glyph: 'lightning-03',
-    key: '⌘2',
-  },
-  { id: 'chase', label: 'chase the cabinet quote', kind: 'action' },
-  { id: 'log-workout', label: 'log a workout', kind: 'action' },
-  { id: 'log-meal', label: 'log a meal', kind: 'action' },
-]
+// The board's own rows, as items, are `helpers/palette-fixture` — shared with the stories.
 
 const shape = (entries: PaletteEntry[]) =>
   entries.map((e) =>
@@ -118,6 +54,8 @@ const shape = (entries: PaletteEntry[]) =>
   )
 const groupsOf = (entries: PaletteEntry[]) =>
   entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
+/** One query per state — `sav` reaches the capitalised `Savings`. */
+const QUERIES = ['', 'cab', '> log', 'adobe', 'cabnet', 'make', 'sav']
 
 // ── The list, state by state ───────────────────────────────────────────────────
 
@@ -133,23 +71,40 @@ describe('paletteEntries — the board’s states', () => {
     expect([...PALETTE_FOOT]).toEqual(boardFoot())
   })
 
-  it('opened: the recent pages only — the board’s `suggested` actions are AUDIT S6, left out', () => {
-    expect(shape(paletteEntries(ITEMS, ''))).toEqual([
+  it('opened: the recent pages, then the `suggested` actions the host supplies, in the board’s order', () => {
+    expect(shape(paletteEntries(PALETTE_ITEMS, '', { suggested: PALETTE_SUGGESTED }))).toEqual([
+      'G:recent',
+      'page:kitchen renovation',
+      'page:budget',
+      'page:journal',
+      'G:suggested',
+      'action:chase the cabinet quote',
+      'action:log a workout',
+    ])
+  })
+
+  it('opened with no suggestions from the host: the recent pages and nothing faked (#285 owns the inference)', () => {
+    expect(shape(paletteEntries(PALETTE_ITEMS, ''))).toEqual([
       'G:recent',
       'page:kitchen renovation',
       'page:budget',
       'page:journal',
     ])
+    expect(groupsOf(paletteEntries(PALETTE_ITEMS, '', { suggested: [] }))).toEqual(['recent'])
   })
 
-  it('opened with nothing recent: every page, so a new pond is not blank', () => {
-    const fresh = ITEMS.map((i) => ({ ...i, recent: false }))
+  it('opened with nothing recent: every page, so a new pond is not blank — suggestions still follow', () => {
+    const fresh = PALETTE_ITEMS.map((i) => ({ ...i, recent: false }))
     expect(groupsOf(paletteEntries(fresh, ''))).toEqual(['pages'])
-    expect(paletteEntries(fresh, '').filter((e) => e.kind === 'row')).toHaveLength(6)
+    expect(paletteEntries(fresh, '').filter((e) => e.kind === 'row')).toHaveLength(8)
+    expect(groupsOf(paletteEntries(fresh, '', { suggested: PALETTE_SUGGESTED }))).toEqual([
+      'pages',
+      'suggested',
+    ])
   })
 
   it('typing: pages, then records, then actions — matched ones, then `ask pond about “q”`', () => {
-    const entries = paletteEntries(ITEMS, 'cab')
+    const entries = paletteEntries(PALETTE_ITEMS, 'cab')
     expect(shape(entries)).toEqual([
       'G:pages',
       'page:cabinet plan',
@@ -166,17 +121,18 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('actions: a leading `>` drops pages and records, and no group label is drawn', () => {
-    expect(shape(paletteEntries(ITEMS, '> log'))).toEqual([
+    expect(shape(paletteEntries(PALETTE_ITEMS, '> log'))).toEqual([
       'action:log a workout',
       'action:log a meal',
+      'action:log sleep',
     ])
-    expect(shape(paletteEntries(ITEMS, '>'))).toEqual(
-      ITEMS.filter((i) => i.kind === 'action').map((i) => `action:${i.label}`)
+    expect(shape(paletteEntries(PALETTE_ITEMS, '>'))).toEqual(
+      PALETTE_ITEMS.filter((i) => i.kind === 'action').map((i) => `action:${i.label}`)
     )
   })
 
   it('record: a record is first class, with the field that matched under it', () => {
-    const entries = paletteEntries(ITEMS, 'adobe')
+    const entries = paletteEntries(PALETTE_ITEMS, 'adobe')
     expect(shape(entries)).toEqual([
       'G:records',
       'record:adobe creative cloud',
@@ -186,8 +142,30 @@ describe('paletteEntries — the board’s states', () => {
     expect(entries[1]).toMatchObject({ sub: 'subscriptions · renews 28 sep', hit: 'adobe' })
   })
 
+  it('a query that matches only an action is the typing state, not empty — the action lists', () => {
+    // The real shell list: its standing `ask pond` row is what `ask` matches.
+    expect(shape(paletteEntries(paletteItems(ROWS, []), 'ask'))).toEqual([
+      'G:actions',
+      'action:ask pond',
+      'action:ask pond about “ask”',
+    ])
+    expect(shape(paletteEntries(PALETTE_ITEMS, 'log'))).toEqual([
+      'G:actions',
+      'action:log a workout',
+      'action:log a meal',
+      'action:log sleep',
+      'action:ask pond about “log”',
+    ])
+    // Nothing at all matches: the empty state, and the actions are not in it.
+    expect(shape(paletteEntries(paletteItems(ROWS, []), 'zzz'))).toEqual([
+      'N:no page or record called “zzz”',
+      'action:ask pond about “zzz”',
+      'action:new page “zzz” under life',
+    ])
+  })
+
   it('empty: a note, ask pond, make the page under the pond, then a close spelling — no dead end', () => {
-    const entries = paletteEntries(ITEMS, 'cabnet', { pondName: 'life' })
+    const entries = paletteEntries(PALETTE_ITEMS, 'cabnet', { pondName: 'life' })
     expect(shape(entries)).toEqual([
       'N:no page or record called “cabnet”',
       'action:ask pond about “cabnet”',
@@ -196,34 +174,48 @@ describe('paletteEntries — the board’s states', () => {
       'page:cabinet plan',
       'record:cabinet quote',
     ])
-    expect(entries[2]).toMatchObject({ item: { id: NEW_PAGE_ID, query: 'cabnet' } })
+    expect(entries[2]).toMatchObject({
+      item: { id: NEW_PAGE_ID, action: 'new-page', query: 'cabnet' },
+    })
+    expect(entries[1]).toMatchObject({ item: { id: ASK_POND_ID, action: 'ask-pond' } })
+  })
+
+  it('`new page “q” under <parent>` names the host’s parent, never the scope — one owner, two readers', () => {
+    const scope = { id: 'money', label: 'money' }
+    const under = (o: Parameters<typeof paletteEntries>[2]) =>
+      shape(paletteEntries(PALETTE_ITEMS, 'zzz', o))[2]
+    expect(under({ parentTitle: 'journal' })).toBe('action:new page “zzz” under journal')
+    expect(under({ scope, parentTitle: 'journal' })).toBe('action:new page “zzz” under journal')
+    // No parent named: the pond, as the board's `empty` frame reads.
+    expect(under({ pondName: 'life' })).toBe('action:new page “zzz” under life')
+    expect(under({ scope })).toBe('action:new page “zzz” under life')
   })
 
   it('scoped: the page and its children, the kind under each name, no groups; `>` ignores the scope', () => {
     const scope = { id: 'money', label: 'money' }
-    const entries = paletteEntries(ITEMS, '', { scope })
-    expect(shape(entries)).toEqual(['page:budget', 'page:subscriptions', 'database:transactions'])
+    const entries = paletteEntries(PALETTE_ITEMS, '', { scope })
+    expect(shape(entries)).toEqual([
+      'page:budget',
+      'page:subscriptions',
+      'page:Savings',
+      'database:transactions',
+    ])
     expect(entries.map((e) => (e.kind === 'row' ? e.sub : null))).toEqual([
+      'page',
       'page',
       'page',
       'database',
     ])
-    expect(shape(paletteEntries(ITEMS, 'zzz', { scope }))[2]).toBe(
-      'action:new page “zzz” under money'
-    )
-    expect(shape(paletteEntries(ITEMS, '> log', { scope }))).toHaveLength(2)
+    expect(shape(paletteEntries(PALETTE_ITEMS, '> log', { scope }))).toHaveLength(3)
   })
 
   it('ponds lead when one matches, and the pages group names the pond (6m: ponds above pages)', () => {
-    expect(groupsOf(paletteEntries(ITEMS, 'make', { pondName: 'life' }))).toEqual([
+    const noPage = PALETTE_ITEMS.filter((i) => i.id !== 'make-page')
+    expect(groupsOf(paletteEntries(noPage, 'make', { pondName: 'life' }))).toEqual([
       'ponds',
       'actions',
     ])
-    const withPage = [
-      ...ITEMS,
-      { id: 'mp', label: 'make this a page', kind: 'page' as const, sub: 'journal' },
-    ]
-    expect(groupsOf(paletteEntries(withPage, 'make', { pondName: 'life' }))).toEqual([
+    expect(groupsOf(paletteEntries(PALETTE_ITEMS, 'make', { pondName: 'life' }))).toEqual([
       'ponds',
       'pages in life',
       'actions',
@@ -232,8 +224,9 @@ describe('paletteEntries — the board’s states', () => {
 
   it('every group label, in every state, is a word the board uses', () => {
     const allowed = new Set(boardGroups())
-    for (const q of ['', 'cab', '> log', 'adobe', 'cabnet', 'make']) {
-      for (const g of groupsOf(paletteEntries(ITEMS, q))) expect(allowed.has(g)).toBe(true)
+    for (const q of QUERIES) {
+      for (const g of groupsOf(paletteEntries(PALETTE_ITEMS, q, { suggested: PALETTE_SUGGESTED })))
+        expect(allowed.has(g)).toBe(true)
     }
   })
 })
@@ -271,7 +264,18 @@ describe('paletteItems — every value from the owner that already derives it', 
     expect(by.tx).toMatchObject({ kind: 'database', sub: DATABASES_ROOT_TITLE })
     expect(by.dbs.kind).toBe('page')
     expect(by.loose).toMatchObject({ label: 'Untitled', sub: undefined, path: [] })
-    expect(items.slice(-2).map((i) => i.label)).toEqual(['new page', 'ask pond'])
+    expect(items.slice(-2).map((i) => [i.label, i.action])).toEqual([
+      ['new page', 'new-page'],
+      ['ask pond', 'ask-pond'],
+    ])
+  })
+
+  it('where a new page files is one value: the page in view by id AND title, else the pond', () => {
+    expect(newPageParent(ROWS, 'entry', 'life')).toEqual({ id: 'entry', title: 'a morning' })
+    expect(newPageParent(ROWS, 'loose', 'life')).toEqual({ id: 'loose', title: 'Untitled' })
+    expect(newPageParent(ROWS, null, 'life')).toEqual({ id: null, title: 'life' })
+    // A leaf has no scope (below) but IS the destination — the two are not one thing.
+    expect(paletteScope(ROWS, 'entry')).toBeNull()
   })
 
   it('recents lead, newest first, flagged — and an unknown recent id is dropped', () => {
@@ -296,7 +300,7 @@ function renderPalette(props: Partial<React.ComponentProps<typeof CommandPalette
   const onSelect = jest.fn()
   const onClose = jest.fn()
   const utils = render(
-    <CommandPalette items={ITEMS} onSelect={onSelect} onClose={onClose} {...props} />
+    <CommandPalette items={PALETTE_ITEMS} onSelect={onSelect} onClose={onClose} {...props} />
   )
   return { ...utils, onSelect, onClose }
 }
@@ -371,6 +375,7 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
       'budgetpage↵',
       'subscriptionspage',
+      'Savingspage',
       'transactionsdatabase',
     ])
     fireEvent.keyDown(input(), { key: 'Backspace' })
@@ -378,12 +383,16 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
     expect(input().placeholder).toBe('jump to a page, or > for actions')
   })
 
-  it('every string on the surface is lowercase — Pond’s words, in every state', () => {
-    for (const q of ['', 'cab', '> log', 'adobe', 'cabnet', 'make']) {
-      const { unmount } = renderPalette({ defaultQuery: q })
-      expect(glass().textContent).not.toMatch(/[A-Z]/)
+  it('the chrome is lowercase in every state — Pond’s words; a page’s title is content and keeps its case', () => {
+    for (const q of QUERIES) {
+      const { unmount } = renderPalette({ defaultQuery: q, suggested: PALETTE_SUGGESTED })
+      expect(paletteChrome(glass())).not.toMatch(/[A-Z]/)
       unmount()
     }
+    // The guard is narrow, not blind: `Savings` renders as written (ADR 0004 §4).
+    renderPalette({ defaultQuery: 'sav' })
+    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('Savings')
+    expect(glass().textContent).toMatch(/[A-Z]/)
   })
 })
 
@@ -414,6 +423,10 @@ describe('the gut: nothing of the dialog survives in the source', () => {
       /import \{ normalizeQuery, splitMatch \} from '\.\/slash-entries'/
     )
     expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function splitMatch/)
-    expect(paletteRow).toMatch(/import \{ Mark \} from '\.\/slash-row'/)
+    // `hint`, `enter` and `match` are the board's once-emitted recipes: imported, never restated.
+    expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
+    expect(paletteRow).not.toMatch(
+      /underline-offset|decoration-\[|max-w-\[45%\]|const (HINT|ENTER|MATCH)\b/
+    )
   })
 })

@@ -11,6 +11,9 @@
  * Records (`row` pages) never enter the `['pages']` cache, so the palette lists
  * none live yet; the `record` kind renders and is fed when a records source
  * exists. `recentIds` are newest first — `Pond 02` 2g: "the last three pages".
+ *
+ * The one `byId` index built here is threaded through `ancestorPath` and
+ * `crumbTrail`, so the list is linear in page count (AUDIT G7, volume).
  */
 
 import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-entries'
@@ -18,16 +21,18 @@ import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import type { PageRow } from '@/lib/pages/tree'
 
-/** The shell's two standing actions, in Pond's words. */
+/** The shell's two standing actions, in Pond's words; `action` is the job the host reads. */
 export const NEW_PAGE_ACTION: PaletteItem = {
   id: 'action:new-page',
   label: 'new page',
   kind: 'action',
+  action: 'new-page',
 }
 export const ASK_POND_ACTION: PaletteItem = {
   id: 'action:ask-pond',
   label: 'ask pond',
   kind: 'action',
+  action: 'ask-pond',
 }
 
 export function paletteItems(
@@ -38,8 +43,8 @@ export function paletteItems(
   const index = markIndex(all)
   const byId = new Map(all.map((r) => [r.id, r]))
   const item = (r: PageRow): PaletteItem => {
-    const path = ancestorPath(all, r.id)
-    const { root } = crumbTrail(all, r.id)
+    const path = ancestorPath(all, r.id, byId)
+    const { root } = crumbTrail(all, r.id, byId)
     return {
       id: r.id,
       label: r.title || 'Untitled',
@@ -57,6 +62,27 @@ export function paletteItems(
     NEW_PAGE_ACTION,
     ASK_POND_ACTION,
   ]
+}
+
+/**
+ * Where `new page` files: the page in view, else the pond's root. ONE value,
+ * read twice — the palette's `new page “q” under <title>` row names `title` and
+ * the New page dialog opens on `id` — so the two can never disagree (the #239
+ * shape: a condition derived in two layers with nothing connecting them). The
+ * palette's scope is not this: a scope is palette state that ⌫ clears, and it
+ * is `null` on a leaf, while the destination stays the page in view.
+ *
+ * A `currentId` the rows do not hold yet (the tree still loading) keeps the id —
+ * the dialog's standing default — and the one title we have for it.
+ */
+export function newPageParent(
+  rows: readonly PageRow[],
+  currentId: string | null,
+  pondName: string
+): { id: string | null; title: string } {
+  if (!currentId) return { id: null, title: pondName }
+  const page = rows.find((r) => r.id === currentId)
+  return { id: currentId, title: page?.title || 'Untitled' }
 }
 
 /**

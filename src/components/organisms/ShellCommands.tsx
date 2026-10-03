@@ -22,16 +22,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
-import { ASK_POND_ID, NEW_PAGE_ID } from '@/components/molecules/palette-entries'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { CREATE_PAGE_EVENT, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
-import {
-  ASK_POND_ACTION,
-  NEW_PAGE_ACTION,
-  paletteItems,
-  paletteScope,
-} from '@/lib/pages/palette-items'
+import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { fetchPages } from '@/lib/pages/tree'
 import { usePondName } from '@/lib/pond/name'
 import { useWorkspace } from '@/lib/workspace/context'
@@ -48,7 +42,10 @@ interface RecentEntry {
 
 function readRecents(): RecentEntry[] {
   try {
-    return JSON.parse(window.localStorage.getItem(RECENT_PAGES_KEY) ?? '[]')
+    // Capped on read as well as on write: a list written under an older, larger cap
+    // would otherwise list whole until the next page is opened from the palette.
+    const stored: RecentEntry[] = JSON.parse(window.localStorage.getItem(RECENT_PAGES_KEY) ?? '[]')
+    return stored.slice(0, RECENT_MAX)
   } catch {
     return []
   }
@@ -121,16 +118,22 @@ export function ShellCommands() {
     [pages, paletteOpen]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
+  // One owner for where a new page files: the palette's row names `parent.title`
+  // and the dialog opens on `parent.id` — never derived twice.
+  const parent = useMemo(
+    () => newPageParent(pages, currentNodeId, pondName),
+    [pages, currentNodeId, pondName]
+  )
 
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
       closePalette()
-      if (item.id === NEW_PAGE_ACTION.id || item.id === NEW_PAGE_ID) {
+      if (item.action === 'new-page') {
         setCreateTitle(item.query ?? '')
         setCreateOpen(true)
         return
       }
-      if (item.id === ASK_POND_ACTION.id || item.id === ASK_POND_ID) {
+      if (item.action === 'ask-pond') {
         requestTerminalFocus(item.query)
         return
       }
@@ -148,7 +151,7 @@ export function ShellCommands() {
       <CreatePageModal
         open={createOpen}
         onOpenChange={setCreateOpen}
-        defaultParentId={currentNodeId}
+        defaultParentId={parent.id}
         defaultTitle={createTitle}
       />
       {paletteOpen && (
@@ -156,6 +159,7 @@ export function ShellCommands() {
           items={items}
           scope={scope}
           pondName={pondName}
+          parentTitle={parent.title}
           onSelect={handlePaletteSelect}
           onClose={closePalette}
         />

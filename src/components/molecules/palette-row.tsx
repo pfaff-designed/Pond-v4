@@ -22,13 +22,16 @@
  *   ↵        mono 10.5 · ink .8 — on the selected row
  *   match    underline · offset 3 · thickness 1, over #278's `pre` / `hit` / `post`
  *
+ * `hint`, `enter` and `match` are not kind-specific — the board emits them once,
+ * outside its per-kind branch — so they are `slash-row.tsx`'s `HINT`, `ENTER` and
+ * `MATCH`, imported beside `Mark`. Only `ROW` and `SUB` are this kind's own.
  * Class strings are template literals, not `cn()` (#252).
  */
 
 import { Icon } from '@/components/atoms/Icon'
 
 import type { PaletteEntry } from './palette-entries'
-import { Mark } from './slash-row'
+import { ENTER, HINT, MATCH, Mark } from './slash-row'
 
 export type PaletteRowEntry = Extract<PaletteEntry, { kind: 'row' }>
 
@@ -39,8 +42,6 @@ const DB_MARK =
 const ROW =
   'flex cursor-default items-center gap-[10px] rounded-[14px] px-[12px] py-[9px] font-sans text-[13.5px] tracking-[0]'
 const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
-const HINT =
-  'min-w-0 max-w-[45%] flex-[0_1_auto] truncate font-mono text-[10.5px] text-mn-text-secondary'
 
 export function PaletteRow({
   id,
@@ -88,7 +89,7 @@ export function PaletteRow({
         className={`min-w-0 truncate ${glyph ? 'font-medium' : 'font-normal'}`}
       >
         <span data-part="pre">{entry.pre}</span>
-        <span data-part="hit" className="underline decoration-[1px] underline-offset-[3px]">
+        <span data-part="hit" className={MATCH}>
           {entry.hit}
         </span>
         <span data-part="post">{entry.post}</span>
@@ -100,7 +101,7 @@ export function PaletteRow({
       )}
       <span className="flex-1" />
       {selected ? (
-        <span data-part="enter" className="font-mono text-[10.5px] text-mn-text-meta">
+        <span data-part="enter" className={ENTER}>
           ↵
         </span>
       ) : (

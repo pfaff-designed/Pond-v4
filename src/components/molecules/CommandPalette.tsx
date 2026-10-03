@@ -56,8 +56,12 @@ export interface CommandPaletteProps {
   onClose: () => void
   /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
   scope?: PaletteScope | null
-  /** For `new page “…” under <pond>`. @default 'life' */
+  /** For `pages in <pond>`. @default 'life' */
   pondName?: string
+  /** Where `new page “…”` files — the host names the page it hands the New page dialog. @default pondName */
+  parentTitle?: string
+  /** The `opened` state's `suggested` actions, when the host can infer them (#285). */
+  suggested?: readonly PaletteItem[]
   /** Opens with this already typed — stories render the board's frames. */
   defaultQuery?: string
   /** Portal target; defaults to `document.body`. Stories theme it. */
@@ -65,8 +69,11 @@ export interface CommandPaletteProps {
 }
 
 const WASH = 'fixed inset-0 z-[99] bg-mn-surface/[0.62]'
+// Centred near the top, the glass grows from its top edge's middle; `.motion-menu`
+// reads this origin and would otherwise fall back to top left (the composer's
+// mirror case, #278).
 const GLASS =
-  'mn-glass rounded-mn-card motion-menu fixed left-[max(12px,calc(50%-260px))] top-[110px] z-[100] box-border flex w-[520px] max-w-[calc(100vw-24px)] flex-col gap-[2px] p-[10px] font-mono text-mn-text'
+  'mn-glass rounded-mn-card motion-menu [--motion-menu-origin:top_center] fixed left-[max(12px,calc(50%-260px))] top-[110px] z-[100] box-border flex w-[520px] max-w-[calc(100vw-24px)] flex-col gap-[2px] p-[10px] font-mono text-mn-text'
 const HEAD =
   'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[12px] pt-[10px] pb-[14px] font-mono text-[14px]'
 const INPUT =
@@ -86,6 +93,8 @@ export function CommandPalette({
   onClose,
   scope: initialScope = null,
   pondName = 'life',
+  parentTitle,
+  suggested,
   defaultQuery = '',
   container,
 }: CommandPaletteProps) {
@@ -95,7 +104,7 @@ export function CommandPalette({
   // The selection is keyed to what it was made against, so a new query starts
   // at the first row without an effect writing state.
   const [sel, setSel] = useState({ query, scope, index: 0 })
-  const entries = paletteEntries(items, query, { scope, pondName })
+  const entries = paletteEntries(items, query, { scope, pondName, parentTitle, suggested })
   const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
   const active = Math.min(
     sel.query === query && sel.scope === scope ? sel.index : 0,

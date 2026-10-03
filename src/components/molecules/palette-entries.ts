@@ -3,9 +3,11 @@
  * draws (#279, child b of #226). The states are `PondPicker.dc.html`'s
  * `kind="palette"` frames and `Pond 02` 2g's captions:
  *
- *   opened   nothing typed: the last pages under `recent`. The board's two
- *            `suggested` actions are AUDIT S6 (p2): they read as nudges, and the
- *            audit's fix is "keep only recent pages in the opened palette".
+ *   opened   nothing typed: the last pages under `recent`, then the host's
+ *            `suggested` actions — 2g: "two actions Pond expects from the time
+ *            and the page you are on". That inference does not exist yet (#285),
+ *            so the shell passes none and the group draws nothing: offered when
+ *            true, never faked (`PROJECT_RULES.md`; the #239 precedent).
  *   typing   `pages`, then `records`, then `actions` (the matched ones, then
  *            `ask pond about “q”`); `ponds` lead when one matches (6m).
  *   actions  a leading `>` drops pages and records.
@@ -20,11 +22,21 @@ import { normalizeQuery, splitMatch } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
 
+/**
+ * What the host does when an `action` row is picked. The shell's standing row
+ * (`new page`) and the one the palette mints from the query (`new page “q”`) are
+ * two rows — both can list at once — doing one job, so they share this one field
+ * and the host reads it, never two ids.
+ */
+export type PaletteAction = 'new-page' | 'ask-pond'
+
 export interface PaletteItem {
   id: string
   /** A page's title verbatim; an action in Pond's words, lowercase. */
   label: string
   kind: PaletteKind
+  /** An `action` row's job for the host. */
+  action?: PaletteAction
   /** The line beside the name: a page's area, a record's database and matched field, `pond · switch`. */
   sub?: string
   /** A page's mark — a `public/icons` glyph. `resolveMark` owns which. */
@@ -51,8 +63,22 @@ export type PaletteEntry =
 
 export interface PaletteOptions {
   scope?: PaletteScope | null
-  /** For `new page “q” under <pond>`. @default 'life' */
+  /** For `pages in <pond>`, and where `new page “q”` files when no `parentTitle` is given. @default 'life' */
   pondName?: string
+  /**
+   * Where `new page “q”` files. The host names here the SAME page it hands the
+   * New page dialog — one owner for the label and the destination, so the row
+   * can never name a parent the dialog then ignores (the #239 shape).
+   * @default pondName
+   */
+  parentTitle?: string
+  /**
+   * The `opened` state's second group — `Pond 02` 2g: "then two actions Pond
+   * expects from the time and the page you are on". The host supplies them once
+   * it can infer them (#285 owns that); until then it passes none and nothing
+   * is drawn.
+   */
+  suggested?: readonly PaletteItem[]
 }
 
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
@@ -68,7 +94,7 @@ const DID_YOU_MEAN_MAX = 3
 export function paletteEntries(
   items: readonly PaletteItem[],
   query: string,
-  { scope = null, pondName = 'life' }: PaletteOptions = {}
+  { scope = null, pondName = 'life', parentTitle = pondName, suggested = [] }: PaletteOptions = {}
 ): PaletteEntry[] {
   const q = normalizeQuery(query)
 
@@ -90,9 +116,15 @@ export function paletteEntries(
   if (!q) {
     if (scope) return pool.map((i) => row(i, '', subOf(i)))
     const recent = items.filter((i) => i.recent)
-    if (recent.length) return [group('recent'), ...recent.map((i) => row(i, ''))]
     const pages = items.filter((i) => i.kind === 'page' || i.kind === 'database')
-    return pages.length ? [group('pages'), ...pages.map((i) => row(i, ''))] : []
+    const lead = recent.length
+      ? [group('recent'), ...recent.map((i) => row(i, ''))]
+      : pages.length
+        ? [group('pages'), ...pages.map((i) => row(i, ''))]
+        : []
+    return suggested.length
+      ? [...lead, group('suggested'), ...suggested.map((i) => row(i, ''))]
+      : lead
   }
 
   const hits = (kinds: PaletteKind[], from: readonly PaletteItem[] = pool) =>
@@ -105,14 +137,17 @@ export function paletteEntries(
     id: ASK_POND_ID,
     label: `ask pond about “${q}”`,
     kind: 'action',
+    action: 'ask-pond',
     query: q,
   }
 
-  if (!ponds.length && !pages.length && !records.length) {
+  // A query that matches only an action is not empty: the `typing` frame lists it.
+  if (!ponds.length && !pages.length && !records.length && !actions.length) {
     const make: PaletteItem = {
       id: NEW_PAGE_ID,
-      label: `new page “${q}” under ${scope?.label ?? pondName}`,
+      label: `new page “${q}” under ${parentTitle}`,
       kind: 'action',
+      action: 'new-page',
       query: q,
     }
     const near = didYouMean(pool, q)

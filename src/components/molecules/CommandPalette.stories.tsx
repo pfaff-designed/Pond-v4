@@ -2,8 +2,13 @@ import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent } from 'storybook/test'
 
-import { CommandPalette, type CommandPaletteProps, type PaletteItem } from './CommandPalette'
+import { CommandPalette, type CommandPaletteProps } from './CommandPalette'
 import { PALETTE_FOOT } from './palette-entries'
+import {
+  PALETTE_ITEMS,
+  PALETTE_SUGGESTED,
+  paletteChrome,
+} from '@/__tests__/helpers/palette-fixture'
 
 /**
  * The ⌘K palette — `PondPicker kind="palette"` (#279): its seven states, both
@@ -13,8 +18,11 @@ import { PALETTE_FOOT } from './palette-entries'
  * computed styles. The glass portals, so each frame hands it its own themed
  * `container` — the `.dark` class around that box is the whole theme.
  *
- * `ponds` is STUBBED here with a `pond` item (⌘2); the shell lists none —
- * multi-pond is M3 (ADR 0002).
+ * The rows are `helpers/palette-fixture` — the one fixture the jest suite reads
+ * too, and not an export of this file (Storybook would list it as a story).
+ * `ponds` is STUBBED there with a `pond` item (⌘2); the shell lists none —
+ * multi-pond is M3 (ADR 0002). `suggested` is likewise a fixture: the shell
+ * passes none until it can infer them (#285).
  */
 
 const PAPER = {
@@ -47,88 +55,19 @@ function alphaOf(color: string): number {
   return m[1].endsWith('%') ? parseFloat(m[1]) / 100 : parseFloat(m[1])
 }
 
-// The board's own rows, as items.
-export const ITEMS: PaletteItem[] = [
-  {
-    id: 'kitchen',
-    label: 'kitchen renovation',
-    kind: 'page',
-    sub: 'creativity',
-    glyph: 'star-01',
-    recent: true,
-    path: ['creativity'],
-  },
-  {
-    id: 'budget',
-    label: 'budget',
-    kind: 'page',
-    sub: 'money',
-    glyph: 'ring',
-    recent: true,
-    path: ['money'],
-  },
-  {
-    id: 'journal',
-    label: 'journal',
-    kind: 'page',
-    sub: 'personal',
-    glyph: 'house',
-    recent: true,
-    path: ['personal'],
-  },
-  {
-    id: 'subscriptions',
-    label: 'subscriptions',
-    kind: 'page',
-    sub: 'money',
-    glyph: 'ring',
-    path: ['money'],
-  },
-  {
-    id: 'cabinet-plan',
-    label: 'cabinet plan',
-    kind: 'page',
-    sub: 'creativity',
-    glyph: 'star-01',
-    path: ['creativity', 'kitchen'],
-  },
-  {
-    id: 'make-page',
-    label: 'make this a page',
-    kind: 'page',
-    sub: 'journal · mentions make noise',
-    glyph: 'house',
-    path: ['personal', 'journal'],
-  },
-  { id: 'transactions', label: 'transactions', kind: 'database', sub: 'money', path: ['money'] },
-  { id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' },
-  {
-    id: 'adobe',
-    label: 'adobe creative cloud',
-    kind: 'record',
-    sub: 'subscriptions · renews 28 sep',
-  },
-  {
-    id: 'make-noise',
-    label: 'make noise',
-    kind: 'pond',
-    sub: 'pond · switch',
-    glyph: 'lightning-03',
-    key: '⌘2',
-  },
-  { id: 'chase', label: 'chase the cabinet quote', kind: 'action' },
-  { id: 'log-workout', label: 'log a workout', kind: 'action' },
-  { id: 'log-meal', label: 'log a meal', kind: 'action' },
-  { id: 'log-sleep', label: 'log sleep', kind: 'action' },
-]
-
 // ── Frame ──────────────────────────────────────────────────────────────────────
 
 type FrameProps = Omit<CommandPaletteProps, 'container' | 'items' | 'onSelect' | 'onClose'> &
   Partial<Pick<CommandPaletteProps, 'items' | 'onSelect' | 'onClose'>> & { ink?: boolean }
 
 /** A themed page the glass floats over. */
-function Frame({ ink, items = ITEMS, onSelect = fn(), onClose = fn(), ...props }: FrameProps) {
+function Frame({
+  ink,
+  items = PALETTE_ITEMS,
+  onSelect = fn(),
+  onClose = fn(),
+  ...props
+}: FrameProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   return (
     <div
@@ -192,6 +131,8 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(g.borderTopColor).toBe(p.glassBorder)
   await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
   await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
+  // Centred near the top, the glass grows from the middle of its top edge.
+  await expect(g.transformOrigin).toBe('260px 0px')
 
   const head = glass.querySelector<HTMLElement>('[data-part="head"]')!
   const h = getComputedStyle(head)
@@ -312,8 +253,9 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(px(f.fontSize)).toBe(10.5)
   await expect(f.color).toBe(p.tier68)
 
-  // Every string on the surface is lowercase — Pond's words.
-  await expect(glass.textContent).not.toMatch(/[A-Z]/)
+  // The chrome is lowercase — Pond's words. A page's title is content and keeps
+  // its case (ADR 0004 §4), so the rows' names are not in this string.
+  await expect(paletteChrome(glass)).not.toMatch(/[A-Z]/)
 }
 
 async function assertHit(root: HTMLElement, label: string, hit: string) {
@@ -330,22 +272,41 @@ async function assertHit(root: HTMLElement, label: string, hit: string) {
 
 // ── opened ─────────────────────────────────────────────────────────────────────
 
-async function assertOpened(root: HTMLElement, p: Palette) {
+async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean) {
   await assertChrome(root, p)
   const input = glassOf(root).querySelector<HTMLInputElement>('input')!
   await expect(input.placeholder).toBe('jump to a page, or > for actions')
   await expect(document.activeElement).toBe(input)
-  await expect(groups(root)).toEqual(['recent'])
-  await expect(labels(root)).toEqual(['kitchen renovation', 'budget', 'journal'])
+  // The board's frame: `recent`, three pages, then `suggested`, two actions. With
+  // nothing from the host, the second group is absent — not stood in for.
+  await expect(groups(root)).toEqual(suggested ? ['recent', 'suggested'] : ['recent'])
+  await expect(labels(root)).toEqual([
+    'kitchen renovation',
+    'budget',
+    'journal',
+    ...(suggested ? ['chase the cabinet quote', 'log a workout'] : []),
+  ])
+  const actions = glassOf(root).querySelectorAll('[data-kind="action"]')
+  await expect(actions.length).toBe(suggested ? 2 : 0)
 }
 
-/** Nothing typed: the last three pages under `recent`. AUDIT S6 drops the board's `suggested`. */
+/** Nothing typed, nothing inferred: the last three pages under `recent`, and no `suggested` faked (#285). */
 export const Opened: Story = {
-  play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER),
+  play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, false),
 }
 export const OpenedInk: Story = {
   args: { ink: true },
-  play: async ({ canvasElement }) => assertOpened(canvasElement, INK),
+  play: async ({ canvasElement }) => assertOpened(canvasElement, INK, false),
+}
+
+/** The board's `opened` frame in full: `recent`, then the two `suggested` actions the host supplied. */
+export const OpenedSuggested: Story = {
+  args: { suggested: PALETTE_SUGGESTED },
+  play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, true),
+}
+export const OpenedSuggestedInk: Story = {
+  args: { suggested: PALETTE_SUGGESTED, ink: true },
+  play: async ({ canvasElement }) => assertOpened(canvasElement, INK, true),
 }
 
 // ── typing ─────────────────────────────────────────────────────────────────────
@@ -463,10 +424,11 @@ async function assertScoped(root: HTMLElement, p: Palette) {
   await expect(s.color).toBe(p.tier80)
   await expect(glassOf(root).querySelector<HTMLInputElement>('input')!.placeholder).toBe('')
   await expect(groups(root)).toEqual([])
-  await expect(labels(root)).toEqual(['budget', 'subscriptions', 'transactions'])
+  // `Savings` keeps its case: a page's title is content, only the chrome is lowercase.
+  await expect(labels(root)).toEqual(['budget', 'subscriptions', 'Savings', 'transactions'])
   await expect(
     [...glassOf(root).querySelectorAll('[data-part="sub"]')].map((x) => x.textContent)
-  ).toEqual(['page', 'page', 'database'])
+  ).toEqual(['page', 'page', 'page', 'database'])
 }
 
 /** The rail's selected page and its children, the kind under each name. */
