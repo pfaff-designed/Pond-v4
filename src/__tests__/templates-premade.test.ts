@@ -19,6 +19,7 @@
  *     filed, not coded around.
  */
 import { blockSchema } from '@/lib/modules/content'
+import { resolveDescriptor } from '@/lib/modules/registry'
 import { todoMarker } from '@/lib/modules/todo/schema'
 import { HIGHLIGHT_EMPTY_LINE } from '@/lib/modules/highlight/schema'
 import { ENTRIES_EMPTY_LINE } from '@/lib/modules/entries/schema'
@@ -279,9 +280,23 @@ describe('instantiateTemplate — ids minted through the existing paths, nothing
       for (const block of page.blocks) {
         expect(blockSchema.safeParse(block).success).toBe(true)
         ids.push(block.id)
-        for (const key of ['items', 'rows', 'entries'] as const) {
-          const nested = (block as Record<string, unknown>)[key]
-          if (Array.isArray(nested)) for (const el of nested) ids.push((el as { id: string }).id)
+        // Derived from the registry, never a hand-kept list (#261 review): a module
+        // that adds a nested path joins this coverage with no edit here. Dotted
+        // paths are walked the way `mintNestedIds` walks them, so a deep one
+        // (`columns.cards`) is checked rather than silently skipped.
+        for (const path of resolveDescriptor(block.type).nestedIdPaths) {
+          const [head, deep] = path.split('.')
+          const top = (block as Record<string, unknown>)[head]
+          if (!Array.isArray(top)) continue
+          for (const el of top) {
+            const row = el as Record<string, unknown>
+            if (deep === undefined) {
+              ids.push(row.id as string)
+              continue
+            }
+            const inner = row[deep]
+            if (Array.isArray(inner)) for (const c of inner) ids.push((c as { id: string }).id)
+          }
         }
       }
       for (const def of page.schema ?? []) {

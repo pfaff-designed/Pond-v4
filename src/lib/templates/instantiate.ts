@@ -65,7 +65,7 @@ export function instantiateTemplate(
  * `configure_view` resolver. The label and the type ride beside the config; `pageId`
  * is not needed (the page does not exist yet) and the resolver does not read it.
  */
-export function resolveTemplateView(
+function resolveTemplateView(
   view: TemplateViewBlock,
   schema: PropertySchema
 ): Omit<ViewBlock, 'id'> {
@@ -78,6 +78,14 @@ export function resolveTemplateView(
  * `resolveViewConfig` resolves, read back off the persisted block. The guard that an
  * instantiated template references only its OWN schema (nothing pre-seeded, nothing
  * dangling, #246) walks this.
+ *
+ * ⚠️ **This list is paired with `resolveViewConfig`'s clauses by hand** and nothing
+ * enforces it — there is no table either side derives from. A tenth reference site,
+ * the way #27 added the gantt dates and #94 added `target`, silently shrinks the
+ * guard above with no compile error. `view/figures.tsx` carries the repo's own
+ * warning about this class (*"#259's `presentation` would have been next"*).
+ * **Add to both, or give them one table.** Verified clause by clause against
+ * `resolveViewConfig` on 2026-10-02.
  */
 export function viewPropertyRefs(block: ViewBlock): string[] {
   const refs: Array<string | undefined> = [

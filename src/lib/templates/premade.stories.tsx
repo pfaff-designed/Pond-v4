@@ -11,10 +11,9 @@ import {
   blockEmptyBox,
   blockFrame,
   propertiesFrame,
-  VIEW_EMPTY,
+  viewFrameState,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
-import { COMPACT_MARK_EMPTY, compactChartMark } from '@/lib/modules/view/chart-compact'
 import { CHART_EMPTY_LINE } from '@/lib/modules/chart/card'
 import { CollectionView } from '@/lib/modules/view/view'
 import type { CollectionRow } from '@/lib/modules/view/apply'
@@ -112,20 +111,22 @@ function TemplatePage({
 }
 
 /**
- * The frame's state for a view block with the given rows — `BlockCanvas`'s
- * `useBlockEmptyState` view branch, minus the write actions a static story has no
- * path for and the loading / filtered cases it never reaches.
+ * The frame's state for a view block with the given rows — **the product's own rule**
+ * (`viewFrameState`, `block-frame.ts`), not a copy of it. It used to be a local
+ * re-derivation of `BlockCanvas`'s `useBlockEmptyState` view branch, which is the
+ * defect shape #239's review caught: this story is the evidence that the twelve
+ * render correctly, so a copy here would keep passing against a stale rule the day
+ * someone changed the hook. The only thing the story adds is the chart mark's copy,
+ * which lives in a React module the server-safe rule cannot import; a static story
+ * has no write path, so `addRow` is dropped rather than offered and faked.
  */
-function viewFrameState(
+function storyViewState(
   block: ViewBlock,
   rows: CollectionRow[]
 ): { state: PondBlockState; emptyLine?: string } {
-  const mark = compactChartMark(block)
-  if (mark !== null && COMPACT_MARK_EMPTY[mark] === 'grid') return { state: 'rest' }
-  if (rows.length > 0) return { state: 'rest' }
-  if (mark !== null && COMPACT_MARK_EMPTY[mark] === 'void')
-    return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
-  return { state: 'empty', emptyLine: VIEW_EMPTY[block.mode].line }
+  const verdict = viewFrameState(block, rows, rows, blockFrame(block))
+  if (verdict.state === 'rest') return { state: 'rest' }
+  return { state: 'empty', emptyLine: verdict.chartLine ? CHART_EMPTY_LINE : verdict.line }
 }
 
 function TemplateBlockView({
@@ -147,7 +148,7 @@ function TemplateBlockView({
   // Bare prose: `padding 2px 4px`, no card — exactly `BlockEditor`'s unframed branch.
   if (!frame) return <div className="px-1 py-0.5">{view}</div>
   const { state, emptyLine } =
-    block.type === 'view' ? viewFrameState(block, rows) : { state: 'rest' as const }
+    block.type === 'view' ? storyViewState(block, rows) : { state: 'rest' as const }
   return (
     <PondBlock {...frame} state={state} emptyLine={emptyLine} emptyBox={blockEmptyBox(block)}>
       {view}

@@ -215,8 +215,13 @@ export function resolveViewConfig(
         series,
         ...(proposal.chart.stacked ? { stacked: true } : {}),
         ...(typeof proposal.chart.target === 'number' ? { target: proposal.chart.target } : {}),
-        // #261: the presentation rides through untouched — a flag the resolver dropped
-        // would make every compact strip a template or Pond proposed come back a card.
+        // #261: the presentation rides through untouched, so a template's compact
+        // strip does not come back a card. NOTE this closes only the resolver half:
+        // `configure_view`'s own tool input (`api/chat/tools.ts`) still has no
+        // `presentation` field, so zod strips it and the MODEL cannot switch a view
+        // to compact through this tool — even though `viewDescriptor.description`
+        // advertises it in the prompt. That gap is #268; `propose_changes` can emit
+        // it today because `viewSchema` carries it.
         ...(proposal.chart.presentation ? { presentation: proposal.chart.presentation } : {}),
       }
     }

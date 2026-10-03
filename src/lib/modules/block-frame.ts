@@ -202,6 +202,55 @@ export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
 }
 
 /**
+ * A view block's frame state, as one rule both hosts read (#261 review — BOTH axes
+ * raised it). `BlockCanvas`'s `useBlockEmptyState` had this inline and the template
+ * story re-derived it, which is the shape of the defect #239's review caught: a
+ * condition removed from one layer and re-derived in another, with nothing
+ * connecting the two. There the derivations were over filtered and unfiltered rows
+ * and a filtered view silently drew nothing.
+ *
+ * `rows` is the collection's rows; `processed` is those the view will actually draw
+ * (its filter applied). Pure, so it is unit-testable and a story can assert against
+ * the same rule the product runs.
+ *
+ * `chartLine` rather than the string: the compact mark's copy is `CHART_EMPTY_LINE`
+ * in `chart/card.tsx`, a React module this server-safe file cannot import — the same
+ * reason `VIEW_EMPTY.chart` carries no `line`. The caller substitutes it. Making the
+ * boundary explicit beats moving a constant six call sites away for a nicer return.
+ */
+export type ViewFrameState =
+  { state: 'rest' } | { state: 'empty'; line?: string; chartLine?: true; addRow?: true }
+
+export function viewFrameState(
+  block: ViewBlock,
+  rows: readonly unknown[],
+  processed: readonly unknown[],
+  frame: BlockFrame | null
+): ViewFrameState {
+  // #259: the heat grid DRAWS its own empty state — 84 cells at ink .07 — so the
+  // frame never takes it over, filtered or not. The bar strip is empty as the
+  // board's voidBox, whose line is the chart's own, true whether the rows are
+  // missing or carry no number — not the table kind's `no rows yet`.
+  const mark = compactChartMark(block)
+  const markEmpty = mark === null ? null : COMPACT_MARK_EMPTY[mark]
+  if (markEmpty === 'grid') return { state: 'rest' }
+  if (rows.length > 0) {
+    return processed.length === 0
+      ? { state: 'empty', line: POND_BLOCK_FILTERED_EMPTY_LINE }
+      : { state: 'rest' }
+  }
+  if (markEmpty === 'void') return { state: 'empty', chartLine: true }
+  // #260: a mode that owns its empty line takes it from `VIEW_EMPTY`, the one table
+  // that also decides the mode's box, so the box and the line cannot disagree.
+  const modeLine = VIEW_EMPTY[block.mode].line
+  if (modeLine !== undefined) return { state: 'empty', line: modeLine }
+  // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
+  // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
+  if (frame && !POND_BLOCK_EMPTY_ACTION_WIRED[frame.kind]) return { state: 'empty' }
+  return { state: 'empty', addRow: true }
+}
+
+/**
  * Whether a persisted block is EMPTY, read off the block alone (#239). A checklist
  * with no items, a table with no rows and a log with no entries are. Only the block
  * types that carry their own rows can answer — a view block is config only (its rows
