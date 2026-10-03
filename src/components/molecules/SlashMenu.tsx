@@ -36,11 +36,13 @@
  * under jsdom every test that mounts it pays ~15–20 s of teardown, which would
  * stall six suites; measured twice, so the primitive is not used here.
  *
- * The row and its mark live in `slash-row.tsx` — the source picker (#280) draws
- * the same row, so it is one file, not a restatement.
+ * The row and its mark live in `slash-row.tsx`, the chrome strings in
+ * `picker-chrome.ts` and the anchoring hook in `use-anchored-box.ts` — the source
+ * picker (#280) draws the same row under the same chrome, so each is one file,
+ * not a restatement.
  */
 
-import React, { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import {
@@ -52,7 +54,9 @@ import {
   type TemplatePick,
   type YourTemplate,
 } from './slash-entries'
+import { FOOT, GLASS, GLASS_ABOVE, GROUP, HEAD, HEAD_TEXT, LIST, NOTE } from './picker-chrome'
 import { Row, type RowEntry } from './slash-row'
+import { useAnchoredBox, type PickerAnchor, type PickerSide } from './use-anchored-box'
 
 export type { SlashIcon, SlashRow, TemplatePick, YourTemplate } from './slash-entries'
 
@@ -61,9 +65,9 @@ export interface SlashMenuProps {
   /** What the person has typed after the `/`. */
   query: string
   /** The field (or button) the glass hangs off. */
-  anchor: Element | null | RefObject<Element | null>
+  anchor: PickerAnchor
   /** @default 'bottom' */
-  side?: 'top' | 'bottom'
+  side?: PickerSide
   /** Accessible name for the list. @default 'blocks' */
   label?: string
   onSelect: (row: SlashRow) => void
@@ -79,18 +83,8 @@ export interface SlashMenuProps {
   container?: HTMLElement | null
 }
 
-const GLASS =
-  'mn-glass rounded-mn-card motion-menu fixed z-[100] box-border flex w-[300px] flex-col gap-[1px] p-[8px] font-mono text-mn-text'
-// Anchored above the composer, the glass grows from its bottom edge (ticket-41);
-// `.motion-menu` reads this origin and falls back to top left.
-const GLASS_ABOVE = `${GLASS} [--motion-menu-origin:bottom_left]`
-const HEAD =
-  'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[10px] pt-[8px] pb-[10px] font-mono text-[12px]'
-const GROUP = 'px-[10px] pt-[8px] pb-[5px] text-[10.5px] tracking-[.04em] text-mn-text-secondary'
-const NOTE =
-  'px-[10px] py-[10px] font-mono text-[12px] leading-[1.55] text-mn-text-meta [text-wrap:pretty]'
-const FOOT =
-  'mt-[4px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[10px] pt-[9px] pb-[4px] text-[10.5px] text-mn-text-secondary'
+/** The slash kind's width — the one chrome value that is this kind's own. */
+const WIDTH = 'w-[300px]'
 
 export function SlashMenu({
   rows,
@@ -176,12 +170,12 @@ export function SlashMenu({
       data-part="glass"
       data-kind="slash"
       data-pane={pane}
-      className={side === 'top' ? GLASS_ABOVE : GLASS}
+      className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${WIDTH}`}
       style={style}
     >
       {pane === 'templates' && (
         <div data-part="head" className={HEAD}>
-          <span data-part="head-text" className="min-w-0 truncate text-mn-text">
+          <span data-part="head-text" className={HEAD_TEXT}>
             page from template
           </span>
         </div>
@@ -189,12 +183,17 @@ export function SlashMenu({
       <div
         role="listbox"
         aria-label={pane === 'templates' ? 'page from template' : label}
-        className="flex max-h-[60vh] flex-col gap-[1px] overflow-y-auto"
+        className={LIST}
       >
         {entries.map((entry, i) => {
           if (entry.kind === 'group') {
             return (
-              <div key={`g-${entry.label}-${i}`} data-part="group" className={GROUP}>
+              <div
+                role="presentation"
+                key={`g-${entry.label}-${i}`}
+                data-part="group"
+                className={GROUP}
+              >
                 {entry.label}
               </div>
             )
@@ -228,35 +227,4 @@ export function SlashMenu({
     </div>,
     container ?? document.body
   )
-}
-
-/**
- * Fixed coordinates 4px off the anchor's rect — below it, or above it for a
- * composer that sits at the foot of the screen — tracked across scroll and resize.
- */
-function useAnchoredBox(
-  anchor: SlashMenuProps['anchor'],
-  side: 'top' | 'bottom'
-): React.CSSProperties | undefined {
-  const [box, setBox] = useState<React.CSSProperties | undefined>(undefined)
-  useLayoutEffect(() => {
-    const el = anchor && 'current' in anchor ? anchor.current : anchor
-    if (!el) return
-    const update = () => {
-      const r = el.getBoundingClientRect()
-      setBox(
-        side === 'top'
-          ? { bottom: window.innerHeight - r.top + 4, left: r.left }
-          : { top: r.bottom + 4, left: r.left }
-      )
-    }
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [anchor, side])
-  return box
 }

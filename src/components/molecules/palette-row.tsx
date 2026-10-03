@@ -31,13 +31,10 @@
 import { Icon } from '@/components/atoms/Icon'
 
 import type { PaletteEntry } from './palette-entries'
+import { ICON } from './slash-entries'
 import { ENTER, HINT, MATCH, Mark } from './slash-row'
 
 export type PaletteRowEntry = Extract<PaletteEntry, { kind: 'row' }>
-
-/** The board's `db` mark — a record, or a page under the databases root. */
-const DB_MARK =
-  'M2.4 3.4a4.6 1.6 0 1 0 9.2 0a4.6 1.6 0 1 0-9.2 0M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6'
 
 const ROW =
   'flex cursor-default items-center gap-[10px] rounded-[14px] px-[12px] py-[9px] font-sans text-[13.5px] tracking-[0]'
@@ -76,7 +73,7 @@ export function PaletteRow({
       {glyph && <Icon name={glyph} />}
       {isData && (
         <span data-part="icon" className="flex text-mn-text-meta">
-          <Mark d={DB_MARK} />
+          <Mark d={ICON.db.d} />
         </span>
       )}
       {isAction && (

@@ -185,11 +185,12 @@ describe('Life is a page (#234)', () => {
   })
 
   it('add → “/” summons the palette and persists the pick to the home row', async () => {
-    // #278: rows speak Pond's words — `checklist` is the todo type, `gallery` a view mode.
+    // #278: rows speak Pond's words — `checklist` is the todo type.
+    // `table`, `gallery` and `chart` are NOT here: since #280 they open the source
+    // picker instead of minting a block, which the next test pins.
     const cases: Array<{ name: string; type: string }> = [
       { name: 'checklist', type: 'todo' },
-      { name: 'table', type: 'table' },
-      { name: 'gallery', type: 'view' },
+      { name: 'highlight', type: 'highlight' },
     ]
     for (const c of cases) {
       HOME_BLOCKS = []
@@ -221,6 +222,37 @@ describe('Life is a page (#234)', () => {
       unmount()
     }
   })
+
+  // `Pond 02` 2e: "the source picker, shared by table, gallery and chart —
+  // /table · /gallery · /chart". Those three rows no longer mint a block: a table
+  // is a view of a database, so the person chooses the source first (#280).
+  it.each(['table', 'gallery', 'chart'])(
+    '“/%s” summons the source picker rather than inserting a block',
+    async (name) => {
+      HOME_BLOCKS = []
+      mockCommitBlocks.mockClear()
+      renderPanel()
+      fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+      const editor = await screen.findByPlaceholderText('Write something…')
+      fireEvent.change(editor, { target: { value: '/' } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      fireEvent.change(editor, { target: { value: `/${name}` } })
+      fireEvent.click(within(menu).getByText(name))
+
+      await waitFor(() => {
+        const glass = document.querySelector('[data-part="glass"][data-kind="source"]')
+        expect(glass).toBeTruthy()
+        expect(glass).toHaveAttribute('data-step', 'source')
+      })
+      // Nothing is written until a source is picked — the pick is the person's
+      // gesture, and it has not been made yet.
+      expect(
+        mockCommitBlocks.mock.calls.some(([, , , blocks]) =>
+          (blocks as Block[]).some((b) => b.type === 'view')
+        )
+      ).toBe(false)
+    }
+  )
 })
 
 describe('an area is the same page (#108, #234)', () => {
@@ -237,5 +269,36 @@ describe('an area is the same page (#108, #234)', () => {
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
     expect(within(nav).getByText('life')).toBeInTheDocument()
     expect(within(nav).queryByText('Health')).toBeNull()
+  })
+  // AUDIT C9 wires a chart to a nearby database; it does not invent one. The
+  // nearby view here points at a collection that is NOT a child of the databases
+  // root — which is what `promote-table.ts` writes — so there is no source to
+  // open the chart step on, and the picker must stay on `source`. Deriving the
+  // step and the source from separate expressions opened `type` with no source,
+  // where ↵ wrote a brand-new empty database instead of charting the table.
+  it('“/chart” beside a view the picker cannot offer stays on the source step', async () => {
+    HOME_BLOCKS = [{ id: 'v1', type: 'view', mode: 'table', collectionId: 'not-a-database' }]
+    renderPanel()
+    await screen.findByRole('button', { name: 'Add a block' })
+    fireEvent.click(screen.getByRole('button', { name: 'Add a block' }))
+    const editor = await screen.findByPlaceholderText('Write something…')
+    fireEvent.change(editor, { target: { value: '/' } })
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.change(editor, { target: { value: '/chart' } })
+    fireEvent.click(within(menu).getByText('chart'))
+
+    await waitFor(() => {
+      const glass = document.querySelector('[data-part="glass"][data-kind="source"]')
+      expect(glass).toBeTruthy()
+      expect(glass).toHaveAttribute('data-step', 'source')
+    })
+    expect(mockCommitBlocks).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.arrayContaining([expect.objectContaining({ type: 'view', mode: 'chart' })]),
+      expect.anything(),
+      expect.anything()
+    )
   })
 })

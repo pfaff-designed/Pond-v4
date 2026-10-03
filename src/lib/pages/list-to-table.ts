@@ -16,9 +16,9 @@
  *      fit keep their text in the last column — nothing lost.
  *   3. field types — promote-table's existing inference (number / date / text),
  *      so every field is one of the 8 property types in properties/schema.ts.
- *   4. createDatabaseFromList — orchestrate the writes: the root, the database
- *      page with its schema, a `type='row'` record per line; return the view
- *      block. The HOST page's block swap is the caller's (the controlled editor
+ *   4. createDatabaseFromList — orchestrate the writes: `createDatabase` (#280:
+ *      the root and the database page with its schema, one owner), then a
+ *      `type='row'` record per line; return the view block. The HOST page's block swap is the caller's (the controlled editor
  *      owns persistence — see BlockCanvas), composed via `replaceBlockWithView`.
  *
  * No Next.js imports — takes a SupabaseClient, exercised directly in jest.
@@ -30,10 +30,10 @@ import type { Block } from '@/lib/documents/types'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { TableRow } from '@/lib/modules/table/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
-import { createPage, deletePage } from '@/lib/pages/client'
+import { createPage } from '@/lib/pages/client'
+import { createDatabase, rollbackDatabase } from '@/lib/pages/create-database'
 import { inferSchema, tableRowsToPageInputs } from '@/lib/pages/promote-table'
-import { getOrCreateDatabasesRoot } from '@/lib/pages/databases-root'
-import { ROW_TYPE, withSchema, type PropertySchema } from '@/lib/properties/schema'
+import { ROW_TYPE, type PropertySchema } from '@/lib/properties/schema'
 
 // ── 1. What is a list ────────────────────────────────────────────────────────
 
@@ -228,29 +228,6 @@ export interface DatabaseFromList {
 }
 
 /**
- * Undo this call's own writes after a failure part-way through, so a stranded
- * half-built database never shows up under databases. Deleting the database page
- * cascades its records (the self-referential FK), and the root goes too only when
- * THIS call created it — an older root may hold other databases. Best-effort by
- * design: every error is swallowed so the original failure is what the caller
- * sees, and the worst case is the empty shell the cleanup was meant to remove.
- */
-async function rollbackDatabase(
-  supabase: SupabaseClient<Database>,
-  databaseId: string | null,
-  rootId: string | null
-): Promise<void> {
-  for (const id of [databaseId, rootId]) {
-    if (!id) continue
-    try {
-      await deletePage(supabase, id)
-    } catch {
-      // Nothing better to do: the caller's own error is the one worth raising.
-    }
-  }
-}
-
-/**
  * Write the database a list becomes (AC2-4): the databases root (created on first
  * use), a collection page under it carrying the inferred schema, and one
  * `type='row'` record per line with its values coerced to the field types —
@@ -283,40 +260,34 @@ export async function createDatabaseFromList(
   // Field types via promote-table's inference — bounded to the 8 property types.
   const schema = inferSchema(table.columns, rows, mintId)
 
-  const root = await getOrCreateDatabasesRoot(supabase, user.id, workspace)
-  let databaseId: string | null = null
+  // The root and the collection page are the shared sequence (#280); only the
+  // records are this gesture's own.
+  const made = await createDatabase(supabase, { title: input.title, schema, workspace }, mintId)
   try {
-    const database = await createPage(supabase, user.id, {
-      parentId: root.id,
-      type: 'page',
-      title: input.title,
-      props: withSchema({}, schema),
-      workspace,
-    })
-    databaseId = database.id
-
     const titleCol = table.columns.length - 1
     const inputs = tableRowsToPageInputs(schema, rows, titleCol)
     for (const row of inputs) {
       await createPage(supabase, user.id, {
-        parentId: database.id,
+        parentId: made.databaseId,
         type: ROW_TYPE,
         title: row.title,
         props: row.props,
         workspace,
       })
     }
-
-    const view: ViewBlock = { id: mintId(), type: 'view', mode: 'table', collectionId: database.id }
     return {
-      view,
-      databaseId: database.id,
-      databasesRootId: root.id,
+      view: made.view,
+      databaseId: made.databaseId,
+      databasesRootId: made.databasesRootId,
       rowCount: inputs.length,
       schema,
     }
   } catch (err) {
-    await rollbackDatabase(supabase, databaseId, root.created ? root.id : null)
+    await rollbackDatabase(
+      supabase,
+      made.databaseId,
+      made.rootCreated ? made.databasesRootId : null
+    )
     throw err
   }
 }

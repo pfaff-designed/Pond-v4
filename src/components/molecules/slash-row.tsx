@@ -8,7 +8,9 @@
  * Every literal is `wayfinder/board-values.generated.json` `.components.PondPicker`:
  *
  *   row     flex · gap 10 · 7px 10px · radius 10 · mono 12.5 · .01em · ink; selected ink .07
+ *           `faint` (the source picker's `field` add row): the row at ink .8
  *   svg     13 × 13 on a 14 grid · stroke currentColor 1.4 round · at ink .8
+ *   sub     INLINE after the label · mono 10.5 · ink .68 · nowrap · ellipsis
  *   hint    0 1 auto · max 45% · mono 10.5 · ink .68 · ellipsis — hidden on the selected row
  *   ↵       mono 10.5 · ink .8 — on the selected row
  *   match   underline · offset 3 · thickness 1, over a `pre` / `hit` / `post` split
@@ -29,7 +31,9 @@ import type { SlashEntry } from './slash-entries'
 export type RowEntry = Extract<SlashEntry, { kind: 'row' }>
 
 const ROW =
-  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] py-[7px] font-mono text-[12.5px] tracking-[.01em] text-mn-text'
+  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] py-[7px] font-mono text-[12.5px] tracking-[.01em]'
+/** The board's `sub` on a mono row: inline after the label. */
+const SUB = 'min-w-0 truncate text-[10.5px] text-mn-text-secondary'
 /** The board's `hint`: the key at rest, at the row's end. */
 export const HINT =
   'min-w-0 max-w-[45%] flex-[0_1_auto] truncate font-mono text-[10.5px] text-mn-text-secondary'
@@ -49,12 +53,13 @@ export function Row({
   onHover: () => void
   onPick: () => void
 }) {
+  const ink = entry.faint ? 'text-mn-text-meta' : 'text-mn-text'
   return (
     <div
       role="option"
       aria-selected={selected}
       data-part="row"
-      className={`${ROW} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
+      className={`${ROW} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
       onMouseEnter={onHover}
       onClick={onPick}
     >
@@ -70,6 +75,11 @@ export function Row({
         </span>
         <span data-part="post">{entry.post}</span>
       </span>
+      {entry.sub && (
+        <span data-part="sub" className={SUB}>
+          {entry.sub}
+        </span>
+      )}
       <span className="flex-1" />
       {selected ? (
         <span data-part="enter" className={ENTER}>

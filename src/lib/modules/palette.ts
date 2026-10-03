@@ -22,26 +22,10 @@
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
-import { TPL_ICON, type SlashGroup } from '@/components/molecules/slash-entries'
+import { ICON, TPL_ICON, type SlashGroup } from '@/components/molecules/slash-entries'
 import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
-
-/** `PondPicker.dc.html`'s `I` table — the hand-drawn 14-grid marks, by row (`tpl` is `TPL_ICON`). */
-const ICON: Record<string, SlashIcon> = {
-  text: { d: 'M3 3.5h8M7 3.5v7.5' },
-  quote: { d: 'M5.6 3.4C4 4 3 5.2 3 7v3.2h2.8V7.4H4M11 3.4C9.4 4 8.4 5.2 8.4 7v3.2h2.8V7.4H9.4' },
-  file: { d: 'M4 2h4l3 3v7H4zM8 2v3h3' },
-  list: { d: 'M6 4h5.5M6 7h5.5M6 10h5.5M3.2 4h.01M3.2 7h.01M3.2 10h.01' },
-  check: { d: 'M2.4 4.2l1 1 1.8-2M7 4.2h4.6M2.4 9.8l1 1 1.8-2M7 9.8h4.6' },
-  table: {
-    d: 'M3.2 2.5h7.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 10.3V3.7a1.2 1.2 0 0 1 1.2-1.2zM2 6h10M6 2.5v9',
-  },
-  gallery: { d: 'M2 2.5h4.2v4.2H2zM7.8 2.5H12v4.2H7.8zM2 8h4.2v4.2H2zM7.8 8H12v4.2H7.8z' },
-  chart: { d: 'M2.5 11.5h9M4.2 11.5V7.5M7 11.5V3.5M9.8 11.5V8.8' },
-  number: { d: 'M5.4 2.5 4.4 11.5M9.6 2.5l-1 9M2.6 5.4h9M2.2 8.6h9' },
-  log: { d: 'M2 7a5 5 0 1 0 10 0a5 5 0 1 0-10 0M7 4.4V7l1.9 1.2' },
-}
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
 const ROW_CHROME: Partial<
