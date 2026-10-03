@@ -533,10 +533,7 @@ function CollectionTable({
           {/* No empty row of its own: on a page the frame owns the empty state
               (PondBlock state="empty", #239) and suppresses this view entirely. */}
           {rows.map((row) => (
-            <tr
-              key={row.id}
-              className="group/row border-b border-mn-line last:border-b-0 align-top"
-            >
+            <tr key={row.id} className="border-b border-mn-line last:border-b-0 align-top">
               <td className="py-1.5 pr-3 font-medium text-mn-text">
                 {editable && onRenameRow ? (
                   <input

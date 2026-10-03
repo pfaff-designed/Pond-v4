@@ -69,10 +69,10 @@ export const Editable: Story = {
   },
 }
 
-/** Editable: add-row appends an empty row, and no row carries a delete affordance.
- *  #223 removed the per-row × — no board draws one. The table module has no row
- *  menu of its own, so row removal is a real gap to take to the boards rather
- *  than a × to reinstate here. */
+/** Editable: add-row appends an empty row, and no row carries a delete affordance
+ *  (#223 — no board draws one). The row-removal gap this leaves is recorded on
+ *  #223, not here: ADR 0004 is explicit that rulings live in the tracker and the
+ *  ADRs, never only in a code comment. */
 export const AddRows: Story = {
   args: { data: inventory },
   render: (args) => <StatefulTable data={args.data} />,
