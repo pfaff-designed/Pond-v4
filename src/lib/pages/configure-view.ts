@@ -38,6 +38,7 @@ import type {
   ViewChartConfig,
   ViewBigNumberConfig,
   ViewChartKind,
+  ViewChartPresentation,
   ViewAggValue,
   ViewFigureFormat,
 } from '@/lib/modules/view/schema'
@@ -75,6 +76,8 @@ export interface ConfigureViewProposal {
     stacked?: boolean
     /** A gauge goal / composed reference line (#94) — a plain number, nothing to resolve. */
     target?: number
+    /** The card or the board's compact inline mark (#259) — a flag, nothing to resolve. */
+    presentation?: ViewChartPresentation
   }
   /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
   bigNumber?: {
@@ -145,7 +148,9 @@ function byNameLookup(schema: PropertySchema): Map<string, PropertyDef> {
  */
 export function resolveViewConfig(
   schema: PropertySchema,
-  proposal: ConfigureViewProposal
+  // `pageId` names the target page and plays no part in resolution, so a caller that
+  // has no page yet — a premade template being instantiated (#261) — may omit it.
+  proposal: Omit<ConfigureViewProposal, 'pageId'> & { pageId?: string }
 ): ResolvedViewConfig {
   const byName = byNameLookup(schema)
   const config: ResolvedViewConfig = { mode: proposal.mode }
@@ -210,6 +215,14 @@ export function resolveViewConfig(
         series,
         ...(proposal.chart.stacked ? { stacked: true } : {}),
         ...(typeof proposal.chart.target === 'number' ? { target: proposal.chart.target } : {}),
+        // #261: the presentation rides through untouched, so a template's compact
+        // strip does not come back a card. NOTE this closes only the resolver half:
+        // `configure_view`'s own tool input (`api/chat/tools.ts`) still has no
+        // `presentation` field, so zod strips it and the MODEL cannot switch a view
+        // to compact through this tool — even though `viewDescriptor.description`
+        // advertises it in the prompt. That gap is #268; `propose_changes` can emit
+        // it today because `viewSchema` carries it.
+        ...(proposal.chart.presentation ? { presentation: proposal.chart.presentation } : {}),
       }
     }
   }

@@ -17,18 +17,21 @@ import { moduleRenderers } from '@/lib/modules/renderers'
 import type { DescriptorType } from '@/lib/modules/registry'
 import type { RendererType } from '@/lib/modules/renderers'
 import type { BlockType } from '@/lib/modules/content'
-import type { ModuleData } from '@/lib/modules/ai-composition'
+import type { ModuleData, NonEmittableType } from '@/lib/modules/ai-composition'
 
 type Expect<T extends true> = T
 type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 
 /**
- * Content types = every registered module except the `page` container. #111 closed
- * the retired-but-registered tier: the nine data-holding display blocks are deleted,
- * so composable, persistable and renderable are now the SAME set. A registered module
- * is one the AI may mint, the palette offers and a page may persist — no exceptions.
+ * Content types = every registered module except the declared non-emittable ones
+ * (`NON_EMITTABLE_MODULES` — today only the `page` container, #261). #111 closed the
+ * retired-but-registered tier: the nine data-holding display blocks are deleted, so
+ * composable, persistable and renderable are now the SAME set. A registered module is
+ * one the AI may mint, the palette offers and a page may persist — no exceptions. The
+ * runtime half of this fence (membership with no overlap or stale entry) is
+ * `template-emit-parity.test.ts`.
  */
-type ContentType = Exclude<DescriptorType, 'page'>
+type ContentType = Exclude<DescriptorType, NonEmittableType>
 
 // ── The fences ───────────────────────────────────────────────────────────────
 // A type added to the registry but missing from a union (or vice versa) fails tsc.
