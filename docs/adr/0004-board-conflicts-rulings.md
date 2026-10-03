@@ -344,14 +344,29 @@ bullet text.** #229, the parent, holds the measured spec.
    a 12-file whitelist excluding `PondMolecule`, `CommandPalette`, `SlashMenu` and the diff cards, all of
    which already use bracket type. The named-size ban — the half the amendment keeps — stays.
 
-2. **The rail's row leading is a CSS rule in `globals.css`, not a utility, and that is not laziness.** The
+2. **The rail's row leading is `leading-[normal]`, and the order of that class is load-bearing.** The
    boards render rows at metric `line-height: normal`; Tailwind's preflight sets `html { line-height: 1.5 }`,
-   which inflates the board's 26px row to 30.25px. Measured in the running app, **both `leading-[normal]` and
-   `[line-height:normal]` emit nothing in this build** (rows stayed 30.25/29.5), though `leading-[normal]`
-   does compile under a bare `@tailwindcss/cli` — the `--leading-*` theme namespace appears to validate that
-   utility as length-or-number and drop the `normal` keyword. No ratio substitutes: `normal` is font-metric,
-   so no single number yields both 26px at 13.5 and 25px at 13. **Re-measure before simplifying it.**
-   `Rail.stories.tsx`'s `BoardRowGeometry` pins all of it in a real browser.
+   which inflates the board's 26px row to 30.25px. `leading-[normal]` fixes it — **but only when it is the
+   last class in the string.** tailwind-merge counts `font-size` as conflicting with `leading` (a `text-*`
+   step can carry its own leading), so the rail's conditional `text-[13px]` for nested rows, appended _after_
+   it, silently dropped it and only the deep rows sprang back to 1.5. That is #252's bug class — `cn()`
+   dropping a class nobody asked it to drop — and it is nastier here than a wrong colour, because the result
+   is a subtly loose row rather than a visible miss.
+
+   This cost most of a session, and the two false trails are worth recording because both will recur:
+
+   - **A Storybook dev server will serve stale CSS.** A newly added utility did not appear in the served
+     sheet, and a plain restart did not clear it; the sheet still carried a class that had been deleted from
+     the source several edits earlier. Measuring against it "proved" that `leading-[normal]` does not compile
+     in this project, which is false — it compiles, and the rule was in the sheet the whole time. **Clear
+     `node_modules/.vite` / `.cache`, or measure through `npm run test-storybook`, which builds fresh.**
+   - **A ratio cannot substitute for `normal`.** It is font-metric, so no single number yields both the
+     board's 26px at 13.5 and 25px at 13.
+
+   A per-component CSS rule in `globals.css` was shipped first, then removed once the real cause was found.
+   **The fix needs no globals.css change at all.** `Rail.stories.tsx`'s `BoardRowGeometry` pins the leading
+   and both heights in a real browser, so a future reorder of that class string fails a test rather than
+   quietly loosening every row.
 
 ### The pattern, for the sixth time
 

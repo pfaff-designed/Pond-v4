@@ -694,23 +694,6 @@
   [data-tree-row][data-voice='full'] [data-part='title'] {
     color: var(--color-mn-text);
   }
-
-  /* Rail row leading. `PondRail.dc.html` renders its rows at the browser's
-     metric `line-height: normal` — 16px on a 13.5px row, giving the board's
-     measured 26px row — while Tailwind's preflight sets `html { line-height:
-     1.5 }`, which inflates the same row to 30.25px (#294's "~45% too loose").
-     It is a CSS rule because the utilities do not survive THIS build: both
-     `leading-[normal]` and `[line-height:normal]` were measured in the running
-     app and emitted nothing (rows stayed 30.25/29.5), though `leading-[normal]`
-     does compile under a bare `@tailwindcss/cli` — the `--leading-*` theme
-     namespace appears to validate that utility as length-or-number and drop the
-     `normal` keyword. A ratio cannot stand in either: `normal` is font-metric,
-     so no single number gives both the board's 26px at 13.5 and 25px at 13.
-     The rail docks it onto its OWN rows, exactly as it docks data-voice above,
-     rather than moving a global default. Re-measure before 'simplifying' this. */
-  [data-tree-row] [data-kind='list-row'] {
-    line-height: normal;
-  }
 }
 
 @layer base {

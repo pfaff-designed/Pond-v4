@@ -399,9 +399,13 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
             )}
           </>
         }
+        // `leading-[normal]` comes LAST on purpose. tailwind-merge counts
+        // font-size as conflicting with leading (a `text-*` step can carry its
+        // own), so a size appended after it silently drops it — #252's bug
+        // class — and the row springs back to preflight's 1.5.
         className={`min-h-0 w-full flex-1 gap-[7px] py-[5px] pr-2 pl-1${
           isAreaRow ? '' : ' text-[13px]'
-        }`}
+        } leading-[normal]`}
       />
     </div>
   )
