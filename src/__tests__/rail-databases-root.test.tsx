@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -81,26 +81,97 @@ function renderRail(tree: RailNode[], expanded = new Set<string>()) {
   )
 }
 
-describe('rail — the databases root', () => {
-  it('renders the databases root in its own foot tree, not among the Life areas', () => {
+// `PondRail.dc.html`'s foot (line 29) is exactly `dbRow` (cylinder + "databases")
+// above `newRow` ("＋ new page") — ONE flat row: no chevron, no children, no nested
+// tree. #229 moved the root there and dropped the second `role="tree"`: the rail
+// is the Life tree plus a foot link, and a database is reached by opening the
+// databases page, which lists its children.
+describe('rail — the databases root is one flat foot row (#229)', () => {
+  it('renders the root in the foot as a control, not among the Life areas and in no second tree', () => {
     renderRail([health, databases])
     const life = screen.getByRole('tree', { name: 'Workspace' })
     expect(within(life).getByText('Health')).toBeInTheDocument()
     expect(within(life).queryByText('databases')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tree')).toHaveLength(1)
 
-    const foot = screen.getByRole('tree', { name: 'Databases' })
-    expect(within(foot).getByText('databases')).toBeInTheDocument()
+    const row = screen.getByRole('button', { name: 'databases' })
+    expect(row.closest('[data-part="rail-foot"]')).not.toBeNull()
+    expect(row.querySelector('ellipse')).not.toBeNull() // the cylinder mark
+    // dbRow: 13.5 / 500, gap 9, padding 6px 8px, radius 10
+    expect(row.className).toMatch(/\btext-\[13\.5px\](?:\s|$)/)
+    expect(row.className).toMatch(/\bfont-medium\b/)
+    expect(row.className).toMatch(/\bgap-\[9px\](?:\s|$)/)
+    expect(row.className).toMatch(/\bpx-2\b/)
+    expect(row.className).toMatch(/\bpy-1\.5\b/)
+    expect(row.className).toMatch(/\brounded-mn-row\b/)
   })
 
-  it('lists a database under the root when it is expanded (the new database appears under databases)', () => {
+  it('never lists the databases themselves in the rail, expanded or not', () => {
     renderRail([health, databases], new Set(['root-db']))
-    const foot = screen.getByRole('tree', { name: 'Databases' })
-    expect(within(foot).getByText('ingredients')).toBeInTheDocument()
+    expect(screen.queryByText('ingredients')).not.toBeInTheDocument()
+    expect(screen.queryByRole('treeitem', { name: /databases/ })).not.toBeInTheDocument()
   })
 
-  it('draws no databases tree until the pond has one to list', () => {
+  it('opens the databases page through the same onSelect as any row, and reads selected on it', () => {
+    const onSelect = jest.fn()
+    render(
+      <RailView
+        tree={[health, databases]}
+        pondName="life"
+        selectedId={null}
+        expanded={new Set()}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={onSelect}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onNewPage={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+    const row = screen.getByRole('button', { name: 'databases' })
+    expect(row).not.toHaveAttribute('aria-current')
+    expect(row.className).not.toMatch(/\bbg-mn-hover-fill\b/)
+    fireEvent.click(row)
+    expect(onSelect).toHaveBeenCalledWith('root-db')
+  })
+
+  it('marks the foot row selected (ink .07) when the databases root is the open page', () => {
+    render(
+      <RailView
+        tree={[health, databases]}
+        pondName="life"
+        selectedId="root-db"
+        expanded={new Set()}
+        lifeExpanded
+        busyId={null}
+        isLoading={false}
+        isEmpty={false}
+        onSelect={jest.fn()}
+        onToggle={jest.fn()}
+        onAddChild={jest.fn()}
+        onDelete={jest.fn()}
+        onLife={jest.fn()}
+        onToggleLife={jest.fn()}
+        onNewPage={jest.fn()}
+        canDrop={() => true}
+        onMove={jest.fn()}
+      />
+    )
+    const row = screen.getByRole('button', { name: 'databases' })
+    expect(row).toHaveAttribute('aria-current', 'page')
+    expect(row.className).toMatch(/\bbg-mn-hover-fill\b/)
+  })
+
+  it('draws no databases row until the pond has one', () => {
     renderRail([health])
-    expect(screen.queryByRole('tree', { name: 'Databases' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'databases' })).not.toBeInTheDocument()
   })
 })
 

@@ -215,7 +215,14 @@ describe('touched files — type scale and supersession guards (AC5, AC6)', () =
     expect(read(file)).not.toMatch(/press-/)
   })
 
-  it.each(TOUCHED.filter((f) => f.endsWith('.tsx')))(
+  // The rail is built from `PondRail.dc.html`, whose rows are 13.5 / 13 / 12.5 /
+  // 10.5 — values the "11/13/16/…" scale below would condemn. ADR 0003's
+  // 2026-10-01 amendment supersedes that scale: a value written in a board is
+  // final. So the rail's guard is "only the board's sizes", not "no sizes".
+  const RAIL_BOARD_SIZES = new Set(['13.5', '13', '12.5', '10.5'])
+  const RAIL = 'src/components/organisms/Rail.tsx'
+
+  it.each(TOUCHED.filter((f) => f.endsWith('.tsx') && f !== RAIL))(
     '%s sets no off-scale type size (11/13/16/18/22/28/36/46 only)',
     (file) => {
       const src = read(file)
@@ -223,6 +230,14 @@ describe('touched files — type scale and supersession guards (AC5, AC6)', () =
       expect(src).not.toMatch(/text-\[[0-9.]+(px|rem|em)\]/)
     }
   )
+
+  it(`${RAIL} sets only PondRail's own sizes (13.5 / 13 / 12.5 / 10.5)`, () => {
+    const src = read(RAIL)
+    expect(src).not.toMatch(/\btext-(xs|sm|base|lg|xl|\dxl)\b/)
+    const sizes = [...src.matchAll(/text-\[([0-9.]+)px\]/g)].map((m) => m[1])
+    expect(sizes.length).toBeGreaterThan(0)
+    for (const s of sizes) expect(RAIL_BOARD_SIZES.has(s)).toBe(true)
+  })
 
   it('globals.css loads only the three PP faces', () => {
     const css = read('src/app/globals.css')
@@ -336,10 +351,10 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i)
   })
 
-  it('empty shows the PondRail hint', () => {
+  it('empty shows the PondRail hint — all lowercase, `pond` included', () => {
     renderRail({ tree: [], isEmpty: true })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'No pages yet. ＋ new page, or ask Pond to start one.'
+      'no pages yet. ＋ new page, or ask pond to start one.'
     )
   })
 })

@@ -68,6 +68,7 @@ import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import { requestCreatePage } from '@/lib/shell-commands'
 import {
   LIFE_ID,
+  LIFE_NODE,
   buildTree,
   flattenVisible,
   isAreaRow,
@@ -90,6 +91,7 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -106,18 +108,17 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // `trailing` slots. Focus / keydown fire only for the row itself (guarded on
 // event target) so inner controls never double-drive the tree (ticket-27/28).
 
-/** Px of extra left-pad per depth level — the guides land on these gridlines. */
-const INDENT_STEP = 16
-/** Fixed left offset of the whole tree content (past the paper margin). */
-const INDENT_BASE = 6
-
-/** A calm authored chevron — rotates on expand, no glyph substitution. */
+/**
+ * A calm authored chevron — rotates 90° when OPEN, none when closed
+ * (`PondRail.dc.html`: `transform: open ? 'rotate(90deg)' : 'none'`); 9 × 9 on a
+ * `0 0 9 9` box, stroke 1.4, round caps and joins.
+ */
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
       width="9"
       height="9"
-      viewBox="0 0 10 10"
+      viewBox="0 0 9 9"
       fill="none"
       aria-hidden
       className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
@@ -135,6 +136,103 @@ function Chevron({ open }: { open: boolean }) {
   )
 }
 
+/**
+ * The nesting guides — `PondRail.dc.html`'s own mechanism, adopted verbatim (#229):
+ * one `guide` span per ancestor level inside a `guides` flex container that is the
+ * row's FIRST child. Each guide is `width: indent - 5 = 9` with `margin-left: 4`,
+ * so the indent is 13px per level BY CONSTRUCTION (no padding arithmetic), and
+ * its `-5px` vertical margins bleed the hairline through the row's padding so the
+ * lines join between rows. `marginRight: -7` cancels the row's own 7px gap.
+ *
+ * ONE value: every guide is ink `.09` in BOTH themes (`a(.09)` — not the `--mn-line`
+ * role, which is .12 on dark; the board's value is final). The board draws no
+ * brightened on-path variant, so the old `bg-mn-hair`/`bg-mn-line` split is gone.
+ */
+function RowGuides({ depth }: { depth: number }) {
+  return (
+    <span data-part="guides" aria-hidden className="-mr-[7px] flex flex-none self-stretch">
+      {Array.from({ length: depth }).map((_, i) => (
+        <span
+          key={i}
+          className="-my-[5px] ml-1 w-[9px] flex-none self-stretch border-l border-mn-text/[0.09]"
+        />
+      ))}
+    </span>
+  )
+}
+
+/**
+ * The row's ground and ink, straight off the board's row formula (line 77 of
+ * `PondRail.dc.html`):
+ *
+ *   fontSize:   areaRow ? 13.5 : 13           (areaRow = depth ≤ 1: life + the areas)
+ *   fontWeight: areaRow || isSel ? 500 : 400
+ *   color:      areaRow || isSel || hov ? fg : a(.68)
+ *   background: isSel ? a(.07) : hov ? ⟨sage — REJECTED⟩ : transparent
+ *
+ * The hover ground is **ink `.05`**, NOT the board's `rgba(100,143,123,.07)`:
+ * **ADR 0004 ruling 6** — `PROJECT_RULES.md` keeps area colours on marks only,
+ * "never text, grounds, cards or buttons". And it is `.05`, not `.07`, because
+ * ink `.07` (`--mn-hover-fill`) is already the SELECTED fill: moving hover to
+ * `.07` would make the two states indistinguishable. Hover `.05`, selected `.07`.
+ * Do not patch this toward the board.
+ *
+ * No fixed height: the board's row is `padding 5px 8px 5px 4px` around the type
+ * with `minHeight: 0`, at the browser's `line-height: normal` (the board's helmet
+ * loads only `fonts.css`, never a reset), so the row sets `leading-[normal]` to
+ * escape the app's preflight 1.5.
+ *
+ * Composed as a plain template, not `cn()`: the rail pairs `13.5`/`13` with ink
+ * tiers, and tailwind-merge cannot tell `text-[13px]` from `text-mn-text` (#252).
+ */
+function rowRecipe(opts: {
+  areaRow: boolean
+  selected: boolean
+  hovered: boolean
+  dragging: boolean
+  dropInto: boolean
+  dropRejected: boolean
+  settleOnMount: boolean
+}): string {
+  const { areaRow, selected, hovered, dragging, dropInto, dropRejected, settleOnMount } = opts
+  return [
+    'group relative flex items-center gap-[7px] rounded-mn-row py-[5px] pr-2 pl-1 leading-[normal] outline-none',
+    FOCUS_VISIBLE_RING,
+    areaRow ? 'text-[13.5px]' : 'text-[13px]',
+    areaRow || selected ? 'font-medium' : 'font-normal',
+    areaRow || selected || hovered ? 'text-mn-text' : 'text-mn-text-secondary',
+    // ADR 0004 §6: hover is ink .05 (never sage); selected is ink .07.
+    selected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-text/5' : '',
+    dragging ? 'opacity-[0.35]' : '',
+    dropRejected ? 'cursor-not-allowed' : 'cursor-pointer',
+    dropInto ? 'ring-2 ring-inset ring-mn-area-b' : '',
+    settleOnMount ? 'motion-settle-in' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** The two hover tools — `＋` and `×` — 12 × 12, stroke 1.4, round caps (`tools`). */
+const PLUS_PATH = 'M6 2.4v7.2M2.4 6h7.2'
+const CROSS_PATH = 'M3 3l6 6M9 3l-6 6'
+
+/**
+ * A 12 × 12 tool with a 22 × 22 hit area drawn by a pseudo-element, so the row
+ * stays at the board's padded height (a 22px box would set the row's height).
+ * No ground on hover: the board's `tools` has no hover delta, and the `×` spends
+ * no red — ink only (the issue body's claim that it hovers to the removal tint
+ * is stale).
+ */
+const TOOL_CLASS = `relative grid h-3 w-3 flex-none place-items-center rounded-mn-chrome outline-none transition-colors after:absolute after:-inset-[5px] after:content-[''] hover:text-mn-text disabled:opacity-30 ${FOCUS_VISIBLE_RING}`
+
+function ToolGlyph({ d }: { d: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path d={d} stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 interface RailRowProps {
   id: string
   title: string
@@ -142,7 +240,8 @@ interface RailRowProps {
   isFolder: boolean
   isExpanded: boolean
   isSelected: boolean
-  /** An ancestor of the selection — the trail reads at a raised tone (t25). */
+  /** An ancestor of the selection — exposed as `data-on-path` for wayfinding
+   *  hooks; the board draws no on-path tone, so it paints nothing (#229). */
   isOnPath: boolean
   /** The single roving tab stop lands here; arrow keys move it (APG tree). */
   isFocused: boolean
@@ -161,8 +260,9 @@ interface RailRowProps {
   /** A leading mark slot (an area's glyph, the Life root's ring — #91) —
    *  replaces the dot. */
   leading?: ReactNode
-  /** Trailing meta slot (the root's "all" caption). */
-  trailing?: ReactNode
+  /** The board's `marginTop: 4` — a gap ABOVE an area group (a depth-1 row that
+   *  is not the first row), suppressed while the pinned band shows. */
+  gapAbove?: boolean
 
   onSelect: (id: string) => void
   onToggle: (id: string) => void
@@ -173,8 +273,8 @@ interface RailRowProps {
 
   // ── Drag-to-reparent/reorder (F25) ────────────────────────────────────────
   draggable?: boolean
-  /** This row is the one being dragged — dims to ~50% (the drag image carries
-   *  the molecule's lift; the source row just quiets). */
+  /** This row is the one being dragged — the board's `opacity: .35`; the ghost
+   *  chip in the rail body carries the label. */
   isDragging?: boolean
   dropZone?: DropZone | null
   isDropRejected?: boolean
@@ -203,7 +303,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
-    trailing,
+    gapAbove = false,
     onSelect,
     onToggle,
     onAddChild,
@@ -223,22 +323,13 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   ref
 ) {
   // Hover is host state (the molecule is presentational and takes ONE state);
-  // CRUD reveal additionally rides group-hover/focus-within CSS so it still
-  // opens for a keyboard user tabbing into the row's controls.
+  // the tools additionally ride group-hover/focus-within CSS so they still open
+  // for a keyboard user tabbing into the row's controls.
   const [hovered, setHovered] = useState(false)
   const label = title || 'Untitled'
-  const padLeft = INDENT_BASE + depth * INDENT_STEP
+  // The board's `areaRow = d <= 1`: the Life root and the areas under it.
+  const areaRow = isRoot || isArea
   const state: PondMoleculeState = isSelected ? 'selected' : hovered ? 'hover' : 'rest'
-  // The rail's "you are here" trail: three ink tiers on the row label. The
-  // list-row molecule renders one tone (mockup default), so the rail docks its
-  // own voice onto the title via data-voice → CSS (see globals.css). full =
-  // the selected row (ink-100); raised = an area/root row or an ancestor of the
-  // selection (ink-80 meta); muted = a plain child row (ink-68).
-  const labelVoice: 'full' | 'raised' | 'muted' = isSelected
-    ? 'full'
-    : isOnPath || isRoot || isArea
-      ? 'raised'
-      : 'muted'
 
   return (
     <div
@@ -252,7 +343,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
       data-on-path={isOnPath || undefined}
-      data-voice={labelVoice}
       draggable={draggable}
       onDragStart={onDragStart ? (e) => onDragStart(id, e) : undefined}
       onDragOver={onDragOver ? (e) => onDragOver(id, e) : undefined}
@@ -274,50 +364,49 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center rounded-mn-row outline-none
-        focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
-        ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
-        ${isDragging ? 'opacity-50' : ''}
-        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount ? 'motion-settle-in ' : ''}`}
-      style={{ paddingLeft: padLeft }}
+      className={rowRecipe({
+        areaRow,
+        selected: isSelected,
+        hovered,
+        dragging: isDragging,
+        dropInto: dropZone === 'into',
+        dropRejected: isDropRejected,
+        settleOnMount,
+      })}
+      // The row's `margin: 0 8px` is the scroll body's `px-2`; only the group gap
+      // is the row's own.
+      style={gapAbove ? { marginTop: 4 } : undefined}
     >
-      {/* Drop-line for a before/after reorder — a calm rule at the row's
-          top/bottom edge; pointer-events-none so it never eats a drag event.
-          The into-highlight is the ring on the row itself (above). */}
+      {/* The drop line (`dropLine`: height 2, radius 2, full ink, margin 0 16px 0
+          58px from the LIST edge — i.e. left 50 / right 8 inside a row that
+          already sits 8 in). The board draws it `before` a row; `after` and the
+          `into` ring are engine states the reorder/reparent path needs.
+          pointer-events-none so it never eats a drag event. */}
       {dropZone === 'before' && (
         <span
           aria-hidden
-          className="pointer-events-none absolute left-2 right-2 -top-px h-0.5 rounded-full bg-mn-text"
+          className="pointer-events-none absolute -top-px right-2 left-[50px] h-0.5 rounded-[2px] bg-mn-text"
         />
       )}
       {dropZone === 'after' && (
         <span
           aria-hidden
-          className="pointer-events-none absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-mn-text"
+          className="pointer-events-none absolute right-2 -bottom-px left-[50px] h-0.5 rounded-[2px] bg-mn-text"
         />
       )}
 
-      {/* Indentation guides — one hairline per ancestor level, brightened a
-          touch on the selected/on-path trail so the eye follows depth home. */}
-      {Array.from({ length: depth }).map((_, i) => (
-        <span
-          key={i}
-          aria-hidden
-          className={`absolute top-0 bottom-0 w-px ${
-            isSelected || isOnPath ? 'bg-mn-line' : 'bg-mn-hair'
-          }`}
-          style={{ left: INDENT_BASE + i * INDENT_STEP + 10 }}
-        />
-      ))}
+      <RowGuides depth={depth} />
 
       {/* caret — toggles the folder without navigating and without taking
-          focus (the row keeps the roving tab stop); leaf gets a spacer */}
+          focus (the row keeps the roving tab stop). `chev`: ink .68, 9 × 9; the
+          hit area is a 23px pseudo-element so the row keeps the board's height.
+          A leaf gets the board's `chevGap` (9px) so its label lines up. */}
       {isFolder ? (
         <button
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid h-[34px] w-[20px] flex-shrink-0 place-items-center text-mn-mark-faint transition-colors hover:text-mn-text"
+          className="relative grid h-[9px] w-[9px] flex-none place-items-center text-mn-text-secondary transition-colors after:absolute after:-inset-[7px] after:content-[''] hover:text-mn-text"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -327,7 +416,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           <Chevron open={isExpanded} />
         </button>
       ) : (
-        <span className="w-[20px] flex-shrink-0" aria-hidden />
+        <span className="w-[9px] flex-none" aria-hidden />
       )}
 
       <PondMolecule
@@ -342,65 +431,56 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // row with no dot at all. Round three caught the dead branch.
         dot={!isRoot && accent !== undefined && leading === undefined}
         accent={accent}
-        emphasis={isRoot || isArea}
         leading={leading}
         trailing={
-          <>
-            {trailing}
-            {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and
-                REAL tab stops so keyboard/AT users reach them without a pointer
-                (t27). The root (Life) is the workspace, not a row: no add/delete. */}
-            {!isRoot && (onAddChild || onDelete) && (
-              <span className="flex items-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                {onAddChild && (
-                  <button
-                    type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
-                    title="Add sub-page"
-                    aria-label={`Add sub-page to ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAddChild(id)
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M6 2.4v7.2M2.4 6h7.2"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                )}
-                {onDelete && (
-                  <button
-                    type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
-                    title="Delete page"
-                    aria-label={`Delete ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(id)
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M3 3l6 6M9 3l-6 6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </span>
-            )}
-          </>
+          // hover tools (`tools`: gap 8, ink .8) — quiet at rest, revealed on
+          // hover / focus-within, and REAL tab stops so keyboard/AT users reach
+          // them without a pointer (t27). The root (Life) is the workspace, not a
+          // row: no add/delete.
+          !isRoot && (onAddChild || onDelete) ? (
+            <span
+              data-part="tools"
+              className="flex items-center gap-2 text-mn-text/80 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+            >
+              {onAddChild && (
+                <button
+                  type="button"
+                  className={TOOL_CLASS}
+                  title="Add sub-page"
+                  aria-label={`Add sub-page to ${label}`}
+                  disabled={isBusy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onAddChild(id)
+                  }}
+                >
+                  <ToolGlyph d={PLUS_PATH} />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className={TOOL_CLASS}
+                  title="Delete page"
+                  aria-label={`Delete ${label}`}
+                  disabled={isBusy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(id)
+                  }}
+                >
+                  <ToolGlyph d={CROSS_PATH} />
+                </button>
+              )}
+            </span>
+          ) : undefined
         }
-        className="h-[34px] min-h-0 w-full flex-1 pl-1 pr-1.5"
+        // The rail is the HOST: the row's geometry, ground and type live on the
+        // treeitem above (the board's row formula), and the molecule is reduced
+        // to its mark · label · tools order at the board's gap 7. `list-row`'s own
+        // base geometry (360 wide, min-h 36, gap 10) is the list block's and is not
+        // touched — it is overridden here, through the className it already takes.
+        className="min-h-0 w-full min-w-0 flex-1 gap-[7px] bg-transparent p-0 text-[length:inherit] text-[color:inherit]"
       />
     </div>
   )
@@ -447,8 +527,27 @@ export interface RailViewProps {
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
 
-/** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
-const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
+/**
+ * The Life root's mark — the ring glyph (#91; the drawn half-disc retired) in
+ * **ink** by default (#229). `PondRail.dc.html` paints `life` at `color: fg`; an
+ * area colour reaches a mark only when the person has chosen one (`tint &&
+ * colour[label]`). So Life goes through the same `resolveMark` / `areaRoleColor`
+ * path as every other row: a role the pond has recorded for `LIFE_ID` would show,
+ * and nothing else tints it. `currentColor` is the row's own full ink.
+ */
+function lifeMark(marks: ReadonlyMap<string, MarkSource>): ReactNode {
+  const mark = resolveMark(LIFE_ID, marks, {
+    id: LIFE_ID,
+    parentId: null,
+    title: LIFE_NODE.title,
+  })
+  return (
+    <AreaMark
+      glyph={mark.glyph ?? LIFE_GLYPH}
+      color={mark.roleIsOwn ? areaRoleColor(mark.role) : 'currentColor'}
+    />
+  )
+}
 
 /**
  * The databases root's mark (#101; PondRail's foot row): a hand-drawn cylinder in
@@ -543,6 +642,7 @@ export function RailView({
   // Empty when the caller supplies none (Storybook): every row then resolves to
   // its derived mark, which is what the rail showed before marks were choosable.
   const markMap = useMemo(() => marks ?? new Map<string, MarkSource>(), [marks])
+  const lifeMarkNode = useMemo(() => lifeMark(markMap), [markMap])
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
   const setRowRef = useCallback(
     (id: string) => (el: HTMLDivElement | null) => {
@@ -553,32 +653,24 @@ export function RailView({
   )
 
   // #101 / 3c: the databases root is the pond's SECOND root — "life for reading,
-  // databases for data". PondRail draws it after the Life tree, at the foot, so
-  // it is lifted out of Life's areas here and flattened on its own (its row at
-  // depth 0, its databases at depth 1), present only once the pond has one.
+  // databases for data". `PondRail.dc.html` draws it as ONE flat row in the foot
+  // (`dbRow`: cylinder + "databases", above "＋ new page") — no chevron, no
+  // children, no nested tree — present only once the pond has one. So it is
+  // lifted out of Life's tree here and rendered as a foot control that opens the
+  // databases page; the per-database list lives on that page, not in the rail
+  // (#229: the second `role="tree"` is gone, and with it the rail's two-tree
+  // structure — it is now the Life tree plus a foot link).
   const databasesRoot = useMemo(() => tree.find(isDatabasesRoot) ?? null, [tree])
   const lifeTree = useMemo(
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
     [tree, databasesRoot]
   )
-  const databasesFlat = useMemo(
-    () =>
-      databasesRoot
-        ? flattenVisible([databasesRoot], expanded, true)
-            .slice(1) // drop the synthetic Life row flattenVisible always leads with
-            .map((f) => ({ ...f, depth: f.depth - 1 }))
-        : [],
-    [databasesRoot, expanded]
-  )
-  const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
 
-  // The ONE flattened list — Life first, the databases root last — driving
-  // render, ARIA coordinates, and keyboard order alike (they can't drift; see
-  // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
-  // ↑/↓ walk from the last Life row into databases.
+  // The ONE flattened list driving render, ARIA coordinates, and keyboard order
+  // alike (they can't drift; see lib/rail/tree.ts).
   const flat = useMemo(
-    () => [...flattenVisible(lifeTree, expanded, lifeExpanded), ...databasesFlat],
-    [lifeTree, expanded, lifeExpanded, databasesFlat]
+    () => flattenVisible(lifeTree, expanded, lifeExpanded),
+    [lifeTree, expanded, lifeExpanded]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
@@ -733,12 +825,7 @@ export function RailView({
         isRoot
         posInSet={posInSet}
         setSize={setSize}
-        leading={LIFE_MARK}
-        trailing={
-          <span className="font-mono text-mn-11 lowercase text-mn-text-secondary pr-1 select-none">
-            all
-          </span>
-        }
+        leading={lifeMarkNode}
         onSelect={onLife}
         onToggle={onToggleLife}
         onFocus={setFocusedId}
@@ -766,15 +853,12 @@ export function RailView({
         isArea={isAreaRow(node)}
         posInSet={posInSet}
         setSize={setSize}
-        // The databases root carries its own functional mark, no area colour (#101).
-        accent={
-          isDatabasesRoot(node)
-            ? undefined
-            : isAreaRow(node) || mark.roleIsOwn
-              ? areaRoleColor(mark.role)
-              : undefined
-        }
-        leading={isDatabasesRoot(node) ? DATABASES_MARK : areaMark(node, mark)}
+        accent={isAreaRow(node) || mark.roleIsOwn ? areaRoleColor(mark.role) : undefined}
+        leading={areaMark(node, mark)}
+        // The board's `marginTop: d === 1 && i > 0 && !pinned.length ? 4 : 0`: a
+        // gap between area GROUPS, not between rows. Life is always row 0, so
+        // every depth-1 row has i > 0.
+        gapAbove={depth === 1}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
@@ -834,31 +918,12 @@ export function RailView({
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
-        <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-          {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
-        </div>
-
-        {/* The databases root (3c / PondRail): after the Life tree, above a
-            hairline — measured margin 10 / padding-top 10 off the foot row —
-            shown only once the pond has one to list (#101). Its own tree so
-            the ARIA structure says what the rail says: two roots. */}
-        {databasesFlat.length > 0 && (
-          <div
-            role="tree"
-            aria-label="Databases"
-            aria-multiselectable={false}
-            className="mt-2.5 border-t border-mn-line pt-2.5"
-          >
-            {databasesFlat.map(renderRow)}
-          </div>
-        )}
-
-        {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
-            children (WAI-ARIA); a <p> inside it would be an illegal child.
-            Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
+      {/* `body`: relative, flex 1, min-height 0, column, overflow hidden. The
+          skeleton (`skelWrap`: padding 8px 20px) sits in the body itself; the
+          tree scrolls inside it at the rows' `margin: 0 8px` (the `px-2`). */}
+      <div data-part="rail-body" className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {isLoading && (
-          <div className="px-3 py-2" role="status">
+          <div className="px-5 py-2" role="status">
             <span className="sr-only">Loading pages…</span>
             <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
               {SKELETON_WIDTHS.map((w, i) => (
@@ -871,24 +936,55 @@ export function RailView({
             </div>
           </div>
         )}
-        {!isLoading && isEmpty && (
-          <p
-            className="mt-2 mr-4 ml-[34px] text-mn-13 leading-[1.5] text-mn-text-secondary"
-            role="status"
-          >
-            No pages yet. ＋ new page, or ask Pond to start one.
-          </p>
-        )}
+
+        <div data-part="rail-scroller" className="min-h-0 flex-1 overflow-y-auto px-2">
+          <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
+            {flat.map(renderRow)}
+          </div>
+
+          {/* `hint` — the board renders it inside the list straight after the
+              (only) row; it sits just after the tree here because role="tree"
+              allows only treeitem children (WAI-ARIA), and the position is the
+              same. 12.5 / 1.5 / ink .68, `margin 8px 16px 0 34px` from the body
+              edge — the scroller's px-2 already supplies 8 of each side. */}
+          {!isLoading && isEmpty && (
+            <p
+              className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-mn-text-secondary [text-wrap:pretty]"
+              role="status"
+            >
+              no pages yet. ＋ new page, or ask pond to start one.
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* The foot (PondRail): a hairline, then "＋ new page". The databases root
-          (3c) sits above, at the end of the scrolling tree (#101). */}
-      <div className="mt-auto border-t border-mn-line px-2 pt-2.5">
+      {/* `foot`: column, gap 2, padding 10px 8px 0, above a hairline (ink .09).
+          The databases root (3c / #101) is ONE flat `dbRow` — 13.5 / 500, gap 9,
+          padding 6px 8px, radius 10 — that opens the databases page, selected on
+          the row's ink .07 when that page is open; then `newRow` at 12.5 / ink .68. */}
+      <div
+        data-part="rail-foot"
+        className="mt-auto flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
+      >
+        {databasesRoot && (
+          <button
+            type="button"
+            data-part="rail-databases"
+            aria-current={selectedId === databasesRoot.id ? 'page' : undefined}
+            onClick={() => onSelect(databasesRoot.id)}
+            className={`flex w-full cursor-pointer items-center gap-[9px] rounded-mn-row px-2 py-1.5 text-left text-[13.5px] leading-[normal] font-medium text-mn-text transition-colors ${
+              selectedId === databasesRoot.id ? 'bg-mn-hover-fill' : 'hover:bg-mn-text/5'
+            }`}
+          >
+            {DATABASES_MARK}
+            <span className="min-w-0 truncate">{databasesRoot.title}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onNewPage}
           aria-label="New page"
-          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-mn-13 text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
+          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-[12.5px] leading-[normal] text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
         >
           ＋ new page
         </button>

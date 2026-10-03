@@ -513,32 +513,47 @@ describe('AC7 — RailView through PondMolecule', () => {
     expect(container.querySelectorAll('[data-kind="list-row"]')).toHaveLength(4)
   })
 
-  it('drives a three-tier label voice so the "you are here" trail reads', () => {
-    // A page nested under a *page* (not a top-level area) isolates the on-path
-    // raise from the area/root raise: selecting the leaf must lift its plain-page
-    // ancestor above a plain off-path row. Guards the regression where the TreeRow→
-    // PondMolecule absorption flattened every row to one tone (#95 review).
-    // #108: the off-path control row must be NESTED — every top-level row now
-    // carries the raised area voice, so a top-level "Other" would read raised.
+  it('drives the board’s TWO ink tiers on the row itself (#229)', () => {
+    // `PondRail.dc.html`, row formula: `color: areaRow || isSel || hov ? fg : a(.68)`,
+    // `fontSize: areaRow ? 13.5 : 13`, `fontWeight: areaRow || isSel ? 500 : 400`.
+    // An area row (depth ≤ 1) and the selected row are full ink; every other
+    // nested row is ink .68. There is no third "on-path" tier — the old
+    // `data-voice` raise (ink .8 on the selection's ancestors) was drawn by no
+    // board and is gone, along with its CSS.
     const trail: RailNode[] = [
       node('proj', 'page', 'Project', [
         node('phase', 'page', 'Phase', [node('task', 'page', 'Task', [], 0, 'phase')], 0, 'proj'),
         node('other', 'page', 'Other', [], 1, 'proj'),
       ]),
     ]
-    const { getByRole } = renderRail({
+    const { getByRole, container } = renderRail({
       tree: trail,
       selectedId: 'task',
       expanded: new Set(['proj', 'phase']),
       pathIds: new Set(['proj', 'phase']),
     })
-    const voice = (name: RegExp) => getByRole('treeitem', { name }).getAttribute('data-voice')
-    expect(voice(/Task/)).toBe('full') // selected
-    expect(voice(/Phase/)).toBe('raised') // on-path ancestor (a plain page, not an area)
-    expect(voice(/Project/)).toBe('raised') // on-path ancestor
-    expect(voice(/Other/)).toBe('muted') // plain, off the selection path
-    // the regression guard: an on-path ancestor must NOT read like a plain row
-    expect(voice(/Phase/)).not.toBe(voice(/Other/))
+    const cls = (name: RegExp) => getByRole('treeitem', { name }).className
+    // area row: 13.5 / 500 / full ink
+    expect(cls(/Project/)).toMatch(/\btext-\[13\.5px\](?:\s|$)/)
+    expect(cls(/Project/)).toMatch(/\bfont-medium\b/)
+    expect(cls(/Project/)).toMatch(/\btext-mn-text\b/)
+    // selected nested row: 13 / 500 / full ink on ink .07
+    expect(cls(/Task/)).toMatch(/\btext-\[13px\](?:\s|$)/)
+    expect(cls(/Task/)).toMatch(/\bfont-medium\b/)
+    expect(cls(/Task/)).toMatch(/\btext-mn-text\b/)
+    expect(cls(/Task/)).toMatch(/\bbg-mn-hover-fill\b/)
+    // nested rows, on the path or not: 13 / 400 / ink .68 — the SAME tier
+    for (const name of [/Phase/, /Other/]) {
+      expect(cls(name)).toMatch(/\btext-\[13px\](?:\s|$)/)
+      expect(cls(name)).toMatch(/\bfont-normal\b/)
+      expect(cls(name)).toMatch(/\btext-mn-text-secondary\b/)
+    }
+    expect(container.querySelector('[data-voice]')).toBeNull()
+    // and no row carries a fixed height — the board's row is padding around type
+    for (const item of container.querySelectorAll('[role="treeitem"]')) {
+      expect(item.className).not.toMatch(/\bh-\[34px\](?:\s|$)/)
+      expect(item.querySelector('.h-\\[34px\\]')).toBeNull()
+    }
   })
 
   it('label click opens; caret click toggles without opening', () => {

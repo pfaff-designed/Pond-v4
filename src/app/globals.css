@@ -679,21 +679,6 @@
     border: var(--mn-proposal-border);
     box-shadow: var(--mn-proposal-shadow);
   }
-
-  /* Rail "you are here" trail. The list-row molecule renders one title tone (its
-     mockup default); the rail docks a three-tier voice onto its OWN rows via
-     data-voice, styling the molecule's documented [data-part='title'] hook. This
-     restores the ancestor-of-selection emphasis that the TreeRow→PondMolecule
-     absorption dropped (#95). ink tiers: full 100 · raised 80 (meta) · muted 68. */
-  [data-tree-row][data-voice='muted'] [data-part='title'] {
-    color: var(--color-mn-text-secondary);
-  }
-  [data-tree-row][data-voice='raised'] [data-part='title'] {
-    color: var(--color-mn-text-meta);
-  }
-  [data-tree-row][data-voice='full'] [data-part='title'] {
-    color: var(--color-mn-text);
-  }
 }
 
 @layer base {
