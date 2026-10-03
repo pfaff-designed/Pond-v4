@@ -7,6 +7,7 @@ import type { TextBlock } from './schema'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
+import { HEADING_PREFIX } from '@/lib/modules/palette'
 
 /**
  * The `text` content block (ticket-20) — rendered reading by default, click-to-edit
@@ -137,6 +138,32 @@ export const EmptyStartsEditing: Story = {
     // Click re-enters edit mode.
     await userEvent.click(trigger)
     await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
+  },
+}
+
+/**
+ * `/heading` (#281) mints `'## '` — scaffolding, not writing. Keyed on
+ * `content === ''` the block mounted in READ mode and drew an empty `<h2>`: a blank
+ * strip with no caret and no placeholder, worse than `/text`. It must open typeable
+ * with the caret after the marker, like any other freshly inserted block.
+ */
+export const HeadingStartsEditing: Story = {
+  args: { data: { id: 'txt-3', type: 'text', content: HEADING_PREFIX } as TextBlock },
+  render: (args) => <StatefulText data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = await canvas.findByRole('textbox')
+    await expect(field).toHaveValue(HEADING_PREFIX)
+    await expect(field).toHaveFocus()
+    // The caret is after the marker, so the first keystroke is the heading's words.
+    await expect((field as HTMLTextAreaElement).selectionStart).toBe(HEADING_PREFIX.length)
+    await userEvent.keyboard('warm-up')
+    await expect(field).toHaveValue(`${HEADING_PREFIX}warm-up`)
+    // Once there are words it is written, so blur returns to the typeset heading.
+    await userEvent.tab()
+    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
+    await expect(canvas.getByRole('heading', { level: 2, name: 'warm-up' })).toBeInTheDocument()
+    await expect(canvas.queryByText('Write something…')).not.toBeInTheDocument()
   },
 }
 
