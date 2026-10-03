@@ -13,6 +13,12 @@
  *   ↵       mono 10.5 · ink .8 — on the selected row
  *   match   underline · offset 3 · thickness 1, over a `pre` / `hit` / `post` split
  *
+ * `hint`, `enter` and `match` are the three the board emits ONCE, outside its
+ * per-kind branch (`PondPicker.dc.html`'s `renderVals()`): they are not kind-
+ * specific, unlike the row's padding, radius and face. So they are exported from
+ * here and the palette's sans row (`palette-row.tsx`, #279) imports them beside
+ * `Mark` rather than restating them.
+ *
  * Class strings are template literals, not `cn()` (#252).
  */
 
@@ -24,8 +30,13 @@ export type RowEntry = Extract<SlashEntry, { kind: 'row' }>
 
 const ROW =
   'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] py-[7px] font-mono text-[12.5px] tracking-[.01em] text-mn-text'
-const HINT =
+/** The board's `hint`: the key at rest, at the row's end. */
+export const HINT =
   'min-w-0 max-w-[45%] flex-[0_1_auto] truncate font-mono text-[10.5px] text-mn-text-secondary'
+/** The board's `enter`: `↵` on the selected row, where the hint was. */
+export const ENTER = 'font-mono text-[10.5px] text-mn-text-meta'
+/** The board's `match`: the underlined `hit` of a `pre` / `hit` / `post` split. */
+export const MATCH = 'underline decoration-[1px] underline-offset-[3px]'
 
 export function Row({
   entry,
@@ -54,14 +65,14 @@ export function Row({
       )}
       <span data-part="label" className="min-w-0 truncate font-normal">
         <span data-part="pre">{entry.pre}</span>
-        <span data-part="hit" className="underline decoration-[1px] underline-offset-[3px]">
+        <span data-part="hit" className={MATCH}>
           {entry.hit}
         </span>
         <span data-part="post">{entry.post}</span>
       </span>
       <span className="flex-1" />
       {selected ? (
-        <span data-part="enter" className="font-mono text-[10.5px] text-mn-text-meta">
+        <span data-part="enter" className={ENTER}>
           ↵
         </span>
       ) : (

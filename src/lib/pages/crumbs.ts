@@ -26,9 +26,16 @@ export interface Crumb {
  *
  * Example: for Health › Workout Routines › 3-Day routine, passing the routine's
  * id returns [Health, Workout Routines].
+ *
+ * A caller walking every row (the palette, #279 — AUDIT G7, volume) hands in the
+ * `byId` index it already holds, so the walk is linear rather than rebuilding a
+ * map per page.
  */
-export function ancestorPath(rows: PageRow[], nodeId: string): Crumb[] {
-  const byId = new Map(rows.map((r) => [r.id, r]))
+export function ancestorPath(
+  rows: PageRow[],
+  nodeId: string,
+  byId: Map<string, PageRow> = new Map(rows.map((r) => [r.id, r]))
+): Crumb[] {
   const chain: Crumb[] = []
   const seen = new Set<string>()
   let current = byId.get(nodeId)?.parent_id ?? null
@@ -61,16 +68,20 @@ export interface CrumbTrail {
   crumbs: Crumb[]
 }
 
-export function crumbTrail(rows: PageRow[], nodeId: string): CrumbTrail {
-  const crumbs = ancestorPath(rows, nodeId)
+export function crumbTrail(
+  rows: PageRow[],
+  nodeId: string,
+  byId: Map<string, PageRow> = new Map(rows.map((r) => [r.id, r]))
+): CrumbTrail {
+  const crumbs = ancestorPath(rows, nodeId, byId)
   const top = crumbs[0]
   // `crumbs[0]` is the chain's own end, which is top-level unless the data is
   // malformed — so the row is re-read to test the real `parent_id`, not assume it.
-  const topRow = top ? rows.find((r) => r.id === top.id) : undefined
+  const topRow = top ? byId.get(top.id) : undefined
   if (topRow && isDatabasesRoot({ parentId: topRow.parent_id, title: topRow.title })) {
     return { root: top, crumbs: crumbs.slice(1) }
   }
-  const own = rows.find((r) => r.id === nodeId)
+  const own = byId.get(nodeId)
   if (own && isDatabasesRoot({ parentId: own.parent_id, title: own.title })) {
     return { root: { id: own.id, type: own.type, title: own.title || 'Untitled' }, crumbs: [] }
   }

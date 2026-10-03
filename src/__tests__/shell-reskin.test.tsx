@@ -641,8 +641,10 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     await act(async () => {
       fireEvent.click(k)
     })
-    expect(await screen.findByRole('dialog', { name: 'Command palette' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Close palette' }))
+    // #279: a floating glass with a combobox, not a dialog.
+    expect(await screen.findByRole('combobox', { name: 'command palette' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'esc' }))
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'New page' }))

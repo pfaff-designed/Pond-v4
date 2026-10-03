@@ -23,6 +23,7 @@ import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
 import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
@@ -842,7 +843,12 @@ export function AITerminal() {
     pendingFocus.current = true
   }, [])
   useEffect(() => {
-    function onFocusRequest() {
+    function onFocusRequest(e: Event) {
+      // The palette's `ask pond about “q”` (#279) arrives with the question typed —
+      // into an EMPTY composer only. A draft in progress is the person's and is
+      // never overwritten (there is no undo for it); the question still gets focus.
+      const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
+      if (text) setInput((prev) => (prev.trim() ? prev : text))
       setIsCollapsed((prev) => {
         if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
         return false
