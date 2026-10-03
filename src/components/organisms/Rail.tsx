@@ -107,7 +107,7 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // event target) so inner controls never double-drive the tree (ticket-27/28).
 
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
-const INDENT_STEP = 16
+const INDENT_STEP = 14
 /** Fixed left offset of the whole tree content (past the paper margin). */
 const INDENT_BASE = 6
 
@@ -287,13 +287,13 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       {dropZone === 'before' && (
         <span
           aria-hidden
-          className="pointer-events-none absolute left-2 right-2 -top-px h-0.5 rounded-full bg-mn-text"
+          className="pointer-events-none absolute right-4 left-[58px] -top-px h-0.5 rounded-mn-hair bg-mn-text"
         />
       )}
       {dropZone === 'after' && (
         <span
           aria-hidden
-          className="pointer-events-none absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-mn-text"
+          className="pointer-events-none absolute right-4 left-[58px] -bottom-px h-0.5 rounded-mn-hair bg-mn-text"
         />
       )}
 
@@ -317,7 +317,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid h-[34px] w-[20px] flex-shrink-0 place-items-center text-mn-mark-faint transition-colors hover:text-mn-text"
+          className="grid w-[20px] flex-shrink-0 place-items-center text-mn-text-secondary transition-colors hover:text-mn-text"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -355,7 +355,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onAddChild && (
                   <button
                     type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="grid h-4 w-4 -my-px place-items-center rounded-mn-chrome text-mn-text-meta outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Add sub-page"
                     aria-label={`Add sub-page to ${label}`}
                     disabled={isBusy}
@@ -377,7 +377,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onDelete && (
                   <button
                     type="button"
-                    className="grid h-[22px] w-[22px] place-items-center rounded-mn-chrome text-mn-mark-faint outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="grid h-4 w-4 -my-px place-items-center rounded-mn-chrome text-mn-text-meta outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Delete page"
                     aria-label={`Delete ${label}`}
                     disabled={isBusy}
@@ -400,7 +400,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
             )}
           </>
         }
-        className="h-[34px] min-h-0 w-full flex-1 pl-1 pr-1.5"
+        className={`min-h-0 w-full flex-1 gap-[7px] py-[5px] pr-2 pl-1${
+          depth >= 2 ? ' text-[13px]' : ''
+        }`}
       />
     </div>
   )
@@ -447,8 +449,9 @@ export interface RailViewProps {
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
 
-/** The Life root's mark — the ring glyph in sage (#91; the drawn half-disc retired). */
-const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-area-a)" />
+/** The Life root's mark — the ring glyph in ink. An area colour is painted only
+ *  when the person has chosen one (#229); ink is the default. */
+const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 
 /**
  * The databases root's mark (#101; PondRail's foot row): a hand-drawn cylinder in
@@ -873,10 +876,10 @@ export function RailView({
         )}
         {!isLoading && isEmpty && (
           <p
-            className="mt-2 mr-4 ml-[34px] text-mn-13 leading-[1.5] text-mn-text-secondary"
+            className="mt-2 mr-4 ml-[34px] text-[12.5px] leading-[1.5] text-mn-text-secondary"
             role="status"
           >
-            No pages yet. ＋ new page, or ask Pond to start one.
+            no pages yet. ＋ new page, or ask pond to start one.
           </p>
         )}
       </div>
@@ -888,7 +891,7 @@ export function RailView({
           type="button"
           onClick={onNewPage}
           aria-label="New page"
-          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-mn-13 text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
+          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-[12.5px] text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
         >
           ＋ new page
         </button>

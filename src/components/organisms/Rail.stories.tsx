@@ -305,7 +305,7 @@ export const Empty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('status')).toHaveTextContent(
-      'No pages yet. ＋ new page, or ask Pond to start one.'
+      'no pages yet. ＋ new page, or ask pond to start one.'
     )
   },
 }

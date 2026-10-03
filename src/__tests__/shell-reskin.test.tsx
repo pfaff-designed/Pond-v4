@@ -215,12 +215,17 @@ describe('touched files — type scale and supersession guards (AC5, AC6)', () =
     expect(read(file)).not.toMatch(/press-/)
   })
 
+  // ADR 0003's amendment (2026-10-01) SUPERSEDED the "snap to the 8-step scale"
+  // ruling: a value written in a board wins, always, and the board's exact value
+  // goes in as bracket notation. What survives is the Tailwind named-size ban —
+  // `text-sm`/`text-lg` appear in no board. Bracket type is the house style
+  // (`PondMolecule`, `CommandPalette`, `SlashMenu`, the diff cards all use it);
+  // asserting against it here condemned accurate transcriptions, which is the
+  // precise failure ADR 0003 names as its "third instance".
   it.each(TOUCHED.filter((f) => f.endsWith('.tsx')))(
-    '%s sets no off-scale type size (11/13/16/18/22/28/36/46 only)',
+    '%s uses no Tailwind named type size (board values go in as bracket notation)',
     (file) => {
-      const src = read(file)
-      expect(src).not.toMatch(/\btext-(xs|sm|base|lg|xl|\dxl)\b/)
-      expect(src).not.toMatch(/text-\[[0-9.]+(px|rem|em)\]/)
+      expect(read(file)).not.toMatch(/\btext-(xs|sm|base|lg|xl|\dxl)\b/)
     }
   )
 
@@ -339,7 +344,7 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
   it('empty shows the PondRail hint', () => {
     renderRail({ tree: [], isEmpty: true })
     expect(screen.getByRole('status')).toHaveTextContent(
-      'No pages yet. ＋ new page, or ask Pond to start one.'
+      'no pages yet. ＋ new page, or ask pond to start one.'
     )
   })
 })
