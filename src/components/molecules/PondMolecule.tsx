@@ -49,7 +49,7 @@ import { PondAtom, type PondAtomKind, type PondAtomState } from '@/components/at
 import { KindDot } from '@/components/atoms/PondAtom'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
-import { FOCUS_RING } from '@/components/atoms/focus-ring'
+import { FOCUS_RING, FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 
 export const POND_MOLECULE_KINDS = [
   'list-row',
@@ -399,7 +399,7 @@ export function PondMolecule({
             aria-label={boxLabel}
             className={cn(
               'flex flex-none cursor-pointer appearance-none border-0 bg-transparent p-0 text-mn-text',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mn-area-b'
+              FOCUS_VISIBLE_RING
             )}
             onClick={onToggle}
           >

@@ -1370,7 +1370,7 @@ function Cell({
       return (
         <PondControl
           kind="checkbox"
-          label=""
+          label={null}
           aria-label={label}
           on={value === true}
           onCheckedChange={(next) => onChange(next)}

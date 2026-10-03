@@ -27,6 +27,15 @@
  * `rest`, the live pseudo-classes (`hover:` · `focus-visible:` · `data-[checked]`)
  * do the same work.
  *
+ * Class strings here are plain template literals, NOT `cn()`, where `PondAtom`
+ * and `PondMolecule` use `cn()`. Deliberate: this file is almost entirely
+ * size+colour pairs, and `tailwind-merge` cannot tell `text-mn-11` (a size) from
+ * `text-mn-text-secondary` (a colour) and drops whichever came first (#252 — two
+ * live instances of that bug already exist in those two siblings). The cost is
+ * that a consumer's `className` does not MERGE for the four non-button kinds: it
+ * is appended, and CSS source order wins. Pass a `className` that adds rather
+ * than overrides until #252 lands.
+ *
  * Three boards, three checkboxes — unreconciled, each final for its board
  * (ADR 0003 amendment): THIS one is the standalone control, **14 × 14 / radius 4 /
  * inset 1.4px at ink .68**. `PondAtom kind="checkbox"` is the inline atom the
@@ -41,10 +50,17 @@ import { Input } from '@base-ui/react/input'
 import { Switch } from '@base-ui/react/switch'
 
 import { FOCUS_RING, FOCUS_VISIBLE_RING, FOCUS_WITHIN_RING } from '@/components/atoms/focus-ring'
-import { Button, buttonStateGround } from '@/components/ui/button'
+import { Button, buttonStateGround, type ButtonVariant } from '@/components/ui/button'
 
 export const POND_CONTROL_KINDS = ['button', 'field', 'toggle', 'checkbox', 'menu'] as const
-export const POND_CONTROL_VARIANTS = ['primary', 'secondary', 'ghost', 'quiet'] as const
+/**
+ * Derived, never hand-kept (#221 review): `buttonStateGround` is a
+ * `Record<ButtonVariant, …>` over the cva's own union, so TypeScript already
+ * forces it to hold every variant and forbids a stray one. Reading its keys makes
+ * the button's variant axis and the control's one fact with one owner — a fifth
+ * cva variant appears here with no edit, and cannot be forgotten.
+ */
+export const POND_CONTROL_VARIANTS = Object.keys(buttonStateGround) as readonly ButtonVariant[]
 export const POND_CONTROL_STATES = [
   'rest',
   'hover',
@@ -57,7 +73,7 @@ export const POND_CONTROL_STATES = [
 ] as const
 
 export type PondControlKind = (typeof POND_CONTROL_KINDS)[number]
-export type PondControlVariant = (typeof POND_CONTROL_VARIANTS)[number]
+export type PondControlVariant = ButtonVariant
 export type PondControlState = (typeof POND_CONTROL_STATES)[number]
 
 export interface PondControlProps extends Omit<
@@ -71,8 +87,16 @@ export interface PondControlProps extends Omit<
   state?: PondControlState
   /** @default 'desktop' */
   size?: 'desktop' | 'mobile'
-  /** button label · field placeholder · toggle/checkbox/menu row label. Falls back to the board's fixture. */
-  label?: string
+  /**
+   * button label · field placeholder · toggle/checkbox/menu row label.
+   *
+   * Omitted, it falls back to {@link FIXTURE} — the board's own
+   * `p.label ?? (kind === 'field' ? 'email' : 'keep page')`, which is a MOCKUP
+   * HARNESS default so a cell renders standalone. **A product call site must pass
+   * one, or pass `null` to say it has none** (a value slot, a table cell) — an
+   * omitted label there would ship the board's fixture copy to a reader.
+   */
+  label?: string | null
   /** field — the typed value (controlled when `onValueChange` is given). */
   value?: string
   /** field — the mono hint under the card · menu — the trailing hint. */
@@ -168,7 +192,7 @@ export function PondControl({
 }: PondControlProps) {
   const s = STATE[state]
   const mobile = size === 'mobile'
-  const text = label ?? FIXTURE[kind]
+  const text = label === null ? '' : (label ?? FIXTURE[kind])
   const inert = s.inert || disabled === true
   const ring = s.ring ? FOCUS_RING : ''
   const off = inert ? OFF : ''

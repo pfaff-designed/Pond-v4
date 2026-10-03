@@ -140,7 +140,7 @@ function MatrixGrid({ size }: { size?: PondControlProps['size'] }) {
         ))}
       </div>
       <div className="flex gap-mn-6">
-        {(['field', 'toggle', 'checkbox', 'menu'] as const).map((kind) => (
+        {POND_CONTROL_KINDS.filter((k) => k !== 'button').map((kind) => (
           <div key={kind} className="flex flex-col gap-mn-2">
             <span className="font-mono lowercase text-[10.5px] text-mn-text-secondary">{kind}</span>
             <States kind={kind} size={size} />
@@ -156,9 +156,12 @@ function MatrixGrid({ size }: { size?: PondControlProps['size'] }) {
 export const Matrix: Story = {
   render: () => <MatrixGrid />,
   play: async ({ canvasElement }) => {
-    // 4 button variants + 4 kinds, × 8 states.
+    // Every button variant, plus every non-button kind, × every state — all three
+    // counts derived, so a sixth kind or a fifth variant joins the matrix and its
+    // assertion together rather than going silently unproven.
+    const nonButtonKinds = POND_CONTROL_KINDS.filter((k) => k !== 'button').length
     await expect(canvasElement.querySelectorAll('[data-kind]')).toHaveLength(
-      (POND_CONTROL_VARIANTS.length + POND_CONTROL_KINDS.length - 1) * POND_CONTROL_STATES.length
+      (POND_CONTROL_VARIANTS.length + nonButtonKinds) * POND_CONTROL_STATES.length
     )
     // No spinner anywhere: `loading` is a copy swap.
     for (const el of canvasElement.querySelectorAll<HTMLElement>('[data-state="loading"] *')) {

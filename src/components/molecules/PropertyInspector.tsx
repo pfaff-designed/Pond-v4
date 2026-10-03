@@ -141,7 +141,7 @@ function PropertyField({
       return (
         <PondControl
           kind="checkbox"
-          label=""
+          label={null}
           aria-label={label}
           disabled={!editable}
           on={value === true}

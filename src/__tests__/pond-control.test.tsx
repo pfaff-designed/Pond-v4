@@ -29,6 +29,26 @@ import { cn } from '@/lib/utils'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 
 const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8')
+
+/** Every hand-written source file under `src/`, minus tests, mocks and stories —
+ *  the same walk `token-law.test.tsx` uses, so the two sweeps cover one set. */
+function sourceFiles(): string[] {
+  const root = process.cwd()
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === '__mocks__') continue
+        walk(full)
+      } else if (/\.tsx?$/.test(entry.name) && !/\.(test|stories)\.tsx?$/.test(entry.name)) {
+        out.push(path.relative(root, full))
+      }
+    }
+  }
+  walk(path.join(root, 'src'))
+  return out
+}
 const classes = (el: Element) => el.className.split(/\s+/)
 
 function root(container: HTMLElement): HTMLElement {
@@ -506,6 +526,20 @@ describe('one owner for the focus ring; one shared state table; no named type si
       expect(source).not.toMatch(/const FOCUS_RING\s*=/)
       expect(source).toMatch(/from '@\/components\/atoms\/focus-ring'/)
     }
+  })
+
+  // The `const FOCUS_RING =` check above passes while the ring is still SPELLED
+  // OUT somewhere else — which is exactly what the #221 review found in
+  // `PondMolecule.tsx`. So sweep every source file for the raw utilities instead
+  // of naming the four we happen to know about: a fifth copy in a file nobody
+  // listed is the failure this guard exists to catch, and a derived sweep is the
+  // only form that catches it.
+  it('the ring utilities are SPELLED OUT in exactly one file — the owner', () => {
+    const owner = 'src/components/atoms/focus-ring.ts'
+    const offenders = sourceFiles().filter(
+      (f) => f !== owner && read(f).includes('outline-offset-2 outline-mn-area-b')
+    )
+    expect(offenders).toEqual([])
   })
 
   it('the eight states are ONE exhaustive map in PondControl, not per-kind recipes', () => {

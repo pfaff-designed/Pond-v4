@@ -44,12 +44,14 @@ import { cn } from '@/lib/utils'
  *  `PondControl` forces for its `state` matrix. The cva below wears the same
  *  values under `hover:` / `aria-expanded:` — two spellings because Tailwind's
  *  scanner needs each full literal, one fact. */
-export const buttonStateGround = {
+export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
+
+export const buttonStateGround: Record<ButtonVariant, { hover: string; selected: string }> = {
   primary: { hover: 'opacity-90', selected: '' },
   secondary: { hover: 'bg-mn-text/[0.12]', selected: 'bg-mn-text/[0.12]' },
   ghost: { hover: 'bg-mn-text/[0.07]', selected: 'bg-mn-text/[0.07]' },
   quiet: { hover: 'bg-mn-text/[0.07]', selected: '' },
-} as const
+}
 
 const buttonVariants = cva(
   `group/button box-border inline-flex shrink-0 items-center justify-center gap-1.5 rounded-mn-pill font-sans font-medium whitespace-nowrap transition-all select-none ${FOCUS_VISIBLE_RING} active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`,
