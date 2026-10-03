@@ -16,6 +16,7 @@ import type { ChartData } from './chart-data'
 import { formatFigure } from './aggregate'
 import { toHeatmapGrid } from './heatmap-data'
 import { ViewNotice } from './notice'
+import { HEATMAP_DATE_NOTICE } from '../chart/card'
 import { toCategoricalChartRows, toChartRows } from '../chart/data'
 import { rankColor, seriesColor } from '@/components/charts/chart-ramp'
 import { LineChart, Line } from '@/components/charts/line-chart'
@@ -173,7 +174,7 @@ function RingKind({ data, names, label }: { data: ChartData; names: string[]; la
 function HeatmapKind({ data, label }: { data: ChartData; label: string }) {
   const grid = toHeatmapGrid(data.heatmap?.cells ?? [])
   if (grid === null) {
-    return <ViewNotice>A heatmap reads one cell a day — pick a date field for “By”.</ViewNotice>
+    return <ViewNotice>{HEATMAP_DATE_NOTICE}</ViewNotice>
   }
   return (
     <div aria-label={label} role="img">

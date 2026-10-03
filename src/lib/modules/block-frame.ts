@@ -24,7 +24,7 @@ import { todoMarker, type TodoBlock, type TodoMarker } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
-import { COMPACT_MARK_EMPTY, compactChartMark } from './view/chart-compact'
+import { COMPACT_MARK_EMPTY, compactChartMark, isChartCard } from './view/chart-compact'
 import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -525,7 +525,7 @@ export function blockFrame(block: Block): BlockFrame | null {
       // own paper, shadow, head and footer. A card inside a card is drawn by no
       // board, so the frame steps aside. The compact marks (#259) are the
       // template's, and keep its card.
-      if (block.mode === 'chart' && compactChartMark(block) === null) return null
+      if (isChartCard(block)) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
       return {

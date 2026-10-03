@@ -120,6 +120,11 @@ export function chartOnPath(rows: readonly PageRow[], pageId: string, rootLabel 
   const own = list.find((r) => r.id === pageId)
   const parts = [trail.root?.title ?? rootLabel, ...trail.crumbs.map((c) => c.title)]
   // The databases root page is its own trail root (`crumbTrail`); don't name it twice.
+  // `Untitled` capitalised here, `untitled` four lines down in `chartSourceTitle` —
+  // deliberate, and the register is why: `on` is the page path, drawn in the SANS
+  // page voice exactly as the rail and the breadcrumb draw it (`crumbs.ts`), while
+  // `reads` is MONO, the machine surface, which `PROJECT_RULES.md` keeps lowercase.
+  // One object, two voices. Do not "fix" either to match the other.
   if (own && trail.root?.id !== pageId) parts.push(own.title || 'Untitled')
   return parts.join(' › ')
 }

@@ -64,6 +64,19 @@ export function compactChartMark(block: ViewBlock): CompactChartMark | null {
 }
 
 /**
+ * Is this block the chart CARD — `PondChart`, which draws its own paper, shadow,
+ * head and footer — rather than a compact mark inside a block card? The one
+ * spelling of a question three places were asking (#227 review): the block frame
+ * steps aside for it (`block-frame.ts`), the view routes its loading and error
+ * states to it (`view.tsx`), and the renderer picks between the two presentations.
+ * Three spellings that disagreed by a hair would put a card inside a card, which
+ * is the thing #227 exists to remove.
+ */
+export function isChartCard(block: ViewBlock): boolean {
+  return block.mode === 'chart' && compactChartMark(block) === null
+}
+
+/**
  * The same question asked of a chart config alone, for a caller that already knows
  * it is in `chart` mode and holds only the config — so it does not have to
  * fabricate a `ViewBlock` to reach the table (#259 review). `undefined` config, or

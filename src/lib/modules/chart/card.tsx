@@ -82,11 +82,10 @@ export const CHART_EMPTY_LINE = 'no data yet'
  * off a category label. Owned here, beside the other shared chart copy, and read by
  * #259's compact grid so the same misconfiguration cannot read two different ways.
  *
- * `collection-chart.tsx`'s `HeatmapKind` still holds its own identical literal. That
- * is deliberate for now, not an oversight: the file is prettier-dirty on `main`, so
- * the husky hook reformats the whole thing on any commit that touches it, and the
- * reformat alone pushes it past `max-lines`. Adopt this constant there in a slice
- * already touching that file.
+ * One owner: `collection-chart.tsx`'s `HeatmapKind` and #259's compact grid both
+ * read it. (It held its own copy until #227, excused by `max-lines` on a
+ * prettier-dirty file — this slice reformatted that file, the warning is gone, and
+ * `AGENTS.md`'s duplicates rule applies again.)
  */
 export const HEATMAP_DATE_NOTICE = 'A heatmap reads one cell a day — pick a date field for “By”.'
 
@@ -117,6 +116,12 @@ export interface ChartCardProps {
    */
   emptyLine?: string
   onEmptyAction?: () => void
+  /**
+   * Overrides `can’t reach {source} · showing the last copy` when that would be
+   * false — a collection that is GONE is not one the reader can reconnect to, and
+   * the board's own action would be a dead offer. A custom line draws no action.
+   */
+  errorLine?: string
   /** The hover readout. Drawn when given; the plots own hover, so the host decides. */
   tip?: ChartTip
   /** The plot. Hidden on `empty` and `loading`; faded to .45 on `error`. */
@@ -167,6 +172,7 @@ export function ChartCard({
   source,
   emptyLine,
   onEmptyAction,
+  errorLine,
   tip,
   children,
   className,
@@ -239,8 +245,8 @@ export function ChartCard({
         // the block shell does (ADR 0004 ruling 7) — never overflow the paper.
         <PondMolecule
           kind="notice"
-          action={CHART_ERROR_ACTION}
-          title={chartErrorLine(source)}
+          action={errorLine === undefined ? CHART_ERROR_ACTION : undefined}
+          title={errorLine ?? chartErrorLine(source)}
           className="max-w-full"
         />
       )}
@@ -267,10 +273,3 @@ export function ChartCard({
     </div>
   )
 }
-
-/**
- * The chart series ramp, re-exported from the chart layer's single definition
- * (`components/charts/chart-ramp.ts` ↔ `--chart-1…5` in globals.css) so the
- * module cards and the kind renderers can never disagree on a colour.
- */
-export { CHART_SERIES_COLORS } from '@/components/charts/chart-ramp'

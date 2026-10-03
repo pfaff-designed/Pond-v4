@@ -20,6 +20,10 @@
  *   rows exist, the filter hides all `nothing matches this filter`, no action
  *   rows exist, none carries a number `no data yet`, no action
  *
+ * `error` is the collection the card cannot read — deleted, or a fetch that failed.
+ * It carries its own sentence, because `can’t reach … · showing the last copy` and
+ * its `reconnect` action are only true of a source that is still there.
+ *
  * `loading` is the card's own four-bar skeleton with the head and the footer it can
  * already name (the fields arrive with the schema, so `reads` is the source alone
  * until then — incomplete, never false).
@@ -46,6 +50,13 @@ export interface CollectionChartProps {
   /** How many rows the collection holds BEFORE the filter — decides which empty line is true. */
   totalRows: number
   isLoading?: boolean
+  /**
+   * The collection could not be read — gone, or the fetch failed. Draws the card's
+   * `error` state with this sentence. Without it a chart whose rows never arrived
+   * would say `no rows in {source} yet`, which is a false statement about the data
+   * — the exact failure #239 ruled on — and would offer a live `add a row`.
+   */
+  errorLine?: string
   provenance?: ChartProvenance
   /** The collection's own insert path; present only on the live editable host. */
   onAddRow?: () => void
@@ -57,6 +68,7 @@ export function CollectionChart({
   rows,
   totalRows,
   isLoading,
+  errorLine,
   provenance,
   onAddRow,
 }: CollectionChartProps) {
@@ -73,7 +85,9 @@ export function CollectionChart({
   let state: ChartCardState = 'rest'
   let emptyLine: string | undefined
   let onEmptyAction: (() => void) | undefined
-  if (isLoading || !data) {
+  if (errorLine !== undefined) {
+    state = 'error'
+  } else if (isLoading || !data) {
     state = 'loading'
   } else if (totalRows === 0) {
     state = 'empty'
@@ -101,6 +115,7 @@ export function CollectionChart({
       state={state}
       source={source}
       emptyLine={emptyLine}
+      errorLine={errorLine}
       onEmptyAction={onEmptyAction}
     >
       {data && <ChartKind data={data} names={names} />}

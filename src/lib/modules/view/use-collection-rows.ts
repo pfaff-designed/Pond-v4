@@ -52,6 +52,13 @@ export interface CollectionData {
   rows: CollectionRow[]
   /** True until BOTH the schema page and the rows have first resolved. */
   isLoading: boolean
+  /**
+   * Either read failed. Distinct from "no rows": a surface that cannot tell them
+   * apart reports `no rows yet` over a collection it never managed to read, which
+   * is a false statement about the data and, where an insert is offered, a live
+   * button on a collection that is not there (#227 review; the #239 ruling).
+   */
+  isError: boolean
   /** Optimistically set one row's property value, then persist (bypasses the AI). */
   setValue: (rowId: string, key: string, value: PropertyValue) => void
   /**
@@ -89,13 +96,21 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
 
-  const { data: page, isPending: pagePending } = useQuery({
+  const {
+    data: page,
+    isPending: pagePending,
+    isError: pageError,
+  } = useQuery({
     queryKey: ['page', collectionId],
     queryFn: () => (collectionId ? getPage(getSupabase(), collectionId) : Promise.resolve(null)),
     enabled: !!collectionId,
   })
 
-  const { data: rowPages, isPending: rowsPending } = useQuery({
+  const {
+    data: rowPages,
+    isPending: rowsPending,
+    isError: rowsError,
+  } = useQuery({
     queryKey: collectionId ? ROWS_KEY(collectionId) : ['rows', 'none'],
     queryFn: async () => {
       if (!collectionId) return [] as PondPage[]
@@ -226,6 +241,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     schema,
     rows,
     isLoading: !!collectionId && (pagePending || rowsPending),
+    isError: !!collectionId && (pageError || rowsError),
     setValue,
     addRow,
     removeRow,

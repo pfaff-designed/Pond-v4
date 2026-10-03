@@ -276,6 +276,28 @@ The **light** glass is not in conflict: `.mn-glass`'s paper recipe is byte-for-b
 `glass` (`rgba(255,255,255,.86) → .64`, border `.9`, shadow `.7` + `rgba(40,34,24,.14)`), and the Shell's
 light frames agree. Only the dark theme has two readings, and only the dark theme is ruled here.
 
+**It also does not cover the chart card's hover tooltip** (`PondChart.dc.html`'s `tip`, built in #227). That
+readout forks the family deliberately: its dark base is `74,73,64` where the family's is `48,49,42`, and its
+shadow is `0 8px 24px` in **both** themes where the family's is `0 20px 54px`.
+
+Three reasons it is outside the family, recorded here rather than in a code comment — ADR 0004's own
+2026-10-02 amendment exists precisely because three rulings had been left in comments and were re-litigated:
+
+1. **The ruling's own reasoning does not reach it.** Ruling 11 is "the composed Shell outranks the isolated
+   component card". **The Shell never draws a chart tooltip** — `PondChart` appears in exactly two files in
+   the whole handoff, its own board and the `Pond 02` catalogue — so there is no composed context to
+   outrank `PondChart.dc.html`, and its card is the only board there is.
+2. **It is a different kind of object.** Every consumer ruling 11 names — the rail cluster, the breadcrumb
+   pill, the composer, the selection bar, the `/` menu, the palette, the source picker — floats **over the
+   canvas**. The tip is a readout **inside a card**, at `top 2 / right 34`, `pointer-events: none`. The
+   "three glasses on one dark screen" argument does not apply: it is never beside another glass.
+3. **The smaller shadow is what makes it read as inside.** `0 20px 54px` is the lift of an object above the
+   page; a 24px shadow is the lift of a label above a plot. Copying the family's shadow would make the tip
+   float off the card it belongs to.
+
+So: **before measuring `.mn-glass` against the chart tip and finding the tip wrong, read this.** It is the
+one deliberate exception, and it is one because the family's own argument does not cover it.
+
 ### The pattern, for the record
 
 This is the family-wide version of ruling 3. The thing that would have gone wrong is the thing

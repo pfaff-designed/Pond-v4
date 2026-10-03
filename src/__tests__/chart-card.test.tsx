@@ -31,6 +31,7 @@ import { POND_BLOCK_STATES } from '@/lib/modules/block-frame'
 import { POND_BLOCK_FILTERED_EMPTY_LINE } from '@/lib/modules/block-frame'
 import { CollectionChart } from '@/lib/modules/view/collection-chart-card'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
+import { ModuleView } from '@/lib/modules/renderers'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { PageRow } from '@/lib/pages/tree'
 import type { ViewBlock } from '@/lib/modules/view/schema'
@@ -57,6 +58,7 @@ const collection = {
   ] as PropertySchema | null,
   rows: [] as CollectionRow[],
   isLoading: false,
+  isError: false,
   addRow: jest.fn().mockResolvedValue('row-new'),
 }
 jest.mock('@/lib/modules/view/use-collection-rows', () => ({
@@ -64,6 +66,7 @@ jest.mock('@/lib/modules/view/use-collection-rows', () => ({
     schema: collection.schema,
     rows: collection.rows,
     isLoading: collection.isLoading,
+    isError: collection.isError,
     setValue: jest.fn(),
     addRow: collection.addRow,
     removeRow: jest.fn(),
@@ -75,6 +78,7 @@ jest.mock('@/lib/modules/view/use-collection-rows', () => ({
 beforeEach(() => {
   collection.rows = []
   collection.isLoading = false
+  collection.isError = false
   collection.addRow.mockClear()
 })
 
@@ -397,6 +401,29 @@ describe('CollectionChart — which empty line is true, and when `add a row` is 
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  // A collection that cannot be read is NOT an empty one. Reported as empty, the
+  // card states something false about the data (#239's ruling) and — worse — offers
+  // a live `add a row` against a collection that is not there.
+  it('a collection it could not read draws the error state, not `no rows`, and offers nothing', () => {
+    render(
+      <CollectionChart
+        config={config}
+        schema={null}
+        rows={[]}
+        totalRows={0}
+        errorLine="That collection couldn’t be read."
+        provenance={provenance}
+        onAddRow={jest.fn()}
+      />
+    )
+    expect(screen.getByText('That collection couldn’t be read.')).toBeInTheDocument()
+    expect(screen.queryByText(/no rows/)).toBeNull()
+    // `reconnect` is the board's action for a source that is still there; it is not
+    // an offer this error can make good on.
+    expect(screen.queryByRole('button', { name: 'reconnect' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'add a row' })).toBeNull()
+  })
+
   it('rest: the head and foot strings come from the block, the config and the provenance', () => {
     const rows = [weighIn('r1', '2026-09-01', 80.4), weighIn('r2', '2026-09-08', 80.1)]
     const { container } = render(
@@ -474,6 +501,36 @@ describe('BlockCanvas — a card chart is its own card; it is not wrapped in a b
     expect(card.parentElement!.className).not.toContain('px-1')
     fireEvent.click(screen.getByRole('button', { name: 'add a row' }))
     expect(collection.addRow).toHaveBeenCalledTimes(1)
+  })
+
+  // `add a row` writes to the collection. A diff card, the create-page proposal and
+  // `CardPreviewModal` all render this view with NO `editable` — a working insert
+  // there would change a page from a surface whose whole job is to be reviewed.
+  // `PROJECT_RULES.md`: pages change only through the person's own edits or an
+  // accepted diff.
+  it('a read-only host offers no `add a row`, though the empty line still reads true', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ModuleView type="view" data={config} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText(/no rows in/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'add a row' })).toBeNull()
+    expect(collection.addRow).not.toHaveBeenCalled()
+  })
+
+  // A collection the view could not read is not an empty one, on any host.
+  it('a failed read draws the error line rather than `no rows`, and offers nothing', () => {
+    collection.isError = true
+    renderCanvas([config])
+    const card = document
+      .getElementById('block-v1')!
+      .querySelector<HTMLElement>('[data-chart-kind]')!
+    expect(card.dataset.chartState).toBe('error')
+    expect(screen.getByText('That collection couldn’t be read.')).toBeInTheDocument()
+    expect(screen.queryByText(/no rows/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'add a row' })).toBeNull()
   })
 
   it('a compact mark keeps the block card (#259) — the two presentations do not converge', () => {
