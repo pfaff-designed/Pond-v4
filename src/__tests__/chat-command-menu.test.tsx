@@ -133,7 +133,7 @@ describe('Chat command slash menu', () => {
     renderTerminal()
     const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
-    expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
+    expect(await screen.findByRole('listbox', { name: 'commands' })).toBeInTheDocument()
     expect(screen.getByText('/clear')).toBeInTheDocument()
     expect(screen.getByText('/handoff')).toBeInTheDocument()
     expect(screen.getByText('/save')).toBeInTheDocument()
@@ -143,10 +143,10 @@ describe('Chat command slash menu', () => {
     renderTerminal()
     const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: '/' } })
-    expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
+    expect(await screen.findByRole('listbox', { name: 'commands' })).toBeInTheDocument()
     fireEvent.change(textarea, { target: { value: '' } })
     await waitFor(() => {
-      expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
+      expect(screen.queryByRole('listbox', { name: 'commands' })).not.toBeInTheDocument()
     })
   })
 
@@ -154,7 +154,7 @@ describe('Chat command slash menu', () => {
     renderTerminal()
     const textarea = await screen.findByPlaceholderText(/ask pond, or \/ for blocks/i)
     fireEvent.change(textarea, { target: { value: 'hello' } })
-    expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
+    expect(screen.queryByRole('listbox', { name: 'commands' })).not.toBeInTheDocument()
   })
 
   it('selecting /clear calls dissolveConversation and resets', async () => {

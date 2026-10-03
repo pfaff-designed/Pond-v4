@@ -3,8 +3,8 @@
 /**
  * The two block-insertion affordances shared by every editable surface — the
  * Life home page, area pages, and document pages (ticket-37, ticket-44). Both
- * open the SAME registry-derived palette (SlashMenu + paletteItems) and hand the
- * picked item back to the caller, which inserts that module's empty state.
+ * open the SAME registry-derived `/` menu (SlashMenu + slashRows, #278) and hand
+ * the picked row back to the caller, which inserts the block that row mints.
  *
  *   • <InsertBetween> — a quiet hairline BETWEEN blocks; hover reveals a `+` that
  *     inserts THERE (mid-page insertion). Unchanged from ticket-37.
@@ -18,15 +18,21 @@
  */
 
 import { useState } from 'react'
-import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
-import { paletteItems } from '@/lib/modules/palette'
+import { SlashMenu, type SlashRow, type TemplatePick } from '@/components/molecules/SlashMenu'
+import { slashRows } from '@/lib/modules/palette'
 
 /**
  * A quiet separator between blocks: hover reveals a `+` that opens the block
  * palette and inserts THERE (insert-between, not append). The hairline gives the
  * hover target an honest footprint without adding visual weight at rest.
  */
-export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) => void }) {
+export function InsertBetween({
+  onInsert,
+  onPickTemplate,
+}: {
+  onInsert: (row: SlashRow) => void
+  onPickTemplate?: (pick: TemplatePick) => void
+}) {
   const [open, setOpen] = useState(false)
   const [btnEl, setBtnEl] = useState<HTMLButtonElement | null>(null)
   return (
@@ -45,13 +51,21 @@ export function InsertBetween({ onInsert }: { onInsert: (item: SlashMenuItem) =>
       />
       {open && (
         <SlashMenu
-          items={paletteItems}
-          onSelect={(item) => {
-            onInsert(item)
+          rows={slashRows}
+          query=""
+          anchor={btnEl}
+          onSelect={(row) => {
+            onInsert(row)
             setOpen(false)
           }}
+          onPickTemplate={
+            onPickTemplate &&
+            ((pick) => {
+              onPickTemplate(pick)
+              setOpen(false)
+            })
+          }
           onClose={() => setOpen(false)}
-          anchorEl={btnEl}
         />
       )}
     </div>

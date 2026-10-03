@@ -263,9 +263,11 @@ function serializeFigures(data: HydratedViewBlock): string | null {
 
 export const viewDescriptor: ModuleDescriptor<ViewBlock> = {
   type: 'view',
+  // A view has no single face (ADR 0007: seven modes), so the `/` menu offers its
+  // MODES as rows — gallery, chart, big number — and withholds a plain `view` row.
+  label: 'view',
   schema: viewSchema,
-  paletteDescription:
-    "An inline table, board, calendar, gallery, gantt, chart, or big number of a collection's pages.",
+  paletteDescription: 'a database’s records, read live — table, gallery, chart, figure',
   description:
     "An inline view that displays a collection's rows (its type='row' child pages, #18) as a table, board, calendar, gallery, gantt (a read-only timeline over Start→End date properties), chart, or big-number. Use ONLY on a page that is a collection (has a property schema) or that has row children. `mode` picks the layout; `groupBy` (a select/status property id) buckets a board; `sort` and a single `filter` clause reference existing property ids; `startDate`/`endDate` (date property ids) place gantt bars; `chart` (kind + xProperty + series) and `bigNumber` (property + agg) AGGREGATE the rows at read time — a chart or headline figure never holds its own copy of the data, which is why there are no standalone chart/stat blocks to create. `chart.presentation: 'compact'` draws kind 'bar' as a small inline bar strip and kind 'heatmap' as a 12-week grid of day cells, with no axes — the at-a-glance mark a dashboard, tracker or habit page places beside its big number; leave it off for a full chart card. Do not use to lay out ordinary prose — that's a text block.",
   // Serialize the CONFIG in full (the AI re-emits it, so every clause must be

@@ -20,7 +20,10 @@ export type PageModule = z.infer<typeof pageModuleSchema>
 
 export const pageDescriptor: ModuleDescriptor<PageModule> = {
   type: 'page',
+  label: 'page',
   schema: pageModuleSchema,
+  // Structural — withheld from the `/` menu (palette.ts), so this line is never shown.
+  paletteDescription: 'a page inside this one',
   description:
     'A container that holds an ordered list of content blocks. Everything is a page; a page renders its blocks in order. The AI composes onto a page — it does not mint pages as content.',
   // A page never appears inside a `blocks[]` (the content union excludes it), so

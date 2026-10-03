@@ -69,8 +69,10 @@ export const ENTRIES_EMPTY_LINE = 'write the first entry'
 
 export const entriesDescriptor: ModuleDescriptor<EntriesBlock> = {
   type: 'entries',
+  // The board's `entry log` row.
+  label: 'entry log',
   schema: entriesSchema,
-  paletteDescription: 'A dated log — short entries under their dates, newest first.',
+  paletteDescription: 'short dated entries, newest first',
   description:
     'A dated log of short written entries, newest first — journal entries, project updates, a record of what happened on which day. ' +
     'Each entry is a date label (lowercase, like "28 oct" or "today") and a few sentences of prose the person wrote. ' +

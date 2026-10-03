@@ -37,11 +37,11 @@ export const AlwaysVisibleAdd: Story = {
     // At rest: the button is visible with no palette open.
     const add = canvas.getByRole('button', { name: 'Add a block' })
     await expect(add).toBeInTheDocument()
-    await expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
-    // Click drops a text block (onAdd) — and does NOT open the palette on this button.
+    await expect(screen.queryByRole('listbox', { name: 'blocks' })).not.toBeInTheDocument()
+    // Click drops a text block (onAdd) — and does NOT open the menu on this button.
     await userEvent.click(add)
     await expect(args.onAdd).toHaveBeenCalled()
-    await expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
+    await expect(screen.queryByRole('listbox', { name: 'blocks' })).not.toBeInTheDocument()
   },
 }
 
@@ -57,8 +57,9 @@ export const InsertBetweenBlocks: StoryObj<typeof InsertBetween> = {
     const canvas = within(canvasElement)
     const insert = canvas.getByRole('button', { name: 'Insert block' })
     await userEvent.click(insert)
-    // The palette portals to document.body, so query it via `screen`.
-    await userEvent.click(await screen.findByText('Todo'))
-    await expect(args.onInsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'todo' }))
+    // The menu portals to document.body, so query it via `screen`. Rows speak
+    // Pond's words (#278): the todo type's row is `checklist`.
+    await userEvent.click(await screen.findByText('checklist'))
+    await expect(args.onInsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'checklist' }))
   },
 }

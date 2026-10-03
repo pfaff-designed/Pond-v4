@@ -1,61 +1,175 @@
 /**
- * The block palette — the ONE authoring vocabulary shared by every insertion
- * surface (ticket-37, extended ticket-44).
+ * The `/` menu's rows — PRESETS, derived from the module registry (#278).
  *
- * `paletteItems` is derived live from the module registry: every registered
- * content module's type + when-to-use description, the same catalog the AI
- * composes from. A module added by another ticket appears here at merge with zero
- * edits — the registry is the single source, never a hardcoded list. `page` is
- * excluded (structural, not a content block a user drops in).
+ * A row is not a module type. `PondPicker.dc.html` draws nineteen rows over eight
+ * registered types and they do not line up: `list` and `checklist` are both `todo`
+ * at different markers (#219), `gallery` / `chart` / `big number` are all `view` at
+ * different modes (ADR 0007), and seven rows name no type at all. So a row is
+ * `{ id, group, label, description, key, icon, type }` plus a factory in
+ * {@link mintPreset}, and one type may contribute several rows.
  *
- * `emptyBlockForType` mints a module's empty authoring state (ticket-37/t38). It
- * returns null for a type with no local factory (an unknown module from a
- * not-yet-merged branch), so a palette pick degrades to a no-op, never a crash.
+ * The derivation survives, sharpened: **every registered content type reaches the
+ * menu through at least one row with no edit here.** Each descriptor contributes
+ * a row named by its own `label` (Pond's words — `types.ts`); `VARIANT_ROWS` adds
+ * a type's other faces; `WITHHELD` drops a type's plain row when its variants are
+ * the whole story (`view`) or when it is structural (`page`). A ninth type appears
+ * at merge in the `blocks` group with the fallback mark — that is what made
+ * `highlight` (#249) and `entries` (#250) appear for free, and
+ * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * Extracted from DocumentPanel so the Life home surface, area pages, and document
- * pages all open the SAME palette and insert the SAME empty states (ticket-44).
+ * Board rows with no factory yet — `heading`, `page link`, `pond — update`,
+ * `page`, `nested page` — are NOT invented here (ADR 0005). They are #281.
  */
 
-import { moduleDescriptors } from '@/lib/modules/registry'
-import type { SlashMenuItem } from '@/components/molecules/SlashMenu'
+import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
+import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
+import type { ViewMode } from '@/lib/modules/view/schema'
 
-// Excludes 'page' alone — structural, not a content block a user drops into a page.
-// Nothing else is withheld: the nine data-holding display blocks that used to be
-// retired-but-registered are deleted outright (#111), so the registry IS the palette.
-// The `view` block IS offered (#19 slice 3): a picked view defaults to a table over
-// the host page's rows, so it draws honestly on a collection and shows a calm "needs
-// a collection with properties" notice elsewhere (see `emptyBlockForType`).
-const EXCLUDED_FROM_PALETTE = new Set<string>(['page'])
+type Group = 'text' | 'blocks' | 'templates'
 
-/**
- * The `/board` preset (board-authoring Slice 1). Not a distinct module type — it
- * mints a `view` block in `board` mode and seeds a Status group-by on the host page
- * (see `board-preset.ts`). Because minting is async (a schema write) and needs the
- * host page id, the insert surfaces (BlockCanvas) special-case this id rather than
- * routing it through the synchronous `emptyBlockForType`.
- */
-export const BOARD_PRESET_ID = 'board'
-
-const boardPreset: SlashMenuItem = {
-  id: BOARD_PRESET_ID,
-  name: 'Board',
-  description:
-    'A Kanban board — cards grouped into status columns. Add cards and drag them between columns; switch the same tasks to Table, Gantt, or Calendar anytime.',
+/** `PondPicker.dc.html`'s `I` table — the hand-drawn 14-grid marks, by row. */
+const ICON: Record<string, SlashIcon> = {
+  text: { d: 'M3 3.5h8M7 3.5v7.5' },
+  quote: { d: 'M5.6 3.4C4 4 3 5.2 3 7v3.2h2.8V7.4H4M11 3.4C9.4 4 8.4 5.2 8.4 7v3.2h2.8V7.4H9.4' },
+  file: { d: 'M4 2h4l3 3v7H4zM8 2v3h3' },
+  list: { d: 'M6 4h5.5M6 7h5.5M6 10h5.5M3.2 4h.01M3.2 7h.01M3.2 10h.01' },
+  check: { d: 'M2.4 4.2l1 1 1.8-2M7 4.2h4.6M2.4 9.8l1 1 1.8-2M7 9.8h4.6' },
+  table: {
+    d: 'M3.2 2.5h7.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 10.3V3.7a1.2 1.2 0 0 1 1.2-1.2zM2 6h10M6 2.5v9',
+  },
+  gallery: { d: 'M2 2.5h4.2v4.2H2zM7.8 2.5H12v4.2H7.8zM2 8h4.2v4.2H2zM7.8 8H12v4.2H7.8z' },
+  chart: { d: 'M2.5 11.5h9M4.2 11.5V7.5M7 11.5V3.5M9.8 11.5V8.8' },
+  number: { d: 'M5.4 2.5 4.4 11.5M9.6 2.5l-1 9M2.6 5.4h9M2.2 8.6h9' },
+  log: { d: 'M2 7a5 5 0 1 0 10 0a5 5 0 1 0-10 0M7 4.4V7l1.9 1.2' },
+  tpl: { d: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z' },
 }
 
-const derivedItems: SlashMenuItem[] = Object.values(moduleDescriptors)
-  .filter((d) => !EXCLUDED_FROM_PALETTE.has(d.type))
-  .map((d) => ({
-    id: d.type,
-    name: d.type.charAt(0).toUpperCase() + d.type.slice(1).replace(/-/g, ' '),
-    // Prefer the short palette label; fall back to the long AI catalog line
-    // (UI-audit Slice 2 — keeps the picker terse without degrading composition).
-    description: d.paletteDescription ?? d.description,
-  }))
+/** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
+const ROW_CHROME: Partial<Record<DescriptorType, { group: Group; icon: SlashIcon; key?: string }>> =
+  {
+    text: { group: 'text', icon: ICON.text },
+    highlight: { group: 'text', icon: ICON.quote, key: '"' },
+    image: { group: 'text', icon: ICON.file },
+    todo: { group: 'blocks', icon: ICON.check, key: '[]' },
+    table: { group: 'blocks', icon: ICON.table },
+    entries: { group: 'blocks', icon: ICON.log },
+  }
 
-// Board leads the collection-view family, ahead of the raw `view` (table) entry.
-export const paletteItems: SlashMenuItem[] = [boardPreset, ...derivedItems]
+/** A type's other faces — the same block at another marker or mode. */
+const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
+  todo: [
+    {
+      id: 'list',
+      type: 'todo',
+      group: 'blocks',
+      label: 'list',
+      description: 'things with nothing to tick off — groceries, names',
+      key: '-',
+      icon: ICON.list,
+    },
+  ],
+  view: [
+    {
+      id: 'gallery',
+      type: 'view',
+      group: 'blocks',
+      label: 'gallery',
+      description: 'a database’s records as cards with an image',
+      icon: ICON.gallery,
+    },
+    {
+      id: 'chart',
+      type: 'view',
+      group: 'blocks',
+      label: 'chart',
+      description: 'figures from a database, drawn over time',
+      icon: ICON.chart,
+    },
+    {
+      id: 'big-number',
+      type: 'view',
+      group: 'blocks',
+      label: 'big number',
+      description: 'one figure from a database, oversized',
+      icon: ICON.number,
+    },
+  ],
+}
+
+/** The `view` mode each of its rows opens in. */
+const VIEW_MODE_BY_ROW: Record<string, ViewMode | undefined> = {
+  gallery: 'gallery',
+  chart: 'chart',
+  'big-number': 'big-number',
+}
+
+/** Row ids where the board's name differs from the type's. */
+const ROW_ID: Record<string, string | undefined> = {
+  todo: 'checklist',
+  image: 'embed-file',
+  entries: 'entry-log',
+}
+
+/** Types whose plain row is withheld: structural, or wholly covered by variants. */
+const WITHHELD: ReadonlySet<DescriptorType> = new Set<DescriptorType>(['page', 'view'])
+
+/** The board's row order; a row it does not draw (a new type) follows, in registry order. */
+const BOARD_ORDER = [
+  'text',
+  'highlight',
+  'embed-file',
+  'list',
+  'checklist',
+  'table',
+  'gallery',
+  'chart',
+  'big-number',
+  'entry-log',
+  'page-from-template',
+]
+const GROUP_ORDER: Group[] = ['text', 'blocks', 'templates']
+
+const ownRows: SlashRow[] = Object.values(moduleDescriptors)
+  .filter((d) => !WITHHELD.has(d.type as DescriptorType))
+  .map((d) => {
+    const chrome = ROW_CHROME[d.type as DescriptorType] ?? { group: 'blocks', icon: ICON.tpl }
+    return {
+      // The board's row names as ids, where they differ from the type.
+      id: ROW_ID[d.type] ?? d.type,
+      type: d.type,
+      group: chrome.group,
+      label: d.label,
+      description: d.paletteDescription,
+      key: chrome.key,
+      icon: chrome.icon,
+    }
+  })
+
+const templateRow: SlashRow = {
+  id: 'page-from-template',
+  group: 'templates',
+  label: 'page from template',
+  description: 'one of the twelve shapes, or one of yours, as a nested page',
+  icon: ICON.tpl,
+  submenu: 'templates',
+}
+
+const rank = (row: SlashRow) => {
+  const i = BOARD_ORDER.indexOf(row.id)
+  return i === -1 ? BOARD_ORDER.length : i
+}
+
+/** Every row of the `/` menu, in the board's groups and order. */
+export const slashRows: readonly SlashRow[] = [
+  ...ownRows,
+  ...Object.values(VARIANT_ROWS).flat(),
+  templateRow,
+].sort(
+  (a, b) =>
+    GROUP_ORDER.indexOf(a.group as Group) - GROUP_ORDER.indexOf(b.group as Group) ||
+    rank(a) - rank(b)
+)
 
 /**
  * The manual-authoring empty state per module: todo = one blank item, table = 2×2,
@@ -105,4 +219,22 @@ export function emptyBlockForType(type: string): Block | null {
     default:
       return null
   }
+}
+
+/**
+ * Mint the block a `/` row inserts: the type's empty state, then the preset's own
+ * marker or mode on top. Null for a row that inserts no block (`page from
+ * template` opens a submenu) and for an unknown id, so a pick degrades to a no-op.
+ */
+export function mintPreset(rowId: string): Block | null {
+  const row = slashRows.find((r) => r.id === rowId)
+  if (!row?.type) return null
+  const block = emptyBlockForType(row.type)
+  if (!block) return null
+  if (block.type === 'todo' && rowId === 'list') return { ...block, marker: 'dot' }
+  if (block.type === 'view') {
+    const mode = VIEW_MODE_BY_ROW[rowId]
+    return mode ? { ...block, mode } : block
+  }
+  return block
 }
