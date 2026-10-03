@@ -67,7 +67,16 @@ export interface CollectionData {
    * to the new row id (for focusing its title), or null off a collection / when logged out.
    */
   addRow: (values?: Record<string, PropertyValue>) => Promise<string | null>
-  /** Optimistically delete a row, then persist. */
+  /**
+   * Optimistically delete a row, then persist.
+   *
+   * **Deliberately unconsumed since #223.** The per-row `×` was deleted because no
+   * board draws one, which left this with no caller. It stays because it is
+   * persistence, not an affordance — AGENTS.md keeps "engine logic the boards
+   * assume but do not draw" through a surface gut — and because durable trash
+   * (#199) and the deleted-record restore diff (#201) are the surfaces that will
+   * call it. Do not re-expose it as a `×`; that is the defect #223 removed.
+   */
   removeRow: (rowId: string) => void
   /** Optimistically rename a row (its page title), then persist. */
   renameRow: (rowId: string, title: string) => void

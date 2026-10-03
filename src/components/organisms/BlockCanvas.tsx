@@ -830,14 +830,12 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* Gutter affordances (ticket-37): the block menu handle + delete, revealed on
-          hover/focus. Both live in one flex row, in identical 20×16 boxes, so the
-          two hand-drawn marks share a centre — their own artwork differs in optical
-          weight, and without the shared box they read as misaligned. Both sit on
-          the 68% ink tier: PROJECT_RULES allows three tiers only (100 / 80 small
-          meta / 68), so neither gutter mark may drop to a fainter ink. The handle is
-          the six-dot mark 6j draws (10×14, dots r 1.1); press-and-drag reorders, a
-          click opens the block menu (#101). */}
+      {/* The gutter handle (#223) — the boards' ONLY row affordance, revealed on
+          hover/focus. It is the six-dot mark 6j draws (10×14, dots r 1.1) in a
+          20×16 box; press-and-drag reorders, a click opens the block menu (#101),
+          which is where `delete block` lives. It sits on the 68% ink tier:
+          PROJECT_RULES allows three tiers only (100 / 80 small meta / 68), so the
+          mark may not drop to a fainter ink. */}
       <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
         <button
           ref={handleRef}
@@ -858,21 +856,6 @@ function BlockEditor({
             <circle cx="7" cy="7" r="1.1" />
             <circle cx="3" cy="11" r="1.1" />
             <circle cx="7" cy="11" r="1.1" />
-          </svg>
-        </button>
-        <button
-          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text focus-visible:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text"
-          title="Delete block"
-          aria-label="Delete block"
-          onClick={onRemove}
-        >
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
-            <path
-              d="M3 3l6 6M9 3l-6 6"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-            />
           </svg>
         </button>
       </div>

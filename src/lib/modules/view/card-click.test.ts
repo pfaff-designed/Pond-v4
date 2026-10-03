@@ -2,9 +2,12 @@
  * Unit tests for the board-card click filter (#64).
  *
  * A card `<li>` opens its page preview on click, but the card also hosts
- * interactive children — the drag handle, the title input, the delete ×, the
- * ↗ open button. A click that lands on (or inside) any of those must NOT also
- * open the preview; only a click on the card's passive body should.
+ * interactive children — the drag handle, the title input, the ↗ open button.
+ * A click that lands on (or inside) any of those must NOT also open the preview;
+ * only a click on the card's passive body should.
+ *
+ * The fixture mirrors what a card actually draws: #223 deleted the per-card ×, so
+ * the ↗ open button is the trailing control the filter has to exclude.
  */
 import { shouldOpenCardFromClick } from './card-click'
 
@@ -16,7 +19,7 @@ function buildCard(): HTMLElement {
       <input aria-label="Card title" />
       <div class="chips"><span class="chip">Doing</span></div>
     </div>
-    <button type="button" aria-label="Delete card">×</button>
+    <button type="button" aria-label="Open card">↗</button>
   `
   document.body.appendChild(li)
   return li
@@ -34,10 +37,10 @@ describe('shouldOpenCardFromClick', () => {
     expect(shouldOpenCardFromClick(li.querySelector('.chip'))).toBe(true)
   })
 
-  it('does NOT open from a click on a button (drag handle, delete ×)', () => {
+  it('does NOT open from a click on a button (drag handle, ↗ open)', () => {
     const li = buildCard()
     expect(shouldOpenCardFromClick(li.querySelector('[aria-label="Drag card"]'))).toBe(false)
-    expect(shouldOpenCardFromClick(li.querySelector('[aria-label="Delete card"]'))).toBe(false)
+    expect(shouldOpenCardFromClick(li.querySelector('[aria-label="Open card"]'))).toBe(false)
   })
 
   it('does NOT open from a click on the title input', () => {
@@ -47,7 +50,7 @@ describe('shouldOpenCardFromClick', () => {
 
   it('does NOT open from a click inside a nested interactive element', () => {
     const li = buildCard()
-    const btn = li.querySelector('[aria-label="Delete card"]') as HTMLElement
+    const btn = li.querySelector('[aria-label="Open card"]') as HTMLElement
     const inner = document.createElement('span')
     btn.appendChild(inner)
     expect(shouldOpenCardFromClick(inner)).toBe(false)
