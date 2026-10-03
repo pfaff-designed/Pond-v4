@@ -29,6 +29,7 @@ import {
   applyView,
   displayValue,
   epochDay,
+  galleryCardMeta,
   groupRows,
   groupRowsByDate,
   layoutGanttBars,
@@ -44,7 +45,23 @@ import { compactChartMark } from './chart-compact'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
-import { buildTicks, formatTick, GANTT_BAR_SHELL } from './gantt-shared'
+import {
+  formatTick,
+  ganttRowDone,
+  quarterTicks,
+  GANTT_BAR_INK,
+  GANTT_BAR_SHELL,
+  GANTT_HEAD,
+  GANTT_LABEL,
+  GANTT_LABEL_INK,
+  GANTT_ROW,
+  GANTT_TICK,
+  GANTT_TICKS,
+  GANTT_TRACK,
+  GANTT_TRACK_STYLE,
+} from './gantt-shared'
+import { PondBlockEmpty } from '@/components/organisms/PondBlock'
+import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
   coerceValue,
   optionForValue,
@@ -1000,35 +1017,49 @@ function CollectionCalendar({
 // ── Gallery ─────────────────────────────────────────────────────────────────────
 
 /**
- * Gallery view — a read-only card grid. There is no image property type this cycle,
- * so a card is the row's title over its resolved property values (select/status as
- * chips, others as read text via the shared `Cell`). Editing stays in the table;
- * gallery is a browse surface (slice-4 grill).
+ * Gallery view — a read-only card grid, drawn to `PondTemplate.dc.html` (#260):
+ *
+ *   gallery { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }
+ *   gcard   { display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }
+ *   img     { display: 'block', height: 64, borderRadius: 12, background: a(.07) }  // filled
+ *   tStyle  { fontSize: 13.5, fontWeight: 500, color: fg }
+ *   mStyle  { fontFamily: mono, fontSize: 10.5, color: a(.68) }
+ *
+ * EVERY record is a card: the board's `list.slice(0, mob ? 2 : 3)` is the template
+ * preview's truncation, not a product rule. The tile is the board's filled ground —
+ * there is no image property type, so it is a slot, not a picture. The board's
+ * ring-on-transparent tile belongs to its EMPTY cards, which the product never draws:
+ * an empty gallery is the frame's `no records yet` (#239). `untitled` and `—` are the
+ * board's own fallbacks; which field the one meta line shows is `galleryCardMeta`.
+ *
+ * Why not `PondMolecule kind="record-card"`, which `PondBlock.dc.html`'s gallery
+ * frame composes: ADR 0004's ladder sends a block to the molecule only where the
+ * molecule can express every case the templates need, and the record-card ALWAYS
+ * draws a tag chip (`tagText: p.tag ?? 'recipe'`) that no template gallery has
+ * (`collection › records` is a title and one line). As `entries` (ADR 0004 §8), the
+ * template's inline card is therefore the specification; the molecule stays for the
+ * block board's demo. Mobile (2 columns, 70-high tile) is the frame's later slice —
+ * `PondBlock` has no size axis yet. Class strings are literals, never `cn` (#252).
  */
+const GALLERY = 'grid grid-cols-[repeat(3,minmax(0,1fr))] gap-[10px]'
+const GALLERY_CARD = 'flex min-w-0 flex-col gap-[6px]'
+const GALLERY_IMAGE = 'block h-[64px] rounded-[12px] bg-mn-text/[0.07]'
+const GALLERY_TITLE = 'text-[13.5px] font-medium text-mn-text'
+const GALLERY_META = 'font-mono text-[10.5px] text-mn-text-secondary'
+
 function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: CollectionRow[] }) {
   // No empty line of its own: the frame owns the empty state (#239).
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+    <div data-part="gallery" className={GALLERY}>
       {rows.map((row) => (
-        <article key={row.id} className="rounded-mn-row bg-mn-card px-3 py-2.5 shadow-mn-sm">
-          <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
-          <dl className="mt-2 space-y-1">
-            {schema.map((def) => (
-              <div key={def.id} className="flex items-baseline gap-2 text-xs">
-                <dt className="shrink-0 text-mn-text-secondary">{def.name}</dt>
-                <dd className="min-w-0 text-mn-text-meta">
-                  <Cell
-                    def={def}
-                    value={coerceValue(def, row.values[def.id])}
-                    editable={false}
-                    onChange={() => {}}
-                    schema={schema}
-                    rowValues={row.values}
-                  />
-                </dd>
-              </div>
-            ))}
-          </dl>
+        <article key={row.id} data-part="gallery-card" className={GALLERY_CARD}>
+          <span aria-hidden data-part="gallery-image" className={GALLERY_IMAGE} />
+          <span data-part="gallery-title" className={GALLERY_TITLE}>
+            {row.title || 'untitled'}
+          </span>
+          <span data-part="gallery-meta" className={GALLERY_META}>
+            {galleryCardMeta(schema, row) || '—'}
+          </span>
         </article>
       ))}
     </div>
@@ -1036,8 +1067,8 @@ function CollectionGallery({ schema, rows }: { schema: PropertySchema; rows: Col
 }
 
 // ── Gantt (read-only timeline) ────────────────────────────────────────────────
-// `formatTick` + `GANTT_BAR_SHELL` moved to gantt-shared.ts (#11) — one source for
-// this view mode AND the standalone timeline module, so the two can't drift.
+// The board's geometry and the pure readings live in gantt-shared.ts (#260); this is
+// the drawing and the drag.
 
 /** Below this RENDERED bar width (px) the edge handles are suppressed and the bar is
  *  move-only (spec): there isn't room to grab a 6px edge without it swallowing the body. */
@@ -1046,10 +1077,16 @@ const NARROW_BAR_PX = 18
 /**
  * Gantt view (#27) — a timeline. Each row is one bar spanning its Start→End date over
  * a single adaptive axis (min start … max end), sorted by start. A row with a Start but
- * no End is a single-day tick; a row with no Start is omitted. Weekly gridlines mark the
- * axis. The date properties are the ones the view names in `startDate`/`endDate`, else
- * the collection's 1st/2nd date property (pickGanttDefs). No date property at all → a
- * calm notice, like the calendar.
+ * no End is a single-day tick; a row with no Start is omitted. The date properties are
+ * the ones the view names in `startDate`/`endDate`, else the collection's 1st/2nd date
+ * property (pickGanttDefs). No date property at all → a calm notice, like the calendar;
+ * nothing dated → the board's voidBox through `PondBlockEmpty` (#260).
+ *
+ * Drawn to `PondTemplate.dc.html`'s `gantt` (#260, values in `gantt-shared.ts`): a head
+ * row of four mono-10 ticks at the range's quarters over the .09 hairline, then one
+ * `gRow` per bar — a 120px label column and an 18-high track with 25% gridlines — each
+ * on its own .055 hairline; bars at top/bottom 4, radius 4, `%`-positioned, full ink
+ * live and ink .22 done (`ganttRowDone`).
  *
  * When `editable`, bars reschedule by drag (`usePointerGanttDrag`): the body MOVES the
  * bar (start+end together), the right edge resizes the End (and CREATES one on a tick,
@@ -1117,38 +1154,38 @@ function CollectionGantt({
     return <ViewNotice>This gantt needs a date property.</ViewNotice>
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
-    return <p className="py-2 text-mn-text-secondary">No dated rows to chart</p>
+    // Nothing dated: the shared voidBox with the template's own line — true whether the
+    // rows are missing or simply carry no dates. Rendered through PondBlockEmpty, never
+    // a second empty component (#259's geometry).
+    return <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
   }
 
   const { bars, rangeStart } = layout
   const { endDef } = defs
   const startDay = epochDay(rangeStart)
   const pct = (day: number) => ((day - startDay) / totalDays) * 100
-
-  // Weekly-grid ticks from the first day through the range end (Mon-agnostic —
-  // just every 7th day off the start), each labelled with its month/day and
-  // thinned to the measured track width so labels never overlap (#57).
-  const ticks = buildTicks(rangeStart, totalDays, trackPx)
+  const ticks = quarterTicks(rangeStart, totalDays)
 
   return (
     <div {...containerHandlers}>
       <div className={drag?.active ? 'cursor-grabbing select-none' : undefined}>
-        {/* Axis header — weekly tick labels aligned to their gridlines. */}
-        <div className="relative mb-1 ml-40 h-4">
-          {ticks.map((t) => (
-            <span
-              key={t.iso}
-              className="absolute top-0 -translate-x-1/2 text-[0.6rem] whitespace-nowrap text-mn-text-secondary tabular-nums"
-              style={{ left: `${t.left}%` }}
-            >
-              {formatTick(t.iso)}
-            </span>
-          ))}
+        {/* gHead — an empty label cell, then the four ticks in their quarter cells. */}
+        <div data-part="gantt-head" className={GANTT_HEAD}>
+          <span />
+          <div data-part="gantt-ticks" className={GANTT_TICKS}>
+            {ticks.map((iso, i) => (
+              // Index keys: a one-day range repeats its day across all four cells.
+              <span key={i} data-part="gantt-tick" className={GANTT_TICK}>
+                {formatTick(iso)}
+              </span>
+            ))}
+          </div>
         </div>
 
-        {/* One row per bar: a fixed label column + a proportional track. */}
-        <ul role="list" className="space-y-1.5">
+        {/* gRow — a 120px label column + a proportional track, each on its own hairline. */}
+        <ul role="list">
           {bars.map(({ row, startIso, endIso }, i) => {
+            const done = ganttRowDone(schema, row)
             const dragging = drag?.active && drag.rowId === row.id
             const showStart = dragging ? drag.startIso : startIso
             const showEnd = dragging ? drag.endIso : endIso
@@ -1161,6 +1198,8 @@ function CollectionGantt({
             // bar is too small to carry grabbable edges, so it's move-only (spec). Until
             // the track is measured (trackPx 0) edges show — the common, wide case.
             const narrow = trackPx > 0 && (width / 100) * trackPx < NARROW_BAR_PX
+            const bar = `${GANTT_BAR_SHELL} ${done ? GANTT_BAR_INK.done : GANTT_BAR_INK.live}`
+            const label = `${GANTT_LABEL} ${done ? GANTT_LABEL_INK.done : GANTT_LABEL_INK.live}`
 
             // The row's stored dates for the drag math: endIso is null unless the row
             // actually holds an End on/after its Start (a milestone reads as a tick).
@@ -1173,27 +1212,22 @@ function CollectionGantt({
             }
 
             return (
-              <li key={row.id} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-xs font-medium text-mn-text">
+              <li key={row.id} data-part="gantt-row" className={GANTT_ROW}>
+                <span data-part="gantt-label" className={label}>
                   {row.title || 'Untitled'}
                 </span>
                 <span
                   data-gantt-track
+                  data-part="gantt-track"
                   ref={i === 0 ? measureTrack : undefined}
-                  className="relative h-5 flex-1"
+                  className={GANTT_TRACK}
+                  style={GANTT_TRACK_STYLE}
                 >
-                  {/* Weekly gridlines behind the bar. */}
-                  {ticks.map((t) => (
-                    <span
-                      key={t.iso}
-                      aria-hidden
-                      className="absolute top-0 bottom-0 border-l border-mn-hair"
-                      style={{ left: `${t.left}%` }}
-                    />
-                  ))}
                   {editable ? (
                     <span
-                      className={GANTT_BAR_SHELL}
+                      data-part="gantt-bar"
+                      data-done={done || undefined}
+                      className={bar}
                       style={{ left: `${left}%`, width: `${width}%` }}
                     >
                       {/* Body — drag to MOVE the whole bar. */}
@@ -1201,7 +1235,7 @@ function CollectionGantt({
                         type="button"
                         aria-label={`Reschedule ${row.title || 'Untitled'}: ${span}`}
                         onPointerDown={(e) => onBarPointerDown(e, row.id, 'move', dates)}
-                        className="absolute inset-0 h-full w-full cursor-grab touch-none rounded-sm"
+                        className="absolute inset-0 h-full w-full cursor-grab touch-none rounded-[4px]"
                       />
                       {/* Left edge — resize the Start (real spans only; hidden when too narrow to grab). */}
                       {endDef && !isTick && !narrow && (
@@ -1209,7 +1243,7 @@ function CollectionGantt({
                           type="button"
                           aria-label={`Move start of ${row.title || 'Untitled'}`}
                           onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-start', dates)}
-                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-sm bg-mn-text"
+                          className="absolute top-0 bottom-0 left-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-l-[4px] bg-mn-text"
                         />
                       )}
                       {/* Right edge — resize the End (creates one on a tick → span; hidden when too narrow). */}
@@ -1218,7 +1252,7 @@ function CollectionGantt({
                           type="button"
                           aria-label={`Move end of ${row.title || 'Untitled'}`}
                           onPointerDown={(e) => onBarPointerDown(e, row.id, 'resize-end', dates)}
-                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-sm bg-mn-text"
+                          className="absolute top-0 right-0 bottom-0 z-10 w-1.5 cursor-ew-resize touch-none rounded-r-[4px] bg-mn-text"
                         />
                       )}
                     </span>
@@ -1226,7 +1260,9 @@ function CollectionGantt({
                     <span
                       role="img"
                       aria-label={`${row.title || 'Untitled'}: ${span}`}
-                      className={GANTT_BAR_SHELL}
+                      data-part="gantt-bar"
+                      data-done={done || undefined}
+                      className={bar}
                       style={{ left: `${left}%`, width: `${width}%` }}
                     />
                   )}

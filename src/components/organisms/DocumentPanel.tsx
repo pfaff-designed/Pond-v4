@@ -32,6 +32,8 @@ import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { getOrCreateHomePage } from '@/lib/pages/home'
 import { commitBlocks } from '@/lib/pages/commit'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
+import { PondBlock } from '@/components/organisms/PondBlock'
+import { propertiesFrame } from '@/lib/modules/block-frame'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
 import { CrumbMark } from '@/components/organisms/PageMarkButton'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
@@ -346,15 +348,17 @@ export function DocumentPanel() {
         <PageProvenance pageId={page.id} props={page.props} className="mb-5" />
 
         {/* Typed properties (#17): shown only when the page carries a schema (it
-            is a collection). Edits write optimistically, bypassing the AI gate. */}
+            is a collection). Edits write optimistically, bypassing the AI gate.
+            #260: framed in the board's `properties` card (ADR 0007 — the inspector
+            IS that kind), empty when the schema has no fields. */}
         {propSchema && (
-          <div className="mb-6 border-b border-mn-hair pb-6">
+          <PondBlock {...propertiesFrame(propSchema)} className="mb-6">
             <PropertyInspector
               schema={propSchema}
               values={readValues(page.props)}
               onChange={onProperty}
             />
-          </div>
+          </PondBlock>
         )}
 
         {/* The shared authoring surface (ticket-44): the `/` palette, hover `+`

@@ -25,6 +25,7 @@ import type { ViewBlock, ViewMode } from './view/schema'
 import { COMPACT_MARK_EMPTY, compactChartMark } from './view/chart-compact'
 import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 export const POND_BLOCK_KINDS = [
   'list',
@@ -130,15 +131,55 @@ export const POND_BLOCK_FILTERED_EMPTY_LINE = 'nothing matches this filter'
  *             borderRadius: 12, boxShadow: `inset 0 0 0 1.4px ${a(.14)}`,
  *             fontFamily: mono, fontSize: 11, color: a(.68) }
  *
- * Only the compact `bars` strip (and #260's `gantt`) is empty as the voidBox; the
+ * Only the compact `bars` strip and the `gantt` mode (#260 — the template's
+ * `isVoid: true, voidText: v` for an unfilled gantt) are empty as the voidBox; the
  * compact `heat` grid draws its own empty state (84 cells at ink .07) and never
  * hands the frame an empty state at all (`COMPACT_MARK_EMPTY`). Every other block
  * is the board's `emptyBox`. Read off the block alone, like `blockFrame()`.
  */
 export type BlockEmptyBox = 'box' | 'void'
 
+/**
+ * The gantt mode's empty line — `PondTemplate.dc.html`'s `gantt` `e:` value verbatim
+ * (#260). Declared here, with the rest of the per-kind block copy, rather than in the
+ * view layer: this file is server-safe, so a host reaches the string without pulling
+ * in a React module, and `VIEW_EMPTY` below can hold it beside the box that draws it.
+ */
+export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
+
+/**
+ * How each view mode is empty: which box the frame draws, and the line that goes in
+ * it when the mode owns one (#260). **Exhaustive over `ViewMode`, so an eighth mode
+ * is a compile error here** rather than silently inheriting the default box — the
+ * defect this file exists to prevent, and the reason `VIEW_KIND` and `VIEW_HEADING`
+ * above are tables too.
+ *
+ * `chart` is the one mode whose box is not static — a compact `bar` is empty as the
+ * voidBox and the card presentation is not — so it reads `'per-mark'` and
+ * `blockEmptyBox()` asks `compactChartMark`. The marker is in the table rather than a
+ * `mode === 'chart'` test outside it so the table never STATES something false about
+ * a mode: a caller reading `.box` directly gets `'per-mark'`, not a wrong answer.
+ * `chart` carries no `line` for the same reason — its copy is `CHART_EMPTY_LINE`,
+ * which lives in the React module `chart/card.tsx` and cannot be reached from here.
+ *
+ * Both consumers read THIS — `blockEmptyBox()` takes `.box` and `BlockCanvas`'s
+ * `useBlockEmptyState` takes `.line`. Before this they each tested `mode === 'gantt'`
+ * separately, so one fact about one mode lived in two files keyed off a raw string.
+ */
+export const VIEW_EMPTY: Record<ViewMode, { box: BlockEmptyBox | 'per-mark'; line?: string }> = {
+  table: { box: 'box' },
+  board: { box: 'box' },
+  calendar: { box: 'box' },
+  gallery: { box: 'box' },
+  'big-number': { box: 'box' },
+  gantt: { box: 'void', line: GANTT_EMPTY_LINE },
+  chart: { box: 'per-mark' },
+}
+
 export function blockEmptyBox(block: Block): BlockEmptyBox {
   if (block.type !== 'view') return 'box'
+  const { box } = VIEW_EMPTY[block.mode]
+  if (box !== 'per-mark') return box
   const mark = compactChartMark(block)
   return mark !== null && COMPACT_MARK_EMPTY[mark] === 'void' ? 'void' : 'box'
 }
@@ -331,14 +372,13 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
   none: { row: 'list-row', dot: false, emphasis: true },
 }
 
-/** The eyebrow when the block has no label of its own (#258) — the kind's name. */
-const TODO_HEADING: Record<TodoMarker, string> = {
-  check: 'checklist',
-  dot: 'list',
-  none: 'list',
-}
-
-/** A view block draws a database; its card is the board kind of its render mode. */
+/**
+ * A view block draws a database; its card is the board kind of its render mode.
+ * #260 confirmed all three mapped modes against `PondBlock.dc.html`'s `W`: `gallery`
+ * is its own 580 card and `big-number` the 400 `number` card, while `gantt` stays
+ * in the 500 `table` card — the block board has no gantt kind and `PondTemplate`
+ * gives it no width of its own, exactly as `board`, `calendar` and `chart`.
+ */
 const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
   table: 'table',
   board: 'table',
@@ -373,6 +413,21 @@ export function viewCollectionId(block: ViewBlock, pageId: string | undefined): 
   return block.collectionId ?? pageId
 }
 
+/**
+ * The card the page's typed properties sit in (#260). ADR 0007: `PropertyInspector`
+ * (#17) IS `PondBlock.dc.html`'s `properties` kind — it renders a page's `_schema`
+ * as field-rows and holds no copy — so it is FRAMED, not rebuilt. It is not a block
+ * and carries no label, so the eyebrow is the kind's name (the same fallback every
+ * unlabelled block takes) and the note is the field count. Unlike `blockFrame()`
+ * this also answers the frame's STATE: a schema's emptiness is read off the schema
+ * alone, with no rows to fetch, so there is nothing for a host hook to decide.
+ */
+export function propertiesFrame(schema: PropertySchema): BlockFrame & { state: PondBlockState } {
+  const n = schema.length
+  const headNote = plural(n, 'field')
+  return { kind: 'properties', heading: 'properties', headNote, state: n ? 'rest' : 'empty' }
+}
+
 export function blockFrame(block: Block): BlockFrame | null {
   switch (block.type) {
     case 'text': {
@@ -395,7 +450,8 @@ export function blockFrame(block: Block): BlockFrame | null {
       const done = block.items.filter((it) => it.checked).length
       return {
         kind: TODO_KIND[marker],
-        heading: blockLabel(block) ?? TODO_HEADING[marker],
+        // The eyebrow when the block has no label of its own (#258) is the kind's name.
+        heading: blockLabel(block) ?? TODO_KIND[marker],
         headNote: marker === 'check' ? `${done} of ${n}` : `${n}`,
       }
     }

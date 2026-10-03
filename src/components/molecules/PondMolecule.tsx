@@ -146,6 +146,14 @@ export interface PondMoleculeProps {
    * `role="checkbox"` span so a done step is still announced as checked.
    */
   onToggle?: () => void
+  /**
+   * field-row — a LIVE control in place of the value atom (issue 260). The row keeps its
+   * own geometry (the 140px label column, 34 min-height, gap 12) and the host's
+   * input sits in the value cell, so `PropertyInspector` renders the molecule
+   * rather than restating its grid to edit a value — the same move as
+   * `onTitleChange` on a list-row. Absent, the value atom draws as before.
+   */
+  children?: ReactNode
   className?: string
 }
 
@@ -209,6 +217,7 @@ export function PondMolecule({
   trailing,
   onTitleChange,
   onToggle,
+  children,
   className,
 }: PondMoleculeProps) {
   const mobile = size === 'mobile'
@@ -610,13 +619,15 @@ export function PondMolecule({
         <span data-part="label" className={pageEyebrowClass}>
           {label ?? 'kcal per serving'}
         </span>
-        <PondAtom
-          kind={valueKind}
-          value={value ?? '520'}
-          state={atomState}
-          size={size}
-          className="justify-self-start"
-        />
+        {children ?? (
+          <PondAtom
+            kind={valueKind}
+            value={value ?? '520'}
+            state={atomState}
+            size={size}
+            className="justify-self-start"
+          />
+        )}
       </div>
     )
   }

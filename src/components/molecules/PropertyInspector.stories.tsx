@@ -3,6 +3,9 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { PropertyInspector } from './PropertyInspector'
+import { PondBlock } from '@/components/organisms/PondBlock'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { propertiesFrame } from '@/lib/modules/block-frame'
 import type { PropertySchema } from '@/lib/properties/schema'
 
 // The relation row (below) renders the connected RelationValueField, which reads
@@ -102,11 +105,67 @@ export const ReadOnly: Story = {
   },
 }
 
-/** A page with no properties yet gets a quiet empty line. */
-export const Empty: Story = {
-  args: { schema: [], values: {} },
+/**
+ * #260 — framed, as DocumentPanel mounts it: the board's `properties` card (400),
+ * `properties` as the eyebrow, the field count as the note. The rows ARE
+ * `PondMolecule kind="field-row"` — `PondBlock.dc.html`'s properties frame
+ * dc-imports the molecule — so the geometry asserted here is the molecule's
+ * (`PondMolecule.dc.html` `fieldRow`): grid `140px minmax(0,1fr)` · gap 12 ·
+ * min-height 34 · width 360 · the eyebrow label; the control rides the value cell.
+ */
+export const InPropertiesCard: Story = {
+  render: (args) => (
+    <PondBlock {...propertiesFrame(args.schema)}>
+      <PropertyInspector {...args} />
+    </PondBlock>
+  ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText(/no properties/i)).toBeInTheDocument()
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
+    await expect(card.dataset.blockKind).toBe('properties')
+    await expect(card.dataset.blockState).toBe('rest')
+    await expect(getComputedStyle(card).width).toBe('400px')
+    const head = card.firstElementChild as HTMLElement
+    await expect(head.children[0].textContent).toBe('properties')
+    await expect(head.children[0].className).toBe(pageEyebrowClass)
+    await expect(head.children[1].textContent).toBe('6 fields')
+
+    const rows = Array.from(card.querySelectorAll<HTMLElement>('[data-kind="field-row"]'))
+    await expect(rows).toHaveLength(schema.length)
+    for (const [i, row] of rows.entries()) {
+      const rs = getComputedStyle(row)
+      await expect(rs.display).toBe('grid')
+      await expect(rs.gridTemplateColumns.split(' ')[0]).toBe('140px')
+      await expect(rs.columnGap).toBe('12px')
+      await expect(parseFloat(rs.minHeight)).toBe(34)
+      await expect(parseFloat(rs.width)).toBe(360)
+      const label = row.querySelector<HTMLElement>('[data-part="label"]')!
+      await expect(label.textContent).toBe(schema[i].name)
+      const ls = getComputedStyle(label)
+      await expect(ls.fontSize).toBe('10.5px')
+      await expect(ls.fontWeight).toBe('500')
+      await expect(ls.textTransform).toBe('uppercase')
+    }
+    // The controls are live inside the rows — the inspector still edits.
+    await expect(rows[0].contains(canvas.getByLabelText('Title value'))).toBe(true)
+    await expect(canvas.getByLabelText('Count value')).toHaveValue(3)
+  },
+}
+
+/** A schema with no fields: the frame's empty state — `no fields yet`, no dead action. */
+export const EmptyInCard: Story = {
+  args: { schema: [], values: {} },
+  render: (args) => (
+    <PondBlock {...propertiesFrame(args.schema)}>
+      <PropertyInspector {...args} />
+    </PondBlock>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
+    await expect(card.dataset.blockState).toBe('empty')
+    await expect(canvas.getByText('no fields yet')).toBeInTheDocument()
+    await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
+    await expect(canvas.queryByText(/no properties/i)).not.toBeInTheDocument()
   },
 }
