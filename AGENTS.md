@@ -5,6 +5,28 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# How a session works
+
+**One session, one landable slice, ending in a merge.** Not a handoff document.
+
+- **Only `size-S` and `size-M` issues get built.** A `size-L` is not a unit of work, it is an
+  unsplit one. Split it into S/M children _before_ starting. On 2026-10-03 there were 23 open
+  `size-L` issues and 47 recorded `/handoff` calls; those two numbers are the same fact.
+- **The queue is the `now` label.** `gh issue list --label now` is the whole answer to "what next" —
+  at most 8 issues, all S or M. Never re-derive priority by reading the backlog; if `now` is empty,
+  refill it deliberately as its own task.
+- **The issue body is the spec.** No build-briefs, no planning docs, no `wayfinder/` additions.
+  If an issue is not specced, spec it _into the issue_, then build. Grill (`/grill-me`) only when the
+  issue is genuinely ambiguous — not as a gate on every build.
+- **One review gate before merge:** `/code-review`. That is the gate that has earned its cost.
+- **Sweep in the same session as the merge:** delete the branch, remove the worktree, close the
+  issue. Run `./scripts/sweep.sh`. Debris is a tax on every future search — on 2026-10-03 a sweep
+  found 45 dead branches, 3 abandoned worktrees (one a 55MB duplicate checkout inside the repo) and
+  112 archived planning docs, all of which had been polluting every grep for weeks.
+- **Do not write a handoff document.** If you are low on context with work unlanded, the slice was
+  mis-scoped: land the smallest honest commit or discard the work, then re-split the issue and say
+  so. A handoff doc moves the cost to the next session instead of removing it.
+
 # If you stall, leave the loop. Do not retry the same approach.
 
 **Two attempts at the same approach is the limit.** If the second fails the same way, stop: the approach is wrong, not unlucky. Diagnose, then take a different route.
