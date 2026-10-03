@@ -23,6 +23,7 @@ import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
 import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
@@ -842,7 +843,10 @@ export function AITerminal() {
     pendingFocus.current = true
   }, [])
   useEffect(() => {
-    function onFocusRequest() {
+    function onFocusRequest(e: Event) {
+      // The palette's `ask pond about “q”` (#279) arrives with the question typed.
+      const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
+      if (text) setInput(text)
       setIsCollapsed((prev) => {
         if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
         return false

@@ -7,8 +7,15 @@
 
 export const FOCUS_TERMINAL_EVENT = 'pond:focus-terminal'
 
-export function requestTerminalFocus() {
-  window.dispatchEvent(new Event(FOCUS_TERMINAL_EVENT))
+export interface FocusTerminalDetail {
+  /** Text to put in the composer as it takes focus — the palette's `ask pond about “q”` (#279). */
+  text?: string
+}
+
+export function requestTerminalFocus(text?: string) {
+  window.dispatchEvent(
+    new CustomEvent<FocusTerminalDetail>(FOCUS_TERMINAL_EVENT, { detail: text ? { text } : {} })
+  )
 }
 
 /**

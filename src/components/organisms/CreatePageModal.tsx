@@ -151,10 +151,13 @@ export function CreatePageModal({
   onOpenChange,
   /** The page currently in view — the new page nests under it by default; null = Life root → top level. */
   defaultParentId,
+  /** A name already typed — the palette's `new page “q”` row (#279). */
+  defaultTitle = '',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultParentId: string | null
+  defaultTitle?: string
 }) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -189,7 +192,7 @@ export function CreatePageModal({
   if (open !== prevOpen) {
     setPrevOpen(open)
     if (open) {
-      setTitle('')
+      setTitle(defaultTitle)
       setError(null)
       setBusy(false)
       setParentValue(defaultParentId ?? TOP_LEVEL_VALUE)

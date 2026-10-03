@@ -1,208 +1,221 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { cn } from '@/lib/utils'
-import { dialogBackdropClass } from '@/components/atoms/dialog-chrome'
+/**
+ * The ⌘K palette — `PondPicker kind="palette"` (#279, child b of #226). A
+ * floating glass card high on the screen, over a washed-back page, not a dialog:
+ * `Pond 02` 2g — "same glass as the composer, placed high on the screen. The page
+ * behind is washed back so the palette reads as a pause, not a panel."
+ *
+ * Every literal here is `wayfinder/board-values.generated.json`
+ * `.components.PondPicker.variants["kind=palette|theme=paper"]` (the board's own
+ * `renderVals()`), never measured off a served frame:
+ *
+ *   glass   520 · border-box · padding 10 · radius 20 · mono · ink · column · gap 2
+ *           → `.mn-glass`: the board's light recipe byte for byte; dark is the
+ *             Shell's through the same class (ADR 0004 ruling 11 — no second recipe)
+ *   wash    paper at .62 behind it (`Pond 06.13`'s composed frame); dark takes
+ *           the dark ground at the same alpha, since no dark frame draws one
+ *   head    flex · gap 10 · 10px 12px 14px · mb 4 · 1px ink .09 · mono 14
+ *           waves glyph · [scope chip] · query · caret · `esc` at 10.5 / ink .8
+ *   scope   1px 6px · radius 6 · ink .07 · ink .8
+ *   group   8px 12px 4px · SANS 500 · 10.5 · .1em · uppercase · ink .68 — the page
+ *           eyebrow (`kicker.ts`), not the `/` menu's lowercase mono label
+ *   note    10px 12px · mono 12 · 1.55 · ink .8 · text-wrap pretty
+ *   foot    flex wrap · gap 14 · 10px 12px 4px · mt 4 · 1px ink .09 · 10.5 · ink .68
+ *
+ * The rows are `palette-row.tsx` (sans — ADR 0004 §4) and what they list is
+ * `palette-entries.ts`. The caret is the input's own: the board's `caret` span
+ * stands in for one on a static frame. The input keeps focus and carries
+ * `aria-activedescendant`; a row is an `option`, never a button. No outline ring
+ * lands on the input — the caret and the selected row's wash are its focus — so
+ * the ring is on `esc` alone, from the one owner. Template literals, not `cn()`
+ * (#252). A plain portal, not base-ui's Popover (#278 measured its jsdom cost).
+ */
 
-export interface PaletteItem {
-  id: string
-  /** Display label. */
-  label: string
-  /** Muted subtitle (section name, description, or path). */
-  subtitle?: string
-  /** Visual grouping: 'page' | 'action' | 'recent'. */
-  group: 'page' | 'action' | 'recent'
-}
+import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
+import { Icon } from '@/components/atoms/Icon'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+
+import {
+  PALETTE_FOOT,
+  paletteEntries,
+  type PaletteItem,
+  type PaletteScope,
+} from './palette-entries'
+import { PaletteRow, type PaletteRowEntry } from './palette-row'
+
+export type { PaletteItem, PaletteKind, PaletteScope } from './palette-entries'
 
 export interface CommandPaletteProps {
-  items: PaletteItem[]
+  items: readonly PaletteItem[]
   onSelect: (item: PaletteItem) => void
+  /** esc, ⌘K again, or a press outside. */
   onClose: () => void
+  /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
+  scope?: PaletteScope | null
+  /** For `new page “…” under <pond>`. @default 'life' */
+  pondName?: string
+  /** Opens with this already typed — stories render the board's frames. */
+  defaultQuery?: string
+  /** Portal target; defaults to `document.body`. Stories theme it. */
+  container?: HTMLElement | null
 }
 
-const GROUP_LABELS: Record<PaletteItem['group'], string> = {
-  page: 'Pages',
-  action: 'Quick actions',
-  recent: 'Recent',
-}
-const GROUP_ORDER: PaletteItem['group'][] = ['action', 'recent', 'page']
+const WASH = 'fixed inset-0 z-[99] bg-mn-surface/[0.62]'
+const GLASS =
+  'mn-glass rounded-mn-card motion-menu fixed left-[max(12px,calc(50%-260px))] top-[110px] z-[100] box-border flex w-[520px] max-w-[calc(100vw-24px)] flex-col gap-[2px] p-[10px] font-mono text-mn-text'
+const HEAD =
+  'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[12px] pt-[10px] pb-[14px] font-mono text-[14px]'
+const INPUT =
+  'min-w-0 flex-1 bg-transparent font-mono text-[14px] text-mn-text caret-mn-text outline-none placeholder:text-mn-text-secondary'
+const SCOPE =
+  'whitespace-nowrap rounded-[6px] bg-mn-text/[0.07] px-[6px] py-[1px] text-mn-text-meta'
+const HEAD_KEY = `${FOCUS_VISIBLE_RING} rounded-[4px] font-mono text-[10.5px] text-mn-text-meta`
+const GROUP = `${pageEyebrowClass} px-[12px] pt-[8px] pb-[4px]`
+const NOTE =
+  'px-[12px] py-[10px] font-mono text-[12px] leading-[1.55] text-mn-text-meta [text-wrap:pretty]'
+const FOOT =
+  'mt-[4px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[12px] pt-[10px] pb-[4px] text-[10.5px] text-mn-text-secondary'
 
-function groupItems(
-  filtered: PaletteItem[]
-): Array<{ group: PaletteItem['group']; items: PaletteItem[] }> {
-  const map = new Map<PaletteItem['group'], PaletteItem[]>()
-  for (const item of filtered) {
-    if (!map.has(item.group)) map.set(item.group, [])
-    map.get(item.group)!.push(item)
-  }
-  return GROUP_ORDER.flatMap((g) => {
-    const items = map.get(g)
-    return items ? [{ group: g, items }] : []
-  })
-}
+export function CommandPalette({
+  items,
+  onSelect,
+  onClose,
+  scope: initialScope = null,
+  pondName = 'life',
+  defaultQuery = '',
+  container,
+}: CommandPaletteProps) {
+  const listId = useId()
+  const [query, setQuery] = useState(defaultQuery)
+  const [scope, setScope] = useState(initialScope)
+  // The selection is keyed to what it was made against, so a new query starts
+  // at the first row without an effect writing state.
+  const [sel, setSel] = useState({ query, scope, index: 0 })
+  const entries = paletteEntries(items, query, { scope, pondName })
+  const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
+  const active = Math.min(
+    sel.query === query && sel.scope === scope ? sel.index : 0,
+    Math.max(0, rows.length - 1)
+  )
+  const select = (index: number) => setSel({ query, scope, index })
+  const rowId = (i: number) => `${listId}-${i}`
 
-/** Centered ⌘K command palette — reuses SlashMenu's keyboard-nav internals. */
-export function CommandPalette({ items, onSelect, onClose }: CommandPaletteProps) {
-  const [filter, setFilter] = useState('')
-  const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-
-  const filtered = filter
-    ? items.filter((item) => item.label.toLowerCase().includes(filter.toLowerCase()))
-    : items
-
-  const flatFiltered = groupItems(filtered).flatMap((g) => g.items)
-  const clampedIndex = Math.min(activeIndex, Math.max(0, flatFiltered.length - 1))
-
+  const glassRef = useRef<HTMLDivElement>(null)
+  useEffect(() => inputRef.current?.focus(), [])
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    glassRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [active, entries.length])
 
-  // Scroll active item into view (mirrors SlashMenu).
+  // esc closes; ⌘K while open closes (the toggle). Capture phase, so neither
+  // reaches the page's own handlers. A press outside the glass closes too.
   useEffect(() => {
-    const container = listRef.current
-    if (!container) return
-    const active = container.querySelector<HTMLElement>('[data-active="true"]')
-    active?.scrollIntoView({ block: 'nearest' })
-  }, [clampedIndex, flatFiltered.length])
-
-  // Close on Escape or click-outside.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
-      // ⌘K while open → close (toggle).
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        e.stopPropagation()
-        onClose()
-      }
+    function onKey(e: KeyboardEvent) {
+      const toggle = (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k'
+      if (e.key !== 'Escape' && !toggle) return
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
     }
-    document.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => document.removeEventListener('keydown', onKeyDown, { capture: true })
+    function onPointerDown(e: PointerEvent) {
+      if (glassRef.current && !glassRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('keydown', onKey, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
   }, [onClose])
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActiveIndex((i) => Math.min(i + 1, flatFiltered.length - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActiveIndex((i) => Math.max(i - 1, 0))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const selected = flatFiltered[clampedIndex]
-      if (selected) onSelect(selected)
-    }
+  function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') select(Math.min(active + 1, rows.length - 1))
+    else if (e.key === 'ArrowUp') select(Math.max(active - 1, 0))
+    else if (e.key === 'Enter') {
+      if (rows[active]) onSelect(rows[active].item)
+    } else if (e.key === 'Backspace' && query === '' && scope) setScope(null)
+    else return
+    e.preventDefault()
   }
 
-  const groups = groupItems(filtered)
-  let runningIndex = 0
-
-  return (
-    // Backdrop
-    <div
-      className={cn(dialogBackdropClass, 'flex items-start justify-center pt-[15vh]')}
-      onClick={onClose}
-      aria-modal="true"
-      role="dialog"
-      aria-label="Command palette"
-    >
-      {/* Panel — stop click-propagation so clicks inside don't close */}
-      <div
-        className="mn-arrive w-full max-w-lg rounded-mn-card bg-mn-surface shadow-mn-lg overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Search input */}
-        <div className="border-b border-mn-hair px-4 py-3 flex items-center gap-3">
-          <span
-            className="rounded-mn-chrome bg-mn-wash px-1.5 py-0.5 font-mono lowercase text-xs text-mn-text-secondary select-none"
-            aria-hidden
-          >
-            ⌘K
-          </span>
+  if (typeof document === 'undefined') return null
+  const indexOf = new Map(rows.map((r, i) => [r, i]))
+  return createPortal(
+    <>
+      <div data-part="wash" aria-hidden className={WASH} />
+      <div ref={glassRef} data-part="glass" data-kind="palette" className={GLASS}>
+        <div data-part="head" className={HEAD}>
+          <Icon name="waves-02" />
+          {scope && (
+            <span data-part="scope" className={SCOPE}>
+              in {scope.label}:
+            </span>
+          )}
           <input
             ref={inputRef}
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value)
-              setActiveIndex(0)
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="search pages or actions…"
-            className="flex-1 bg-transparent font-mono lowercase text-sm outline-none placeholder:text-mn-text-secondary text-mn-text-meta"
-            aria-label="Search pages or actions"
-            aria-autocomplete="list"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onInputKey}
+            placeholder={scope ? '' : 'jump to a page, or > for actions'}
+            className={INPUT}
             role="combobox"
+            aria-label="command palette"
             aria-expanded="true"
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={rows[active] ? rowId(active) : undefined}
+            autoComplete="off"
+            spellCheck={false}
           />
-          <button
-            onClick={onClose}
-            className="font-mono lowercase text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
-            aria-label="Close palette"
-          >
+          <button type="button" data-part="head-key" className={HEAD_KEY} onClick={onClose}>
             esc
           </button>
         </div>
-
-        {/* Results */}
-        <div ref={listRef} className="overflow-y-auto max-h-80" role="listbox">
-          {flatFiltered.length === 0 ? (
-            <p className="px-4 py-3 font-mono lowercase text-sm text-mn-text-secondary">
-              no results
-            </p>
-          ) : (
-            groups.map(({ group, items: groupItems }) => {
-              const startIndex = runningIndex
-              runningIndex += groupItems.length
+        <div
+          id={listId}
+          role="listbox"
+          aria-label="pages, records and actions"
+          className="flex max-h-[60vh] flex-col gap-[2px] overflow-y-auto"
+        >
+          {entries.map((entry, i) => {
+            if (entry.kind === 'group')
               return (
-                <div key={group}>
-                  <div className="px-4 pt-3 pb-1 font-mono lowercase text-[0.65rem] text-mn-text-secondary">
-                    {GROUP_LABELS[group]}
-                  </div>
-                  {groupItems.map((item, localI) => {
-                    const globalI = startIndex + localI
-                    const isActive = globalI === clampedIndex
-                    return (
-                      <button
-                        key={item.id}
-                        className={cn(
-                          'w-full text-left rounded-mn-row px-3 py-2 transition-colors outline-none',
-                          isActive ? 'bg-mn-selected-fill' : 'hover:bg-mn-wash'
-                        )}
-                        data-active={isActive ? 'true' : undefined}
-                        role="option"
-                        aria-selected={isActive}
-                        onMouseEnter={() => setActiveIndex(globalI)}
-                        onClick={() => onSelect(item)}
-                      >
-                        <div className="font-mono lowercase text-sm text-mn-text-meta truncate">
-                          {item.label}
-                        </div>
-                        {item.subtitle && (
-                          <div className="font-mono lowercase text-[0.65rem] text-mn-text-secondary truncate mt-0.5">
-                            {item.subtitle}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
+                <div key={`g-${i}`} data-part="group" className={GROUP}>
+                  {entry.label}
                 </div>
               )
-            })
-          )}
+            if (entry.kind === 'note')
+              return (
+                <div key={`n-${i}`} data-part="note" className={NOTE}>
+                  {entry.text}
+                </div>
+              )
+            const at = indexOf.get(entry) ?? -1
+            return (
+              <PaletteRow
+                key={entry.item.id}
+                id={rowId(at)}
+                entry={entry}
+                selected={at === active}
+                onHover={() => select(at)}
+                onPick={() => onSelect(entry.item)}
+              />
+            )
+          })}
         </div>
-
-        {/* Footer hint */}
-        <div className="border-t border-mn-hair px-4 py-2 flex gap-4 font-mono lowercase text-xs text-mn-text-secondary">
-          <span>↑↓ navigate</span>
-          <span>↵ select</span>
-          <span>esc close</span>
+        <div data-part="foot" className={FOOT}>
+          {PALETTE_FOOT.map((f) => (
+            <span key={f}>{f}</span>
+          ))}
         </div>
       </div>
-    </div>
+    </>,
+    container ?? document.body
   )
 }
