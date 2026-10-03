@@ -10,6 +10,13 @@
  * It shells out to the real script rather than importing it: the extractor is a
  * `.mts` ES module run by Node directly, and spawning it tests exactly the command
  * a person would type. It reads files and exits — no server, no browser.
+ *
+ * `--experimental-strip-types` is passed explicitly (#262). Node unflagged type
+ * stripping in 22.18, so CI (which resolves `.nvmrc`'s `22` to the latest) ran the
+ * `.mts` file bare and passed, while a 22.15 install on a developer's machine could
+ * not load it at all and this one suite was red locally on every branch. The flag
+ * has been accepted since 22.6 and is still accepted on 24, so it makes the two
+ * agree on the oldest Node the project claims rather than only the newest.
  */
 
 import { spawnSync } from 'node:child_process'
@@ -26,7 +33,7 @@ describe('board-values.generated.json', () => {
   })
 
   it('matches a fresh extraction from the handoff (run `npm run board-values`)', () => {
-    const run = spawnSync(process.execPath, [script, '--check'], {
+    const run = spawnSync(process.execPath, ['--experimental-strip-types', script, '--check'], {
       cwd: repoRoot,
       encoding: 'utf8',
       timeout: 120_000,
