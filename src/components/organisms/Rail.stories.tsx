@@ -123,6 +123,44 @@ export const Expanded: Story = {
   },
 }
 
+/**
+ * The board's row geometry, pinned. `PondRail.dc.html` renders its rows at
+ * `padding '5px 8px 5px 4px'` / `gap 7` / `line-height: normal`, measuring
+ * 26px on an area row (13.5 type) and 25px below it (13 type). #294 closed a
+ * fixed 34px against those numbers; this story is what stops them drifting
+ * back — the looseness is invisible in jsdom and in review, and only a real
+ * browser catches it.
+ */
+export const BoardRowGeometry: Story = {
+  args: { expanded: new Set(['health', 'personal']) },
+  play: async ({ canvasElement }) => {
+    const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
+    await expect(rows.length).toBeGreaterThan(4)
+
+    for (const row of rows) {
+      const css = getComputedStyle(row)
+      await expect(css.padding).toBe('5px 8px 5px 4px')
+      await expect(css.columnGap).toBe('7px')
+      await expect(css.borderTopLeftRadius).toBe('10px')
+      // the board's metric leading, not Tailwind's preflight 1.5 (= 20.25px here)
+      await expect(css.lineHeight).toBe('normal')
+    }
+
+    const heightAt = (size: string) =>
+      rows
+        .filter((r) => getComputedStyle(r).fontSize === size)
+        .map((r) => Math.round(r.getBoundingClientRect().height))
+
+    // the board's own split: areas carry 13.5 type, everything deeper 13
+    const areas = heightAt('13.5px')
+    const nested = heightAt('13px')
+    await expect(areas.length).toBeGreaterThan(0)
+    await expect(nested.length).toBeGreaterThan(0)
+    await expect([...new Set(areas)]).toEqual([26])
+    await expect([...new Set(nested)]).toEqual([25])
+  },
+}
+
 /** ARIA coordinates: levels and sibling positions come from the flattened tree. */
 export const AriaCoordinates: Story = {
   args: { expanded: new Set(['health']) },

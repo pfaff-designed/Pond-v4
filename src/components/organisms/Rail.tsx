@@ -228,6 +228,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const [hovered, setHovered] = useState(false)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
+  /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): an area
+   *  row carries 13.5 type, everything deeper 13. */
+  const isAreaRow = depth <= 1
   const state: PondMoleculeState = isSelected ? 'selected' : hovered ? 'hover' : 'rest'
   // The rail's "you are here" trail: three ink tiers on the row label. The
   // list-row molecule renders one tone (mockup default), so the rail docks its
@@ -284,16 +287,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       {/* Drop-line for a before/after reorder — a calm rule at the row's
           top/bottom edge; pointer-events-none so it never eats a drag event.
           The into-highlight is the ring on the row itself (above). */}
-      {dropZone === 'before' && (
+      {(dropZone === 'before' || dropZone === 'after') && (
         <span
           aria-hidden
-          className="pointer-events-none absolute right-4 left-[58px] -top-px h-0.5 rounded-mn-hair bg-mn-text"
-        />
-      )}
-      {dropZone === 'after' && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute right-4 left-[58px] -bottom-px h-0.5 rounded-mn-hair bg-mn-text"
+          className={`pointer-events-none absolute right-4 left-[58px] h-0.5 rounded-mn-hair bg-mn-text ${
+            dropZone === 'before' ? '-top-px' : '-bottom-px'
+          }`}
         />
       )}
 
@@ -351,11 +350,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 REAL tab stops so keyboard/AT users reach them without a pointer
                 (t27). The root (Life) is the workspace, not a row: no add/delete. */}
             {!isRoot && (onAddChild || onDelete) && (
-              <span className="flex items-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+              <span className="flex flex-none items-center gap-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                 {onAddChild && (
                   <button
                     type="button"
-                    className="grid h-4 w-4 -my-px place-items-center rounded-mn-chrome text-mn-text-meta outline-none transition-colors hover:bg-mn-text/5 hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Add sub-page"
                     aria-label={`Add sub-page to ${label}`}
                     disabled={isBusy}
@@ -377,7 +376,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onDelete && (
                   <button
                     type="button"
-                    className="grid h-4 w-4 -my-px place-items-center rounded-mn-chrome text-mn-text-meta outline-none transition-colors hover:bg-mn-hover-fill hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
                     title="Delete page"
                     aria-label={`Delete ${label}`}
                     disabled={isBusy}
@@ -401,7 +400,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           </>
         }
         className={`min-h-0 w-full flex-1 gap-[7px] py-[5px] pr-2 pl-1${
-          depth >= 2 ? ' text-[13px]' : ''
+          isAreaRow ? '' : ' text-[13px]'
         }`}
       />
     </div>

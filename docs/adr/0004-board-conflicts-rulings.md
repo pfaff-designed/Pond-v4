@@ -305,3 +305,57 @@ rulings 7–10 warn about: reading one card's value, finding the code different,
 once per card, once per ticket, each time away from the composed frame every card sits inside. The
 check is the same as before: **before ruling a value wrong, read what the composed board draws.** Here
 it draws the Shell's glass, five times.
+
+## Ruling 12, 2026-10-03 — `PondRail`'s row values are the board's, and #294's prose points the other way
+
+### The conflict
+
+#229's divergence list is headed **"Divergences to fix (`board → code`)"**, and the arrows mean exactly that:
+left is the board, right is what the code currently does. Two bullets label their own sides and settle it —
+"**row height:** board ~23px (pad `5px 8px 5px 4px`…) → a fixed **34px**" and "chevron colour `ink .68` →
+**ink .3** (a fourth tier…)", where `.3` is `--mn-mark-faint`, the code's own illegal fourth tier.
+
+**#294 inherited those arrows without their labels.** Read as plain English imperatives, four of its seven
+bullets point _away_ from the board:
+
+| #294 reads                                | the board actually says                             |
+| ----------------------------------------- | --------------------------------------------------- |
+| "chevron `ink .68` → ink .3"              | `chev.color: rgba(27,29,20,0.68)`, all 16 rows      |
+| "indent step 14 → 16px"                   | `PondRail.dc.html:59` `const indent = 14`           |
+| "empty hint → 13"                         | `hint.fontSize: 12.5` (and `newRow.fontSize: 12.5`) |
+| "one row size (drop the 13.5 / 13 split)" | fs **13.5** at guides ≤ 1, **13** at guides ≥ 2     |
+
+### The ruling
+
+**The board wins on all four**, per ADR 0003's amendment ¶1 ("a value written in a board wins, always") and
+its closing line ("when a builder reports that a stated rule contradicts a board, believe the board"). So the
+rail **regains** the 13.5/13 depth split rather than collapsing to one size, and the chevron goes to .68.
+Taking #294's English at face value would have shipped four regressions.
+
+**Before 'fixing' the rail's chevron to .3 or flattening its row sizes: the board is the authority, not #294's
+bullet text.** #229, the parent, holds the measured spec.
+
+### Two consequences recorded here rather than in a comment
+
+1. **`shell-reskin`'s type guard was narrowed, deliberately.** It asserted
+   `expect(src).not.toMatch(/text-\[[0-9.]+(px|rem|em)\]/)` — banning bracket notation, which is ADR 0003's
+   **original** type ruling, superseded by that ADR's own 2026-10-01 amendment ¶3: replace Tailwind named
+   sizes "with the board's exact value **in bracket notation**". The guard survived only because `TOUCHED` is
+   a 12-file whitelist excluding `PondMolecule`, `CommandPalette`, `SlashMenu` and the diff cards, all of
+   which already use bracket type. The named-size ban — the half the amendment keeps — stays.
+
+2. **The rail's row leading is a CSS rule in `globals.css`, not a utility, and that is not laziness.** The
+   boards render rows at metric `line-height: normal`; Tailwind's preflight sets `html { line-height: 1.5 }`,
+   which inflates the board's 26px row to 30.25px. Measured in the running app, **both `leading-[normal]` and
+   `[line-height:normal]` emit nothing in this build** (rows stayed 30.25/29.5), though `leading-[normal]`
+   does compile under a bare `@tailwindcss/cli` — the `--leading-*` theme namespace appears to validate that
+   utility as length-or-number and drop the `normal` keyword. No ratio substitutes: `normal` is font-metric,
+   so no single number yields both 26px at 13.5 and 25px at 13. **Re-measure before simplifying it.**
+   `Rail.stories.tsx`'s `BoardRowGeometry` pins all of it in a real browser.
+
+### The pattern, for the sixth time
+
+Same shape as rulings 7–11, one step earlier in the chain: this time the plausible-sounding statement that
+would have condemned correct values was **the issue text itself**, not a README or a derived rule. A split
+issue inherits its parent's conventions along with its words. **When a child issue and the board disagree,
+the board is the spec and the parent holds it.**
