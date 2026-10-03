@@ -181,14 +181,15 @@ describe('Life is a page (#234)', () => {
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
     expect(await screen.findByPlaceholderText('Write something…')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Filter blocks')).not.toBeInTheDocument()
+    expect(screen.queryByRole('listbox', { name: 'blocks' })).not.toBeInTheDocument()
   })
 
   it('add → “/” summons the palette and persists the pick to the home row', async () => {
+    // #278: rows speak Pond's words — `checklist` is the todo type, `gallery` a view mode.
     const cases: Array<{ name: string; type: string }> = [
-      { name: 'Todo', type: 'todo' },
-      { name: 'Table', type: 'table' },
-      { name: 'View', type: 'view' },
+      { name: 'checklist', type: 'todo' },
+      { name: 'table', type: 'table' },
+      { name: 'gallery', type: 'view' },
     ]
     for (const c of cases) {
       HOME_BLOCKS = []
@@ -197,9 +198,8 @@ describe('Life is a page (#234)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
       const editor = await screen.findByPlaceholderText('Write something…')
       fireEvent.change(editor, { target: { value: '/' } })
-      const filter = await screen.findByLabelText('Filter blocks')
-      fireEvent.change(filter, { target: { value: c.name } })
-      const menu = screen.getByRole('menu', { name: 'Block picker' })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      fireEvent.change(editor, { target: { value: `/${c.name}` } })
       fireEvent.click(within(menu).getByText(c.name))
       // The pick persists to the HOME row (id 'home-1'), not any area. Matched on
       // the picked block, not "the first save": the panel's debounced save is not

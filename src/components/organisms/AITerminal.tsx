@@ -59,7 +59,7 @@ import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-t
 import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import { SavePickerModal } from './SavePickerModal'
-import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
+import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
 import {
   TextSelectionPopover,
   type SelectionContext,
@@ -148,10 +148,11 @@ import type {
 
 type CommandResult = 'clear' | 'handoff' | 'save' | null
 
-const CHAT_COMMANDS: SlashMenuItem[] = [
-  { id: 'clear', name: '/clear', description: 'Clear the conversation and start fresh' },
-  { id: 'handoff', name: '/handoff', description: 'Extract entities and start a fresh session' },
-  { id: 'save', name: '/save', description: 'Save the conversation to a page' },
+// The composer's `/` rows — the same `/` menu as the page's (#278), lowercase.
+const CHAT_COMMANDS: SlashRow[] = [
+  { id: 'clear', label: '/clear', description: 'clear the thread and start again' },
+  { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
+  { id: 'save', label: '/save', description: 'save the thread to a page' },
 ]
 
 // Remembered drawer ergonomics (ticket-24).
@@ -1217,13 +1218,16 @@ export function AITerminal() {
     ghostKeyHandler(e)
     if (e.defaultPrevented) return
 
-    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"): stop a
-    // stream and keep what arrived; else close the / menu; else leave the field.
-    // It never clears what was typed (G1: a failed answer keeps what you typed).
+    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"), innermost
+    // layer first. While the / menu is open it is that layer: SlashMenu takes esc
+    // on the document in the capture phase and stops it, so it closes — keeping
+    // the typed text (the board's `esc keep as text`) — and this handler never
+    // sees that press. The next esc reaches here: stop a stream and keep what
+    // arrived; else leave the field. It never clears what was typed (G1: a
+    // failed answer keeps what you typed).
     if (e.key === 'Escape') {
       e.preventDefault()
       if (isStreaming) stop()
-      else if (chatMenuOpen) setChatMenuOpen(false)
       else e.currentTarget.blur()
       return
     }
@@ -2714,22 +2718,23 @@ export function AITerminal() {
             <div ref={composerRef} className="motion-focus-draw relative flex-1">
               {chatMenuOpen && (
                 <SlashMenu
-                  items={CHAT_COMMANDS}
-                  onSelect={(item) => {
+                  rows={CHAT_COMMANDS}
+                  query={input.slice(1)}
+                  anchor={composerRef}
+                  side="top"
+                  label="commands"
+                  onSelect={(row) => {
                     setChatMenuOpen(false)
                     setInput('')
-                    if (item.id === 'clear') {
+                    if (row.id === 'clear') {
                       handleClear()
-                    } else if (item.id === 'handoff') {
+                    } else if (row.id === 'handoff') {
                       handleHandoff()
-                    } else if (item.id === 'save') {
+                    } else if (row.id === 'save') {
                       setIsSavePickerOpen(true)
                     }
                   }}
                   onClose={() => setChatMenuOpen(false)}
-                  // ticket-41: anchored above the composer, so it grows from its
-                  // bottom edge (--motion-menu-origin overrides the default top-left).
-                  className="absolute bottom-full left-0 z-20 w-64 mb-1 [--motion-menu-origin:bottom_left]"
                 />
               )}
               {/* Ghost suggestion (ticket-40 §5) — behind the textarea, visible only when empty */}

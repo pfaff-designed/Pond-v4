@@ -9,7 +9,7 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -73,8 +73,8 @@ describe('Insert-between affordance', () => {
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const insertButtons = await screen.findAllByRole('button', { name: 'Insert block' })
     fireEvent.click(insertButtons[0])
-    // Palette filter input should appear
-    expect(await screen.findByLabelText('Filter blocks')).toBeInTheDocument()
+    // The `/` menu lists the blocks (#278: no filter input — the query is typed on the page)
+    expect(await screen.findByRole('listbox', { name: 'blocks' })).toBeInTheDocument()
   })
 
   it('selecting from palette inserts a new block', async () => {
@@ -82,11 +82,8 @@ describe('Insert-between affordance', () => {
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const insertButtons = await screen.findAllByRole('button', { name: 'Insert block' })
     fireEvent.click(insertButtons[0])
-    // Wait for palette
-    const filterInput = await screen.findByLabelText('Filter blocks')
-    fireEvent.change(filterInput, { target: { value: 'Todo' } })
-    const todoButton = await screen.findByText('Todo')
-    fireEvent.click(todoButton)
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.click(within(menu).getByText('checklist'))
     // Should commit blocks with a new todo block
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
     const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]

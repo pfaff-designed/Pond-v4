@@ -22,7 +22,9 @@ export type TextBlock = z.infer<typeof textSchema>
 
 export const textDescriptor: ModuleDescriptor<TextBlock> = {
   type: 'text',
+  label: 'text',
   schema: textSchema,
+  paletteDescription: 'prose on a page — notes, explanations, any writing',
   description:
     'A prose block written in markdown. Use for notes, explanations, headings, and any freeform writing.',
   serialize: (data) => data.content,

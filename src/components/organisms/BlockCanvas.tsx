@@ -37,18 +37,20 @@ import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { SlashMenu, type SlashMenuItem } from '@/components/molecules/SlashMenu'
+import { SlashMenu, type SlashRow, type TemplatePick } from '@/components/molecules/SlashMenu'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
-import { paletteItems, emptyBlockForType, BOARD_PRESET_ID } from '@/lib/modules/palette'
-import { ensureBoardGroupBy } from '@/lib/modules/view/board-preset'
+import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
+import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
+import { instantiateTemplate } from '@/lib/templates/instantiate'
 import {
   createDatabaseFromList,
   inferListDatabaseTitle,
   previewListTable,
 } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
-import { deletePage } from '@/lib/pages/client'
+import { createPage, defineSchema, deletePage } from '@/lib/pages/client'
+import { insertPageOptimistic } from '@/lib/pages/tree'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
 import { useQueryClient } from '@tanstack/react-query'
@@ -231,39 +233,52 @@ export function BlockCanvas({
     })
   }
 
-  // Build the `/board` preset block (board-authoring Slice 1): ensure the host page
-  // has a status/select property to group by (seeding a default Status when it
-  // isn't yet a collection), mint a `view` block in board mode grouped by it, and
-  // invalidate the host page's cache so the view re-reads the freshly-seeded schema.
-  // Async (a schema write), so callers await it before splicing into `blocks`.
-  async function buildBoardBlock(): Promise<Block | null> {
-    try {
-      const base = emptyBlockForType('view')
-      if (!base || base.type !== 'view') return null
-      const groupBy = await ensureBoardGroupBy(getSupabase(), pageId)
-      queryClient.invalidateQueries({ queryKey: ['page', pageId] })
-      return { ...base, mode: 'board', groupBy }
-    } catch (err) {
-      console.error('Failed to create board', err)
-      return null
-    }
-  }
-
-  // Insert an empty block of the picked palette type at `at` (ticket-37). No-op
-  // for a type with no empty-state factory (unknown module). The `/board` preset
-  // takes the async collection-seeding path instead.
-  async function insertBlockAt(at: number, item: SlashMenuItem) {
-    if (item.id === BOARD_PRESET_ID) {
-      const nb = await buildBoardBlock()
-      if (!nb) return
-      markInserted(nb.id)
-      onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
-      return
-    }
-    const nb = emptyBlockForType(item.id)
+  // Insert the block a `/` row mints at `at` (ticket-37, #278). A row is a preset
+  // — `list` is `todo` at the dot marker, `chart` is `view` in chart mode — so the
+  // palette mints it; a row with no factory is a no-op, never a crash.
+  function insertBlockAt(at: number, row: SlashRow) {
+    const nb = mintPreset(row.id)
     if (!nb) return
     markInserted(nb.id)
     onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
+  }
+
+  // `page from template › ↵ new nested page` (#278): make the page the template
+  // describes UNDER this one — its title, its blocks and, for a collection, its
+  // schema — through the same seams the AI's create_page path uses
+  // (`instantiateTemplate`, #261), then go there. The `/…` text block that summoned
+  // the menu was a command, so it goes. The one-way provenance stamp, the cursor
+  // landing on the title and `→ preview` are #156's. A person's own templates
+  // (`yours`, #157) are not passed in here yet, so only a premade kind arrives.
+  async function makeNestedPageFromTemplate(pick: TemplatePick, replaceAt: number | null) {
+    if (pick.origin !== 'premade') return
+    try {
+      const made = instantiateTemplate(PREMADE_TEMPLATES[pick.kind])
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const created = await createPage(supabase, user.id, {
+        parentId: pageId,
+        type: 'page',
+        title: made.title,
+        blocks: made.blocks,
+        workspace,
+      })
+      if (made.schema) await defineSchema(supabase, created.id, made.schema)
+      if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
+      insertPageOptimistic(queryClient, workspace, {
+        id: created.id,
+        parentId: pageId,
+        type: created.type,
+        title: created.title,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
+    } catch (err) {
+      console.error('Failed to make a page from the template', err)
+    }
   }
 
   // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
@@ -291,7 +306,10 @@ export function BlockCanvas({
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
         <div className="space-y-0">
-          <InsertBetween onInsert={(item) => insertBlockAt(0, item)} />
+          <InsertBetween
+            onInsert={(row) => insertBlockAt(0, row)}
+            onPickTemplate={(pick) => void makeNestedPageFromTemplate(pick, null)}
+          />
           {blocks.map((block, i) => (
             <React.Fragment key={block.id}>
               <BlockEditor
@@ -304,21 +322,18 @@ export function BlockCanvas({
                 onMoveDown={() => moveBlockAt(i, 'down')}
                 onSlashKey={() => setSlashMenuOpenAt(i)}
                 slashMenuOpen={slashMenuOpenAt === i}
-                onSlashSelect={async (item) => {
-                  // Replace the empty text block at i with the picked module's
-                  // empty state (the `/` gesture: text block → chosen block). The
-                  // `/board` preset takes the async collection-seeding path.
-                  const nb =
-                    item.id === BOARD_PRESET_ID
-                      ? await buildBoardBlock()
-                      : emptyBlockForType(item.id)
-                  if (!nb) {
-                    setSlashMenuOpenAt(null)
-                    return
-                  }
+                onSlashSelect={(row) => {
+                  // Replace the `/…` text block at i with the picked row's block
+                  // (the `/` gesture: text block → chosen block).
+                  setSlashMenuOpenAt(null)
+                  const nb = mintPreset(row.id)
+                  if (!nb) return
                   markInserted(nb.id)
                   onChange(blocks.map((b, bi) => (bi === i ? nb : b)))
+                }}
+                onSlashPickTemplate={(pick) => {
                   setSlashMenuOpenAt(null)
+                  void makeNestedPageFromTemplate(pick, i)
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
                 menuOpen={menuOpenAt === i}
@@ -464,6 +479,7 @@ function BlockEditor({
   onMoveUp,
   onMoveDown,
   onSlashKey,
+  onSlashPickTemplate,
   slashMenuOpen,
   onSlashSelect,
   onSlashClose,
@@ -487,7 +503,8 @@ function BlockEditor({
   onMoveDown?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
-  onSlashSelect?: (item: SlashMenuItem) => void
+  onSlashSelect?: (row: SlashRow) => void
+  onSlashPickTemplate?: (pick: TemplatePick) => void
   onSlashClose?: () => void
   menuOpen?: boolean
   menuItems?: BlockMenuItem[]
@@ -502,7 +519,12 @@ function BlockEditor({
 }) {
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const frame = blockFrame(block)
+  // The `/` menu's query is what follows the slash in THIS text block (#278): the
+  // board has no filter input — the person keeps typing on the page.
+  const slashQuery =
+    slashMenuOpen && block.type === 'text' ? (block as { content: string }).content.slice(1) : ''
   const { state, onEmptyAction, emptyLine } = useBlockEmptyState(block, frame, pageId, onChange)
 
   const view = (
@@ -512,16 +534,14 @@ function BlockEditor({
       editable
       onChange={(next) => {
         const nextBlock = next as Block
-        // `/` typed into an EMPTY text block opens the palette instead of
-        // persisting the slash (ticket-37). Only the empty→'/' transition fires.
-        if (
-          nextBlock.type === 'text' &&
-          block.type === 'text' &&
-          (block as { content: string }).content === '' &&
-          (nextBlock as { content: string }).content === '/'
-        ) {
-          onSlashKey?.()
-          return
+        if (nextBlock.type === 'text' && block.type === 'text') {
+          const was = (block as { content: string }).content
+          const now = (nextBlock as { content: string }).content
+          // `/` typed into an EMPTY text block opens the menu (ticket-37, #278).
+          // The slash STAYS as text — it is the query the person is typing, and
+          // esc keeps it. Deleting it back out closes the menu.
+          if (was === '' && now === '/') onSlashKey?.()
+          else if (slashMenuOpen && !now.startsWith('/')) onSlashClose?.()
         }
         onChange(nextBlock)
       }}
@@ -553,6 +573,7 @@ function BlockEditor({
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         'group relative',
         settleOnMount && 'motion-settle-in',
@@ -628,13 +649,15 @@ function BlockEditor({
         />
       )}
 
-      {/* The `/` block palette, anchored under this block (ticket-37). */}
+      {/* The `/` menu, hung under this block (ticket-37, #278). */}
       {slashMenuOpen && (
         <SlashMenu
-          items={paletteItems}
+          rows={slashRows}
+          query={slashQuery}
+          anchor={rootRef}
           onSelect={onSlashSelect ?? (() => {})}
+          onPickTemplate={onSlashPickTemplate}
           onClose={onSlashClose ?? (() => {})}
-          className="absolute left-0 top-full z-10 mt-1 w-72"
         />
       )}
 

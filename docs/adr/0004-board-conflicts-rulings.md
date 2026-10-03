@@ -223,3 +223,63 @@ This would have been the fifth instance of the failure ADR 0003's third amendmen
 orchestrator as the author of the wrong rule. The check that caught it is the one appended with rulings 7–9
 today, and it generalises past `dc-import`: **before ruling a value wrong, read what the board does for the
 sibling case.** A board's internal consistency is evidence; a convention from outside it is not.
+
+---
+
+## Ruling 11, 2026-10-03 — the dark floating glass is the Shell's, through one `.mn-glass`, for every consumer
+
+### The conflict
+
+Two component cards each restate the dark glass with their own ink delta, and neither agrees with the
+composed Shell:
+
+| source                                | background                                                      | border                  | shadow                                                             |
+| ------------------------------------- | --------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| `Pond 05 Shell.dc.html` (dark frames) | `linear-gradient(160deg,rgba(72,73,64,.86),rgba(48,49,42,.66))` | `rgba(250,249,239,.2)`  | `inset 0 1px 0 rgba(250,249,239,.12), 0 20px 54px rgba(0,0,0,.44)` |
+| `PondPicker.dc.html` (`theme=ink`)    | `linear-gradient(160deg,rgba(48,49,42,.92),rgba(48,49,42,.78))` | `rgba(250,249,239,.09)` | `inset 0 1px 0 rgba(250,249,239,.06), 0 20px 54px rgba(0,0,0,.42)` |
+| `PondComposer.dc.html` (dark)         | `rgba(48,49,42,.92) → .78`                                      | `rgba(250,249,239,.09)` | — (restated in #230's body as a divergence to fix)                 |
+
+`globals.css`'s dark `--mn-glass-*` trio is the Shell's row, annotated _"Pond 05 dark frames, computed
+verbatim"_. The #278 spec review read the picker card against it and called the picker wrong; #230's
+issue body reads the composer card against the same trio and calls the composer wrong. Same pair of
+values, two cards, two tickets.
+
+### The ruling
+
+**On the dark theme the whole floating-glass family takes the Shell's values, through the one shared
+`.mn-glass` / `--mn-glass-bg` / `--mn-glass-border` / `--mn-glass-shadow`.** The per-component ink deltas
+in `PondPicker.dc.html` and `PondComposer.dc.html` are isolated restatements and are **deliberately not
+implemented**. No consumer forks a dark glass of its own.
+
+This binds every consumer, present and future: the rail cluster, the breadcrumb pill, the composer, the
+selection bar, the `/` menu, the palette (#279) and the source picker (#280). **#230 must not "fix" the
+composer's dark glass toward its component card** — that is exactly the re-litigation this ADR exists to
+prevent, and the divergence line in its body is withdrawn by this ruling.
+
+### Evidence
+
+1. **The Shell draws it five times.** `Pond 05 Shell.dc.html` carries the `.86 → .66` / `.2` recipe at five
+   occurrences across its dark frames — one value for every floating object on the screen. The component
+   cards each carry their delta once, in isolation, and the two cards do not even cite each other.
+2. **Ruling 3 is the precedent, exactly.** The composer's width was ruled 534 over the card's 560 because
+   _the composed context outranks the isolated component card_: the Shell is unanimous across its frames
+   and is what a person actually sees. The dark glass is the same shape of conflict on the same two
+   boards, and the same reasoning gives the same answer.
+3. **A fork would split one visual object across one screen.** Four surfaces already consume `.mn-glass`.
+   A picker-only (or composer-only) dark trio would put the `/` menu, the rail cluster and the breadcrumb
+   on one dark screen in three glasses that differ by a few hundredths of alpha — a difference no board
+   draws and no person could name, but one that would read as the chrome not agreeing with itself.
+
+### What this does not decide
+
+The **light** glass is not in conflict: `.mn-glass`'s paper recipe is byte-for-byte the picker card's
+`glass` (`rgba(255,255,255,.86) → .64`, border `.9`, shadow `.7` + `rgba(40,34,24,.14)`), and the Shell's
+light frames agree. Only the dark theme has two readings, and only the dark theme is ruled here.
+
+### The pattern, for the record
+
+This is the family-wide version of ruling 3. The thing that would have gone wrong is the thing
+rulings 7–10 warn about: reading one card's value, finding the code different, and "fixing" the code —
+once per card, once per ticket, each time away from the composed frame every card sits inside. The
+check is the same as before: **before ruling a value wrong, read what the composed board draws.** Here
+it draws the Shell's glass, five times.

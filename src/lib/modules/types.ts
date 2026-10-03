@@ -104,15 +104,23 @@ export type NestedIdPath<T> = T extends object
 export interface ModuleDescriptor<T = unknown, Path extends string = NestedIdPath<T>> {
   type: string
   schema: ZodType<T>
+  /**
+   * The block's name in Pond's words (#278) — `Pond 03 Concepts` 3a's glossary or a
+   * row `PondPicker.dc.html` draws — lowercase, as the `/` menu renders it. The
+   * `type` string is build vocabulary (`todo`, `view`) and never reaches a surface;
+   * this does. A module must name itself here to register at all.
+   */
+  label: string
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
   description: string
   /**
-   * Short (≤2 sentence) label for the block palette UI (UI-audit Slice 2). The
-   * long `description` above is the AI catalog text and reads too long in the
-   * picker; `palette.ts` prefers this when present and falls back to `description`.
-   * Keep it human, imperative, and terse — no schema/JSON detail.
+   * The `/` menu's short line for this block (#278): lowercase, under ~80
+   * characters, in Pond's words. The menu matches a typed query against it and
+   * shows it as the row's hint when the match came through it rather than the
+   * label. The long `description` above is the AI catalog text and never reaches
+   * the menu.
    */
-  paletteDescription?: string
+  paletteDescription: string
   /**
    * Full-fidelity text rendering of a block — the prompt body and the embedding
    * source. REQUIRED: a block the model cannot read here is silently destroyed on

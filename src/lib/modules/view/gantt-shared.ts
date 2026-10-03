@@ -69,8 +69,8 @@ export function formatTick(iso: string): string {
  * The board's `done` bar — `['book the van', 0, 8, 1]` — is the task the kanban
  * beside it files under its `done` lane (`project › tasks — board`), so a row is
  * done when a status/select property resolves to an option labelled `done`,
- * case-insensitive. The first status/select property decides, the same one a
- * `/board` groups by (`ensureBoardGroupBy`). No such property → nothing is done.
+ * case-insensitive. The first status/select property decides (`firstGroupingDef`),
+ * the same one a board's lanes column by. No such property → nothing is done.
  */
 export function ganttRowDone(schema: PropertySchema, row: CollectionRow): boolean {
   const def = firstGroupingDef(schema)

@@ -38,7 +38,7 @@ import {
   createPageBlockSchema,
   moduleCatalog,
 } from '@/lib/modules/ai-composition'
-import { emptyBlockForType, paletteItems } from '@/lib/modules/palette'
+import { emptyBlockForType, slashRows } from '@/lib/modules/palette'
 import { blockFrame, blockIsEmpty, POND_BLOCK_EMPTY_ACTION_WIRED } from '@/lib/modules/block-frame'
 
 /** The board's `project` → `updates` fixture: sans. */
@@ -194,7 +194,7 @@ describe('entries in moduleDataSchema (the AI emit union)', () => {
 
 describe('entries in the palette and the frame', () => {
   it('is offered by the palette and mints an EMPTY log (the frame’s `no entries yet` / `write one` is the authoring state)', () => {
-    expect(paletteItems.some((i) => i.id === 'entries')).toBe(true)
+    expect(slashRows.some((r) => r.type === 'entries')).toBe(true)
     const empty = emptyBlockForType('entries')
     expect(empty).toMatchObject({ type: 'entries', entries: [] })
     expect(blockSchema.safeParse(empty).success).toBe(true)

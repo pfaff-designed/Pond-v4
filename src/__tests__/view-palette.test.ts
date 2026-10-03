@@ -6,21 +6,22 @@
  * a future registry change can't silently drop it back out or return a crash-prone
  * empty state.
  */
-import { paletteItems, emptyBlockForType } from '@/lib/modules/palette'
+import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { moduleRenderers } from '@/lib/modules/renderers'
 
-describe('view in the block palette', () => {
-  it('is offered in the palette (no longer excluded)', () => {
-    expect(paletteItems.some((i) => i.id === 'view')).toBe(true)
+describe('view in the / menu', () => {
+  it('is offered — through its modes (gallery, chart, big number), never as a plain `view` row (#278)', () => {
+    expect(slashRows.some((r) => r.type === 'view')).toBe(true)
+    expect(slashRows.some((r) => r.label === 'view')).toBe(false)
   })
 
   it("still excludes the structural 'page' type", () => {
-    expect(paletteItems.some((i) => i.id === 'page')).toBe(false)
+    expect(slashRows.some((r) => r.type === 'page')).toBe(false)
   })
 
   it("table is STILL offered — it's the freeform-grid primitive", () => {
-    expect(paletteItems.some((i) => i.id === 'table')).toBe(true)
+    expect(slashRows.some((r) => r.type === 'table')).toBe(true)
   })
 
   it('mints a table-mode view with a fresh id as its empty state', () => {
@@ -61,20 +62,17 @@ describe('the deleted data-holding display blocks (#111)', () => {
   })
 
   it.each(deleted)('%s mints nothing from the palette', (type) => {
-    expect(paletteItems.some((i) => i.id === type)).toBe(false)
+    expect(slashRows.some((r) => r.type === type || r.id === type)).toBe(false)
     expect(emptyBlockForType(type)).toBeNull()
   })
 
-  it('every registered content type is offered — `page` is the only exclusion', () => {
+  it('every registered content type is reached by a row — `page` is the only exclusion', () => {
     const registered = Object.keys(moduleDescriptors).filter((t) => t !== 'page')
-    // `board` is a preset that mints a `view`, not a type of its own.
-    const offered = paletteItems.map((i) => i.id).filter((id) => id !== 'board')
-    expect(offered.sort()).toEqual(registered.sort())
+    const reached = [...new Set(slashRows.map((r) => r.type).filter((t): t is string => !!t))]
+    expect(reached.sort()).toEqual(registered.sort())
   })
 
-  it('leaves the palette with the live authoring vocabulary only', () => {
-    expect(paletteItems.map((i) => i.id).sort()).toEqual(
-      ['board', 'entries', 'highlight', 'image', 'table', 'text', 'todo', 'view'].sort()
-    )
+  it('offers no `board` row — the board (design) draws none; a board is the view block’s mode (ADR 0007)', () => {
+    expect(slashRows.some((r) => r.id === 'board')).toBe(false)
   })
 })

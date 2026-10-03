@@ -188,9 +188,16 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
     const editor = await screen.findByPlaceholderText('Write something…')
     fireEvent.change(editor, { target: { value: '/' } })
-    const filterInput = await screen.findByLabelText('Filter blocks')
-    fireEvent.change(filterInput, { target: { value: 'Todo' } })
-    fireEvent.click(await screen.findByText('Todo'))
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // #278: the query is the text typed on the page after the `/`.
+    fireEvent.change(editor, { target: { value: '/check' } })
+    // The matched label is split pre / hit / post, so find the row by its whole text.
+    const row = await waitFor(() => {
+      const match = screen.getAllByRole('option').find((o) => o.textContent?.includes('checklist'))
+      if (!match) throw new Error('no checklist row')
+      return match
+    })
+    fireEvent.click(row)
 
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
     const call = mockCommitBlocks.mock.calls.find(([, , pageId]) => pageId === 'page-1')!

@@ -35,7 +35,7 @@ import {
   createPageBlockSchema,
   moduleCatalog,
 } from '@/lib/modules/ai-composition'
-import { emptyBlockForType, paletteItems } from '@/lib/modules/palette'
+import { emptyBlockForType, slashRows } from '@/lib/modules/palette'
 import { blockFrame } from '@/lib/modules/block-frame'
 
 const kept: HighlightBlock = {
@@ -98,7 +98,7 @@ describe('highlight schema + registry facets', () => {
   })
 
   it('is offered by the palette and mints an empty passage', () => {
-    expect(paletteItems.some((i) => i.id === 'highlight')).toBe(true)
+    expect(slashRows.some((r) => r.type === 'highlight')).toBe(true)
     const empty = emptyBlockForType('highlight')
     expect(empty).not.toBeNull()
     expect(empty).toMatchObject({ type: 'highlight', content: '' })
