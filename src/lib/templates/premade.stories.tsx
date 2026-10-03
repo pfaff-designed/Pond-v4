@@ -145,8 +145,9 @@ function TemplateBlockView({
     ) : (
       <ModuleView type={block.type} data={block} />
     )
-  // Bare prose: `padding 2px 4px`, no card — exactly `BlockEditor`'s unframed branch.
-  if (!frame) return <div className="px-1 py-0.5">{view}</div>
+  // Exactly `BlockEditor`'s unframed branch: bare prose at `padding 2px 4px`, no
+  // card; a block that is its OWN card (the chart card, #227) as it is.
+  if (!frame) return block.type === 'text' ? <div className="px-1 py-0.5">{view}</div> : view
   const { state, emptyLine } =
     block.type === 'view' ? storyViewState(block, rows) : { state: 'rest' as const }
   return (

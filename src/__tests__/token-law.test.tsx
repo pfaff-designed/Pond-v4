@@ -23,7 +23,7 @@ import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { READING_PROSE_CLASS, TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { SandboxBanner } from '@/components/molecules/SandboxBanner'
-import { ChartCard, KICKER } from '@/lib/modules/chart/card'
+import { ChartCard } from '@/lib/modules/chart/card'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
 import { ModuleDiffCard } from '@/components/molecules/ModuleDiffCard'
 import { BlockHandleMenu } from '@/components/molecules/BlockHandleMenu'
@@ -485,25 +485,26 @@ describe('Markdown — page prose is full ink', () => {
   })
 })
 
-// ── Block eyebrow in the wrong medium ───────────────────────────────────────
+// ── The chart card's two voices land on the right elements ──────────────────
 
-describe('ChartCard — the block eyebrow is the page eyebrow (sans, uppercase)', () => {
-  it('KICKER is pageEyebrowClass, not a mono lowercase recipe', () => {
-    expect(KICKER).toBe(pageEyebrowClass)
-    expect(KICKER).not.toMatch(/font-mono|lowercase|tracking-wider/)
-  })
-
-  it('renders the title with the sans eyebrow', () => {
-    render(
-      <ChartCard title="kcal by week" points={[]} seriesColors={[]}>
+describe('ChartCard — the title is sans 15/500 at full ink; the mono voice is the type tag (#227)', () => {
+  it('the title is neither an eyebrow nor mono; the type tag is mono 10.5 at the .8 tier', () => {
+    const { container } = render(
+      <ChartCard kind="line" title="kcal by week">
         <svg />
       </ChartCard>
     )
     const title = screen.getByText('kcal by week')
-    expect(title.className).toMatch(/font-sans/)
-    expect(title.className).toMatch(/uppercase/)
-    expect(title.className).toMatch(/text-\[10\.5px\]/)
-    expect(title.className).toMatch(/tracking-\[0\.1em\]/)
+    expect(title.className).toMatch(/text-\[15px\]/)
+    expect(title.className).toMatch(/font-medium/)
+    expect(title.className).not.toMatch(/font-mono|uppercase|tracking-|text-mn-text-secondary/)
+    const tag = container.querySelector<HTMLElement>('[data-part="type"]')!
+    expect(tag.textContent).toBe('line')
+    expect(tag.className).toMatch(/font-mono/)
+    expect(tag.className).toMatch(/text-\[10\.5px\]/)
+    expect(tag.className).toMatch(/text-mn-text-meta/)
+    // The card inherits the page's sans; no Tailwind named size anywhere on it (#217).
+    expect(container.innerHTML).not.toMatch(/text-(xs|sm|base|lg|xl)\b/)
   })
 })
 

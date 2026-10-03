@@ -569,32 +569,44 @@ describe('BlockCanvas — the offered action does the thing it offers', () => {
   })
 })
 
-// ── The chart card’s degenerate case takes the shared treatment ──────────────────
+// ── The chart card’s empty state is the shared box, with its own TRUE line ───────
 
-describe('ChartCard — no `No data yet`; the shared box with its own TRUE line, alone', () => {
-  it('no points: the shared empty box reads `no data yet`', () => {
+describe('ChartCard — the shared empty box, the board’s copy, and never a dead `add a row` (#227)', () => {
+  it('empty with a source: `no rows in {source} yet` + `add a row`, wired; the plot is hidden', () => {
+    const onEmptyAction = jest.fn()
     const { container } = render(
-      <ChartCard points={[]} seriesColors={['#000']}>
+      <ChartCard kind="line" state="empty" source="weigh-ins" onEmptyAction={onEmptyAction}>
+        <svg data-testid="plot" />
+      </ChartCard>
+    )
+    expect(screen.getByText('no rows in weigh-ins yet')).toBeInTheDocument()
+    expect(container.querySelector('[data-part="empty"]')).not.toBeNull()
+    expect(screen.queryByTestId('plot')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'add a row' }))
+    expect(onEmptyAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('an overriding line (rows exist, nothing numeric) draws `no data yet` and NO action', () => {
+    render(
+      <ChartCard kind="line" state="empty" source="weigh-ins" emptyLine={CHART_EMPTY_LINE}>
         <svg data-testid="plot" />
       </ChartCard>
     )
     expect(CHART_EMPTY_LINE).toBe('no data yet')
     expect(screen.queryByText('No data yet')).toBeNull()
     expect(screen.getByText('no data yet')).toBeInTheDocument()
-    expect(container.querySelector('[data-part="empty"]')).not.toBeNull()
-    expect(screen.queryByTestId('plot')).toBeNull()
+    expect(screen.queryByText('no rows yet')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('points with no numeric series: `no data yet` is still true where `no rows yet` would not be', () => {
+  it('an unwired action is not drawn — offered or absent, never faked', () => {
     render(
-      <ChartCard points={[{ x: '2026-01', values: {} }]} seriesColors={['#000']}>
-        <svg data-testid="plot" />
+      <ChartCard kind="line" state="empty" source="weigh-ins">
+        <svg />
       </ChartCard>
     )
-    expect(screen.getByText('no data yet')).toBeInTheDocument()
-    expect(screen.queryByText('no rows yet')).toBeNull()
-    expect(screen.queryByTestId('plot')).toBeNull()
+    expect(screen.getByText('no rows in weigh-ins yet')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })
 

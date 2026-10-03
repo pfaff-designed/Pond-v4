@@ -19,6 +19,8 @@ const meta = {
   title: 'Modules/View/Chart kinds',
   component: CollectionView,
   parameters: { layout: 'padded' },
+  // #227: the card's `reads` row names the source, so every kind carries one here.
+  args: { chartProvenance: { source: 'ledger' } },
 } satisfies Meta<typeof CollectionView>
 
 export default meta
@@ -48,40 +50,139 @@ const schema: PropertySchema = [
   { id: 'p-day', name: 'Day', type: 'date' },
 ]
 
-const r = (id: string, title: string, values: Record<string, unknown>): CollectionRow => ({ id, title, values })
+const r = (id: string, title: string, values: Record<string, unknown>): CollectionRow => ({
+  id,
+  title,
+  values,
+})
 
 const rows: CollectionRow[] = [
-  r('t1', 'Flat', { 'p-month': 'may', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.2, 'p-energy': 2, 'p-reviewed': true, 'p-day': '2026-01-05' }),
-  r('t2', 'Groceries', { 'p-month': 'may', 'p-category': 'c-food', 'p-out': 420, 'p-hours': 6.1, 'p-energy': 3, 'p-reviewed': true, 'p-day': '2026-01-06' }),
-  r('t3', 'ISA', { 'p-month': 'jun', 'p-category': 'c-saved', 'p-in': 3200, 'p-out': 700, 'p-hours': 7.4, 'p-energy': 5, 'p-reviewed': false, 'p-day': '2026-01-12' }),
-  r('t4', 'Rail card', { 'p-month': 'jun', 'p-category': 'c-transport', 'p-out': 180, 'p-hours': 7.9, 'p-energy': 6, 'p-reviewed': true, 'p-day': '2026-01-13' }),
-  r('t5', 'Streaming', { 'p-month': 'jul', 'p-category': 'c-subs', 'p-in': 2900, 'p-out': 96, 'p-hours': 8.6, 'p-energy': 8, 'p-reviewed': false, 'p-day': '2026-01-19' }),
-  r('t6', 'Market', { 'p-month': 'jul', 'p-category': 'c-food', 'p-out': 310, 'p-hours': 6.8, 'p-energy': 4, 'p-reviewed': true, 'p-day': '2026-01-20' }),
-  r('t7', 'Flat', { 'p-month': 'aug', 'p-category': 'c-rent', 'p-in': 3200, 'p-out': 1150, 'p-hours': 5.9, 'p-energy': 2, 'p-reviewed': false, 'p-day': '2026-01-26' }),
-  r('t8', 'Bike repair', { 'p-month': 'aug', 'p-category': 'c-transport', 'p-out': 2400, 'p-hours': 9.1, 'p-energy': 9, 'p-reviewed': true, 'p-day': '2026-01-27' }),
+  r('t1', 'Flat', {
+    'p-month': 'may',
+    'p-category': 'c-rent',
+    'p-in': 3200,
+    'p-out': 1150,
+    'p-hours': 5.2,
+    'p-energy': 2,
+    'p-reviewed': true,
+    'p-day': '2026-01-05',
+  }),
+  r('t2', 'Groceries', {
+    'p-month': 'may',
+    'p-category': 'c-food',
+    'p-out': 420,
+    'p-hours': 6.1,
+    'p-energy': 3,
+    'p-reviewed': true,
+    'p-day': '2026-01-06',
+  }),
+  r('t3', 'ISA', {
+    'p-month': 'jun',
+    'p-category': 'c-saved',
+    'p-in': 3200,
+    'p-out': 700,
+    'p-hours': 7.4,
+    'p-energy': 5,
+    'p-reviewed': false,
+    'p-day': '2026-01-12',
+  }),
+  r('t4', 'Rail card', {
+    'p-month': 'jun',
+    'p-category': 'c-transport',
+    'p-out': 180,
+    'p-hours': 7.9,
+    'p-energy': 6,
+    'p-reviewed': true,
+    'p-day': '2026-01-13',
+  }),
+  r('t5', 'Streaming', {
+    'p-month': 'jul',
+    'p-category': 'c-subs',
+    'p-in': 2900,
+    'p-out': 96,
+    'p-hours': 8.6,
+    'p-energy': 8,
+    'p-reviewed': false,
+    'p-day': '2026-01-19',
+  }),
+  r('t6', 'Market', {
+    'p-month': 'jul',
+    'p-category': 'c-food',
+    'p-out': 310,
+    'p-hours': 6.8,
+    'p-energy': 4,
+    'p-reviewed': true,
+    'p-day': '2026-01-20',
+  }),
+  r('t7', 'Flat', {
+    'p-month': 'aug',
+    'p-category': 'c-rent',
+    'p-in': 3200,
+    'p-out': 1150,
+    'p-hours': 5.9,
+    'p-energy': 2,
+    'p-reviewed': false,
+    'p-day': '2026-01-26',
+  }),
+  r('t8', 'Bike repair', {
+    'p-month': 'aug',
+    'p-category': 'c-transport',
+    'p-out': 2400,
+    'p-hours': 9.1,
+    'p-energy': 9,
+    'p-reviewed': true,
+    'p-day': '2026-01-27',
+  }),
 ]
 
-const view = (id: string, chart: ViewChartConfig): ViewBlock => ({ id, type: 'view', mode: 'chart', chart })
+const view = (id: string, chart: ViewChartConfig): ViewBlock => ({
+  id,
+  type: 'view',
+  mode: 'chart',
+  chart,
+})
 
 /** Composed: monthly Out as bars, its running total as the line, the dashed projection one slot on, a 6,000 budget line. */
 export const Composed: Story = {
-  args: { config: view('v-composed', { kind: 'composed', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }], target: 6000 }), schema, rows },
+  args: {
+    config: view('v-composed', {
+      kind: 'composed',
+      xProperty: 'p-month',
+      series: [{ property: 'p-out', agg: 'sum' }],
+      target: 6000,
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('img', { name: /composed chart of Out by Month/ })).toBeInTheDocument()
+    await expect(
+      await canvas.findByRole('img', { name: /composed chart of Out by Month/ })
+    ).toBeInTheDocument()
     // Bars + the running-total line come from the SAME rows: four months → four bars.
     await expect(canvasElement.querySelectorAll('rect[rx="2"]')).toHaveLength(4)
     await expect(canvas.getByText('budget')).toBeInTheDocument()
     // The projection: last total 6,406 carried forward by August's 3,550.
     await expect(canvas.getByText('9,956 projected')).toBeInTheDocument()
-    // Axis chrome belongs to cartesian kinds.
-    await expect(canvas.getByText('Month')).toBeInTheDocument()
+    // #227: the card's `reads` row names the source and the fields the plot read.
+    await expect(canvas.getByText('ledger · Month, Out')).toBeInTheDocument()
   },
 }
 
 /** Net: In minus Out by month — August's bike repair pushes the month below zero (dashed, hollow). */
 export const Net: Story = {
-  args: { config: view('v-net', { kind: 'net', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }, { property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-net', {
+      kind: 'net',
+      xProperty: 'p-month',
+      series: [
+        { property: 'p-in', agg: 'sum' },
+        { property: 'p-out', agg: 'sum' },
+      ],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /net chart/ })).toBeInTheDocument()
@@ -97,10 +198,20 @@ export const Net: Story = {
  * grid is derived at read time, so nothing holds a copy of the calendar.
  */
 export const Heatmap: Story = {
-  args: { config: view('v-heatmap', { kind: 'heatmap', xProperty: 'p-day', series: [{ property: 'p-hours', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-heatmap', {
+      kind: 'heatmap',
+      xProperty: 'p-day',
+      series: [{ property: 'p-hours', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('img', { name: /heatmap chart of Sleep hours by Day/ })).toBeInTheDocument()
+    await expect(
+      await canvas.findByRole('img', { name: /heatmap chart of Sleep hours by Day/ })
+    ).toBeInTheDocument()
     // Jan 5 → Jan 27 spans the weeks of Jan 4, 11, 18 and 25: four columns of seven.
     // The grid sizes itself from the measured width, so the cells land a frame later.
     await waitFor(() =>
@@ -118,7 +229,15 @@ export const Heatmap: Story = {
 
 /** A heatmap can only read a DATE: a category x says so rather than drawing a lie. */
 export const HeatmapNeedsADate: Story = {
-  args: { config: view('v-heatmap-cat', { kind: 'heatmap', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-heatmap-cat', {
+      kind: 'heatmap',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText(/a heatmap reads one cell a day/i)).toBeInTheDocument()
@@ -131,10 +250,20 @@ export const HeatmapNeedsADate: Story = {
  * the total in the centre and a legend of shares beside it.
  */
 export const RingShare: Story = {
-  args: { config: view('v-ring', { kind: 'ring', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-ring', {
+      kind: 'ring',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('img', { name: /ring chart of Out by Category/ })).toBeInTheDocument()
+    await expect(
+      await canvas.findByRole('img', { name: /ring chart of Out by Category/ })
+    ).toBeInTheDocument()
     // The legend reads the shares straight off the rows: Transport is 180 + 2,400.
     for (const label of ['Rent', 'Food', 'Saved', 'Transport', 'Subs']) {
       await expect(canvas.getByText(label)).toBeInTheDocument()
@@ -149,9 +278,16 @@ export const RingShare: Story = {
 /** Nothing positive to share out: a notice, not rings around an empty total. */
 export const RingNothingPositive: Story = {
   args: {
-    config: view('v-ring-neg', { kind: 'ring', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    config: view('v-ring-neg', {
+      kind: 'ring',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
     schema,
-    rows: rows.map((row) => ({ ...row, values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) } })),
+    rows: rows.map((row) => ({
+      ...row,
+      values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) },
+    })),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -161,7 +297,11 @@ export const RingNothingPositive: Story = {
 
 /** Gauge: how many records are reviewed, against the record count (no target set). */
 export const Gauge: Story = {
-  args: { config: view('v-gauge', { kind: 'gauge', series: [{ property: 'p-reviewed', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-gauge', { kind: 'gauge', series: [{ property: 'p-reviewed', agg: 'sum' }] }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /gauge chart/ })).toBeInTheDocument()
@@ -175,7 +315,15 @@ export const Gauge: Story = {
 
 /** Gauge with a stated goal: total In against a 20,000 target. */
 export const GaugeWithTarget: Story = {
-  args: { config: view('v-gauge-target', { kind: 'gauge', series: [{ property: 'p-in', agg: 'sum' }], target: 20000 }), schema, rows },
+  args: {
+    config: view('v-gauge-target', {
+      kind: 'gauge',
+      series: [{ property: 'p-in', agg: 'sum' }],
+      target: 20000,
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('12,500')).toBeInTheDocument()
@@ -185,7 +333,15 @@ export const GaugeWithTarget: Story = {
 
 /** Radar: Out by category — five spokes, one ink polygon. */
 export const Radar: Story = {
-  args: { config: view('v-radar', { kind: 'radar', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-radar', {
+      kind: 'radar',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /radar chart/ })).toBeInTheDocument()
@@ -197,7 +353,15 @@ export const Radar: Story = {
 
 /** Scatter: each record a dot — Energy against Sleep hours (a NUMBER x property → a true two-variable scatter). */
 export const Scatter: Story = {
-  args: { config: view('v-scatter', { kind: 'scatter', xProperty: 'p-hours', series: [{ property: 'p-energy', agg: 'latest' }] }), schema, rows },
+  args: {
+    config: view('v-scatter', {
+      kind: 'scatter',
+      xProperty: 'p-hours',
+      series: [{ property: 'p-energy', agg: 'latest' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /scatter chart/ })).toBeInTheDocument()
@@ -209,7 +373,15 @@ export const Scatter: Story = {
 
 /** Sankey: the Out total flowing into categories, largest first. */
 export const Sankey: Story = {
-  args: { config: view('v-sankey', { kind: 'sankey', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-sankey', {
+      kind: 'sankey',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /sankey chart/ })).toBeInTheDocument()
@@ -220,7 +392,15 @@ export const Sankey: Story = {
 
 /** Sunburst: categories in the inner ring, each category's records in the outer ring. */
 export const Sunburst: Story = {
-  args: { config: view('v-sunburst', { kind: 'sunburst', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-sunburst', {
+      kind: 'sunburst',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /sunburst chart/ })).toBeInTheDocument()
@@ -237,7 +417,11 @@ export const Sunburst: Story = {
 export const Funnel: Story = {
   args: {
     config: {
-      ...view('v-funnel', { kind: 'funnel', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+      ...view('v-funnel', {
+        kind: 'funnel',
+        xProperty: 'p-category',
+        series: [{ property: 'p-out', agg: 'sum' }],
+      }),
       sort: { key: 'p-out', dir: 'desc' },
     },
     schema,
@@ -248,7 +432,9 @@ export const Funnel: Story = {
     await expect(await canvas.findByRole('list', { name: /funnel chart/ })).toBeInTheDocument()
     // Steps follow the view's own row order (first-seen bucket under the sort), so a
     // funnel's order is the person's, not the chart's: Transport (2,580) is the mouth.
-    const labels = Array.from(canvasElement.querySelectorAll('ol li span[title]')).map((el) => el.textContent)
+    const labels = Array.from(canvasElement.querySelectorAll('ol li span[title]')).map(
+      (el) => el.textContent
+    )
     await expect(labels).toEqual(['Transport', 'Rent', 'Saved', 'Food', 'Subs'])
     await expect(canvas.getByText('2,580')).toBeInTheDocument()
   },
@@ -256,26 +442,48 @@ export const Funnel: Story = {
 
 // ── The three Bklit cartesian kinds, so all thirteen sit in one place ──────────
 export const Line: Story = {
-  args: { config: view('v-line', { kind: 'line', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-line', {
+      kind: 'line',
+      xProperty: 'p-month',
+      series: [{ property: 'p-in', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Month')).toBeInTheDocument()
-    await expect(canvas.getByText('In')).toBeInTheDocument()
+    await expect(canvas.getByText('ledger · Month, In')).toBeInTheDocument()
   },
 }
 export const Area: Story = {
-  args: { config: view('v-area', { kind: 'area', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-area', {
+      kind: 'area',
+      xProperty: 'p-month',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Month')).toBeInTheDocument()
-    await expect(canvas.getByText('Out')).toBeInTheDocument()
+    await expect(canvas.getByText('ledger · Month, Out')).toBeInTheDocument()
   },
 }
 export const Bar: Story = {
-  args: { config: view('v-bar', { kind: 'bar', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-bar', {
+      kind: 'bar',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Category')).toBeInTheDocument()
+    await expect(canvas.getByText('ledger · Category, Out')).toBeInTheDocument()
   },
 }
 
@@ -284,7 +492,11 @@ export const Bar: Story = {
 // a line, counted, over a select. On main this threw `RangeError: Invalid time value`
 // from the time-series shell and the page degraded to "couldn't load".
 
-const selectCount: ViewChartConfig = { kind: 'line', xProperty: 'p-category', series: [{ agg: 'count', property: 'p-category' }] }
+const selectCount: ViewChartConfig = {
+  kind: 'line',
+  xProperty: 'p-category',
+  series: [{ agg: 'count', property: 'p-category' }],
+}
 
 export const LineCategoricalX: Story = {
   args: { config: view('v-line-cat', selectCount), schema, rows },
@@ -293,7 +505,8 @@ export const LineCategoricalX: Story = {
     // The category labels are read as given, never formatted as dates.
     await expect(await canvas.findByText('Rent')).toBeInTheDocument()
     await expect(canvas.getByText('Subs')).toBeInTheDocument()
-    await expect(canvas.getByText('Category')).toBeInTheDocument()
+    // A count over the x field reads that one field, once.
+    await expect(canvas.getByText('ledger · Category')).toBeInTheDocument()
     await expect(canvasElement.querySelector('svg')).not.toBeNull()
   },
 }
@@ -316,7 +529,15 @@ export const BarCategoricalX: Story = {
 }
 /** A text x (month names, the mockup's own axis) on a line — also categorical. */
 export const LineTextX: Story = {
-  args: { config: view('v-line-text', { kind: 'line', xProperty: 'p-month', series: [{ property: 'p-out', agg: 'sum' }] }), schema, rows },
+  args: {
+    config: view('v-line-text', {
+      kind: 'line',
+      xProperty: 'p-month',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText('may')).toBeInTheDocument()
@@ -328,7 +549,15 @@ export const LineTextX: Story = {
 
 /** One record: the net chart centres its single marker and draws no segment. */
 export const NetSingleRecord: Story = {
-  args: { config: view('v-net-1', { kind: 'net', xProperty: 'p-month', series: [{ property: 'p-in', agg: 'sum' }] }), schema, rows: rows.slice(0, 1) },
+  args: {
+    config: view('v-net-1', {
+      kind: 'net',
+      xProperty: 'p-month',
+      series: [{ property: 'p-in', agg: 'sum' }],
+    }),
+    schema,
+    rows: rows.slice(0, 1),
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('img', { name: /net chart/ })).toBeInTheDocument()
@@ -340,9 +569,16 @@ export const NetSingleRecord: Story = {
 /** Nothing positive to flow: a notice, not card chrome around a blank. */
 export const SankeyNothingPositive: Story = {
   args: {
-    config: view('v-sankey-neg', { kind: 'sankey', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    config: view('v-sankey-neg', {
+      kind: 'sankey',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
     schema,
-    rows: rows.map((row) => ({ ...row, values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) } })),
+    rows: rows.map((row) => ({
+      ...row,
+      values: { ...row.values, 'p-out': -Math.abs(Number(row.values['p-out'] ?? 0)) },
+    })),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -352,7 +588,15 @@ export const SankeyNothingPositive: Story = {
 
 /** All-equal values: the funnel is a column of full-width steps, every count equal. */
 export const FunnelAllEqual: Story = {
-  args: { config: view('v-funnel-eq', { kind: 'funnel', xProperty: 'p-month', series: [{ property: 'p-month', agg: 'count' }] }), schema, rows },
+  args: {
+    config: view('v-funnel-eq', {
+      kind: 'funnel',
+      xProperty: 'p-month',
+      series: [{ property: 'p-month', agg: 'count' }],
+    }),
+    schema,
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByRole('list', { name: /funnel chart/ })).toBeInTheDocument()
@@ -363,7 +607,11 @@ export const FunnelAllEqual: Story = {
 /** A sliver far thinner than the slice gap still sweeps forward (B1) — two inner slices, no inverted arc. */
 export const SunburstTinySlice: Story = {
   args: {
-    config: view('v-sunburst-tiny', { kind: 'sunburst', xProperty: 'p-category', series: [{ property: 'p-out', agg: 'sum' }] }),
+    config: view('v-sunburst-tiny', {
+      kind: 'sunburst',
+      xProperty: 'p-category',
+      series: [{ property: 'p-out', agg: 'sum' }],
+    }),
     schema,
     rows: [
       { id: 'big', title: 'Flat', values: { 'p-category': 'c-rent', 'p-out': 10000 } },
@@ -376,7 +624,9 @@ export const SunburstTinySlice: Story = {
     const paths = Array.from(canvasElement.querySelectorAll('svg[role="img"] path'))
     await expect(paths).toHaveLength(4)
     // Every arc is drawn with the small-arc flag except the one that genuinely spans > 180°.
-    await expect(paths.filter((p) => /A44,44 0 1 1/.test(p.getAttribute('d') ?? ''))).toHaveLength(1)
+    await expect(paths.filter((p) => /A44,44 0 1 1/.test(p.getAttribute('d') ?? ''))).toHaveLength(
+      1
+    )
   },
 }
 
@@ -386,9 +636,14 @@ export const SunburstTinySlice: Story = {
  */
 export const GaugeMovesWithTheRecords: Story = {
   args: {
-    config: view('v-gauge-moved', { kind: 'gauge', series: [{ property: 'p-reviewed', agg: 'sum' }] }),
+    config: view('v-gauge-moved', {
+      kind: 'gauge',
+      series: [{ property: 'p-reviewed', agg: 'sum' }],
+    }),
     schema,
-    rows: rows.map((row) => (row.id === 't3' ? { ...row, values: { ...row.values, 'p-reviewed': true } } : row)),
+    rows: rows.map((row) =>
+      row.id === 't3' ? { ...row, values: { ...row.values, 'p-reviewed': true } } : row
+    ),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)

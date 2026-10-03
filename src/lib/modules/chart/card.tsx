@@ -1,48 +1,79 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import type { ChartPoint } from './data'
-import { seriesNames } from './data'
-import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-
 /**
- * Shared chart CARD chrome — the module-card wrapper every chart KIND renders inside.
- * The Bklit VISUAL is untouched; this only supplies the surrounding chrome so all
- * thirteen kinds read as one family: a sans eyebrow title, a muted caption, axis + legend
- * labels in the same eyebrow voice, and a calm empty state that never crashes on
- * degenerate data. Colours are the Make Noise chart tokens only (#94 retint).
+ * PondChart (#227) — the card every chart KIND renders inside, measured off
+ * `PondChart.dc.html`'s inline `renderVals()` (`wayfinder/board-values.generated.json`):
+ *
+ *   card     width 350 · padding 16px 16px 14px · radius 20 · gap 12 · card paper ·
+ *            --mn-shadow-card · sans · full ink
+ *   headRow  flex · baseline · space-between · gap 10
+ *   title    sans 15 / 500 at full ink            the block's own label
+ *   typeTag  MONO 10.5 / ink .8 / nowrap          `CHART_TYPE_TAG[kind]`
+ *   sub      12.5 / ink .68 / margin-top -6       pulls under the title against gap 12
+ *   plotBox  relative · padding 6px 0 2px · min-height 150 · overflow visible (the tip)
+ *   tip      absolute top 2 / right 34 · column gap 3 · padding 8px 11px · radius 14 ·
+ *            white glass gradient + white hairline + 0 8px 24px rgba(40,34,24,.12) ·
+ *            MONO 11 / full ink · pointer-events none      (ink: 74,73,64 glass)
+ *   foot     column gap 4 · padding-top 10 · 1px ink .055 top hairline · 11px
+ *            footLabel width 38 / ink .68 · footVal ink .8 · footMono MONO 10.5 / ink .8
+ *
+ * The seven states (`CHART_CARD_STATES`), each read straight out of the board:
+ *
+ *   hover     THIS card's own: `translateY(-1px)` + the shadow swap
+ *             (`0 2px 4px .06, 0 14px 32px .1`; ink `.34 / .4`) and the tip appears.
+ *             The block shell's hover changes nothing — the lift stays in this file.
+ *   selected  `0 0 0 2px ink, cardShadow` — CONSUMED from `PondBlock`
+ *             (`POND_BLOCK_SELECTED_RING` + `shadow-mn-card`; ring before shadow).
+ *   empty     the plot is hidden; `emptyBox` draws — the shared `PondBlockEmpty`
+ *             ground (ink .035) at the chart's geometry: column · flex-start ·
+ *             center · gap 12 · height 150 · padding 0 14 · radius 14 — with
+ *             `no rows in {source} yet` (13.5 / ink .68) and `add a row`, drawn only
+ *             when the host wires it (never a dead button).
+ *   loading   the plot is hidden; the four-bar skeleton draws (`CHART_SKELETON`).
+ *   error     the plot stays, faded to opacity .45; PondMolecule's `notice` with
+ *             `can’t reach {source} · showing the last copy` and `reconnect`.
+ *   disabled  `opacity .4` + `inert` — CONSUMED from `PondBlock` (`POND_BLOCK_DISABLED`).
+ *             No `aria-disabled`: on a generic div AT ignores it (#238).
+ *
+ * The plot renders as `children`, untouched: the card is chrome AROUND Bklit's
+ * drawing, never a rewrite of it. Class strings that pair a SIZE with an ink TIER
+ * are plain template literals, never `cn()` (#252).
  */
 
-/** The block eyebrow — exported so any surface that needs it shares the exact
- *  chrome instead of restating the classes. `PondBlock.dc.html` (read inline):
- *  10.5 / 500 / .1em / uppercase / a(.68) with NO font-family, so it inherits the
- *  block's sans. A block lives on a PAGE, so it is the page eyebrow — never the
- *  mono machine voice (atoms/kicker.ts, "two mediums"; #220). */
-export const KICKER = pageEyebrowClass
+import type { ReactNode } from 'react'
+import type { ChartKind } from '@/lib/modules/view/aggregate'
+import { PondMolecule } from '@/components/molecules/PondMolecule'
+import {
+  PondBlockEmpty,
+  POND_BLOCK_DISABLED,
+  POND_BLOCK_SELECTED_RING,
+} from '@/components/organisms/PondBlock'
+import {
+  CHART_EMPTY_ACTION,
+  CHART_ERROR_ACTION,
+  CHART_FOOT_LABELS,
+  CHART_SKELETON,
+  CHART_TYPE_TAG,
+  chartEmptyLine,
+  chartErrorLine,
+  type ChartCardState,
+} from './chrome'
 
-export interface ChartCardProps {
-  title?: string
-  caption?: string
-  xLabel?: string
-  yLabel?: string
-  points: readonly ChartPoint[]
-  /** Series colours keyed by name, in series order, for the legend swatches. */
-  seriesColors: readonly string[]
-  /** The Bklit chart element. Rendered only when there is at least one point. */
-  children: ReactNode
-}
+export {
+  CHART_CARD_STATES,
+  CHART_TYPE_TAG,
+  CHART_EMPTY_ACTION,
+  CHART_ERROR_ACTION,
+  CHART_SKELETON,
+  chartEmptyLine,
+  chartErrorLine,
+  type ChartCardState,
+} from './chrome'
 
 /**
- * A degenerate chart (no points, or points with no numeric series) must read as a
- * quiet empty line rather than a broken axis or a zero-height SVG. This is the
- * single guard the ticket calls out: "Empty/degenerate data states never crash."
- * It draws the shared PondBlock empty box (#239) with its own line, alone — no
- * action is reachable from inside the card. The line is `no data yet`, not the
- * table kind's `no rows yet`: `isEmpty` is also true when points EXIST but carry no
- * numeric series, and the box must never state something false about the data.
- * #227 gives the chart card its own chrome, including `no rows in {source} yet` +
- * `add a row`.
+ * The line for a chart that has rows but nothing numeric to draw — true where the
+ * board's `no rows in … yet` would not be (#239 review; the host decides which
+ * condition holds). Also the compact bar strip's voidBox line (#259).
  */
 export const CHART_EMPTY_LINE = 'no data yet'
 
@@ -51,103 +82,194 @@ export const CHART_EMPTY_LINE = 'no data yet'
  * off a category label. Owned here, beside the other shared chart copy, and read by
  * #259's compact grid so the same misconfiguration cannot read two different ways.
  *
- * `collection-chart.tsx`'s `HeatmapKind` still holds its own identical literal. That
- * is deliberate for now, not an oversight: the file is prettier-dirty on `main`, so
- * the husky hook reformats the whole thing on any commit that touches it, and the
- * reformat alone pushes it past `max-lines`. Adopt this constant there in a slice
- * already touching that file.
+ * One owner: `collection-chart.tsx`'s `HeatmapKind` and #259's compact grid both
+ * read it. (It held its own copy until #227, excused by `max-lines` on a
+ * prettier-dirty file — this slice reformatted that file, the warning is gone, and
+ * `AGENTS.md`'s duplicates rule applies again.)
  */
 export const HEATMAP_DATE_NOTICE = 'A heatmap reads one cell a day — pick a date field for “By”.'
 
-function isEmpty(points: readonly ChartPoint[]): boolean {
-  return seriesNames(points).length === 0
+/** The hover readout — the board's `tipA` (muted: the x) over `tipB` (the value). */
+export interface ChartTip {
+  a: string
+  b: string
 }
 
+export interface ChartCardProps {
+  kind: ChartKind
+  /** The board's `title` — the block's own label. Omit it and the head keeps only the tag. */
+  title?: string
+  /** The board's `sub` — a description of the window. Omit it rather than invent one. */
+  sub?: string
+  /** The footer's `on` — the host page's path. Omit it off a page host. */
+  on?: string
+  /** The footer's `reads` — the source and its fields, in the mono voice. */
+  reads?: string
+  /** @default 'rest' */
+  state?: ChartCardState
+  /** The source the empty and error copy name; the board's `this table` when unknown. */
+  source?: string
+  /**
+   * Overrides `no rows in {source} yet` when that would be false about the data —
+   * rows exist but the filter hides them, or none carries a number. The host passes
+   * `onEmptyAction` only when `add a row` is the honest action.
+   */
+  emptyLine?: string
+  onEmptyAction?: () => void
+  /**
+   * Overrides `can’t reach {source} · showing the last copy` when that would be
+   * false — a collection that is GONE is not one the reader can reconnect to, and
+   * the board's own action would be a dead offer. A custom line draws no action.
+   */
+  errorLine?: string
+  /** The hover readout. Drawn when given; the plots own hover, so the host decides. */
+  tip?: ChartTip
+  /** The plot. Hidden on `empty` and `loading`; faded to .45 on `error`. */
+  children: ReactNode
+  className?: string
+}
+
+// ── The board's class recipes ──────────────────────────────────────────────────
+
+/** hover's shadow swap, live and forced — two spellings so Tailwind's scanner sees each literal. */
+const HOVER_SHADOW =
+  'shadow-[0_2px_4px_rgba(40,34,24,.06),0_14px_32px_rgba(40,34,24,.1)] dark:shadow-[0_2px_4px_rgba(0,0,0,.34),0_14px_32px_rgba(0,0,0,.4)]'
+const HOVER_LIVE =
+  'shadow-mn-card hover:transform-[translateY(-1px)] hover:shadow-[0_2px_4px_rgba(40,34,24,.06),0_14px_32px_rgba(40,34,24,.1)] dark:hover:shadow-[0_2px_4px_rgba(0,0,0,.34),0_14px_32px_rgba(0,0,0,.4)]'
+const HOVER_FORCED = `transform-[translateY(-1px)] ${HOVER_SHADOW}`
+
+/** The card's `box-shadow` + `transform` per state; `rest` is live to the pointer. */
+const CARD_STATE: Record<ChartCardState, string> = {
+  rest: HOVER_LIVE,
+  hover: HOVER_FORCED,
+  selected: `${POND_BLOCK_SELECTED_RING} shadow-mn-card`,
+  empty: HOVER_LIVE,
+  loading: HOVER_LIVE,
+  error: HOVER_LIVE,
+  disabled: `shadow-mn-card ${POND_BLOCK_DISABLED}`,
+}
+
+/**
+ * The tip's glass, as the board draws it in each theme — its own recipe, not
+ * `.mn-glass`: the light shadow is `0 8px 24px .12`, not the floating family's
+ * `0 20px 54px`, and it is a readout inside a card, not an object over the canvas.
+ */
+const TIP =
+  'pointer-events-none absolute top-[2px] right-[34px] flex flex-col gap-[3px] rounded-[14px] border border-[rgba(255,255,255,.9)] bg-[linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))] px-[11px] py-[8px] font-mono text-[11px] text-mn-text shadow-[0_8px_24px_rgba(40,34,24,.12)] dark:border-[rgba(250,249,239,.09)] dark:bg-[linear-gradient(160deg,rgba(74,73,64,.95),rgba(74,73,64,.82))] dark:shadow-[0_8px_24px_rgba(0,0,0,.4)]'
+
+/** `emptyBox`'s geometry over the shared ground (`PondBlockEmpty`: ink .035, radius 14, gap 12). */
+const EMPTY_GEOMETRY = 'h-[150px] flex-col items-start justify-center px-[14px] py-0'
+
+const FOOT_LABEL = 'w-[38px] shrink-0 text-mn-text-secondary'
+
 export function ChartCard({
+  kind,
   title,
-  caption,
-  xLabel,
-  yLabel,
-  points,
-  seriesColors,
+  sub,
+  on,
+  reads,
+  state = 'rest',
+  source,
+  emptyLine,
+  onEmptyAction,
+  errorLine,
+  tip,
   children,
+  className,
 }: ChartCardProps) {
-  const names = seriesNames(points)
-  const empty = isEmpty(points)
+  const empty = state === 'empty'
+  const loading = state === 'loading'
+  const error = state === 'error'
+  const disabled = state === 'disabled'
+  const showPlot = !loading && !empty
 
   return (
-    <div className="text-sm text-mn-text">
-      {title && <div className={KICKER}>{title}</div>}
-      {caption && <div className="mt-0.5 text-xs text-mn-text-secondary">{caption}</div>}
+    <div
+      data-chart-kind={kind}
+      data-chart-state={state}
+      aria-busy={loading || undefined}
+      // A real boolean attribute (React 19): present when disabled, absent otherwise.
+      inert={disabled || undefined}
+      className={`relative flex w-[350px] max-w-full flex-col gap-mn-3 rounded-mn-card bg-mn-card px-mn-4 pt-mn-4 pb-[14px] font-sans text-mn-text ${CARD_STATE[state]} ${className ?? ''}`}
+    >
+      <div data-part="head" className="flex items-baseline justify-between gap-[10px]">
+        {title !== undefined && (
+          <span data-part="title" className="text-[15px] font-medium">
+            {title}
+          </span>
+        )}
+        <span
+          data-part="type"
+          className="ml-auto font-mono text-[10.5px] whitespace-nowrap text-mn-text-meta"
+        >
+          {CHART_TYPE_TAG[kind]}
+        </span>
+      </div>
+      {sub !== undefined && (
+        <div data-part="sub" className="-mt-[6px] text-[12.5px] text-mn-text-secondary">
+          {sub}
+        </div>
+      )}
 
-      {empty ? (
-        <PondBlockEmpty line={CHART_EMPTY_LINE} className="mt-2" />
-      ) : (
-        <>
-          <div className="mt-2">{children}</div>
+      <div data-part="plot" className="relative min-h-[150px] overflow-visible pt-[6px] pb-[2px]">
+        {showPlot && <div className={error ? 'opacity-[0.45]' : undefined}>{children}</div>}
+        {tip && (
+          <div data-part="tip" className={TIP}>
+            <span className="text-mn-text-secondary">{tip.a}</span>
+            <span>{tip.b}</span>
+          </div>
+        )}
+        {loading && (
+          <div data-part="skeleton" className="flex flex-col gap-mn-3 pt-[10px]">
+            {CHART_SKELETON.map(([w, h], i) => (
+              <span
+                key={i}
+                aria-hidden
+                className={`block rounded-[6px] bg-mn-text/[0.08] ${w} ${h}`}
+              />
+            ))}
+          </div>
+        )}
+        {empty && (
+          <PondBlockEmpty
+            line={emptyLine ?? chartEmptyLine(source)}
+            action={CHART_EMPTY_ACTION}
+            onAction={onEmptyAction}
+            className={EMPTY_GEOMETRY}
+          />
+        )}
+      </div>
 
-          {/* Axis labels + legend in the mono-kicker voice (small, muted). */}
-          {(xLabel || yLabel || names.length > 1) && (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-              <div className="flex flex-wrap items-center gap-3">
-                {names.length > 1 &&
-                  names.map((name, i) => (
-                    <span
-                      key={name}
-                      className="flex items-center gap-1.5 text-mn-11 text-mn-text-secondary"
-                    >
-                      <span
-                        aria-hidden
-                        className="inline-block h-2 w-2 rounded-full"
-                        style={{ background: seriesColors[i % seriesColors.length] }}
-                      />
-                      {name}
-                    </span>
-                  ))}
-              </div>
-              {(xLabel || yLabel) && (
-                <div className={`${KICKER} flex gap-3`}>
-                  {yLabel && (
-                    <span className="inline-flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path
-                          d="M6 2.5v7M4 4.5 6 2.5 8 4.5M4 7.5 6 9.5 8 7.5"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      {yLabel}
-                    </span>
-                  )}
-                  {xLabel && (
-                    <span className="inline-flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path
-                          d="M2.5 6h7M4.5 4 2.5 6 4.5 8M7.5 4 9.5 6 7.5 8"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      {xLabel}
-                    </span>
-                  )}
-                </div>
-              )}
+      {error && (
+        // The board's notice is 440 wide in a 318 content box; clamp to it the way
+        // the block shell does (ADR 0004 ruling 7) — never overflow the paper.
+        <PondMolecule
+          kind="notice"
+          action={errorLine === undefined ? CHART_ERROR_ACTION : undefined}
+          title={errorLine ?? chartErrorLine(source)}
+          className="max-w-full"
+        />
+      )}
+
+      {(on !== undefined || reads !== undefined) && (
+        <div
+          data-part="foot"
+          className="flex flex-col gap-[4px] border-t border-mn-text/[0.055] pt-[10px] text-[11px]"
+        >
+          {on !== undefined && (
+            <div data-part="on" className="flex gap-[10px]">
+              <span className={FOOT_LABEL}>{CHART_FOOT_LABELS.on}</span>
+              <span className="text-mn-text-meta">{on}</span>
             </div>
           )}
-        </>
+          {reads !== undefined && (
+            <div data-part="reads" className="flex gap-[10px]">
+              <span className={FOOT_LABEL}>{CHART_FOOT_LABELS.reads}</span>
+              <span className="font-mono text-[10.5px] text-mn-text-meta">{reads}</span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
 }
-
-/**
- * The chart series ramp, re-exported from the chart layer's single definition
- * (`components/charts/chart-ramp.ts` ↔ `--chart-1…5` in globals.css) so the
- * module cards and the kind renderers can never disagree on a colour.
- */
-export { CHART_SERIES_COLORS } from '@/components/charts/chart-ramp'

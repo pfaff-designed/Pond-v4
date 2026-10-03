@@ -501,13 +501,13 @@ export const ChartByStage: Story = {
     },
     schema,
     rows,
+    chartProvenance: { source: 'pots' },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // The axis labels name the PROPERTIES the chart reads — it is a view of the
-    // database, so the category axis is a field and the value axis is a field+verb.
-    await expect(canvas.getByText('Stage')).toBeInTheDocument()
-    await expect(canvas.getByText('Priority')).toBeInTheDocument()
+    // The card's `reads` row names the PROPERTIES the chart reads (#227) — it is a
+    // view of the database, so the source comes first, then the x field, then the series.
+    await expect(canvas.getByText('pots · Stage, Priority')).toBeInTheDocument()
   },
 }
 
@@ -522,12 +522,12 @@ export const ChartPerRecord: Story = {
     },
     schema,
     rows,
+    chartProvenance: { source: 'pots' },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Record')).toBeInTheDocument()
-    // The verb is named in the series label, so the read is never ambiguous.
-    await expect(canvas.getByText('Priority (latest)')).toBeInTheDocument()
+    // Bucketed by record title, no x field is read: `reads` names the source and the series alone.
+    await expect(canvas.getByText('pots · Priority')).toBeInTheDocument()
   },
 }
 

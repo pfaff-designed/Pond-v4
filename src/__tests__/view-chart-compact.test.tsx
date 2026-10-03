@@ -353,11 +353,14 @@ describe('BlockCanvas — a compact chart’s empty state is the board’s, not 
     )
   })
 
-  it('the default card presentation is untouched: a bar chart with no flag still draws the card', () => {
+  it('the default card presentation draws the chart CARD — PondChart, its own card, no block card and no strip (#227)', () => {
     collection.rows = [row('r1', { 'p-week': 'w1', 'p-km': 6 })]
     renderCanvas([card])
-    const c = cardOf('v-card')
-    expect(c.dataset.blockState).toBe('rest')
+    const host = document.getElementById('block-v-card')!
+    expect(host.querySelector('[data-block-kind]')).toBeNull()
+    const c = host.querySelector<HTMLElement>('[data-chart-kind]')!
+    expect(c.dataset.chartKind).toBe('bar')
+    expect(c.dataset.chartState).toBe('rest')
     expect(c.querySelector('[data-part="bars"]')).toBeNull()
   })
 })

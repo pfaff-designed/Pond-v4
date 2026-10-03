@@ -130,6 +130,20 @@ export const blockHeadNoteClass = 'font-mono text-[10.5px] text-mn-text-secondar
 export const BLOCK_LOADING_NOTE = 'loading…'
 
 /**
+ * The two state recipes a card that is NOT a block shell still shares with it
+ * (#227: the chart card). ONE owner each — a second spelling in another file
+ * would drift the day either value moved.
+ *
+ *   selected  `0 0 0 2px ${fg}, ${cardShadow}` — Tailwind v4 composes
+ *             `--tw-ring-shadow` BEFORE `--tw-shadow`, so `ring-2 ring-mn-text`
+ *             beside `shadow-mn-card` paints the ring first, both present, in both
+ *             themes (`--mn-text` flips; `--mn-shadow-card` is redefined for dark).
+ *   disabled  `opacity: .4` is the only pixel change; the consumer also sets `inert`.
+ */
+export const POND_BLOCK_SELECTED_RING = 'ring-2 ring-mn-text'
+export const POND_BLOCK_DISABLED = 'opacity-40'
+
+/**
  * The board's `emptyBox` + `emptyText` (#239), bare: the ink-.035 ground at radius
  * 14 and padding 14, the kind's lowercase line at 13.5 / ink .68, and — only when
  * `onAction` is wired — the offered action as the existing secondary pill
@@ -140,7 +154,9 @@ export const BLOCK_LOADING_NOTE = 'loading…'
  *
  * `line` overrides the kind's line when the kind's copy would be FALSE about the
  * data — a filter matching nothing over rows that exist, a chart with points but no
- * numeric series. `kind` still names the action; with no kind there is none.
+ * numeric series. `action` names the offered action for a surface that is not a
+ * block kind (#227: the chart card's `add a row`); else `kind` names it, and with
+ * neither there is none.
  *
  * `box` (#259) picks which empty box the board draws. `PondBlock.dc.html` has one;
  * `PondTemplate.dc.html` adds the `voidBox` for the compact chart marks that are
@@ -152,25 +168,28 @@ export const BLOCK_LOADING_NOTE = 'loading…'
 export function PondBlockEmpty({
   kind,
   line,
+  action,
   box = 'box',
   onAction,
   className,
 }: {
   kind?: PondBlockKind
   line?: string
+  action?: string
   box?: BlockEmptyBox
   onAction?: () => void
   className?: string
 }) {
   const copy = kind ? blockEmptyCopy(kind) : undefined
   const text = line ?? copy?.line
+  const actionLabel = action ?? copy?.action
   const recipe = EMPTY_BOX[box]
   return (
     <div data-part="empty" data-empty-box={box} className={cn(recipe.box, className)}>
       <span className={recipe.text}>{text}</span>
-      {box === 'box' && onAction && copy && (
+      {box === 'box' && onAction && actionLabel && (
         <Button variant="secondary" onClick={onAction}>
-          {copy.action}
+          {actionLabel}
         </Button>
       )}
     </div>
@@ -334,8 +353,8 @@ export function PondBlock({
           : ['bg-mn-card shadow-mn-card', WIDTH_CLASS[kind]],
         // selected: the ring is PREPENDED to the card shadow (Tailwind composes
         // --tw-ring-shadow before --tw-shadow), so both paint — as the board draws.
-        selected && 'ring-2 ring-mn-text',
-        disabled && 'opacity-40',
+        selected && POND_BLOCK_SELECTED_RING,
+        disabled && POND_BLOCK_DISABLED,
         className
       )}
     >

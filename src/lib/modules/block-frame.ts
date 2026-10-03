@@ -8,9 +8,11 @@
  * its board kind. Pure data, no React: the frame component takes the result, the
  * view underneath it is untouched.
  *
- * `null` means the block is BARE — no card. `PondTemplate.dc.html` draws exactly one
- * block that way: an UNLABELLED text block (`bare = k === 'text' && !label` →
- * `padding: 2px 4px`, no card). Prose is the page, cards sit on it.
+ * `null` means the block takes NO block card. Two blocks do: an UNLABELLED text
+ * block, which is BARE (`PondTemplate.dc.html`: `bare = k === 'text' && !label` →
+ * `padding: 2px 4px`, no card — prose is the page, cards sit on it), and a chart
+ * view drawn as the card, which is its OWN card (`PondChart`, #227). A host tells
+ * them apart by type: only prose gets the bare padding.
  *
  * The eyebrow is the block's own LABEL when it has one (#258) — the board's
  * `hasEyebrow: !!label`, a property of the block, not of its type — and falls back
@@ -22,7 +24,7 @@ import { todoMarker, type TodoBlock, type TodoMarker } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
 import type { ViewBlock, ViewMode } from './view/schema'
-import { COMPACT_MARK_EMPTY, compactChartMark } from './view/chart-compact'
+import { COMPACT_MARK_EMPTY, compactChartMark, isChartCard } from './view/chart-compact'
 import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -481,8 +483,8 @@ export function propertiesFrame(schema: PropertySchema): BlockFrame & { state: P
 export function blockFrame(block: Block): BlockFrame | null {
   switch (block.type) {
     case 'text': {
-      // `bare = k === 'text' && !label`. `null` keeps meaning exactly one thing: an
-      // UNLABELLED text block, bare at `padding 2px 4px` (#237) — now conditional.
+      // `bare = k === 'text' && !label`: an UNLABELLED text block is bare at
+      // `padding 2px 4px` (#237) — now conditional on the label (#258).
       // A labelled one (`project → goal`, `meeting → notes`) is the `list` card:
       // `PondTemplate.dc.html` gives a text block no width of its own, so — as
       // highlight — it sits in the standard 400 card. No note: none is drawn for prose.
@@ -518,6 +520,12 @@ export function blockFrame(block: Block): BlockFrame | null {
         headNote: plural((block.rows ?? []).length, 'row'),
       }
     case 'view':
+      // #227: a chart drawn as the CARD is `PondChart` — level 3 beside `PondBlock`
+      // (`Pond 02` 2o: "charts: blocks that draw a database") — and it draws its
+      // own paper, shadow, head and footer. A card inside a card is drawn by no
+      // board, so the frame steps aside. The compact marks (#259) are the
+      // template's, and keep its card.
+      if (isChartCard(block)) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
       return {

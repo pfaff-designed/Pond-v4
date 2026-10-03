@@ -39,9 +39,11 @@ import {
   type CollectionRow,
 } from './apply'
 import { CollectionBigNumber, ChartControls, BigNumberControls, ControlSelect } from './figures'
-import { CollectionChart } from './collection-chart'
+import { CollectionChart } from './collection-chart-card'
 import { CompactChart } from './collection-chart-compact'
-import { compactChartMark } from './chart-compact'
+import { isChartCard } from './chart-compact'
+import { useChartProvenance } from './use-chart-provenance'
+import type { ChartProvenance } from '../chart/chrome'
 import { ViewNotice } from './notice'
 import { usePointerBucketDrag } from './use-pointer-bucket-drag'
 import { usePointerGanttDrag } from './use-gantt-bar-drag'
@@ -91,8 +93,10 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, isLoading, setValue, addRow, removeRow, renameRow, updateSchema } =
+  const { schema, rows, isLoading, isError, setValue, addRow, removeRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
+  // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
+  const chartProvenance = useChartProvenance(pageId, collectionId)
 
   // Config edits (mode/group-by) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
@@ -120,6 +124,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         schema={schema}
         rows={rows}
         isLoading={isLoading}
+        isError={isError}
         editable={editable}
         linked={!!data.collectionId}
         onEdit={setValue}
@@ -129,6 +134,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         onConfigChange={onConfigChange}
         onUpdateSchema={editable ? updateSchema : undefined}
         onOpenCard={openCard}
+        chartProvenance={chartProvenance}
       />
       <CardPreviewModal
         rowId={preview?.id ?? null}
@@ -147,6 +153,8 @@ export interface CollectionViewProps {
   schema: PropertySchema | null
   rows: CollectionRow[]
   isLoading?: boolean
+  /** Either collection read failed — distinct from "no rows", which would be a lie. */
+  isError?: boolean
   editable?: boolean
   /** True when this is a linked view over another collection (#41) — words the
    *  "target unavailable" notice when a linked target is deleted or isn't a collection. */
@@ -167,6 +175,8 @@ export interface CollectionViewProps {
    *  row id. Present on the live host (ViewView mounts the modal); absent on
    *  Storybook/static renders, where cards stay plain (no dead affordance). */
   onOpenCard?: (rowId: string) => void
+  /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
+  chartProvenance?: ChartProvenance
 }
 
 export function CollectionView({
@@ -174,6 +184,7 @@ export function CollectionView({
   schema,
   rows,
   isLoading,
+  isError,
   editable,
   linked,
   onEdit,
@@ -183,26 +194,55 @@ export function CollectionView({
   onConfigChange,
   onUpdateSchema,
   onOpenCard,
+  chartProvenance,
 }: CollectionViewProps) {
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
     [rows, schema, config]
   )
 
+  // #227: the chart CARD owns its loading state (the board's four-bar skeleton) —
+  // every other mode shares the calm notice until its rows arrive.
+  const chartCard = isChartCard(config)
   if (isLoading) {
-    return <ViewNotice>Loading rows…</ViewNotice>
+    return chartCard ? (
+      <CollectionChart
+        config={config}
+        schema={null}
+        rows={[]}
+        totalRows={0}
+        isLoading
+        provenance={chartProvenance}
+      />
+    ) : (
+      <ViewNotice>Loading rows…</ViewNotice>
+    )
   }
 
   // No schema → not really a collection. A LINKED view whose target was deleted (or
   // was never a collection) resolves to no schema too — word that case for what it is
   // rather than the generic "add properties" hint. Either way, fail soft (#41).
-  if (!schema) {
-    return (
-      <ViewNotice>
-        {linked
-          ? 'That collection isn’t available.'
-          : 'This view needs a collection with properties.'}
-      </ViewNotice>
+  if (!schema || isError) {
+    const line = isError
+      ? 'That collection couldn’t be read.'
+      : linked
+        ? 'That collection isn’t available.'
+        : 'This view needs a collection with properties.'
+    // A chart card has no block frame around it (#227), so a bare notice here
+    // would float on the page in no card at all — where every other mode's
+    // notice still sits inside its block. The card draws its own, which is what
+    // its `error` state is for.
+    return chartCard ? (
+      <CollectionChart
+        config={config}
+        schema={null}
+        rows={[]}
+        totalRows={0}
+        errorLine={line}
+        provenance={chartProvenance}
+      />
+    ) : (
+      <ViewNotice>{line}</ViewNotice>
     )
   }
 
@@ -251,10 +291,23 @@ export function CollectionView({
       ) : config.mode === 'chart' ? (
         // #259: the chart's PRESENTATION — the compact inline mark (the board's
         // `bars` strip / `heat` grid) or the chart card. Same rows, same aggregation.
-        compactChartMark(config) && config.chart ? (
+        !chartCard && config.chart ? (
           <CompactChart schema={schema} rows={processed} chart={config.chart} />
         ) : (
-          <CollectionChart schema={schema} rows={processed} chart={config.chart} />
+          <CollectionChart
+            config={config}
+            schema={schema}
+            rows={processed}
+            totalRows={rows.length}
+            provenance={chartProvenance}
+            /* `editable` gates it, as every other mode's insert is gated: a diff
+               card, a create-page proposal and `CardPreviewModal` all render this
+               view with no `editable`, and an `add a row` there would write to the
+               collection from a surface whose whole job is to be reviewed —
+               "pages change only through the person's own edits or an accepted
+               diff" (`PROJECT_RULES.md`). */
+            onAddRow={editable && onAddRow ? () => void onAddRow() : undefined}
+          />
         )
       ) : config.mode === 'big-number' ? (
         <CollectionBigNumber schema={schema} rows={processed} bigNumber={config.bigNumber} />
