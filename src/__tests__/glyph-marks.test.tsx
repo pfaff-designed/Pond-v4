@@ -210,7 +210,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
   return render(
     <RailView
       tree={TREE}
-      pondName="Life"
+      pondName="life"
       marks={marks}
       selectedId={null}
       expanded={new Set(['health', 'personal'])}
@@ -456,7 +456,7 @@ describe('Rail — the seed title resolves too', () => {
     const { getByRole } = render(
       <RailView
         tree={[node('fin', 'page', 'Financial')]}
-        pondName="Life"
+        pondName="life"
         selectedId={null}
         expanded={new Set()}
         lifeExpanded

@@ -63,6 +63,7 @@ const NODE_TYPES: readonly NodeType[] = ['routine', 'project', 'action', 'page']
 export function parseChatBody(body: unknown): {
   messages: UIMessage[]
   nodeId?: string
+  pondId?: string
   nodeType?: NodeType
   /** Which pond this turn belongs to — the scope of any change-log record it
    *  writes (#110 criterion 11). Lives in a client context, so it rides the
@@ -84,6 +85,7 @@ export function parseChatBody(body: unknown): {
   return {
     messages: b.messages as UIMessage[],
     nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
+    pondId: typeof b.pondId === 'string' ? b.pondId : undefined,
     nodeType,
     workspace: b.workspace === 'sandbox' ? 'sandbox' : 'main',
     resolutions: parseResolutions(b.resolutions),
@@ -102,7 +104,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, workspace, resolutions, requestChanges } = parsed
+  const { messages, nodeId, nodeType, workspace, resolutions, requestChanges, pondId } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
@@ -127,6 +129,8 @@ export async function POST(req: Request) {
       nodeId,
       nodeType,
       latestUserText: userText,
+      // #312: the composer reads only this pond (`s6m5`).
+      pondId,
     })
     if (context) contextBlocks.push(context)
 

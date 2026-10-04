@@ -19,6 +19,7 @@ import {
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
@@ -417,6 +418,7 @@ export function AITerminal() {
   // the accept handlers below construct it only when they actually run.
   const getSupabase = useLazySupabase()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const basePath = workspaceBasePath(workspace)
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
@@ -870,6 +872,9 @@ export function AITerminal() {
   // pending one is still in the thread (6d closing) but must not pin the drawer
   // open on every mount; only a card opened THIS session does.
   const [seededProposalIds, setSeededProposalIds] = useState<ReadonlySet<string>>(new Set())
+  // Which pond's thread is currently on screen (#312) — so a pond CHANGE can be
+  // told apart from a first load.
+  const loadedPondRef = useRef<string | null>(null)
   useEffect(() => {
     // Async IIFE so an envless client construction (#38) rejects into the catch
     // below instead of throwing out of the effect and crashing the mount.
@@ -879,9 +884,20 @@ export function AITerminal() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
-      const conversation = await getOrCreateConversation(supabase, user.id, workspace)
+      const conversation = await getOrCreateConversation(supabase, user.id, workspace, pondId)
       setConversationId(conversation.id)
-      if (conversation.messages.length > 0) {
+      // #312: a thread is per pond, so SWITCHING ponds replaces what is on screen.
+      // Switching is a client-side navigation and this component never unmounts, so
+      // without this the previous pond's conversation stayed visible in the new
+      // pond, its context chips pointing at pages that pond cannot see.
+      //
+      // Guarded on the pond having actually CHANGED, not on every run: a first
+      // mount with an empty thread must not touch `setMessages`, which is what two
+      // 6a tests assert (an error must drop exactly one answer, and asking again
+      // must not reset the thread).
+      const switched = loadedPondRef.current !== null && loadedPondRef.current !== pondId
+      loadedPondRef.current = pondId
+      if (switched || conversation.messages.length > 0) {
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
         setMessages(conversation.messages)
       }
@@ -894,7 +910,8 @@ export function AITerminal() {
       setSeededProposalIds(new Set(Object.keys(conversation.resolutions.pageProposals ?? {})))
       setIsReady(true)
     })().catch(console.error)
-  }, [setMessages, getSupabase, workspace])
+    // `pondId` is a real dependency: the thread it loads belongs to that pond.
+  }, [setMessages, getSupabase, workspace, pondId])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
@@ -1065,7 +1082,7 @@ export function AITerminal() {
     } = await supabase.auth.getUser()
     if (!user) return
     await dissolveConversation(supabase, conversationId)
-    const fresh = await getOrCreateConversation(supabase, user.id, workspace)
+    const fresh = await getOrCreateConversation(supabase, user.id, workspace, pondId)
     setConversationId(fresh.id)
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
@@ -1148,7 +1165,8 @@ export function AITerminal() {
       // `workspace` scopes the change-log record the route writes for any
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
-      const body = { nodeId, nodeType, workspace, resolutions: outgoing }
+      // #312: `pondId` so the route's context reads only this pond (`s6m5`).
+      const body = { nodeId, nodeType, workspace, pondId, resolutions: outgoing }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
@@ -1175,6 +1193,7 @@ export function AITerminal() {
       nodeId,
       nodeType,
       workspace,
+      pondId,
       quoteCtx,
       csvAttachment,
       fileParts,

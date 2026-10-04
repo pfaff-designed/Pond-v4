@@ -226,10 +226,18 @@ export interface FlatRow {
 export function flattenVisible(
   roots: RailNode[],
   expanded: ReadonlySet<string>,
-  lifeExpanded: boolean
+  lifeExpanded: boolean,
+  /**
+   * #312/#320: the root row is named for the POND you are in. `LIFE_NODE`'s own
+   * title is the literal `'life'`, which was right when a person had one pond and
+   * wrong in every pond after — a new pond's root row read `life` while its header
+   * read the pond's real name. Omitted, it stays `LIFE_NODE`'s title.
+   */
+  rootTitle?: string | null
 ): FlatRow[] {
+  const root = rootTitle ? { ...LIFE_NODE, title: rootTitle } : LIFE_NODE
   const out: FlatRow[] = [
-    { id: LIFE_ID, node: LIFE_NODE, depth: 0, isFolder: true, posInSet: 1, setSize: 1 },
+    { id: LIFE_ID, node: root, depth: 0, isFolder: true, posInSet: 1, setSize: 1 },
   ]
   const walk = (nodes: RailNode[], depth: number) => {
     nodes.forEach((node, i) => {

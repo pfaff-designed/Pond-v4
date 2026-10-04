@@ -370,12 +370,23 @@ export async function hydrateViewBlocks(
 
 /** All of a user's pages as lean title rows for the workspace outline — one
  *  query, no blocks/embeddings (listPages would drag every page body along). */
-export async function fetchPageSummaries(sb: Sb, userId: string): Promise<PageSummary[]> {
-  const { data } = await sb
-    .from('pages')
-    .select('id, parent_id, type, title')
-    .eq('user_id', userId)
-    .order('order', { ascending: true })
+export async function fetchPageSummaries(
+  sb: Sb,
+  userId: string,
+  /**
+   * #312: `Pond 06.13` `s6m5` — "the composer reads only this pond". This is the
+   * outline the model is given, so without the pond it was handed EVERY pond's
+   * page titles: a new pond's chat could name, mention and propose against pages
+   * that pond cannot see.
+   */
+  pondId?: string | null
+): Promise<PageSummary[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (sb as any).from('pages').select('id, parent_id, type, title').eq('user_id', userId)
+
+  if (pondId) q = q.eq('pond_id', pondId)
+
+  const { data } = await q.order('order', { ascending: true })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return ((data ?? []) as any[]).map((r) => ({
@@ -412,6 +423,8 @@ export interface BuildChatContextOptions {
   nodeId?: string | null
   nodeType?: NodeType | null
   latestUserText?: string
+  /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
+  pondId?: string | null
 }
 
 /**
@@ -442,7 +455,7 @@ export async function buildChatContext(
     }
   }
 
-  const outline = formatWorkspaceOutline(await fetchPageSummaries(sb, userId))
+  const outline = formatWorkspaceOutline(await fetchPageSummaries(sb, userId, opts.pondId))
   if (outline) blocks.push(outline)
 
   return blocks.join('\n\n')

@@ -507,7 +507,11 @@ describe('AC7 — RailView through PondMolecule', () => {
     const utils = render(
       <RailView
         tree={TREE}
-        pondName="Life"
+        // Lowercase: the data is lowercase and the capitals in the boards are the
+        // eyebrow's own text-transform (#101 review). The root row renders this
+        // prop now rather than a hard-coded "life" (#312), so a title-cased
+        // fixture would be asserting a value the product never stores.
+        pondName="life"
         selectedId={null}
         expanded={new Set(['health'])}
         lifeExpanded

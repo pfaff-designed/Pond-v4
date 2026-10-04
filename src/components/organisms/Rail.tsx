@@ -586,8 +586,13 @@ export function RailView({
   // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
   // ↑/↓ walk from the last Life row into databases.
   const flat = useMemo(
-    () => [...flattenVisible(lifeTree, expanded, lifeExpanded), ...databasesFlat],
-    [lifeTree, expanded, lifeExpanded, databasesFlat]
+    () => [
+      // #312/#320: the root row is named for the pond you are in, not the literal
+      // 'life' that `LIFE_NODE` carries.
+      ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
+      ...databasesFlat,
+    ],
+    [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
@@ -728,10 +733,15 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
+        // #312/#320: the root row is the POND you are in, not the word "life".
+        // This was a hard-coded literal, which is why a new pond's root row read
+        // `life` while its header read the pond's real name — and why overriding
+        // `LIFE_NODE.title` alone changed nothing.
+        //
         // Lowercase, like every other line of the rail's source copy in `Pond 05
         // Shell` — the capitals in the boards are the eyebrow's own text-transform
-        // (#101 review). The pond NAME above reads `usePondName()`, also lowercase.
-        title="life"
+        // (#101 review). `usePondName()` supplies it, also lowercase.
+        title={pondName}
         depth={0}
         isFolder
         isExpanded={lifeExpanded}
@@ -1206,7 +1216,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
-        onLife={() => router.push(basePath)}
+        onLife={() => router.push(workspaceUrl(null, basePath))}
         onToggleLife={handleToggleLife}
         onNewPage={requestCreatePage}
         canDrop={canDrop}
