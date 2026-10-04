@@ -30,6 +30,11 @@ import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import { usePondId } from '@/lib/pond/context'
+import { SaveAsTemplateSheet } from '@/components/organisms/SaveAsTemplateSheet'
+import { getPage } from '@/lib/pages/client'
+import { createTemplate } from '@/lib/templates/client'
+import { templateBlocksFrom } from '@/lib/templates/from-page'
+import { createClient } from '@/lib/supabase/client'
 
 const RECENT_PAGES_KEY = 'pond:recent-pages'
 /** `Pond 02` 2g: "before anything is typed: the last three pages". */
@@ -113,12 +118,15 @@ export function ShellCommands() {
       paletteOpen
         ? paletteItems(
             pages,
-            readRecents().map((r) => r.id)
+            readRecents().map((r) => r.id),
+            currentNodeId
           )
         : [],
-    [pages, paletteOpen]
+    [pages, paletteOpen, currentNodeId]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
+  // `6i` frame 3: saving is a page action, so the sheet opens on the page in view.
+  const [saveTemplateFor, setSaveTemplateFor] = useState<{ id: string; title: string } | null>(null)
   // One owner for where a new page files: the palette's row names `parent.title`
   // and the dialog opens on `parent.id` — never derived twice.
   const parent = useMemo(
@@ -138,13 +146,57 @@ export function ShellCommands() {
         requestTerminalFocus(item.query)
         return
       }
+      if (item.action === 'save-as-template') {
+        // The row lists only with a page open, so `currentNodeId` is set here.
+        const open = pages.find((p) => p.id === currentNodeId)
+        if (currentNodeId) {
+          setSaveTemplateFor({ id: currentNodeId, title: open?.title || 'Untitled' })
+        }
+        return
+      }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title })
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [closePalette, pages, router]
+    [closePalette, pages, router, currentNodeId]
+  )
+
+  /**
+   * Save the page in view as a template (KAN-10 / #157, board `6i`).
+   *
+   * The page's BLOCKS are fetched here rather than held in state: the palette
+   * reads `fetchPages`, a lean projection with no `blocks` at all, and the open
+   * page's own cache belongs to `DocumentPanel`. One read at save time is both
+   * simpler and certain to be current.
+   *
+   * `templateBlocksFrom` is what decides what the template carries — by default
+   * the stack, the labels and the placeholders, never the content (`6i` frame 4).
+   */
+  const saveAsTemplate = useCallback(
+    async ({ name, keepContent }: { name: string; keepContent: boolean }) => {
+      const target = saveTemplateFor
+      if (!target) return
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const page = await getPage(supabase, target.id)
+      if (!page) throw new Error('That page no longer exists')
+      await createTemplate(supabase, user.id, {
+        name,
+        // Saved shapes are the generic `page` kind; the twelve specific kinds
+        // belong to the premades (#155), which are code constants, not rows.
+        kind: 'page',
+        blocks: templateBlocksFrom(page.blocks, () => crypto.randomUUID(), { keepContent }),
+        // `listTemplates` filters on the pond, so an unstamped template would be
+        // invisible in every pond including this one.
+        pondId,
+      })
+    },
+    [saveTemplateFor, pondId]
   )
 
   return (
@@ -155,6 +207,13 @@ export function ShellCommands() {
         defaultParentId={parent.id}
         defaultTitle={createTitle}
       />
+      {saveTemplateFor && (
+        <SaveAsTemplateSheet
+          pageTitle={saveTemplateFor.title}
+          onSave={saveAsTemplate}
+          onClose={() => setSaveTemplateFor(null)}
+        />
+      )}
       {paletteOpen && (
         <CommandPalette
           items={items}

@@ -27,8 +27,12 @@ export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
  * (`new page`) and the one the palette mints from the query (`new page “q”`) are
  * two rows — both can list at once — doing one job, so they share this one field
  * and the host reads it, never two ids.
+ *
+ * `save-as-template` is a PAGE action, so it lists only when a page is open —
+ * board `6i` frame 3: "Saving is a page action, so it lives in the command
+ * palette, not the / menu."
  */
-export type PaletteAction = 'new-page' | 'ask-pond'
+export type PaletteAction = 'new-page' | 'ask-pond' | 'save-as-template'
 
 export interface PaletteItem {
   id: string

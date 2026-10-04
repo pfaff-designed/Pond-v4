@@ -250,6 +250,26 @@ const ROWS: PageRow[] = [
   row({ id: 'loose', title: '' }),
 ]
 
+describe('paletteItems — the save-as-template page action (KAN-10, board `6i` frame 3)', () => {
+  // "Saving is a page action, so it lives in the command palette, not the / menu."
+  // A page action has nothing to act on with no page open, so it must not list.
+  it.each([
+    ['no page open', null, false],
+    ['a page open', 'entry', true],
+  ])('%s → listed: %s', (_name, openPageId, listed) => {
+    const items = paletteItems(ROWS, [], openPageId as string | null)
+    expect(items.some((i) => i.action === 'save-as-template')).toBe(listed)
+  })
+
+  it('the standing actions list either way, so adding a page action removed nothing', () => {
+    for (const open of [null, 'entry']) {
+      const actions = paletteItems(ROWS, [], open).map((i) => i.action)
+      expect(actions).toContain('new-page')
+      expect(actions).toContain('ask-pond')
+    }
+  })
+})
+
 describe('paletteItems — every value from the owner that already derives it', () => {
   it('area from the breadcrumb’s ancestry, kind from the databases root, glyph from the mark, path for scope', () => {
     const items = paletteItems(ROWS, [])

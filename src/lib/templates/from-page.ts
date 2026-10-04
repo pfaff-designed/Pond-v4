@@ -75,10 +75,12 @@ export function templateBlocksFrom(
  * read that one database, and once the template is used in another pond that is
  * a cross-pond read of the kind #323 removed everywhere else.
  *
- * OPEN (KAN-10): the board's tick says "this page's content" and does not say
- * what that means for a view, whose content is a live reference. This takes the
- * conservative reading — shape, never a tie — which matches `provenance.ts`'s
- * copy-not-a-tie rule. Worth confirming against `6i` frame 4 before it ships.
+ * DECIDED (KAN-10, 2026-10-04): the board's tick says "this page's content" and
+ * does not say what that means for a view, whose content is a live reference.
+ * Ruled: the new page gets the view's SHAPE with no source attached — records are
+ * left behind. Ticking the box does not bring another page's records with it,
+ * because a pond must stay sealed and a template is a copy, never a tie
+ * (`provenance.ts`). Do not "fix" this by restoring the id.
  */
 function withoutTie(block: Block, id: string): Block {
   if (block.type !== 'view') return { ...block, id }
