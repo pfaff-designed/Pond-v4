@@ -12,6 +12,12 @@
  *
  * These tests pin the token layer (globals.css), sweep the source for the retired
  * treatments, and render the named surfaces to check they landed on legal values.
+ *
+ * It also holds the repo-hygiene laws rehomed out of the retired `pond-*` jest
+ * suites: the laws that read SOURCE TEXT off disk or compute arithmetic over the
+ * raw palette. None of them is a component test — a browser story cannot see a
+ * file that is absent, a cva variant that was deleted, a second copy of a class
+ * literal in a file nobody listed, or a contrast ratio derived from `--raw-*`.
  */
 import React from 'react'
 import fs from 'node:fs'
@@ -19,6 +25,9 @@ import path from 'node:path'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { FOCUS_RING } from '@/components/atoms/focus-ring'
+import { POND_CONTROL_VARIANTS } from '@/components/atoms/PondControl'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { READING_PROSE_CLASS, TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
@@ -526,5 +535,243 @@ describe('type sites that were on the fourth tier land on the board’s 68', () 
     expect(line.className).toMatch(/text-mn-text-secondary/)
     expect(line.className).toMatch(/text-\[13\.5px\]/)
     expect(line.className).not.toMatch(/mn-text-faint/)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Rehomed from the `pond-*` suites: laws about SOURCE TEXT and PURE MATHS.
+//
+// Everything below reads a file off disk or does arithmetic over the raw
+// palette. A Storybook story renders a component, so it can never prove any of
+// it: an absence (a deleted cva variant, a file that is gone, a string drawn
+// nowhere), a single declaration site, or a WCAG ratio parsed out of the CSS.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── #92: press-* is gone, and no component spells a colour by hand ──────────
+
+describe('source hygiene — no press-* class, no literal hex (#92)', () => {
+  // `press-*` → `color-*` completed in #92; these four files are the surviving
+  // absence guard. PondAtom and PondMolecule additionally take every colour from
+  // a role token, so a hex literal in either is a token-layer bypass.
+  const HYGIENE = [
+    { file: 'src/components/atoms/PondAtom.tsx', hex: true },
+    { file: 'src/components/atoms/RelationChip.tsx', hex: false },
+    { file: 'src/components/atoms/QuoteChip.tsx', hex: false },
+    { file: 'src/components/molecules/PondMolecule.tsx', hex: true },
+  ]
+
+  it.each(HYGIENE)('$file carries no press-* class', ({ file }) => {
+    expect(read(file)).not.toMatch(/press-/)
+  })
+
+  it.each(HYGIENE.filter((h) => h.hex))('$file carries no literal hex colour', ({ file }) => {
+    expect(read(file)).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+})
+
+// ── The cva axes of ui/button.tsx — provable only in source ─────────────────
+
+describe('ui/button.tsx — the cva axes (#221 / #230)', () => {
+  // No rendering can prove a variant's ABSENCE: `buttonVariants({ variant:
+  // 'destructive' })` on a table that no longer has the key just falls back to
+  // the default and returns a perfectly legal string. The cva table is read.
+  const source = read('src/components/ui/button.tsx')
+
+  it.each([
+    // colour axis — the board's four and nothing else (`PondControl.dc.html`)
+    ['destructive', /^\s*destructive:/m, false],
+    ['outline', /^\s*outline:/m, false],
+    ['link', /^\s*link:/m, false],
+    ['default', /^\s*default:/m, false],
+    ['primary', /^\s*primary:/m, true],
+    ['quiet', /^\s*quiet:/m, true],
+    // size axis — sm/xs carry the composer's diff actions and the dialogs (#230)
+    ['sm', /^\s*sm:/m, true],
+    ['xs', /^\s*xs:/m, true],
+    ['mobile', /^\s*mobile:/m, true],
+    ['lg', /^\s*lg:/m, false],
+    ['icon*', /^\s*icon(-xs|-sm|-lg)?:/m, false],
+  ])('the %s key is present=%s in the cva tables', (_key, pattern, present) => {
+    expect(pattern.test(source)).toBe(present)
+  })
+
+  it('the unargued default IS primary · desktop', () => {
+    expect(buttonVariants()).toBe(buttonVariants({ variant: 'primary', size: 'desktop' }))
+  })
+
+  it('the mobile size is the board’s h44 · px20 · 14px (AUDIT X1)', () => {
+    expect(buttonVariants({ size: 'mobile' })).toMatch(/\bh-11\b.*\bpx-5\b.*\btext-\[14px\]/)
+  })
+
+  it.each(POND_CONTROL_VARIANTS.map((v) => [v]))(
+    'cn(buttonVariants({ variant: "%s" })) keeps BOTH the size and the colour (#252)',
+    (variant) => {
+      // tailwind-merge dropped one of the two when a variant's ground and its
+      // label colour collided; the regression was invisible until a button went
+      // text-less. A pure function over `cn`, not a render.
+      const merged = cn(buttonVariants({ variant }))
+      expect(merged).toContain('text-[12px]')
+      expect(merged).toMatch(/text-mn-text(\/80)?\b|text-raw-paper/)
+    }
+  )
+})
+
+// ── One owner for the mist focus ring ──────────────────────────────────────
+
+describe('FOCUS_RING has exactly one owner (#221 review)', () => {
+  const OWNER = 'src/components/atoms/focus-ring.ts'
+  const CONSUMERS = [
+    'src/components/atoms/PondAtom.tsx',
+    'src/components/molecules/PondMolecule.tsx',
+    'src/components/atoms/PondControl.tsx',
+    'src/components/ui/button.tsx',
+  ]
+
+  it('is the mist ring, spelled once', () => {
+    expect(FOCUS_RING).toBe('outline-2 outline-offset-2 outline-mn-area-b')
+  })
+
+  it.each(CONSUMERS.map((f) => [f]))(
+    '%s redeclares no FOCUS_RING and imports the owner',
+    (file) => {
+      const source = read(file)
+      expect(source).not.toMatch(/const FOCUS_RING\s*=/)
+      expect(source).toMatch(/from '@\/components\/atoms\/focus-ring'/)
+    }
+  )
+
+  it('the ring utilities are SPELLED OUT in exactly one file — the owner', () => {
+    // The `const FOCUS_RING =` check above passes while the ring is still spelled
+    // out somewhere else, which is what the #221 review found in PondMolecule.
+    // DERIVED on purpose: the whole value of this sweep is catching a fifth copy
+    // in a file nobody thought to list, so it must not take a list.
+    const offenders = sourceFiles().filter(
+      (f) => f !== OWNER && read(f).includes('outline-offset-2 outline-mn-area-b')
+    )
+    expect(offenders).toEqual([])
+  })
+})
+
+// ── One state table, no named type sizes ───────────────────────────────────
+
+describe('PondControl.tsx — one shared state table, no Tailwind named sizes', () => {
+  it('the eight states are ONE exhaustive map, not eight per-kind recipes', () => {
+    // Exhaustiveness is a TYPE fact: `Record<PondControlState, …>` fails to
+    // compile if a state is missed. A render cannot tell one shared map from
+    // five hand-written per-kind recipes that happen to agree today.
+    const source = read('src/components/atoms/PondControl.tsx')
+    expect(source).toMatch(/Record<PondControlState,/)
+    expect(source).toMatch(/Record<PondControlKind,/)
+  })
+
+  it.each([['src/components/atoms/PondControl.tsx'], ['src/components/ui/button.tsx']])(
+    '%s uses no Tailwind named type size (#217)',
+    (file) => {
+      expect(read(file)).not.toMatch(/\btext-(xs|sm|base|lg|xl)\b/)
+    }
+  )
+})
+
+// ── The bare <input type="checkbox"> sites gave up their inputs ────────────
+
+describe('no production source keeps a bare type="checkbox"', () => {
+  it.each([['src/components/molecules/PropertyInspector.tsx'], ['src/lib/modules/view/view.tsx']])(
+    '%s draws no bare checkbox input — it takes PondControl kind="checkbox"',
+    (file) => {
+      expect(read(file)).not.toMatch(/type="checkbox"/)
+    }
+  )
+
+  it('each surviving checkbox names its board in a comment', () => {
+    // Two boards, two checkboxes — unreconciled by design, so each one carries
+    // the board it transcribes rather than being silently deduplicated.
+    expect(read('src/components/atoms/PondControl.tsx')).toMatch(/PondControl\.dc\.html/)
+    expect(read('src/components/atoms/PondAtom.tsx')).toMatch(
+      /PondAtom\.dc\.html[^\n]*checkbox|checkbox[^\n]*PondAtom\.dc\.html/
+    )
+  })
+})
+
+// ── The absorbed molecules are gone, not relocated ─────────────────────────
+
+describe('TreeRow and OverviewCard were absorbed into PondMolecule (#95)', () => {
+  it.each([
+    ['src/components/molecules/TreeRow.tsx'],
+    ['src/components/molecules/TreeRow.stories.tsx'],
+    ['src/components/molecules/OverviewCard.tsx'],
+    ['src/components/molecules/OverviewCard.stories.tsx'],
+    ['src/components/molecules/RelationValue.stories.tsx'],
+  ])('%s does not exist', (gone) => {
+    expect(fs.existsSync(path.join(root, gone))).toBe(false)
+  })
+
+  it('no source file still imports the absorbed molecules', () => {
+    expect(linesMatching(/from '@\/components\/molecules\/(TreeRow|OverviewCard)'/)).toEqual([])
+  })
+})
+
+// ── Empty copy: the three ad-hoc sentence-case strings ─────────────────────
+
+describe('source sweep — the three sentence-case empty strings are gone', () => {
+  // The frame owns the empty state (`PondBlockEmpty`), so a block view that
+  // draws its own notice is a divergence. These are the three that existed.
+  it.each([['No entries yet'], ['No rows yet'], ['No data yet']])(
+    '“%s” is drawn nowhere under src/',
+    (needle) => {
+      expect(sourceFiles().filter((f) => read(f).includes(needle))).toEqual([])
+    }
+  )
+})
+
+// ── AA contrast over the raw palette ──────────────────────────────────────
+//
+// Mirrors the audit-tokens contrast check in-suite so the three ink tiers can
+// never silently rot: the `--raw-*` values are parsed out of globals.css, each
+// tier composited at its alpha, and the WCAG ratio computed. Pure arithmetic
+// over the token layer — nothing is rendered, and nothing can be.
+
+describe('ink-tier contrast on paper and on both dark grounds', () => {
+  const css = read(CSS)
+
+  const raw = (name: string): [number, number, number] => {
+    const m = css.match(new RegExp(`--raw-${name}:\\s*#([0-9a-fA-F]{6})`))
+    if (!m) throw new Error(`--raw-${name} not found in globals.css`)
+    const h = m[1]
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+  }
+  const composite = (fg: number[], bg: number[], a: number) =>
+    fg.map((c, i) => a * c + (1 - a) * bg[i])
+  const luminance = ([r, g, b]: number[]) => {
+    const f = (c: number) => {
+      const s = c / 255
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+  }
+  const contrast = (fg: number[], bg: number[]) => {
+    const [l1, l2] = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
+    return (l1 + 0.05) / (l2 + 0.05)
+  }
+
+  /** --mn-text / --mn-text-meta / --mn-text-secondary. There is no fourth. */
+  const TIERS = [1, 0.8, 0.68]
+
+  /** label, the ink doing the writing, the ground it sits on. */
+  const GROUNDS: Array<[string, string, string]> = [
+    ['ink over paper', 'ink', 'paper'],
+    ['paper over the dark ground', 'paper', 'ink'],
+    ['paper over the dark card', 'paper', 'card-dark'],
+  ]
+
+  const CASES = GROUNDS.flatMap(([label, fg, bg]) => TIERS.map((tier) => ({ label, fg, bg, tier })))
+
+  it.each(CASES)('$label, tier $tier — ≥ 4.5 (AA body text)', ({ fg, bg, tier }) => {
+    const ground = raw(bg)
+    expect(contrast(composite(raw(fg), ground, tier), ground)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('the reminder due-dot reads ≥ 3:1 as a non-text mark on paper', () => {
+    // Burnt orange is a MARK, so it answers to the 3:1 non-text ratio, not 4.5.
+    expect(contrast(raw('burnt-orange'), raw('paper'))).toBeGreaterThanOrEqual(3)
   })
 })

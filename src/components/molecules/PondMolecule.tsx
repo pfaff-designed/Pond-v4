@@ -186,8 +186,13 @@ const EMPTY_TITLE: Partial<Record<PondMoleculeKind, string>> = {
 const AREA_BG = { sage: 'bg-mn-area-a', mist: 'bg-mn-area-b', navy: 'bg-mn-area-c' }
 
 /** The dragging lift: card ground, deep shadow, the -0.6° tilt — which
- *  collapses under prefers-reduced-motion. */
-const LIFT = 'bg-card shadow-mn-lg -rotate-[0.6deg] motion-reduce:transform-none'
+ *  collapses under prefers-reduced-motion.
+ *
+ *  The guard must be `rotate-none`, NOT `transform-none`: Tailwind v4 compiles
+ *  `-rotate-[0.6deg]` to the `rotate:` PROPERTY, and `transform: none` cannot
+ *  neutralise it. The old spelling read correct and suppressed nothing, so the
+ *  tilt survived `prefers-reduced-motion` for every dragged row. */
+const LIFT = 'bg-card shadow-mn-lg -rotate-[0.6deg] motion-reduce:rotate-none'
 
 export function PondMolecule({
   kind,
@@ -493,7 +498,8 @@ export function PondMolecule({
         : hover
           ? '-translate-y-px shadow-mn-md'
           : 'shadow-mn-card',
-      'motion-reduce:transform-none',
+      // `translate-y-*` compiles to `translate:`, so this must be translate-none.
+      'motion-reduce:translate-none',
       editRing,
       wrap
     )
@@ -794,7 +800,8 @@ export function PondMolecule({
           : hover
             ? '-translate-y-px shadow-mn-md'
             : 'shadow-mn-sm',
-        'motion-reduce:transform-none',
+        // `translate-y-*` compiles to `translate:`, so this must be translate-none.
+        'motion-reduce:translate-none',
         editing && 'shadow-none ring-[1.4px] ring-inset ring-mn-text',
         empty && 'bg-transparent shadow-none ring-[1.4px] ring-inset ring-mn-text/20',
         on && 'opacity-60',

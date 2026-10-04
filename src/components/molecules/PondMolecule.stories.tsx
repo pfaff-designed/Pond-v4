@@ -266,10 +266,12 @@ export const DraggingLift: Story = {
     // Tailwind v4 writes a rotate utility to the `rotate` PROPERTY, not to
     // `transform`, so the tilt is read back from there.
     await expect(s.rotate).toBe('-0.6deg')
-    // NOTE — divergence, reported not fixed: the reduced-motion guard is
-    // `motion-reduce:transform-none`, which cannot neutralise a `rotate:`
-    // property, so the tilt survives prefers-reduced-motion.
-    await expect(row.className).toContain('motion-reduce:transform-none')
+    // The reduced-motion guard, asserted by CLASS — the one place a class name
+    // stands in for a computed value, because a play function cannot flip the
+    // `prefers-reduced-motion` media query. It must be `rotate-none`: Tailwind v4
+    // writes the tilt to the `rotate:` property (asserted above), which the old
+    // `transform-none` spelling could not neutralise.
+    await expect(row.className).toContain('motion-reduce:rotate-none')
   },
 }
 

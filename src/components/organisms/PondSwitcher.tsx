@@ -25,10 +25,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
+import { AreaMark } from '@/components/atoms/AreaMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
 
-/** The board's 9×9 chevron: `margin-left:6px`, `opacity:.8`, rotates when open. */
+/** The board's 9×9 chevron: `margin-left:6px`, the .68 ink tier, rotates when open.
+ *  `swChev.color` is `rgba(27,29,20,0.68)` — a tier, so `text-mn-text-secondary`,
+ *  not `opacity-80` over `currentColor`, which lands on a different value and
+ *  fades the stroke rather than tinting it. */
 function SwitcherChevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -41,7 +45,7 @@ function SwitcherChevron({ open }: { open: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className={`ml-[6px] flex-none opacity-80 transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
+      className={`ml-[6px] flex-none text-mn-text-secondary transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
         open ? 'rotate-180' : ''
       }`}
     >
@@ -153,7 +157,7 @@ export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
           <div
             role="menu"
             aria-label="Ponds"
-            className="mn-glass absolute top-[30px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
+            className="mn-glass absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
           >
             <div className="px-[10px] pt-[6px] pb-[4px] font-mono text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
               ponds
@@ -169,6 +173,7 @@ export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
                   p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'
                 }`}
               >
+                {p.glyph && <AreaMark glyph={p.glyph} color="var(--mn-text)" />}
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 {p.id === active?.id && (
                   <span className="font-mono text-[10.5px] text-mn-text">✓</span>
