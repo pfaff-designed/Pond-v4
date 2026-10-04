@@ -15,6 +15,7 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PondSwitcher } from '@/components/organisms/PondSwitcher'
+import { PondProvider } from '@/lib/pond/context'
 
 const push = jest.fn()
 
@@ -35,10 +36,16 @@ import { createPond, listPonds } from '@/lib/pond/client'
 const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
 const NOISE = { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'ink', order: 1 }
 
-// No QueryClientProvider on purpose: the switcher owns its own fetch, so the rail
-// head keeps working in the four suites and the stories that render it without one.
+// Rendered inside the REAL provider, not a stub: the switcher and the shell share
+// one pond list, and the bug this guards against lived in exactly that seam — a
+// created pond was in the URL before the list had it, so the shell resolved back
+// to the first pond and the new pond showed its pages.
 function renderSwitcher() {
-  return render(<PondSwitcher fallbackName="life" />)
+  return render(
+    <PondProvider>
+      <PondSwitcher fallbackName="life" />
+    </PondProvider>
+  )
 }
 
 beforeEach(() => {
@@ -99,46 +106,76 @@ describe('the pond switcher', () => {
     expect(link).toHaveAttribute('href', '/workspace?pond=p-noise')
   })
 
-  it('makes a pond from one field and switches to it', async () => {
-    ;(createPond as jest.Mock).mockResolvedValue({ ...NOISE, id: 'p-new', name: 'red door guys' })
+  it("opens the board's three-step sheet, not a field in the menu", async () => {
     renderSwitcher()
-
-    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
 
-    const field = screen.getByLabelText('New pond name')
-    fireEvent.change(field, { target: { value: 'red door guys' } })
-    fireEvent.submit(field.closest('form')!)
+    // `s6m2`: a sheet over a paper scrim, with the step counter and the title.
+    const sheet = screen.getByRole('dialog', { name: 'New pond' })
+    expect(sheet).toBeInTheDocument()
+    expect(sheet).toHaveTextContent('new pond')
+    expect(sheet).toHaveTextContent('1 of 3')
+    expect(sheet).toHaveTextContent('Name it')
+    // The board's rows are PRESENT, not omitted — #316 ships them disabled.
+    expect(sheet).toHaveTextContent('glyph')
+    expect(sheet).toHaveTextContent('theme')
+    expect(sheet).toHaveTextContent('burnt orange')
+  })
 
+  it('walks 1 of 3 → 2 of 3 → 3 of 3, then makes the pond', async () => {
+    ;(createPond as jest.Mock).mockResolvedValue({ ...NOISE, id: 'p-new', name: 'red door guys' })
+    renderSwitcher()
+    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    const sheet = screen.getByRole('dialog', { name: 'New pond' })
+    fireEvent.change(screen.getByPlaceholderText('make noise'), {
+      target: { value: 'red door guys' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
+    expect(sheet).toHaveTextContent('2 of 3')
+    expect(sheet).toHaveTextContent('Areas')
+    expect(sheet).toHaveTextContent('Areas are pages with pages inside')
+
+    fireEvent.click(screen.getByRole('button', { name: 'continue' }))
+    expect(sheet).toHaveTextContent('3 of 3')
+    expect(sheet).toHaveTextContent('Sources')
+    expect(sheet).toHaveTextContent('google sheet')
+
+    // The last step's primary names what it does, per W6 ("an accept may be named
+    // for what it does").
+    fireEvent.click(screen.getByRole('button', { name: 'make pond' }))
     await waitFor(() => expect(createPond).toHaveBeenCalledWith('red door guys'))
     await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
   })
 
-  it("submitting the field empty is legal — s6m2's skip gives 'untitled pond'", async () => {
+  it("skip makes it straight away — s6m2: skip gives 'untitled pond'", async () => {
     ;(createPond as jest.Mock).mockResolvedValue({
       ...LIFE,
       id: 'p-untitled',
       name: 'untitled pond',
     })
     renderSwitcher()
-
-    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
-    fireEvent.submit(screen.getByLabelText('New pond name').closest('form')!)
 
-    // The column default supplies the name, so the client sends none.
+    fireEvent.click(screen.getByRole('button', { name: 'skip' }))
+    // Empty name: the column default supplies "untitled pond".
     await waitFor(() => expect(createPond).toHaveBeenCalledWith(''))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-untitled'))
   })
 
-  it('surfaces a failure instead of silently closing', async () => {
+  it('surfaces a failure in the sheet instead of silently closing', async () => {
     ;(createPond as jest.Mock).mockRejectedValue(new Error('relation "ponds" does not exist'))
     renderSwitcher()
-
-    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(await screen.findByRole('button', { name: /life/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
-    fireEvent.submit(screen.getByLabelText('New pond name').closest('form')!)
+    fireEvent.click(screen.getByRole('button', { name: 'skip' }))
 
     await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'New pond' })).toBeInTheDocument()
     expect(push).not.toHaveBeenCalled()
   })
 })

@@ -28,7 +28,9 @@ import { dialogBackdropClass, dialogPopupClass } from '@/components/atoms/dialog
 import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { usePondName } from '@/lib/pond/name'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
@@ -162,6 +164,7 @@ export function CreatePageModal({
   const router = useRouter()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const pondName = usePondName()
   const [title, setTitle] = useState('')
   const [parentValue, setParentValue] = useState<string>(TOP_LEVEL_VALUE)
@@ -169,8 +172,8 @@ export function CreatePageModal({
   const [error, setError] = useState<string | null>(null)
 
   const { data: rows = [] } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
 
   const parentOptions: CreatePageParentOption[] = useMemo(() => {

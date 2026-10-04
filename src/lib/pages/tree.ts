@@ -10,6 +10,7 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { firstPondId } from '@/lib/pond/first'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -32,14 +33,24 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<PageRow[]> {
+export async function fetchPages(
+  workspace: WorkspaceScope = 'main',
+  pondId?: string | null
+): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  const { data, error } = await supabase
+  // #312: a pond is an instance of the shell, so the tree it shows is its own.
+  // When the caller does not name a pond — a surface rendered outside the shell's
+  // PondProvider — fall back to the person's first, which is also what `?pond=`
+  // resolves to on a cold load. Never return every pond's pages: that is how a
+  // new pond would show the first pond's tree.
+  const scope = pondId ?? (await firstPondId(supabase, user.id))
+
+  let q = supabase
     .from('pages')
     // #134: glyph + area_role ride along, so the ONE ['pages', workspace] cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
@@ -56,6 +67,9 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
     .neq('type', ROW_TYPE)
     .order('order')
 
+  if (scope) q = q.eq('pond_id', scope)
+
+  const { data, error } = await q
   if (error) throw error
   return (data ?? []) as PageRow[]
 }

@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { WorkspaceProvider } from '@/lib/workspace/context'
+import { PondProvider } from '@/lib/pond/context'
 import { SandboxBanner } from '@/components/molecules/SandboxBanner'
 import { Rail } from '@/components/organisms/Rail'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
@@ -38,47 +39,61 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   return (
     <WorkspaceProvider workspace={workspace}>
-      <div className="flex flex-col h-full bg-background">
-        {isSandbox && <SandboxBanner />}
-        <div data-part="shell" className="relative flex flex-1 min-h-0">
-          <DeletionUndoProvider>
-            <BreadcrumbSlotProvider slot={breadcrumbSlot}>
-              {/* The fallback reserves the rail's footprint (the card + its 20px
+      {/* #312: resolves the active pond from `?pond=` once, for the rail's
+          switcher and for every pond-scoped query beneath it.
+
+          Wrapped in Suspense because it reads `useSearchParams()`, which opts a
+          route out of static prerendering unless there is a boundary above it —
+          `/sandbox` failed its export without this. `fallback={null}` is safe:
+          the provider renders nothing of its own, and every consumer below
+          already treats an unresolved pond as "not scoped yet". */}
+      <Suspense fallback={null}>
+        <PondProvider>
+          <div className="flex flex-col h-full bg-background">
+            {isSandbox && <SandboxBanner />}
+            <div data-part="shell" className="relative flex flex-1 min-h-0">
+              <DeletionUndoProvider>
+                <BreadcrumbSlotProvider slot={breadcrumbSlot}>
+                  {/* The fallback reserves the rail's footprint (the card + its 20px
                   inset) so the content column doesn't jump when it lands. */}
-              <Suspense
-                fallback={<div className="my-5 ml-5 flex-shrink-0" style={{ width: RAIL_WIDTH_PX }} />}
-              >
-                <Rail />
-              </Suspense>
-              <div className="relative flex flex-col flex-1 min-h-0">
-                {/* Content owns the full column height; the surfaces inside pad
-                    their own bottom against the composer's published height. */}
-                <main className="flex-1 overflow-y-auto">
-                  {children}
-                  <Suspense fallback={null}>
-                    <DocumentPanel />
+                  <Suspense
+                    fallback={
+                      <div className="my-5 ml-5 flex-shrink-0" style={{ width: RAIL_WIDTH_PX }} />
+                    }
+                  >
+                    <Rail />
                   </Suspense>
-                </main>
-              </div>
-              {/* The breadcrumb pill's slot (`Pond 05 Shell`: absolute, top 20,
+                  <div className="relative flex flex-col flex-1 min-h-0">
+                    {/* Content owns the full column height; the surfaces inside pad
+                    their own bottom against the composer's published height. */}
+                    <main className="flex-1 overflow-y-auto">
+                      {children}
+                      <Suspense fallback={null}>
+                        <DocumentPanel />
+                      </Suspense>
+                    </main>
+                  </div>
+                  {/* The breadcrumb pill's slot (`Pond 05 Shell`: absolute, top 20,
                   left calc(50% + 13px), translateX(-50%)). Empty until the open
                   surface portals its trail in. */}
-              <div
-                ref={setBreadcrumbSlot}
-                data-part="breadcrumb-slot"
-                className="absolute top-5 left-[calc(50%_+_13px)] z-20 flex -translate-x-1/2 items-center gap-2"
-              />
-              <Suspense fallback={null}>
-                <AITerminal />
-              </Suspense>
-              <Suspense fallback={null}>
-                <ShellCommands />
-              </Suspense>
-              <NotifyBridge />
-            </BreadcrumbSlotProvider>
-          </DeletionUndoProvider>
-        </div>
-      </div>
+                  <div
+                    ref={setBreadcrumbSlot}
+                    data-part="breadcrumb-slot"
+                    className="absolute top-5 left-[calc(50%_+_13px)] z-20 flex -translate-x-1/2 items-center gap-2"
+                  />
+                  <Suspense fallback={null}>
+                    <AITerminal />
+                  </Suspense>
+                  <Suspense fallback={null}>
+                    <ShellCommands />
+                  </Suspense>
+                  <NotifyBridge />
+                </BreadcrumbSlotProvider>
+              </DeletionUndoProvider>
+            </div>
+          </div>
+        </PondProvider>
+      </Suspense>
     </WorkspaceProvider>
   )
 }

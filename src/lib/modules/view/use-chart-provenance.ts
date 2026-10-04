@@ -33,8 +33,10 @@
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchPages } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import type { HomePage } from '@/lib/pages/home'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { chartProvenance, type ChartProvenance } from '../chart/chrome'
 
 export function useChartProvenance(
@@ -42,10 +44,11 @@ export function useChartProvenance(
   collectionId: string | undefined
 ): ChartProvenance {
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const queryClient = useQueryClient()
   const { data: rows = [] } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
   // A read, not a subscription: the root word only changes when the person renames
   // the home row, which re-renders this tree through `DocumentPanel` anyway.

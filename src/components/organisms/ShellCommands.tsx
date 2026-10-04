@@ -27,8 +27,10 @@ import { CREATE_PAGE_EVENT, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { fetchPages } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 
 const RECENT_PAGES_KEY = 'pond:recent-pages'
 /** `Pond 02` 2g: "before anything is typed: the last three pages". */
@@ -71,11 +73,12 @@ export function ShellCommands() {
   const [createTitle, setCreateTitle] = useState('')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const pondName = usePondName()
 
   const { data: pages = [] } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])

@@ -21,10 +21,18 @@ export function useActivePondId(): string | null {
   return useSearchParams().get('pond')
 }
 
-/** Resolve the active pond against a list, falling back to the first. */
+/**
+ * Resolve the active pond against a list.
+ *
+ * With no `?pond=`, the first pond in switcher order. With a `?pond=` that names
+ * a pond NOT in the list, **null** — never the first pond. That fallback was a
+ * real bug: right after creating a pond the URL named it before the list had it,
+ * so the shell resolved back to `life` and the new pond showed life's pages.
+ */
 export function resolveActivePond(ponds: Pond[], activeId: string | null): Pond | null {
   if (!ponds.length) return null
-  return ponds.find((p) => p.id === activeId) ?? ponds[0]
+  if (!activeId) return ponds[0]
+  return ponds.find((p) => p.id === activeId) ?? null
 }
 
 /**

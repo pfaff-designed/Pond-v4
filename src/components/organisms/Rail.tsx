@@ -56,7 +56,9 @@ import {
   applyMoveOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
@@ -908,8 +910,8 @@ export function Rail() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const pondName = usePondName()
-  const seededRef = useRef(false)
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -920,8 +922,8 @@ export function Rail() {
   const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
@@ -988,26 +990,21 @@ export function Rail() {
     selectedNodeIdRef.current = selectedNodeId
   }, [selectedNodeId])
 
-  // Seed default pages on first login — fires once when the tree is empty after load
-  useEffect(() => {
-    if (isLoading || pages.length > 0 || seededRef.current) return
-    seededRef.current = true
-
-    async function seed() {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const seedFn = workspace === 'sandbox' ? 'seed_sandbox_pages' : 'seed_default_pages'
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)(seedFn, { p_user_id: user.id })
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
-    }
-
-    seed()
-  }, [isLoading, pages.length, queryClient, workspace])
+  // REMOVED (#312/#320): the auto-seed that fired whenever the tree came back
+  // empty, calling `seed_default_pages` to insert five top-level pages.
+  //
+  // A new pond IS an empty tree, so this fired on every pond a person made and
+  // filled it with `personal` / `professional` / `health` / `financial` /
+  // `creativity` — the phantom content #320 explicitly rules out ("a pond is born
+  // with one row, its root; anything structure-shaped is made by the person").
+  // It also failed loudly in the attempt: those titles already exist in `life`, so
+  // the RPC hit the sibling-title unique index and answered 409.
+  //
+  // Onboarding is where a first pond's areas come from — #171 seeds the root and
+  // the areas the person PICKED — and `Pond 06.13` `s6m3` is where a new pond's
+  // areas come from. Neither is a tree-is-empty side effect. The RPCs themselves
+  // (`seed_default_pages`, `seed_sandbox_pages`) are now unreferenced by the app
+  // and should be dropped with `workspace`.
 
   const basePath = workspaceBasePath(workspace)
 

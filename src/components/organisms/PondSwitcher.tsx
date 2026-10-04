@@ -21,10 +21,12 @@
  * is worse than none — the same rule that kept `import from notes` out of #177.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createPond, listPonds, type Pond } from '@/lib/pond/client'
-import { pondHref, resolveActivePond, useActivePondId } from '@/lib/pond/active'
+import { createPond } from '@/lib/pond/client'
+import { usePond } from '@/lib/pond/context'
+import { NewPondSheet } from './NewPondSheet'
+import { pondHref } from '@/lib/pond/active'
 
 /** The board's 9×9 chevron: `margin-left:6px`, `opacity:.8`, rotates when open. */
 function SwitcherChevron({ open }: { open: boolean }) {
@@ -70,36 +72,27 @@ function Plus() {
 export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [ponds, setPonds] = useState<Pond[]>([])
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const router = useRouter()
-  const activeId = useActivePondId()
-  const active = resolveActivePond(ponds, activeId)
 
-  // Deliberately NOT react-query. The rail head had no QueryClientProvider
-  // requirement before this component, and four suites plus several stories render
-  // the rail without one — imposing a provider here would be a wide change for one
-  // small list. The switcher owns its own fetch instead.
-  const load = useCallback(() => {
-    listPonds()
-      .then(setPonds)
-      .catch(() => setPonds([]))
-  }, [])
+  // ONE source of truth. The switcher used to run its own `listPonds`, which is
+  // how a created pond could be in the URL while the shell's list still lacked it
+  // — the shell then resolved back to the first pond and the new pond showed its
+  // pages. Both now read the same provider.
+  const { pond: active, ponds, addPond } = usePond()
 
-  useEffect(load, [load])
-
-  async function submit() {
+  async function create(name: string) {
     if (pending) return
     setPending(true)
     setFailure(null)
     try {
-      const pond = await createPond(draft)
+      const pond = await createPond(name)
       setNaming(false)
-      setDraft('')
       setOpen(false)
-      load()
+      // Into the list BEFORE the navigation, so the shell can resolve the pond the
+      // URL is about to name.
+      addPond(pond)
       router.push(pondHref(pond.id))
     } catch (err) {
       setFailure((err as Error).message)
@@ -185,48 +178,31 @@ export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
 
             <div className="mx-[8px] my-[4px] h-px bg-mn-text/[0.09]" />
 
-            {naming ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void submit()
-                }}
-                className="px-[10px] py-[4px]"
-              >
-                {/* `s6m2`: the name is typed, and skipping gives "untitled pond" —
-                    so an empty submit is legal and the column default supplies it. */}
-                <input
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setNaming(false)
-                  }}
-                  placeholder="name it, or ↵ for untitled pond"
-                  aria-label="New pond name"
-                  disabled={pending}
-                  className="w-full bg-transparent font-mono text-[12.5px] leading-[normal] text-mn-text placeholder:text-mn-text-secondary focus:outline-none"
-                />
-              </form>
-            ) : (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => setNaming(true)}
-                className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text-meta"
-              >
-                <Plus />
-                <span className="min-w-0 flex-1 truncate text-left">new pond</span>
-              </button>
-            )}
-
-            {failure && (
-              <div className="px-[10px] pt-[2px] pb-[6px] font-mono text-[10.5px] leading-[normal] text-mn-signal-removed">
-                could not make it. {failure}
-              </div>
-            )}
+            {/* `s6m2`: the board draws a three-step SHEET over a paper scrim, not a
+                field in the menu. This row opens it (#316). */}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setNaming(true)}
+              className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text-meta"
+            >
+              <Plus />
+              <span className="min-w-0 flex-1 truncate text-left">new pond</span>
+            </button>
           </div>
         </>
+      )}
+
+      {naming && (
+        <NewPondSheet
+          onCreate={(name) => void create(name)}
+          onCancel={() => {
+            setNaming(false)
+            setFailure(null)
+          }}
+          pending={pending}
+          failure={failure}
+        />
       )}
     </div>
   )

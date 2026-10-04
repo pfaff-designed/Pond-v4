@@ -56,6 +56,8 @@ import { childCards } from '@/lib/pages/child-cards'
 import { crumbTrail } from '@/lib/pages/crumbs'
 import { workspaceBasePath, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
+import { usePond } from '@/lib/pond/context'
 import { useWorkspace } from '@/lib/workspace/context'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
@@ -64,6 +66,9 @@ import type { Block } from '@/lib/documents/types'
 export function DocumentPanel() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { pond } = usePond()
+  const pondId = pond?.id ?? null
+  const pondName = pond?.name ?? null
   const nodeId = searchParams.get('nodeId')
   // Lazily created on first use, not at render — so an envless mount (Storybook,
   // CI) never constructs a real client and throws (#38); the page query and the
@@ -85,9 +90,14 @@ export function DocumentPanel() {
   // first access; it is read for every page because the breadcrumb's root crumb
   // is that page's own title — "Breadcrumb starts at the root page" (AUDIT W9),
   // not an assumed name.
+  // #312: the root is per POND, so the cache key carries the pond and the query
+  // waits for it. Without `enabled` a first render would create (or read) a root
+  // in the wrong pond before the pond resolved.
   const { data: home, isPending: homePending } = useQuery({
-    queryKey: ['home'],
-    queryFn: () => getOrCreateHomePage(getSupabase()),
+    queryKey: ['home', pondId],
+    // #320: the root is titled with its pond's name, so the pond's name is part of
+    // creating it — not something a later rename has to repair.
+    queryFn: () => getOrCreateHomePage(getSupabase(), pondId, pondName),
   })
   // The page this panel shows: the URL's node, or — at the root — the home row.
   const pageId = nodeId ?? home?.id ?? null
@@ -114,8 +124,8 @@ export function DocumentPanel() {
   // the data rather than the wall clock. `rowsPending` holds the panel on the
   // loading state until they land, so a page never paints without its children.
   const { data: rows = [], isPending: rowsPending } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
   // The root's children are the top-level pages (`null` parent); the home row is
   // never among the rows (fetchPages strips it), so it is never its own child.

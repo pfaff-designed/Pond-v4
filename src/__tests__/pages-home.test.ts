@@ -19,6 +19,7 @@ import type { PageRow } from '@/lib/pages/tree'
 interface Row {
   id: string
   user_id: string
+  pond_id?: string
   parent_id: string | null
   type: string
   title: string
@@ -90,15 +91,18 @@ function makeSupabase(opts: {
   } as any
 }
 
+/** #312: the root is per pond, so every call names one. */
+const POND = 'pond-1'
+
 describe('getOrCreateHomePage', () => {
   it('returns null when unauthenticated', async () => {
     const sb = makeSupabase({ user: null })
-    expect(await getOrCreateHomePage(sb)).toBeNull()
+    expect(await getOrCreateHomePage(sb, POND)).toBeNull()
   })
 
   it('creates the reserved home row on first access (empty blocks)', async () => {
     const sb = makeSupabase({ user: { id: 'u1' }, rows: [] })
-    const home = await getOrCreateHomePage(sb)
+    const home = await getOrCreateHomePage(sb, POND)
     expect(home).not.toBeNull()
     expect(home!.title).toBe('life')
     expect(home!.blocks).toEqual([])
@@ -112,13 +116,15 @@ describe('getOrCreateHomePage', () => {
     const existing: Row = {
       id: 'home-existing',
       user_id: 'u1',
+      // #312: a root belongs to a pond, and `readHomeRow` filters on it.
+      pond_id: POND,
       parent_id: null,
       type: HOME_TYPE,
       title: 'Life',
       blocks: [{ id: 'b1', type: 'text', content: 'welcome' }],
     }
     const sb = makeSupabase({ user: { id: 'u1' }, rows: [existing] })
-    const home = await getOrCreateHomePage(sb)
+    const home = await getOrCreateHomePage(sb, POND)
     expect(home!.id).toBe('home-existing')
     expect(home!.blocks).toHaveLength(1)
     expect(sb._inserts).toHaveLength(0)
@@ -131,6 +137,8 @@ describe('getOrCreateHomePage', () => {
     const winner: Row = {
       id: 'home-winner',
       user_id: 'u1',
+      // #312: a root belongs to a pond, and `readHomeRow` filters on it.
+      pond_id: POND,
       parent_id: null,
       type: HOME_TYPE,
       title: 'Life',
@@ -143,7 +151,7 @@ describe('getOrCreateHomePage', () => {
       // Only visible after the insert is attempted — the concurrent winner.
       winnerAfterInsert: winner,
     })
-    const home = await getOrCreateHomePage(sb)
+    const home = await getOrCreateHomePage(sb, POND)
     expect(home!.id).toBe('home-winner')
     expect(sb._inserts).toHaveLength(0)
   })

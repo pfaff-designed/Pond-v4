@@ -21,6 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
+import { firstPondId } from '@/lib/pond/first'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import {
   ROW_TYPE,
@@ -51,6 +52,13 @@ export interface PondPage {
 }
 
 export interface CreatePageInput {
+  /**
+   * #312: the pond the page belongs to. Optional only so the call sites that have
+   * not been threaded yet keep compiling — migration 0019 makes `pages.pond_id`
+   * NOT NULL, so a write without it fails at the database. Every product call
+   * site must pass one.
+   */
+  pondId?: string | null
   parentId?: string | null
   type?: NodeType
   title?: string
@@ -199,7 +207,8 @@ async function siblingRows(
   supabase: SupabaseClient<Database>,
   userId: string,
   workspace: string,
-  parentId: string | null
+  parentId: string | null,
+  pondId?: string | null
 ): Promise<{ id: string; title: string }[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = (supabase as any)
@@ -207,6 +216,10 @@ async function siblingRows(
     .select('id, title')
     .eq('user_id', userId)
     .eq('workspace', workspace)
+  // #312: 0018's `pages_sibling_title_pond_uniq` is keyed per pond, so the
+  // auto-suffix must read THIS pond's siblings — otherwise it renames around a
+  // name that does not collide.
+  if (pondId) q = q.eq('pond_id', pondId)
   q = parentId === null ? q.is('parent_id', null) : q.eq('parent_id', parentId)
   const { data } = await q
   return (data ?? []) as { id: string; title: string }[]
@@ -221,8 +234,20 @@ export async function createPage(
   const parentId = input.parentId ?? null
   const workspace = input.workspace ?? 'main'
   const desired = input.title ?? ''
+
+  // #312: every page belongs to a pond, and 0019 makes the column NOT NULL. Where
+  // the caller knows which pond it is in, it passes one. Where it does not — the
+  // creators still reached from deep lib code (`create-database.ts`,
+  // `list-to-table.ts`, `promote-table.ts`, `nodes/create.ts`,
+  // `use-collection-rows.ts`, `databases-root.ts`) — fall back to the person's
+  // FIRST pond rather than writing null. Null would pass no filter and the page
+  // would be invisible in every pond, which is worse than being in the wrong one.
+  // This fallback is transitional: thread those six and delete it.
+  const pondId = input.pondId ?? (await firstPondId(supabase, userId))
+
   const insert = {
     user_id: userId,
+    ...(pondId ? { pond_id: pondId } : {}),
     parent_id: parentId,
     type: input.type ?? 'page',
     title: desired,
@@ -260,7 +285,7 @@ export async function createPage(
     if ((error as any)?.code !== '23505' || attempt === 1) {
       throw new Error(error?.message ?? 'Failed to create page')
     }
-    const siblings = await siblingRows(supabase, userId, workspace, parentId)
+    const siblings = await siblingRows(supabase, userId, workspace, parentId, pondId)
     insert.title = nextAvailableTitle(
       desired || 'Untitled',
       siblings.map((s) => s.title)
@@ -317,7 +342,13 @@ export async function updateTitle(
       .eq('id', id)
       .maybeSingle()
     if (self) {
-      const siblings = await siblingRows(supabase, self.user_id, self.workspace, self.parent_id)
+      const siblings = await siblingRows(
+        supabase,
+        self.user_id,
+        self.workspace,
+        self.parent_id,
+        self.pond_id
+      )
       const clashes = siblings.some((s) => s.id !== id && normalizeTitle(s.title) === normalized)
       if (clashes) throw new DuplicateTitleError(title.trim())
     }

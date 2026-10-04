@@ -194,36 +194,86 @@ describe('0018_ponds — the pond record', () => {
   })
 })
 
-describe('0018_ponds — the old unique indexes survive', () => {
-  it('keeps 0006 and 0009 alongside the pond-keyed pair', async () => {
-    const db = await makeDb()
-    const res = await db.query<{ indexname: string }>(
-      `select indexname from pg_indexes
-        where schemaname = 'public' and tablename = 'pages' order by indexname`
-    )
-    const names = res.rows.map((r) => r.indexname)
-    // The old pair still constrains rows that have no pond yet…
+describe('the unique indexes across 0018 and 0019', () => {
+  it('0018 keeps the user-keyed pair, because re-keying would disable them', async () => {
+    // Why the two-step. `pond_id` is nullable, and NULLs are distinct in a unique
+    // index, so an index keyed on `pond_id` alone constrains NOTHING for a row
+    // that has none. 0018 re-keyed them and the suite caught it: two siblings with
+    // the same title both landed. So 0018 ADDS the pond-keyed pair and leaves the
+    // old one holding.
+    const db = await makeDb({ through: '0018_ponds.sql' })
+    const names = (
+      await db.query<{ indexname: string }>(
+        `select indexname from pg_indexes
+          where schemaname = 'public' and tablename = 'pages'`
+      )
+    ).rows.map((r) => r.indexname)
+
     expect(names).toContain('pages_one_home_per_user')
     expect(names).toContain('pages_sibling_title_uniq')
-    // …and the new pair constrains rows that do.
     expect(names).toContain('pages_one_root_per_pond')
     expect(names).toContain('pages_sibling_title_pond_uniq')
     await db.close()
   })
 
-  it('still rejects duplicate sibling titles for rows with a null pond_id', async () => {
-    // The regression this file exists for. Every app insert omits `pond_id`
-    // today, so if only the pond-keyed index existed, both of these would land.
+  it('0019 drops the user-keyed pair, so a pond can have its OWN root', async () => {
+    // This is the whole point: `pages_one_home_per_user` allowed one root per
+    // PERSON, so a second pond could not have a root of its own and fell back to
+    // showing the first pond's pages. 0019 removes it once the app reads and
+    // writes scoped by pond.
+    const db = await makeDb()
+    const names = (
+      await db.query<{ indexname: string }>(
+        `select indexname from pg_indexes
+          where schemaname = 'public' and tablename = 'pages'`
+      )
+    ).rows.map((r) => r.indexname)
+
+    expect(names).not.toContain('pages_one_home_per_user')
+    expect(names).not.toContain('pages_sibling_title_uniq')
+    // The per-pond replacements are what constrains now.
+    expect(names).toContain('pages_one_root_per_pond')
+    expect(names).toContain('pages_sibling_title_pond_uniq')
+    await db.close()
+  })
+
+  it('lets two ponds each hold their own root — a new pond is genuinely empty', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await db.query(
-      `insert into public.pages (user_id, parent_id, type, title) values ($1, null, 'page', 'Notes')`,
+    const life = (
+      await db.query<{ id: string }>(
+        'select id from public.ponds where user_id = $1 order by "order" limit 1',
+        [USER]
+      )
+    ).rows[0].id
+    const other = (
+      await db.query<{ id: string }>(
+        `insert into public.ponds (user_id, name, "order") values ($1, 'make noise', 1) returning id`,
+        [USER]
+      )
+    ).rows[0].id
+
+    for (const pond of [life, other]) {
+      await db.query(
+        `insert into public.pages (user_id, pond_id, parent_id, type, title)
+         values ($1, $2, null, 'home', 'root')`,
+        [USER, pond]
+      )
+    }
+
+    const roots = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.pages where type = 'home' and user_id = $1`,
       [USER]
     )
+    // Two roots for one person: impossible before 0019, required by #320.
+    expect(roots.rows[0].n).toBe(2)
+
+    // And still only ONE root per pond.
     await expect(
       db.query(
-        `insert into public.pages (user_id, parent_id, type, title) values ($1, null, 'page', '  notes ')`,
-        [USER]
+        `insert into public.pages (user_id, pond_id, parent_id, type, title)
+         values ($1, $2, null, 'home', 'second root')`,
+        [USER, life]
       )
     ).rejects.toThrow()
     await db.close()
