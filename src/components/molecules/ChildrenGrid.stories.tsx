@@ -43,13 +43,31 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A page's nested pages: a card per child, one click target each, no section label. */
+/**
+ * A page's nested pages: a card per child, one click target each, no section label.
+ *
+ * The cards ARE `PondMolecule kind="record-card"` (#95, the OverviewCard
+ * absorption) — one molecule per card, each wrapped in exactly one button host,
+ * and clicking a card's title raises the WHOLE card model back to the caller.
+ */
 export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getAllByRole('button')).toHaveLength(2)
+    const buttons = canvas.getAllByRole('button')
+    await expect(buttons).toHaveLength(2)
+
+    // Every card is a record-card molecule, one per button host — no card drawn
+    // by hand, none drawn twice.
+    const molecules = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="record-card"]')]
+    await expect(molecules).toHaveLength(CARDS.length)
+    for (const [i, molecule] of molecules.entries()) {
+      await expect(molecule.closest('button')).toBe(buttons[i])
+      await expect(molecule).toHaveTextContent(CARDS[i].title)
+    }
+
+    // Still opens: the click raises the whole card model, not just its id.
     await userEvent.click(canvas.getByText('Workout Log'))
-    await expect(args.onOpenCard).toHaveBeenCalledWith(expect.objectContaining({ id: 'log' }))
+    await expect(args.onOpenCard).toHaveBeenCalledWith(CARDS[1])
   },
 }
 

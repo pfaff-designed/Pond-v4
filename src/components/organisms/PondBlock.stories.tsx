@@ -3,13 +3,19 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 
 import {
   PondBlock,
+  PondBlockEmpty,
   POND_BLOCK_KINDS,
+  POND_BLOCK_STATES,
   POND_BLOCK_WIDTHS,
   POND_BLOCK_HOVER_ROW,
   POND_BLOCK_SKELETON,
   POND_BLOCK_ROW_GAP,
+  POND_BLOCK_EMPTY,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
+  POND_BLOCK_ERROR_LINE,
   POND_BLOCK_TOMB_WIDTH,
   POND_BLOCK_TOMB_NOTE,
+  POND_BLOCK_TOMB_FIXTURE,
   BLOCK_LOADING_NOTE,
   blockEmptyCopy,
   blockErrorLine,
@@ -295,6 +301,105 @@ const contentWidth = (c: HTMLElement) => {
   return c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
 }
 
+/**
+ * The board's per-kind TABLES, written out as literals, once. Every loop below reads
+ * the constants, so on its own this file would keep agreeing with itself the day a
+ * value moved — and a value written in a board is final. This is the one place the
+ * numbers and the copy are spelled, so a drift off the board fails here by name.
+ */
+async function assertBoardTables() {
+  await expect(POND_BLOCK_STATES).toEqual([
+    'rest',
+    'hover',
+    'selected',
+    'empty',
+    'loading',
+    'error',
+    'deleted',
+    'disabled',
+  ])
+  await expect(POND_BLOCK_WIDTHS).toEqual({
+    list: 400,
+    checklist: 400,
+    table: 500,
+    gallery: 580,
+    number: 400,
+    log: 460,
+    properties: 400,
+  })
+  // `R`: on hover exactly one child row paints, at this index; `number` has no rows.
+  await expect(POND_BLOCK_HOVER_ROW).toEqual({
+    list: 1,
+    checklist: 1,
+    table: 0,
+    log: 0,
+    properties: 0,
+    gallery: 0,
+    number: null,
+  })
+  const ten = [
+    ['w-[82%]', 'h-[10px]'],
+    ['w-[64%]', 'h-[10px]'],
+    ['w-[74%]', 'h-[10px]'],
+  ]
+  await expect(POND_BLOCK_SKELETON).toEqual({
+    list: ten,
+    checklist: ten,
+    table: ten,
+    log: ten,
+    properties: ten,
+    number: [
+      ['w-[60%]', 'h-[52px]'],
+      ['w-[40%]', 'h-[10px]'],
+    ],
+    gallery: [
+      ['w-full', 'h-[120px]'],
+      ['w-[50%]', 'h-[10px]'],
+    ],
+  })
+  // The row stack's gap: 0 for table (its rows draw their own rule), 2 elsewhere.
+  for (const kind of POND_BLOCK_KINDS) {
+    await expect(POND_BLOCK_ROW_GAP[kind]).toBe(kind === 'table' ? 'gap-0' : 'gap-[2px]')
+  }
+  // `errLine`, curly apostrophes (U+2019) included.
+  const sheet = 'pond can’t reach this sheet any more · showing the last copy'
+  const block = 'this block couldn’t load'
+  await expect(POND_BLOCK_ERROR_LINE).toEqual({
+    list: block,
+    checklist: block,
+    table: sheet,
+    gallery: sheet,
+    number: sheet,
+    log: block,
+    properties: block,
+  })
+  // `EL` — the board's gallery row reads `no recipes yet` for its recipes fixture;
+  // the board's own shape is `records`.
+  await expect(POND_BLOCK_EMPTY).toEqual({
+    list: { line: 'nothing due', action: 'add an item' },
+    checklist: { line: 'no steps yet', action: 'add a step' },
+    table: { line: 'no rows yet', action: 'add a row' },
+    gallery: { line: 'no records yet', action: 'add a record' },
+    number: { line: 'no values this week', action: 'pick a field' },
+    log: { line: 'no entries yet', action: 'write one' },
+    properties: { line: 'no fields yet', action: 'add a field' },
+  })
+  // Lowercase as authored, with no sentence case and no `+` prefix on the action.
+  for (const kind of POND_BLOCK_KINDS) {
+    const { line, action } = blockEmptyCopy(kind)
+    await expect(line).toBe(line.toLowerCase())
+    await expect(action).toBe(action.toLowerCase())
+    await expect(action.startsWith('+')).toBe(false)
+  }
+  await expect(POND_BLOCK_FILTERED_EMPTY_LINE).toBe('nothing matches this filter')
+  // The board's note — a one-character ellipsis (U+2026).
+  await expect(BLOCK_LOADING_NOTE).toBe('loading…')
+  // The tombstone: ONE width for every kind, not a per-kind map, and its fixtures.
+  await expect(POND_BLOCK_TOMB_WIDTH).toBe(460)
+  await expect(POND_BLOCK_TOMB_NOTE).toBe('database deleted')
+  await expect(POND_BLOCK_TOMB_FIXTURE).toEqual({ deletedOn: '22 sep', restoreWindow: '30 days' })
+}
+
 /** The rest card: paper + the two-layer card shadow and nothing more — and live. */
 async function assertRestCard(c: HTMLElement, theme: Theme) {
   const cs = getComputedStyle(c)
@@ -304,6 +409,9 @@ async function assertRestCard(c: HTMLElement, theme: Theme) {
   await expect(cs.transform).toBe('none')
   await expect(cs.opacity).toBe('1')
   await expect(c.hasAttribute('inert')).toBe(false)
+  // The tombstone recipe leaks into no other state: no stone, no hairline ring.
+  await expect(c.querySelector('[data-part="tomb"]')).toBeNull()
+  await expect(cs.boxShadow).not.toContain('inset')
 }
 
 /** Every card on the canvas measures to the board, in the given theme. */
@@ -327,8 +435,16 @@ async function assertFrames(canvasElement: HTMLElement, theme: Theme) {
     await assertRestCard(c, theme)
     await expect(cs.borderTopWidth).toBe('0px')
 
-    // The head row: eyebrow + headNote on one baseline row, 12 apart.
+    // rest draws the module view untouched — no empty box, no skeleton, no notice.
+    await expect(c.children).toHaveLength(2)
+    await expect(c.querySelector('[data-part="empty"]')).toBeNull()
+    await expect(c.querySelector('[data-part="skeleton"]')).toBeNull()
+    await expect(c.querySelector('[data-kind="notice"]')).toBeNull()
+
+    // The head row: eyebrow + headNote on one baseline row, 12 apart. `number` has
+    // no note and still gets BOTH slots — the board draws the empty one.
     const head = c.firstElementChild as HTMLElement
+    await expect(head.children).toHaveLength(2)
     const hs = getComputedStyle(head)
     await expect(hs.display).toBe('flex')
     await expect(hs.alignItems).toBe('baseline')
@@ -355,10 +471,13 @@ async function assertFrames(canvasElement: HTMLElement, theme: Theme) {
   }
 }
 
-/** All seven kinds on paper, measured against the board. */
+/** All seven kinds on paper, measured against the board — and the board's tables. */
 export const Kinds: Story = {
   render: () => <AllKinds />,
-  play: async ({ canvasElement }) => assertFrames(canvasElement, LIGHT),
+  play: async ({ canvasElement }) => {
+    await assertBoardTables()
+    await assertFrames(canvasElement, LIGHT)
+  },
 }
 
 /** The same seven on ink: card #30312A, the heavier dark shadow, ink .68 flips to paper .68. */
@@ -396,6 +515,15 @@ async function assertHover(canvasElement: HTMLElement, theme: Theme) {
       await expect(alphaOf(getComputedStyle(hovered[0]).backgroundColor)).toBeCloseTo(0.05, 2)
     }
   }
+  // And a REAL pointer over the card changes no pixel of it either: the board gives
+  // the frame no `:hover` rule at all, so a stray lift or tint can only come from a
+  // class nobody drew — invisible in jsdom, which has no hover.
+  const c = card(canvasElement, 'list')
+  const before = getComputedStyle(c).boxShadow
+  await userEvent.hover(c)
+  await expect(getComputedStyle(c).boxShadow).toBe(before)
+  await assertRestCard(c, theme)
+  await userEvent.unhover(c)
 }
 
 /** hover — board parity: the card is identical to rest; row R[kind] carries the wash. */
@@ -571,6 +699,10 @@ async function assertDisabled(canvasElement: HTMLElement, theme: Theme) {
     // typing and no Tab — `inert` as a real boolean attribute, not a styling hint.
     await expect(c.hasAttribute('inert')).toBe(true)
     await expect(c.getAttribute('aria-disabled')).toBeNull()
+    // The board DRAWS the body at .4 — it is faded, not replaced.
+    if (POND_BLOCK_HOVER_ROW[kind] !== null) {
+      await expect(c.querySelectorAll('[data-kind]').length).toBeGreaterThan(0)
+    }
   }
 }
 
@@ -584,6 +716,48 @@ export const DisabledInk: Story = {
   render: () => <AllKinds state="disabled" />,
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertDisabled(canvasElement, DARK),
+}
+
+/**
+ * disabled, demonstrated rather than asserted by attribute: the body under the card
+ * is a LIVE module view, so `inert` has to remove the whole subtree from the focus
+ * order, not merely grey it. Only a real browser can show that — jsdom implements
+ * `inert` not at all, so the attribute test it can run would pass just as happily
+ * over a `pointer-events-none` that still let Tab walk into a text field.
+ */
+export const DisabledIsInert: Story = {
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-4">
+      <button data-testid="before">before</button>
+      <PondBlock kind="table" heading="calories" headNote="rows only" state="disabled">
+        <div className="flex flex-col gap-mn-2">
+          <button data-testid="inside">add a row</button>
+          <input data-testid="cell" defaultValue="Table saw" />
+        </div>
+      </PondBlock>
+      <button data-testid="after">after</button>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const c = canvasElement.querySelector<HTMLElement>('[data-block-kind="table"]')!
+    await expect(c.hasAttribute('inert')).toBe(true)
+
+    // Nothing inside can take focus, even asked directly.
+    for (const id of ['inside', 'cell']) {
+      canvas.getByTestId(id).focus()
+      await expect(document.activeElement).not.toBe(canvas.getByTestId(id))
+    }
+
+    // And no amount of tabbing walks into it. (`userEvent.tab()` is synthetic and
+    // does not know about `inert` — it offers the card's button the focus, the
+    // BROWSER refuses it, and that refusal is the thing under test.)
+    canvas.getByTestId('before').focus()
+    for (let i = 0; i < 3; i++) {
+      await userEvent.tab()
+      await expect(c.contains(document.activeElement)).toBe(false)
+    }
+  },
 }
 
 // ── empty: the box, the line, the offered action (#239) ─────────────────────────
@@ -647,7 +821,10 @@ async function assertEmpty(canvasElement: HTMLElement, theme: Theme) {
     await expect(us.fontFamily).toContain('PP Neue Montreal')
     await expect(parseFloat(us.borderTopLeftRadius)).toBeGreaterThanOrEqual(16) // pill
     await expect(us.textTransform).toBe('none')
-    // (The button's 14px `text-sm` vs the board's 12 is #221's — not asserted here.)
+    // The SECONDARY recipe, not the primary or the ghost: PondControl's ink .07
+    // ground (#221). A primary ink pill here would shout the one dated thing on
+    // the screen from an empty box — the board gives the offer the quiet weight.
+    await expect(alphaOf(us.backgroundColor)).toBeCloseTo(0.07, 2)
 
     await userEvent.click(button)
     await expect(onEmptyAction).toHaveBeenLastCalledWith(kind)
@@ -683,6 +860,105 @@ export const EmptyLineOnly: Story = {
       await expect(c.querySelector('button')).toBeNull()
       await expect(c.querySelectorAll('[data-kind]')).toHaveLength(0)
     }
+  },
+}
+
+/**
+ * The empty box's three OTHER callers, in one frame (#239) — the cases where the
+ * kind's own line would be FALSE about the data, and the box rendered bare under a
+ * surface that is not a block card (the chart card's degenerate case):
+ *
+ *   1  bare, kind only            — the kind's line, no action (none wired)
+ *   2  `line` + kind              — the override reads, the KIND still names the action
+ *   3  `line`, no kind, wired     — nothing names an action, so none is drawn
+ *   4  the frame's `emptyLine`    — threaded through to the box, and the filtered
+ *                                   line offers nothing: clearing a filter is not
+ *                                   wired through the frame, and a dead button is
+ *                                   never drawn
+ */
+export const EmptyOverriddenLine: Story = {
+  render: () => (
+    <div className="flex min-w-[460px] flex-col items-start gap-mn-4">
+      <div data-testid="bare">
+        <PondBlockEmpty kind="table" />
+      </div>
+      <div data-testid="override">
+        <PondBlockEmpty kind="table" line={POND_BLOCK_FILTERED_EMPTY_LINE} onAction={fn()} />
+      </div>
+      <div data-testid="no-kind">
+        <PondBlockEmpty line="no data yet" onAction={fn()} />
+      </div>
+      <PondBlock
+        kind="table"
+        heading="calories"
+        headNote="rows only"
+        state="empty"
+        emptyLine={POND_BLOCK_FILTERED_EMPTY_LINE}
+      >
+        <p>the live module view</p>
+      </PondBlock>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const boxIn = (id: string) =>
+      canvas.getByTestId(id).querySelector<HTMLElement>('[data-part="empty"]')!
+
+    // 1 — the kind's own line, alone.
+    await expect(boxIn('bare').textContent).toBe('no rows yet')
+    await expect(boxIn('bare').children).toHaveLength(1)
+
+    // 2 — the override reads and the kind still names the action it offers.
+    const override = Array.from(boxIn('override').children) as HTMLElement[]
+    await expect(override[0].textContent).toBe('nothing matches this filter')
+    await expect(override[0].textContent).not.toBe('no rows yet')
+    await expect(override[1].textContent).toBe('add a row')
+    // It is the same box, not a second empty component: the board's 14 / radius 14 /
+    // ink .035 ground, whatever named the line.
+    const bs = getComputedStyle(boxIn('override'))
+    await expect(bs.paddingTop).toBe('14px')
+    await expect(bs.borderTopLeftRadius).toBe('14px')
+    await expect(alphaOf(bs.backgroundColor)).toBeCloseTo(0.035, 3)
+
+    // 3 — a line with no kind names no action, so a wired callback draws nothing.
+    await expect(boxIn('no-kind').textContent).toBe('no data yet')
+    await expect(boxIn('no-kind').querySelector('button')).toBeNull()
+
+    // 4 — the frame threads `emptyLine` into the box, and offers nothing with it.
+    const c = card(canvasElement, 'table')
+    const box = c.querySelector<HTMLElement>('[data-part="empty"]')!
+    await expect(box.textContent).toBe('nothing matches this filter')
+    await expect(c.textContent).not.toContain('no rows yet')
+    await expect(c.querySelector('button')).toBeNull()
+    // The head keeps its own note; the live view is suppressed, not stacked above.
+    await expect(noteOf(c).textContent).toBe('rows only')
+    await expect(c.textContent).not.toContain('the live module view')
+  },
+}
+
+/**
+ * The column can be narrower than the kind (mobile, a dragged-in editor width): the
+ * card CLAMPS to it. Written as a story because the failure is silent on a desktop
+ * canvas and invisible in jsdom, which has no layout — a 580 gallery in a 320 column
+ * would simply overflow its page, which is what `max-w-full` is in the recipe for.
+ */
+export const NarrowColumn: Story = {
+  render: () => (
+    <div className="w-[320px] overflow-hidden">
+      <PondBlock kind="gallery" heading="recipes" headNote="18 records">
+        <Body kind="gallery" state="rest" />
+      </PondBlock>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const c = card(canvasElement, 'gallery')
+    // The kind wants 580 and the column gives 320 — it takes the column.
+    await expect(POND_BLOCK_WIDTHS.gallery).toBe(580)
+    await expect(getComputedStyle(c).width).toBe('320px')
+    // And nothing inside pushes back out of it.
+    await expect(c.scrollWidth).toBeLessThanOrEqual(c.clientWidth)
+    // The padding is NOT what gives: the board's 18 survives the clamp.
+    await expect(getComputedStyle(c).paddingLeft).toBe('18px')
   },
 }
 
@@ -743,8 +1019,11 @@ async function assertDeleted(canvasElement: HTMLElement, theme: Theme) {
     await expect(c.querySelector('[data-part="empty"]')).toBeNull()
     await expect(c.children).toHaveLength(2)
 
-    // tomb: column, gap 12.
+    // tomb: column, gap 12 — the second and last child of the card, holding exactly
+    // the line and the actions.
     const tomb = c.querySelector<HTMLElement>('[data-part="tomb"]')!
+    await expect(tomb).toBe(c.children[1])
+    await expect(tomb.children).toHaveLength(2)
     const ts = getComputedStyle(tomb)
     await expect(ts.display).toBe('flex')
     await expect(ts.flexDirection).toBe('column')
@@ -779,16 +1058,26 @@ async function assertDeleted(canvasElement: HTMLElement, theme: Theme) {
       await expect(bs.fontFamily).toContain('PP Neue Montreal')
       await expect(parseFloat(bs.borderTopLeftRadius)).toBeGreaterThanOrEqual(16) // pill
     }
-    // secondary carries a ground; ghost carries only the inset hairline.
-    await expect(alphaOf(getComputedStyle(restore).backgroundColor)).toBeGreaterThan(0)
+    // PondControl's literals (#221): secondary is the ink .07 ground, ghost is
+    // transparent with the 1px inset ink .2 hairline and NO ground. The two ways
+    // out are not the same weight — restore is the offer, remove is the exit.
+    await expect(alphaOf(getComputedStyle(restore).backgroundColor)).toBeCloseTo(0.07, 2)
     await expect(alphaOf(getComputedStyle(remove).backgroundColor)).toBe(0)
-    await expect(getComputedStyle(remove).boxShadow).toContain('inset')
-    // (The buttons' 14px `text-sm` vs the board's 12 is #221's — not asserted here.)
+    const rs = shadowLayers(getComputedStyle(remove).boxShadow)
+    await expect(rs).toHaveLength(1)
+    const hair = rs[0].match(/^(.+?) 0px 0px 0px 1px inset$/)
+    await expect(hair).not.toBeNull()
+    await expect(alphaOf(hair![1])).toBeCloseTo(0.2, 2)
 
+    // Each click reaches its OWN callback and nothing else.
+    const removesBefore = onRemoveBlock.mock.calls.length
     await userEvent.click(restore)
     await expect(onRestore).toHaveBeenLastCalledWith(kind)
+    await expect(onRemoveBlock.mock.calls.length).toBe(removesBefore)
+    const restoresBefore = onRestore.mock.calls.length
     await userEvent.click(remove)
     await expect(onRemoveBlock).toHaveBeenLastCalledWith(kind)
+    await expect(onRestore.mock.calls.length).toBe(restoresBefore)
   }
   await expect(onRestore).toHaveBeenCalledTimes(POND_BLOCK_KINDS.length)
   await expect(onRemoveBlock).toHaveBeenCalledTimes(POND_BLOCK_KINDS.length)
@@ -804,6 +1093,74 @@ export const DeletedInk: Story = {
   render: () => <AllKinds state="deleted" onRestore={onRestore} onRemoveBlock={onRemoveBlock} />,
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertDeleted(canvasElement, DARK),
+}
+
+/**
+ * The tombstone's facts come from the HOST (#199), not from the heading: 7a's stone
+ * names the DATABASE the view showed — `kitchen costs` — while the eyebrow stays the
+ * view's own name, and the date and window are the real ones once `deleted_at`
+ * exists. Two inputs, as the board has them; the fixtures are only the defaults.
+ *
+ * Past the window there is nothing to restore, so `restore` is not wired — and an
+ * action that is not wired is not drawn, never a dead button. (7a also shortens the
+ * copy there and drops the "can be restored" promise; `blockTombLine` always emits
+ * it, so that variant is unbuilt and is #199's — nothing can compute "past the
+ * window" without `deleted_at`.)
+ */
+export const DeletedNamed: Story = {
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-4">
+      <div data-testid="named">
+        <PondBlock
+          kind="table"
+          heading="table"
+          headNote="rows only"
+          state="deleted"
+          deletedName="kitchen costs"
+          deletedOn="24 sep"
+          restoreWindow="29 days"
+          onRestore={fn()}
+          onRemoveBlock={fn()}
+        >
+          <p>the view</p>
+        </PondBlock>
+      </div>
+      <div data-testid="past-window">
+        <PondBlock
+          kind="list"
+          heading="notifications"
+          headNote="3"
+          state="deleted"
+          onRemoveBlock={fn()}
+        >
+          <p>the view</p>
+        </PondBlock>
+      </div>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const named = canvas.getByTestId('named').querySelector<HTMLElement>('[data-block-kind]')!
+    const line = named.querySelector<HTMLElement>('[data-part="tomb-line"]')!
+    await expect(line.textContent).toBe(
+      'This view showed kitchen costs, which was deleted on 24 sep. It can be restored for 29 days.'
+    )
+    await expect(line.textContent).toBe(blockTombLine('kitchen costs', '24 sep', '29 days'))
+    // The eyebrow is still the view's own heading — the stone names the database.
+    await expect((named.firstElementChild as HTMLElement).children[0].textContent).toBe('table')
+    await expect(line.textContent).not.toContain('22 sep')
+
+    // Past the window: `remove block` is the only action, and it is the ghost.
+    const past = canvas.getByTestId('past-window').querySelector<HTMLElement>('[data-block-kind]')!
+    const buttons = Array.from(past.querySelectorAll('button'))
+    await expect(buttons.map((b) => b.textContent)).toEqual(['remove block'])
+    await expect(buttons[0].hasAttribute('disabled')).toBe(false)
+    await expect(alphaOf(getComputedStyle(buttons[0]).backgroundColor)).toBe(0)
+    // And the line still reads — the stone is not an empty frame with a button.
+    await expect(past.querySelector('[data-part="tomb-line"]')!.textContent).toBe(
+      blockTombLine('notifications')
+    )
+  },
 }
 
 /**
@@ -837,5 +1194,8 @@ export const WithTableView: Story = {
     await expect(canvas.getByText('Bandsaw')).toBeVisible()
     const c = canvasElement.querySelector<HTMLElement>('[data-block-kind="table"]')!
     await expect(getComputedStyle(c).width).toBe('500px')
+    // No `state` passed: the frame defaults to rest and stamps it on the card, so a
+    // host that knows nothing about states still gets the board's resting card.
+    await expect(c.dataset.blockState).toBe('rest')
   },
 }

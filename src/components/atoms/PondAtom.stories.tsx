@@ -15,6 +15,27 @@ const inkTheme: Decorator = (Story) => (
   </div>
 )
 
+/**
+ * Every number and colour asserted below is a literal from the board —
+ * `wayfinder/board-values.generated.json`, `.components.PondAtom`
+ * (`kind=*|theme=paper` deltas, their `states`, and the `level=*` / `size=mobile`
+ * / `color=*` secondaries) — read back off REAL computed styles. Not rounded to a
+ * scale, not reconciled with a token: `13.5px` means 13.5px.
+ */
+const INK = 'rgb(27, 29, 20)'
+const TIER80 = 'rgba(27, 29, 20, 0.8)' // --mn-text-meta
+const TIER68 = 'rgba(27, 29, 20, 0.68)' // --mn-text-secondary
+const SERIF = /PP Editorial New/
+const MONO = /PP Neue Montreal Mono/
+const WHEAT = 'rgb(255, 239, 174)' // --raw-wheat, the highlight signal
+const BURNT = 'rgb(217, 102, 41)' // --raw-burnt-orange, the ONE dated thing
+const AREA = { sage: 'rgb(100, 143, 123)', mist: 'rgb(165, 200, 209)', navy: 'rgb(18, 53, 78)' }
+
+const text = (root: ParentNode) => root.querySelector<HTMLElement>('[data-part="text"]')!
+const texts = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('[data-part="text"]')]
+const atom = (root: ParentNode, kind: string) =>
+  root.querySelector<HTMLElement>(`[data-kind="${kind}"]`)!
+
 const meta = {
   title: 'Atoms/PondAtom',
   component: PondAtom,
@@ -64,6 +85,21 @@ export const MatrixInk: Story = {
 
 export const MatrixMobile: Story = {
   render: () => <MatrixGrid size="mobile" />,
+  play: async ({ canvasElement }) => {
+    // The mobile touch target — board `size=mobile` wrap minHeight 44, and AUDIT X1.
+    // Silent on a desktop-sized Storybook canvas, so it is asserted, not eyeballed.
+    for (const kind of ['text', 'relation', 'checkbox', 'dot'] as const) {
+      await expect(getComputedStyle(atom(canvasElement, kind)).minHeight).toBe('44px')
+    }
+    // and the marks that grow with it
+    await expect(getComputedStyle(atom(canvasElement, 'checkbox').firstElementChild!).width).toBe(
+      '18px'
+    )
+    const glyph = canvasElement.querySelector<HTMLElement>('[data-part="glyph"]')!
+    await expect(getComputedStyle(glyph).width).toBe('20px')
+    const avatar = canvasElement.querySelector<HTMLElement>('[data-part="avatar"]')!
+    await expect(getComputedStyle(avatar).width).toBe('26px')
+  },
 }
 
 /** Rest-state gallery: every kind at its fixture value, desktop. */
@@ -75,8 +111,263 @@ export const Kinds: Story = {
       ))}
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const roots = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind]')]
+    await expect(roots.map((r) => r.dataset.kind)).toEqual([...POND_ATOM_KINDS])
+    for (const root of roots) await expect(root.dataset.state).toBe('rest')
+
+    // The three mark-only kinds draw a mark and no text.
+    for (const kind of ['checkbox', 'icon', 'dot'] as const) {
+      await expect(atom(canvasElement, kind).querySelector('[data-part="text"]')).toBeNull()
+    }
+    // Rest is not editing and not checked: no caret anywhere, no tick in the box.
+    await expect(canvasElement.querySelector('[data-part="caret"]')).toBeNull()
+    await expect(canvasElement.querySelector('[data-part="check"]')).toBeNull()
+
+    // checkbox box at rest — board `box` 12 / radius 3 / inset 1.4px ink .68.
+    const box = canvasElement.querySelector<HTMLElement>('[data-part="box"]')!
+    const b = getComputedStyle(box)
+    await expect([b.width, b.height, b.borderRadius]).toEqual(['12px', '12px', '3px'])
+    // (Tailwind's ring stacks empty shadow layers around the one that paints.)
+    await expect(b.boxShadow).toContain(`${TIER68} 0px 0px 0px 1.4px inset`)
+
+    // the kind dot — board `kindDot` 7 / radius 2
+    const dot = canvasElement.querySelector<HTMLElement>('[data-part="dot"]')!
+    const dotStyle = getComputedStyle(dot)
+    await expect([dotStyle.width, dotStyle.height, dotStyle.borderRadius]).toEqual([
+      '7px',
+      '7px',
+      '2px',
+    ])
+
+    // divider — board `rule`: a 200px hairline at --mn-line, 12px above and below.
+    // (The board writes `height: 0` + a 1px top border; under Tailwind's
+    // border-box preflight the used height IS that 1px, which is the hairline.)
+    const rule = getComputedStyle(atom(canvasElement, 'divider'))
+    await expect([rule.width, rule.height]).toEqual(['200px', '1px'])
+    await expect(rule.borderTopWidth).toBe('1px')
+    await expect(rule.borderTopColor).toBe('rgba(27, 29, 20, 0.09)')
+    await expect([rule.marginTop, rule.marginBottom]).toEqual(['12px', '12px'])
+
+    // person — the avatar is initials of the value, at the board's 20px / 9px.
+    const avatar = canvasElement.querySelector<HTMLElement>('[data-part="avatar"]')!
+    await expect(avatar.textContent).toBe('CP')
+    const a = getComputedStyle(avatar)
+    await expect([a.width, a.height, a.fontSize]).toEqual(['20px', '20px', '9px'])
+  },
 }
 
+/**
+ * The three type registers, split by MEDIUM (PROJECT_RULES § Design language).
+ * One story for all thirteen typed kinds: the jest suite spent three parametrised
+ * blocks asserting class STRINGS, which cannot catch a class that `cn()` drops —
+ * exactly the #252 failure. These read the resolved font off the browser.
+ */
+export const TypeRegisters: Story = {
+  render: () => (
+    <div className="flex max-w-[460px] flex-col items-start gap-mn-2 p-mn-4">
+      {(['prose', 'highlight', 'quote'] as const).map((kind) => (
+        <PondAtom key={kind} kind={kind} />
+      ))}
+      {(['code', 'tag', 'relation', 'file'] as const).map((kind) => (
+        <PondAtom key={kind} kind={kind} />
+      ))}
+      {(['number', 'money', 'percent', 'duration', 'time', 'date'] as const).map((kind) => (
+        <PondAtom key={kind} kind={kind} />
+      ))}
+      <PondAtom kind="eyebrow" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const styleOf = (kind: string) => getComputedStyle(text(atom(canvasElement, kind)))
+
+    // Prose on a page — PP Editorial New at 200. NEVER 400: the board draws this
+    // family at 200/800 only, and 400 is the one weight that would look plausible.
+    for (const [kind, size] of [
+      ['prose', '17.5px'],
+      ['highlight', '17.5px'],
+      ['quote', '19px'],
+    ] as const) {
+      const s = styleOf(kind)
+      await expect(s.fontFamily).toMatch(SERIF)
+      await expect(s.fontWeight).toBe('200')
+      await expect(s.fontSize).toBe(size)
+    }
+    await expect(styleOf('quote').fontStyle).toBe('italic')
+
+    // The machine surface — mono, lowercase, at the board's own sizes. The meta
+    // tier (.8) is what holds these at 10.5px; full ink would shout.
+    for (const [kind, size, color] of [
+      ['code', '12px', INK],
+      ['tag', '10.5px', TIER80],
+      ['relation', '10.5px', TIER80],
+      ['file', '11px', TIER80],
+    ] as const) {
+      const s = styleOf(kind)
+      await expect(s.fontFamily).toMatch(MONO)
+      await expect(s.textTransform).toBe('lowercase')
+      await expect(s.fontSize).toBe(size)
+      await expect(s.color).toBe(color)
+    }
+
+    // Numbers read as a column: tabular everywhere, and the board gives the five
+    // measured kinds weight 500 — but NOT `date`, which stays 400.
+    for (const kind of ['number', 'money', 'percent', 'duration', 'time'] as const) {
+      const s = styleOf(kind)
+      await expect(s.fontVariantNumeric).toBe('tabular-nums')
+      await expect(s.fontWeight).toBe('500')
+    }
+    await expect(styleOf('date').fontVariantNumeric).toBe('tabular-nums')
+    await expect(styleOf('date').fontWeight).toBe('400')
+
+    // The eyebrow is a PAGE label, so it is the sans — 10.5 / 500 / .1em / .68.
+    const eyebrow = styleOf('eyebrow')
+    await expect(eyebrow.fontFamily).not.toMatch(MONO)
+    await expect(eyebrow.fontFamily).not.toMatch(SERIF)
+    await expect([eyebrow.fontSize, eyebrow.fontWeight, eyebrow.textTransform]).toEqual([
+      '10.5px',
+      '500',
+      'uppercase',
+    ])
+    await expect(parseFloat(eyebrow.letterSpacing)).toBeCloseTo(1.05, 2) // .1em of 10.5
+    await expect(eyebrow.color).toBe(TIER68)
+  },
+}
+
+/** Wheat is highlighted passages only, and it ALWAYS carries ink — never a tier. */
+export const Highlight: Story = {
+  args: { kind: 'highlight' },
+  play: async ({ canvasElement }) => {
+    const s = getComputedStyle(text(canvasElement))
+    await expect(s.backgroundColor).toBe(WHEAT)
+    await expect(s.color).toBe(INK)
+    await expect(s.padding).toBe('0px 3px') // board `highlight` padding "0 3px"
+  },
+}
+
+/** The media tile (image / video) — the two kinds that are not inline. */
+export const MediaTiles: Story = {
+  render: () => (
+    <div className="flex items-start gap-mn-3 p-mn-4">
+      <PondAtom kind="image" />
+      <PondAtom kind="video" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const image = atom(canvasElement, 'image')
+    const video = atom(canvasElement, 'video')
+
+    await expect(image.textContent).toBe('image · 4:3')
+    await expect(video.textContent).toBe('video · 0:42')
+
+    // Only the video carries the play affordance — board `play` 30px pill.
+    await expect(image.querySelector('[data-part="play"]')).toBeNull()
+    const play = getComputedStyle(video.querySelector<HTMLElement>('[data-part="play"]')!)
+    await expect([play.width, play.height]).toEqual(['30px', '30px'])
+
+    // board `media` 150 × 99, radius 14
+    const tile = getComputedStyle(image)
+    await expect([tile.width, tile.height, tile.borderRadius]).toEqual(['150px', '99px', '14px'])
+    // the caption is machine copy: mono 10.5 at ink .68
+    const cap = getComputedStyle(image.lastElementChild!)
+    await expect(cap.fontFamily).toMatch(MONO)
+    await expect([cap.fontSize, cap.color]).toEqual(['10.5px', TIER68])
+  },
+}
+
+/**
+ * Empty and loading — AUDIT G6. Every placeholder the board writes, in one frame,
+ * so a missing state shows up as a missing word rather than a blank inline box.
+ */
+export const EmptyAndLoading: Story = {
+  render: () => (
+    <div className="flex max-w-[460px] flex-col items-start gap-mn-2 p-mn-4">
+      {(['relation', 'person', 'heading', 'prose', 'link', 'file', 'text'] as const).map((kind) => (
+        <PondAtom key={kind} kind={kind} state="empty" />
+      ))}
+      <div className="flex items-start gap-mn-3">
+        <PondAtom kind="image" state="empty" />
+        <PondAtom kind="video" state="empty" />
+      </div>
+      <PondAtom kind="text" state="loading" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const [kind, placeholder] of [
+      ['relation', 'link a record'],
+      ['person', 'assign someone'],
+      ['heading', 'untitled'],
+      ['prose', 'write something'],
+      ['link', 'add a link'],
+      ['file', 'attach a file'],
+      ['image', 'drop an image'],
+      ['video', 'drop a video'],
+    ] as const) {
+      await expect(atom(canvasElement, kind).textContent).toBe(placeholder)
+    }
+
+    // `text` has no placeholder of its own — the board's fallback word is "empty".
+    const [emptyText, loadingText] = [...canvasElement.querySelectorAll('[data-kind="text"]')]
+    await expect(emptyText.textContent).toBe('empty')
+    await expect(loadingText.textContent).toBe('…')
+
+    // Both states drop to the .68 tier, and the empty relation loses its › mark.
+    for (const el of [emptyText, loadingText]) {
+      await expect(getComputedStyle(text(el)).color).toBe(TIER68)
+    }
+    await expect(canvasElement.querySelector('[data-part="suffix"]')).toBeNull()
+
+    // An empty person is a placeholder, NOT an avatar of the word "assign someone".
+    await expect(canvasElement.querySelector('[data-part="avatar"]')).toBeNull()
+  },
+}
+
+/**
+ * The decorative kind marks the board appends to the value. They are `aria-hidden`
+ * so a wrapping control's accessible name stays the value — a silent regression
+ * otherwise: the chip would read "chickpeas, harissa ›" to a screen reader.
+ */
+export const Suffixes: Story = {
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-2 p-mn-4">
+      <PondAtom kind="relation" />
+      <PondAtom kind="link" />
+      <PondAtom kind="file" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const [kind, suffix] of [
+      ['relation', ' ›'],
+      ['link', ' ↗'],
+      ['file', ' · 212 kb'],
+    ] as const) {
+      const mark = atom(canvasElement, kind).querySelector('[data-part="suffix"]')!
+      await expect(mark.textContent).toBe(suffix)
+      await expect(mark).toHaveAttribute('aria-hidden')
+    }
+  },
+}
+
+/**
+ * `note={false}` — the host's own copy wins. `RelationChip` and `PondMolecule`'s
+ * check row both pass it, because the atom's fixture note ("deleted · kept 710")
+ * is board copy for the component card, not for a real missing page.
+ */
+export const ErrorNoteSuppressed: Story = {
+  args: { kind: 'relation', state: 'error', value: 'Missing page', note: false },
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector('[data-part="note"]')).toBeNull()
+    // The struck label survives — only the note is the host's business.
+    await expect(getComputedStyle(text(canvasElement)).textDecorationLine).toBe('line-through')
+  },
+}
+
+/**
+ * The six heading ranks. Each is a board literal (`level=*` secondary), and the
+ * register SWITCHES at 3: 1–2 are the uppercase display face, 3–5 drop to
+ * sentence case at 500, and 6 goes back uppercase and letterspaced. Getting a rank
+ * wrong is silent — it just reads as a slightly different heading.
+ */
 export const HeadingLevels: Story = {
   render: () => (
     <div className="flex flex-col items-start gap-mn-2 p-mn-4">
@@ -85,6 +376,27 @@ export const HeadingLevels: Story = {
       ))}
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const spans = texts(canvasElement)
+    const BOARD = [
+      { size: '38px', weight: '700', transform: 'uppercase', leading: 1, track: '-0.38px' },
+      { size: '22px', weight: '700', transform: 'uppercase', leading: 1.1, track: '-0.22px' },
+      { size: '18px', weight: '500', transform: 'none', leading: 1.3, track: 'normal' },
+      { size: '16px', weight: '500', transform: 'none', leading: 1.3, track: 'normal' },
+      { size: '13.5px', weight: '500', transform: 'none', leading: 1.4, track: 'normal' },
+      { size: '11px', weight: '500', transform: 'uppercase', leading: 1.4, track: '1.1px' },
+    ]
+    for (const [i, want] of BOARD.entries()) {
+      const s = getComputedStyle(spans[i])
+      await expect([s.fontSize, s.fontWeight, s.textTransform, s.letterSpacing]).toEqual([
+        want.size,
+        want.weight,
+        want.transform,
+        want.track, // -.01em on 1-2, dropped on 3-5, .1em on 6
+      ])
+      await expect(parseFloat(s.lineHeight) / parseFloat(want.size)).toBeCloseTo(want.leading, 2)
+    }
+  },
 }
 
 /**
@@ -131,13 +443,42 @@ export const AreaMarks: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    // Marks carry the area role; no text span ever does.
-    await expect(canvasElement.querySelectorAll('[data-part="glyph"].text-mn-area-c')).toHaveLength(
-      1
-    )
-    for (const text of canvasElement.querySelectorAll('[data-part="text"]')) {
-      await expect(text.className).not.toContain('mn-area')
+    const glyphs = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="glyph"]')]
+    const dots = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="dot"]')]
+
+    // ink first, then the three area hues — the mark takes the colour, exactly.
+    await expect(getComputedStyle(glyphs[0]).color).toBe(INK)
+    for (const [i, color] of (['sage', 'mist', 'navy'] as const).entries()) {
+      await expect(getComputedStyle(glyphs[i + 1]).color).toBe(AREA[color])
+      await expect(getComputedStyle(dots[i + 1]).backgroundColor).toBe(AREA[color])
     }
+
+    // …and the text never does. Area colour is MARKS ONLY: a tinted label is the
+    // divergence that would read as "designed" and quietly break the three ink
+    // tiers, so it is asserted on the resolved colour, not on a class name.
+    for (const span of texts(canvasElement)) {
+      await expect(getComputedStyle(span).color).toBe(INK)
+    }
+  },
+}
+
+/** Dark is the other paper: navy flips to mist because `--mn-area-c` itself flips. */
+export const AreaMarksInk: Story = {
+  render: () => (
+    <div className="flex items-center gap-mn-3 p-mn-4">
+      {(['sage', 'mist', 'navy'] as const).map((color) => (
+        <PondAtom key={color} kind="dot" color={color} />
+      ))}
+    </div>
+  ),
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => {
+    const dots = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="dot"]')]
+    await expect(dots.map((d) => getComputedStyle(d).backgroundColor)).toEqual([
+      AREA.sage,
+      AREA.mist,
+      AREA.mist, // navy → mist on dark
+    ])
   },
 }
 
@@ -197,11 +538,39 @@ export const RelationError: Story = {
   },
 }
 
+/**
+ * Signal discipline — burnt orange is THE one dated thing per screen, so the atom
+ * draws it on `kind="date"` with `due`, and nowhere else. The three negatives are
+ * the point: a stray signal is silent (it looks deliberate) and it spends the one
+ * loud colour the whole screen has.
+ */
 export const DateDue: Story = {
-  args: { kind: 'date', due: true },
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-2 p-mn-4">
+      <PondAtom kind="date" due />
+      <PondAtom kind="date" />
+      <PondAtom kind="time" due />
+      <PondAtom kind="text" />
+    </div>
+  ),
   play: async ({ canvasElement }) => {
-    // Exactly ONE burnt-orange dot — the one dated thing.
-    await expect(canvasElement.querySelectorAll('.bg-mn-signal-dated')).toHaveLength(1)
+    const dots = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="due-dot"]')]
+    await expect(dots).toHaveLength(1)
+
+    // board `dueDot`: 7 × 7, radius 2, #D96629 — and it sits on the dated date.
+    const s = getComputedStyle(dots[0])
+    await expect([s.width, s.height, s.borderRadius]).toEqual(['7px', '7px', '2px'])
+    await expect(s.backgroundColor).toBe(BURNT)
+    await expect(dots[0].closest('[data-kind]')).toBe(atom(canvasElement, 'date'))
+
+    // No other kind borrows a signal colour — not wheat, not the diff red.
+    for (const el of canvasElement.querySelectorAll<HTMLElement>(
+      '[data-kind]:not([data-kind="date"]) *, [data-kind="time"], [data-kind="text"]'
+    )) {
+      const c = getComputedStyle(el)
+      await expect([c.backgroundColor, c.color]).not.toContain(BURNT)
+      await expect([c.backgroundColor, c.color]).not.toContain(WHEAT)
+    }
   },
 }
 

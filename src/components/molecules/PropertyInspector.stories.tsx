@@ -69,11 +69,18 @@ export const Default: Story = {
     await expect(title).toHaveValue('Build a workbench')
     await expect(canvas.getByLabelText('Count value')).toHaveValue(3)
     await expect(canvas.getByLabelText('Stage value')).toHaveValue('doing')
-    // The checkbox property is `PondControl kind="checkbox"` (#221): a base-ui
-    // `role="checkbox"` span, so its state is `aria-checked`, not `.checked`.
+    // The checkbox property IS `PondControl kind="checkbox"` (#221): a base-ui
+    // `role="checkbox"` span inside the control's own `[data-kind]` root, so its
+    // state is `aria-checked`, not `.checked` — and the bare
+    // `<input type="checkbox">` this call site used to hand-roll is gone (only
+    // base-ui's own aria-hidden shadow input may remain).
     const done = canvas.getByLabelText('Done value')
     await expect(done).toHaveAttribute('role', 'checkbox')
     await expect(done).toHaveAttribute('aria-checked', 'false')
+    await expect(done.closest('[data-kind="checkbox"]')).not.toBeNull()
+    await expect(
+      canvasElement.querySelector('input[type="checkbox"]:not([aria-hidden])')
+    ).toBeNull()
 
     // Editing text raises onChange with the new string.
     await userEvent.type(title, '!')
@@ -98,13 +105,29 @@ export const ClearsToNull: Story = {
   },
 }
 
-/** Read-only: every control is disabled, no edit escapes. */
+/**
+ * Read-only: every control is disabled, no edit escapes. The checkbox is a
+ * base-ui `role="checkbox"` span rather than an input, so its refusal reads as
+ * `aria-disabled` — and a click on it emits nothing at all (#221).
+ */
 export const ReadOnly: Story = {
-  args: { editable: false },
-  play: async ({ canvasElement }) => {
+  args: {
+    editable: false,
+    values: { title: 'Build a workbench', count: 3, stage: 'doing', done: true },
+  },
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByLabelText('Title value')).toBeDisabled()
     await expect(canvas.getByLabelText('Stage value')).toBeDisabled()
+
+    const done = canvas.getByLabelText('Done value')
+    await expect(done).toHaveAttribute('aria-checked', 'true')
+    await expect(done).toHaveAttribute('aria-disabled', 'true')
+    // Disabled takes the pointer out first — then force the click through anyway,
+    // because `aria-disabled` is an announcement and the refusal has to be real.
+    await expect(getComputedStyle(done).pointerEvents).toBe('none')
+    await userEvent.click(done, { pointerEventsCheck: 0 })
+    await expect(args.onChange).not.toHaveBeenCalled()
   },
 }
 

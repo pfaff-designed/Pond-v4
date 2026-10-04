@@ -111,7 +111,13 @@ export const LifeCollapsed: Story = {
   },
 }
 
-/** An expanded area folder shows its leaves; a nested sub-area stays a folder. */
+/**
+ * An expanded area folder shows its leaves; a nested sub-area stays a folder.
+ *
+ * #95 (the TreeRow absorption): every visible row is a presentational
+ * `PondMolecule kind="list-row"` hosted by exactly one interactive `treeitem` —
+ * one molecule per row, no row drawn by hand and none left behind.
+ */
 export const Expanded: Story = {
   args: { expanded: new Set(['health', 'personal']), selectedId: 'sleep' },
   play: async ({ canvasElement }) => {
@@ -120,6 +126,15 @@ export const Expanded: Story = {
     await expect(canvas.getByText('Trips')).toBeInTheDocument()
     // nested sub-area folder is itself collapsed
     await expect(canvas.queryByText('Recipes')).not.toBeInTheDocument()
+
+    // life + 4 top-level + Health's 2 + Personal's 2 = 9 visible rows.
+    const items = canvas.getAllByRole('treeitem')
+    const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
+    await expect(items).toHaveLength(9)
+    await expect(rows).toHaveLength(items.length)
+    for (const [i, row] of rows.entries()) {
+      await expect(row.closest('[role="treeitem"]')).toBe(items[i])
+    }
   },
 }
 
@@ -161,7 +176,11 @@ export const BoardRowGeometry: Story = {
   },
 }
 
-/** ARIA coordinates: levels and sibling positions come from the flattened tree. */
+/**
+ * ARIA coordinates: levels and sibling positions come from the flattened tree —
+ * and a folder states its own open/shut (`aria-expanded`), while a leaf omits
+ * the attribute entirely rather than claiming to be a collapsed folder.
+ */
 export const AriaCoordinates: Story = {
   args: { expanded: new Set(['health']) },
   play: async ({ canvasElement }) => {
@@ -173,6 +192,18 @@ export const AriaCoordinates: Story = {
     await expect(health).toHaveAttribute('aria-level', '2')
     await expect(health).toHaveAttribute('aria-posinset', '1')
     await expect(health).toHaveAttribute('aria-setsize', '4')
+    await expect(health).toHaveAttribute('aria-expanded', 'true')
+    await expect(canvas.getByRole('treeitem', { name: /Personal/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    // A real leaf omits the attribute rather than claiming hidden content. Note
+    // `isFolderNode` counts EVERY top-level page as a folder (so childless
+    // `Scratchpad` does carry aria-expanded="false" — it is an area you can open
+    // and add into); only a NESTED childless row is a leaf to the tree.
+    await expect(canvas.getByRole('treeitem', { name: /Sleep/ })).not.toHaveAttribute(
+      'aria-expanded'
+    )
     const sleep = canvas.getByRole('treeitem', { name: /Sleep/ })
     await expect(sleep).toHaveAttribute('aria-level', '3')
     await expect(sleep).toHaveAttribute('aria-posinset', '1')
@@ -203,6 +234,25 @@ export const PathToSelection: Story = {
     await expect(canvas.getByRole('treeitem', { name: /Health/ })).not.toHaveAttribute(
       'data-on-path'
     )
+
+    // The three-tier label VOICE the trail is drawn with (`data-voice` → CSS ink
+    // tiers; the list-row molecule itself renders one tone, so the rail docks its
+    // own). `Food` isolates the on-path raise from the area/root raise — it is a
+    // nested plain page, not a top-level area — and `Trips` is its off-path
+    // sibling at the same depth. Guards the #95-review regression where the
+    // TreeRow→PondMolecule absorption flattened every row to one tone, and the
+    // #108 follow-up where a top-level control row read raised for being an area.
+    const voice = (name: RegExp) =>
+      canvas.getByRole('treeitem', { name }).getAttribute('data-voice')
+    const VOICES: [RegExp, string][] = [
+      [/Recipes/, 'full'], // selected
+      [/Food/, 'raised'], // on-path ancestor (a nested plain page, not an area)
+      [/Personal/, 'raised'], // on-path ancestor
+      [/Trips/, 'muted'], // plain, off the selection path
+    ]
+    for (const [name, expected] of VOICES) await expect(voice(name)).toBe(expected)
+    // the regression guard: an on-path ancestor must NOT read like a plain row
+    await expect(voice(/Food/)).not.toBe(voice(/Trips/))
   },
 }
 

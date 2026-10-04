@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import {
@@ -163,6 +164,30 @@ export const Matrix: Story = {
     await expect(canvasElement.querySelectorAll('[data-kind]')).toHaveLength(
       (POND_CONTROL_VARIANTS.length + nonButtonKinds) * POND_CONTROL_STATES.length
     )
+    // The board's three axes, read back off what actually rendered: five kinds,
+    // four variants, eight states — in the board's own order, and nothing else.
+    const drawn = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind]')]
+    await expect([...new Set(drawn.map((el) => el.dataset.kind))]).toEqual([
+      'button',
+      'field',
+      'toggle',
+      'checkbox',
+      'menu',
+    ])
+    await expect([...new Set(drawn.map((el) => el.dataset.state))]).toEqual([
+      'rest',
+      'hover',
+      'focus',
+      'selected',
+      'editing',
+      'disabled',
+      'loading',
+      'error',
+    ])
+    const variants = [...canvasElement.querySelectorAll<HTMLElement>('[data-cell]')]
+      .map((el) => el.dataset.cell!.split('/')[2])
+      .filter(Boolean)
+    await expect([...new Set(variants)]).toEqual(['primary', 'secondary', 'ghost', 'quiet'])
     // No spinner anywhere: `loading` is a copy swap.
     for (const el of canvasElement.querySelectorAll<HTMLElement>('[data-state="loading"] *')) {
       await expect(getComputedStyle(el).animationName).toBe('none')
@@ -457,6 +482,9 @@ export const CheckboxInk: Story = {
 
 async function assertMenu(root: HTMLElement, p: Palette) {
   const row = (state: PondControlState) => cell(root, 'menu', state)
+  /** The two cells off the state axis: the bare row, and the keyboard-highlighted one. */
+  const extra = (name: 'bare' | 'highlighted') =>
+    root.querySelector<HTMLElement>(`[data-cell="menu/${name}"] [data-kind="menu"]`)!
   for (const state of POND_CONTROL_STATES) {
     const cs = getComputedStyle(row(state))
     await expect(cs.display).toBe('flex')
@@ -485,12 +513,28 @@ async function assertMenu(root: HTMLElement, p: Palette) {
   await assertFocusRing(row('focus'))
   await expect(getComputedStyle(row('disabled')).opacity).toBe('0.4')
   await expect(getComputedStyle(row('disabled')).pointerEvents).toBe('none')
+  // The board draws a hint and the ↵ only when it is given one (`hasHint` / `on`):
+  // a bare row is label and nothing else.
+  await expect(extra('bare').querySelector('[data-part="hint"]')).toBeNull()
+  await expect(extra('bare').querySelector('[data-part="enter"]')).toBeNull()
+  await expect(extra('bare').querySelector('[data-part="label"]')!.textContent).toBe('keep page')
+  // `data-highlighted` is how a base-ui Menu.Item marks the row the keyboard is on;
+  // it must land on the board's hover ground, or arrowing through a menu shows nothing.
+  await expect(alphaOf(getComputedStyle(extra('highlighted')).backgroundColor)).toBeCloseTo(0.05, 2)
 }
 
 export const Menu: Story = {
   render: () => (
-    <div className="p-mn-4">
+    <div className="flex items-start gap-mn-6 p-mn-4">
       <States kind="menu" />
+      <div role="menu" className="flex flex-col items-start gap-mn-2">
+        <div data-cell="menu/bare">
+          <PondControl kind="menu" />
+        </div>
+        <div data-cell="menu/highlighted">
+          <PondControl kind="menu" hint="page" data-highlighted="" />
+        </div>
+      </div>
     </div>
   ),
   play: async ({ canvasElement }) => assertMenu(canvasElement, PAPER),
@@ -574,5 +618,56 @@ export const Live: Story = {
     await expect(getComputedStyle(input).color).toBe(PAPER.ink)
     // Keyboard focus wears the mist ring on the field card.
     await assertFocusRing(input.parentElement!)
+  },
+}
+
+// ── Controlled — the host owns the value ───────────────────────────────────────
+
+/** The two kinds a product call site drives from its own state: `value` +
+ *  `onValueChange` on the field (with a plain, non-error hint), and `on` +
+ *  `onCheckedChange` on the toggle. */
+function Controlled_() {
+  const [email, setEmail] = useState('hi')
+  const [zen, setZen] = useState(false)
+  return (
+    <div className="flex flex-col items-start gap-mn-3 p-mn-4">
+      <div data-cell="field/controlled">
+        <PondControl kind="field" value={email} onValueChange={setEmail} hint="we’ll send a code" />
+      </div>
+      <div data-cell="toggle/controlled">
+        <PondControl kind="toggle" label="zen" on={zen} onCheckedChange={setZen} />
+      </div>
+    </div>
+  )
+}
+
+export const Controlled: Story = {
+  render: () => <Controlled_ />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // The field shows what the host holds, and every keystroke is handed back.
+    const input = canvas.getByRole('textbox')
+    await expect(input).toHaveValue('hi')
+    await userEvent.type(input, '@make-noise')
+    await expect(input).toHaveValue('hi@make-noise')
+    // A hint given outside `error` is the board's description, not its error: same
+    // mono 10.5 at ink .8, and the control stays valid.
+    await expect(input).not.toHaveAttribute('aria-invalid')
+    const hint = canvasElement.querySelector<HTMLElement>('[data-part="hint"]')!
+    const hs = getComputedStyle(hint)
+    await expect(hint.textContent).toBe('we’ll send a code')
+    await expect(hs.fontFamily).toContain('PP Neue Montreal Mono')
+    await expect(hs.fontSize).toBe('10.5px')
+    await expect(alphaOf(hs.color)).toBeCloseTo(0.8, 2)
+    // `on` is whatever the host says; a click asks for the next value and the
+    // board's selected track + knob at 14 follow from the host's answer.
+    const sw = canvas.getByRole('switch')
+    await expect(sw).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(sw)
+    await expect(sw).toHaveAttribute('aria-checked', 'true')
+    await expect(getComputedStyle(sw).backgroundColor).toBe(PAPER.ink)
+    await expect(getComputedStyle(sw.querySelector<HTMLElement>('[data-part="knob"]')!).left).toBe(
+      '14px'
+    )
   },
 }
