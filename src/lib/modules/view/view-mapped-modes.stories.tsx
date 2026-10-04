@@ -3,7 +3,12 @@ import { expect } from 'storybook/test'
 
 import { CollectionView } from './view'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { blockEmptyBox, blockFrame, GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
+import {
+  blockEmptyBox,
+  blockFrame,
+  GANTT_EMPTY_LINE,
+  POND_BLOCK_FILTERED_EMPTY_LINE,
+} from '@/lib/modules/block-frame'
 import { GANTT_TICK_COUNT } from './gantt-shared'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
@@ -500,4 +505,86 @@ export const NumberNoValuesInk: Story = {
   args: { config: noValues, schema: runSchema, rows: blankRow },
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertNumberEmpty(canvasElement, DARK),
+}
+
+/**
+ * The gallery card's two fallbacks: a record with no title reads `untitled`, and a
+ * record with no field to show reads `—` on the meta's own tier. Both are the board's
+ * words — a blank card, or a card that invented a title, would be the failure.
+ */
+export const GalleryFallbacks: Story = {
+  args: { config: gallery, schema: plantSchema, rows: [r('e', '', {})] },
+  play: async ({ canvasElement }) => {
+    const title = canvasElement.querySelector<HTMLElement>('[data-part="gallery-title"]')!
+    await expect(title.textContent).toBe('untitled')
+    await expect(getComputedStyle(title).color).toBe(LIGHT.ink)
+    const metaEl = canvasElement.querySelector<HTMLElement>('[data-part="gallery-meta"]')!
+    await expect(metaEl.textContent).toBe('—')
+    const ms = getComputedStyle(metaEl)
+    await expect(ms.fontFamily).toContain('Mono')
+    await expect(ms.fontSize).toBe('10.5px')
+    await expect(ms.color).toBe(LIGHT.ink68)
+  },
+}
+
+/**
+ * A delta rides the ONE mono sub line, between the figure's name and the record
+ * count — the board draws no second line and no coloured chip for it.
+ */
+export const NumberWithDelta: Story = {
+  args: {
+    config: {
+      ...figure,
+      id: 'v-number-delta',
+      bigNumber: {
+        property: 'p-km',
+        agg: 'sum',
+        delta: { property: 'p-when', value: 'now' },
+      },
+    },
+    schema: [
+      ...runSchema,
+      { id: 'p-when', name: 'When', type: 'select', options: [{ id: 'now', label: 'now' }] },
+    ],
+    rows: [
+      r('a', 'this week', { 'p-km': 12, 'p-when': 'now' }),
+      r('b', 'last week', { 'p-km': 10 }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const wrap = canvasElement.querySelector<HTMLElement>('[data-part="number"]')!
+    // Still two children: the figure and one sub line.
+    await expect(wrap.children).toHaveLength(2)
+    const sub = wrap.querySelector<HTMLElement>('[data-part="sub"]')!
+    await expect(sub.textContent).toBe('Distance · +20% · over 2 records')
+    const ss = getComputedStyle(sub)
+    await expect(ss.fontFamily).toContain('Mono')
+    await expect(ss.fontSize).toBe('11px')
+    await expect(ss.color).toBe(LIGHT.ink68)
+  },
+}
+
+/**
+ * A gantt whose FILTER hides every row: the same voidBox, carrying the filter's line
+ * rather than the gantt's — `no tasks yet` would be false about the collection.
+ */
+export const GanttFilteredEmptyInFrame: Story = {
+  args: { config: gantt, schema: taskSchema, rows: [] },
+  render: () => (
+    <PondBlock
+      {...blockFrame(gantt)!}
+      state="empty"
+      emptyBox={blockEmptyBox(gantt)}
+      emptyLine={POND_BLOCK_FILTERED_EMPTY_LINE}
+    >
+      <CollectionView config={gantt} schema={taskSchema} rows={[]} />
+    </PondBlock>
+  ),
+  play: async ({ canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind="table"]')!
+    await expect(card.dataset.blockState).toBe('empty')
+    const box = card.querySelector<HTMLElement>('[data-part="empty"]')!
+    await assertVoid(box, LIGHT, POND_BLOCK_FILTERED_EMPTY_LINE)
+    await expect(box.textContent).not.toBe(GANTT_EMPTY_LINE)
+  },
 }

@@ -2,7 +2,12 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { useState } from 'react'
 
-import { TerminalDrawer, TERMINAL_COLLAPSED_HEIGHT, TERMINAL_DEFAULT_HEIGHT } from './TerminalDrawer'
+import {
+  TerminalDrawer,
+  TERMINAL_COLLAPSED_HEIGHT,
+  TERMINAL_DEFAULT_HEIGHT,
+} from './TerminalDrawer'
+import { COMPOSER_CLEARANCE_VAR, PROPOSAL_MIN_HEIGHT } from '@/lib/layout/terminal-height'
 
 // #96: the card IS the column (534 wide, centred on the shell), so the footer
 // and body own only their inner gutter — no offsets, no re-centring.
@@ -207,5 +212,78 @@ export const KeyboardResize: Story = {
     await expect(section.style.height).toBe(
       `${TERMINAL_DEFAULT_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px`
     )
+  },
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Relocated from jest (`shell-reskin`).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ONE source for the composer's clearance: the drawer publishes its real
+ * footprint onto the shell as `--pond-composer-clearance`, and every page
+ * surface pads its bottom against that one value.
+ *
+ * This is pinned in a browser because it is the kind of failure nobody sees
+ * until a decision is unreachable. `AITerminal` auto-grows the drawer to
+ * `PROPOSAL_MIN_HEIGHT` while a diff needs review, so the clearance has to
+ * follow — otherwise the accept / reject gesture is pinned behind the glass with
+ * no scroll room. The teardown matters as much: a stale clearance left on the
+ * shell pads a surface against a composer that is gone.
+ *
+ * `composerClearancePadding()` and `drawerFootprintPx()` are pure arithmetic and
+ * stay unit-tested; what lives here is the DOM side effect — that the drawer
+ * finds the shell, writes the footprint, keeps it in step, and cleans it up.
+ */
+export const PublishesItsClearanceToTheShell: Story = {
+  decorators: [
+    (Story) => (
+      <div data-part="shell" className="relative h-screen bg-mn-surface">
+        <Story />
+      </div>
+    ),
+  ],
+  render: (args) => {
+    const [state, setState] = useState<{ height: number; collapsed: boolean } | null>({
+      height: args.height,
+      collapsed: true,
+    })
+    return (
+      <>
+        <div className="absolute top-4 left-4 flex gap-2">
+          <button onClick={() => setState({ height: PROPOSAL_MIN_HEIGHT, collapsed: false })}>
+            open a proposal
+          </button>
+          <button onClick={() => setState({ height: 160, collapsed: false })}>drag to 160</button>
+          <button onClick={() => setState(null)}>unmount</button>
+        </div>
+        {state && <TerminalDrawer {...args} height={state.height} collapsed={state.collapsed} />}
+      </>
+    )
+  },
+  play: async ({ canvas, canvasElement }) => {
+    // The decorator's shell is a DESCENDANT of the canvas, not an ancestor.
+    const shell = canvasElement.querySelector<HTMLElement>('[data-part="shell"]')!
+    const clearance = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
+
+    // Collapsed: the strip alone.
+    await expect(clearance()).toBe(`${TERMINAL_COLLAPSED_HEIGHT}px`)
+
+    // A proposal opens: the auto-grown floor + the strip, and the drawer's own
+    // box is sized from the very same number — one value, not two that agree.
+    await userEvent.click(canvas.getByText('open a proposal'))
+    const grown = PROPOSAL_MIN_HEIGHT + TERMINAL_COLLAPSED_HEIGHT
+    await expect(clearance()).toBe(`${grown}px`)
+    await expect(canvasElement.querySelector<HTMLElement>('section')!.style.height).toBe(
+      `${grown}px`
+    )
+
+    // A user drag publishes the dragged height.
+    await userEvent.click(canvas.getByText('drag to 160'))
+    await expect(clearance()).toBe(`${160 + TERMINAL_COLLAPSED_HEIGHT}px`)
+
+    // Gone with the drawer — no stale clearance left padding the surface.
+    await userEvent.click(canvas.getByText('unmount'))
+    await expect(clearance()).toBe('')
   },
 }

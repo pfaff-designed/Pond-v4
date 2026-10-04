@@ -113,6 +113,9 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(g.borderTopColor).toBe(p.glassBorder)
   await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
   await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
+  // Below its field (`side="bottom"`, the default) the glass grows from its TOP
+  // edge — `.motion-menu`'s fallback origin. `side="top"` flips it (ComposerCommands).
+  await expect(g.transformOrigin).toBe('0px 0px')
 
   for (const group of glass.querySelectorAll<HTMLElement>('[data-part="group"]')) {
     const s = getComputedStyle(group)
@@ -161,6 +164,11 @@ async function assertChrome(root: HTMLElement, p: Palette) {
     await expect(e.color).toBe(p.tier80)
     await expect(e.fontFamily).toMatch(MONO)
   }
+
+  // Every string the glass draws is lowercase, in EVERY state — Pond's own words,
+  // never build vocabulary. (Which words they may be is the glossary's business and
+  // stays a node test: it reads the handoff.)
+  await expect(glass.textContent).not.toMatch(/[A-Z]/)
 
   const foot = glass.querySelector<HTMLElement>('[data-part="foot"]')
   if (foot) {
@@ -330,5 +338,205 @@ export const Keys: Story = {
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalled()
     await expect((field as HTMLTextAreaElement).value).toBe('/')
+  },
+}
+
+// ── the pointer ────────────────────────────────────────────────────────────────
+
+/**
+ * Hovering a row moves the selection to it, and the selection is what swaps the
+ * board's key hint for `↵` (`PondPicker`'s rows carry `hasHint:true, hint:"[]"`
+ * unselected and `hasHint:false` selected). The ink-.07 ground moves with it —
+ * one selection, one wash — and a click on the hovered row inserts it.
+ */
+export const Hovered: Story = {
+  args: { onSelect: fn() },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    const rows = [...glass.querySelectorAll<HTMLElement>('[role="option"]')]
+    const text = rows[0]
+    const checklist = rows.find(
+      (r) => r.querySelector('[data-part="label"]')!.textContent === 'checklist'
+    )!
+
+    // At rest: `checklist` wears the board's key hint and no ↵.
+    await expect(checklist.querySelector('[data-part="hint"]')!.textContent).toBe('[]')
+    await expect(checklist.querySelector('[data-part="enter"]')).toBeNull()
+
+    await userEvent.hover(checklist)
+    await expect(checklist.getAttribute('aria-selected')).toBe('true')
+    await expect(checklist.querySelector('[data-part="hint"]')).toBeNull()
+    await expect(checklist.querySelector('[data-part="enter"]')!.textContent).toBe('↵')
+    await expect(alphaOf(getComputedStyle(checklist).backgroundColor)).toBeCloseTo(0.07, 2)
+    // …and `text`, which had it on open, gives both up.
+    await expect(text.getAttribute('aria-selected')).toBe('false')
+    await expect(alphaOf(getComputedStyle(text).backgroundColor)).toBeCloseTo(0, 2)
+    await expect(text.querySelector('[data-part="enter"]')).toBeNull()
+
+    await userEvent.click(checklist)
+    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'checklist' }))
+  },
+}
+
+// ── the edges of the walk, and the swallow ─────────────────────────────────────
+
+const selectedLabel = (root: HTMLElement) =>
+  glassOf(root).querySelector('[aria-selected="true"] [data-part="label"]')!.textContent
+
+/**
+ * ↑ on the first row and ↓ on the last stay put rather than wrapping, and a ↵ that
+ * will insert is swallowed in the capture phase — otherwise the field takes the
+ * newline too and the block arrives with a blank line under it, which nothing on
+ * screen would show.
+ */
+export const KeyEdges: Story = {
+  args: { onSelect: fn() },
+  play: async ({ canvasElement }) => {
+    const field = within(canvasElement).getByLabelText('page')
+    field.focus()
+
+    await userEvent.keyboard('{ArrowUp}')
+    await expect(selectedLabel(canvasElement)).toBe('text')
+
+    // The menu listens in the capture phase, so neither the walk nor the insert
+    // reaches the field underneath.
+    for (const key of ['ArrowDown', 'ArrowUp', 'Enter']) {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      field.dispatchEvent(e)
+      await expect(e.defaultPrevented).toBe(true)
+    }
+
+    await userEvent.keyboard('{ArrowDown>30/}')
+    await expect(selectedLabel(canvasElement)).toBe('page from template')
+  },
+}
+
+/**
+ * The one ↵ the menu does NOT take: with nothing to insert the key is the field's,
+ * so `/zz` followed by ↵ reaches the page and keeps the typed text as text.
+ */
+export const EmptyKeepsEnter: Story = {
+  args: { query: 'zz', onSelect: fn() },
+  play: async ({ canvasElement, args }) => {
+    const field = within(canvasElement).getByLabelText('page')
+    field.focus()
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    field.dispatchEvent(enter)
+    await expect(enter.defaultPrevented).toBe(false)
+    await expect(args.onSelect).not.toHaveBeenCalled()
+  },
+}
+
+// ── walking into the templates pane and back ───────────────────────────────────
+
+/**
+ * `page from template` opens a pane rather than inserting: ↵ on it draws the head
+ * and does NOT insert a block, ← steps back to the blocks, → opens it too, and ↵ on
+ * a premade shape picks that kind.
+ */
+export const TemplatesNav: Story = {
+  args: { onSelect: fn(), onPickTemplate: fn() },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    const tpl = () =>
+      [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (r) => r.querySelector('[data-part="label"]')!.textContent === 'page from template'
+      )!
+    const head = () => glass.querySelector('[data-part="head"]')
+
+    await userEvent.hover(tpl())
+    await userEvent.keyboard('{Enter}')
+    // The row opens the pane; nothing is inserted on the page.
+    await expect(args.onSelect).not.toHaveBeenCalled()
+    await expect(head()!.textContent).toBe('page from template')
+    await expect(glass.querySelector('[role="listbox"]')!.getAttribute('aria-label')).toBe(
+      'page from template'
+    )
+    await expect(labels(canvasElement)).toEqual([...TEMPLATE_KINDS])
+    await expect(selectedLabel(canvasElement)).toBe(TEMPLATE_KINDS[0])
+    // No `onPreviewTemplate` here, so the foot offers only the one key.
+    await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('↵ new nested page')
+
+    // ← steps back to the blocks. The selection returns to the row it came from,
+    // because nothing moved inside the pane.
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect(head()).toBeNull()
+    await expect(labels(canvasElement)).toEqual(slashRows.map((r) => r.label))
+    await expect(selectedLabel(canvasElement)).toBe('page from template')
+
+    // → opens it as well, and ↵ down the list picks that premade shape.
+    await userEvent.hover(tpl())
+    await userEvent.keyboard('{ArrowRight}')
+    await expect(head()).not.toBeNull()
+    await userEvent.keyboard('{ArrowDown>3/}{Enter}')
+    await expect(args.onPickTemplate).toHaveBeenCalledWith({
+      origin: 'premade',
+      kind: TEMPLATE_KINDS[3],
+    })
+  },
+}
+
+// ── the same menu in the composer ──────────────────────────────────────────────
+
+/**
+ * `AITerminal` draws this menu for the thread commands: the list takes the host's
+ * own name (`commands`), and anchored ABOVE the field it grows from its bottom
+ * edge instead of its top — the computed origin, not the class that sets it.
+ *
+ * The rows mirror `AITerminal`'s `CHAT_COMMANDS`; they are not imported because
+ * that organism is not loadable from a story. Which ids those rows run is
+ * `AITerminal`'s own wiring and stays a feature test.
+ */
+const COMPOSER_COMMANDS = [
+  { id: 'clear', label: '/clear', description: 'clear the thread and start again' },
+  { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
+  { id: 'save', label: '/save', description: 'save the thread to a page' },
+]
+
+export const ComposerCommands: Story = {
+  args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', onSelect: fn() },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    await expect(glass.querySelector('[role="listbox"]')!.getAttribute('aria-label')).toBe(
+      'commands'
+    )
+    await expect(labels(canvasElement)).toEqual(['/clear', '/handoff', '/save'])
+    // No `key` on these rows, so no hint rides at rest.
+    await expect(glass.querySelectorAll('[data-part="hint"]')).toHaveLength(0)
+
+    // `[--motion-menu-origin:bottom_left]` — read off the box, not the class
+    // string. `offsetHeight`, not the rect: the arrival keyframe scales the glass.
+    await expect(getComputedStyle(glass).transformOrigin).toBe(`0px ${glass.offsetHeight}px`)
+
+    const save = [...glass.querySelectorAll<HTMLElement>('[role="option"]')][2]
+    await userEvent.click(save)
+    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'save' }))
+  },
+}
+
+/**
+ * A row matched through its DESCRIPTION rather than its label: the description
+ * rides as the hint and nothing is underlined, because the hit is empty. `thread`
+ * is in all three descriptions and none of the three labels.
+ */
+export const MatchedOnDescription: Story = {
+  args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', query: 'thread' },
+  play: async ({ canvasElement }) => {
+    const glass = glassOf(canvasElement)
+    const rows = [...glass.querySelectorAll<HTMLElement>('[role="option"]')]
+    await expect(rows).toHaveLength(3)
+    for (const row of rows) {
+      await expect(row.querySelector('[data-part="hit"]')!.textContent).toBe('')
+      const hint = row.querySelector<HTMLElement>('[data-part="hint"]')
+      // The selected row shows ↵ where the hint would be; the rest show the description.
+      if (row.getAttribute('aria-selected') === 'true') {
+        await expect(hint).toBeNull()
+      } else {
+        await expect(COMPOSER_COMMANDS.map((c) => c.description)).toContain(hint!.textContent)
+      }
+    }
+    await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
+      '/ thread — 3 matches'
+    )
   },
 }

@@ -74,6 +74,12 @@ const blankJournal: EntriesBlock = {
   entries: [{ id: 'b1', date: 'today', text: '' }],
 }
 
+/** The same empty row on a SANS block: the medium is the block's, not the state's. */
+const blankUpdates: EntriesBlock = {
+  ...updates,
+  entries: [{ id: 'b2', date: 'today', text: '' }],
+}
+
 const INK = 'rgb(27, 29, 20)' // #1B1D14
 const PAPER = 'rgb(250, 249, 239)' // #FAF9EF
 const INK_68 = 'rgba(27, 29, 20, 0.68)'
@@ -203,6 +209,58 @@ export const EmptyDark: Story = {
   play: async ({ canvasElement }) => assertBlank(canvasElement, PAPER_68),
 }
 
+/** The sans twin of `assertBlank`: the empty line in the SANS medium at .68. */
+async function assertBlankSans(canvasElement: HTMLElement, ink68: string) {
+  await assertGeometry(canvasElement, 1)
+  await assertDates(canvasElement, ink68)
+  const [t] = textsOf(canvasElement)
+  await expect(t.textContent).toBe(ENTRIES_EMPTY_LINE)
+  await assertSans(getComputedStyle(t), ink68)
+}
+
+/**
+ * The block's own flag picks the medium in BOTH directions. The serif `Empty` story
+ * above proves a journal keeps its serif; this proves a sans block does not acquire
+ * one. A fork that read the state instead of the flag passes one of the two.
+ */
+export const EmptySans: Story = {
+  args: { data: blankUpdates },
+  play: async ({ canvasElement }) => assertBlankSans(canvasElement, INK_68),
+}
+
+export const EmptySansDark: Story = {
+  args: { data: blankUpdates },
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => assertBlankSans(canvasElement, PAPER_68),
+}
+
+/**
+ * Whitespace-only prose is blank: `filled` is `text.trim() !== ''`. Without the
+ * trim a row of spaces renders at FULL ink with no visible text — a row that looks
+ * like a rendering bug and reads as nothing, with no error anywhere.
+ */
+export const WhitespaceIsEmpty: Story = {
+  args: {
+    data: { ...journal, entries: [{ id: 'w1', date: '1 jan', text: '  \n ' }] },
+  },
+  play: async ({ canvasElement }) => assertBlank(canvasElement, INK_68),
+}
+
+/**
+ * Read-only renders NO fields. A field reaching a page the person cannot edit is
+ * both an editing affordance the role does not grant and a focus stop in the ARIA
+ * tree; nothing about it looks wrong in a screenshot.
+ */
+export const ReadOnlyHasNoFields: Story = {
+  args: { data: journal },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryAllByRole('textbox')).toHaveLength(0)
+    await expect(canvasElement.querySelector('input,textarea')).toBeNull()
+    await assertJournal(canvasElement, INK, INK_68)
+  },
+}
+
 // ── Editable ────────────────────────────────────────────────────────────────────
 
 /** Stateful host so the editable play test exercises a real onChange round-trip. */
@@ -220,10 +278,21 @@ export const EditableJournal: Story = {
     const texts = canvas.getAllByRole('textbox', { name: 'Entry text' })
     await expect(texts).toHaveLength(3)
     await assertSerif(getComputedStyle(texts[0]), INK)
+    await expect((texts[0] as HTMLTextAreaElement).placeholder).toBe(ENTRIES_EMPTY_LINE)
     const dates = canvas.getAllByRole('textbox', { name: 'Entry date' })
     const ds = getComputedStyle(dates[0])
     await expect(ds.fontFamily).toContain('PP Neue Montreal Mono')
     await expect(ds.fontSize).toBe('10.5px')
+    await expect(ds.color).toBe(INK_68)
+    // The editable row keeps the read-only row's geometry: the board's 52px grid at
+    // gap 12, baseline — the fields swap in, the layout does not change.
+    for (const t of texts) {
+      const cs = getComputedStyle(t.parentElement!)
+      await expect(cs.display).toBe('grid')
+      await expect(cs.gridTemplateColumns.startsWith('52px ')).toBe(true)
+      await expect(cs.columnGap).toBe('12px')
+      await expect(cs.alignItems).toBe('baseline')
+    }
     await userEvent.type(texts[1], ' Early night.')
     await expect(texts[1]).toHaveValue(
       'Quiet day. Finished the chapter and started the next. Early night.'

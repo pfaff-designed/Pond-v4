@@ -4,6 +4,7 @@ import { expect } from 'storybook/test'
 import { CollectionView } from './view'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { CHART_EMPTY_LINE } from '../chart/card'
+import { POND_BLOCK_FILTERED_EMPTY_LINE } from '../block-frame'
 import { BAR_STRIP_HEIGHT, HEAT_CELLS } from './chart-compact'
 import type { CollectionRow } from './apply'
 import type { ViewBlock, ViewChartConfig } from './schema'
@@ -246,9 +247,14 @@ async function assertHeatGrid(canvasElement: HTMLElement) {
   await expect(gs.columnGap).toBe('3px')
   await expect(gs.rowGap).toBe('3px')
 
+  // The grid carries its reading as an accessible name — and no cell carries a `title`
+  // tooltip: a hover readout is an affordance, and no board draws one on these marks.
+  await expect(grid.getAttribute('aria-label')).toContain('the last twelve weeks')
+
   const cells = Array.from(grid.querySelectorAll<HTMLElement>('[data-part="cell"]'))
   await expect(cells).toHaveLength(HEAT_CELLS)
   await expect(cells).toHaveLength(84)
+  await expect(cells.filter((c) => c.title !== '')).toHaveLength(0)
   for (const cell of cells) {
     const cs = getComputedStyle(cell)
     // cell: width 100% · aspect 1 · radius 2
@@ -316,4 +322,31 @@ export const HeatEmptyInk: Story = {
   args: { config: heat, schema, rows: [] },
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertHeatEmpty(canvasElement),
+}
+
+/**
+ * The strip's OTHER empty sentence: rows exist but the filter hides them all, so the
+ * same voidBox carries the filter's line — `no data yet` would be false about the
+ * collection, and neither line is ever offered an action.
+ */
+export const BarsFilteredEmptyInFrame: Story = {
+  args: { config: bars, schema, rows: [] },
+  render: () => (
+    <PondBlock
+      kind="table"
+      heading="by week"
+      state="empty"
+      emptyBox="void"
+      emptyLine={POND_BLOCK_FILTERED_EMPTY_LINE}
+    >
+      <CollectionView config={bars} schema={schema} rows={[]} />
+    </PondBlock>
+  ),
+  play: async ({ canvasElement }) => {
+    const card = canvasElement.querySelector<HTMLElement>('[data-block-kind="table"]')!
+    await expect(card.dataset.blockState).toBe('empty')
+    const box = card.querySelector<HTMLElement>('[data-part="empty"]')!
+    await assertVoid(box, LIGHT, POND_BLOCK_FILTERED_EMPTY_LINE)
+    await expect(box.textContent).not.toBe(CHART_EMPTY_LINE)
+  },
 }

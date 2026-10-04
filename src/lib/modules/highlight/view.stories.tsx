@@ -148,3 +148,60 @@ export const ClickToEdit: Story = {
     await assertFilled(canvasElement)
   },
 }
+
+/**
+ * Whitespace-only content is empty: `filled` is `content.trim() !== ''`. Without the
+ * trim a block of spaces paints a wheat slab with nothing in it — wheat's one legal
+ * job, spent on nothing, and no error anywhere.
+ */
+export const WhitespaceIsEmpty: Story = {
+  args: { data: { id: 'h3', type: 'highlight', content: '   \n ' } },
+  play: async ({ canvasElement }) => assertEmpty(canvasElement, INK_68),
+}
+
+/**
+ * An EMPTY editable block opens straight into the source — there is nothing to
+ * click yet, so a rendered empty state here would be a dead end. Blurring leaves
+ * the board's line, still with no wheat, and the trigger takes a click again.
+ */
+export const EmptyEditable: Story = {
+  args: { data: empty },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const textarea = await canvas.findByRole('textbox')
+    await expect(textarea).toHaveValue('')
+    await expect(getComputedStyle(textarea).backgroundColor).toBe(NO_GROUND)
+    await userEvent.tab()
+    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
+    await assertEmpty(canvasElement, INK_68)
+    await userEvent.click(canvas.getByRole('button', { name: 'Edit highlight block' }))
+    await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
+  },
+}
+
+/**
+ * The trigger is a div with `role="button"`, so Enter and Space are OURS to handle —
+ * the browser gives them to it for free only on a real `<button>`. Escape leaves the
+ * source. A keyboard-only person losing this cannot edit a highlight at all, and
+ * nothing about the rendered page shows it.
+ */
+export const KeyboardEdit: Story = {
+  args: { data: kept },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const trigger = canvas.getByRole('button', { name: 'Edit highlight block' })
+    trigger.focus()
+    await userEvent.keyboard('{Enter}')
+    const textarea = await canvas.findByRole('textbox')
+    await waitFor(() => expect(textarea).toHaveFocus())
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
+    await assertFilled(canvasElement)
+    // Space re-enters it.
+    canvas.getByRole('button', { name: 'Edit highlight block' }).focus()
+    await userEvent.keyboard(' ')
+    await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
+  },
+}

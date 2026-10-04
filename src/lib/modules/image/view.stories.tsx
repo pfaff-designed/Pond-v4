@@ -84,3 +84,30 @@ export const EmptyReadOnly: Story = {
     await expect(canvas.queryByLabelText('Upload a file')).not.toBeInTheDocument()
   },
 }
+
+/**
+ * An AI-emitted block carries no `mediaType`, so image-ness is inferred from the
+ * URL's extension. Losing that renders a photograph as a file link — a plausible,
+ * silent downgrade of every image Pond composes.
+ */
+export const InferredFromUrl: Story = {
+  args: { data: { id: 'i5', type: 'image', url: 'https://example.com/files/pic.jpg' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('img')).toHaveAttribute(
+      'src',
+      'https://example.com/files/pic.jpg'
+    )
+    await expect(canvas.queryByRole('link')).not.toBeInTheDocument()
+  },
+}
+
+/** The same URL with a document extension stays a link: the inference cuts both ways. */
+export const InferredDocumentFromUrl: Story = {
+  args: { data: { id: 'i6', type: 'image', url: 'https://example.com/files/notes.md' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole('img')).not.toBeInTheDocument()
+    await expect(canvas.getByRole('link', { name: /notes\.md/ })).toBeInTheDocument()
+  },
+}

@@ -50,12 +50,19 @@ export const TwoCards: Story = {
   },
 }
 
-/** Accept all raises the group intent once. */
-export const AcceptAllFires: Story = {
+/** The bar's two intents each fire ONCE for the group, and the count names what
+ *  they would take — "2 proposed edits", not "2 changes". */
+export const GroupBarFires: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
+    await expect(canvas.getByText('2 proposed edits')).toBeInTheDocument()
     await userEvent.click(canvas.getByRole('button', { name: 'accept all' }))
     await expect(args.onAcceptAll).toHaveBeenCalledTimes(1)
+    await userEvent.click(canvas.getByRole('button', { name: 'reject all' }))
+    await expect(args.onRejectAll).toHaveBeenCalledTimes(1)
+    // The bar decides the group; it never silently decides a single card too.
+    await expect(args.onAccept).not.toHaveBeenCalled()
+    await expect(args.onReject).not.toHaveBeenCalled()
   },
 }
 

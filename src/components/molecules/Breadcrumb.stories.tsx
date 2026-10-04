@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
+import type { ComponentProps } from 'react'
 import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { Breadcrumb } from './Breadcrumb'
+import { AreaMark } from '@/components/atoms/AreaMark'
 
 const meta = {
   title: 'Molecules/Breadcrumb',
@@ -154,5 +156,155 @@ export const EditableTail: Story = {
     await userEvent.clear(field)
     await userEvent.type(field, 'Push day')
     await expect(field).toHaveValue('Push day')
+  },
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Relocated from jest (`shell-reskin`, `glyph-marks`).
+//
+// The pill's geometry and its glass are asserted as COMPUTED values against the
+// board literals, in both themes — not as the Tailwind classes (`h-10`, `py-2`,
+// `pl-3.5`, `gap-2.5`, `mn-glass`) that are supposed to produce them. A right
+// class name over a wrong role is exactly how #252 shipped.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The floating-glass recipe (handoff README § Surfaces), resolved per theme. */
+const GLASS = {
+  light: {
+    ground: 'rgb(250, 249, 239)',
+    bg: 'linear-gradient(160deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.64))',
+    border: 'rgb(255, 255, 255)',
+    borderAlpha: 'rgba(255, 255, 255, 0.9)',
+  },
+  dark: {
+    ground: 'rgb(27, 29, 20)',
+    bg: 'linear-gradient(160deg, rgba(72, 73, 64, 0.86), rgba(48, 49, 42, 0.66))',
+    border: 'rgb(250, 249, 239)',
+    borderAlpha: 'rgba(250, 249, 239, 0.2)',
+  },
+} as const
+
+type Theme = keyof typeof GLASS
+const THEMES: Theme[] = ['light', 'dark']
+
+function BothThemes(args: ComponentProps<typeof Breadcrumb>) {
+  return (
+    <div className="flex flex-col gap-6">
+      {THEMES.map((theme) => (
+        <div
+          key={theme}
+          data-theme-probe={theme}
+          className={`bg-mn-surface p-6 ${theme === 'dark' ? 'dark' : ''}`}
+        >
+          <Breadcrumb {...args} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const probe = (root: HTMLElement, theme: Theme) =>
+  root.querySelector<HTMLElement>(`[data-theme-probe="${theme}"]`)!
+
+/**
+ * The pill is floating glass, in pixels, in both themes.
+ *
+ * `Pond 05 Shell` (measured): height 40, radius 999, padding `8px 8px 8px 14px`,
+ * gap 10, and the pond's own mark at 12 leading it. The glass is the README
+ * recipe read through the `--mn-glass-*` roles — `blur(24px) saturate(1.3)`,
+ * which Chromium honours only UNPREFIXED (a hand-written `-webkit-` twin makes
+ * Lightning CSS drop the standard declaration and the blur silently vanishes,
+ * which is why the computed value is what gets asserted).
+ *
+ * Also pins what the pill does NOT do: it positions nothing itself — where the
+ * pill sits is the shell slot's job — so a `position` other than `static` here
+ * means the slot and the pill are both trying to place it.
+ */
+export const GlassPillComputed: Story = {
+  args: { onCommandK: fn() },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const nav = within(scope).getByRole('navigation', { name: 'Breadcrumb' })
+      const css = getComputedStyle(nav)
+
+      await expect(Math.round(nav.getBoundingClientRect().height)).toBe(40)
+      await expect(css.borderTopLeftRadius).toBe('9999px')
+      await expect(css.padding).toBe('8px 8px 8px 14px')
+      await expect(css.columnGap).toBe('10px')
+
+      // the glass, by role — the one thing light and dark genuinely differ on
+      await expect(css.backgroundImage).toBe(GLASS[theme].bg)
+      await expect(css.backdropFilter).toBe('blur(24px) saturate(1.3)')
+      await expect(css.borderTopWidth).toBe('1px')
+      await expect(css.borderTopStyle).toBe('solid')
+      await expect(css.borderTopColor).toBe(GLASS[theme].borderAlpha)
+      await expect(getComputedStyle(scope).backgroundColor).toBe(GLASS[theme].ground)
+
+      // The pill floats; it does not place itself.
+      await expect(css.position).toBe('static')
+      // Nothing re-cases the segments: a crumb is its page title verbatim, and
+      // the root reads lowercase because the DATA is lowercase (#101 review).
+      await expect(css.textTransform).toBe('none')
+
+      // The lead mark is the POND's (a plain mask in currentColor at 12), never
+      // an area mark — the pond is not an area.
+      const pond = nav.querySelector<HTMLElement>('[data-pond-mark] [data-icon]')!
+      await expect(pond.getBoundingClientRect().width).toBe(12)
+      await expect(nav.querySelector('[data-area-mark]')).toBeNull()
+    }
+  },
+}
+
+/**
+ * The area mark is INJECTED, not derived (#134 made it a control that writes to
+ * the database, which a presentational molecule has no business owning). What
+ * the pill still owns is WHERE it goes: the first crumb, and nowhere else.
+ *
+ * Beside the crumb, never inside it — a crumb is a `<button>` and so is the
+ * mark, and nesting them is invalid HTML React reports as a hydration error.
+ * The hue is a ROLE, read here as the resolved colour in both themes: `area-c`
+ * is navy on light and mist on dark (navy→mist, 1g), so a theme that resolved
+ * the role to the wrong hue fails here while the old `/^var\(--mn-area-c\)$/`
+ * match on the inline style would have passed.
+ */
+export const InjectedLeadMark: Story = {
+  args: {
+    crumbs: [
+      { id: 'health', type: 'page', title: 'Health' },
+      { id: 'sleep', type: 'page', title: 'Sleep' },
+    ],
+    current: 'Dreams',
+    leadMark: <AreaMark glyph="leaf-01" color="var(--mn-area-c)" size={11} />,
+  },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const canvas = within(probe(canvasElement, theme))
+      const health = canvas.getByRole('button', { name: /Health/ })
+      const glyph = health.parentElement!.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
+      await expect(glyph).toBeInTheDocument()
+      await expect(health.querySelector('[data-icon]')).toBeNull()
+      await expect(glyph.getBoundingClientRect().width).toBe(11)
+
+      const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
+      await expect(getComputedStyle(slot).color).toBe(
+        theme === 'light' ? 'rgb(18, 53, 78)' : 'rgb(165, 200, 209)'
+      )
+
+      // Only the lead crumb carries one.
+      const sleep = canvas.getByRole('button', { name: /Sleep/ })
+      await expect(sleep.parentElement!.querySelector('[data-icon]')).toBeNull()
+    }
+  },
+}
+
+/** No `leadMark`, no area mark at all — only the pond's own glyph (2t). */
+export const NoLeadMark: Story = {
+  args: { crumbs: [{ id: 'health', type: 'page', title: 'Health' }], current: undefined },
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector('[data-area-mark]')).toBeNull()
+    await expect(canvasElement.querySelectorAll('[data-icon]')).toHaveLength(1)
   },
 }

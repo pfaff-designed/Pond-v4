@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { SourcePicker, type SourcePickerProps } from './SourcePicker'
 import type { SourceDatabase, SourceField } from './source-entries'
@@ -60,9 +60,12 @@ const DATABASES: SourceDatabase[] = [
   { id: 'subscriptions', title: 'subscriptions', records: 6, recordsAre: 'pages' },
   { id: 'sleep', title: 'sleep nights', records: 241, recordsAre: 'rows' },
 ]
+// Ids, because a chart config names fields by SCHEMA ID. A pick that carried only
+// the kind made a chart bucketed by record title plotting a constant 1 — silent,
+// and the row had promised `kcal by day`.
 const CALORIE_FIELDS: SourceField[] = [
-  { name: 'day', type: 'date' },
-  { name: 'kcal', type: 'number' },
+  { id: 'f-day', name: 'day', type: 'date' },
+  { id: 'f-kcal', name: 'kcal', type: 'number' },
 ]
 const loadFields = async (id: string) => (id === 'calories' ? CALORIE_FIELDS : [])
 
@@ -472,6 +475,217 @@ export const Keys: Story = {
       recordsAre: 'pages',
       mode: 'table',
       chart: undefined,
+    })
+  },
+}
+
+// ── what a pick hands the host ─────────────────────────────────────────────────
+//
+// The frames above draw the picker; these say what leaves it. A wrong pick is the
+// silent kind of wrong — the glass looked right, and a chart came out bucketed by
+// record title — so each one asserts the WHOLE object, ids included.
+
+const rowsOf = (root: HTMLElement) => [
+  ...glassOf(root).querySelectorAll<HTMLElement>('[role="option"]'),
+]
+const footOf = (root: HTMLElement) => glassOf(root).querySelector('[data-part="foot"]')!.textContent
+
+/** A click on a database row picks it, and the BLOCK's own mode rides along. */
+export const PickExistingCarriesTheMode: Story = {
+  args: { block: 'gallery', onPick: fn() },
+  play: async ({ canvasElement, args }) => {
+    await expect(glassOf(canvasElement).querySelector('[data-part="head-text"]')!.textContent).toBe(
+      '/gallery'
+    )
+    await userEvent.click(rowsOf(canvasElement)[2])
+    await expect(args.onPick).toHaveBeenCalledWith({
+      kind: 'existing',
+      database: DATABASES[1],
+      mode: 'gallery',
+    })
+  },
+}
+
+/** The foot follows the selection: `↵ create` under `new`, `↵ view` on a database. */
+export const FootFollowsTheSelection: Story = {
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await expect(footOf(canvasElement)).toBe('named after this page↵ create')
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(footOf(canvasElement)).toBe('↵ view')
+    await userEvent.keyboard('{ArrowUp}')
+    await expect(footOf(canvasElement)).toBe('named after this page↵ create')
+  },
+}
+
+/**
+ * Dismissal, and the field underneath. A press outside the glass closes and keeps
+ * the typed text; a press ON the glass does not. ↑↓ ↵ esc are swallowed at the
+ * document — if one reached the field, ↵ would commit a half-typed `/table`.
+ */
+export const DismissAndTheFieldUnderneath: Story = {
+  args: { onClose: fn() },
+  play: async ({ canvasElement, args }) => {
+    const field = within(canvasElement).getByLabelText('page') as HTMLTextAreaElement
+    field.focus()
+    const reached = fn()
+    field.addEventListener('keydown', reached)
+    await userEvent.keyboard('{ArrowDown}{ArrowUp}{Enter}')
+    await expect(reached).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Escape}')
+    await expect(args.onClose).toHaveBeenCalledTimes(1)
+    await expect(field.value).toBe('/table')
+
+    fireEvent.pointerDown(glassOf(canvasElement))
+    await expect(args.onClose).toHaveBeenCalledTimes(1)
+    fireEvent.pointerDown(document.body)
+    await expect(args.onClose).toHaveBeenCalledTimes(2)
+  },
+}
+
+/** The seg's choice rides the pick: `rows only` reaches the host as `recordsAre`. */
+export const RowsOnlyRidesThePick: Story = {
+  args: { onPick: fn() },
+  play: async ({ canvasElement, args }) => {
+    const field = within(canvasElement).getByLabelText('page')
+    field.focus()
+    await userEvent.keyboard('{Enter}')
+    const seg = glassOf(canvasElement).querySelector<HTMLElement>('[data-part="seg"]')!
+    const opts = seg.querySelectorAll<HTMLElement>('[data-part="seg-opt"]')
+    await userEvent.click(opts[1])
+    // Pressing the pressed option again does not leave the seg with no choice —
+    // an unpressed seg would send `recordsAre` as whatever the default was.
+    await userEvent.click(opts[1])
+    await expect(opts[1].getAttribute('aria-pressed')).toBe('true')
+    await expect(opts[0].getAttribute('aria-pressed')).toBe('false')
+    // The seg owns its own keys, so ↵ only creates once focus is back in the field.
+    field.focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(args.onPick).toHaveBeenCalledWith({
+      kind: 'new',
+      title: 'recipes',
+      fields: [],
+      recordsAre: 'rows',
+      mode: 'table',
+      chart: undefined,
+    })
+  },
+}
+
+/** ↵ on `field` adds a text field each time, named `field` then `field 2` — and
+ *  both ride the pick. A second row called `field` would collide in the schema. */
+export const FieldsAddUpAndAreNamed: Story = {
+  args: { onPick: fn() },
+  play: async ({ canvasElement, args }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await expect(labels(canvasElement)).toEqual(['title', 'field', 'field'])
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    await expect(labels(canvasElement)).toEqual(['title', 'field', 'field 2', 'field'])
+    await userEvent.keyboard('{ArrowUp}{Enter}')
+    await expect(args.onPick).toHaveBeenLastCalledWith({
+      kind: 'new',
+      title: 'recipes',
+      fields: [
+        { name: 'field', type: 'text' },
+        { name: 'field 2', type: 'text' },
+      ],
+      recordsAre: 'pages',
+      mode: 'table',
+      chart: undefined,
+    })
+  },
+}
+
+/** A pond with no database yet: the lone `new` row, and ↵ goes straight through. */
+export const EmptyPond: Story = {
+  args: { databases: [] },
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await expect(groups(canvasElement)).toEqual(['new'])
+    await expect(rowsOf(canvasElement)).toHaveLength(1)
+    await userEvent.keyboard('{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('new')
+  },
+}
+
+/**
+ * A chart pick names the two fields the row's `sub` promised, BY ID — and a kind
+ * taken off `all charts` reads the same pair a suggested one does. The board puts
+ * the full list one row from the fits group, not in another world.
+ */
+export const ChartPickCarriesTheAxes: Story = {
+  args: {
+    block: 'chart',
+    defaultStep: 'type',
+    defaultSource: DATABASES[1],
+    loadFields,
+    onPick: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    await waitFor(() => expect(rowsOf(canvasElement)).toHaveLength(4))
+    within(canvasElement).getByLabelText('page').focus()
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    await expect(args.onPick).toHaveBeenCalledWith({
+      kind: 'existing',
+      database: DATABASES[1],
+      mode: 'chart',
+      chart: { kind: 'area', xProperty: 'f-day', yProperty: 'f-kcal' },
+    })
+
+    await userEvent.click(rowsOf(canvasElement)[3])
+    await waitFor(() => expect(groups(canvasElement)).toEqual(['all charts']))
+    await userEvent.click(rowsOf(canvasElement)[CHART_KINDS.indexOf('sankey')])
+    await expect(args.onPick).toHaveBeenLastCalledWith({
+      kind: 'existing',
+      database: DATABASES[1],
+      mode: 'chart',
+      chart: { kind: 'sankey', xProperty: 'f-day', yProperty: 'f-kcal' },
+    })
+  },
+}
+
+/** A source with no date + number pair suggests nothing — just `all charts`. */
+export const NoFitsOffersAllCharts: Story = {
+  args: { block: 'chart', loadFields },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(rowsOf(canvasElement)[1]) // recipes — no fields
+    await expect(glassOf(canvasElement).dataset.step).toBe('type')
+    await waitFor(() => expect(labels(canvasElement)).toEqual(['all charts']))
+    await expect(groups(canvasElement)).toEqual([])
+    await expect(glassOf(canvasElement).querySelector('[data-part="rule"]')).toBeNull()
+  },
+}
+
+/**
+ * `/chart` on a NEW database defines it first, then picks the type, and the pick
+ * carries both. A database being defined has no field IDS yet, so the pick is the
+ * kind alone and the engine infers the axes — never an empty count series.
+ */
+export const NewDatabaseThenChartType: Story = {
+  args: { block: 'chart', onPick: fn() },
+  play: async ({ canvasElement, args }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('new')
+    await expect(footOf(canvasElement)).toBe('filed in databasesthis page gets a chart view')
+    await userEvent.keyboard('{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('type')
+    await expect(glassOf(canvasElement).querySelector('[data-part="head-text"]')!.textContent).toBe(
+      '/chart › recipes'
+    )
+    await expect(labels(canvasElement)).toEqual(['all charts'])
+    await userEvent.keyboard('{Enter}')
+    await userEvent.click(rowsOf(canvasElement)[CHART_KINDS.indexOf('bar')])
+    await expect(args.onPick).toHaveBeenCalledWith({
+      kind: 'new',
+      title: 'recipes',
+      fields: [],
+      recordsAre: 'pages',
+      mode: 'chart',
+      chart: { kind: 'bar' },
     })
   },
 }
