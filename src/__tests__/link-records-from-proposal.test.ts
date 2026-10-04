@@ -357,7 +357,9 @@ describe('linkRecordsFromProposal', () => {
         title: 'Tasks',
         blocks: [],
         props: {
-          [SCHEMA_KEY]: [{ id: 'p-proj', name: 'Project', type: 'relation', target: 'coll-projects' }],
+          [SCHEMA_KEY]: [
+            { id: 'p-proj', name: 'Project', type: 'relation', target: 'coll-projects' },
+          ],
         },
         order: 0,
       },

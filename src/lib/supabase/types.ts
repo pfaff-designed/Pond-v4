@@ -24,6 +24,13 @@ export type NodeType = 'routine' | 'project' | 'action' | 'page' | 'home' | 'row
 // 'sandbox' is the isolated orchestrator/user testing scope.
 export type Workspace = 'main' | 'sandbox'
 
+// The eight themes `Pond 06.13` `s6m2` draws (migration 0018). #316 ships the
+// theme control DISABLED with only paper and ink reachable until #175 builds the
+// other six — the board governs the stored domain, the disabled control governs
+// the UI.
+export type PondTheme =
+  'paper' | 'ink' | 'sage' | 'mist' | 'navy' | 'wheat' | 'burnt-orange' | 'ember'
+
 export interface Database {
   public: {
     Tables: {
@@ -32,10 +39,48 @@ export interface Database {
         Insert: { id: string; email: string; created_at?: string }
         Update: { email?: string }
       }
+      // A pond is an instance of the shell (#312, migration 0018). One person may
+      // have several and nothing crosses between them. `last_page_id` serves
+      // `s6m6`: "the page you left stays open for when you come back."
+      // There is deliberately NO delete policy on this table — deleting a pond is
+      // unresolved on #312 — so there is no Delete shape here either.
+      ponds: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          glyph: string | null
+          theme: PondTheme
+          order: number
+          last_page_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name?: string
+          glyph?: string | null
+          theme?: PondTheme
+          order?: number
+          last_page_id?: string | null
+        }
+        Update: {
+          name?: string
+          glyph?: string | null
+          theme?: PondTheme
+          order?: number
+          last_page_id?: string | null
+          updated_at?: string
+        }
+      }
       pages: {
         Row: {
           id: string
           user_id: string
+          /** 0018: the pond this row belongs to. NULLABLE until #318's children
+           *  make every insert supply it; see #314. */
+          pond_id: string | null
           parent_id: string | null
           type: NodeType
           title: string
@@ -55,6 +100,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          pond_id?: string | null
           parent_id?: string | null
           type?: NodeType
           title?: string
@@ -84,6 +130,8 @@ export interface Database {
       }
       conversations: {
         Row: {
+          /** 0018: see pages.pond_id. */
+          pond_id: string | null
           id: string
           user_id: string
           transcript: Json
@@ -91,8 +139,19 @@ export interface Database {
           created_at: string
           dissolved_at: string | null
         }
-        Insert: { id?: string; user_id: string; transcript?: Json; workspace?: Workspace }
-        Update: { transcript?: Json; workspace?: Workspace; dissolved_at?: string }
+        Insert: {
+          id?: string
+          user_id: string
+          pond_id?: string | null
+          transcript?: Json
+          workspace?: Workspace
+        }
+        Update: {
+          transcript?: Json
+          pond_id?: string | null
+          workspace?: Workspace
+          dissolved_at?: string
+        }
       }
       // The durable change log (#102, migration 0011). One row = one diff:
       // before/after + one of eight statuses, scoped per pond (user + workspace).
@@ -103,6 +162,9 @@ export interface Database {
       // Read/write it through src/lib/change-log/store.ts, never inline.
       change_log: {
         Row: {
+          /** 0018: see pages.pond_id. Not in the append-only trigger's frozen
+           *  list yet — freezing it belongs to the migration that sets NOT NULL. */
+          pond_id: string | null
           id: string
           user_id: string
           workspace: Workspace
@@ -123,6 +185,7 @@ export interface Database {
         }
         Insert: {
           id?: string
+          pond_id?: string | null
           user_id: string
           workspace?: Workspace
           status: string
@@ -158,6 +221,8 @@ export interface Database {
         Row: {
           id: string
           user_id: string
+          /** 0018: see pages.pond_id. */
+          pond_id: string | null
           workspace: Workspace
           name: string
           kind: string
@@ -169,6 +234,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
+          pond_id?: string | null
           workspace?: Workspace
           name: string
           kind: string

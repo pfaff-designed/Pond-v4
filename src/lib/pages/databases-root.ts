@@ -93,7 +93,9 @@ export function withoutDatabasesRoot<
 export async function getOrCreateDatabasesRoot(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<{ id: string; created: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
@@ -114,6 +116,7 @@ export async function getOrCreateDatabasesRoot(
     type: 'page',
     title: DATABASES_ROOT_TITLE,
     workspace,
+    pondId,
   })
   return { id: root.id, created: true }
 }

@@ -102,7 +102,9 @@ export async function createPageFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: CreatePageProposal,
   mintId: () => string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<CreatedPage> {
   const {
     data: { user },
@@ -113,7 +115,7 @@ export async function createPageFromProposal(
   const sb = supabase as any
 
   const ref = proposal.parentRef?.trim()
-  const parentId = ref ? await resolveParentId(sb, user.id, ref, workspace) : null
+  const parentId = ref ? await resolveParentId(sb, user.id, ref, workspace, pondId) : null
 
   const blocks = hydrateProposalBlocks(proposal.blocks, mintId)
 
@@ -126,6 +128,7 @@ export async function createPageFromProposal(
     blocks,
     props,
     workspace,
+    pondId,
   })
   return { id: page.id }
 }
@@ -542,7 +545,9 @@ export interface AddRowProposal {
 export async function addRowFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: AddRowProposal,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<CreatedPage> {
   const collection = await getPage(supabase, proposal.collectionId)
   if (!collection) {
@@ -588,6 +593,7 @@ export async function addRowFromProposal(
     title: proposal.title ?? '',
     props: values,
     workspace,
+    pondId,
   })
   return { id: page.id }
 }

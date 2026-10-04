@@ -33,9 +33,9 @@ describe('chipSchema', () => {
 describe('suggestFollowupsSchema (chips)', () => {
   it('accepts 1-4 chips', () => {
     expect(suggestFollowupsSchema.safeParse({ suggestions: ['a'] }).success).toBe(true)
-    expect(
-      suggestFollowupsSchema.safeParse({ suggestions: ['a', 'b', 'c', 'd'] }).success
-    ).toBe(true)
+    expect(suggestFollowupsSchema.safeParse({ suggestions: ['a', 'b', 'c', 'd'] }).success).toBe(
+      true
+    )
   })
   it('rejects zero or more than four chips', () => {
     expect(suggestFollowupsSchema.safeParse({ suggestions: [] }).success).toBe(false)
@@ -71,9 +71,7 @@ describe('askQuestionSchema (branch-pause question card)', () => {
     ).toBe(false)
   })
   it('requires a branch label (so the Brief mirror + card have a name)', () => {
-    expect(
-      askQuestionSchema.safeParse({ question: 'q', options: ['a', 'b'] }).success
-    ).toBe(false)
+    expect(askQuestionSchema.safeParse({ question: 'q', options: ['a', 'b'] }).success).toBe(false)
   })
 })
 
@@ -89,15 +87,19 @@ describe('parseQuestionResolutions — persist round-trip', () => {
     const parsed = parseQuestionResolutions({ q1: { answer: 'x', via: 'nonsense' } })
     expect(parsed.q1.via).toBe('free')
   })
-  it.each([[undefined], [null], ['nope'], [42], [{ q1: 'not-an-object' }], [{ q1: { via: 'option' } }]])(
-    'degrades malformed %p to an empty/partial map without throwing',
-    (bad) => {
-      expect(() => parseQuestionResolutions(bad)).not.toThrow()
-      // A card with no answer string is dropped.
-      const parsed = parseQuestionResolutions(bad)
-      expect(Object.values(parsed).every((r) => typeof r.answer === 'string')).toBe(true)
-    }
-  )
+  it.each([
+    [undefined],
+    [null],
+    ['nope'],
+    [42],
+    [{ q1: 'not-an-object' }],
+    [{ q1: { via: 'option' } }],
+  ])('degrades malformed %p to an empty/partial map without throwing', (bad) => {
+    expect(() => parseQuestionResolutions(bad)).not.toThrow()
+    // A card with no answer string is dropped.
+    const parsed = parseQuestionResolutions(bad)
+    expect(Object.values(parsed).every((r) => typeof r.answer === 'string')).toBe(true)
+  })
 })
 
 // ── Render helpers ───────────────────────────────────────────────────────────

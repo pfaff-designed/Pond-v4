@@ -195,7 +195,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x' })
+    await createPage(sb as never, 'user-1', { title: 'x', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).toBe('main')
@@ -207,7 +207,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox' })
+    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).toBe('sandbox')
@@ -219,7 +219,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox' })
+    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).not.toBe('main')
@@ -235,22 +235,29 @@ jest.mock('@/lib/supabase/client', () => ({
 import { createClient } from '@/lib/supabase/client'
 
 describe('fetchPages scope isolation', () => {
-  function primeClient(scopeResolvedRows: Record<string, unknown[]>) {
+  /**
+   * #312: the tree is scoped by POND, not by workspace.
+   *
+   * These asserted `.eq('workspace', …)` because that WAS the scope. It is not any
+   * more: the sandbox pond holds exactly the `workspace='sandbox'` rows, so the
+   * pond filter says everything the workspace filter said — and keeping both made
+   * the sandbox pond unreachable, since `/workspace?pond=<sandbox>` asked for
+   * `workspace='main'` AND the sandbox pond, which can never both match.
+   */
+  function primeClient(byPond: Record<string, unknown[]>) {
     const eqCalls: Array<[string, unknown]> = []
-    let currentScope = 'main'
+    let pond = 'none'
     const chain: Record<string, jest.Mock> = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn((col: string, val: unknown) => {
         eqCalls.push([col, val])
-        if (col === 'workspace') currentScope = val as string
+        if (col === 'pond_id') pond = val as string
         return chain
       }),
-      // ticket-44 merge: fetchPages also chains .neq('type','home'); pass-through
-      // (this suite asserts workspace scoping, not the home filter).
       neq: jest.fn(() => chain),
-      order: jest.fn(() =>
-        Promise.resolve({ data: scopeResolvedRows[currentScope] ?? [], error: null })
-      ),
+      order: jest.fn(() => Promise.resolve({ data: byPond[pond] ?? [], error: null })),
+      limit: jest.fn(() => chain),
+      maybeSingle: jest.fn(() => Promise.resolve({ data: null, error: null })),
     }
     ;(createClient as jest.Mock).mockReturnValue({
       auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
@@ -259,34 +266,53 @@ describe('fetchPages scope isolation', () => {
     return { eqCalls }
   }
 
-  it("the tree read defaults to 'main' rows only", async () => {
+  const row = (id: string, title: string) => ({
+    id,
+    parent_id: null,
+    type: 'page',
+    title,
+    order: 0,
+    updated_at: 't',
+  })
+
+  it("returns only the named pond's rows", async () => {
     const { eqCalls } = primeClient({
-      main: [{ id: 'm1', parent_id: null, type: 'page', title: 'Real', order: 0, updated_at: 't' }],
-      sandbox: [
-        { id: 's1', parent_id: null, type: 'page', title: 'SB', order: 0, updated_at: 't' },
-      ],
+      'pond-life': [row('m1', 'Real')],
+      'pond-sandbox': [row('s1', 'SB')],
     })
+
+    const rows = await fetchPages('main', 'pond-life')
+
+    expect(rows.map((r) => r.id)).toEqual(['m1'])
+    expect(eqCalls).toContainEqual(['pond_id', 'pond-life'])
+    // The workspace filter is GONE — it is what made the sandbox pond unreachable.
+    expect(eqCalls.map(([col]) => col)).not.toContain('workspace')
+  })
+
+  it("returns the sandbox POND's rows when that is the pond, whatever the route says", async () => {
+    const { eqCalls } = primeClient({
+      'pond-life': [row('m1', 'Real')],
+      'pond-sandbox': [row('s1', 'SB')],
+    })
+
+    // `/workspace?pond=<sandbox pond>` — the combination that used to return
+    // nothing, because the route said 'main' and the pond said sandbox.
+    const rows = await fetchPages('main', 'pond-sandbox')
+
+    expect(rows.map((r) => r.id)).toEqual(['s1'])
+    expect(eqCalls).toContainEqual(['pond_id', 'pond-sandbox'])
+  })
+
+  it('falls back to the first pond when none is named', async () => {
+    // A surface outside the shell\'s PondProvider. `firstPondId` answers from the
+    // `ponds` table; this double returns none, so the read is unscoped rather than
+    // returning every pond\'s pages.
+    const { eqCalls } = primeClient({ none: [row('m1', 'Real')] })
 
     const rows = await fetchPages()
 
     expect(rows.map((r) => r.id)).toEqual(['m1'])
-    expect(eqCalls).toContainEqual(['workspace', 'main'])
-    expect(eqCalls).not.toContainEqual(['workspace', 'sandbox'])
-  })
-
-  it("the sandbox tree read returns 'sandbox' rows only", async () => {
-    const { eqCalls } = primeClient({
-      main: [{ id: 'm1', parent_id: null, type: 'page', title: 'Real', order: 0, updated_at: 't' }],
-      sandbox: [
-        { id: 's1', parent_id: null, type: 'page', title: 'SB', order: 0, updated_at: 't' },
-      ],
-    })
-
-    const rows = await fetchPages('sandbox')
-
-    expect(rows.map((r) => r.id)).toEqual(['s1'])
-    expect(eqCalls).toContainEqual(['workspace', 'sandbox'])
-    expect(eqCalls).not.toContainEqual(['workspace', 'main'])
+    expect(eqCalls).toContainEqual(['user_id', 'user-1'])
   })
 })
 

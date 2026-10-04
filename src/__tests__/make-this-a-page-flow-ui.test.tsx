@@ -495,7 +495,8 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(mockInsertPageOptimistic).toHaveBeenCalledWith(
       expect.anything(),
       'main',
-      expect.objectContaining({ id: 'new-page-1', parentId: 'kr-1', title: 'renovation blockers' })
+      expect.objectContaining({ id: 'new-page-1', parentId: 'kr-1', title: 'renovation blockers' }),
+      null
     )
     await waitFor(() =>
       expect(mockRouterPush).toHaveBeenCalledWith(expect.stringContaining('nodeId=new-page-1'))

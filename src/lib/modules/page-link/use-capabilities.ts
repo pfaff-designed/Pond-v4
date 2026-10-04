@@ -17,8 +17,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { createPage, updateTitle } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { workspaceHref } from '@/lib/pages/nav'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { resolvePageFromRows, searchPagesInRows } from './resolve'
 import type { PageLinkCapabilities } from './context'
 
@@ -29,12 +31,13 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const router = useRouter()
   // Reads the rail/page cache — this query is already populated, so it's a cache
   // hit, not a second fetch.
   const { data: rows = [] } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
 
   return useMemo<PageLinkCapabilities>(
@@ -53,13 +56,19 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
           type: 'page',
           title: title.trim() || 'Untitled',
           workspace,
+          pondId,
         })
-        insertPageOptimistic(queryClient, workspace, {
-          id: created.id,
-          parentId: containingPageId,
-          type: created.type,
-          title: created.title,
-        })
+        insertPageOptimistic(
+          queryClient,
+          workspace,
+          {
+            id: created.id,
+            parentId: containingPageId,
+            type: created.type,
+            title: created.title,
+          },
+          pondId
+        )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         return { id: created.id, title: created.title, type: created.type }
       },

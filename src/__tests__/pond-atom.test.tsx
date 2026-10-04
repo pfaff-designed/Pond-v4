@@ -116,9 +116,7 @@ describe('AC4 — type registers', () => {
   it.each([['number'], ['money'], ['percent'], ['date'], ['time'], ['duration']] as [
     PondAtomKind,
   ][])('numeric kind %s uses tabular-nums', (kind) => {
-    expect(textSpan(render(<PondAtom kind={kind} />).container).className).toContain(
-      'tabular-nums'
-    )
+    expect(textSpan(render(<PondAtom kind={kind} />).container).className).toContain('tabular-nums')
   })
 })
 
@@ -249,13 +247,10 @@ describe('kind behaviours', () => {
     expect(queryByText('deleted · kept 710')).not.toBeInTheDocument()
   })
 
-  it.each([['checkbox'], ['icon'], ['dot']] as [PondAtomKind][])(
-    '%s renders no text',
-    (kind) => {
-      const { container } = render(<PondAtom kind={kind} />)
-      expect(container.querySelector('[data-part="text"]')).not.toBeInTheDocument()
-    }
-  )
+  it.each([['checkbox'], ['icon'], ['dot']] as [PondAtomKind][])('%s renders no text', (kind) => {
+    const { container } = render(<PondAtom kind={kind} />)
+    expect(container.querySelector('[data-part="text"]')).not.toBeInTheDocument()
+  })
 
   it('checkbox on renders the check mark; off does not', () => {
     const on = render(<PondAtom kind="checkbox" on />)

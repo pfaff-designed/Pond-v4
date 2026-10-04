@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
+import { firstPondId } from '@/lib/pond/first'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { UIMessage } from 'ai'
 import { emptyResolutions, parseResolutions, type ConversationResolutions } from './resolutions'
@@ -19,14 +20,31 @@ type ConversationRecord = {
 export async function getOrCreateConversation(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /**
+   * #312: the thread belongs to a pond. `Pond 06.13` `s6m5`: "pages, databases,
+   * memory, threads and the change log are per pond. Nothing crosses over."
+   *
+   * Without this the composer opened the person's most recent thread whatever pond
+   * they were in, so a brand-new pond came up holding the last conversation —
+   * which also means its context and read chips referred to pages that pond cannot
+   * see. Omitted, it falls back to the person's first pond.
+   */
+  pondId?: string | null
 ): Promise<ActiveConversation> {
-  const { data: existing } = await supabase
+  const scope = pondId ?? (await firstPondId(supabase, userId))
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
     .from('conversations')
     .select('id, transcript')
     .eq('user_id', userId)
     .eq('workspace', workspace)
     .is('dissolved_at', null)
+
+  if (scope) q = q.eq('pond_id', scope)
+
+  const { data: existing } = await q
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -44,7 +62,9 @@ export async function getOrCreateConversation(
   const sb = supabase as any
   const { data: created, error } = await sb
     .from('conversations')
-    .insert({ user_id: userId, workspace })
+    // A new thread is born in the pond it was started from, so it never leaks
+    // into another one.
+    .insert({ user_id: userId, workspace, ...(scope ? { pond_id: scope } : {}) })
     .select('id')
     .single()
 

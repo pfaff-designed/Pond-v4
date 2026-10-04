@@ -115,11 +115,16 @@ function makeSupabase(collection: { id: string; props?: Record<string, unknown> 
 describe('addRowFromProposal', () => {
   it('creates a type=row child of the collection with resolved values', async () => {
     const sb = makeSupabase({ id: 'coll-1', props: { [SCHEMA_KEY]: schema } })
-    const created = await addRowFromProposal(sb as never, {
-      collectionId: 'coll-1',
-      title: 'Dune',
-      props: { Author: 'Frank Herbert', Rating: 5 },
-    })
+    const created = await addRowFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-1',
+        title: 'Dune',
+        props: { Author: 'Frank Herbert', Rating: 5 },
+      },
+      'main',
+      null
+    )
     expect(created).toEqual({ id: 'row-1' })
     const payload = sb._insert.mock.calls[0][0]
     expect(payload.type).toBe(ROW_TYPE)
@@ -132,14 +137,14 @@ describe('addRowFromProposal', () => {
 
   it('defaults an omitted title to empty', async () => {
     const sb = makeSupabase({ id: 'coll-1', props: { [SCHEMA_KEY]: schema } })
-    await addRowFromProposal(sb as never, { collectionId: 'coll-1', props: {} })
+    await addRowFromProposal(sb as never, { collectionId: 'coll-1', props: {} }, 'main', null)
     expect(sb._insert.mock.calls[0][0].title).toBe('')
   })
 
   it('throws when the target page does not exist (card can revert)', async () => {
     const sb = makeSupabase(null)
     await expect(
-      addRowFromProposal(sb as never, { collectionId: 'ghost', props: {} })
+      addRowFromProposal(sb as never, { collectionId: 'ghost', props: {} }, 'main', null)
     ).rejects.toThrow(/not found/i)
     expect(sb._insert).not.toHaveBeenCalled()
   })
@@ -147,7 +152,12 @@ describe('addRowFromProposal', () => {
   it('throws when the target exists but is not a collection (no schema)', async () => {
     const sb = makeSupabase({ id: 'plain', props: {} })
     await expect(
-      addRowFromProposal(sb as never, { collectionId: 'plain', props: { Author: 'x' } })
+      addRowFromProposal(
+        sb as never,
+        { collectionId: 'plain', props: { Author: 'x' } },
+        'main',
+        null
+      )
     ).rejects.toThrow(/not a collection/i)
     expect(sb._insert).not.toHaveBeenCalled()
   })
@@ -250,31 +260,46 @@ function tripStore(): StoredPage[] {
 describe('addRowFromProposal — relation-value titles resolve to row ids', () => {
   it('stores the resolved row id for a relation value given as a title, never the raw title', async () => {
     const sb = makeStoreSupabase(tripStore())
-    await addRowFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      title: 'Stove',
-      props: { 'Packs With': ['Tent'] },
-    })
+    await addRowFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        title: 'Stove',
+        props: { 'Packs With': ['Tent'] },
+      },
+      'main',
+      null
+    )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
   })
 
   it('keeps an entry that is already a target row id (idempotent) and dedupes', async () => {
     const sb = makeStoreSupabase(tripStore())
-    await addRowFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      title: 'Stove',
-      props: { 'Packs With': ['row-tent', 'Tent', 'Rope'] },
-    })
+    await addRowFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        title: 'Stove',
+        props: { 'Packs With': ['row-tent', 'Tent', 'Rope'] },
+      },
+      'main',
+      null
+    )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent', 'row-rope'] })
   })
 
   it('drops an unresolvable title rather than writing a dangling id (lenient)', async () => {
     const sb = makeStoreSupabase(tripStore())
-    await addRowFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      title: 'Stove',
-      props: { 'Packs With': ['Tent', 'Lantern'] },
-    })
+    await addRowFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        title: 'Stove',
+        props: { 'Packs With': ['Tent', 'Lantern'] },
+      },
+      'main',
+      null
+    )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
   })
 
@@ -290,11 +315,16 @@ describe('addRowFromProposal — relation-value titles resolve to row ids', () =
       order: 2,
     })
     const sb = makeStoreSupabase(pages)
-    await addRowFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      title: 'Stove',
-      props: { 'Packs With': ['Tent', 'Rope'] },
-    })
+    await addRowFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        title: 'Stove',
+        props: { 'Packs With': ['Tent', 'Rope'] },
+      },
+      'main',
+      null
+    )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-rope'] })
   })
 })

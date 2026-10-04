@@ -92,14 +92,19 @@ export async function countPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
   workspace: WorkspaceScope,
+  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
+  pondId: string | null | undefined,
   templateId: string
 ): Promise<number> {
-  const { count, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
     .from('pages')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('workspace', workspace)
-    .contains('props', stampFilter(templateId))
+  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { count, error } = await q.contains('props', stampFilter(templateId))
 
   if (error) throw new Error(error.message)
   return count ?? 0
@@ -125,14 +130,19 @@ export async function listPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
   workspace: WorkspaceScope,
+  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
+  pondId: string | null | undefined,
   templateId: string,
   limit = 20
 ): Promise<PageMadeFrom[]> {
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
     .from('pages')
     .select('id, title, parent_id, props')
     .eq('user_id', userId)
     .eq('workspace', workspace)
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { data, error } = await q
     .contains('props', stampFilter(templateId))
     .order('updated_at', { ascending: false })
     .limit(limit)
@@ -159,13 +169,17 @@ export async function siblingTemplateRanking(
   supabase: SupabaseClient<Database>,
   userId: string,
   workspace: WorkspaceScope,
+  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
+  pondId: string | null | undefined,
   parentId: string | null
 ): Promise<string[]> {
-  let query = supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = (supabase as any)
     .from('pages')
     .select('props')
     .eq('user_id', userId)
     .eq('workspace', workspace)
+  if (pondId) query = query.eq('pond_id', pondId)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.
   query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId)

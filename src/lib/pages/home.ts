@@ -20,6 +20,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
+import { firstPondId } from '@/lib/pond/first'
 
 /** The reserved page type that marks the Life home row. */
 export const HOME_TYPE = 'home' as const
@@ -46,14 +47,25 @@ function toBlocks(value: unknown): Block[] {
  * nested pages + the add affordance (ticket-44 §1), never phantom content.
  */
 export async function getOrCreateHomePage(
-  supabase: SupabaseClient<Database>
+  supabase: SupabaseClient<Database>,
+  pondId?: string | null,
+  /**
+   * #320: "a pond is born with one row, its root, titled with the pond's own
+   * name." Omitted, the root falls back to `life` — which is right for the first
+   * pond and wrong for every other, so a pond surface passes its name.
+   */
+  pondName?: string | null
 ): Promise<HomePage | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return null
 
-  const existing = await readHomeRow(supabase, user.id)
+  // Same fallback as `fetchPages`: a surface outside the shell's PondProvider
+  // gets the person's first pond rather than the wrong pond's root.
+  const scope = pondId ?? (await firstPondId(supabase, user.id))
+
+  const existing = await readHomeRow(supabase, user.id, scope)
   if (existing) return existing
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,13 +74,15 @@ export async function getOrCreateHomePage(
     .from('pages')
     .insert({
       user_id: user.id,
+      ...(scope ? { pond_id: scope } : {}),
       parent_id: null,
       type: HOME_TYPE,
-      // Lowercase, like every other page name Pond writes (#101 review): the rail
-      // and the breadcrumb render a title raw, and the AI reads this one in the
-      // workspace outline. A pond created before this keeps 'Life' until the
-      // one-off row correction lands (gated, batched with migration 0017).
-      title: 'life',
+      // #320: titled with the POND's name. Lowercase, like every other page name
+      // Pond writes (#101 review): the rail and the breadcrumb render a title raw,
+      // and the AI reads this one in the workspace outline. A pond created before
+      // this keeps 'Life' until the one-off row correction lands (gated, batched
+      // with migration 0017).
+      title: pondName?.trim() || 'life',
       blocks: [],
       props: {},
     })
@@ -79,12 +93,12 @@ export async function getOrCreateHomePage(
     // Lost the create race (unique index) or a transient failure — re-read the
     // winning row. If that also comes back empty, surface null rather than throw
     // so the caller can show a loading state rather than crash.
-    return readHomeRow(supabase, user.id)
+    return readHomeRow(supabase, user.id, scope)
   }
 
   return {
     id: data.id as string,
-    title: (data.title as string) ?? 'life',
+    title: (data.title as string) ?? pondName ?? 'life',
     blocks: toBlocks(data.blocks),
   }
 }
@@ -92,16 +106,24 @@ export async function getOrCreateHomePage(
 /** Read the user's existing home row, or null if none exists yet. */
 async function readHomeRow(
   supabase: SupabaseClient<Database>,
-  userId: string
+  userId: string,
+  pondId: string | null
 ): Promise<HomePage | null> {
-  const { data } = await supabase
+  // #312: scoped by POND, not just by person. Without the pond clause a second
+  // pond's get-or-create reads the FIRST pond's root and hands it back — the
+  // blocker 0018 refused to create a second root around, closed by 0019 dropping
+  // `pages_one_home_per_user`.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
     .from('pages')
     .select('id, title, blocks')
     .eq('user_id', userId)
     .eq('type', HOME_TYPE)
     .is('parent_id', null)
-    .limit(1)
-    .maybeSingle()
+
+  if (pondId) q = q.eq('pond_id', pondId)
+
+  const { data } = await q.limit(1).maybeSingle()
 
   if (!data) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

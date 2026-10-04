@@ -55,10 +55,12 @@ import { createPage, defineSchema, deletePage, getPage } from '@/lib/pages/clien
 import { createDatabase } from '@/lib/pages/create-database'
 import { fetchRecordCounts, sourceDatabases } from '@/lib/pages/source-databases'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
@@ -146,6 +148,7 @@ export function BlockCanvas({
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
   // captured may be stale — re-basing an edit on that snapshot would drop
@@ -182,8 +185,8 @@ export function BlockCanvas({
   // records (`source-databases.ts`). Counts refetch on each open, so a record
   // added through a view is reflected the next time the picker is summoned.
   const { data: pageRows = [] } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
     enabled: sourcePicker !== null,
   })
   const { data: recordCounts } = useQuery({
@@ -226,8 +229,10 @@ export function BlockCanvas({
     if (!block) return
     const title = inferListDatabaseTitle(blocks, index, pageTitle)
     try {
-      const made = await createDatabaseFromList(getSupabase(), { block, title, workspace }, () =>
-        crypto.randomUUID()
+      const made = await createDatabaseFromList(
+        getSupabase(),
+        { block, title, workspace, pondId },
+        () => crypto.randomUUID()
       )
       markInserted(made.view.id)
       onChange(replaceBlockWithView(blocksRef.current, block.id, made.view))
@@ -414,6 +419,7 @@ export function BlockCanvas({
           mode: pick.mode,
           chart,
           workspace,
+          pondId,
         },
         () => crypto.randomUUID()
       )
@@ -467,15 +473,21 @@ export function BlockCanvas({
         title: made.title,
         blocks: made.blocks,
         workspace,
+        pondId,
       })
       if (made.schema) await defineSchema(supabase, created.id, made.schema)
       if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
-      insertPageOptimistic(queryClient, workspace, {
-        id: created.id,
-        parentId: pageId,
-        type: created.type,
-        title: created.title,
-      })
+      insertPageOptimistic(
+        queryClient,
+        workspace,
+        {
+          id: created.id,
+          parentId: pageId,
+          type: created.type,
+          title: created.title,
+        },
+        pondId
+      )
       void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
     } catch (err) {

@@ -24,7 +24,7 @@ describe('createDatabase', () => {
     const sb = makeFakeSupabase([existingRoot])
     const made = await createDatabase(
       sb as never,
-      { title: 'recipes', schema: TITLE_ONLY },
+      { title: 'recipes', schema: TITLE_ONLY, pondId: null },
       counter()
     )
 
@@ -49,7 +49,7 @@ describe('createDatabase', () => {
     const sb = makeFakeSupabase([])
     const made = await createDatabase(
       sb as never,
-      { title: 'recipes', schema: TITLE_ONLY },
+      { title: 'recipes', schema: TITLE_ONLY, pondId: null },
       counter()
     )
     const root = sb._pages.get(made.databasesRootId)!
@@ -62,7 +62,7 @@ describe('createDatabase', () => {
     const sb = makeFakeSupabase([existingRoot])
     const gallery = await createDatabase(
       sb as never,
-      { title: 'recipes', schema: TITLE_ONLY, mode: 'gallery' },
+      { title: 'recipes', schema: TITLE_ONLY, mode: 'gallery', pondId: null },
       counter()
     )
     expect(gallery.view.mode).toBe('gallery')
@@ -75,6 +75,7 @@ describe('createDatabase', () => {
         schema: TITLE_ONLY,
         mode: 'chart',
         chart: { kind: 'line', xProperty: 'f-day', series: [{ property: 'f-kcal', agg: 'sum' }] },
+        pondId: null,
       },
       counter()
     )
@@ -93,7 +94,7 @@ describe('createDatabase', () => {
     const sb = makeFakeSupabase([existingRoot])
     sb.auth.getUser.mockResolvedValueOnce({ data: { user: null } })
     await expect(
-      createDatabase(sb as never, { title: 'recipes', schema: TITLE_ONLY }, counter())
+      createDatabase(sb as never, { title: 'recipes', schema: TITLE_ONLY, pondId: null }, counter())
     ).rejects.toThrow('Not authenticated')
     expect(sb._pages.size).toBe(1)
   })
@@ -102,13 +103,21 @@ describe('createDatabase', () => {
     // Insert 1 is the root, insert 2 (the database) fails.
     const fresh = makeFakeSupabase([], 2)
     await expect(
-      createDatabase(fresh as never, { title: 'recipes', schema: TITLE_ONLY }, counter())
+      createDatabase(
+        fresh as never,
+        { title: 'recipes', schema: TITLE_ONLY, pondId: null },
+        counter()
+      )
     ).rejects.toThrow('connection failure')
     expect(fresh._pages.size).toBe(0)
 
     const older = makeFakeSupabase([existingRoot], 1)
     await expect(
-      createDatabase(older as never, { title: 'recipes', schema: TITLE_ONLY }, counter())
+      createDatabase(
+        older as never,
+        { title: 'recipes', schema: TITLE_ONLY, pondId: null },
+        counter()
+      )
     ).rejects.toThrow('connection failure')
     expect(older._pages.has('root-db')).toBe(true)
   })
@@ -131,7 +140,7 @@ describe('createDatabaseFromList composes createDatabase (#101 on #280)', () => 
     const sb = makeFakeSupabase([existingRoot])
     const made = await createDatabaseFromList(
       sb as never,
-      { block: ingredients, title: 'ingredients' },
+      { block: ingredients, title: 'ingredients', pondId: null },
       counter()
     )
     expect(sb._pages.get(made.databaseId)!.parent_id).toBe('root-db')
@@ -151,7 +160,11 @@ describe('createDatabaseFromList composes createDatabase (#101 on #280)', () => 
     // Inserts: 1 root, 2 database, 3 first row (fails).
     const sb = makeFakeSupabase([], 3)
     await expect(
-      createDatabaseFromList(sb as never, { block: ingredients, title: 'ingredients' }, counter())
+      createDatabaseFromList(
+        sb as never,
+        { block: ingredients, title: 'ingredients', pondId: null },
+        counter()
+      )
     ).rejects.toThrow('connection failure')
     expect(sb._pages.size).toBe(0)
   })

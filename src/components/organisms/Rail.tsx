@@ -56,7 +56,10 @@ import {
   applyMoveOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
+import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
@@ -583,8 +586,13 @@ export function RailView({
   // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
   // ↑/↓ walk from the last Life row into databases.
   const flat = useMemo(
-    () => [...flattenVisible(lifeTree, expanded, lifeExpanded), ...databasesFlat],
-    [lifeTree, expanded, lifeExpanded, databasesFlat]
+    () => [
+      // #312/#320: the root row is named for the pond you are in, not the literal
+      // 'life' that `LIFE_NODE` carries.
+      ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
+      ...databasesFlat,
+    ],
+    [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
 
@@ -725,10 +733,15 @@ export function RailView({
         ref={setRowRef(id)}
         key={id}
         id={id}
+        // #312/#320: the root row is the POND you are in, not the word "life".
+        // This was a hard-coded literal, which is why a new pond's root row read
+        // `life` while its header read the pond's real name — and why overriding
+        // `LIFE_NODE.title` alone changed nothing.
+        //
         // Lowercase, like every other line of the rail's source copy in `Pond 05
         // Shell` — the capitals in the boards are the eyebrow's own text-transform
-        // (#101 review). The pond NAME above reads `usePondName()`, also lowercase.
-        title="life"
+        // (#101 review). `usePondName()` supplies it, also lowercase.
+        title={pondName}
         depth={0}
         isFolder
         isExpanded={lifeExpanded}
@@ -831,14 +844,11 @@ export function RailView({
           and a pond is neither. (3) ADR 0003 puts small meta at 11, and the
           component board's 13.5 is off-scale besides. The serif display face is
           reserved for reading prose, never chrome. */}
-      <div data-part="rail-head" className="flex items-center px-4 pb-3">
-        <span
-          data-part="pond-name"
-          className="min-w-0 truncate font-sans text-mn-11 font-medium tracking-[0.14em] uppercase text-foreground select-none"
-        >
-          {pondName}
-        </span>
-      </div>
+      {/* #312/#319: the head is now the SWITCHER. The chevron appears only once
+          there is something to list — before migration 0018 is applied
+          `listPonds()` returns [] and this renders the plain name exactly as it
+          did, rather than an affordance that opens an empty menu. */}
+      <PondSwitcher fallbackName={pondName} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
@@ -910,8 +920,8 @@ export function Rail() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const pondName = usePondName()
-  const seededRef = useRef(false)
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -922,8 +932,8 @@ export function Rail() {
   const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
-    queryKey: ['pages', workspace],
-    queryFn: () => fetchPages(workspace),
+    queryKey: pagesKey(workspace, pondId),
+    queryFn: () => fetchPages(workspace, pondId),
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
@@ -990,26 +1000,21 @@ export function Rail() {
     selectedNodeIdRef.current = selectedNodeId
   }, [selectedNodeId])
 
-  // Seed default pages on first login — fires once when the tree is empty after load
-  useEffect(() => {
-    if (isLoading || pages.length > 0 || seededRef.current) return
-    seededRef.current = true
-
-    async function seed() {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const seedFn = workspace === 'sandbox' ? 'seed_sandbox_pages' : 'seed_default_pages'
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)(seedFn, { p_user_id: user.id })
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
-    }
-
-    seed()
-  }, [isLoading, pages.length, queryClient, workspace])
+  // REMOVED (#312/#320): the auto-seed that fired whenever the tree came back
+  // empty, calling `seed_default_pages` to insert five top-level pages.
+  //
+  // A new pond IS an empty tree, so this fired on every pond a person made and
+  // filled it with `personal` / `professional` / `health` / `financial` /
+  // `creativity` — the phantom content #320 explicitly rules out ("a pond is born
+  // with one row, its root; anything structure-shaped is made by the person").
+  // It also failed loudly in the attempt: those titles already exist in `life`, so
+  // the RPC hit the sibling-title unique index and answered 409.
+  //
+  // Onboarding is where a first pond's areas come from — #171 seeds the root and
+  // the areas the person PICKED — and `Pond 06.13` `s6m3` is where a new pond's
+  // areas come from. Neither is a tree-is-empty side effect. The RPCs themselves
+  // (`seed_default_pages`, `seed_sandbox_pages`) are now unreferenced by the app
+  // and should be dropped with `workspace`.
 
   const basePath = workspaceBasePath(workspace)
 
@@ -1035,19 +1040,24 @@ export function Rail() {
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', workspace })
+        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', workspace, pondId })
       )
       // ensure the parent folder is open so the new child is visible
       setExpanded((prev) => new Set(prev).add(id))
       if (created) {
         // F26: seed the cache with the new row so the reveal nests it immediately,
         // rather than depending on the refetch having landed before we navigate.
-        insertPageOptimistic(queryClient, workspace, {
-          id: created.id,
-          parentId: id,
-          type: 'page',
-          title: 'Untitled',
-        })
+        insertPageOptimistic(
+          queryClient,
+          workspace,
+          {
+            id: created.id,
+            parentId: id,
+            type: 'page',
+            title: 'Untitled',
+          },
+          pondId
+        )
         navigateTo({ id: created.id, type: 'page', title: 'Untitled' })
       }
     } finally {
@@ -1058,7 +1068,7 @@ export function Rail() {
   /** Put a single optimistically-removed row back (surgical) and reconcile. */
   function restoreDeletedRow(row: PageRow | undefined) {
     if (row) {
-      queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) =>
+      queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) =>
         rows ? restoreRow(rows, row) : rows
       )
     }
@@ -1079,7 +1089,7 @@ export function Rail() {
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
-        router.push(basePath)
+        router.push(workspaceUrl(null, basePath))
       }
     } catch {
       restoreDeletedRow(removedRow)
@@ -1099,10 +1109,10 @@ export function Rail() {
     }
 
     const removedRow = pages.find((r) => r.id === node.id)
-    queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) =>
+    queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) =>
       removeRow(rows ?? [], node.id)
     )
-    if (selectedNodeId === node.id) router.push(basePath)
+    if (selectedNodeId === node.id) router.push(workspaceUrl(null, basePath))
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
@@ -1165,11 +1175,16 @@ export function Rail() {
     const move = computeMove(pages, draggedId, targetId, zone)
     if (!move) return
 
-    const snapshot = applyMoveOptimistic(queryClient, workspace, {
-      movedId: draggedId,
-      newParentId: move.newParentId,
-      siblingOrder: move.siblingOrder,
-    })
+    const snapshot = applyMoveOptimistic(
+      queryClient,
+      workspace,
+      {
+        movedId: draggedId,
+        newParentId: move.newParentId,
+        siblingOrder: move.siblingOrder,
+      },
+      pondId
+    )
 
     // Expand-on-drop: an into-drop reveals the moved child under its new parent.
     if (zone === 'into') {
@@ -1186,7 +1201,7 @@ export function Rail() {
         })
       )
     } catch {
-      if (snapshot) queryClient.setQueryData<PageRow[]>(['pages', workspace], snapshot)
+      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), snapshot)
       notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)
       queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
     }
@@ -1211,7 +1226,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
-        onLife={() => router.push(basePath)}
+        onLife={() => router.push(workspaceUrl(null, basePath))}
         onToggleLife={handleToggleLife}
         onNewPage={requestCreatePage}
         canDrop={canDrop}

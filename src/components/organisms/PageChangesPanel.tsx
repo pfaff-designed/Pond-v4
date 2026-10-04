@@ -35,6 +35,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { getPage } from '@/lib/pages/client'
 import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
@@ -56,6 +57,7 @@ export function pageChangesKey(workspace: string, pageId: string | undefined) {
 export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const getSupabase = useLazySupabase()
   const workspace = useWorkspace()
+  const pondId = usePondId()
   const queryClient = useQueryClient()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -69,7 +71,8 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return []
-      return listRecords(supabase, { userId: user.id, workspace, targetPageId: pageId })
+      // #312: the change log is per pond (`s6m5`).
+      return listRecords(supabase, { userId: user.id, workspace, pondId, targetPageId: pageId })
     },
   })
 
@@ -134,11 +137,14 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         await proposeRevert(ctx.supabase, {
           userId: ctx.userId,
           workspace,
+          // #312: without this the revert record is invisible in every pond and
+          // the page becomes permanently unrevertable.
+          pondId,
           record,
           current: ctx.page.blocks,
         })
       }),
-    [run, loadWriteContext, records, workspace]
+    [run, loadWriteContext, records, workspace, pondId]
   )
 
   const onAccept = useCallback(

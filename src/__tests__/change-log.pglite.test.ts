@@ -118,6 +118,9 @@ describe('0011_change_log — shape', () => {
         'created_at',
         'id',
         'links',
+        // 0018: the tenancy key. Nullable for now — #314 ruled it stays nullable
+        // until #318's children make every insert supply it.
+        'pond_id',
         'read',
         'source_thread_id',
         'status',

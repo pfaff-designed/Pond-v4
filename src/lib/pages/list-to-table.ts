@@ -207,6 +207,8 @@ export function inferListDatabaseTitle(blocks: Block[], index: number, pageTitle
 // ── 4. Orchestrator ──────────────────────────────────────────────────────────
 
 export interface CreateDatabaseFromListInput {
+  /** #312: the pond this writes into. Required — see `CreatePageInput.pondId`. */
+  pondId: string | null
   /** The list block being turned into a table. */
   block: Block
   /** The new database's title (see {@link inferListDatabaseTitle}). */
@@ -262,7 +264,11 @@ export async function createDatabaseFromList(
 
   // The root and the collection page are the shared sequence (#280); only the
   // records are this gesture's own.
-  const made = await createDatabase(supabase, { title: input.title, schema, workspace }, mintId)
+  const made = await createDatabase(
+    supabase,
+    { title: input.title, schema, workspace, pondId: input.pondId },
+    mintId
+  )
   try {
     const titleCol = table.columns.length - 1
     const inputs = tableRowsToPageInputs(schema, rows, titleCol)
@@ -273,6 +279,7 @@ export async function createDatabaseFromList(
         title: row.title,
         props: row.props,
         workspace,
+        pondId: input.pondId,
       })
     }
     return {

@@ -60,7 +60,12 @@ function makeSupabase(chain = makeChain()) {
 const sampleBlocks: Block[] = [
   { id: 'b1', type: 'text', content: '# Notes' },
   { id: 'b2', type: 'todo', items: [{ id: 'i1', label: 'Do thing', checked: false }] },
-  { id: 'b3', type: 'table', columns: ['Metric', 'Value'], rows: [{ id: 'r1', cells: ['MRR', '500'] }] },
+  {
+    id: 'b3',
+    type: 'table',
+    columns: ['Metric', 'Value'],
+    rows: [{ id: 'r1', cells: ['MRR', '500'] }],
+  },
 ]
 
 function pageRow(overrides: Record<string, unknown> = {}) {
@@ -211,6 +216,7 @@ describe('createPage', () => {
       type: 'page',
       title: 'Sub-page',
       blocks: sampleBlocks,
+      pondId: null,
     })
 
     expect(sb.from).toHaveBeenCalledWith('pages')
@@ -233,7 +239,7 @@ describe('createPage', () => {
     })
     const sb = makeSupabase(chain)
 
-    const result = await createPage(sb as never, 'user-1', {})
+    const result = await createPage(sb as never, 'user-1', { pondId: null })
 
     const inserted = chain.insert.mock.calls[0][0]
     expect(inserted.user_id).toBe('user-1')
@@ -250,7 +256,7 @@ describe('createPage', () => {
       single: jest.fn().mockResolvedValue({ data: null, error: { message: 'boom' } }),
     })
     const sb = makeSupabase(chain)
-    await expect(createPage(sb as never, 'user-1', {})).rejects.toThrow(/boom/)
+    await expect(createPage(sb as never, 'user-1', { pondId: null })).rejects.toThrow(/boom/)
   })
 
   it('auto-suffixes and retries when the first insert hits a sibling-name collision (#84)', async () => {
@@ -265,7 +271,7 @@ describe('createPage', () => {
     })
     const sb = makeSupabase(chain)
 
-    const result = await createPage(sb as never, 'user-1', { title: 'Personal' })
+    const result = await createPage(sb as never, 'user-1', { title: 'Personal', pondId: null })
 
     // Inserted twice: original attempt, then the suffixed retry. (The insert
     // payload is mutated in place, so assert the count + the final resolved title

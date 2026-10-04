@@ -127,13 +127,18 @@ describe('viewSchema — chart + big-number config (#111)', () => {
   })
 
   it('accepts an optional numeric target (#94 gauge goal / composed budget) and rejects a non-number', () => {
-    const withTarget = { ...base, mode: 'chart', chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 30 } }
+    const withTarget = {
+      ...base,
+      mode: 'chart',
+      chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 30 },
+    }
     expect(viewSchema.safeParse(withTarget).success).toBe(true)
     expect(
       viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: '30' } }).success
     ).toBe(false)
     expect(
-      viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: Infinity } }).success
+      viewSchema.safeParse({ ...withTarget, chart: { ...withTarget.chart, target: Infinity } })
+        .success
     ).toBe(false)
   })
 

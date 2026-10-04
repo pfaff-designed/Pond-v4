@@ -13,6 +13,15 @@ import { makeDb, migrationFiles, seedUser } from './helpers/pglite-harness'
 const USER = '11111111-1111-1111-1111-111111111111'
 
 /** Insert a page, returning its generated id. */
+/** The `life` pond `handle_new_user` makes for a seeded person (0018). */
+async function lifePondId(db: PGlite, userId: string = USER): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    'select id from public.ponds where user_id = $1 order by "order" limit 1',
+    [userId]
+  )
+  return res.rows[0].id
+}
+
 async function addPage(
   db: PGlite,
   opts: {
@@ -21,12 +30,23 @@ async function addPage(
     type?: string
     title?: string
     workspace?: string
+    /**
+     * #312: 0019 drops the user-keyed `pages_sibling_title_uniq` in favour of
+     * 0018's `pages_sibling_title_pond_uniq`, so sibling names are constrained
+     * PER POND. A row with no pond is constrained by nothing — pass one to
+     * exercise the index.
+     */
+    pondId?: string | null
   } = {}
 ): Promise<string> {
   const { userId = USER, parentId = null, type = 'page', title = 'Untitled' } = opts
   // Only pass `workspace` when explicitly set, so C3 can exercise the DEFAULT.
   const cols = ['user_id', 'parent_id', 'type', 'title']
   const vals: unknown[] = [userId, parentId, type, title]
+  if (opts.pondId !== undefined) {
+    cols.push('pond_id')
+    vals.push(opts.pondId)
+  }
   if (opts.workspace !== undefined) {
     cols.push('workspace')
     vals.push(opts.workspace)
@@ -236,23 +256,46 @@ describe('sibling-name uniqueness (0009)', () => {
   it('rejects two siblings with the same normalized title under the same parent', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main' })
-    await addPage(db, { parentId: area, title: 'Notes', workspace: 'main' })
+    // `seedUser` fires 0018's `handle_new_user`, which makes the person's `life`
+    // pond — the scope the index is now keyed on.
+    const pondId = await lifePondId(db)
+    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main', pondId })
+    await addPage(db, { parentId: area, title: 'Notes', workspace: 'main', pondId })
     // case-insensitive + trimmed → same key → rejected.
     await expect(
-      addPage(db, { parentId: area, title: '  notes ', workspace: 'main' })
+      addPage(db, { parentId: area, title: '  notes ', workspace: 'main', pondId })
     ).rejects.toThrow()
+    await db.close()
+  })
+
+  it('allows the same sibling title in a DIFFERENT pond (#312)', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const life = await lifePondId(db)
+    const other = await db.query<{ id: string }>(
+      `insert into public.ponds (user_id, name, "order") values ($1, 'make noise', 1) returning id`,
+      [USER]
+    )
+    // The whole point of a pond: the same name in two ponds is two pages.
+    await addPage(db, { title: 'Notes', workspace: 'main', pondId: life })
+    await addPage(db, { title: 'Notes', workspace: 'main', pondId: other.rows[0].id })
+    const n = await db.query<{ n: number }>(
+      `select count(*)::int as n from public.pages where lower(btrim(title)) = 'notes'`
+    )
+    expect(n.rows[0].n).toBe(2)
     await db.close()
   })
 
   it('rejects duplicate ROOT (null-parent) siblings — proves the COALESCE guard', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await addPage(db, { type: 'page', title: 'Personal', workspace: 'main' })
+    const pondId = await lifePondId(db)
+    await addPage(db, { type: 'page', title: 'Personal', workspace: 'main', pondId })
     // Without COALESCE(parent_id, sentinel) a plain unique index would treat the
-    // two NULL parents as distinct and let this through — the original bug.
+    // two NULL parents as distinct and let this through — the original bug. 0018's
+    // pond-keyed index carries the same COALESCE, so the guard survives the re-key.
     await expect(
-      addPage(db, { type: 'page', title: 'Personal', workspace: 'main' })
+      addPage(db, { type: 'page', title: 'Personal', workspace: 'main', pondId })
     ).rejects.toThrow()
     await db.close()
   })

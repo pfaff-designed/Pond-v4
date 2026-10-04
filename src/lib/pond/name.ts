@@ -19,12 +19,27 @@
  */
 
 import { useWorkspace, type WorkspaceScope } from '@/lib/workspace/context'
+import { usePond } from './context'
 
 export function defaultPondName(workspace: WorkspaceScope): string {
   return workspace === 'sandbox' ? 'sandbox' : 'life'
 }
 
-/** The current workspace's pond name. */
+/**
+ * The active pond's name (#312).
+ *
+ * This is the replacement that this file's own header predicted — "the switcher
+ * (M3) replaces the hook with a read of the active pond". It reads the pond the
+ * shell resolved from `?pond=` and falls back to `defaultPondName` only where
+ * there is no pond to read: outside the shell's `PondProvider`, or before
+ * migration 0018 made the table.
+ *
+ * Until this changed, every surface showing a pond name showed `life` regardless
+ * of which pond you were in — visible as a new pond's rail root reading `life`
+ * while its header read the pond's real name.
+ */
 export function usePondName(): string {
-  return defaultPondName(useWorkspace())
+  const workspace = useWorkspace()
+  const { pond } = usePond()
+  return pond?.name ?? defaultPondName(workspace)
 }

@@ -138,7 +138,9 @@ describe('#63 accept path: the scaffolded table block materializes and persists'
         parentRef: null,
         blocks: REPRO_BLOCKS,
       },
-      mint
+      mint,
+      'main',
+      null
     )
 
     expect(result.id).toBe('tracker-1')

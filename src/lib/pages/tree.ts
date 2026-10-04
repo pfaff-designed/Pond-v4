@@ -10,6 +10,8 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import { firstPondId } from '@/lib/pond/first'
+import { pagesKey } from './keys'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -32,21 +34,36 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<PageRow[]> {
+export async function fetchPages(
+  workspace: WorkspaceScope = 'main',
+  pondId?: string | null
+): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  const { data, error } = await supabase
+  // #312: a pond is an instance of the shell, so the tree it shows is its own.
+  // When the caller does not name a pond — a surface rendered outside the shell's
+  // PondProvider — fall back to the person's first, which is also what `?pond=`
+  // resolves to on a cold load. Never return every pond's pages: that is how a
+  // new pond would show the first pond's tree.
+  const scope = pondId ?? (await firstPondId(supabase, user.id))
+
+  let q = supabase
     .from('pages')
     // #134: glyph + area_role ride along, so the ONE ['pages', workspace] cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
     // mark — no surface fetches anything extra to draw one.
     .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
     .eq('user_id', user.id)
-    .eq('workspace', workspace)
+    // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
+    // `workspace='sandbox'` rows, so the pond filter already says everything the
+    // workspace filter said — and keeping BOTH made the sandbox pond unreachable:
+    // `/workspace?pond=<sandbox>` asked for `workspace='main'` AND the sandbox
+    // pond, which can never both match, so it showed nothing. `workspace` is now
+    // dead weight on the column; retiring it is its own slice.
     // ticket-44: the reserved Life home row never enters the ['pages'] cache
     // (rail / children grid / breadcrumb) — home blocks are read separately.
     .neq('type', HOME_TYPE)
@@ -54,8 +71,13 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
     // views, never as rail children or children-grid cards — this is the ONE boundary
     // that keeps them out of the tree. They stay directly openable via getPage.
     .neq('type', ROW_TYPE)
-    .order('order')
 
+  // Filters before `.order()`: a PostgREST builder is chainable either way, but
+  // ordering last keeps the shape readable and means a test double does not have
+  // to return a chainable from `order`.
+  if (scope) q = q.eq('pond_id', scope)
+
+  const { data, error } = await q.order('order')
   if (error) throw error
   return (data ?? []) as PageRow[]
 }
@@ -72,9 +94,16 @@ export async function fetchPages(workspace: WorkspaceScope = 'main'): Promise<Pa
 export function insertPageOptimistic(
   queryClient: QueryClient,
   workspace: WorkspaceScope,
-  page: { id: string; parentId: string | null; type: string; title: string }
+  page: { id: string; parentId: string | null; type: string; title: string },
+  /**
+   * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
+   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
+   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * synchronous reveal, the drag rollback, and the delete-undo window.
+   */
+  pondId: string | null
 ): void {
-  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+  queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) => {
     const existing = rows ?? []
     if (existing.some((r) => r.id === page.id)) return existing
     return [
@@ -102,11 +131,19 @@ export function insertPageOptimistic(
 export function applyMoveOptimistic(
   queryClient: QueryClient,
   workspace: WorkspaceScope,
-  move: { movedId: string; newParentId: string | null; siblingOrder: string[] }
+  move: { movedId: string; newParentId: string | null; siblingOrder: string[] },
+  /**
+   * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
+   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
+   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * synchronous reveal, the drag rollback, and the delete-undo window.
+   */
+  pondId: string | null
 ): PageRow[] | undefined {
-  const snapshot = queryClient.getQueryData<PageRow[]>(['pages', workspace])
+  const key = pagesKey(workspace, pondId)
+  const snapshot = queryClient.getQueryData<PageRow[]>(key)
   const orderById = new Map(move.siblingOrder.map((id, index) => [id, index]))
-  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+  queryClient.setQueryData<PageRow[]>(key, (rows) => {
     if (!rows) return rows
     return rows.map((r) => {
       const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id

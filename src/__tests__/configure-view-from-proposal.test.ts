@@ -156,7 +156,10 @@ describe('resolveViewConfig', () => {
         mode: 'chart',
         chart: { kind: 'gauge', series: [{ property: 'Hours', agg: 'sum' }], target: 40 },
       })
-    ).toEqual({ mode: 'chart', chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 40 } })
+    ).toEqual({
+      mode: 'chart',
+      chart: { kind: 'gauge', series: [{ property: 'p-hours', agg: 'sum' }], target: 40 },
+    })
   })
 
   it('drops an unresolved chart x property (one point per record) but keeps the series', () => {

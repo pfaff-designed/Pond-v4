@@ -246,7 +246,9 @@ describe('promoteTableFromProposal', () => {
     const result = await promoteTableFromProposal(
       sb as never,
       { pageId: 'page-1', blockId: 'b-table' },
-      counter()
+      counter(),
+      'main',
+      null
     )
 
     // The host page is now a collection with the inferred schema (AC1).
@@ -283,7 +285,13 @@ describe('promoteTableFromProposal', () => {
     const sb = makeFakeSupabase([
       seededPage([{ id: 'x', type: 'text', content: 'hi' }, tableBlock]),
     ])
-    const result = await promoteTableFromProposal(sb as never, { pageId: 'page-1' }, counter())
+    const result = await promoteTableFromProposal(
+      sb as never,
+      { pageId: 'page-1' },
+      counter(),
+      'main',
+      null
+    )
     expect(result.rowCount).toBe(2)
     expect(readSchema(sb._pages.get('page-1')!.props)).not.toBeNull()
   })
@@ -291,21 +299,27 @@ describe('promoteTableFromProposal', () => {
   it('throws when the page does not exist', async () => {
     const sb = makeFakeSupabase([])
     await expect(
-      promoteTableFromProposal(sb as never, { pageId: 'ghost' }, counter())
+      promoteTableFromProposal(sb as never, { pageId: 'ghost' }, counter(), 'main', null)
     ).rejects.toThrow(/not found/i)
   })
 
   it('throws when the named block is not a table', async () => {
     const sb = makeFakeSupabase([seededPage([{ id: 'b-text', type: 'text', content: 'x' }])])
     await expect(
-      promoteTableFromProposal(sb as never, { pageId: 'page-1', blockId: 'b-text' }, counter())
+      promoteTableFromProposal(
+        sb as never,
+        { pageId: 'page-1', blockId: 'b-text' },
+        counter(),
+        'main',
+        null
+      )
     ).rejects.toThrow(/table/i)
   })
 
   it('throws when the page has no table block to promote', async () => {
     const sb = makeFakeSupabase([seededPage([{ id: 'b-text', type: 'text', content: 'x' }])])
     await expect(
-      promoteTableFromProposal(sb as never, { pageId: 'page-1' }, counter())
+      promoteTableFromProposal(sb as never, { pageId: 'page-1' }, counter(), 'main', null)
     ).rejects.toThrow(/table/i)
   })
 })

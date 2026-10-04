@@ -71,7 +71,9 @@ export async function resolveParentId(
   sb: any,
   userId: string,
   idOrName: string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<string> {
   if (UUID_RE.test(idOrName)) return idOrName
   const { data, error } = await sb
@@ -117,7 +119,9 @@ export function parseActionCard(json: string): ActionCard | null {
 export async function createNode(
   supabase: SupabaseClient<Database>,
   card: ActionCard,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<CreatedNode> {
   const {
     data: { user },
@@ -132,13 +136,16 @@ export async function createNode(
   if (card.type === 'project' || card.type === 'routine') parentRef = card.area_id
   else if (card.type === 'action') parentRef = card.project_id ?? card.area_id
 
-  const parentId = parentRef ? await resolveParentId(sb, user.id, parentRef, workspace) : null
+  const parentId = parentRef
+    ? await resolveParentId(sb, user.id, parentRef, workspace, pondId)
+    : null
 
   const page = await createPage(supabase, user.id, {
     parentId,
     type: card.type,
     title: card.name,
     workspace,
+    pondId,
   })
   return { id: page.id }
 }
