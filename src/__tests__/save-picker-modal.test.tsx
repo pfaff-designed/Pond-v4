@@ -194,7 +194,8 @@ describe('SavePickerModal', () => {
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
         { type: 'page', name: 'Travel' },
-        'main'
+        'main',
+        null
       )
     })
   })
@@ -285,7 +286,8 @@ describe('SavePickerModal', () => {
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
         { type: 'page', name: 'Area A' },
-        'main'
+        'main',
+        null
       )
     })
     // Action B still visible

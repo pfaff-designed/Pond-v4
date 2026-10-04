@@ -56,13 +56,19 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
           type: 'page',
           title: title.trim() || 'Untitled',
           workspace,
+          pondId,
         })
-        insertPageOptimistic(queryClient, workspace, {
-          id: created.id,
-          parentId: containingPageId,
-          type: created.type,
-          title: created.title,
-        })
+        insertPageOptimistic(
+          queryClient,
+          workspace,
+          {
+            id: created.id,
+            parentId: containingPageId,
+            type: created.type,
+            title: created.title,
+          },
+          pondId
+        )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         return { id: created.id, title: created.title, type: created.type }
       },

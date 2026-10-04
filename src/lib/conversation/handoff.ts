@@ -73,16 +73,18 @@ export async function performHandoff(
   userId: string,
   messages: UIMessage[],
   deps: HandoffDeps = defaultDeps,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond the handoff writes into and whose fresh thread it opens. */
+  pondId: string | null = null
 ): Promise<HandoffResult> {
   const extractions = await deps.extract(messages)
 
   for (const item of extractions) {
-    await deps.createNode(supabase, { type: item.type, name: item.name }, workspace)
+    await deps.createNode(supabase, { type: item.type, name: item.name }, workspace, pondId)
   }
 
   await deps.dissolveConversation(supabase, conversationId)
-  const freshConversation = await deps.getOrCreateConversation(supabase, userId, workspace)
+  const freshConversation = await deps.getOrCreateConversation(supabase, userId, workspace, pondId)
 
   return { freshConversation, written: extractions.length }
 }

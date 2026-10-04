@@ -220,15 +220,21 @@ export function CreatePageModal({
         // rail/editor display anyway (the fallback shouldn't mask an empty row).
         title: title.trim() || 'Untitled',
         workspace,
+        pondId,
       })
       // F26: seed the cache with the new row (correct parent_id) before navigating,
       // so the rail nests it immediately; reconcile in the background.
-      insertPageOptimistic(queryClient, workspace, {
-        id: created.id,
-        parentId,
-        type: created.type,
-        title: created.title,
-      })
+      insertPageOptimistic(
+        queryClient,
+        workspace,
+        {
+          id: created.id,
+          parentId,
+          type: created.type,
+          title: created.title,
+        },
+        pondId
+      )
       onOpenChange(false)
 
       // Land in the editor. A blocks-less `page` → DocumentPanel renders the

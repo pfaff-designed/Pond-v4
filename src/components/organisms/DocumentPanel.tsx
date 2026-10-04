@@ -66,7 +66,7 @@ import type { Block } from '@/lib/documents/types'
 export function DocumentPanel() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { pond } = usePond()
+  const { pond, loading: pondLoading } = usePond()
   const pondId = pond?.id ?? null
   const pondName = pond?.name ?? null
   const nodeId = searchParams.get('nodeId')
@@ -98,6 +98,19 @@ export function DocumentPanel() {
     // #320: the root is titled with its pond's name, so the pond's name is part of
     // creating it — not something a later rename has to repair.
     queryFn: () => getOrCreateHomePage(getSupabase(), pondId, pondName),
+    // #312: wait for the pond LIST to settle, not for a pond to exist.
+    //
+    // Without any guard, the first render called `getOrCreateHomePage(null)`,
+    // which falls back to the person's FIRST pond — so for one `listPonds`
+    // round-trip the panel drew pond A's root under pond B's URL, and a keystroke
+    // in that window saved blocks into the wrong pond's root.
+    //
+    // Guarding on `!!pondId` instead was worse: with no pond at all — before
+    // migration 0018, or any surface outside the provider — the panel hung on its
+    // loading state forever and the breadcrumb and ⌘K never rendered. `loading`
+    // is false in the default context, so those surfaces behave exactly as they
+    // did before ponds.
+    enabled: !pondLoading,
   })
   // The page this panel shows: the URL's node, or — at the root — the home row.
   const pageId = nodeId ?? home?.id ?? null

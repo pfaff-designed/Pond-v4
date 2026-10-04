@@ -195,7 +195,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x' })
+    await createPage(sb as never, 'user-1', { title: 'x', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).toBe('main')
@@ -207,7 +207,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox' })
+    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).toBe('sandbox')
@@ -219,7 +219,7 @@ describe('createPage stamps the workspace column', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox' })
+    await createPage(sb as never, 'user-1', { title: 'x', workspace: 'sandbox', pondId: null })
 
     const inserted = (chain.insert as jest.Mock).mock.calls[0][0]
     expect(inserted.workspace).not.toBe('main')

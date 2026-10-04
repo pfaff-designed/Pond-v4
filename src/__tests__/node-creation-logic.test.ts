@@ -100,7 +100,7 @@ describe('createNode', () => {
     const sb = makeSupabase(chain)
     const card: ActionCard = { type: 'page', name: 'Travel' }
 
-    const result = await createNode(sb as never, card)
+    const result = await createNode(sb as never, card, 'main', null)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.insert).toHaveBeenCalled()
@@ -118,7 +118,7 @@ describe('createNode', () => {
     const uuid = '00000000-0000-0000-0000-000000000001'
     const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: uuid }
 
-    const result = await createNode(sb as never, card)
+    const result = await createNode(sb as never, card, 'main', null)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
@@ -135,7 +135,7 @@ describe('createNode', () => {
     const uuid = '00000000-0000-0000-0000-000000000002'
     const card: ActionCard = { type: 'routine', name: 'Morning Walk', area_id: uuid }
 
-    const result = await createNode(sb as never, card)
+    const result = await createNode(sb as never, card, 'main', null)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
@@ -163,7 +163,7 @@ describe('createNode', () => {
     }
     const card: ActionCard = { type: 'project', name: 'Website Redesign', area_id: 'Professional' }
 
-    const result = await createNode(sb as never, card)
+    const result = await createNode(sb as never, card, 'main', null)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.ilike).toHaveBeenCalledWith('title', 'Professional')
@@ -177,7 +177,7 @@ describe('createNode', () => {
     const sb = makeSupabase(chain)
     const card: ActionCard = { type: 'action', name: 'Send invoice' }
 
-    const result = await createNode(sb as never, card)
+    const result = await createNode(sb as never, card, 'main', null)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     const insertArg = chain.insert.mock.calls[0][0]
@@ -197,6 +197,6 @@ describe('createNode', () => {
     const sb = makeSupabase(chain)
     const card: ActionCard = { type: 'page', name: 'Fail Area' }
 
-    await expect(createNode(sb as never, card)).rejects.toThrow('RLS violation')
+    await expect(createNode(sb as never, card, 'main', null)).rejects.toThrow('RLS violation')
   })
 })

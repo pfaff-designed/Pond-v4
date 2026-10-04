@@ -35,11 +35,16 @@ const byId = (rows: PageRow[], id: string) => rows.find((r) => r.id === id)!
 describe('applyMoveOptimistic', () => {
   it('sets the moved row parent_id and reindexes the target group densely', () => {
     const { qc } = seed()
-    applyMoveOptimistic(qc, 'main', {
-      movedId: 'scratch',
-      newParentId: 'health',
-      siblingOrder: ['sleep', 'marathon', 'scratch'],
-    })
+    applyMoveOptimistic(
+      qc,
+      'main',
+      {
+        movedId: 'scratch',
+        newParentId: 'health',
+        siblingOrder: ['sleep', 'marathon', 'scratch'],
+      },
+      null
+    )
     const rows = get(qc)
     expect(byId(rows, 'scratch').parent_id).toBe('health')
     expect(byId(rows, 'sleep').order).toBe(0)
@@ -49,21 +54,31 @@ describe('applyMoveOptimistic', () => {
 
   it('moves a page to top-level with a null parent_id', () => {
     const { qc } = seed()
-    applyMoveOptimistic(qc, 'main', {
-      movedId: 'sleep',
-      newParentId: null,
-      siblingOrder: ['health', 'scratch', 'sleep'],
-    })
+    applyMoveOptimistic(
+      qc,
+      'main',
+      {
+        movedId: 'sleep',
+        newParentId: null,
+        siblingOrder: ['health', 'scratch', 'sleep'],
+      },
+      null
+    )
     expect(byId(get(qc), 'sleep').parent_id).toBeNull()
   })
 
   it('returns the pre-move snapshot, and restoring it reverts the cache', () => {
     const { qc, rows } = seed()
-    const snapshot = applyMoveOptimistic(qc, 'main', {
-      movedId: 'scratch',
-      newParentId: 'health',
-      siblingOrder: ['sleep', 'marathon', 'scratch'],
-    })
+    const snapshot = applyMoveOptimistic(
+      qc,
+      'main',
+      {
+        movedId: 'scratch',
+        newParentId: 'health',
+        siblingOrder: ['sleep', 'marathon', 'scratch'],
+      },
+      null
+    )
     expect(snapshot).toBe(rows) // the exact prior array reference
     // moved in the cache…
     expect(byId(get(qc), 'scratch').parent_id).toBe('health')

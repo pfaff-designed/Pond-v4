@@ -27,6 +27,8 @@ import { getOrCreateDatabasesRoot } from '@/lib/pages/databases-root'
 import { withSchema, type PropertySchema } from '@/lib/properties/schema'
 
 export interface CreateDatabaseInput {
+  /** #312: the pond this writes into. Required — see `CreatePageInput.pondId`. */
+  pondId: string | null
   /** The database's title — the picker names it after the page it started on. */
   title: string
   /** Its fields, ids already minted (the 8 property types). */
@@ -90,7 +92,7 @@ export async function createDatabase(
   if (!user) throw new Error('Not authenticated')
 
   const workspace = input.workspace ?? 'main'
-  const root = await getOrCreateDatabasesRoot(supabase, user.id, workspace)
+  const root = await getOrCreateDatabasesRoot(supabase, user.id, workspace, input.pondId)
   try {
     const database = await createPage(supabase, user.id, {
       parentId: root.id,
@@ -98,6 +100,7 @@ export async function createDatabase(
       title: input.title,
       props: withSchema({}, input.schema),
       workspace,
+      pondId: input.pondId,
     })
     const view: ViewBlock = {
       id: mintId(),

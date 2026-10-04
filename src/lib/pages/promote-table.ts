@@ -197,7 +197,9 @@ export async function promoteTableFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: PromoteTableProposal,
   mintId: () => string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond to write into. See `CreatePageInput.pondId`. */
+  pondId: string | null
 ): Promise<PromotedTable> {
   const page = await getPage(supabase, proposal.pageId)
   if (!page) throw new Error(`Cannot promote a table: page ${proposal.pageId} was not found`)
@@ -222,6 +224,7 @@ export async function promoteTableFromProposal(
       title: input.title,
       props: input.props,
       workspace,
+      pondId,
     })
   }
 

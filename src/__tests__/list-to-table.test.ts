@@ -239,11 +239,11 @@ describe('withoutDatabasesRoot', () => {
 describe('getOrCreateDatabasesRoot', () => {
   it('creates the top-level databases page once, then reuses it', async () => {
     const sb = makeFakeSupabase([])
-    const first = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main')
+    const first = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
     const root = sb._pages.get(first.id)!
     expect(root.parent_id).toBeNull()
     expect(root.title).toBe(DATABASES_ROOT_TITLE)
-    const second = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main')
+    const second = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
     expect(second.id).toBe(first.id)
     expect(
       [...sb._pages.values()].filter((p) =>
@@ -254,7 +254,7 @@ describe('getOrCreateDatabasesRoot', () => {
 
   it('finds an existing root whatever its title casing', async () => {
     const sb = makeFakeSupabase([existingRoot])
-    const root = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main')
+    const root = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
     expect(root.id).toBe('root-db')
   })
 })
@@ -264,7 +264,7 @@ describe('createDatabaseFromList', () => {
     const sb = makeFakeSupabase([existingRoot])
     const result = await createDatabaseFromList(
       sb as never,
-      { block: ingredients, title: 'ingredients' },
+      { block: ingredients, title: 'ingredients', pondId: null },
       counter()
     )
 
@@ -308,7 +308,7 @@ describe('createDatabaseFromList', () => {
     const sb = makeFakeSupabase([])
     const result = await createDatabaseFromList(
       sb as never,
-      { block: ingredients, title: 'ingredients' },
+      { block: ingredients, title: 'ingredients', pondId: null },
       counter()
     )
     const root = sb._pages.get(result.databasesRootId)!
@@ -321,7 +321,7 @@ describe('createDatabaseFromList', () => {
     const sb = makeFakeSupabase([existingRoot])
     const { view } = await createDatabaseFromList(
       sb as never,
-      { block: ingredients, title: 'ingredients' },
+      { block: ingredients, title: 'ingredients', pondId: null },
       counter()
     )
     const blocks = [{ id: 'h', type: 'text', content: '## ingredients' }, ingredients] as never[]
@@ -337,7 +337,7 @@ describe('createDatabaseFromList', () => {
     await expect(
       createDatabaseFromList(
         sb as never,
-        { block: { id: 'b', type: 'text', content: 'prose' }, title: 'x' },
+        { block: { id: 'b', type: 'text', content: 'prose' }, title: 'x', pondId: null },
         counter()
       )
     ).rejects.toThrow(/not a list/i)
@@ -349,7 +349,11 @@ describe('createDatabaseFromList', () => {
     // record, so two are already written when it goes wrong.
     const sb = makeFakeSupabase([existingRoot], 4)
     await expect(
-      createDatabaseFromList(sb as never, { block: ingredients, title: 'ingredients' }, counter())
+      createDatabaseFromList(
+        sb as never,
+        { block: ingredients, title: 'ingredients', pondId: null },
+        counter()
+      )
     ).rejects.toThrow(/connection failure/i)
 
     // The half-built database and every record under it are gone; the pre-existing
@@ -361,7 +365,11 @@ describe('createDatabaseFromList', () => {
     // Insert 1 creates the root, insert 2 is the database page.
     const sb = makeFakeSupabase([], 2)
     await expect(
-      createDatabaseFromList(sb as never, { block: ingredients, title: 'ingredients' }, counter())
+      createDatabaseFromList(
+        sb as never,
+        { block: ingredients, title: 'ingredients', pondId: null },
+        counter()
+      )
     ).rejects.toThrow(/connection failure/i)
     expect([...sb._pages.values()]).toEqual([])
   })
@@ -370,7 +378,11 @@ describe('createDatabaseFromList', () => {
     const sb = makeFakeSupabase([existingRoot])
     sb.auth.getUser.mockResolvedValue({ data: { user: null } })
     await expect(
-      createDatabaseFromList(sb as never, { block: ingredients, title: 'x' }, counter())
+      createDatabaseFromList(
+        sb as never,
+        { block: ingredients, title: 'x', pondId: null },
+        counter()
+      )
     ).rejects.toThrow(/authenticated/i)
   })
 })

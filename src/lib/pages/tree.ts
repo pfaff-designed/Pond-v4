@@ -11,6 +11,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { firstPondId } from '@/lib/pond/first'
+import { pagesKey } from './keys'
 import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -93,9 +94,16 @@ export async function fetchPages(
 export function insertPageOptimistic(
   queryClient: QueryClient,
   workspace: WorkspaceScope,
-  page: { id: string; parentId: string | null; type: string; title: string }
+  page: { id: string; parentId: string | null; type: string; title: string },
+  /**
+   * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
+   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
+   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * synchronous reveal, the drag rollback, and the delete-undo window.
+   */
+  pondId: string | null
 ): void {
-  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+  queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) => {
     const existing = rows ?? []
     if (existing.some((r) => r.id === page.id)) return existing
     return [
@@ -123,11 +131,19 @@ export function insertPageOptimistic(
 export function applyMoveOptimistic(
   queryClient: QueryClient,
   workspace: WorkspaceScope,
-  move: { movedId: string; newParentId: string | null; siblingOrder: string[] }
+  move: { movedId: string; newParentId: string | null; siblingOrder: string[] },
+  /**
+   * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
+   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
+   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * synchronous reveal, the drag rollback, and the delete-undo window.
+   */
+  pondId: string | null
 ): PageRow[] | undefined {
-  const snapshot = queryClient.getQueryData<PageRow[]>(['pages', workspace])
+  const key = pagesKey(workspace, pondId)
+  const snapshot = queryClient.getQueryData<PageRow[]>(key)
   const orderById = new Map(move.siblingOrder.map((id, index) => [id, index]))
-  queryClient.setQueryData<PageRow[]>(['pages', workspace], (rows) => {
+  queryClient.setQueryData<PageRow[]>(key, (rows) => {
     if (!rows) return rows
     return rows.map((r) => {
       const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id

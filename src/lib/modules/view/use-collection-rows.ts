@@ -34,6 +34,7 @@ import {
   type PondPage,
 } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import {
   readSchema,
   readValues,
@@ -100,6 +101,7 @@ const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
  */
 export function useCollectionRows(collectionId: string | undefined): CollectionData {
   const workspace = useWorkspace()
+  const pondId = usePondId()
   // Lazily created on first fetch, not at render — so seeded/disabled queries
   // never construct a real client and throw (envless CI/Storybook, #38).
   const getSupabase = useLazySupabase()
@@ -188,6 +190,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
           title: '',
           props: values,
           workspace,
+          pondId,
         })
         queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
           prev ? [...prev, created] : [created]

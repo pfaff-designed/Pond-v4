@@ -114,6 +114,7 @@ describe('makePageFromAnswer', () => {
           { id: 'wt-1', title: 'Worktop template' },
         ],
         workspace: 'main',
+        pondId: null,
       },
       mint()
     )
@@ -150,7 +151,7 @@ describe('makePageFromAnswer', () => {
     const { supabase, inserts } = makeSupabase({ existing: { 'kr-1': PARENT } })
     await makePageFromAnswer(
       supabase,
-      { proposal: proposal(), threadId: null, pages: [{ id: 'x', title: 'Sleep' }] },
+      { proposal: proposal(), threadId: null, pages: [{ id: 'x', title: 'Sleep' }], pondId: null },
       mint()
     )
     expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
@@ -161,7 +162,11 @@ describe('makePageFromAnswer', () => {
   it('refuses when the parent was deleted between proposal and make page — nothing is written', async () => {
     const { supabase, inserts } = makeSupabase({ existing: {} })
     await expect(
-      makePageFromAnswer(supabase, { proposal: proposal(), threadId: null, pages: [] }, mint())
+      makePageFromAnswer(
+        supabase,
+        { proposal: proposal(), threadId: null, pages: [], pondId: null },
+        mint()
+      )
     ).rejects.toBeInstanceOf(ParentGoneError)
     expect(inserts).toHaveLength(0)
   })
@@ -170,7 +175,7 @@ describe('makePageFromAnswer', () => {
     const { supabase, inserts } = makeSupabase({ existing: {} })
     await makePageFromAnswer(
       supabase,
-      { proposal: proposal({ parentId: null }), threadId: null, pages: [] },
+      { proposal: proposal({ parentId: null }), threadId: null, pages: [], pondId: null },
       mint()
     )
     expect(inserts[0].row.parent_id).toBeNull()
@@ -185,6 +190,7 @@ describe('makePageFromAnswer', () => {
         proposal: proposal({ parentId: null, name: long, kind: ' project ' }),
         threadId: null,
         pages: [],
+        pondId: null,
       },
       mint()
     )
@@ -195,7 +201,12 @@ describe('makePageFromAnswer', () => {
 
     await makePageFromAnswer(
       supabase,
-      { proposal: proposal({ parentId: null, name: '   ' }), threadId: null, pages: [] },
+      {
+        proposal: proposal({ parentId: null, name: '   ' }),
+        threadId: null,
+        pages: [],
+        pondId: null,
+      },
       mint()
     )
     expect(inserts[1].row.title).toBe('untitled')
@@ -206,7 +217,7 @@ describe('makePageFromAnswer', () => {
     await expect(
       makePageFromAnswer(
         supabase,
-        { proposal: proposal({ parentId: null }), threadId: null, pages: [] },
+        { proposal: proposal({ parentId: null }), threadId: null, pages: [], pondId: null },
         mint()
       )
     ).rejects.toThrow(/not authenticated/i)

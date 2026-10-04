@@ -45,9 +45,7 @@ jest.mock('@/lib/pages/commit', () => ({
   commitBlocks: jest.fn().mockResolvedValue(undefined),
 }))
 
-const blocks: Block[] = [
-  { id: 'b-text', type: 'text', content: 'Notes on the workbench build' },
-]
+const blocks: Block[] = [{ id: 'b-text', type: 'text', content: 'Notes on the workbench build' }]
 
 function renderPanel() {
   mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
@@ -118,8 +116,6 @@ describe('DocumentPanel resizable content column (#58)', () => {
     const up = new Event('pointerup', { bubbles: true, cancelable: true })
     Object.assign(up, { pointerId: 1, clientX: 350 })
     fireEvent(handle, up)
-    expect(window.localStorage.getItem(CONTENT_WIDTH_KEY)).toBe(
-      String(CONTENT_DEFAULT_WIDTH + 100)
-    )
+    expect(window.localStorage.getItem(CONTENT_WIDTH_KEY)).toBe(String(CONTENT_DEFAULT_WIDTH + 100))
   })
 })

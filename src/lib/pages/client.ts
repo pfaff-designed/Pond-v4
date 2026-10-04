@@ -53,12 +53,19 @@ export interface PondPage {
 
 export interface CreatePageInput {
   /**
-   * #312: the pond the page belongs to. Optional only so the call sites that have
-   * not been threaded yet keep compiling — migration 0019 makes `pages.pond_id`
-   * NOT NULL, so a write without it fails at the database. Every product call
-   * site must pass one.
+   * #312: the pond the page belongs to. **Required.**
+   *
+   * It was optional, and that single `?` cost the guarantee #318 was chosen for:
+   * none of the thirteen call sites passed one, so every page created in a second
+   * pond was written into the person's FIRST pond and then filtered out of the
+   * tree it was created in — orphaned in both. Required means tsc enumerates
+   * every site, which is the whole point.
+   *
+   * Pass `null` ONLY where there is genuinely no pond to name, and expect the
+   * row to be invisible in every pond until one is backfilled. Note 0019 does
+   * NOT set `pond_id NOT NULL`, so the database will not catch a null for you.
    */
-  pondId?: string | null
+  pondId: string | null
   parentId?: string | null
   type?: NodeType
   title?: string
@@ -235,14 +242,10 @@ export async function createPage(
   const workspace = input.workspace ?? 'main'
   const desired = input.title ?? ''
 
-  // #312: every page belongs to a pond, and 0019 makes the column NOT NULL. Where
-  // the caller knows which pond it is in, it passes one. Where it does not — the
-  // creators still reached from deep lib code (`create-database.ts`,
-  // `list-to-table.ts`, `promote-table.ts`, `nodes/create.ts`,
-  // `use-collection-rows.ts`, `databases-root.ts`) — fall back to the person's
-  // FIRST pond rather than writing null. Null would pass no filter and the page
-  // would be invisible in every pond, which is worse than being in the wrong one.
-  // This fallback is transitional: thread those six and delete it.
+  // #312: `pondId` is required, so a caller that knows its pond says so. The
+  // fallback remains ONLY for an explicit `null` — a caller that genuinely has no
+  // pond — and resolves the person's first rather than writing null, because a
+  // null `pond_id` passes no filter and the page is invisible everywhere.
   const pondId = input.pondId ?? (await firstPondId(supabase, userId))
 
   const insert = {

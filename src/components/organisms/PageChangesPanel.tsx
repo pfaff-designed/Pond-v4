@@ -137,11 +137,14 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         await proposeRevert(ctx.supabase, {
           userId: ctx.userId,
           workspace,
+          // #312: without this the revert record is invisible in every pond and
+          // the page becomes permanently unrevertable.
+          pondId,
           record,
           current: ctx.page.blocks,
         })
       }),
-    [run, loadWriteContext, records, workspace]
+    [run, loadWriteContext, records, workspace, pondId]
   )
 
   const onAccept = useCallback(

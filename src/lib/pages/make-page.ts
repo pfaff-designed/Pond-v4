@@ -41,6 +41,8 @@ export class ParentGoneError extends Error {
 }
 
 export interface MakePageInput {
+  /** #312: the pond this writes into. Required — see `CreatePageInput.pondId`. */
+  pondId: string | null
   proposal: PageProposal
   /** The conversation the answer came from — the made-from chip links back to it. */
   threadId: string | null
@@ -103,6 +105,7 @@ export async function makePageFromAnswer(
     blocks,
     props,
     workspace,
+    pondId: input.pondId,
   })
   return { id: page.id, title: page.title }
 }
@@ -122,6 +125,8 @@ export async function recordPageProposal(
   input: {
     userId: string
     workspace?: WorkspaceScope
+    /** #312: the pond whose change log records this proposal. */
+    pondId?: string | null
     threadId: string | null
     proposal: PageProposal
   }
@@ -131,6 +136,7 @@ export async function recordPageProposal(
     await appendProposal(supabase, {
       userId: input.userId,
       workspace: input.workspace ?? 'main',
+      pondId: input.pondId ?? null,
       action: 'create_page',
       // The person asked for it; Pond proposed the name, place and kind.
       actor: 'pond',

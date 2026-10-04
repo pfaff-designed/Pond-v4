@@ -106,7 +106,9 @@ describe('createPageFromProposal', () => {
         parentRef: null,
         blocks: [{ type: 'text', content: 'A hearty classic.' }],
       },
-      mint
+      mint,
+      'main',
+      null
     )
 
     expect(sb.from).toHaveBeenCalledWith('pages')
@@ -126,7 +128,9 @@ describe('createPageFromProposal', () => {
     await createPageFromProposal(
       sb as never,
       { type: 'project', title: 'Website Redesign', parentRef: null, blocks: [] },
-      mint
+      mint,
+      'main',
+      null
     )
     const insert = sb._chain.insert.mock.calls[0][0]
     expect(insert.type).toBe('project')
@@ -139,7 +143,9 @@ describe('createPageFromProposal', () => {
     await createPageFromProposal(
       sb as never,
       { type: 'page', title: 'Sub', parentRef: uuid, blocks: [] },
-      mint
+      mint,
+      'main',
+      null
     )
     const insert = sb._chain.insert.mock.calls[0][0]
     expect(insert.parent_id).toBe(uuid)
@@ -163,7 +169,9 @@ describe('createPageFromProposal', () => {
     await createPageFromProposal(
       sb as never,
       { type: 'page', kind: 'note', title: 'Reading goals', parentRef: 'Personal', blocks: [] },
-      mint
+      mint,
+      'main',
+      null
     )
     expect(chain.ilike).toHaveBeenCalledWith('title', 'Personal')
     const insert = chain.insert.mock.calls[0][0]
@@ -179,7 +187,9 @@ describe('createPageFromProposal', () => {
       createPageFromProposal(
         sb as never,
         { type: 'page', title: 'X', parentRef: null, blocks: [] },
-        mint
+        mint,
+        'main',
+        null
       )
     ).rejects.toThrow(/authenticated/i)
   })

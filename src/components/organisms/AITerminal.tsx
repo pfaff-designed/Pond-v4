@@ -20,6 +20,7 @@ import {
 import { getPage, listPages } from '@/lib/pages/client'
 import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
+import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
@@ -872,9 +873,19 @@ export function AITerminal() {
   // pending one is still in the thread (6d closing) but must not pin the drawer
   // open on every mount; only a card opened THIS session does.
   const [seededProposalIds, setSeededProposalIds] = useState<ReadonlySet<string>>(new Set())
-  // Which pond's thread is currently on screen (#312) — so a pond CHANGE can be
-  // told apart from a first load.
-  const loadedPondRef = useRef<string | null>(null)
+  /**
+   * Which pond's thread is on screen (#312).
+   *
+   * Seeded with a SENTINEL, not `null`. Seeded with null, the `null → <pond>`
+   * transition — which happens on every mount, because ponds load async and the
+   * first run always has `pondId === null` — counted as "not switched". So a
+   * direct load of `?pond=B` ran: fetch with null → the first pond's thread →
+   * `setMessages(A)` and `conversationId = A`; then run 2 with pond B saw
+   * `switched === false`, left A's messages on screen, and the save effect wrote
+   * them into B's conversation row. The sentinel makes the first resolve a real
+   * change.
+   */
+  const loadedPondRef = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     // Async IIFE so an envless client construction (#38) rejects into the catch
     // below instead of throwing out of the effect and crashing the mount.
@@ -895,7 +906,13 @@ export function AITerminal() {
       // mount with an empty thread must not touch `setMessages`, which is what two
       // 6a tests assert (an error must drop exactly one answer, and asking again
       // must not reset the thread).
-      const switched = loadedPondRef.current !== null && loadedPondRef.current !== pondId
+      // `undefined` means "nothing loaded yet", which is NOT a switch — a first
+      // mount with an empty thread must not touch `setMessages`, as two 6a tests
+      // assert. `null` means "loaded, with no pond resolved", which IS a real
+      // previous state: the null → pond transition is exactly the direct-load
+      // case that was copying the first pond's thread into another pond.
+      const prev = loadedPondRef.current
+      const switched = prev !== undefined && prev !== pondId
       loadedPondRef.current = pondId
       if (switched || conversation.messages.length > 0) {
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
@@ -1105,15 +1122,26 @@ export function AITerminal() {
       user.id,
       messages,
       undefined,
-      workspace
+      workspace,
+      pondId
     )
     if (written > 0) {
-      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      // #312: the pond-aware key, or the refetch misses the tree it just changed.
+      await queryClient.invalidateQueries({ queryKey: pagesKey(workspace, pondId) })
     }
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [conversationId, messages, queryClient, setMessages, resetResolutions, getSupabase, workspace])
+  }, [
+    conversationId,
+    messages,
+    queryClient,
+    setMessages,
+    resetResolutions,
+    getSupabase,
+    workspace,
+    pondId,
+  ])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -1565,16 +1593,22 @@ export function AITerminal() {
             blocks: part.blocks ?? [],
           },
           () => crypto.randomUUID(),
-          workspace
+          workspace,
+          pondId
         )
         // F26: seed the cache with the new row (correct parent_id) before navigating,
         // so the rail nests it immediately; reconcile in the background.
-        insertPageOptimistic(queryClient, workspace, {
-          id: created.id,
-          parentId: parentRef,
-          type: part.type,
-          title: part.title,
-        })
+        insertPageOptimistic(
+          queryClient,
+          workspace,
+          {
+            id: created.id,
+            parentId: parentRef,
+            type: part.type,
+            title: part.title,
+          },
+          pondId
+        )
         router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }, basePath))
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         // The write landed — only now may the record say so. The log only grows,
@@ -1660,7 +1694,8 @@ export function AITerminal() {
         await addRowFromProposal(
           getSupabase(),
           { collectionId: selectedCollectionId, title: part?.title, props: rowProps },
-          workspace
+          workspace,
+          pondId
         )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         // The write landed — only now may the record say so. The log only grows,
@@ -1707,7 +1742,8 @@ export function AITerminal() {
           getSupabase(),
           { pageId: selectedTargetId, blockId },
           () => crypto.randomUUID(),
-          workspace
+          workspace,
+          pondId
         )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
@@ -1874,6 +1910,9 @@ export function AITerminal() {
         await recordPageProposal(supabase, {
           userId: user.id,
           workspace,
+          // #312: otherwise the proposal's change-log record is invisible in every
+          // pond's proposed view and change log.
+          pondId,
           threadId: conversationId,
           proposal,
         })
@@ -1914,17 +1953,22 @@ export function AITerminal() {
       try {
         const made = await makePageFromAnswer(
           getSupabase(),
-          { proposal, threadId: conversationId, pages: allPages, workspace },
+          { proposal, threadId: conversationId, pages: allPages, workspace, pondId },
           () => crypto.randomUUID()
         )
         dispatch({ kind: 'notePageMade', id, pageId: made.id })
         // Rail entry at once (the correct parent), reconciled in the background.
-        insertPageOptimistic(queryClient, workspace, {
-          id: made.id,
-          parentId: proposal.parentId,
-          type: 'page',
-          title: made.title,
-        })
+        insertPageOptimistic(
+          queryClient,
+          workspace,
+          {
+            id: made.id,
+            parentId: proposal.parentId,
+            type: 'page',
+            title: made.title,
+          },
+          pondId
+        )
         void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
         router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }, basePath))
         // The write landed — only now may the record say so (the log only grows).

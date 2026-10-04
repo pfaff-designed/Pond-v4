@@ -229,8 +229,10 @@ export function BlockCanvas({
     if (!block) return
     const title = inferListDatabaseTitle(blocks, index, pageTitle)
     try {
-      const made = await createDatabaseFromList(getSupabase(), { block, title, workspace }, () =>
-        crypto.randomUUID()
+      const made = await createDatabaseFromList(
+        getSupabase(),
+        { block, title, workspace, pondId },
+        () => crypto.randomUUID()
       )
       markInserted(made.view.id)
       onChange(replaceBlockWithView(blocksRef.current, block.id, made.view))
@@ -417,6 +419,7 @@ export function BlockCanvas({
           mode: pick.mode,
           chart,
           workspace,
+          pondId,
         },
         () => crypto.randomUUID()
       )
@@ -470,15 +473,21 @@ export function BlockCanvas({
         title: made.title,
         blocks: made.blocks,
         workspace,
+        pondId,
       })
       if (made.schema) await defineSchema(supabase, created.id, made.schema)
       if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
-      insertPageOptimistic(queryClient, workspace, {
-        id: created.id,
-        parentId: pageId,
-        type: created.type,
-        title: created.title,
-      })
+      insertPageOptimistic(
+        queryClient,
+        workspace,
+        {
+          id: created.id,
+          parentId: pageId,
+          type: created.type,
+          title: created.title,
+        },
+        pondId
+      )
       void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
       pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
     } catch (err) {

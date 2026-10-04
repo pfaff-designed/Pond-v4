@@ -25,6 +25,14 @@ import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } fro
 export interface ProposeRevertInput {
   userId: string
   workspace?: WorkspaceScope
+  /**
+   * #312: the pond this revert belongs to. Without it the record is written
+   * pond-less: `PageChangesPanel` now reads scoped, so the card NEVER APPEARS —
+   * while `listRevertsOf` still finds it, so the second attempt throws "already
+   * has a revert waiting on you". The log only grows, so the page becomes
+   * permanently unrevertable with nothing on screen to explain it.
+   */
+  pondId?: string | null
   /** The accepted record being set back. */
   record: ChangeLogRecord
   /** The target page's blocks as they stand now. */
@@ -57,7 +65,12 @@ export async function proposeRevert(
     throw new Error(`change log: record ${record.id} cannot be reverted — ${refusal}`)
   }
 
-  const existing = await listRevertsOf(supabase, { userId, workspace, recordId: record.id })
+  const existing = await listRevertsOf(supabase, {
+    userId,
+    workspace,
+    pondId: input.pondId,
+    recordId: record.id,
+  })
   if (existing.some((r) => r.status === 'proposed')) {
     throw new Error(`change log: record ${record.id} already has a revert waiting on you`)
   }
@@ -75,6 +88,7 @@ export async function proposeRevert(
   return appendRecord(supabase, {
     userId,
     workspace,
+    pondId: input.pondId,
     status: plan.status,
     action: 'revert',
     // `you` on a `proposed` record, which nothing else in the log produces. It is
@@ -117,6 +131,14 @@ export type AcceptRevertResult =
 export interface AcceptRevertInput {
   userId: string
   workspace?: WorkspaceScope
+  /**
+   * #312: the pond this revert belongs to. Without it the record is written
+   * pond-less: `PageChangesPanel` now reads scoped, so the card NEVER APPEARS —
+   * while `listRevertsOf` still finds it, so the second attempt throws "already
+   * has a revert waiting on you". The log only grows, so the page becomes
+   * permanently unrevertable with nothing on screen to explain it.
+   */
+  pondId?: string | null
   /** The `proposed` revert record being answered. */
   revert: ChangeLogRecord
   /** The target page's blocks as they stand NOW. */
@@ -189,6 +211,7 @@ export async function acceptRevert(
       await markOutdated(supabase, {
         userId: input.userId,
         workspace: input.workspace ?? 'main',
+        pondId: input.pondId,
         targetPageId: revert.targetPageId,
         exceptId: revert.id,
         actions: [...BLOCK_ACTIONS],
