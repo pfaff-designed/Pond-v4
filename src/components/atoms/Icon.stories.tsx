@@ -24,7 +24,11 @@ type Story = StoryObj<typeof meta>
 /** Pull the painted glyph span; waits for the async data-URI to land. */
 async function paintedGlyph(canvasElement: HTMLElement, name: string) {
   const el = canvasElement.querySelector<HTMLElement>(`[data-icon="${name}"]`)!
-  await waitFor(() => expect(el.style.mask).toContain('data:'))
+  // 5s, not waitFor's 1s default. Each glyph is fetched and base64-decoded before
+  // the mask is set, and `AreaDefaults` waits on six of them; under the full
+  // `test-storybook` run (63 story files in parallel) 1s is not enough margin and
+  // this went red as `expected '' to contain 'data:'` while passing in isolation.
+  await waitFor(() => expect(el.style.mask).toContain('data:'), { timeout: 5000 })
   return el
 }
 

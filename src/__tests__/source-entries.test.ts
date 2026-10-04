@@ -8,9 +8,6 @@
  * field words, `Pond 03` 3a for the vocabulary.
  */
 
-import fs from 'node:fs'
-import path from 'node:path'
-
 import {
   chartSuggestions,
   CHART_LABEL,
@@ -29,9 +26,7 @@ import {
 import { ICON } from '@/components/molecules/slash-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
 import { PROPERTY_TYPES } from '@/lib/properties/schema'
-
-const HANDOFF = path.join(process.cwd(), 'wayfinder/design_handoff_pond')
-const readHandoff = (file: string) => fs.readFileSync(path.join(HANDOFF, file), 'utf8')
+import { readHandoff } from './helpers/handoff'
 
 /** `Pond 03` 3a — the 18px/500 term column, straight off the board. */
 function glossaryTerms(): string[] {

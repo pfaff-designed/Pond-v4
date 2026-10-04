@@ -6,8 +6,6 @@
  * both themes); this file pins the words and the behaviour.
  */
 import React from 'react'
-import fs from 'node:fs'
-import path from 'node:path'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -38,6 +36,7 @@ import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
+import { readHandoff } from './helpers/handoff'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -82,11 +81,9 @@ beforeEach(() => {
   collection.addRow.mockClear()
 })
 
-const HANDOFF = path.join(process.cwd(), 'wayfinder/design_handoff_pond')
-
 /** `pond-charts.js`'s thirteen `type` strings — what `PondChart.dc.html` renders as the tag. */
 function boardTypeTags(): Record<string, string> {
-  const js = fs.readFileSync(path.join(HANDOFF, 'pond-charts.js'), 'utf8')
+  const js = readHandoff('pond-charts.js')
   const body = js.slice(js.indexOf('window.PondCharts=') + 'window.PondCharts='.length)
   const charts = JSON.parse(body.slice(0, body.lastIndexOf('}') + 1)) as Record<
     string,
