@@ -100,50 +100,8 @@ describe('0010_drop_area_type', () => {
   // raw, and `Pond 05 Shell`'s rail copy is lowercase throughout — the capitals in
   // the boards are a `text-transform`. Pinned exactly, not case-insensitively:
   // the point is that what the seed WRITES is lowercase.
-  it('seeds five lowercase top-level pages (no areas) for a new user', async () => {
-    const db = await makeDb()
-    await seedUser(db, USER)
-
-    await db.query('select public.seed_default_pages($1)', [USER])
-
-    const rows = await db.query<{ type: string; title: string; order: number }>(
-      `select type, title, "order" from public.pages
-       where user_id = $1 and parent_id is null order by "order"`,
-      [USER]
-    )
-    expect(rows.rows.map((r) => r.title)).toEqual([
-      'personal',
-      'professional',
-      'health',
-      'finances',
-      'creativity',
-    ])
-    expect(rows.rows.every((r) => r.type === 'page')).toBe(true)
-
-    await db.close()
-  })
-
-  it('seeds the sandbox fixture as lowercase pages, keeping the demo page nested', async () => {
-    const db = await makeDb()
-    await seedUser(db, USER)
-
-    await db.query('select public.seed_sandbox_pages($1)', [USER])
-
-    const rows = await db.query<{
-      id: string
-      parent_id: string | null
-      type: string
-      title: string
-    }>(
-      `select id, parent_id, type, title from public.pages
-       where user_id = $1 and workspace = 'sandbox' order by "order"`,
-      [USER]
-    )
-    expect(rows.rows.every((r) => r.type === 'page')).toBe(true)
-    const a = rows.rows.find((r) => r.title === 'sandbox area a')!
-    const demo = rows.rows.find((r) => r.title === 'demo page')!
-    expect(demo.parent_id).toBe(a.id)
-
-    await db.close()
-  })
+  // The seed RPCs are gone (0020). `seed_default_pages` filled five top-level
+  // pages whenever the tree came back empty — which a NEW POND is, so it fought
+  // #320's one-row-at-birth rule. A first pond's areas come from onboarding
+  // (#171); a new pond's from `Pond 06.13` `s6m3`.
 })

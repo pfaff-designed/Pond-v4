@@ -139,7 +139,6 @@ describe('#63 accept path: the scaffolded table block materializes and persists'
         blocks: REPRO_BLOCKS,
       },
       mint,
-      'main',
       null
     )
 

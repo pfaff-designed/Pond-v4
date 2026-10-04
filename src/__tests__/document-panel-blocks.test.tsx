@@ -124,7 +124,7 @@ describe('DocumentPanel block rendering (via the module registry)', () => {
 
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
     expect(mockUpdateTitle).toHaveBeenCalledWith(expect.anything(), 'page-1', 'Workshop notes')
-    const [, , , savedBlocks, , opts] = mockCommitBlocks.mock.calls[0]
+    const [, , , savedBlocks, opts] = mockCommitBlocks.mock.calls[0]
     // Still an own edit — the sweep runs; what makes the rename harmless is that
     // the blocks it is handed are byte-for-byte the ones the diffs were written
     // against.

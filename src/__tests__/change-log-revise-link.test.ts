@@ -40,7 +40,7 @@ function record(status: ChangeLogStatus): ChangeLogRecord {
   return {
     id: 'rec-orig',
     userId: USER,
-    workspace: 'main',
+    pondId: 'pond-1',
     status,
     action: 'edit',
     actor: 'pond',
@@ -93,7 +93,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(record('changes_requested'))
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [revisionCall],
@@ -111,7 +111,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(record('outdated'))
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [revisionCall],
@@ -124,7 +124,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(record('proposed'))
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [revisionCall],
@@ -139,7 +139,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(record('rejected'))
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [revisionCall],
@@ -152,7 +152,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(null)
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [revisionCall],
@@ -165,7 +165,7 @@ describe('recordProposedToolCalls — revision linking (#98)', () => {
     mockedLookup.mockResolvedValue(record('changes_requested'))
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'page-1',
       revisesToolCallId: 'pc-orig',
       toolCalls: [{ toolCallId: 'cp1', toolName: 'create_page', input: { title: 'x' } }],

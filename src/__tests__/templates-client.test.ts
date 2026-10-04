@@ -3,7 +3,7 @@
  *
  * Mirrors the mocked-chain approach in pages-client.test.ts — no live Supabase.
  * Verifies the CRUD surface every other Phase 4 slice builds on:
- *   - listTemplates        (per pond: user + workspace; [] on a fresh pond)
+ *   - listTemplates        (per pond; [] on a fresh pond)
  *   - getTemplate          (by id, null when missing)
  *   - createTemplate       (insert; 23505 → DuplicateTemplateNameError, NO auto-suffix)
  *   - renameTemplate       (update name; 23505 → DuplicateTemplateNameError)
@@ -66,7 +66,7 @@ function templateRow(overrides: Record<string, unknown> = {}) {
 // ── listTemplates ─────────────────────────────────────────────────────────────
 
 describe('listTemplates', () => {
-  it('reads the pond scope (user + workspace) and maps rows to PondTemplate', async () => {
+  it('reads the pond scope and maps rows to PondTemplate', async () => {
     const rows = [templateRow(), templateRow({ id: 'tpl-2', name: 'Habit', kind: 'habit' })]
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: rows, error: null }) })
     const sb = makeSupabase(chain)
@@ -76,7 +76,6 @@ describe('listTemplates', () => {
     expect(sb.from).toHaveBeenCalledWith('templates')
     expect(chain.select).toHaveBeenCalledWith(TEMPLATE_COLUMNS)
     expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
-    expect(chain.eq).toHaveBeenCalledWith('workspace', 'sandbox')
     expect(out).toHaveLength(2)
     expect(out[0]).toEqual({
       id: 'tpl-1',
@@ -90,17 +89,10 @@ describe('listTemplates', () => {
     expect(out[1]).toMatchObject({ id: 'tpl-2', kind: 'habit' })
   })
 
-  it("defaults the workspace to 'main'", async () => {
-    const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: [], error: null }) })
-    const sb = makeSupabase(chain)
-    await listTemplates(sb as never, 'user-1')
-    expect(chain.eq).toHaveBeenCalledWith('workspace', 'main')
-  })
-
   it('returns [] on a fresh pond without throwing (premade are code constants, not rows)', async () => {
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: null, error: null }) })
     const sb = makeSupabase(chain)
-    await expect(listTemplates(sb as never, 'user-1', 'main')).resolves.toEqual([])
+    await expect(listTemplates(sb as never, 'user-1')).resolves.toEqual([])
   })
 
   it('coerces a non-array blocks column to []', async () => {
@@ -158,7 +150,7 @@ describe('getTemplate', () => {
 // ── createTemplate ────────────────────────────────────────────────────────────
 
 describe('createTemplate', () => {
-  it('inserts user_id, workspace, name, kind, blocks and origin, returning the saved row', async () => {
+  it('inserts user_id, name, kind, blocks and origin, returning the saved row', async () => {
     const chain = makeChain({
       single: jest.fn().mockResolvedValue({ data: templateRow({ id: 'tpl-new' }), error: null }),
     })
@@ -169,13 +161,11 @@ describe('createTemplate', () => {
       kind: 'meeting notes',
       blocks: sampleBlocks,
       origin: 'yours',
-      workspace: 'sandbox',
     })
 
     expect(sb.from).toHaveBeenCalledWith('templates')
     expect(chain.insert.mock.calls[0][0]).toEqual({
       user_id: 'user-1',
-      workspace: 'sandbox',
       name: 'Weekly review',
       kind: 'meeting notes',
       blocks: sampleBlocks,
@@ -186,13 +176,12 @@ describe('createTemplate', () => {
     expect(out.blocks).toEqual(sampleBlocks)
   })
 
-  it("defaults workspace to 'main', blocks to [] and origin to 'yours'", async () => {
+  it("defaults blocks to [] and origin to 'yours'", async () => {
     const chain = makeChain({
       single: jest.fn().mockResolvedValue({ data: templateRow(), error: null }),
     })
     await createTemplate(makeSupabase(chain) as never, 'user-1', { name: 'Habit', kind: 'habit' })
     expect(chain.insert.mock.calls[0][0]).toMatchObject({
-      workspace: 'main',
       blocks: [],
       origin: 'yours',
     })

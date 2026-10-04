@@ -14,7 +14,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
 import { isOpen } from './status'
 import { jsonEqual, planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
@@ -24,7 +23,6 @@ import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } fro
 
 export interface ProposeRevertInput {
   userId: string
-  workspace?: WorkspaceScope
   /**
    * #312: the pond this revert belongs to. Without it the record is written
    * pond-less: `PageChangesPanel` now reads scoped, so the card NEVER APPEARS —
@@ -59,7 +57,6 @@ export async function proposeRevert(
   input: ProposeRevertInput
 ): Promise<ChangeLogRecord> {
   const { userId, record, current } = input
-  const workspace = input.workspace ?? 'main'
   const refusal = revertRefusal(record)
   if (refusal !== null) {
     throw new Error(`change log: record ${record.id} cannot be reverted — ${refusal}`)
@@ -67,7 +64,6 @@ export async function proposeRevert(
 
   const existing = await listRevertsOf(supabase, {
     userId,
-    workspace,
     pondId: input.pondId,
     recordId: record.id,
   })
@@ -87,7 +83,6 @@ export async function proposeRevert(
   const plan = planRevert(record, current)
   return appendRecord(supabase, {
     userId,
-    workspace,
     pondId: input.pondId,
     status: plan.status,
     action: 'revert',
@@ -130,7 +125,6 @@ export type AcceptRevertResult =
 
 export interface AcceptRevertInput {
   userId: string
-  workspace?: WorkspaceScope
   /**
    * #312: the pond this revert belongs to. Without it the record is written
    * pond-less: `PageChangesPanel` now reads scoped, so the card NEVER APPEARS —
@@ -210,7 +204,6 @@ export async function acceptRevert(
     try {
       await markOutdated(supabase, {
         userId: input.userId,
-        workspace: input.workspace ?? 'main',
         pondId: input.pondId,
         targetPageId: revert.targetPageId,
         exceptId: revert.id,

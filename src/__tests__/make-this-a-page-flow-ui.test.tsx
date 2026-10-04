@@ -494,7 +494,6 @@ describe('make this a page → the `new page — proposed` card', () => {
     // Rail entry + navigation + the record advances to accepted.
     expect(mockInsertPageOptimistic).toHaveBeenCalledWith(
       expect.anything(),
-      'main',
       expect.objectContaining({ id: 'new-page-1', parentId: 'kr-1', title: 'renovation blockers' }),
       null
     )

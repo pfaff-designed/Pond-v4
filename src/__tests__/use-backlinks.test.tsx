@@ -19,8 +19,6 @@ jest.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
-jest.mock('@/lib/workspace/context', () => ({ useWorkspace: () => 'main' }))
-
 const mockGetCollectionRows = jest.fn()
 const mockListPages = jest.fn()
 jest.mock('@/lib/pages/client', () => ({

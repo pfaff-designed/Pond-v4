@@ -22,7 +22,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { CreatePageBlock } from '@/lib/modules/ai-composition'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { hydrateBlock } from '@/lib/modules/hydrate'
 import { collectBatchRefIds, resolveSourceRef } from '@/lib/modules/same-batch-refs'
 import { createPage, getPage, defineSchema } from '@/lib/pages/client'
@@ -102,7 +101,6 @@ export async function createPageFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: CreatePageProposal,
   mintId: () => string,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<CreatedPage> {
@@ -115,7 +113,7 @@ export async function createPageFromProposal(
   const sb = supabase as any
 
   const ref = proposal.parentRef?.trim()
-  const parentId = ref ? await resolveParentId(sb, user.id, ref, workspace, pondId) : null
+  const parentId = ref ? await resolveParentId(sb, user.id, ref, pondId) : null
 
   const blocks = hydrateProposalBlocks(proposal.blocks, mintId)
 
@@ -127,7 +125,6 @@ export async function createPageFromProposal(
     title: proposal.title,
     blocks,
     props,
-    workspace,
     pondId,
   })
   return { id: page.id }
@@ -545,7 +542,6 @@ export interface AddRowProposal {
 export async function addRowFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: AddRowProposal,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<CreatedPage> {
@@ -580,7 +576,7 @@ export async function addRowFromProposal(
     if (def.type !== 'relation') continue
     const raw = values[def.id]
     if (!Array.isArray(raw) || raw.length === 0) continue
-    const candidates = await relationCandidates(supabase, user.id, def.target, workspace)
+    const candidates = await relationCandidates(supabase, user.id, def.target, pondId)
     values[def.id] = raw
       .map((ref) => resolveRowRef(candidates, ref))
       .flatMap((res) => (res.kind === 'resolved' ? [res.id] : []))
@@ -592,7 +588,6 @@ export async function addRowFromProposal(
     type: ROW_TYPE,
     title: proposal.title ?? '',
     props: values,
-    workspace,
     pondId,
   })
   return { id: page.id }

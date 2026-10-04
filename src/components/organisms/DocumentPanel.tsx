@@ -54,11 +54,10 @@ import { useSurfaceColumn } from '@/lib/layout/surface-column'
 import { requestCommandPalette } from '@/lib/shell-commands'
 import { childCards } from '@/lib/pages/child-cards'
 import { crumbTrail } from '@/lib/pages/crumbs'
-import { workspaceBasePath, workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePond } from '@/lib/pond/context'
-import { useWorkspace } from '@/lib/workspace/context'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import type { Block } from '@/lib/documents/types'
@@ -75,8 +74,6 @@ export function DocumentPanel() {
   // save/property paths below construct it only when they actually run.
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
-  const workspace = useWorkspace()
-  const basePath = workspaceBasePath(workspace)
   const { flushScope } = useDeletionUndo()
   // #58: the editor column's user-set width — persisted, clamped, adjusted by
   // the ContentWidthHandle on the column's right edge. Hook lives above the
@@ -137,8 +134,8 @@ export function DocumentPanel() {
   // the data rather than the wall clock. `rowsPending` holds the panel on the
   // loading state until they land, so a page never paints without its children.
   const { data: rows = [], isPending: rowsPending } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
   })
   // The root's children are the top-level pages (`null` parent); the home row is
   // never among the rows (fetchPages strips it), so it is never its own child.
@@ -153,7 +150,7 @@ export function DocumentPanel() {
   // crumb is the root, and a card or crumb carries its own id/type/title, so the
   // URL gets the same params a rail click would.
   function goTo(ref: WorkspaceNodeRef | null) {
-    router.push(workspaceUrl(ref, basePath))
+    router.push(workspaceUrl(ref))
   }
 
   const [title, setTitle] = useState('')
@@ -233,7 +230,7 @@ export function DocumentPanel() {
       // `ownEdit` (G2, #98): the page moved on under the person's own hand, so
       // every pending block diff aimed at it goes outdated — its card greys out,
       // drops accept and offers revise.
-      await commitBlocks(supabase, queryClient, id, nextBlocks, workspace, { ownEdit: true })
+      await commitBlocks(supabase, queryClient, id, nextBlocks, { ownEdit: true, pondId })
       // keep the ['page'] cache in step with what we just saved, so the
       // same-page adopt above only fires for genuinely external writes.
       queryClient.setQueryData(['page', id], (prev: typeof page) =>

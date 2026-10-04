@@ -117,7 +117,8 @@ export interface ChangeLogTransition {
 export interface ChangeLogRecord {
   id: string
   userId: string
-  workspace: 'main' | 'sandbox'
+  /** #312: the pond this record belongs to. `workspace` was retired by 0020. */
+  pondId: string | null
   status: ChangeLogStatus
   action: ChangeLogAction
   actor: ChangeLogActor
@@ -143,7 +144,7 @@ export interface ChangeLogRecord {
 export interface ChangeLogRow {
   id: string
   user_id: string
-  workspace: 'main' | 'sandbox'
+  pond_id: string | null
   status: string
   action: string
   actor: string

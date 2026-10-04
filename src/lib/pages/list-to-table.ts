@@ -27,7 +27,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { TableRow } from '@/lib/modules/table/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { createPage } from '@/lib/pages/client'
@@ -213,7 +212,6 @@ export interface CreateDatabaseFromListInput {
   block: Block
   /** The new database's title (see {@link inferListDatabaseTitle}). */
   title: string
-  workspace?: WorkspaceScope
 }
 
 export interface DatabaseFromList {
@@ -256,7 +254,6 @@ export async function createDatabaseFromList(
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const workspace = input.workspace ?? 'main'
   const table = inferListTable(items)
   const rows: TableRow[] = table.rows.map((cells) => ({ id: mintId(), cells }))
   // Field types via promote-table's inference — bounded to the 8 property types.
@@ -266,7 +263,7 @@ export async function createDatabaseFromList(
   // records are this gesture's own.
   const made = await createDatabase(
     supabase,
-    { title: input.title, schema, workspace, pondId: input.pondId },
+    { title: input.title, schema, pondId: input.pondId },
     mintId
   )
   try {
@@ -278,7 +275,6 @@ export async function createDatabaseFromList(
         type: ROW_TYPE,
         title: row.title,
         props: row.props,
-        workspace,
         pondId: input.pondId,
       })
     }

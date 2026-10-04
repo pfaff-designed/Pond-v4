@@ -6,7 +6,7 @@
  * Mounted once inside `BlockCanvas` (the shared authoring body), so the editor, the
  * Life home, and area pages all supply the same capabilities with no per-caller
  * wiring — each just passes the `pageId` it already owns as the parent for new child
- * pages. Resolution/search read the already-loaded `['pages', workspace]` cache the
+ * pages. Resolution/search read the already-loaded `pagesKey()` cache the
  * rail/page surfaces populate (no extra fetch); create/rename reuse the same
  * `createPage`/`updateTitle` + optimistic-insert tail `CreatePageModal` uses.
  */
@@ -19,7 +19,6 @@ import { createPage, updateTitle } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { workspaceHref } from '@/lib/pages/nav'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { resolvePageFromRows, searchPagesInRows } from './resolve'
 import type { PageLinkCapabilities } from './context'
@@ -30,14 +29,13 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
   // handlers below actually talk to Supabase.
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
-  const workspace = useWorkspace()
   const pondId = usePondId()
   const router = useRouter()
   // Reads the rail/page cache — this query is already populated, so it's a cache
   // hit, not a second fetch.
   const { data: rows = [] } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
   })
 
   return useMemo<PageLinkCapabilities>(
@@ -55,12 +53,10 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
           parentId: containingPageId,
           type: 'page',
           title: title.trim() || 'Untitled',
-          workspace,
           pondId,
         })
         insertPageOptimistic(
           queryClient,
-          workspace,
           {
             id: created.id,
             parentId: containingPageId,
@@ -69,15 +65,15 @@ export function usePageLinkCapabilities(containingPageId: string): PageLinkCapab
           },
           pondId
         )
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         return { id: created.id, title: created.title, type: created.type }
       },
       renamePage: async (pageId, title) => {
         await updateTitle(getSupabase(), pageId, title.trim() || 'Untitled')
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         void queryClient.invalidateQueries({ queryKey: ['page', pageId] })
       },
     }),
-    [rows, containingPageId, getSupabase, queryClient, workspace, router]
+    [rows, containingPageId, getSupabase, queryClient, pondId, router]
   )
 }

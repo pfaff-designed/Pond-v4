@@ -29,15 +29,25 @@ const STATUSES = [
   'reverted',
 ]
 
+/** The pond `handle_new_user` makes for a seeded person (0018). */
+async function lifePondId(db: PGlite, userId: string = USER): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    'select id from public.ponds where user_id = $1 order by "order" limit 1',
+    [userId]
+  )
+  return res.rows[0].id
+}
+
 async function addPage(
   db: PGlite,
-  opts: { userId?: string; title?: string; workspace?: string; blocks?: unknown } = {}
+  opts: { userId?: string; title?: string; pondId?: string; blocks?: unknown } = {}
 ): Promise<string> {
-  const { userId = USER, title = 'Target', workspace = 'main', blocks = [] } = opts
+  const { userId = USER, title = 'Target', blocks = [] } = opts
+  const pondId = opts.pondId ?? (await lifePondId(db, userId))
   const res = await db.query<{ id: string }>(
-    `insert into public.pages (user_id, parent_id, type, title, workspace, blocks)
+    `insert into public.pages (user_id, parent_id, type, title, pond_id, blocks)
      values ($1, null, 'page', $2, $3, $4) returning id`,
-    [userId, title, workspace, JSON.stringify(blocks)]
+    [userId, title, pondId, JSON.stringify(blocks)]
   )
   return res.rows[0].id
 }
@@ -46,7 +56,7 @@ async function addRecord(
   db: PGlite,
   opts: {
     userId?: string
-    workspace?: string
+    pondId?: string
     status?: string
     action?: string
     actor?: string
@@ -59,7 +69,6 @@ async function addRecord(
 ): Promise<string> {
   const {
     userId = USER,
-    workspace = 'main',
     status = 'proposed',
     action = 'edit',
     actor = 'pond',
@@ -71,12 +80,12 @@ async function addRecord(
   } = opts
   const res = await db.query<{ id: string }>(
     `insert into public.change_log
-       (user_id, workspace, status, action, actor, target_page_id, target_block_id,
+       (user_id, pond_id, status, action, actor, target_page_id, target_block_id,
         "before", "after", source_thread_id, transitions)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
     [
       userId,
-      workspace,
+      opts.pondId ?? (await lifePondId(db, userId)),
       status,
       action,
       actor,
@@ -130,7 +139,6 @@ describe('0011_change_log — shape', () => {
         'tool_call_id',
         'transitions',
         'user_id',
-        'workspace',
       ].sort()
     )
     // before/after are nullable — a create has no before, a redaction clears both.
@@ -142,7 +150,12 @@ describe('0011_change_log — shape', () => {
   })
 
   it('re-applies cleanly, so a replayed migration is a no-op not an abort', async () => {
-    const db = await makeDb()
+    // `through` 0011, not the whole tree: 0020 drops `workspace`, which 0011's own
+    // index definitions reference, so an older migration that names a dropped
+    // column can never replay against a CURRENT database. That is inherent to a
+    // destructive migration, not a defect in 0011's guards — which is what this
+    // asserts.
+    const db = await makeDb({ through: '0011_change_log.sql' })
     // Every statement in 0011 is guarded except the `create policy` lines, which
     // sit inside begin;…commit; — so a re-run aborted the whole migration on a
     // duplicate-object error rather than doing nothing.
@@ -161,8 +174,8 @@ describe('0011_change_log — shape', () => {
       `select indexname from pg_indexes where schemaname = 'public' and tablename = 'change_log'`
     )
     const names = idx.rows.map((r) => r.indexname)
-    expect(names).toContain('change_log_pond_recent_idx') // (user, workspace, created_at desc)
-    expect(names).toContain('change_log_pond_status_idx') // (user, workspace, status)
+    expect(names).toContain('change_log_pond_recent_idx') // (user, pond, created_at desc)
+    expect(names).toContain('change_log_pond_status_idx') // (user, pond, status)
     expect(names).toContain('change_log_target_page_idx') // (target_page_id)
     await db.close()
   })
@@ -191,21 +204,18 @@ describe('0011_change_log — shape', () => {
     await db.close()
   })
 
-  it('scopes per pond: workspace defaults to main and is constrained', async () => {
+  it('scopes per pond: a record carries the pond it was written in', async () => {
+    // 0020 retired `workspace`; the pond IS the scope now, and 0020 also added
+    // `pond_id` to the append-only trigger's frozen list.
     const db = await makeDb()
     await seedUser(db, USER)
-    const id = await db
-      .query<{ id: string }>(
-        `insert into public.change_log (user_id, status, action) values ($1,'proposed','edit') returning id`,
-        [USER]
-      )
-      .then((r) => r.rows[0].id)
-    const res = await db.query<{ workspace: string }>(
-      'select workspace from public.change_log where id = $1',
+    const pond = await lifePondId(db)
+    const id = await addRecord(db, { pondId: pond })
+    const res = await db.query<{ pond_id: string }>(
+      'select pond_id from public.change_log where id = $1',
       [id]
     )
-    expect(res.rows[0].workspace).toBe('main')
-    await expect(addRecord(db, { workspace: 'elsewhere' })).rejects.toThrow(/workspace/)
+    expect(res.rows[0].pond_id).toBe(pond)
     await db.close()
   })
 })
@@ -307,7 +317,7 @@ describe('0011_change_log — the log only grows', () => {
     for (const sql of [
       `update public.change_log set action = 'delete' where id = $1`,
       `update public.change_log set actor = 'you' where id = $1`,
-      `update public.change_log set workspace = 'sandbox' where id = $1`,
+      `update public.change_log set pond_id = gen_random_uuid() where id = $1`,
       `update public.change_log set created_at = now() - interval '1 day' where id = $1`,
       `update public.change_log set target_block_id = 'other-block' where id = $1`,
       `update public.change_log set user_id = '${OTHER}' where id = $1`,
@@ -660,22 +670,30 @@ describe('0011_change_log — records outlive their targets', () => {
     await db.close()
   })
 
-  it('isolates ponds: a workspace-scoped read never sees the other scope', async () => {
+  it('isolates ponds: a pond-scoped read never sees another pond', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const mainRec = await addRecord(db, { workspace: 'main', action: 'edit' })
-    const sandboxRec = await addRecord(db, { workspace: 'sandbox', action: 'edit' })
+    const life = await lifePondId(db)
+    const elsewhere = (
+      await db.query<{ id: string }>(
+        `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 6) returning id`,
+        [USER]
+      )
+    ).rows[0].id
 
-    const mainRows = await db.query<{ id: string }>(
-      `select id from public.change_log where user_id = $1 and workspace = 'main'`,
-      [USER]
+    const here = await addRecord(db, { pondId: life, action: 'edit' })
+    const there = await addRecord(db, { pondId: elsewhere, action: 'edit' })
+
+    const hereRows = await db.query<{ id: string }>(
+      `select id from public.change_log where user_id = $1 and pond_id = $2`,
+      [USER, life]
     )
-    const sandboxRows = await db.query<{ id: string }>(
-      `select id from public.change_log where user_id = $1 and workspace = 'sandbox'`,
-      [USER]
+    const thereRows = await db.query<{ id: string }>(
+      `select id from public.change_log where user_id = $1 and pond_id = $2`,
+      [USER, elsewhere]
     )
-    expect(mainRows.rows.map((r) => r.id)).toEqual([mainRec])
-    expect(sandboxRows.rows.map((r) => r.id)).toEqual([sandboxRec])
+    expect(hereRows.rows.map((r) => r.id)).toEqual([here])
+    expect(thereRows.rows.map((r) => r.id)).toEqual([there])
     await db.close()
   })
 })
@@ -889,14 +907,16 @@ describe('0011_change_log — accept then sweep, end to end', () => {
   /** What markOutdated issues: every OTHER still-proposed record on the page. */
   async function sweepPage(
     db: PGlite,
-    opts: { userId?: string; workspace?: string; pageId: string; exceptId: string }
+    opts: { userId?: string; pondId?: string; pageId: string; exceptId: string }
   ): Promise<number> {
-    const { userId = USER, workspace = 'main', pageId, exceptId } = opts
+    const { userId = USER, pageId, exceptId } = opts
+    // #312/0020: the sweep is scoped by pond, as `markOutdated` is.
+    const pondId = opts.pondId ?? (await lifePondId(db, userId))
     const stale = await db.query<{ id: string }>(
       `select id from public.change_log
-        where user_id = $1 and workspace = $2 and target_page_id = $3
+        where user_id = $1 and pond_id = $2 and target_page_id = $3
           and status = 'proposed' and action = 'edit' and id <> $4`,
-      [userId, workspace, pageId, exceptId]
+      [userId, pondId, pageId, exceptId]
     )
     for (const r of stale.rows) {
       await db.query('select * from public.advance_change_log_record($1, $2, $3, $4)', [
@@ -923,7 +943,16 @@ describe('0011_change_log — accept then sweep, end to end', () => {
     // Three records the sweep must leave alone.
     const elsewhere = await addRecord(db, { pageId: otherPage })
     const settled = await addRecord(db, { pageId: page, status: 'rejected' })
-    const sandbox = await addRecord(db, { pageId: page, workspace: 'sandbox' })
+    // A record on the same page but in ANOTHER POND — the sweep must leave it
+    // alone. It used to be `workspace: 'sandbox'`; 0020 retired that, and the pond
+    // is the scope the sweep is written against.
+    const elsewherePond = (
+      await db.query<{ id: string }>(
+        `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 5) returning id`,
+        [USER]
+      )
+    ).rows[0].id
+    const otherPond = await addRecord(db, { pageId: page, pondId: elsewherePond })
     // A pending row insert on the SAME page. Its before/after live in the page's
     // rows, not its blocks, so a block write says nothing about it and it must
     // survive the sweep still accept-able.
@@ -946,7 +975,7 @@ describe('0011_change_log — accept then sweep, end to end', () => {
     // and never an action whose diff is not a block diff.
     expect(await statusOf(db, elsewhere)).toBe('proposed')
     expect(await statusOf(db, settled)).toBe('rejected')
-    expect(await statusOf(db, sandbox)).toBe('proposed')
+    expect(await statusOf(db, otherPond)).toBe('proposed')
     expect(await statusOf(db, rowInsert)).toBe('proposed')
 
     const pageBlocks = await db.query<{ blocks: unknown }>(

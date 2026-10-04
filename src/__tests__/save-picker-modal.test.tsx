@@ -194,7 +194,6 @@ describe('SavePickerModal', () => {
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
         { type: 'page', name: 'Travel' },
-        'main',
         null
       )
     })
@@ -286,7 +285,6 @@ describe('SavePickerModal', () => {
       expect(mockCreateNode).toHaveBeenCalledWith(
         expect.anything(),
         { type: 'page', name: 'Area A' },
-        'main',
         null
       )
     })

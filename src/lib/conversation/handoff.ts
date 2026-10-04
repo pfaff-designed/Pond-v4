@@ -11,7 +11,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { UIMessage } from 'ai'
 import type { SaveExtraction } from '@/app/api/save-extract/route'
 import { createNode as defaultCreateNode } from '@/lib/nodes/create'
@@ -73,18 +72,17 @@ export async function performHandoff(
   userId: string,
   messages: UIMessage[],
   deps: HandoffDeps = defaultDeps,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond the handoff writes into and whose fresh thread it opens. */
   pondId: string | null = null
 ): Promise<HandoffResult> {
   const extractions = await deps.extract(messages)
 
   for (const item of extractions) {
-    await deps.createNode(supabase, { type: item.type, name: item.name }, workspace, pondId)
+    await deps.createNode(supabase, { type: item.type, name: item.name }, pondId)
   }
 
   await deps.dissolveConversation(supabase, conversationId)
-  const freshConversation = await deps.getOrCreateConversation(supabase, userId, workspace, pondId)
+  const freshConversation = await deps.getOrCreateConversation(supabase, userId, pondId)
 
   return { freshConversation, written: extractions.length }
 }

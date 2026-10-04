@@ -20,7 +20,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { ViewBlock, ViewMode } from '@/lib/modules/view/schema'
 import { createPage, deletePage } from '@/lib/pages/client'
 import { getOrCreateDatabasesRoot } from '@/lib/pages/databases-root'
@@ -37,7 +36,6 @@ export interface CreateDatabaseInput {
   mode?: ViewMode
   /** Chart mode's config, when the picker chose a kind. */
   chart?: ViewBlock['chart']
-  workspace?: WorkspaceScope
 }
 
 export interface CreatedDatabase {
@@ -91,15 +89,13 @@ export async function createDatabase(
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const workspace = input.workspace ?? 'main'
-  const root = await getOrCreateDatabasesRoot(supabase, user.id, workspace, input.pondId)
+  const root = await getOrCreateDatabasesRoot(supabase, user.id, input.pondId)
   try {
     const database = await createPage(supabase, user.id, {
       parentId: root.id,
       type: 'page',
       title: input.title,
       props: withSchema({}, input.schema),
-      workspace,
       pondId: input.pondId,
     })
     const view: ViewBlock = {

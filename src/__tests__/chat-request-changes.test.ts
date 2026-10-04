@@ -113,7 +113,7 @@ describe('POST /api/chat with requestChanges', () => {
   const body = {
     messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'drop the worktop' }] }],
     nodeId: 'page-1',
-    workspace: 'main',
+    pondId: 'pond-1',
     requestChanges: { toolCallId: 'pc-orig', note: 'drop the worktop', reason: 'note' },
   }
 
@@ -132,7 +132,7 @@ describe('POST /api/chat with requestChanges', () => {
     expect(mockedResolve).toHaveBeenCalledTimes(1)
     expect(mockedResolve.mock.calls[0][1]).toEqual({
       userId: 'user-1',
-      workspace: 'main',
+      pondId: 'pond-1',
       toolCallId: 'pc-orig',
       decision: 'changes_requested',
     })

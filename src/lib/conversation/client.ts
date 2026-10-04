@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { firstPondId } from '@/lib/pond/first'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { UIMessage } from 'ai'
 import { emptyResolutions, parseResolutions, type ConversationResolutions } from './resolutions'
 
@@ -20,7 +19,6 @@ type ConversationRecord = {
 export async function getOrCreateConversation(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main',
   /**
    * #312: the thread belongs to a pond. `Pond 06.13` `s6m5`: "pages, databases,
    * memory, threads and the change log are per pond. Nothing crosses over."
@@ -39,7 +37,6 @@ export async function getOrCreateConversation(
     .from('conversations')
     .select('id, transcript')
     .eq('user_id', userId)
-    .eq('workspace', workspace)
     .is('dissolved_at', null)
 
   if (scope) q = q.eq('pond_id', scope)
@@ -64,7 +61,7 @@ export async function getOrCreateConversation(
     .from('conversations')
     // A new thread is born in the pond it was started from, so it never leaks
     // into another one.
-    .insert({ user_id: userId, workspace, ...(scope ? { pond_id: scope } : {}) })
+    .insert({ user_id: userId, ...(scope ? { pond_id: scope } : {}) })
     .select('id')
     .single()
 

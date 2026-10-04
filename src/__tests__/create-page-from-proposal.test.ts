@@ -107,7 +107,6 @@ describe('createPageFromProposal', () => {
         blocks: [{ type: 'text', content: 'A hearty classic.' }],
       },
       mint,
-      'main',
       null
     )
 
@@ -129,7 +128,6 @@ describe('createPageFromProposal', () => {
       sb as never,
       { type: 'project', title: 'Website Redesign', parentRef: null, blocks: [] },
       mint,
-      'main',
       null
     )
     const insert = sb._chain.insert.mock.calls[0][0]
@@ -144,7 +142,6 @@ describe('createPageFromProposal', () => {
       sb as never,
       { type: 'page', title: 'Sub', parentRef: uuid, blocks: [] },
       mint,
-      'main',
       null
     )
     const insert = sb._chain.insert.mock.calls[0][0]
@@ -170,7 +167,6 @@ describe('createPageFromProposal', () => {
       sb as never,
       { type: 'page', kind: 'note', title: 'Reading goals', parentRef: 'Personal', blocks: [] },
       mint,
-      'main',
       null
     )
     expect(chain.ilike).toHaveBeenCalledWith('title', 'Personal')
@@ -188,7 +184,6 @@ describe('createPageFromProposal', () => {
         sb as never,
         { type: 'page', title: 'X', parentRef: null, blocks: [] },
         mint,
-        'main',
         null
       )
     ).rejects.toThrow(/authenticated/i)

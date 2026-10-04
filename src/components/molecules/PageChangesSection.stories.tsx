@@ -12,7 +12,7 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   return {
     id: 'rec-1',
     userId: 'user-1',
-    workspace: 'main',
+    pondId: 'pond-1',
     status: 'accepted',
     action: 'edit',
     actor: 'pond',

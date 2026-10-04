@@ -33,7 +33,7 @@ function record(status: ChangeLogStatus = 'proposed'): ChangeLogRecord {
   return {
     id: 'rec-1',
     userId: USER,
-    workspace: 'main',
+    pondId: 'pond-1',
     status,
     action: 'add_row',
     actor: 'pond',

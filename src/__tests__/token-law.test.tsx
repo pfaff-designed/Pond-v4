@@ -22,7 +22,6 @@ import { buttonVariants } from '@/components/ui/button'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { READING_PROSE_CLASS, TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
-import { SandboxBanner } from '@/components/molecules/SandboxBanner'
 import { ChartCard } from '@/lib/modules/chart/card'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
 import { ModuleDiffCard } from '@/components/molecules/ModuleDiffCard'
@@ -35,7 +34,6 @@ import { TextView } from '@/lib/modules/text/view'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
-jest.mock('@/lib/sandbox/reset', () => ({ resetSandbox: jest.fn() }))
 
 const root = process.cwd()
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), 'utf8')
@@ -409,19 +407,6 @@ describe('source sweep — wheat is highlighted passages, burnt orange the dated
       'src/components/molecules/PondMolecule.tsx',
     ]
     expect(hits.filter((h) => !owners.some((f) => h.startsWith(f)))).toEqual([])
-  })
-
-  it('the sandbox banner is an ink wash, not a wheat band', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(
-      <QueryClientProvider client={client}>
-        <SandboxBanner />
-      </QueryClientProvider>
-    )
-    const banner = screen.getByRole('status', { name: 'Sandbox workspace' })
-    expect(banner.className).not.toMatch(/raw-wheat/)
-    expect(banner.className).toMatch(/bg-mn-wash/)
-    expect(banner.className).toMatch(/text-mn-text/)
   })
 })
 

@@ -564,9 +564,8 @@ describe('defaultPondName — the M1 seam for the pond name', () => {
   // throughout (life, personal, journal, notes); the capitals in the boards are the
   // eyebrow's own `text-transform: uppercase`, which the head class already carries
   // (asserted above). The data is lowercase; the transform is presentational.
-  it('names the main pond and the sandbox, both lowercase', () => {
-    expect(defaultPondName('main')).toBe('life')
-    expect(defaultPondName('sandbox')).toBe('sandbox')
+  it('names the first pond, lowercase', () => {
+    expect(defaultPondName()).toBe('life')
   })
 })
 

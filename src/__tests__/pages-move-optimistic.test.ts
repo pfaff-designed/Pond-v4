@@ -1,7 +1,7 @@
 /**
  * Optimistic cache mutator for drag-to-reparent/reorder (F25):
  * applyMoveOptimistic sets the moved row's parent_id and rewrites order for the
- * reindexed target group in the ['pages', workspace] cache, returning a pre-move
+ * reindexed target group in the pagesKey() cache, returning a pre-move
  * snapshot for rollback. Uses a real QueryClient — the same cache the rail reads.
  */
 
@@ -25,11 +25,11 @@ function seed(): { qc: QueryClient; rows: PageRow[] } {
     row('scratch', null, 0),
   ]
   const qc = new QueryClient()
-  qc.setQueryData(['pages', 'main'], rows)
+  qc.setQueryData(['pages'], rows)
   return { qc, rows }
 }
 
-const get = (qc: QueryClient) => qc.getQueryData<PageRow[]>(['pages', 'main'])!
+const get = (qc: QueryClient) => qc.getQueryData<PageRow[]>(['pages'])!
 const byId = (rows: PageRow[], id: string) => rows.find((r) => r.id === id)!
 
 describe('applyMoveOptimistic', () => {
@@ -37,7 +37,6 @@ describe('applyMoveOptimistic', () => {
     const { qc } = seed()
     applyMoveOptimistic(
       qc,
-      'main',
       {
         movedId: 'scratch',
         newParentId: 'health',
@@ -56,7 +55,6 @@ describe('applyMoveOptimistic', () => {
     const { qc } = seed()
     applyMoveOptimistic(
       qc,
-      'main',
       {
         movedId: 'sleep',
         newParentId: null,
@@ -71,7 +69,6 @@ describe('applyMoveOptimistic', () => {
     const { qc, rows } = seed()
     const snapshot = applyMoveOptimistic(
       qc,
-      'main',
       {
         movedId: 'scratch',
         newParentId: 'health',
@@ -83,7 +80,7 @@ describe('applyMoveOptimistic', () => {
     // moved in the cache…
     expect(byId(get(qc), 'scratch').parent_id).toBe('health')
     // …then rolled back
-    qc.setQueryData(['pages', 'main'], snapshot)
+    qc.setQueryData(['pages'], snapshot)
     expect(byId(get(qc), 'scratch').parent_id).toBeNull()
     expect(byId(get(qc), 'scratch').order).toBe(0)
   })

@@ -35,7 +35,6 @@ import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import type { NodeType } from '@/lib/supabase/types'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import {
   parseRequestChanges,
   requestChangesContextNote,
@@ -65,10 +64,6 @@ export function parseChatBody(body: unknown): {
   nodeId?: string
   pondId?: string
   nodeType?: NodeType
-  /** Which pond this turn belongs to — the scope of any change-log record it
-   *  writes (#110 criterion 11). Lives in a client context, so it rides the
-   *  request; anything unrecognised falls back to 'main'. */
-  workspace: WorkspaceScope
   resolutions: ConversationResolutions
   /** #98 — this turn is a request-changes note (or an outdated revise) on a
    *  propose_changes card; the reply must be a revised diff. */
@@ -87,7 +82,6 @@ export function parseChatBody(body: unknown): {
     nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
     pondId: typeof b.pondId === 'string' ? b.pondId : undefined,
     nodeType,
-    workspace: b.workspace === 'sandbox' ? 'sandbox' : 'main',
     resolutions: parseResolutions(b.resolutions),
     ...(requestChanges ? { requestChanges } : {}),
   }
@@ -104,7 +98,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, workspace, resolutions, requestChanges, pondId } = parsed
+  const { messages, nodeId, nodeType, resolutions, requestChanges, pondId } = parsed
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
@@ -141,7 +135,7 @@ export async function POST(req: Request) {
     if (requestChanges && requestChanges.reason === 'note') {
       await resolveChangeLogRecord(supabase, {
         userId: user.id,
-        workspace,
+        pondId,
         toolCallId: requestChanges.toolCallId,
         decision: 'changes_requested',
       })
@@ -302,7 +296,6 @@ export async function POST(req: Request) {
       if (!user || toolCalls.length === 0) return
       await recordProposedToolCalls(supabase, {
         userId: user.id,
-        workspace,
         // #312: the change log is per pond (`s6m5`).
         pondId,
         openPageId: nodeId ?? null,

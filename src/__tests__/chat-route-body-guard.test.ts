@@ -50,9 +50,9 @@ describe('parseChatBody', () => {
       messages: [],
       nodeId: undefined,
       nodeType: undefined,
-      // #102: the pond scope of any change-log record this turn writes, always
-      // present and defaulting to main.
-      workspace: 'main',
+      // #312: the pond scope of any change-log record this turn writes. Absent
+      // when the body carries none — there is no default pond to fall back to.
+      pondId: undefined,
       // ticket-39: the envelope now also carries question-card answers.
       // #17 slice 5: and define_schema decisions (`schemas`).
       resolutions: {
@@ -76,16 +76,16 @@ describe('parseChatBody', () => {
     expect(out?.nodeType).toBe('project')
   })
 
-  it('carries the pond scope so a sandbox proposal is logged as sandbox (#102/#110 c11)', () => {
+  it('carries the pond so the proposal is logged in the pond it came from (#312)', () => {
     // The change-log record the route writes is scoped per pond (user_id +
-    // workspace). The workspace lives in a client context, so it has to ride the
-    // request — without it every sandbox proposal would be filed into main.
-    expect(parseChatBody({ messages: [], workspace: 'sandbox' })?.workspace).toBe('sandbox')
-    expect(parseChatBody({ messages: [], workspace: 'main' })?.workspace).toBe('main')
-    // Anything else is not a pond: fall back to main rather than trusting it into
-    // a CHECK-constraint violation at insert time.
-    expect(parseChatBody({ messages: [], workspace: 'nonsense' })?.workspace).toBe('main')
-    expect(parseChatBody({ messages: [] })?.workspace).toBe('main')
+    // pond_id). The pond lives in the client's address, so it has to ride the
+    // request — without it every proposal was filed into the first pond. This
+    // replaces the `workspace` field 0020 retired.
+    expect(parseChatBody({ messages: [], pondId: 'pond-2' })?.pondId).toBe('pond-2')
+    // Anything that is not a string is not a pond id: omit it rather than
+    // trusting it into the insert.
+    expect(parseChatBody({ messages: [], pondId: 7 })?.pondId).toBeUndefined()
+    expect(parseChatBody({ messages: [] })?.pondId).toBeUndefined()
   })
 
   it('drops the retired "area" nodeType (#108) rather than carrying it', () => {

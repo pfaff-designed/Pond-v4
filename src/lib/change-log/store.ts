@@ -24,7 +24,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { assertTransition, canRevise } from './status'
 import { jsonEqual } from './revert-plan'
 import {
@@ -42,7 +41,7 @@ import {
 const TABLE = 'change_log'
 
 const COLUMNS =
-  'id, user_id, workspace, status, action, actor, target_page_id, target_block_id, before, after, source_thread_id, tool_call_id, read, links, transitions, created_at, status_at'
+  'id, user_id, pond_id, status, action, actor, target_page_id, target_block_id, before, after, source_thread_id, tool_call_id, read, links, transitions, created_at, status_at'
 
 // ── Row ↔ record mapping ─────────────────────────────────────────────────────
 
@@ -100,7 +99,7 @@ export function mapChangeLogRow(row: ChangeLogRow): ChangeLogRecord {
   return {
     id: row.id,
     userId: row.user_id,
-    workspace: row.workspace,
+    pondId: row.pond_id,
     status: row.status,
     action: row.action as ChangeLogAction,
     actor: row.actor,
@@ -138,25 +137,20 @@ export function mapChangeLogRow(row: ChangeLogRow): ChangeLogRecord {
  */
 function readScoped(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null },
+  opts: { userId: string; pondId?: string | null },
   select: string = COLUMNS,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   selectOpts?: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
-    .from(TABLE)
-    .select(select, selectOpts)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
+  let q: any = (supabase as any).from(TABLE).select(select, selectOpts).eq('user_id', opts.userId)
   if (opts.pondId) q = q.eq('pond_id', opts.pondId)
   return q
 }
 
 export interface AppendRecordInput {
   userId: string
-  workspace?: WorkspaceScope
   /** #312: the pond this record belongs to. Unstamped, it escapes every filter. */
   pondId?: string | null
   status: ChangeLogStatus
@@ -185,7 +179,6 @@ export async function appendRecord(
   const actor = input.actor ?? ACTOR_YOU
   const insert = {
     user_id: input.userId,
-    workspace: input.workspace ?? 'main',
     ...(input.pondId ? { pond_id: input.pondId } : {}),
     status: input.status,
     action: input.action,
@@ -252,7 +245,7 @@ export async function reviseRecord(
   }
   return appendProposal(supabase, {
     userId: original.userId,
-    workspace: original.workspace,
+    pondId: original.pondId,
     ...input,
     links: { revisedFrom: original.id },
   })
@@ -277,7 +270,7 @@ export async function getRecord(
  * proposal is logged server-side as the call is emitted (`propose.ts`), keyed by
  * `tool_call_id`; the browser later resolves that same card and knows only the
  * tool call id, so this is how it finds the record to advance. Scoped to the pond
- * like every other read, so a tool call id can never reach across workspaces.
+ * like every other read, so a tool call id can never reach across ponds.
  *
  * Null is an ordinary answer, not an error: a card streamed before this build
  * shipped, or one whose log write was dropped (the log is a side-record and
@@ -285,7 +278,7 @@ export async function getRecord(
  */
 export async function getRecordByToolCall(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; toolCallId: string }
+  opts: { userId: string; pondId?: string | null; toolCallId: string }
 ): Promise<ChangeLogRecord | null> {
   const { data, error } = await readScoped(supabase, opts)
     .eq('tool_call_id', opts.toolCallId)
@@ -308,7 +301,6 @@ export async function listRecordsByToolCalls(
   supabase: SupabaseClient<Database>,
   opts: {
     userId: string
-    workspace?: WorkspaceScope
     pondId?: string | null
     toolCallIds: readonly string[]
   }
@@ -428,7 +420,6 @@ export async function markOutdated(
   supabase: SupabaseClient<Database>,
   opts: {
     userId: string
-    workspace?: WorkspaceScope
     /** #312: scope to one pond; omitted reads across ponds. */
     pondId?: string | null
     targetPageId: string
@@ -518,7 +509,6 @@ export async function redactRecordContent(
 /** Filters behind the log's saved views (all / proposed / by page / …). */
 export interface ListRecordsOptions {
   userId: string
-  workspace?: WorkspaceScope
   /** #312: scope to one pond; omitted reads across ponds. */
   pondId?: string | null
   status?: ChangeLogStatus | ChangeLogStatus[]
@@ -530,7 +520,7 @@ export interface ListRecordsOptions {
 
 /**
  * A pond's log, newest first — the shape every change-log view reads. Always
- * scoped to (`user_id`, `workspace`), so a record in one pond can never surface
+ * scoped to (`user_id`, `pond_id`), so a record in one pond can never surface
  * in another (spec #110 criterion 11).
  */
 export async function listRecords(
@@ -562,11 +552,10 @@ export async function listRecords(
 export async function countProposed(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond whose open records to count. Omitted, counts across ponds. */
   pondId?: string | null
 ): Promise<number> {
-  const { count } = await readScoped(supabase, { userId, workspace, pondId }, 'id', {
+  const { count } = await readScoped(supabase, { userId, pondId }, 'id', {
     count: 'exact',
     head: true,
   }).eq('status', 'proposed')
@@ -585,7 +574,7 @@ export async function countProposed(
  */
 export async function listRevertsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; recordId: string }
+  opts: { userId: string; pondId?: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
   const { data, error } = await readScoped(supabase, opts)
     .eq('links->>revert_of', opts.recordId)
@@ -604,9 +593,9 @@ export async function listRevertsOf(
  */
 export async function listRevisionsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; recordId: string }
+  opts: { userId: string; pondId?: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
-  const all = await listRecords(supabase, { userId: opts.userId, workspace: opts.workspace })
+  const all = await listRecords(supabase, { userId: opts.userId, pondId: opts.pondId })
   const byRevisedFrom = new Map<string, ChangeLogRecord>()
   for (const r of all) {
     if (r.links.revisedFrom) byRevisedFrom.set(r.links.revisedFrom, r)

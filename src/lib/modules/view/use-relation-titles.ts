@@ -19,8 +19,9 @@ import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, getPage, listPages, type PondPage } from '@/lib/pages/client'
-import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import { ROW_TYPE } from '@/lib/properties/schema'
+import { pagesKey } from '@/lib/pages/keys'
 
 export interface RelationCandidate {
   id: string
@@ -35,7 +36,7 @@ export interface RelationTitles {
 }
 
 export function useRelationTitles(ids: string[], targetId?: string): RelationTitles {
-  const workspace = useWorkspace()
+  const pondId = usePondId()
   // Lazily created on first fetch, not at render — so seeded/disabled queries
   // (e.g. Storybook, envless CI) never construct a real client and throw.
   const getSupabase = useLazySupabase()
@@ -51,20 +52,20 @@ export function useRelationTitles(ids: string[], targetId?: string): RelationTit
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return [] as PondPage[]
-      return getCollectionRows(supabase, user.id, targetId, workspace)
+      return getCollectionRows(supabase, user.id, targetId)
     },
     enabled: targeted,
   })
 
   // Untargeted: the whole workspace page list, for a global "link any page" search.
   const { data: allPages } = useQuery({
-    queryKey: ['pages', workspace, 'full'] as const,
+    queryKey: [...pagesKey(pondId), 'full'] as const,
     queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      return user ? listPages(supabase, user.id, workspace) : []
+      return user ? listPages(supabase, user.id, pondId) : []
     },
     enabled: !targeted,
   })

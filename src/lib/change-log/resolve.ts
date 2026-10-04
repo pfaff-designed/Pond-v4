@@ -32,7 +32,6 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { ProposalDecision } from '@/lib/conversation/resolutions'
 import { isOpen } from './status'
 import { acceptRecord, advanceStatus, getRecordByToolCall, markOutdated } from './store'
@@ -40,7 +39,8 @@ import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogStatus } 
 
 export interface ResolveRecordInput {
   userId: string
-  workspace?: WorkspaceScope
+  /** #312: which pond's log. A tool call id is unique per pond, not globally. */
+  pondId?: string | null
   /** The tool call whose card the person just decided. */
   toolCallId: string
   /** The decision, which is also the status the record lands on — the card's own
@@ -63,7 +63,7 @@ export async function resolveChangeLogRecord(
   try {
     const record = await getRecordByToolCall(supabase, {
       userId: opts.userId,
-      workspace: opts.workspace,
+      pondId: opts.pondId,
       toolCallId: opts.toolCallId,
     })
     if (!record) return null
@@ -128,14 +128,14 @@ export interface ProposalForAccept {
  */
 export async function readProposalForAccept(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string | null; workspace?: WorkspaceScope; toolCallId: string }
+  opts: { userId: string | null; pondId?: string | null; toolCallId: string }
 ): Promise<ProposalForAccept> {
   if (opts.userId === null) return { record: null, staleReason: null }
   let record: ChangeLogRecord | null = null
   try {
     record = await getRecordByToolCall(supabase, {
       userId: opts.userId,
-      workspace: opts.workspace,
+      pondId: opts.pondId,
       toolCallId: opts.toolCallId,
     })
   } catch (err) {
@@ -152,7 +152,8 @@ export async function readProposalForAccept(
 
 export interface CommitAcceptedEditInput {
   userId: string | null
-  workspace?: WorkspaceScope
+  /** #312: the pond whose log is advanced and swept. */
+  pondId?: string | null
   /** The record behind this accept, from {@link readProposalForAccept}. */
   record: ChangeLogRecord | null
   /** The page actually being written — the one the PERSON chose. */
@@ -176,8 +177,7 @@ export async function commitAcceptedEdit(
   supabase: SupabaseClient<Database>,
   opts: CommitAcceptedEditInput
 ): Promise<void> {
-  const { userId, record, targetPageId, blocks, commit, propagate } = opts
-  const workspace = opts.workspace ?? 'main'
+  const { userId, pondId, record, targetPageId, blocks, commit, propagate } = opts
 
   // The atomic path, and the only one criterion 3 is satisfied by: the page write
   // rides inside accept_change_log_record. It is available only when the record is
@@ -235,7 +235,7 @@ export async function commitAcceptedEdit(
     try {
       await markOutdated(supabase, {
         userId,
-        workspace,
+        pondId,
         targetPageId,
         exceptId: record?.id,
         actions: [...BLOCK_ACTIONS],

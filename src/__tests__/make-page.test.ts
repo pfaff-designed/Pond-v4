@@ -113,8 +113,7 @@ describe('makePageFromAnswer', () => {
           { id: 'cq-1', title: 'Cabinet quote' },
           { id: 'wt-1', title: 'Worktop template' },
         ],
-        workspace: 'main',
-        pondId: null,
+        pondId: 'pond-1',
       },
       mint()
     )
@@ -126,7 +125,7 @@ describe('makePageFromAnswer', () => {
     expect(row.parent_id).toBe('kr-1')
     expect(row.type).toBe('page')
     expect(row.title).toBe('renovation blockers')
-    expect(row.workspace).toBe('main')
+    expect(row.pond_id).toBe('pond-1')
     // The prose, word for word, is the page's ONLY block (6a frame 5).
     expect(row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
     // What the answer mentioned is a card, not prose, so it rides in props beside
@@ -229,7 +228,7 @@ describe('recordPageProposal — born `proposed`, in the proposed view', () => {
     const { supabase, inserts } = makeSupabase()
     const ok = await recordPageProposal(supabase, {
       userId: 'user-1',
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       threadId: 'conv-1',
       proposal: proposal(),
     })
@@ -239,7 +238,7 @@ describe('recordPageProposal — born `proposed`, in the proposed view', () => {
     const row = inserts[0].row
     expect(row).toMatchObject({
       user_id: 'user-1',
-      workspace: 'sandbox',
+      pond_id: 'pond-2',
       status: 'proposed',
       action: 'create_page',
       actor: 'pond',

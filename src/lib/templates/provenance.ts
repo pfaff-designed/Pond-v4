@@ -32,7 +32,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { PondTemplate } from './types'
 
 // ── The stamp ────────────────────────────────────────────────────────────────
@@ -91,7 +90,6 @@ function stampFilter(templateId: string): Record<string, unknown> {
 export async function countPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope,
   /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
   pondId: string | null | undefined,
   templateId: string
@@ -101,7 +99,6 @@ export async function countPagesMadeFrom(
     .from('pages')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('workspace', workspace)
   // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
   if (pondId) q = q.eq('pond_id', pondId)
   const { count, error } = await q.contains('props', stampFilter(templateId))
@@ -129,7 +126,6 @@ type MadeFromRow = {
 export async function listPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope,
   /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
   pondId: string | null | undefined,
   templateId: string,
@@ -140,7 +136,6 @@ export async function listPagesMadeFrom(
     .from('pages')
     .select('id, title, parent_id, props')
     .eq('user_id', userId)
-    .eq('workspace', workspace)
   if (pondId) q = q.eq('pond_id', pondId)
   const { data, error } = await q
     .contains('props', stampFilter(templateId))
@@ -168,17 +163,12 @@ export async function listPagesMadeFrom(
 export async function siblingTemplateRanking(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope,
   /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
   pondId: string | null | undefined,
   parentId: string | null
 ): Promise<string[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = (supabase as any)
-    .from('pages')
-    .select('props')
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
+  let query: any = (supabase as any).from('pages').select('props').eq('user_id', userId)
   if (pondId) query = query.eq('pond_id', pondId)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.

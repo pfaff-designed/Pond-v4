@@ -18,7 +18,6 @@ import {
   type ProposalTarget,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
@@ -45,7 +44,7 @@ import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions } from '@/lib/pages/parent-options'
-import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
+import { workspaceHref } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import {
@@ -418,9 +417,7 @@ export function AITerminal() {
   // CI) never constructs a real client and throws (#38); queryFns, effects and
   // the accept handlers below construct it only when they actually run.
   const getSupabase = useLazySupabase()
-  const workspace = useWorkspace()
   const pondId = usePondId()
-  const basePath = workspaceBasePath(workspace)
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
   // so we can't drive the card's resolved state off the SDK part — the local maps
@@ -465,13 +462,13 @@ export function AITerminal() {
         loggedDecisions.current.add(toolCallId)
         await resolveChangeLogRecord(supabase, {
           userId: user.id,
-          workspace,
+          pondId,
           toolCallId,
           decision,
         })
       })()
     },
-    [getSupabase, workspace]
+    [getSupabase, pondId]
   )
 
   /**
@@ -567,7 +564,7 @@ export function AITerminal() {
   // write-once stamp must never be taken against a still-in-flight list (it
   // would mis-read a valid target as missing).
   //
-  // MUST be keyed separately from the sidebar's ['pages', workspace] cache: that
+  // MUST be keyed separately from the sidebar's pagesKey() cache: that
   // one is fed by `fetchPages`, a lean projection with NO `props`. This query is
   // `listPages` — the full page shape *including* `props`, which #18's
   // `collectionOptions` needs to read `_schema` (isCollection). Sharing the key
@@ -575,13 +572,13 @@ export function AITerminal() {
   // collection picker. The extra key segment keeps them distinct while
   // prefix-based `invalidateQueries(['pages'])` still refreshes both.
   const { data: allPages = [], isFetched: pagesLoaded } = useQuery({
-    queryKey: ['pages', workspace, 'full'],
+    queryKey: [...pagesKey(pondId), 'full'],
     queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      return user ? listPages(supabase, user.id, workspace) : []
+      return user ? listPages(supabase, user.id, pondId) : []
     },
   })
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
@@ -895,7 +892,7 @@ export function AITerminal() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
-      const conversation = await getOrCreateConversation(supabase, user.id, workspace, pondId)
+      const conversation = await getOrCreateConversation(supabase, user.id, pondId)
       setConversationId(conversation.id)
       // #312: a thread is per pond, so SWITCHING ponds replaces what is on screen.
       // Switching is a client-side navigation and this component never unmounts, so
@@ -928,7 +925,7 @@ export function AITerminal() {
       setIsReady(true)
     })().catch(console.error)
     // `pondId` is a real dependency: the thread it loads belongs to that pond.
-  }, [setMessages, getSupabase, workspace, pondId])
+  }, [setMessages, getSupabase, pondId])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
@@ -1099,12 +1096,12 @@ export function AITerminal() {
     } = await supabase.auth.getUser()
     if (!user) return
     await dissolveConversation(supabase, conversationId)
-    const fresh = await getOrCreateConversation(supabase, user.id, workspace, pondId)
+    const fresh = await getOrCreateConversation(supabase, user.id, pondId)
     setConversationId(fresh.id)
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
-  }, [conversationId, setMessages, resetResolutions, getSupabase, workspace])
+  }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Handle /handoff ───────────────────────────────────────────────────────
   // Extract entities from the transcript (Quick model), write them all, then
@@ -1122,26 +1119,16 @@ export function AITerminal() {
       user.id,
       messages,
       undefined,
-      workspace,
       pondId
     )
     if (written > 0) {
       // #312: the pond-aware key, or the refetch misses the tree it just changed.
-      await queryClient.invalidateQueries({ queryKey: pagesKey(workspace, pondId) })
+      await queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
     }
     setConversationId(freshConversation.id)
     setMessages([])
     resetResolutions()
-  }, [
-    conversationId,
-    messages,
-    queryClient,
-    setMessages,
-    resetResolutions,
-    getSupabase,
-    workspace,
-    pondId,
-  ])
+  }, [conversationId, messages, queryClient, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -1190,11 +1177,11 @@ export function AITerminal() {
       // attachments (#61) ride along as FileUIParts — single-turn, cleared on
       // send like the CSV/quote context. An attachment-only send omits `text`
       // entirely so no empty text part reaches the model.
-      // `workspace` scopes the change-log record the route writes for any
+      // `pondId` scopes the change-log record the route writes for any
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
       // #312: `pondId` so the route's context reads only this pond (`s6m5`).
-      const body = { nodeId, nodeType, workspace, pondId, resolutions: outgoing }
+      const body = { nodeId, nodeType, pondId, resolutions: outgoing }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
@@ -1220,7 +1207,6 @@ export function AITerminal() {
       clearError,
       nodeId,
       nodeType,
-      workspace,
       pondId,
       quoteCtx,
       csvAttachment,
@@ -1382,7 +1368,7 @@ export function AITerminal() {
         // commit, the log is simply left alone (there is no pond to scope a record
         // to), which is how this path behaved before the log existed.
         userId: user?.id ?? null,
-        workspace,
+        pondId,
         resolutions,
         toolCallId,
         openNodeId: nodeId,
@@ -1417,14 +1403,11 @@ export function AITerminal() {
           action: openTarget
             ? () =>
                 router.push(
-                  workspaceHref(
-                    {
-                      id: openTarget,
-                      type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
-                      title: targetName,
-                    },
-                    basePath
-                  )
+                  workspaceHref({
+                    id: openTarget,
+                    type: allPages.find((p) => p.id === openTarget)?.type ?? 'page',
+                    title: targetName,
+                  })
                 )
             : undefined,
           actionLabel: 'Open',
@@ -1440,14 +1423,13 @@ export function AITerminal() {
       decideChanges,
       getSupabase,
       queryClient,
-      workspace,
       resolutions,
       nodeId,
       changeTargets,
       contextLabel,
       router,
       allPages,
-      basePath,
+      pondId,
     ]
   )
 
@@ -1457,17 +1439,14 @@ export function AITerminal() {
   const openTargetPage = useCallback(
     (target: ProposalTarget) => {
       router.push(
-        workspaceHref(
-          {
-            id: target.nodeId,
-            type: allPages.find((p) => p.id === target.nodeId)?.type ?? 'page',
-            title: target.nodeName,
-          },
-          basePath
-        )
+        workspaceHref({
+          id: target.nodeId,
+          type: allPages.find((p) => p.id === target.nodeId)?.type ?? 'page',
+          title: target.nodeName,
+        })
       )
     },
-    [router, allPages, basePath]
+    [router, allPages]
   )
 
   // ── Request changes / revise (#98, board 6c frame 3) ──────────────────────
@@ -1499,7 +1478,6 @@ export function AITerminal() {
       const body = {
         nodeId,
         nodeType,
-        workspace,
         resolutions: projectResolutions(next),
         requestChanges: { toolCallId, note, reason },
       }
@@ -1512,7 +1490,7 @@ export function AITerminal() {
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
     },
-    [proposals, logDecision, nodeId, nodeType, workspace, sendMessage, clearError]
+    [proposals, logDecision, nodeId, nodeType, sendMessage, clearError]
   )
 
   // ── Read the cards' records back (#98, G2) ────────────────────────────────
@@ -1545,7 +1523,6 @@ export function AITerminal() {
       if (!user || cancelled) return
       const records = await listRecordsByToolCalls(supabase, {
         userId: user.id,
-        workspace,
         toolCallIds: [...liveDiffCards.keys()],
       })
       if (cancelled) return
@@ -1568,7 +1545,7 @@ export function AITerminal() {
     // the person navigated to another page — which is when a card aimed at it can
     // have gone stale. A record outdated from ANOTHER tab is read on the next of
     // those, not live (no realtime subscription in M1).
-  }, [liveDiffCards, changeDecisions, currentPage?.blocks, workspace, getSupabase])
+  }, [liveDiffCards, changeDecisions, currentPage?.blocks, pondId, getSupabase])
 
   // ── create_page resolution (M1) ───────────────────────────────────────────
   // Accept: mint block ids, resolve the user-chosen parent, write via createPage,
@@ -1593,14 +1570,12 @@ export function AITerminal() {
             blocks: part.blocks ?? [],
           },
           () => crypto.randomUUID(),
-          workspace,
           pondId
         )
         // F26: seed the cache with the new row (correct parent_id) before navigating,
         // so the rail nests it immediately; reconcile in the background.
         insertPageOptimistic(
           queryClient,
-          workspace,
           {
             id: created.id,
             parentId: parentRef,
@@ -1609,8 +1584,8 @@ export function AITerminal() {
           },
           pondId
         )
-        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }, basePath))
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        router.push(workspaceHref({ id: created.id, type: part.type, title: part.title }))
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
         logDecision(toolCallId, 'accepted')
@@ -1620,7 +1595,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'creates', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, router, workspace, basePath, logDecision]
+    [getSupabase, queryClient, router, pondId, logDecision]
   )
 
   // ── define_schema resolution (#17 slice 5) ────────────────────────────────
@@ -1665,7 +1640,7 @@ export function AITerminal() {
           const page = prev as { props?: Record<string, unknown> }
           return { ...page, props: withSchema(page.props, schema) }
         })
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
         logDecision(toolCallId, 'accepted')
@@ -1675,7 +1650,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'schemas', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, allPages, logDecision]
+    [getSupabase, queryClient, allPages, logDecision]
   )
 
   // ── add_row resolution (#18) ──────────────────────────────────────────────
@@ -1694,10 +1669,9 @@ export function AITerminal() {
         await addRowFromProposal(
           getSupabase(),
           { collectionId: selectedCollectionId, title: part?.title, props: rowProps },
-          workspace,
           pondId
         )
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
         logDecision(toolCallId, 'accepted')
@@ -1707,7 +1681,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'rows', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, logDecision]
+    [getSupabase, queryClient, pondId, logDecision]
   )
 
   // ── promote_table resolution (#29) ────────────────────────────────────────
@@ -1742,10 +1716,9 @@ export function AITerminal() {
           getSupabase(),
           { pageId: selectedTargetId, blockId },
           () => crypto.randomUUID(),
-          workspace,
           pondId
         )
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         void queryClient.invalidateQueries({ queryKey: ['page', selectedTargetId] })
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
@@ -1756,7 +1729,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'promotions', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, logDecision]
+    [getSupabase, queryClient, pondId, logDecision]
   )
 
   // ── link_records resolution (#40) ─────────────────────────────────────────
@@ -1780,7 +1753,7 @@ export function AITerminal() {
         const linked = await linkRecordsFromProposal(
           getSupabase(),
           { collectionId: selectedCollectionId, fromRow, relation, toRows },
-          workspace
+          pondId
         )
         void queryClient.invalidateQueries({ queryKey: ['rows', selectedCollectionId] })
         if (linked.targetCollectionId && linked.targetCollectionId !== selectedCollectionId) {
@@ -1802,7 +1775,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'links', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, logDecision]
+    [getSupabase, queryClient, pondId, logDecision]
   )
 
   // ── configure_view resolution (#19 slice 5) ───────────────────────────────
@@ -1850,7 +1823,7 @@ export function AITerminal() {
             decision: 'accepted',
             aux: { replaced: true },
           })
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
         void queryClient.invalidateQueries({ queryKey: ['page', host] })
         // The write landed — only now may the record say so. The log only grows,
         // so an `accepted` stamped before this point could never be taken back.
@@ -1861,7 +1834,7 @@ export function AITerminal() {
         dispatch({ kind: 'revert', type: 'views', id: toolCallId })
       }
     },
-    [getSupabase, queryClient, workspace, nodeId, logDecision]
+    [getSupabase, queryClient, nodeId, logDecision]
   )
 
   // ── make this a page (#97, `Pond 06.01` 6a frames 3–5) ──────────────────
@@ -1909,7 +1882,6 @@ export function AITerminal() {
         if (!user) return
         await recordPageProposal(supabase, {
           userId: user.id,
-          workspace,
           // #312: otherwise the proposal's change-log record is invisible in every
           // pond's proposed view and change log.
           pondId,
@@ -1918,7 +1890,7 @@ export function AITerminal() {
         })
       })()
     },
-    [nodeId, allPages, pageProposals, getSupabase, workspace, conversationId]
+    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId]
   )
 
   const editPageProposal = useCallback(
@@ -1953,14 +1925,13 @@ export function AITerminal() {
       try {
         const made = await makePageFromAnswer(
           getSupabase(),
-          { proposal, threadId: conversationId, pages: allPages, workspace, pondId },
+          { proposal, threadId: conversationId, pages: allPages, pondId },
           () => crypto.randomUUID()
         )
         dispatch({ kind: 'notePageMade', id, pageId: made.id })
         // Rail entry at once (the correct parent), reconciled in the background.
         insertPageOptimistic(
           queryClient,
-          workspace,
           {
             id: made.id,
             parentId: proposal.parentId,
@@ -1969,8 +1940,8 @@ export function AITerminal() {
           },
           pondId
         )
-        void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
-        router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }, basePath))
+        void queryClient.invalidateQueries({ queryKey: pagesKey() })
+        router.push(workspaceHref({ id: made.id, type: 'page', title: made.title }))
         // The write landed — only now may the record say so (the log only grows).
         logDecision(id, 'accepted')
       } catch (err) {
@@ -1989,27 +1960,15 @@ export function AITerminal() {
         makingPages.current.delete(id)
       }
     },
-    [
-      pageProposals,
-      getSupabase,
-      conversationId,
-      allPages,
-      workspace,
-      queryClient,
-      router,
-      basePath,
-      logDecision,
-    ]
+    [pageProposals, getSupabase, conversationId, allPages, queryClient, router, pondId, logDecision]
   )
 
   const openMadePage = useCallback(
     (proposal: PageProposal) => {
       if (!proposal.pageId) return
-      router.push(
-        workspaceHref({ id: proposal.pageId, type: 'page', title: proposal.name }, basePath)
-      )
+      router.push(workspaceHref({ id: proposal.pageId, type: 'page', title: proposal.name }))
     },
-    [router, basePath]
+    [router]
   )
 
   // ── Streaming stage text (ticket-32) ──────────────────────────────────────

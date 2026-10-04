@@ -41,7 +41,6 @@ import { applyProposedChanges } from '@/lib/pages/edits'
 import { advanceStatus, appendProposal, getRecordByToolCall, reviseRecord } from './store'
 import { canRevise, isOpen } from './status'
 import { ACTOR_YOU, type ChangeLogAction, type ChangeLogRecord } from './types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 
 /**
  * Tool name → the action its record is filed under. A tool that is NOT in here
@@ -67,7 +66,6 @@ export interface ProposalToolCall {
 
 export interface RecordProposalsInput {
   userId: string
-  workspace: WorkspaceScope
   /**
    * #312: the pond the proposal belongs to. `s6m5` — the change log is per pond.
    * A record written without one escapes every pond filter, so it would appear in
@@ -129,7 +127,6 @@ export async function recordProposedToolCalls(
 ): Promise<number> {
   const {
     userId,
-    workspace,
     pondId = null,
     openPageId,
     sourceThreadId = null,
@@ -144,7 +141,6 @@ export async function recordProposedToolCalls(
     try {
       revised = await getRecordByToolCall(supabase, {
         userId,
-        workspace,
         pondId,
         toolCallId: revisesToolCallId,
       })
@@ -189,7 +185,6 @@ export async function recordProposedToolCalls(
 
       const record = {
         userId,
-        workspace,
         pondId,
         action,
         targetPageId,

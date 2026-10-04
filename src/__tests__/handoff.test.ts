@@ -52,13 +52,11 @@ describe('performHandoff', () => {
     expect(deps.createNode).toHaveBeenCalledWith(
       supabase,
       { type: 'project', name: 'Plan the trip' },
-      'main',
       null
     )
     expect(deps.createNode).toHaveBeenCalledWith(
       supabase,
       { type: 'action', name: 'Book flights' },
-      'main',
       null
     )
     expect(result.written).toBe(2)
@@ -83,7 +81,7 @@ describe('performHandoff', () => {
 
     const result = await performHandoff(supabase, 'conv-1', 'user-1', makeMessages(), deps as never)
 
-    expect(deps.getOrCreateConversation).toHaveBeenCalledWith(supabase, 'user-1', 'main', null)
+    expect(deps.getOrCreateConversation).toHaveBeenCalledWith(supabase, 'user-1', null)
     expect(result.freshConversation).toEqual({ id: 'fresh-conv', messages: [] })
   })
 

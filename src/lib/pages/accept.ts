@@ -20,7 +20,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { Database } from '@/lib/supabase/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
@@ -45,8 +44,8 @@ export async function writeAcceptedChanges(opts: {
    *  would leave the record `proposed` forever, silently. Explicitly `null` when
    *  there is no session, which means there is no pond to scope a record to. */
   userId: string | null
-  /** Which pond. Scopes both the record lookup and the rail invalidation. */
-  workspace?: WorkspaceScope
+  /** Which pond. Scopes both the record lookup and the outdated sweep. */
+  pondId?: string | null
   resolutions: ConversationResolutions
   toolCallId: string
   openNodeId: string | null
@@ -60,7 +59,6 @@ export async function writeAcceptedChanges(opts: {
   refIds?: Record<string, string>
 }): Promise<AcceptWriteResult> {
   const { resolutions, toolCallId, openNodeId, changes } = opts
-  const workspace = opts.workspace ?? 'main'
   if (changes.length === 0) return { applied: 0, skipped: 0, skippedReasons: [], targetId: null }
 
   const target = resolveAcceptTarget(resolutions, toolCallId, openNodeId)
@@ -76,7 +74,7 @@ export async function writeAcceptedChanges(opts: {
   // Everything from the read to the write is one critical section per page —
   // see `withPageWriteLock`. The target has to be resolved first to know which
   // lock to take, and that resolution is pure, so nothing races ahead of it.
-  return withPageWriteLock(target, () => writeToTarget(target, workspace, opts))
+  return withPageWriteLock(target, () => writeToTarget(target, opts))
 }
 
 /**
@@ -121,7 +119,6 @@ function withPageWriteLock<T>(pageId: string, run: () => Promise<T>): Promise<T>
 /** The body of an accept, run under the target page's write lock. */
 async function writeToTarget(
   target: string,
-  workspace: WorkspaceScope,
   opts: Parameters<typeof writeAcceptedChanges>[0]
 ): Promise<AcceptWriteResult> {
   const { supabase, queryClient, userId, resolutions, toolCallId, changes } = opts
@@ -155,7 +152,11 @@ async function writeToTarget(
   // What the log already knows about this proposal. A stale reason means the log
   // has moved past it — accepting anyway would write a page from a diff the system
   // has declared out of date, and the log would disagree with the page for good.
-  const proposal = await readProposalForAccept(supabase, { userId, workspace, toolCallId })
+  const proposal = await readProposalForAccept(supabase, {
+    userId,
+    pondId: opts.pondId,
+    toolCallId,
+  })
   if (proposal.staleReason !== null) {
     const reason = proposal.staleReason
     return {
@@ -175,16 +176,16 @@ async function writeToTarget(
     // Nothing landed, so the page has not moved on and the log must not say it
     // has. The blocks are unchanged; committing them is what this path did before
     // the log existed, and it keeps the receipt and skip reasons intact.
-    await commitBlocks(supabase, queryClient, target, result.blocks, workspace)
+    await commitBlocks(supabase, queryClient, target, result.blocks)
   } else {
     await commitAcceptedEdit(supabase, {
       userId,
-      workspace,
+      pondId: opts.pondId,
       record: proposal.record,
       targetPageId: target,
       blocks: result.blocks,
-      commit: () => commitBlocks(supabase, queryClient, target, result.blocks, workspace),
-      propagate: () => propagateBlockWrite(queryClient, target, workspace),
+      commit: () => commitBlocks(supabase, queryClient, target, result.blocks),
+      propagate: () => propagateBlockWrite(queryClient, target),
     })
   }
 

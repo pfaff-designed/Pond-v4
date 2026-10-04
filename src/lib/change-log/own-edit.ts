@@ -24,14 +24,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { markOutdated } from './store'
 import { ACTOR_YOU, BLOCK_ACTIONS } from './types'
 
 export async function sweepOutdatedAfterOwnEdit(
   supabase: SupabaseClient<Database>,
   opts: {
-    workspace: WorkspaceScope
+    /** #312: the pond whose log is swept. */
+    pondId?: string | null
     pageId: string
     /** The blocks the save just wrote. A pending diff whose `before` still
      *  matches them is untouched — the page's blocks did not move. */
@@ -46,7 +46,7 @@ export async function sweepOutdatedAfterOwnEdit(
     if (!user) return
     await markOutdated(supabase, {
       userId: user.id,
-      workspace: opts.workspace,
+      pondId: opts.pondId,
       targetPageId: opts.pageId,
       // Whole page — the save wrote the whole array. Block actions only: a
       // pending add_row on this page is untouched by a block write.

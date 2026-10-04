@@ -4,10 +4,13 @@
  * navigate by pushing this href, so the params a surface reads
  * (?nodeType, ?nodeId, ?nodeName) can never drift between entry points.
  *
- * ticket-43: an optional `basePath` scopes navigation to the sandbox route.
- * The real workspace omits it (defaults to '/workspace') so its URLs are
- * byte-identical; the sandbox passes '/sandbox' so clicks stay in-scope.
+ * There is one route (`/workspace`). The sandbox's second base path went with
+ * the `/sandbox` route when the sandbox became a pond (#315) — a pond is scope
+ * carried in `?pond=`, not a route of its own.
  */
+
+/** The only route the shell renders at; the sandbox's `/sandbox` is retired. */
+export const WORKSPACE_PATH = '/workspace'
 
 export interface WorkspaceNodeRef {
   id: string
@@ -20,9 +23,9 @@ export interface WorkspaceNodeRef {
  *
  * Read from the live URL rather than threaded through all thirteen call sites,
  * because the pond is a property of WHERE YOU ARE, exactly like the page is.
- * Threading it would also have left the same hole open: several callers already
- * omit `basePath`, so the next navigation helper that forgets a param would drop
- * the pond again. Reading it here means every navigation keeps it by default.
+ * Threading it would also have left the same hole open: a caller that forgot the
+ * param would drop the pond again. Reading it here means every navigation keeps
+ * it by default.
  *
  * Returns null during server rendering, where there is no address to read — the
  * URL is then pond-less and the shell resolves the person's first pond, which is
@@ -44,13 +47,9 @@ function currentPondId(): string | null {
  * `pondId` overrides the ambient one, for the caller that is deliberately moving
  * you to a different pond.
  */
-export function workspaceUrl(
-  node: WorkspaceNodeRef | null,
-  basePath = '/workspace',
-  pondId?: string | null
-): string {
+export function workspaceUrl(node: WorkspaceNodeRef | null, pondId?: string | null): string {
   const pond = pondId ?? currentPondId()
-  if (!node) return pond ? `${basePath}?pond=${encodeURIComponent(pond)}` : basePath
+  if (!node) return pond ? `${WORKSPACE_PATH}?pond=${encodeURIComponent(pond)}` : WORKSPACE_PATH
   const params = new URLSearchParams({
     nodeType: node.type,
     nodeId: node.id,
@@ -59,17 +58,9 @@ export function workspaceUrl(
   // Appended last so the page params keep their historical order — several tests
   // assert the href string, and `?pond=` is additive rather than a reshuffle.
   if (pond) params.set('pond', pond)
-  return `${basePath}?${params.toString()}`
+  return `${WORKSPACE_PATH}?${params.toString()}`
 }
 
 /** Ticket-26 alias for the same URL; new call sites should use workspaceUrl. */
-export const workspaceHref = (
-  node: WorkspaceNodeRef,
-  basePath = '/workspace',
-  pondId?: string | null
-): string => workspaceUrl(node, basePath, pondId)
-
-/** The route base path for a workspace scope (ticket-43). */
-export function workspaceBasePath(workspace: 'main' | 'sandbox'): string {
-  return workspace === 'sandbox' ? '/sandbox' : '/workspace'
-}
+export const workspaceHref = (node: WorkspaceNodeRef, pondId?: string | null): string =>
+  workspaceUrl(node, pondId)
