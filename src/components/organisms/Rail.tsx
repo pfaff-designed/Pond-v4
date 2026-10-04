@@ -57,6 +57,7 @@ import {
   type PageRow,
 } from '@/lib/pages/tree'
 import { useWorkspace } from '@/lib/workspace/context'
+import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
@@ -831,14 +832,11 @@ export function RailView({
           and a pond is neither. (3) ADR 0003 puts small meta at 11, and the
           component board's 13.5 is off-scale besides. The serif display face is
           reserved for reading prose, never chrome. */}
-      <div data-part="rail-head" className="flex items-center px-4 pb-3">
-        <span
-          data-part="pond-name"
-          className="min-w-0 truncate font-sans text-mn-11 font-medium tracking-[0.14em] uppercase text-foreground select-none"
-        >
-          {pondName}
-        </span>
-      </div>
+      {/* #312/#319: the head is now the SWITCHER. The chevron appears only once
+          there is something to list — before migration 0018 is applied
+          `listPonds()` returns [] and this renders the plain name exactly as it
+          did, rather than an affordance that opens an empty menu. */}
+      <PondSwitcher fallbackName={pondName} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2">
         <div role="tree" aria-label="Workspace" aria-multiselectable={false}>

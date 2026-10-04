@@ -1,0 +1,144 @@
+/**
+ * The pond switcher in the rail head (#312 / #319, `Pond 06.13` `s6m1`).
+ *
+ * These prove the surface a person actually touches: the chevron, the list, and
+ * making a pond. They mock `@/lib/pond/client` rather than the database, because
+ * migration 0018 has not been applied to the hosted project yet — `ponds` answers
+ * 404 there — and the component's behaviour must not wait on that.
+ *
+ * The before-0018 case is tested too, and it is the one that matters most while
+ * the table is missing: `listPonds()` returns [] and the head must render exactly
+ * what it rendered before, with NO chevron. A switcher that opens an empty menu is
+ * the dead affordance that `#177` kept `import from notes` out for.
+ */
+
+import React from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { PondSwitcher } from '@/components/organisms/PondSwitcher'
+
+const push = jest.fn()
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push, replace: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(mockSearch),
+}))
+
+let mockSearch = ''
+
+jest.mock('@/lib/pond/client', () => ({
+  listPonds: jest.fn(),
+  createPond: jest.fn(),
+}))
+
+import { createPond, listPonds } from '@/lib/pond/client'
+
+const LIFE = { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 }
+const NOISE = { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'ink', order: 1 }
+
+// No QueryClientProvider on purpose: the switcher owns its own fetch, so the rail
+// head keeps working in the four suites and the stories that render it without one.
+function renderSwitcher() {
+  return render(<PondSwitcher fallbackName="life" />)
+}
+
+beforeEach(() => {
+  mockSearch = ''
+  push.mockClear()
+  ;(listPonds as jest.Mock).mockResolvedValue([LIFE, NOISE])
+  ;(createPond as jest.Mock).mockReset()
+})
+
+describe('the rail head before migration 0018', () => {
+  it('renders the plain name with NO chevron when there are no ponds', async () => {
+    ;(listPonds as jest.Mock).mockResolvedValue([])
+    const { container } = renderSwitcher()
+
+    await waitFor(() => expect(listPonds).toHaveBeenCalled())
+    expect(screen.getByText('life')).toBeInTheDocument()
+    // No button, so nothing to click and no empty menu to open.
+    expect(container.querySelector('[data-part="pond-switcher"]')).toBeNull()
+    expect(container.querySelector('svg')).toBeNull()
+  })
+})
+
+describe('the pond switcher', () => {
+  it('shows the active pond and opens the list on click', async () => {
+    const { container } = renderSwitcher()
+
+    const head = await screen.findByRole('button')
+    expect(head).toHaveAttribute('aria-expanded', 'false')
+    expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
+    // The chevron both boards draw.
+    expect(head.querySelector('svg')).not.toBeNull()
+
+    fireEvent.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'true')
+
+    const menu = screen.getByRole('menu', { name: 'Ponds' })
+    expect(menu).toBeInTheDocument()
+    expect(screen.getByText('make noise')).toBeInTheDocument()
+  })
+
+  it('names the pond from ?pond= rather than always the first', async () => {
+    mockSearch = 'pond=p-noise'
+    const { container } = renderSwitcher()
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('make noise')
+    )
+  })
+
+  it('links each pond to ?pond=<id>, dropping any ?nodeId=', async () => {
+    mockSearch = 'pond=p-life&nodeId=some-page'
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    const link = screen.getByRole('menuitem', { name: /make noise/ })
+    // A page id from one pond means nothing in another, so switching lands on the
+    // new pond's root rather than carrying ?nodeId= across.
+    expect(link).toHaveAttribute('href', '/workspace?pond=p-noise')
+  })
+
+  it('makes a pond from one field and switches to it', async () => {
+    ;(createPond as jest.Mock).mockResolvedValue({ ...NOISE, id: 'p-new', name: 'red door guys' })
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+
+    const field = screen.getByLabelText('New pond name')
+    fireEvent.change(field, { target: { value: 'red door guys' } })
+    fireEvent.submit(field.closest('form')!)
+
+    await waitFor(() => expect(createPond).toHaveBeenCalledWith('red door guys'))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/workspace?pond=p-new'))
+  })
+
+  it("submitting the field empty is legal — s6m2's skip gives 'untitled pond'", async () => {
+    ;(createPond as jest.Mock).mockResolvedValue({
+      ...LIFE,
+      id: 'p-untitled',
+      name: 'untitled pond',
+    })
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    fireEvent.submit(screen.getByLabelText('New pond name').closest('form')!)
+
+    // The column default supplies the name, so the client sends none.
+    await waitFor(() => expect(createPond).toHaveBeenCalledWith(''))
+  })
+
+  it('surfaces a failure instead of silently closing', async () => {
+    ;(createPond as jest.Mock).mockRejectedValue(new Error('relation "ponds" does not exist'))
+    renderSwitcher()
+
+    fireEvent.click(await screen.findByRole('button'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /new pond/ }))
+    fireEvent.submit(screen.getByLabelText('New pond name').closest('form')!)
+
+    await waitFor(() => expect(screen.getByText(/could not make it/)).toBeInTheDocument())
+    expect(push).not.toHaveBeenCalled()
+  })
+})

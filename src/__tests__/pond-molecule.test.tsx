@@ -28,6 +28,22 @@ import {
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 
+// `RailView`'s head is the pond switcher (#312/#319), which reads `?pond=` and
+// navigates on switch — so this suite now needs the router mocked. It asserts the
+// rail's ROWS, not its head, so a stub is enough.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(''),
+  usePathname: () => '/workspace',
+}))
+
+// Before migration 0018 the `ponds` table does not exist, which is also the state
+// these row assertions want: no chevron, no menu, just the name.
+jest.mock('@/lib/pond/client', () => ({
+  listPonds: jest.fn(() => Promise.resolve([])),
+  createPond: jest.fn(),
+}))
+
 /** The molecule's root element. */
 function root(container: HTMLElement): HTMLElement {
   const el = container.querySelector<HTMLElement>('[data-kind]')

@@ -6,6 +6,14 @@ import '../src/app/globals.css'
 
 const preview: Preview = {
   parameters: {
+    // The App Router's hooks (`useRouter`, `useSearchParams`) throw "invariant
+    // expected app router to be mounted" outside a Next tree. `Rail`'s head is the
+    // pond switcher (#312/#319), which reads `?pond=` and navigates, so every rail
+    // story needed a router. `@storybook/nextjs-vite` supplies a mock when told the
+    // app is App Router — set here rather than per-story so the next component that
+    // navigates does not rediscover this.
+    nextjs: { appDirectory: true },
+
     controls: {
       matchers: {
         color: /(background|color)$/i,
