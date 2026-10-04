@@ -270,11 +270,36 @@ prevent, and the divergence line in its body is withdrawn by this ruling.
    on one dark screen in three glasses that differ by a few hundredths of alpha — a difference no board
    draws and no person could name, but one that would read as the chrome not agreeing with itself.
 
+### Correction, 2026-10-03 — the light glass IS in conflict, and is ruled the same way
+
+**The paragraph below was wrong and is superseded by this one.** It surveyed `Pond 05 Shell`,
+`PondPicker` and `PondComposer`, found those three agreed on the light recipe, and concluded no
+conflict existed. It never checked **`PondRail.dc.html`**, whose switcher `menu` carries a fourth
+light recipe:
+
+| source                                       | light background                  | border | shadow                                  |
+| -------------------------------------------- | --------------------------------- | ------ | --------------------------------------- |
+| `.mn-glass` / `PondPicker` / `Pond 05 Shell` | `rgba(255,255,255,.86) → .64`     | `.9`   | `inset …,.7` + `rgba(40,34,24,.14)`     |
+| **`PondRail.dc.html`** (`menu`)              | **`rgba(255,255,255,.92) → .76`** | `.9`   | `inset …,.7` + **`rgba(40,34,24,.16)`** |
+
+**Ruled: the light glass takes the family value through `.mn-glass`, exactly as the dark does.**
+`PondRail`'s `.92 → .76` / `.16` is an isolated restatement and is **deliberately not implemented**.
+
+The reasoning is this ruling's own, unchanged: the rail cluster is already one of the named consumers,
+and the switcher menu opens over the canvas **beside** the breadcrumb pill and the composer. Forking it
+would put three light glasses differing by a few hundredths of alpha on one screen — the precise
+failure the dark ruling exists to prevent. A conflict the ADR had not seen does not change the answer;
+it only means the answer now covers both themes.
+
+Found while prototyping the switcher (#319), where the prototype had forked the light values to
+`PondRail`'s before this correction was written. Reverted.
+
 ### What this does not decide
 
-The **light** glass is not in conflict: `.mn-glass`'s paper recipe is byte-for-byte the picker card's
+~~The **light** glass is not in conflict: `.mn-glass`'s paper recipe is byte-for-byte the picker card's
 `glass` (`rgba(255,255,255,.86) → .64`, border `.9`, shadow `.7` + `rgba(40,34,24,.14)`), and the Shell's
-light frames agree. Only the dark theme has two readings, and only the dark theme is ruled here.
+light frames agree. Only the dark theme has two readings, and only the dark theme is ruled here.~~
+**Superseded by the correction above.**
 
 **It also does not cover the chart card's hover tooltip** (`PondChart.dc.html`'s `tip`, built in #227). That
 readout forks the family deliberately: its dark base is `74,73,64` where the family's is `48,49,42`, and its

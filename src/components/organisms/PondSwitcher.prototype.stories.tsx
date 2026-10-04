@@ -32,7 +32,15 @@ import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
  * head is sans 500 / 11 / .14em / UPPERCASE with NO mark (`Rail.tsx:834`, from
  * `Pond 05 Shell`, which draws it that way in all 18 frames). `PondRail.dc.html` and
  * `AUDIT.md` C3 ("show the pond name **and glyph** with the switcher chevron") say
- * mark + lowercase 13.5. The chevron cannot be added without choosing one.
+ * mark + lowercase 13.5.
+ *
+ * SETTLED on #319: where a component board and a screen board disagree about a
+ * component's own values, the component board wins — so the head is
+ * `PondRail`'s: the 13 mask glyph, lowercase
+ * 13.5 / 500, and the chevron. AUDIT C3 (a closed p1 in the Decided log) agrees, and
+ * already outranks any mockup frame. `treatment='board'` is the default below; the
+ * `shipped` treatment and `HeadTreatmentConflict` are kept only as the record of what
+ * was decided against, and of what `Rail.tsx:834` still renders.
  */
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -164,11 +172,17 @@ function PondRow({ pond, current }: { pond: ProtoPond; current: boolean }) {
 /**
  * The open list, at the board's own radius 16 / padding 6.
  *
- * Glass is written out per theme rather than taken from `.mn-glass`. ADR 0004
- * ruling 11 says light is not in conflict; it IS. `PondRail.dc.html`'s `menu`
- * gives light `rgba(255,255,255,.92 → .76)` with `inset 0 1px 0 rgba(255,255,255,.7)`
- * and a `.16` shadow, where the token is `.86 → .64` with `.14`. Dark matches the
- * token, so only light diverged. **Ruling 11 needs amending before this ships.**
+ * Glass is `.mn-glass` in BOTH themes, per ADR 0004 ruling 11 and its 2026-10-03
+ * correction. `PondRail.dc.html`'s `menu` does carry its own light recipe
+ * (`rgba(255,255,255,.92 → .76)`, shadow `.16`) where the token is `.86 → .64` / `.14`
+ * — the ruling had surveyed Shell/Picker/Composer and missed PondRail, so it wrongly
+ * said light was uncontested. Corrected, and ruled the same way as dark: the rail
+ * cluster is a named consumer of the shared family, the menu opens beside the
+ * breadcrumb and composer, and three light glasses differing by hundredths of alpha
+ * on one screen is the exact failure that ruling prevents. NOT forked.
+ *
+ * The component-board-wins call on #319 does **not** override this: it governs a
+ * component's own values, and yields to ruling 11 for this shared family.
  *
  * The board's menu also carries `shared ponds` and `shared with me` sections.
  * Both are out of scope on #312 (solo multi-pond), so they are omitted here.
@@ -191,7 +205,7 @@ function SwitcherMenu({
     <div
       role="menu"
       aria-label="Ponds"
-      className="absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] border border-white/90 bg-[linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))] p-[6px] text-mn-text shadow-[inset_0_1px_0_rgba(255,255,255,.7),0_20px_54px_rgba(40,34,24,.16)] backdrop-blur-[24px] backdrop-saturate-[1.3] dark:border-[rgba(250,249,239,.09)] dark:bg-[linear-gradient(160deg,rgba(74,73,64,.96),rgba(74,73,64,.86))] dark:shadow-[0_20px_54px_rgba(0,0,0,.45)]"
+      className="mn-glass absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
     >
       <div className={`${pageEyebrowClass} px-[10px] pt-[6px] pb-[4px] leading-[normal]`}>
         ponds
@@ -433,8 +447,13 @@ export const ArchivedPonds: Story = {
 }
 
 /**
- * The conflict. Left is what ships (`Pond 05 Shell`, 18 frames); right is what
- * `PondRail.dc.html` and AUDIT C3 say. The chevron needs one of them chosen.
+ * The conflict, RESOLVED — kept as the record, not as an open question.
+ * Left is what ships (`Pond 05 Shell`'s 11 / .14em / uppercase, no mark); right is
+ * `PondRail.dc.html` + AUDIT C3's 13 glyph / lowercase 13.5. **#319 rules for the
+ * right**: a component board beats a screen board on that component's own values.
+ * `Rail.tsx:834` still renders the left, locked by three assertions in
+ * `src/__tests__/shell-reskin.test.tsx` that encode ADR 0002's M1 trim — retiring
+ * those is a build slice under #312, not a drive-by edit.
  */
 export const HeadTreatmentConflict: Story = {
   args: {},
