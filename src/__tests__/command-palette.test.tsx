@@ -26,12 +26,13 @@ import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-i
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import type { PageRow } from '@/lib/pages/tree'
 import { PALETTE_ITEMS, PALETTE_SUGGESTED, paletteChrome } from './helpers/palette-fixture'
+import { readHandoff } from './helpers/handoff'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 
 /** The palette branch of `PondPicker.dc.html`'s `renderVals()` — the `else` after `source`. */
 function boardPaletteBranch(): string {
-  const html = read('wayfinder/design_handoff_pond/PondPicker.dc.html')
+  const html = readHandoff('PondPicker.dc.html')
   const start = html.indexOf('sansRows = true')
   const end = html.indexOf('const rowPad', start)
   return html.slice(start, end)

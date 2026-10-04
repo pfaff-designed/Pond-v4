@@ -5,15 +5,14 @@
  * `COMPONENTS` / `BOARDS` below and the `skipped` block in the output.
  */
 
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import { buildBoard, type BoardValues } from './board.mts'
 import { compileVals, readDcFile, readPondCharts } from './dc.mts'
 import { buildComponent, type ComponentValues } from './matrix.mts'
 import { README, SKIPPED } from './readme.mts'
 import { serialise } from './serialise.mts'
+import { HANDOFF, readHandoffFile } from './source.mts'
 
-export const HANDOFF = 'wayfinder/design_handoff_pond'
+export { HANDOFF }
 
 /** Component `.dc.html` files: logic-driven, read by running `renderVals()`. */
 export const COMPONENTS = [
@@ -42,14 +41,14 @@ export type BoardValuesDoc = {
 export { serialise }
 
 export async function buildDoc(repoRoot: string): Promise<BoardValuesDoc> {
-  const read = (name: string) => readFile(path.join(repoRoot, HANDOFF, `${name}.dc.html`), 'utf8')
-  const PondCharts = readPondCharts(
-    await readFile(path.join(repoRoot, HANDOFF, 'pond-charts.js'), 'utf8')
-  )
+  // Reads the working tree if the handoff is checked out, else the committed copy
+  // in git — the folder was deliberately deleted (see source.mts).
+  const read = (name: string) => readHandoffFile(repoRoot, `${name}.dc.html`)
+  const PondCharts = readPondCharts(readHandoffFile(repoRoot, 'pond-charts.js'))
 
   const components: Record<string, ComponentValues> = {}
   for (const name of COMPONENTS) {
-    const html = await read(name)
+    const html = read(name)
     const { propsSchema, logicSrc } = readDcFile(html, name)
     components[name] = buildComponent({
       source: `${HANDOFF}/${name}.dc.html`,
@@ -60,7 +59,7 @@ export async function buildDoc(repoRoot: string): Promise<BoardValuesDoc> {
 
   const boards: Record<string, BoardValues> = {}
   for (const name of BOARDS) {
-    boards[name] = buildBoard(await read(name), `${HANDOFF}/${name}.dc.html`)
+    boards[name] = buildBoard(read(name), `${HANDOFF}/${name}.dc.html`)
   }
 
   return { readme: README, generatedFrom: HANDOFF, components, boards, skipped: SKIPPED }

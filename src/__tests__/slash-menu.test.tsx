@@ -16,13 +16,13 @@ import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
 import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
+import { readHandoff } from './helpers/handoff'
 
-const HANDOFF = path.join(process.cwd(), 'wayfinder/design_handoff_pond')
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 
 /** `Pond 03` 3a — the 18px/500 term column, straight off the board. */
 function glossaryTerms(): string[] {
-  const html = fs.readFileSync(path.join(HANDOFF, 'Pond 03 Concepts.dc.html'), 'utf8')
+  const html = readHandoff('Pond 03 Concepts.dc.html')
   const start = html.indexOf('id="3a"')
   const end = html.indexOf('class="dv-opt"', start + 10)
   const seg = html.slice(start, end)
@@ -33,7 +33,7 @@ function glossaryTerms(): string[] {
 
 /** The slash kind's row labels and group labels, off `PondPicker.dc.html`'s `renderVals()`. */
 function boardSlashWords(): string[] {
-  const html = fs.readFileSync(path.join(HANDOFF, 'PondPicker.dc.html'), 'utf8')
+  const html = readHandoff('PondPicker.dc.html')
   const start = html.indexOf("if (kind === 'slash')")
   const end = html.indexOf("} else if (kind === 'source')", start)
   const seg = html.slice(start, end)
