@@ -140,7 +140,7 @@ describe('countPagesMadeFrom', () => {
     })
     const sb = makeSupabase(chain)
 
-    const n = await countPagesMadeFrom(sb as never, 'user-1', 'main', 'tpl-1')
+    const n = await countPagesMadeFrom(sb as never, 'user-1', 'main', null, 'tpl-1')
 
     expect(n).toBe(3)
     expect(sb.from).toHaveBeenCalledWith('pages')
@@ -154,7 +154,9 @@ describe('countPagesMadeFrom', () => {
 
   it('returns 0 when the count is null', async () => {
     const chain = makeChain({ contains: jest.fn().mockResolvedValue({ count: null, error: null }) })
-    expect(await countPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', 'tpl-1')).toBe(0)
+    expect(await countPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', null, 'tpl-1')).toBe(
+      0
+    )
   })
 
   it('throws when the read errors', async () => {
@@ -162,7 +164,7 @@ describe('countPagesMadeFrom', () => {
       contains: jest.fn().mockResolvedValue({ count: null, error: { message: 'count boom' } }),
     })
     await expect(
-      countPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', 'tpl-1')
+      countPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', null, 'tpl-1')
     ).rejects.toThrow(/count boom/)
   })
 })
@@ -184,7 +186,7 @@ describe('listPagesMadeFrom', () => {
     const chain = makeChain({ limit: jest.fn().mockResolvedValue({ data: rows, error: null }) })
     const sb = makeSupabase(chain)
 
-    const out = await listPagesMadeFrom(sb as never, 'user-1', 'main', 'tpl-1', 5)
+    const out = await listPagesMadeFrom(sb as never, 'user-1', 'main', null, 'tpl-1', 5)
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
@@ -202,7 +204,9 @@ describe('listPagesMadeFrom', () => {
 
   it('returns [] when nothing was made from the template', async () => {
     const chain = makeChain({ limit: jest.fn().mockResolvedValue({ data: null, error: null }) })
-    expect(await listPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', 'tpl-1')).toEqual([])
+    expect(
+      await listPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', null, 'tpl-1')
+    ).toEqual([])
   })
 
   it('throws when the read errors', async () => {
@@ -210,7 +214,7 @@ describe('listPagesMadeFrom', () => {
       limit: jest.fn().mockResolvedValue({ data: null, error: { message: 'list boom' } }),
     })
     await expect(
-      listPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', 'tpl-1')
+      listPagesMadeFrom(makeSupabase(chain) as never, 'u', 'main', null, 'tpl-1')
     ).rejects.toThrow(/list boom/)
   })
 })
@@ -234,7 +238,7 @@ describe('siblingTemplateRanking', () => {
     const chain = makeChain({ not: jest.fn().mockResolvedValue({ data: rows, error: null }) })
     const sb = makeSupabase(chain)
 
-    const out = await siblingTemplateRanking(sb as never, 'user-1', 'main', 'parent-1')
+    const out = await siblingTemplateRanking(sb as never, 'user-1', 'main', null, 'parent-1')
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
@@ -247,14 +251,14 @@ describe('siblingTemplateRanking', () => {
 
   it('uses is(null) for top-level siblings when parentId is null', async () => {
     const chain = makeChain({ not: jest.fn().mockResolvedValue({ data: [], error: null }) })
-    await siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', null)
+    await siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', null, null)
     expect(chain.is).toHaveBeenCalledWith('parent_id', null)
   })
 
   it('returns [] when no sibling carries a stamp', async () => {
     const chain = makeChain({ not: jest.fn().mockResolvedValue({ data: null, error: null }) })
     expect(
-      await siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', 'p')
+      await siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', null, 'p')
     ).toEqual([])
   })
 
@@ -263,7 +267,7 @@ describe('siblingTemplateRanking', () => {
       not: jest.fn().mockResolvedValue({ data: null, error: { message: 'rank boom' } }),
     })
     await expect(
-      siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', 'p')
+      siblingTemplateRanking(makeSupabase(chain) as never, 'user-1', 'main', null, 'p')
     ).rejects.toThrow(/rank boom/)
   })
 })

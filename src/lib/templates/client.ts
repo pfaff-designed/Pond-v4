@@ -108,14 +108,19 @@ function mapRow(row: TemplateRow): PondTemplate {
 export async function listTemplates(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
+  pondId?: string | null
 ): Promise<PondTemplate[]> {
-  const { data, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
     .from('templates')
     .select(TEMPLATE_COLUMNS)
     .eq('user_id', userId)
     .eq('workspace', workspace)
-    .order('name', { ascending: true })
+  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { data, error } = await q.order('name', { ascending: true })
 
   if (error) throw new Error(error.message)
   return ((data ?? []) as TemplateRow[]).map(mapRow)

@@ -123,9 +123,42 @@ export function mapChangeLogRow(row: ChangeLogRow): ChangeLogRecord {
 /** Everything an append needs. `status` is the status the record is BORN with —
  *  `proposed` for anything awaiting a decision, `accepted` for a person's own
  *  edit (which applies as they type). */
+/**
+ * The common read prefix, with the pond filter applied ONLY when there is a pond
+ * (#312).
+ *
+ * `Pond 06.13` `s6m5`: "pages, databases, memory, threads and **the change log**
+ * are per pond. Nothing crosses over." Without the filter, the proposed view
+ * showed every pond's diffs in every pond.
+ *
+ * Conditional for a reason worth naming: `.eq('pond_id', null)` matches only the
+ * rows that have NO pond, which is the exact opposite of "read across ponds". A
+ * first attempt at this did precisely that, so the condition lives here once
+ * rather than at six call sites.
+ */
+function readScoped(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null },
+  select: string = COLUMNS,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  selectOpts?: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any)
+    .from(TABLE)
+    .select(select, selectOpts)
+    .eq('user_id', opts.userId)
+    .eq('workspace', opts.workspace ?? 'main')
+  if (opts.pondId) q = q.eq('pond_id', opts.pondId)
+  return q
+}
+
 export interface AppendRecordInput {
   userId: string
   workspace?: WorkspaceScope
+  /** #312: the pond this record belongs to. Unstamped, it escapes every filter. */
+  pondId?: string | null
   status: ChangeLogStatus
   action: ChangeLogAction
   actor?: ChangeLogActor
@@ -153,6 +186,7 @@ export async function appendRecord(
   const insert = {
     user_id: input.userId,
     workspace: input.workspace ?? 'main',
+    ...(input.pondId ? { pond_id: input.pondId } : {}),
     status: input.status,
     action: input.action,
     actor,
@@ -251,14 +285,9 @@ export async function getRecord(
  */
 export async function getRecordByToolCall(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; toolCallId: string }
+  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; toolCallId: string }
 ): Promise<ChangeLogRecord | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
+  const { data, error } = await readScoped(supabase, opts)
     .eq('tool_call_id', opts.toolCallId)
     .maybeSingle()
   // Taking only `data` made a broken query indistinguishable from "this call was
@@ -277,16 +306,16 @@ export async function getRecordByToolCall(
  */
 export async function listRecordsByToolCalls(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; toolCallIds: readonly string[] }
+  opts: {
+    userId: string
+    workspace?: WorkspaceScope
+    pondId?: string | null
+    toolCallIds: readonly string[]
+  }
 ): Promise<ChangeLogRecord[]> {
   if (opts.toolCallIds.length === 0) return []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
-    .in('tool_call_id', [...opts.toolCallIds])
+
+  const { data, error } = await readScoped(supabase, opts).in('tool_call_id', [...opts.toolCallIds])
   if (error) throw error
   return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
 }
@@ -400,6 +429,8 @@ export async function markOutdated(
   opts: {
     userId: string
     workspace?: WorkspaceScope
+    /** #312: scope to one pond; omitted reads across ponds. */
+    pondId?: string | null
     targetPageId: string
     /** Blocks the accepted diff touched. Empty ⇒ sweep the whole page. */
     blockIds?: string[]
@@ -430,11 +461,7 @@ export async function markOutdated(
   }
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
+  let q: any = readScoped(supabase, opts)
     .eq('target_page_id', opts.targetPageId)
     .eq('status', 'proposed')
   if (opts.actions !== undefined) q = q.in('action', opts.actions)
@@ -492,6 +519,8 @@ export async function redactRecordContent(
 export interface ListRecordsOptions {
   userId: string
   workspace?: WorkspaceScope
+  /** #312: scope to one pond; omitted reads across ponds. */
+  pondId?: string | null
   status?: ChangeLogStatus | ChangeLogStatus[]
   targetPageId?: string
   action?: ChangeLogAction | ChangeLogAction[]
@@ -509,11 +538,7 @@ export async function listRecords(
   opts: ListRecordsOptions
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
+  let q: any = readScoped(supabase, opts)
   if (opts.status !== undefined) {
     q = Array.isArray(opts.status) ? q.in('status', opts.status) : q.eq('status', opts.status)
   }
@@ -537,15 +562,14 @@ export async function listRecords(
 export async function countProposed(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main'
+  workspace: WorkspaceScope = 'main',
+  /** #312: the pond whose open records to count. Omitted, counts across ponds. */
+  pondId?: string | null
 ): Promise<number> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (supabase as any)
-    .from(TABLE)
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
-    .eq('status', 'proposed')
+  const { count } = await readScoped(supabase, { userId, workspace, pondId }, 'id', {
+    count: 'exact',
+    head: true,
+  }).eq('status', 'proposed')
   return count ?? 0
 }
 
@@ -561,14 +585,9 @@ export async function countProposed(
  */
 export async function listRevertsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; recordId: string }
+  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq('user_id', opts.userId)
-    .eq('workspace', opts.workspace ?? 'main')
+  const { data, error } = await readScoped(supabase, opts)
     .eq('links->>revert_of', opts.recordId)
     .order('created_at', { ascending: false })
   // A failed query read as "no reverts yet" would let a second revert be raised
@@ -585,7 +604,7 @@ export async function listRevertsOf(
  */
 export async function listRevisionsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; workspace?: WorkspaceScope; recordId: string }
+  opts: { userId: string; workspace?: WorkspaceScope; pondId?: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
   const all = await listRecords(supabase, { userId: opts.userId, workspace: opts.workspace })
   const byRevisedFrom = new Map<string, ChangeLogRecord>()

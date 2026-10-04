@@ -68,6 +68,12 @@ export interface ProposalToolCall {
 export interface RecordProposalsInput {
   userId: string
   workspace: WorkspaceScope
+  /**
+   * #312: the pond the proposal belongs to. `s6m5` — the change log is per pond.
+   * A record written without one escapes every pond filter, so it would appear in
+   * the proposed view of every pond.
+   */
+  pondId?: string | null
   /** The page the person has open — the default target of a block proposal. */
   openPageId: string | null
   /** The conversation the proposal came from, when the caller knows it. */
@@ -124,6 +130,7 @@ export async function recordProposedToolCalls(
   const {
     userId,
     workspace,
+    pondId = null,
     openPageId,
     sourceThreadId = null,
     revisesToolCallId = null,
@@ -138,6 +145,7 @@ export async function recordProposedToolCalls(
       revised = await getRecordByToolCall(supabase, {
         userId,
         workspace,
+        pondId,
         toolCallId: revisesToolCallId,
       })
       // The note IS the decision: if the browser's own advance has not landed
@@ -182,6 +190,7 @@ export async function recordProposedToolCalls(
       const record = {
         userId,
         workspace,
+        pondId,
         action,
         targetPageId,
         before,

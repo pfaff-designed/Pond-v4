@@ -303,6 +303,8 @@ export async function POST(req: Request) {
       await recordProposedToolCalls(supabase, {
         userId: user.id,
         workspace,
+        // #312: the change log is per pond (`s6m5`).
+        pondId,
         openPageId: nodeId ?? null,
         // #98 — a propose_changes emitted in answer to a request-changes note is
         // the revision of that card's record, linked through links.revisedFrom.
