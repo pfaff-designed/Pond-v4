@@ -532,6 +532,11 @@ async function assertError(canvasElement: HTMLElement, theme: Theme) {
     const ts = getComputedStyle(title)
     await expect(ts.fontFamily).toContain('PP Neue Montreal Mono')
     await expect(ts.fontSize).toBe('11px')
+    // Ink .8, the notice's own tier. Asserted since #252: `cn()` was dropping this
+    // colour because `text-mn-text-meta` and `text-mn-11` looked like one group to
+    // tailwind-merge, so the error line shipped at the wrong tier — and this story
+    // passed anyway, because it checked the font and the size but never the colour.
+    await expect(ts.color).toBe(theme.ink80)
     // The board's notice is 440 wide; it never overflows the paper.
     const nw = parseFloat(getComputedStyle(notice).width)
     await expect(nw).toBeCloseTo(Math.min(440, contentWidth(c)), 0)

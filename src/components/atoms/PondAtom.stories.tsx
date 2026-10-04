@@ -1,11 +1,6 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect } from 'storybook/test'
-import {
-  PondAtom,
-  POND_ATOM_KINDS,
-  POND_ATOM_STATES,
-  type PondAtomProps,
-} from './PondAtom'
+import { PondAtom, POND_ATOM_KINDS, POND_ATOM_STATES, type PondAtomProps } from './PondAtom'
 
 /**
  * PondAtom (#93) — the one polymorphic inline atom: 24 kinds × 9 states on the
@@ -36,18 +31,13 @@ function MatrixGrid({ size }: { size?: PondAtomProps['size'] }) {
     <div className="grid items-center gap-x-mn-4 gap-y-mn-1 overflow-x-auto p-mn-4 [grid-template-columns:auto_repeat(9,minmax(120px,auto))]">
       <span />
       {POND_ATOM_STATES.map((state) => (
-        <span
-          key={state}
-          className="font-mono lowercase text-[10.5px] text-mn-text-secondary"
-        >
+        <span key={state} className="font-mono lowercase text-[10.5px] text-mn-text-secondary">
           {state}
         </span>
       ))}
       {POND_ATOM_KINDS.map((kind) => (
         <div key={kind} className="contents">
-          <span className="font-mono lowercase text-[10.5px] text-mn-text-secondary">
-            {kind}
-          </span>
+          <span className="font-mono lowercase text-[10.5px] text-mn-text-secondary">{kind}</span>
           {POND_ATOM_STATES.map((state) => (
             <PondAtom key={state} kind={kind} state={state} size={size} due on />
           ))}
@@ -97,6 +87,36 @@ export const HeadingLevels: Story = {
   ),
 }
 
+/**
+ * Leading reaches the DOM at all — the half of #252 that is easy to ship blind.
+ * Every one of these `leading-*` classes was written in the source and then dropped
+ * by `cn()`, so the text rendered at Tailwind's preflight 1.5 and no test noticed.
+ * Asserted in a real browser against the board's own numbers.
+ */
+export const BoardLeading: Story = {
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-2 p-mn-4">
+      <PondAtom kind="heading" level={2} value="section" />
+      <PondAtom kind="prose" value="a paragraph of running prose, set in the serif." />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const [heading, prose] = canvasElement.querySelectorAll<HTMLElement>('[data-part="text"]')
+
+    // heading level 2 — board lineHeight 1.1 at 22px
+    const h = getComputedStyle(heading)
+    await expect(h.fontSize).toBe('22px')
+    await expect(parseFloat(h.lineHeight) / 22).toBeCloseTo(1.1, 2)
+
+    // prose — board lineHeight 1.6 at 17.5px. NOT the house --leading-relaxed (1.7):
+    // the board's value wins, and this call site had been carrying the wrong token
+    // invisibly because the class never applied.
+    const p = getComputedStyle(prose)
+    await expect(p.fontSize).toBe('17.5px')
+    await expect(parseFloat(p.lineHeight) / 17.5).toBeCloseTo(1.6, 2)
+  },
+}
+
 /** Area colour tints marks ONLY — glyph + dot; ink text never changes. */
 export const AreaMarks: Story = {
   render: () => (
@@ -112,7 +132,9 @@ export const AreaMarks: Story = {
   ),
   play: async ({ canvasElement }) => {
     // Marks carry the area role; no text span ever does.
-    await expect(canvasElement.querySelectorAll('[data-part="glyph"].text-mn-area-c')).toHaveLength(1)
+    await expect(canvasElement.querySelectorAll('[data-part="glyph"].text-mn-area-c')).toHaveLength(
+      1
+    )
     for (const text of canvasElement.querySelectorAll('[data-part="text"]')) {
       await expect(text.className).not.toContain('mn-area')
     }

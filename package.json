@@ -11,6 +11,8 @@
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run test",
+    "_comment_gate": "The CI gate, in one command: the same six steps the two workflow jobs run, in the same order. Keep in step with .github/workflows.",
+    "gate": "npm run lint && npm run typecheck && npm test && npm run test:pglite && npm run build && npm run test-storybook",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "jest",
