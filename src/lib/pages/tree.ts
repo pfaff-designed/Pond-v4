@@ -57,7 +57,12 @@ export async function fetchPages(
     // mark — no surface fetches anything extra to draw one.
     .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
     .eq('user_id', user.id)
-    .eq('workspace', workspace)
+    // #312: scoped by POND, not by workspace. The sandbox pond holds exactly the
+    // `workspace='sandbox'` rows, so the pond filter already says everything the
+    // workspace filter said — and keeping BOTH made the sandbox pond unreachable:
+    // `/workspace?pond=<sandbox>` asked for `workspace='main'` AND the sandbox
+    // pond, which can never both match, so it showed nothing. `workspace` is now
+    // dead weight on the column; retiring it is its own slice.
     // ticket-44: the reserved Life home row never enters the ['pages'] cache
     // (rail / children grid / breadcrumb) — home blocks are read separately.
     .neq('type', HOME_TYPE)
@@ -65,11 +70,13 @@ export async function fetchPages(
     // views, never as rail children or children-grid cards — this is the ONE boundary
     // that keeps them out of the tree. They stay directly openable via getPage.
     .neq('type', ROW_TYPE)
-    .order('order')
 
+  // Filters before `.order()`: a PostgREST builder is chainable either way, but
+  // ordering last keeps the shape readable and means a test double does not have
+  // to return a chainable from `order`.
   if (scope) q = q.eq('pond_id', scope)
 
-  const { data, error } = await q
+  const { data, error } = await q.order('order')
   if (error) throw error
   return (data ?? []) as PageRow[]
 }
