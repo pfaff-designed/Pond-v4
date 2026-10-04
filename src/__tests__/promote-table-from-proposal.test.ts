@@ -247,7 +247,6 @@ describe('promoteTableFromProposal', () => {
       sb as never,
       { pageId: 'page-1', blockId: 'b-table' },
       counter(),
-      'main',
       null
     )
 
@@ -289,7 +288,6 @@ describe('promoteTableFromProposal', () => {
       sb as never,
       { pageId: 'page-1' },
       counter(),
-      'main',
       null
     )
     expect(result.rowCount).toBe(2)
@@ -299,7 +297,7 @@ describe('promoteTableFromProposal', () => {
   it('throws when the page does not exist', async () => {
     const sb = makeFakeSupabase([])
     await expect(
-      promoteTableFromProposal(sb as never, { pageId: 'ghost' }, counter(), 'main', null)
+      promoteTableFromProposal(sb as never, { pageId: 'ghost' }, counter(), null)
     ).rejects.toThrow(/not found/i)
   })
 
@@ -310,7 +308,6 @@ describe('promoteTableFromProposal', () => {
         sb as never,
         { pageId: 'page-1', blockId: 'b-text' },
         counter(),
-        'main',
         null
       )
     ).rejects.toThrow(/table/i)
@@ -319,7 +316,7 @@ describe('promoteTableFromProposal', () => {
   it('throws when the page has no table block to promote', async () => {
     const sb = makeFakeSupabase([seededPage([{ id: 'b-text', type: 'text', content: 'x' }])])
     await expect(
-      promoteTableFromProposal(sb as never, { pageId: 'page-1' }, counter(), 'main', null)
+      promoteTableFromProposal(sb as never, { pageId: 'page-1' }, counter(), null)
     ).rejects.toThrow(/table/i)
   })
 })

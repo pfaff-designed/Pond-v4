@@ -215,7 +215,7 @@ describe('Life is a page (#234)', () => {
           expect(call).toBeTruthy()
           // G2 (#98 review): the person's own typed edit carries `ownEdit`, so a
           // pending diff aimed at Life goes outdated.
-          expect(call![5]).toMatchObject({ ownEdit: true })
+          expect(call![4]).toMatchObject({ ownEdit: true })
         },
         { timeout: 2000 }
       )

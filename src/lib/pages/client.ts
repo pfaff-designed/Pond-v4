@@ -11,18 +11,18 @@
  * cast-to-any pattern for insert/update chains (Supabase's generated types don't
  * narrow well through the builder). Supersedes lib/documents/client.ts.
  *
- * ticket-43: all reads pass workspace='main'|'sandbox' to isolate scopes.
- * Writes (createPage) also stamp the workspace column. Reads by id (getPage,
+ * #312: a page belongs to a pond, and the LIST reads (`listPages`, `siblingRows`)
+ * take a `pondId` to isolate one. Reads by id (getPage, getChildPages,
  * saveBlocks, updateTitle, deletePage) are id-scoped and trust the caller has
- * the right page — no workspace filter needed there (FK cascade and id primary
- * key keep them safe).
+ * the right page — the id or the `parent_id` already pins the pond, and the FK
+ * cascade keeps the subtree together. `workspace` was retired by 0020: the
+ * sandbox is a pond (#315), not a second scope axis.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { firstPondId } from '@/lib/pond/first'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import {
   ROW_TYPE,
   withSchema,
@@ -71,7 +71,6 @@ export interface CreatePageInput {
   title?: string
   blocks?: Block[]
   props?: Record<string, unknown>
-  workspace?: WorkspaceScope
 }
 
 /** A page returned by semantic search, with its cosine similarity to the query. */
@@ -138,20 +137,16 @@ export async function getPage(
  * top-level pages (those with no parent). A page may have zero, one, or many
  * children of any type.
  *
- * ticket-43: workspace filters to the correct scope so sandbox children
- * never appear in main queries and vice-versa.
+ * No pond filter: `parentId` is itself a page in one pond, so its children are
+ * in that pond. Every caller passes a concrete id — `null` (top-level, which
+ * WOULD cross ponds) is reached only from tests.
  */
 export async function getChildPages(
   supabase: SupabaseClient<Database>,
   userId: string,
-  parentId: string | null,
-  workspace: WorkspaceScope = 'main'
+  parentId: string | null
 ): Promise<PondPage[]> {
-  let query = supabase
-    .from('pages')
-    .select(PAGE_COLUMNS)
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
+  let query = supabase.from('pages').select(PAGE_COLUMNS).eq('user_id', userId)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.
   query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId)
@@ -172,10 +167,9 @@ export async function getChildPages(
 export async function getCollectionRows(
   supabase: SupabaseClient<Database>,
   userId: string,
-  collectionId: string,
-  workspace: WorkspaceScope = 'main'
+  collectionId: string
 ): Promise<PondPage[]> {
-  const children = await getChildPages(supabase, userId, collectionId, workspace)
+  const children = await getChildPages(supabase, userId, collectionId)
   return children.filter((p) => p.type === ROW_TYPE)
 }
 
@@ -185,19 +179,20 @@ export async function getCollectionRows(
  * populate the destination (parent) picker and to pre-resolve an AI-proposed parent
  * title to an id. Reads the same columns as the other list reads.
  *
- * ticket-43: workspace filters to the correct scope.
+ * #312: scoped to one pond. Unscoped this read reached across every pond, so the
+ * parent picker offered another pond's pages and an AI-proposed parent title
+ * could resolve to a page you cannot see from here.
  */
 export async function listPages(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main'
+  pondId?: string | null
 ): Promise<PondPage[]> {
-  const { data } = await supabase
-    .from('pages')
-    .select(PAGE_COLUMNS)
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
-    .order('order', { ascending: true })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q: any = (supabase as any).from('pages').select(PAGE_COLUMNS).eq('user_id', userId)
+  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { data } = await q.order('order', { ascending: true })
 
   const rows = (data ?? []) as PageRow[]
   return rows.map(mapRow)
@@ -207,22 +202,17 @@ export async function listPages(
 
 /**
  * The `{id, title}` of every sibling under `parentId` (root when null) in a
- * workspace — the scope the `pages_sibling_title_uniq` index guards (#84). Used
- * to auto-suffix new titles and to detect rename collisions.
+ * pond — the scope `pages_sibling_title_pond_uniq` guards (#84, re-keyed by
+ * 0019). Used to auto-suffix new titles and to detect rename collisions.
  */
 async function siblingRows(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: string,
   parentId: string | null,
   pondId?: string | null
 ): Promise<{ id: string; title: string }[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
-    .from('pages')
-    .select('id, title')
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
+  let q: any = (supabase as any).from('pages').select('id, title').eq('user_id', userId)
   // #312: 0018's `pages_sibling_title_pond_uniq` is keyed per pond, so the
   // auto-suffix must read THIS pond's siblings — otherwise it renames around a
   // name that does not collide.
@@ -239,7 +229,6 @@ export async function createPage(
   input: CreatePageInput
 ): Promise<PondPage> {
   const parentId = input.parentId ?? null
-  const workspace = input.workspace ?? 'main'
   const desired = input.title ?? ''
 
   // #312: `pondId` is required, so a caller that knows its pond says so. The
@@ -256,7 +245,6 @@ export async function createPage(
     title: desired,
     blocks: input.blocks ?? [],
     props: input.props ?? {},
-    workspace,
   }
 
   // Insert first with the caller's title — the common case has no collision, so
@@ -288,7 +276,7 @@ export async function createPage(
     if ((error as any)?.code !== '23505' || attempt === 1) {
       throw new Error(error?.message ?? 'Failed to create page')
     }
-    const siblings = await siblingRows(supabase, userId, workspace, parentId, pondId)
+    const siblings = await siblingRows(supabase, userId, parentId, pondId)
     insert.title = nextAvailableTitle(
       desired || 'Untitled',
       siblings.map((s) => s.title)
@@ -341,17 +329,15 @@ export async function updateTitle(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: self } = await (supabase as any)
       .from('pages')
-      .select('user_id, workspace, parent_id')
+      // #312: `pond_id` was MISSING here, so `self.pond_id` was always undefined
+      // and the sibling lookup below skipped its pond clause — renaming a page
+      // compared its title against every pond's siblings and refused names that do
+      // not collide. `workspace` is gone (0020).
+      .select('user_id, pond_id, parent_id')
       .eq('id', id)
       .maybeSingle()
     if (self) {
-      const siblings = await siblingRows(
-        supabase,
-        self.user_id,
-        self.workspace,
-        self.parent_id,
-        self.pond_id
-      )
+      const siblings = await siblingRows(supabase, self.user_id, self.parent_id, self.pond_id)
       const clashes = siblings.some((s) => s.id !== id && normalizeTitle(s.title) === normalized)
       if (clashes) throw new DuplicateTitleError(title.trim())
     }

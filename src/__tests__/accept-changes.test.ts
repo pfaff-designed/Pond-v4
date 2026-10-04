@@ -52,7 +52,7 @@ function logRecord(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   return {
     id: 'rec-1',
     userId: USER,
-    workspace: 'main',
+    pondId: 'pond-1',
     status: 'proposed',
     action: 'edit',
     actor: 'pond',
@@ -120,8 +120,7 @@ describe('writeAcceptedChanges', () => {
       supabase,
       queryClient,
       'stamped-id',
-      expect.any(Array),
-      'main'
+      expect.any(Array)
     )
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'stamped-id'] })
   })
@@ -137,13 +136,9 @@ describe('writeAcceptedChanges', () => {
       changes,
     })
     expect(mockedGetPage).toHaveBeenCalledWith(supabase, 'open-id')
-    expect(mockedCommitBlocks).toHaveBeenCalledWith(
-      supabase,
-      queryClient,
-      'open-id',
-      [expect.objectContaining({ type: 'text', content: 'hello' })],
-      'main'
-    )
+    expect(mockedCommitBlocks).toHaveBeenCalledWith(supabase, queryClient, 'open-id', [
+      expect.objectContaining({ type: 'text', content: 'hello' }),
+    ])
   })
 
   it('no stamp and no open node → every change skipped, nothing written', async () => {
@@ -217,13 +212,9 @@ describe('writeAcceptedChanges', () => {
     // lands on the target page's block array (with the edit applied).
     expect(result.skipped).toBe(0)
     expect(mockedGetPage).toHaveBeenCalledWith(supabase, 'ceramics-id')
-    expect(mockedCommitBlocks).toHaveBeenCalledWith(
-      supabase,
-      queryClient,
-      'ceramics-id',
-      [expect.objectContaining({ id: 'blk-target', type: 'text', content: 'new plan' })],
-      'main'
-    )
+    expect(mockedCommitBlocks).toHaveBeenCalledWith(supabase, queryClient, 'ceramics-id', [
+      expect.objectContaining({ id: 'blk-target', type: 'text', content: 'new plan' }),
+    ])
     // The target page's cache is invalidated so it is fresh when the user visits.
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'ceramics-id'] })
   })
@@ -349,7 +340,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
     // The RPC writes pages.blocks and nothing else, so the propagation half of
     // commitBlocks — rail refresh + re-embed — still has to run.
-    expect(mockedPropagate).toHaveBeenCalledWith(queryClient, 'stamped-id', 'main')
+    expect(mockedPropagate).toHaveBeenCalledWith(queryClient, 'stamped-id')
   })
 
   it('writes the page the person chose, not the one the record froze', async () => {
@@ -375,8 +366,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
       supabase,
       queryClient,
       'stamped-id',
-      expect.any(Array),
-      'main'
+      expect.any(Array)
     )
     // The record still advances — it just loses the shared transaction, and goes
     // on naming a page nothing was written to (#146 item 5).
@@ -421,7 +411,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
       supabase,
       queryClient,
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       resolutions: stamped('pc1', 'stamped-id'),
       toolCallId: 'pc1',
       openNodeId: null,
@@ -430,7 +420,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
 
     expect(mockedMarkOutdated).toHaveBeenCalledWith(supabase, {
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       targetPageId: 'stamped-id',
       exceptId: 'rec-1',
       // Only block diffs. A pending add_row on this page is untouched by a block

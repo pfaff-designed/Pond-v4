@@ -34,9 +34,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { getPage } from '@/lib/pages/client'
+import { pagesKey } from '@/lib/pages/keys'
 import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
@@ -50,20 +50,19 @@ export interface PageChangesPanelProps {
 }
 
 /** The query key for one page's log. Exported so a write path can invalidate it. */
-export function pageChangesKey(workspace: string, pageId: string | undefined) {
-  return ['change-log', workspace, 'page', pageId] as const
+export function pageChangesKey(pondId: string | null, pageId: string | undefined) {
+  return ['change-log', pondId, 'page', pageId] as const
 }
 
 export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const getSupabase = useLazySupabase()
-  const workspace = useWorkspace()
   const pondId = usePondId()
   const queryClient = useQueryClient()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: pageChangesKey(workspace, pageId),
+    queryKey: pageChangesKey(pondId, pageId),
     enabled: pageId !== undefined,
     queryFn: async (): Promise<ChangeLogRecord[]> => {
       const supabase = getSupabase()
@@ -72,7 +71,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
       } = await supabase.auth.getUser()
       if (!user) return []
       // #312: the change log is per pond (`s6m5`).
-      return listRecords(supabase, { userId: user.id, workspace, pondId, targetPageId: pageId })
+      return listRecords(supabase, { userId: user.id, pondId, targetPageId: pageId })
     },
   })
 
@@ -96,16 +95,16 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   }, [getSupabase, pageId])
 
   const refresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: pageChangesKey(workspace, pageId) })
-  }, [queryClient, workspace, pageId])
+    await queryClient.invalidateQueries({ queryKey: pageChangesKey(pondId, pageId) })
+  }, [queryClient, pondId, pageId])
 
   /** Also pull the editor and the rail back in step — accept wrote pages.blocks. */
   const refreshPage = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['page', pageId] }),
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] }),
+      queryClient.invalidateQueries({ queryKey: pagesKey() }),
     ])
-  }, [queryClient, workspace, pageId])
+  }, [queryClient, pageId])
 
   /** One place for the busy flag, the error line and the refresh. */
   const run = useCallback(
@@ -136,7 +135,6 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         if (!record) return
         await proposeRevert(ctx.supabase, {
           userId: ctx.userId,
-          workspace,
           // #312: without this the revert record is invisible in every pond and
           // the page becomes permanently unrevertable.
           pondId,
@@ -144,7 +142,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
           current: ctx.page.blocks,
         })
       }),
-    [run, loadWriteContext, records, workspace, pondId]
+    [run, loadWriteContext, records, pondId]
   )
 
   const onAccept = useCallback(
@@ -159,7 +157,6 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         // vouch for it if it did.
         const result = await acceptRevert(ctx.supabase, {
           userId: ctx.userId,
-          workspace,
           revert,
           current: ctx.page.blocks,
         })
@@ -169,7 +166,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         }
         await refreshPage()
       }),
-    [run, loadWriteContext, records, workspace, refreshPage]
+    [run, loadWriteContext, records, refreshPage]
   )
 
   const onReject = useCallback(

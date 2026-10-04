@@ -57,10 +57,9 @@ import {
   type PageRow,
 } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { PondSwitcher } from './PondSwitcher'
-import { workspaceUrl, workspaceBasePath } from '@/lib/pages/nav'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { areaRoleColor } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/crumbs'
@@ -919,7 +918,6 @@ export function Rail() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const workspace = useWorkspace()
   const pondId = usePondId()
   const pondName = usePondName()
   // Area folders start collapsed and open per session; Life starts expanded so
@@ -932,8 +930,8 @@ export function Rail() {
   const { stageDeletion, notify } = useDeletionUndo()
 
   const { data: pages = [], isLoading } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
   })
 
   const tree = useMemo(() => buildTree(pages), [pages])
@@ -1016,10 +1014,8 @@ export function Rail() {
   // (`seed_default_pages`, `seed_sandbox_pages`) are now unreferenced by the app
   // and should be dropped with `workspace`.
 
-  const basePath = workspaceBasePath(workspace)
-
   function navigateTo(node: { id: string; type: string; title: string }) {
-    router.push(workspaceUrl(node, basePath))
+    router.push(workspaceUrl(node))
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -1032,7 +1028,7 @@ export function Rail() {
     } = await supabase.auth.getUser()
     if (!user) return undefined
     const result = await fn(supabase, user.id)
-    await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+    await queryClient.invalidateQueries({ queryKey: pagesKey() })
     return result
   }
 
@@ -1040,7 +1036,7 @@ export function Rail() {
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', workspace, pondId })
+        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', pondId })
       )
       // ensure the parent folder is open so the new child is visible
       setExpanded((prev) => new Set(prev).add(id))
@@ -1049,7 +1045,6 @@ export function Rail() {
         // rather than depending on the refetch having landed before we navigate.
         insertPageOptimistic(
           queryClient,
-          workspace,
           {
             id: created.id,
             parentId: id,
@@ -1068,11 +1063,11 @@ export function Rail() {
   /** Put a single optimistically-removed row back (surgical) and reconcile. */
   function restoreDeletedRow(row: PageRow | undefined) {
     if (row) {
-      queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) =>
+      queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
         rows ? restoreRow(rows, row) : rows
       )
     }
-    queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+    queryClient.invalidateQueries({ queryKey: pagesKey() })
   }
 
   /**
@@ -1089,7 +1084,7 @@ export function Rail() {
       // if the open page was in the deleted subtree, clear the workspace
       const selected = selectedNodeIdRef.current
       if (selected && subtreeIds(node).has(selected)) {
-        router.push(workspaceUrl(null, basePath))
+        router.push(workspaceUrl(null))
       }
     } catch {
       restoreDeletedRow(removedRow)
@@ -1109,10 +1104,8 @@ export function Rail() {
     }
 
     const removedRow = pages.find((r) => r.id === node.id)
-    queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) =>
-      removeRow(rows ?? [], node.id)
-    )
-    if (selectedNodeId === node.id) router.push(workspaceUrl(null, basePath))
+    queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], node.id))
+    if (selectedNodeId === node.id) router.push(workspaceUrl(null))
 
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
@@ -1177,7 +1170,6 @@ export function Rail() {
 
     const snapshot = applyMoveOptimistic(
       queryClient,
-      workspace,
       {
         movedId: draggedId,
         newParentId: move.newParentId,
@@ -1201,9 +1193,9 @@ export function Rail() {
         })
       )
     } catch {
-      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), snapshot)
+      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
       notify(`Couldn't move "${nodeById.get(draggedId)?.title || 'Untitled'}"`)
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
     }
   }
 
@@ -1226,7 +1218,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
-        onLife={() => router.push(workspaceUrl(null, basePath))}
+        onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
         onNewPage={requestCreatePage}
         canDrop={canDrop}

@@ -29,7 +29,6 @@ import { createClient } from '@/lib/supabase/client'
 import { createPage } from '@/lib/pages/client'
 import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { usePondName } from '@/lib/pond/name'
 import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
@@ -163,7 +162,6 @@ export function CreatePageModal({
 }) {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const workspace = useWorkspace()
   const pondId = usePondId()
   const pondName = usePondName()
   const [title, setTitle] = useState('')
@@ -172,8 +170,8 @@ export function CreatePageModal({
   const [error, setError] = useState<string | null>(null)
 
   const { data: rows = [] } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
   })
 
   const parentOptions: CreatePageParentOption[] = useMemo(() => {
@@ -219,14 +217,12 @@ export function CreatePageModal({
         // Never write an empty title — 'Untitled' in the DB, matching what the
         // rail/editor display anyway (the fallback shouldn't mask an empty row).
         title: title.trim() || 'Untitled',
-        workspace,
         pondId,
       })
       // F26: seed the cache with the new row (correct parent_id) before navigating,
       // so the rail nests it immediately; reconcile in the background.
       insertPageOptimistic(
         queryClient,
-        workspace,
         {
           id: created.id,
           parentId,
@@ -240,7 +236,7 @@ export function CreatePageModal({
       // Land in the editor. A blocks-less `page` → DocumentPanel renders the
       // editor (ticket-22), with the title pre-filled.
       router.push(workspaceHref(created))
-      void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      void queryClient.invalidateQueries({ queryKey: pagesKey() })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create page')
       setBusy(false)

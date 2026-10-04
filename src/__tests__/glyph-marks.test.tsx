@@ -342,7 +342,7 @@ describe('DocumentPanel — the trail’s lead crumb carries the area’s mark',
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
     client.setQueryData(
-      ['pages', 'main'],
+      ['pages'],
       markOn ? ROWS.map((r) => (r.id === markOn.id ? { ...r, ...markOn } : r)) : ROWS
     )
     return render(

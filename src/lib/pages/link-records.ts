@@ -21,7 +21,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { getPage, getCollectionRows, listPages, setProperty } from '@/lib/pages/client'
 import { addLink } from '@/lib/modules/view/relation-value-ops'
 import { readSchema, coerceValue, ROW_TYPE } from '@/lib/properties/schema'
@@ -60,19 +59,19 @@ export function resolveRowRef(candidates: RowCandidate[], ref: string): TitleRes
  * The pages a relation's proposed target titles resolve against (#20 semantics,
  * shared with useRelationTitles): a TARGETED relation links rows of its target
  * collection; an untargeted one ("link any page") links any non-row page in the
- * workspace.
+ * pond (#312 — never another pond's, which you cannot even open from here).
  */
 export async function relationCandidates(
   supabase: SupabaseClient<Database>,
   userId: string,
   target: string | undefined,
-  workspace: WorkspaceScope
+  pondId?: string | null
 ): Promise<RowCandidate[]> {
   if (target) {
-    const rows = await getCollectionRows(supabase, userId, target, workspace)
+    const rows = await getCollectionRows(supabase, userId, target)
     return rows.map((r) => ({ id: r.id, title: r.title }))
   }
-  const pages = await listPages(supabase, userId, workspace)
+  const pages = await listPages(supabase, userId, pondId)
   return pages.filter((p) => p.type !== ROW_TYPE).map((p) => ({ id: p.id, title: p.title }))
 }
 
@@ -121,7 +120,8 @@ function refError(res: Exclude<TitleResolution, { kind: 'resolved' }>, where: st
 export async function linkRecordsFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: LinkRecordsProposal,
-  workspace: WorkspaceScope = 'main'
+  /** #312: the pond an UNTARGETED relation's candidates come from. */
+  pondId?: string | null
 ): Promise<LinkedRecords> {
   const collection = await getPage(supabase, proposal.collectionId)
   if (!collection) {
@@ -150,22 +150,24 @@ export async function linkRecordsFromProposal(
   if (!user) throw new Error('Not authenticated')
 
   // The source row, resolved among the collection's own rows.
-  const sourceRows = await getCollectionRows(supabase, user.id, proposal.collectionId, workspace)
+  const sourceRows = await getCollectionRows(supabase, user.id, proposal.collectionId)
   const sourceCandidates = sourceRows.map((r) => ({ id: r.id, title: r.title }))
   const source = resolveRowRef(sourceCandidates, proposal.fromRow)
   if (source.kind !== 'resolved') throw refError(source, `"${collection.title}"`)
   const sourceRow = sourceRows.find((r) => r.id === source.id)
-  if (!sourceRow) throw refError({ kind: 'not-found', title: proposal.fromRow }, `"${collection.title}"`)
+  if (!sourceRow)
+    throw refError({ kind: 'not-found', title: proposal.fromRow }, `"${collection.title}"`)
 
-  // The targets, resolved within the relation's target collection (or the
-  // workspace's non-row pages for an untargeted relation). ALL must resolve
+  // The targets, resolved within the relation's target collection (or the pond's
+  // non-row pages for an untargeted relation). ALL must resolve
   // before ANY write — never a dangling id, never a partial link batch.
-  const targetCandidates = await relationCandidates(supabase, user.id, def.target, workspace)
-  const where = def.target === proposal.collectionId ? `"${collection.title}"` : 'the target collection'
+  const targetCandidates = await relationCandidates(supabase, user.id, def.target, pondId)
+  const where =
+    def.target === proposal.collectionId ? `"${collection.title}"` : 'the target collection'
   const targetIds: string[] = []
   for (const ref of proposal.toRows) {
     const res = resolveRowRef(targetCandidates, ref)
-    if (res.kind !== 'resolved') throw refError(res, def.target ? where : 'the workspace')
+    if (res.kind !== 'resolved') throw refError(res, def.target ? where : 'this pond')
     targetIds.push(res.id)
   }
 

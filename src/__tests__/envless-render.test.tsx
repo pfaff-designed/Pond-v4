@@ -23,8 +23,6 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
-jest.mock('@/lib/workspace/context', () => ({ useWorkspace: () => 'main' }))
-
 // The flat page tree read by the rail/overview/capabilities surfaces. Mocked so
 // these tests exercise ONLY the supabase-construction seam, not fetchPages' own
 // (also envless-failing) client.

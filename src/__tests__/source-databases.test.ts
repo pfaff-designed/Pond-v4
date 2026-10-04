@@ -74,13 +74,12 @@ describe('fetchRecordCounts', () => {
         }).then(resolve),
     }
     const from = jest.fn(() => builder)
-    const counts = await fetchRecordCounts({ from } as never, 'user-1', 'main')
+    const counts = await fetchRecordCounts({ from } as never, 'user-1')
     expect(from).toHaveBeenCalledTimes(1)
     expect(from).toHaveBeenCalledWith('pages')
     expect(calls).toEqual([
       ['select', 'parent_id'],
       ['eq', 'user_id=user-1'],
-      ['eq', 'workspace=main'],
       ['eq', `type=${ROW_TYPE}`],
     ])
     expect([...counts.entries()]).toEqual([

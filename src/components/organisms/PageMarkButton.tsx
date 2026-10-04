@@ -42,8 +42,8 @@ import { AreaMark } from '@/components/atoms/AreaMark'
 import { KindDot } from '@/components/atoms/PondAtom'
 import { MarkPicker } from '@/components/molecules/MarkPicker'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { setPageMark } from '@/lib/pages/client'
+import { pagesKey } from '@/lib/pages/keys'
 import { areaRoleColor, type AreaRole } from '@/lib/rail/glyph-library'
 import { markIndex, resolveMark, type PageMark } from '@/lib/pages/mark'
 
@@ -82,7 +82,6 @@ export function PageMarkButton({
   className,
 }: PageMarkButtonProps) {
   const getSupabase = useLazySupabase()
-  const workspace = useWorkspace()
   const queryClient = useQueryClient()
   const trigger = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
@@ -148,9 +147,9 @@ export function PageMarkButton({
       }
       // The mark rides the shared ['pages'] cache every surface reads, so one
       // invalidation moves the rail, the breadcrumb and the kicker together.
-      await queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      await queryClient.invalidateQueries({ queryKey: pagesKey() })
     },
-    [getSupabase, pageId, queryClient, workspace]
+    [getSupabase, pageId, queryClient]
   )
 
   return (

@@ -20,7 +20,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { createPage } from '@/lib/pages/client'
 
 /**
@@ -93,7 +92,6 @@ export function withoutDatabasesRoot<
 export async function getOrCreateDatabasesRoot(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<{ id: string; created: boolean }> {
@@ -102,7 +100,6 @@ export async function getOrCreateDatabasesRoot(
     .from('pages')
     .select('id, title')
     .eq('user_id', userId)
-    .eq('workspace', workspace)
     .is('parent_id', null)
   if (error) throw new Error(error.message)
 
@@ -115,7 +112,6 @@ export async function getOrCreateDatabasesRoot(
     parentId: null,
     type: 'page',
     title: DATABASES_ROOT_TITLE,
-    workspace,
     pondId,
   })
   return { id: root.id, created: true }

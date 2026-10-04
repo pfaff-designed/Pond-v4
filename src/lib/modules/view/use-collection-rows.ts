@@ -11,7 +11,7 @@
  *   - `['page', collectionId]` — the collection page itself, for its `_schema` (the
  *     SAME cache DocumentPanel primes for the open page, so no refetch on mount).
  *   - `['rows', collectionId]` — the row children WITH full props. A DEDICATED key,
- *     deliberately NOT the lean `['pages', workspace]` tree: that shape strips
+ *     deliberately NOT the lean `pagesKey()` tree: that shape strips
  *     `props` and excludes `row` types entirely (fetchPages), so reusing it would
  *     make every collection read as empty (the #18 live-verify gotcha).
  *
@@ -33,7 +33,6 @@ import {
   updateTitle,
   type PondPage,
 } from '@/lib/pages/client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import {
   readSchema,
@@ -100,7 +99,6 @@ const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
  * not-loading result so the renderer can show its "needs a collection" state.
  */
 export function useCollectionRows(collectionId: string | undefined): CollectionData {
-  const workspace = useWorkspace()
   const pondId = usePondId()
   // Lazily created on first fetch, not at render — so seeded/disabled queries
   // never construct a real client and throw (envless CI/Storybook, #38).
@@ -130,7 +128,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return [] as PondPage[]
-      return getCollectionRows(supabase, user.id, collectionId, workspace)
+      return getCollectionRows(supabase, user.id, collectionId)
     },
     enabled: !!collectionId,
   })
@@ -189,7 +187,6 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
           type: ROW_TYPE,
           title: '',
           props: values,
-          workspace,
           pondId,
         })
         queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
@@ -197,7 +194,7 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
         )
         return created.id
       },
-    [collectionId, queryClient, getSupabase, workspace]
+    [collectionId, queryClient, getSupabase, pondId]
   )
 
   // Optimistically drop the row from the cache, then persist. Reconcile from server

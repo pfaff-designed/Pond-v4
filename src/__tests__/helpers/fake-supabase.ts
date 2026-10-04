@@ -14,7 +14,7 @@
 export type Row = {
   id: string
   user_id: string
-  workspace: string
+  pond_id?: string | null
   parent_id: string | null
   type: string
   title: string
@@ -77,7 +77,7 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
         const row: Row = {
           id,
           user_id: (insertPayload?.user_id as string) ?? 'user-1',
-          workspace: (insertPayload?.workspace as string) ?? 'main',
+          pond_id: (insertPayload?.pond_id as string) ?? null,
           parent_id: (insertPayload?.parent_id as string) ?? null,
           type: (insertPayload?.type as string) ?? 'page',
           title: (insertPayload?.title as string) ?? '',
@@ -109,7 +109,6 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
 export const existingRoot: Row = {
   id: 'root-db',
   user_id: 'user-1',
-  workspace: 'main',
   parent_id: null,
   type: 'page',
   title: 'databases',

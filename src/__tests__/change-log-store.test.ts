@@ -25,7 +25,7 @@ function row(overrides: Partial<ChangeLogRow> = {}): ChangeLogRow {
   return {
     id: 'rec-1',
     user_id: USER,
-    workspace: 'main',
+    pond_id: 'pond-1',
     status: 'proposed',
     action: 'edit',
     actor: 'pond',
@@ -134,10 +134,10 @@ describe('appendProposal', () => {
   it('defaults the pond scope to main and carries sandbox through', async () => {
     const sb = makeSupabase()
     await store.appendProposal(sb as never, { userId: USER, action: 'edit' })
-    expect(writtenTo(sb, 'insert').workspace).toBe('main')
 
-    await store.appendProposal(sb as never, { userId: USER, action: 'edit', workspace: 'sandbox' })
-    expect(writtenTo(sb, 'insert').workspace).toBe('sandbox')
+    // 0020 retired `workspace`; a record carries its POND.
+    await store.appendProposal(sb as never, { userId: USER, action: 'edit', pondId: 'pond-2' })
+    expect(writtenTo(sb, 'insert').pond_id).toBe('pond-2')
   })
 })
 
@@ -419,12 +419,12 @@ describe('markOutdated (G2)', () => {
     const sb = makeSupabase({ list: [] })
     await store.markOutdated(sb as never, {
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       targetPageId: 'page-1',
     })
     const eqArgs = sb._chain.eq.mock.calls
     expect(eqArgs).toContainEqual(['user_id', USER])
-    expect(eqArgs).toContainEqual(['workspace', 'sandbox'])
+    expect(eqArgs).toContainEqual(['pond_id', 'pond-2'])
     expect(eqArgs).toContainEqual(['target_page_id', 'page-1'])
     expect(eqArgs).toContainEqual(['status', 'proposed'])
   })
@@ -450,9 +450,9 @@ describe('redactRecordContent', () => {
 describe('listRecords', () => {
   it('always scopes to one pond and orders newest first', async () => {
     const sb = makeSupabase({ list: [row()] })
-    await store.listRecords(sb as never, { userId: USER, workspace: 'sandbox' })
+    await store.listRecords(sb as never, { userId: USER, pondId: 'pond-2' })
     expect(sb._chain.eq.mock.calls).toContainEqual(['user_id', USER])
-    expect(sb._chain.eq.mock.calls).toContainEqual(['workspace', 'sandbox'])
+    expect(sb._chain.eq.mock.calls).toContainEqual(['pond_id', 'pond-2'])
     expect(sb._chain.order).toHaveBeenCalledWith('created_at', { ascending: false })
   })
 
@@ -491,7 +491,7 @@ describe('getRecordByToolCall', () => {
     const sb = makeSupabase({ maybeSingle: row({ id: 'rec-7', tool_call_id: 'call-7' }) })
     const record = await store.getRecordByToolCall(sb as never, {
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       toolCallId: 'call-7',
     })
 
@@ -500,7 +500,7 @@ describe('getRecordByToolCall', () => {
     // Scoped like every other read: a tool call id from another pond is not ours.
     const eqArgs = sb._chain.eq.mock.calls
     expect(eqArgs).toContainEqual(['user_id', USER])
-    expect(eqArgs).toContainEqual(['workspace', 'sandbox'])
+    expect(eqArgs).toContainEqual(['pond_id', 'pond-2'])
     expect(eqArgs).toContainEqual(['tool_call_id', 'call-7'])
   })
 
@@ -679,13 +679,13 @@ describe('listRecordsByToolCalls (#98)', () => {
     })
     const records = await store.listRecordsByToolCalls(sb as never, {
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       toolCallIds: ['c1', 'c2'],
     })
     expect(records.map((r) => r.id)).toEqual(['r1', 'r2'])
     expect(records[0].status).toBe('outdated')
     expect(sb._chain.eq.mock.calls).toContainEqual(['user_id', USER])
-    expect(sb._chain.eq.mock.calls).toContainEqual(['workspace', 'sandbox'])
+    expect(sb._chain.eq.mock.calls).toContainEqual(['pond_id', 'pond-2'])
     expect(sb._chain.in).toHaveBeenCalledWith('tool_call_id', ['c1', 'c2'])
   })
 

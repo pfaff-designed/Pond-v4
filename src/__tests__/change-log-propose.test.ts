@@ -75,7 +75,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
 
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: PAGE,
       toolCalls: [proposeChangesCall()],
     })
@@ -105,7 +105,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
 
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: 'the-open-page',
       toolCalls: [
         proposeChangesCall({
@@ -118,17 +118,17 @@ describe('recordProposedToolCalls — criterion 2', () => {
     expect(inserts[0].target_page_id).toBe('another-page')
   })
 
-  it('carries the pond scope, so a sandbox proposal is never logged into main', async () => {
+  it('carries the pond, so a proposal is never logged into another pond (#312)', async () => {
     const { supabase, inserts } = makeSupabase({ blocks: BEFORE_BLOCKS })
 
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       openPageId: PAGE,
       toolCalls: [proposeChangesCall()],
     })
 
-    expect(inserts[0].workspace).toBe('sandbox')
+    expect(inserts[0].pond_id).toBe('pond-2')
   })
 
   it('records the other proposal tools under their own action', async () => {
@@ -136,7 +136,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
 
     await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: PAGE,
       toolCalls: [
         { toolCallId: 'c1', toolName: 'create_page', input: { title: 'New' } },
@@ -162,7 +162,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
 
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: PAGE,
       toolCalls: [
         { toolCallId: 'r1', toolName: 'read_page', input: { pageId: PAGE } },
@@ -182,7 +182,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
 
     const written = await recordProposedToolCalls(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       openPageId: null,
       toolCalls: [proposeChangesCall()],
     })
@@ -204,7 +204,7 @@ describe('recordProposedToolCalls — criterion 2', () => {
     await expect(
       recordProposedToolCalls(supabase, {
         userId: USER,
-        workspace: 'main',
+        pondId: 'pond-1',
         openPageId: PAGE,
         toolCalls: [proposeChangesCall()],
       })

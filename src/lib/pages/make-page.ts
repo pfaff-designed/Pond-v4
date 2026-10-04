@@ -19,7 +19,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { appendProposal } from '@/lib/change-log/store'
 import {
   clampPageName,
@@ -48,7 +47,6 @@ export interface MakePageInput {
   threadId: string | null
   /** The pond's pages, for the "mentioned" list. Rows only; nothing is written to them. */
   pages: MentionablePage[]
-  workspace?: WorkspaceScope
 }
 
 export interface MadePage {
@@ -67,7 +65,6 @@ export async function makePageFromAnswer(
   mintId: () => string
 ): Promise<MadePage> {
   const { proposal, threadId, pages } = input
-  const workspace = input.workspace ?? 'main'
 
   const {
     data: { user },
@@ -104,7 +101,6 @@ export async function makePageFromAnswer(
     title,
     blocks,
     props,
-    workspace,
     pondId: input.pondId,
   })
   return { id: page.id, title: page.title }
@@ -124,7 +120,6 @@ export async function recordPageProposal(
   supabase: SupabaseClient<Database>,
   input: {
     userId: string
-    workspace?: WorkspaceScope
     /** #312: the pond whose change log records this proposal. */
     pondId?: string | null
     threadId: string | null
@@ -135,7 +130,6 @@ export async function recordPageProposal(
   try {
     await appendProposal(supabase, {
       userId: input.userId,
-      workspace: input.workspace ?? 'main',
       pondId: input.pondId ?? null,
       action: 'create_page',
       // The person asked for it; Pond proposed the name, place and kind.

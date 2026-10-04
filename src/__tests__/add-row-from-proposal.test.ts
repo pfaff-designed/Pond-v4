@@ -122,7 +122,6 @@ describe('addRowFromProposal', () => {
         title: 'Dune',
         props: { Author: 'Frank Herbert', Rating: 5 },
       },
-      'main',
       null
     )
     expect(created).toEqual({ id: 'row-1' })
@@ -137,14 +136,14 @@ describe('addRowFromProposal', () => {
 
   it('defaults an omitted title to empty', async () => {
     const sb = makeSupabase({ id: 'coll-1', props: { [SCHEMA_KEY]: schema } })
-    await addRowFromProposal(sb as never, { collectionId: 'coll-1', props: {} }, 'main', null)
+    await addRowFromProposal(sb as never, { collectionId: 'coll-1', props: {} }, null)
     expect(sb._insert.mock.calls[0][0].title).toBe('')
   })
 
   it('throws when the target page does not exist (card can revert)', async () => {
     const sb = makeSupabase(null)
     await expect(
-      addRowFromProposal(sb as never, { collectionId: 'ghost', props: {} }, 'main', null)
+      addRowFromProposal(sb as never, { collectionId: 'ghost', props: {} }, null)
     ).rejects.toThrow(/not found/i)
     expect(sb._insert).not.toHaveBeenCalled()
   })
@@ -152,12 +151,7 @@ describe('addRowFromProposal', () => {
   it('throws when the target exists but is not a collection (no schema)', async () => {
     const sb = makeSupabase({ id: 'plain', props: {} })
     await expect(
-      addRowFromProposal(
-        sb as never,
-        { collectionId: 'plain', props: { Author: 'x' } },
-        'main',
-        null
-      )
+      addRowFromProposal(sb as never, { collectionId: 'plain', props: { Author: 'x' } }, null)
     ).rejects.toThrow(/not a collection/i)
     expect(sb._insert).not.toHaveBeenCalled()
   })
@@ -267,7 +261,6 @@ describe('addRowFromProposal — relation-value titles resolve to row ids', () =
         title: 'Stove',
         props: { 'Packs With': ['Tent'] },
       },
-      'main',
       null
     )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
@@ -282,7 +275,6 @@ describe('addRowFromProposal — relation-value titles resolve to row ids', () =
         title: 'Stove',
         props: { 'Packs With': ['row-tent', 'Tent', 'Rope'] },
       },
-      'main',
       null
     )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent', 'row-rope'] })
@@ -297,7 +289,6 @@ describe('addRowFromProposal — relation-value titles resolve to row ids', () =
         title: 'Stove',
         props: { 'Packs With': ['Tent', 'Lantern'] },
       },
-      'main',
       null
     )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-tent'] })
@@ -322,7 +313,6 @@ describe('addRowFromProposal — relation-value titles resolve to row ids', () =
         title: 'Stove',
         props: { 'Packs With': ['Tent', 'Rope'] },
       },
-      'main',
       null
     )
     expect(sb._inserts[0].props).toEqual({ 'p-packs': ['row-rope'] })

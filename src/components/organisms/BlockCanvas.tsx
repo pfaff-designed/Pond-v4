@@ -59,7 +59,6 @@ import { pagesKey } from '@/lib/pages/keys'
 import { readSchema } from '@/lib/properties/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
@@ -147,7 +146,6 @@ export function BlockCanvas({
   const { stageDeletion, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
-  const workspace = useWorkspace()
   const pondId = usePondId()
   // The LATEST blocks, for the async paths below (the list→table write and its
   // undo). They run after awaits / from a toast, when the `blocks` their closure
@@ -185,18 +183,18 @@ export function BlockCanvas({
   // records (`source-databases.ts`). Counts refetch on each open, so a record
   // added through a view is reflected the next time the picker is summoned.
   const { data: pageRows = [] } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
     enabled: sourcePicker !== null,
   })
   const { data: recordCounts } = useQuery({
-    queryKey: ['record-counts', workspace],
+    queryKey: ['record-counts', pondId],
     queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      return user ? fetchRecordCounts(supabase, user.id, workspace) : new Map<string, number>()
+      return user ? fetchRecordCounts(supabase, user.id) : new Map<string, number>()
     },
     enabled: sourcePicker !== null,
     staleTime: 0,
@@ -229,15 +227,13 @@ export function BlockCanvas({
     if (!block) return
     const title = inferListDatabaseTitle(blocks, index, pageTitle)
     try {
-      const made = await createDatabaseFromList(
-        getSupabase(),
-        { block, title, workspace, pondId },
-        () => crypto.randomUUID()
+      const made = await createDatabaseFromList(getSupabase(), { block, title, pondId }, () =>
+        crypto.randomUUID()
       )
       markInserted(made.view.id)
       onChange(replaceBlockWithView(blocksRef.current, block.id, made.view))
       // The rail lists the new database (and, on first use, the databases root).
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
       stageDeletion({
         message: 'Turned into a table',
         scope: 'block',
@@ -251,7 +247,7 @@ export function BlockCanvas({
           } catch (err) {
             console.error('Failed to remove the database after undo', err)
           }
-          queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
         },
       })
     } catch (err) {
@@ -418,14 +414,13 @@ export function BlockCanvas({
           schema: pick.fields.map((f) => ({ id: crypto.randomUUID(), name: f.name, type: f.type })),
           mode: pick.mode,
           chart,
-          workspace,
           pondId,
         },
         () => crypto.randomUUID()
       )
       placeView(made.view, open.hostId, open.replace)
-      queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
-      queryClient.invalidateQueries({ queryKey: ['record-counts', workspace] })
+      queryClient.invalidateQueries({ queryKey: pagesKey() })
+      queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
       stageDeletion({
         message: 'Made a database',
         scope: 'block',
@@ -442,7 +437,7 @@ export function BlockCanvas({
           } catch (err) {
             console.error('Failed to remove the database after undo', err)
           }
-          queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
         },
       })
     } catch (err) {
@@ -472,14 +467,12 @@ export function BlockCanvas({
         type: 'page',
         title: made.title,
         blocks: made.blocks,
-        workspace,
         pondId,
       })
       if (made.schema) await defineSchema(supabase, created.id, made.schema)
       if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
       insertPageOptimistic(
         queryClient,
-        workspace,
         {
           id: created.id,
           parentId: pageId,
@@ -488,7 +481,7 @@ export function BlockCanvas({
         },
         pondId
       )
-      void queryClient.invalidateQueries({ queryKey: ['pages', workspace] })
+      void queryClient.invalidateQueries({ queryKey: pagesKey() })
       pageLinks.navigateToPage({ id: created.id, title: created.title, type: created.type })
     } catch (err) {
       console.error('Failed to make a page from the template', err)

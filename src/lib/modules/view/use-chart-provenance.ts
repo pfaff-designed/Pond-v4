@@ -4,7 +4,7 @@
  * The chart card's `on` / `reads` provenance (#227), read off caches the shell
  * usually has already filled:
  *
- *   `['pages', workspace]`  the lean tree the rail and the breadcrumb share, exactly
+ *   `pagesKey()`  the lean tree the rail and the breadcrumb share, exactly
  *                           as `page-link/use-capabilities.ts` reads it. **On the
  *                           page surface this is a cache hit** — `BlockCanvas`
  *                           mounts that hook above every view block. It is NOT a
@@ -35,7 +35,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import type { HomePage } from '@/lib/pages/home'
-import { useWorkspace } from '@/lib/workspace/context'
 import { usePondId } from '@/lib/pond/context'
 import { chartProvenance, type ChartProvenance } from '../chart/chrome'
 
@@ -43,12 +42,11 @@ export function useChartProvenance(
   pageId: string | undefined,
   collectionId: string | undefined
 ): ChartProvenance {
-  const workspace = useWorkspace()
   const pondId = usePondId()
   const queryClient = useQueryClient()
   const { data: rows = [] } = useQuery({
-    queryKey: pagesKey(workspace, pondId),
-    queryFn: () => fetchPages(workspace, pondId),
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
   })
   // A read, not a subscription: the root word only changes when the person renames
   // the home row, which re-renders this tree through `DocumentPanel` anyway.

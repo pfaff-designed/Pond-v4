@@ -12,7 +12,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { firstPondId } from '@/lib/pond/first'
 import { pagesKey } from './keys'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
 
@@ -34,10 +33,7 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(
-  workspace: WorkspaceScope = 'main',
-  pondId?: string | null
-): Promise<PageRow[]> {
+export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
@@ -53,7 +49,7 @@ export async function fetchPages(
 
   let q = supabase
     .from('pages')
-    // #134: glyph + area_role ride along, so the ONE ['pages', workspace] cache
+    // #134: glyph + area_role ride along, so the ONE pagesKey() cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
     // mark — no surface fetches anything extra to draw one.
     .select('id, parent_id, type, title, "order", updated_at, glyph, area_role')
@@ -83,7 +79,7 @@ export async function fetchPages(
 }
 
 /**
- * Optimistically insert a just-created page into the ['pages', workspace] cache so
+ * Optimistically insert a just-created page into the pagesKey() cache so
  * the rail sees it synchronously — before the navigate — instead of waiting on the
  * invalidate refetch. Fixes F26 (a new page shows at ROOT until a manual refresh):
  * the rail's reveal effect bailed because the new node wasn't in the stale cache
@@ -93,17 +89,16 @@ export async function fetchPages(
  */
 export function insertPageOptimistic(
   queryClient: QueryClient,
-  workspace: WorkspaceScope,
   page: { id: string; parentId: string | null; type: string; title: string },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
-   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
-   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
+   * moved to `pagesKey(pondId)` silently did nothing — which killed the
    * synchronous reveal, the drag rollback, and the delete-undo window.
    */
   pondId: string | null
 ): void {
-  queryClient.setQueryData<PageRow[]>(pagesKey(workspace, pondId), (rows) => {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => {
     const existing = rows ?? []
     if (existing.some((r) => r.id === page.id)) return existing
     return [
@@ -121,7 +116,7 @@ export function insertPageOptimistic(
 }
 
 /**
- * Optimistically apply a MOVE (F25) to the ['pages', workspace] cache so the rail
+ * Optimistically apply a MOVE (F25) to the pagesKey() cache so the rail
  * restructures instantly — before movePage's write lands. Sets the moved row's
  * `parent_id` and rewrites `order = index` for every id in the reindexed target
  * group (computeMove's `siblingOrder`). Mirrors insertPageOptimistic; returns the
@@ -130,17 +125,16 @@ export function insertPageOptimistic(
  */
 export function applyMoveOptimistic(
   queryClient: QueryClient,
-  workspace: WorkspaceScope,
   move: { movedId: string; newParentId: string | null; siblingOrder: string[] },
   /**
    * #312: the pond whose cache to write. `setQueryData` is an EXACT key match,
-   * unlike `invalidateQueries`, so writing `['pages', workspace]` while the reads
-   * moved to `pagesKey(workspace, pondId)` silently did nothing — which killed the
+   * unlike `invalidateQueries`, so writing `pagesKey()` while the reads
+   * moved to `pagesKey(pondId)` silently did nothing — which killed the
    * synchronous reveal, the drag rollback, and the delete-undo window.
    */
   pondId: string | null
 ): PageRow[] | undefined {
-  const key = pagesKey(workspace, pondId)
+  const key = pagesKey(pondId)
   const snapshot = queryClient.getQueryData<PageRow[]>(key)
   const orderById = new Map(move.siblingOrder.map((id, index) => [id, index]))
   queryClient.setQueryData<PageRow[]>(key, (rows) => {

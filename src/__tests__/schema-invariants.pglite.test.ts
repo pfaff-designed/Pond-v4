@@ -29,7 +29,6 @@ async function addPage(
     parentId?: string | null
     type?: string
     title?: string
-    workspace?: string
     /**
      * #312: 0019 drops the user-keyed `pages_sibling_title_uniq` in favour of
      * 0018's `pages_sibling_title_pond_uniq`, so sibling names are constrained
@@ -46,10 +45,6 @@ async function addPage(
   if (opts.pondId !== undefined) {
     cols.push('pond_id')
     vals.push(opts.pondId)
-  }
-  if (opts.workspace !== undefined) {
-    cols.push('workspace')
-    vals.push(opts.workspace)
   }
   const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
   const res = await db.query<{ id: string }>(
@@ -148,55 +143,13 @@ describe('PGLite schema invariants', () => {
   })
 
   // C3 — workspace DEFAULT. A page inserted without a workspace reads back 'main'.
-  it("C3: workspace defaults to 'main' when unspecified", async () => {
-    const db = await makeDb()
-    await seedUser(db, USER)
-
-    const id = await addPage(db, { type: 'page', title: 'No workspace given' })
-
-    const res = await db.query<{ workspace: string }>(
-      'select workspace from public.pages where id = $1',
-      [id]
-    )
-    expect(res.rows[0].workspace).toBe('main')
-
-    await db.close()
-  })
+  // C3 and C4 asserted the `workspace` column's default and its main/sandbox
+  // isolation. 0020 retired the column: the sandbox is a POND (#315), and
+  // per-pond isolation is asserted by the pond tests below and in
+  // `ponds.pglite.test.ts`.
 
   // C4 — workspace isolation. A workspace-scoped SELECT returns only that
   // scope's rows, with no bleed in either direction.
-  it('C4: workspace-scoped selects isolate main and sandbox in both directions', async () => {
-    const db = await makeDb()
-    await seedUser(db, USER)
-
-    const mainPage = await addPage(db, { type: 'page', title: 'Main row', workspace: 'main' })
-    const sandboxPage = await addPage(db, {
-      type: 'page',
-      title: 'Sandbox row',
-      workspace: 'sandbox',
-    })
-
-    const mainRows = await db.query<{ id: string }>(
-      "select id from public.pages where user_id = $1 and workspace = 'main'",
-      [USER]
-    )
-    const sandboxRows = await db.query<{ id: string }>(
-      "select id from public.pages where user_id = $1 and workspace = 'sandbox'",
-      [USER]
-    )
-
-    const mainIds = mainRows.rows.map((r) => r.id)
-    const sandboxIds = sandboxRows.rows.map((r) => r.id)
-
-    // main scope sees the main row, never the sandbox row.
-    expect(mainIds).toContain(mainPage)
-    expect(mainIds).not.toContain(sandboxPage)
-    // sandbox scope sees the sandbox row, never the main row.
-    expect(sandboxIds).toContain(sandboxPage)
-    expect(sandboxIds).not.toContain(mainPage)
-
-    await db.close()
-  })
 })
 
 // ── #84 — sibling-name uniqueness (migration 0009) ────────────────────────────
@@ -259,12 +212,10 @@ describe('sibling-name uniqueness (0009)', () => {
     // `seedUser` fires 0018's `handle_new_user`, which makes the person's `life`
     // pond — the scope the index is now keyed on.
     const pondId = await lifePondId(db)
-    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main', pondId })
-    await addPage(db, { parentId: area, title: 'Notes', workspace: 'main', pondId })
+    const area = await addPage(db, { type: 'page', title: 'Area', pondId })
+    await addPage(db, { parentId: area, title: 'Notes', pondId })
     // case-insensitive + trimmed → same key → rejected.
-    await expect(
-      addPage(db, { parentId: area, title: '  notes ', workspace: 'main', pondId })
-    ).rejects.toThrow()
+    await expect(addPage(db, { parentId: area, title: '  notes ', pondId })).rejects.toThrow()
     await db.close()
   })
 
@@ -277,8 +228,8 @@ describe('sibling-name uniqueness (0009)', () => {
       [USER]
     )
     // The whole point of a pond: the same name in two ponds is two pages.
-    await addPage(db, { title: 'Notes', workspace: 'main', pondId: life })
-    await addPage(db, { title: 'Notes', workspace: 'main', pondId: other.rows[0].id })
+    await addPage(db, { title: 'Notes', pondId: life })
+    await addPage(db, { title: 'Notes', pondId: other.rows[0].id })
     const n = await db.query<{ n: number }>(
       `select count(*)::int as n from public.pages where lower(btrim(title)) = 'notes'`
     )
@@ -290,23 +241,21 @@ describe('sibling-name uniqueness (0009)', () => {
     const db = await makeDb()
     await seedUser(db, USER)
     const pondId = await lifePondId(db)
-    await addPage(db, { type: 'page', title: 'Personal', workspace: 'main', pondId })
+    await addPage(db, { type: 'page', title: 'Personal', pondId })
     // Without COALESCE(parent_id, sentinel) a plain unique index would treat the
     // two NULL parents as distinct and let this through — the original bug. 0018's
     // pond-keyed index carries the same COALESCE, so the guard survives the re-key.
-    await expect(
-      addPage(db, { type: 'page', title: 'Personal', workspace: 'main', pondId })
-    ).rejects.toThrow()
+    await expect(addPage(db, { type: 'page', title: 'Personal', pondId })).rejects.toThrow()
     await db.close()
   })
 
   it('allows the same title under two different parents', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const a = await addPage(db, { type: 'page', title: 'A', workspace: 'main' })
-    const b = await addPage(db, { type: 'page', title: 'B', workspace: 'main' })
-    await addPage(db, { parentId: a, title: 'Notes', workspace: 'main' })
-    const second = await addPage(db, { parentId: b, title: 'Notes', workspace: 'main' })
+    const a = await addPage(db, { type: 'page', title: 'A' })
+    const b = await addPage(db, { type: 'page', title: 'B' })
+    await addPage(db, { parentId: a, title: 'Notes' })
+    const second = await addPage(db, { parentId: b, title: 'Notes' })
     expect(await pageExists(db, second)).toBe(true)
     await db.close()
   })
@@ -314,37 +263,46 @@ describe('sibling-name uniqueness (0009)', () => {
   it('allows multiple blank-titled siblings (placeholders are exempt from the index)', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    const area = await addPage(db, { type: 'page', title: 'Area', workspace: 'main' })
+    const area = await addPage(db, { type: 'page', title: 'Area' })
     // New pages / collection rows start blank; several under one parent is normal.
-    const a = await addPage(db, { parentId: area, title: '', workspace: 'main' })
-    const b = await addPage(db, { parentId: area, title: '', workspace: 'main' })
+    const a = await addPage(db, { parentId: area, title: '' })
+    const b = await addPage(db, { parentId: area, title: '' })
     expect(await pageExists(db, a)).toBe(true)
     expect(await pageExists(db, b)).toBe(true)
     await db.close()
   })
 
-  it('allows the same title in different workspaces', async () => {
+  it('allows the same title in a different pond (0020 retired workspaces)', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await addPage(db, { type: 'page', title: 'Shared', workspace: 'main' })
-    const sandbox = await addPage(db, { type: 'page', title: 'Shared', workspace: 'sandbox' })
-    expect(await pageExists(db, sandbox)).toBe(true)
+    const life = await lifePondId(db)
+    const elsewhere = (
+      await db.query<{ id: string }>(
+        `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 8) returning id`,
+        [USER]
+      )
+    ).rows[0].id
+    await addPage(db, { type: 'page', title: 'Shared', pondId: life })
+    const other = await addPage(db, { type: 'page', title: 'Shared', pondId: elsewhere })
+    expect(await pageExists(db, other)).toBe(true)
     await db.close()
   })
 
   it('dedupe collapses duplicate siblings onto one keeper, preserving children', async () => {
-    const db = await makeDb()
+    // `through` 0009: this re-applies 0009's own SQL, which selects `p.workspace`,
+    // and 0020 dropped that column.
+    const db = await makeDb({ through: '0009_unique_sibling_title.sql' })
     await seedUser(db, USER)
     // Drop the index so we can seed the very duplicates 0009 is meant to clean.
     await db.exec('drop index if exists pages_sibling_title_uniq')
 
     // Keeper: a root 'Health' with 2 children. One empty twin. One twin w/ 1 child.
-    const keeper = await addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
-    await addPage(db, { parentId: keeper, title: 'Weight', workspace: 'main' })
-    await addPage(db, { parentId: keeper, title: 'Sleep', workspace: 'main' })
-    await addPage(db, { type: 'page', title: 'Health', workspace: 'main' }) // empty twin
-    const twin = await addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
-    await addPage(db, { parentId: twin, title: 'Lose 40 lbs', workspace: 'main' })
+    const keeper = await addPage(db, { type: 'page', title: 'Health' })
+    await addPage(db, { parentId: keeper, title: 'Weight' })
+    await addPage(db, { parentId: keeper, title: 'Sleep' })
+    await addPage(db, { type: 'page', title: 'Health' }) // empty twin
+    const twin = await addPage(db, { type: 'page', title: 'Health' })
+    await addPage(db, { parentId: twin, title: 'Lose 40 lbs' })
 
     // Re-run the full 0009 migration: dedupe + recreate the index.
     const mig = migrationFiles().find((m) => m.name.startsWith('0009'))!
@@ -352,7 +310,7 @@ describe('sibling-name uniqueness (0009)', () => {
 
     // Exactly one root 'Health' survives, and it's the keeper (most children).
     const roots = await db.query<{ id: string }>(
-      "select id from public.pages where parent_id is null and lower(btrim(title)) = 'health' and workspace = 'main'"
+      "select id from public.pages where parent_id is null and lower(btrim(title)) = 'health'"
     )
     expect(roots.rows).toHaveLength(1)
     expect(roots.rows[0].id).toBe(keeper)
@@ -365,9 +323,7 @@ describe('sibling-name uniqueness (0009)', () => {
     expect(kids.rows.map((r) => r.title).sort()).toEqual(['Lose 40 lbs', 'Sleep', 'Weight'])
 
     // And the index is back: a fresh duplicate is rejected again.
-    await expect(
-      addPage(db, { type: 'page', title: 'Health', workspace: 'main' })
-    ).rejects.toThrow()
+    await expect(addPage(db, { type: 'page', title: 'Health' })).rejects.toThrow()
     await db.close()
   })
 })
@@ -399,14 +355,14 @@ const TEMPLATE_KIND_LABELS = [
 
 async function addTemplate(
   db: PGlite,
-  opts: { name: string; kind?: string; workspace?: string; origin?: string; userId?: string }
+  opts: { name: string; kind?: string; pondId?: string; origin?: string; userId?: string }
 ): Promise<string> {
   const res = await db.query<{ id: string }>(
-    `insert into public.templates (user_id, workspace, name, kind, origin)
+    `insert into public.templates (user_id, pond_id, name, kind, origin)
      values ($1, $2, $3, $4, $5) returning id`,
     [
       opts.userId ?? USER,
-      opts.workspace ?? 'main',
+      opts.pondId ?? (await lifePondId(db, opts.userId ?? USER)),
       opts.name,
       opts.kind ?? 'notes',
       opts.origin ?? 'yours',
@@ -422,16 +378,16 @@ describe('template store (0016)', () => {
     const id = await addTemplate(db, { name: 'Weekly review', kind: 'meeting notes' })
 
     const res = await db.query<{
-      workspace: string
+      pond_id: string
       blocks: unknown
       origin: string
       created_at: string
       updated_at: string
     }>(
-      'select workspace, blocks, origin, created_at, updated_at from public.templates where id = $1',
+      'select pond_id, blocks, origin, created_at, updated_at from public.templates where id = $1',
       [id]
     )
-    expect(res.rows[0].workspace).toBe('main')
+    expect(res.rows[0].pond_id).toBeTruthy()
     expect(res.rows[0].blocks).toEqual([])
     expect(res.rows[0].origin).toBe('yours')
     expect(res.rows[0].created_at).toBeTruthy()
@@ -470,12 +426,19 @@ describe('template store (0016)', () => {
     await db.close()
   })
 
-  it('allows the same name in a different workspace (a pond is user + workspace)', async () => {
+  it('allows the same name in a different POND (0020 re-keyed the index)', async () => {
     const db = await makeDb()
     await seedUser(db, USER)
-    await addTemplate(db, { name: 'Weekly review', workspace: 'main' })
-    const sandbox = await addTemplate(db, { name: 'Weekly review', workspace: 'sandbox' })
-    const res = await db.query('select 1 from public.templates where id = $1', [sandbox])
+    const elsewhere = (
+      await db.query<{ id: string }>(
+        `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 7) returning id`,
+        [USER]
+      )
+    ).rows[0].id
+    await addTemplate(db, { name: 'Weekly review' })
+    // Same name, different pond — legal, and the point of the re-key.
+    const other = await addTemplate(db, { name: 'Weekly review', pondId: elsewhere })
+    const res = await db.query('select 1 from public.templates where id = $1', [other])
     expect(res.rows).toHaveLength(1)
     await db.close()
   })

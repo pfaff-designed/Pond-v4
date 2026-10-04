@@ -40,7 +40,7 @@ const BLOCKS = [{ id: 'b1', type: 'text', content: 'typed' }] as unknown as Bloc
 describe('sweepOutdatedAfterOwnEdit', () => {
   it('sweeps the block diffs aimed at the edited page, by you', async () => {
     await sweepOutdatedAfterOwnEdit(supabaseWithUser('user-1'), {
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       pageId: 'page-1',
       blocks: BLOCKS,
     })
@@ -48,7 +48,7 @@ describe('sweepOutdatedAfterOwnEdit', () => {
     const [, opts] = mockedMarkOutdated.mock.calls[0]
     expect(opts).toMatchObject({
       userId: 'user-1',
-      workspace: 'sandbox',
+      pondId: 'pond-2',
       targetPageId: 'page-1',
       actor: ACTOR_YOU,
     })
@@ -65,7 +65,7 @@ describe('sweepOutdatedAfterOwnEdit', () => {
 
   it('does nothing without a session — there is no pond to sweep', async () => {
     await sweepOutdatedAfterOwnEdit(supabaseWithUser(null), {
-      workspace: 'main',
+      pondId: 'pond-1',
       pageId: 'p',
       blocks: [],
     })
@@ -77,7 +77,7 @@ describe('sweepOutdatedAfterOwnEdit', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
     await expect(
       sweepOutdatedAfterOwnEdit(supabaseWithUser('user-1'), {
-        workspace: 'main',
+        pondId: 'pond-1',
         pageId: 'p',
         blocks: [],
       })
@@ -105,7 +105,7 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
   })
 
   it('an own edit lands, then the page’s pending block diffs go outdated', async () => {
-    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], 'main', {
+    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], {
       ownEdit: true,
     })
     expect(mockedMarkOutdated).toHaveBeenCalledTimes(1)
@@ -135,13 +135,13 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
       },
     } as unknown as SupabaseClient<Database>
 
-    await commitBlocks(slowSupabase, queryClient, 'page-1', [], 'main', { ownEdit: true })
+    await commitBlocks(slowSupabase, queryClient, 'page-1', [], { ownEdit: true })
     // No flush: this is the moment the caller's reconcile fires.
     expect(mockedMarkOutdated).toHaveBeenCalledTimes(1)
   })
 
   it('sweeps BEFORE anything downstream is told the page moved', async () => {
-    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], 'main', {
+    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], {
       ownEdit: true,
     })
     expect(order).toEqual(['sweep', 'invalidate'])
@@ -149,7 +149,7 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
 
   it('passes the blocks it just wrote, so a title-only save sweeps nothing', async () => {
     const blocks = [{ id: 'b1', type: 'text', content: 'unchanged' }] as unknown as Block[]
-    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', blocks, 'main', {
+    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', blocks, {
       ownEdit: true,
     })
     // markOutdated compares each record's `before` against these and spares the
@@ -158,7 +158,7 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
   })
 
   it('a plain commit (the accept path) sweeps nothing here — it runs its own', async () => {
-    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], 'main')
+    await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [])
     await new Promise((r) => setTimeout(r, 0))
     expect(mockedMarkOutdated).not.toHaveBeenCalled()
   })

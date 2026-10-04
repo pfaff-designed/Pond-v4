@@ -137,7 +137,7 @@ describe('breadcrumb — the trail starts at the root the page descends from', (
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     })
-    client.setQueryData(['pages', 'main'], ROWS)
+    client.setQueryData(['pages'], ROWS)
     return render(
       <QueryClientProvider client={client}>
         <DeletionUndoProvider>

@@ -18,7 +18,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { PageRow } from '@/lib/pages/tree'
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -55,15 +54,13 @@ export function sourceDatabases(rows: readonly PageRow[], counts: RecordCounts):
  */
 export async function fetchRecordCounts(
   supabase: SupabaseClient<Database>,
-  userId: string,
-  workspace: WorkspaceScope = 'main'
+  userId: string
 ): Promise<RecordCounts> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('pages')
     .select('parent_id')
     .eq('user_id', userId)
-    .eq('workspace', workspace)
     .eq('type', ROW_TYPE)
   if (error) throw new Error(error.message)
   const counts = new Map<string, number>()

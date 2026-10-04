@@ -13,8 +13,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { BacklinksSection } from '@/components/molecules/BacklinksSection'
 import { useBacklinks } from '@/lib/modules/view/use-backlinks'
-import { useWorkspace } from '@/lib/workspace/context'
-import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
+import { workspaceHref } from '@/lib/pages/nav'
 
 export interface BacklinksPanelProps {
   /** The open page (backlink target). Undefined disables the hook. */
@@ -27,7 +26,6 @@ export interface BacklinksPanelProps {
 export function BacklinksPanel({ targetId, targetCollectionId, className }: BacklinksPanelProps) {
   const { groups } = useBacklinks(targetId, targetCollectionId)
   const router = useRouter()
-  const workspace = useWorkspace()
 
   // id→title over every chip, so the click-through href carries the real title for the
   // rail/breadcrumb hint (the workspace panel itself loads purely from ?nodeId).
@@ -38,12 +36,7 @@ export function BacklinksPanel({ targetId, targetCollectionId, className }: Back
   }, [groups])
 
   function onOpen(id: string) {
-    router.push(
-      workspaceHref(
-        { id, type: 'page', title: titleById.get(id) ?? id },
-        workspaceBasePath(workspace)
-      )
-    )
+    router.push(workspaceHref({ id, type: 'page', title: titleById.get(id) ?? id }))
   }
 
   return <BacklinksSection groups={groups} onOpen={onOpen} className={className} />

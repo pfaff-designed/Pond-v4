@@ -24,7 +24,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import type { TableBlock, TableRow } from '@/lib/modules/table/schema'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import { createPage, getPage, defineSchema, saveBlocks } from '@/lib/pages/client'
@@ -197,7 +196,6 @@ export async function promoteTableFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: PromoteTableProposal,
   mintId: () => string,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<PromotedTable> {
@@ -223,7 +221,6 @@ export async function promoteTableFromProposal(
       type: ROW_TYPE,
       title: input.title,
       props: input.props,
-      workspace,
       pondId,
     })
   }

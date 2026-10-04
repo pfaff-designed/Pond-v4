@@ -17,15 +17,36 @@ const USER = '11111111-1111-1111-1111-111111111111'
 const BEFORE = [{ id: 'a', type: 'text', content: 'one' }]
 const AFTER = [{ id: 'a', type: 'text', content: 'ONE' }]
 
+/** The pond `handle_new_user` makes for a seeded person (0018). */
+async function lifePond(db: PGlite, userId: string = USER): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    'select id from public.ponds where user_id = $1 order by "order" limit 1',
+    [userId]
+  )
+  return res.rows[0].id
+}
+
+/** A second pond, for the cross-pond guard. */
+async function otherPond(db: PGlite, userId: string = USER): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 9) returning id`,
+    [userId]
+  )
+  return res.rows[0].id
+}
+
+// #312: these carried a `workspace`, which 0020 retired — the sandbox is a pond
+// (#315), so per-pond separation IS the scope these tests were always about.
 async function addPage(
   db: PGlite,
-  opts: { userId?: string; workspace?: string; blocks?: unknown } = {}
+  opts: { userId?: string; pondId?: string; blocks?: unknown } = {}
 ): Promise<string> {
-  const { userId = USER, workspace = 'main', blocks = AFTER } = opts
+  const { userId = USER, blocks = AFTER } = opts
+  const pondId = opts.pondId ?? (await lifePond(db, userId))
   const res = await db.query<{ id: string }>(
-    `insert into public.pages (user_id, parent_id, type, title, workspace, blocks)
-     values ($1, null, 'page', 'Target', $2, $3) returning id`,
-    [userId, workspace, JSON.stringify(blocks)]
+    `insert into public.pages (user_id, pond_id, parent_id, type, title, blocks)
+     values ($1, $2, null, 'page', 'Target', $3) returning id`,
+    [userId, pondId, JSON.stringify(blocks)]
   )
   return res.rows[0].id
 }
@@ -34,7 +55,7 @@ async function addRecord(
   db: PGlite,
   opts: {
     userId?: string
-    workspace?: string
+    pondId?: string
     status?: string
     action?: string
     pageId?: string | null
@@ -45,7 +66,6 @@ async function addRecord(
 ): Promise<string> {
   const {
     userId = USER,
-    workspace = 'main',
     status = 'proposed',
     action = 'edit',
     pageId = null,
@@ -53,14 +73,15 @@ async function addRecord(
     after = null,
     links = {},
   } = opts
+  const pondId = opts.pondId ?? (await lifePond(db, userId))
   const res = await db.query<{ id: string }>(
     `insert into public.change_log
-       (user_id, workspace, status, action, actor, target_page_id, "before", "after",
+       (user_id, pond_id, status, action, actor, target_page_id, "before", "after",
         links, transitions)
      values ($1,$2,$3,$4,'you',$5,$6,$7,$8,$9) returning id`,
     [
       userId,
-      workspace,
+      pondId,
       status,
       action,
       pageId,
@@ -228,13 +249,14 @@ describe('accept_revert_record — refusals are atomic', () => {
 
   it('refuses a link that reaches into another pond', async () => {
     // Per-pond separation (criterion 11). RLS confines the reads, but this
-    // function is reached by id and would otherwise advance a record in a
-    // workspace the revert does not belong to.
+    // function is reached by id and would otherwise advance a record in a POND the
+    // revert does not belong to — the guard 0020 moved from `workspace` to
+    // `pond_id`, which also closed a client's ability to re-point a record.
     const db = await makeDb()
     await seedUser(db, USER)
     const pageId = await addPage(db)
     const elsewhere = await addRecord(db, {
-      workspace: 'sandbox',
+      pondId: await otherPond(db),
       status: 'accepted',
       action: 'edit',
     })

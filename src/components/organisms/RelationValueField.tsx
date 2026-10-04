@@ -13,8 +13,7 @@
 import { useRouter } from 'next/navigation'
 import { RelationValue } from '@/components/molecules/RelationValue'
 import { useRelationTitles } from '@/lib/modules/view/use-relation-titles'
-import { useWorkspace } from '@/lib/workspace/context'
-import { workspaceHref, workspaceBasePath } from '@/lib/pages/nav'
+import { workspaceHref } from '@/lib/pages/nav'
 import type { PropertyDef } from '@/lib/properties/schema'
 
 export interface RelationValueFieldProps {
@@ -29,15 +28,12 @@ export function RelationValueField({ def, value, editable, onChange }: RelationV
   const ids = Array.isArray(value) ? (value as string[]) : []
   const { titles, candidates } = useRelationTitles(ids, def.target)
   const router = useRouter()
-  const workspace = useWorkspace()
 
   // A relation only links pages; the workspace panel loads content purely from
   // ?nodeId, so a `type: 'page'` hint in the href is harmless (rail/breadcrumb
   // only). Title falls back to the id when unresolved.
   function onOpen(id: string) {
-    router.push(
-      workspaceHref({ id, type: 'page', title: titles.get(id) ?? id }, workspaceBasePath(workspace))
-    )
+    router.push(workspaceHref({ id, type: 'page', title: titles.get(id) ?? id }))
   }
 
   return (

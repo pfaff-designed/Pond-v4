@@ -25,13 +25,14 @@ import { useMemo } from 'react'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, listPages, type PondPage } from '@/lib/pages/client'
-import { useWorkspace } from '@/lib/workspace/context'
+import { usePondId } from '@/lib/pond/context'
 import {
   findBacklinkSources,
   computeBacklinks,
   type BacklinkCandidate,
   type BacklinkGroup,
 } from '@/lib/modules/view/compute-backlinks'
+import { pagesKey } from '@/lib/pages/keys'
 
 export interface UseBacklinks {
   /** The inbound links, grouped by source property; empty when nothing links here. */
@@ -52,7 +53,7 @@ export function useBacklinks(
   targetId: string | undefined,
   targetCollectionId: string | null | undefined
 ): UseBacklinks {
-  const workspace = useWorkspace()
+  const pondId = usePondId()
   // Lazily created on first fetch, not at render — so seeded/disabled queries never
   // construct a real client and throw (envless CI/Storybook).
   const getSupabase = useLazySupabase()
@@ -62,13 +63,13 @@ export function useBacklinks(
   // The whole workspace list (with props → schemas), for candidate discovery. Same key
   // `use-relation-titles` uses, so the fetch is shared, not duplicated.
   const { data: allPages, isLoading: pagesLoading } = useQuery({
-    queryKey: ['pages', workspace, 'full'] as const,
+    queryKey: [...pagesKey(pondId), 'full'] as const,
     queryFn: async () => {
       const supabase = getSupabase()
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      return user ? listPages(supabase, user.id, workspace) : []
+      return user ? listPages(supabase, user.id, pondId) : []
     },
     enabled,
   })
@@ -96,7 +97,7 @@ export function useBacklinks(
           data: { user },
         } = await supabase.auth.getUser()
         if (!user) return [] as PondPage[]
-        return getCollectionRows(supabase, user.id, collectionId, workspace)
+        return getCollectionRows(supabase, user.id, collectionId)
       },
       enabled,
     })),

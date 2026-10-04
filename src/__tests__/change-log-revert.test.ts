@@ -54,7 +54,7 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   return {
     id: 'rec-1',
     userId: USER,
-    workspace: 'main',
+    pondId: 'pond-1',
     status: 'accepted' as ChangeLogStatus,
     action: 'edit' as ChangeLogAction,
     actor: 'pond',
@@ -464,7 +464,7 @@ describe('proposeRevert', () => {
 
     await proposeRevert(supabase, {
       userId: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       record: original,
       current: [text('a', 'one'), text('b', 'TWO')],
     })
@@ -474,7 +474,7 @@ describe('proposeRevert', () => {
       supabase,
       expect.objectContaining({
         userId: USER,
-        workspace: 'main',
+        pondId: 'pond-1',
         status: 'proposed',
         action: 'revert',
         // The person asked for it, so it is theirs — unlike a proposal, which is Pond's.
@@ -549,7 +549,7 @@ describe('proposeRevert', () => {
         {
           id: 'rev-1',
           user_id: USER,
-          workspace: 'main',
+          pondId: 'pond-1',
           status: 'proposed',
           action: 'revert',
           actor: 'you',
@@ -581,7 +581,7 @@ describe('proposeRevert', () => {
         {
           id: 'rev-1',
           user_id: USER,
-          workspace: 'main',
+          pondId: 'pond-1',
           status: 'rejected',
           action: 'revert',
           actor: 'you',
@@ -638,7 +638,7 @@ describe('proposeRevert', () => {
     const stale = {
       id: 'rev-1',
       user_id: USER,
-      workspace: 'main',
+      pondId: 'pond-1',
       status: 'outdated',
       action: 'revert',
       actor: 'you',
@@ -853,7 +853,7 @@ function toRow(r: ChangeLogRecord) {
   return {
     id: r.id,
     user_id: r.userId,
-    workspace: r.workspace,
+    pond_id: r.pondId,
     status: r.status,
     action: r.action,
     actor: r.actor,

@@ -27,7 +27,6 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getCollectionRows, getPage, type PondPage } from '@/lib/pages/client'
-import { useWorkspace } from '@/lib/workspace/context'
 import { readSchema, type PropertyDef } from '@/lib/properties/schema'
 import { computeRollup, type RollupResult } from '@/lib/modules/view/compute-rollup'
 
@@ -45,7 +44,6 @@ export function useRollup(
   relationValue: unknown,
   relationDef?: PropertyDef
 ): UseRollup {
-  const workspace = useWorkspace()
   // Lazily created on first fetch, not at render — so seeded/disabled queries never
   // construct a real client and throw (envless CI/Storybook).
   const getSupabase = useLazySupabase()
@@ -64,7 +62,7 @@ export function useRollup(
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return [] as PondPage[]
-      return getCollectionRows(supabase, user.id, targetId, workspace)
+      return getCollectionRows(supabase, user.id, targetId)
     },
     enabled: needsRows,
   })

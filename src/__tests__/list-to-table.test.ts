@@ -239,11 +239,11 @@ describe('withoutDatabasesRoot', () => {
 describe('getOrCreateDatabasesRoot', () => {
   it('creates the top-level databases page once, then reuses it', async () => {
     const sb = makeFakeSupabase([])
-    const first = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
+    const first = await getOrCreateDatabasesRoot(sb as never, 'user-1', null)
     const root = sb._pages.get(first.id)!
     expect(root.parent_id).toBeNull()
     expect(root.title).toBe(DATABASES_ROOT_TITLE)
-    const second = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
+    const second = await getOrCreateDatabasesRoot(sb as never, 'user-1', null)
     expect(second.id).toBe(first.id)
     expect(
       [...sb._pages.values()].filter((p) =>
@@ -254,7 +254,7 @@ describe('getOrCreateDatabasesRoot', () => {
 
   it('finds an existing root whatever its title casing', async () => {
     const sb = makeFakeSupabase([existingRoot])
-    const root = await getOrCreateDatabasesRoot(sb as never, 'user-1', 'main', null)
+    const root = await getOrCreateDatabasesRoot(sb as never, 'user-1', null)
     expect(root.id).toBe('root-db')
   })
 })

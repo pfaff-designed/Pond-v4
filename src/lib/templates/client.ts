@@ -21,7 +21,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import {
   isTemplateKind,
   isTemplateOrigin,
@@ -38,7 +37,12 @@ export interface CreateTemplateInput {
   blocks?: Block[]
   /** Defaults to 'yours' — a saved template is the person's own. */
   origin?: TemplateOrigin
-  workspace?: WorkspaceScope
+  /**
+   * #312: the pond this template belongs to. `listTemplates` filters on it, so an
+   * unstamped template is invisible in every pond. `workspace` was retired by
+   * 0020 — the sandbox is a pond (#315).
+   */
+  pondId?: string | null
 }
 
 type TemplateRow = {
@@ -108,16 +112,11 @@ function mapRow(row: TemplateRow): PondTemplate {
 export async function listTemplates(
   supabase: SupabaseClient<Database>,
   userId: string,
-  workspace: WorkspaceScope = 'main',
   /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
   pondId?: string | null
 ): Promise<PondTemplate[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
-    .from('templates')
-    .select(TEMPLATE_COLUMNS)
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
+  let q: any = (supabase as any).from('templates').select(TEMPLATE_COLUMNS).eq('user_id', userId)
   // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
   if (pondId) q = q.eq('pond_id', pondId)
   const { data, error } = await q.order('name', { ascending: true })
@@ -156,7 +155,9 @@ export async function createTemplate(
 ): Promise<PondTemplate> {
   const insert = {
     user_id: userId,
-    workspace: input.workspace ?? 'main',
+    // #312/B4: stamp the pond. `listTemplates` filters on it, so an unstamped
+    // template was invisible everywhere. `workspace` is gone (0020).
+    ...(input.pondId ? { pond_id: input.pondId } : {}),
     name: input.name.trim(),
     kind: input.kind,
     blocks: input.blocks ?? [],

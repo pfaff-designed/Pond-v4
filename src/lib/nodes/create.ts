@@ -6,7 +6,6 @@
 import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import type { WorkspaceScope } from '@/lib/workspace/context'
 import { createPage } from '@/lib/pages/client'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────
@@ -64,26 +63,22 @@ export interface CreatedNode {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Resolve a parent reference that may be a UUID or a page title, to a page id.
- *  ticket-43: the title lookup is scoped to `workspace` so a sandbox parent
- *  title resolves against sandbox rows only (a UUID needs no scope — it's exact). */
+ *  #312: the title lookup is scoped to the pond, so an AI-proposed parent title
+ *  resolves against THIS pond's pages only (a UUID needs no scope — it's exact).
+ *  Unscoped, a title shared by two ponds filed the new page in the wrong one. */
 export async function resolveParentId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   userId: string,
   idOrName: string,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<string> {
   if (UUID_RE.test(idOrName)) return idOrName
-  const { data, error } = await sb
-    .from('pages')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('workspace', workspace)
-    .ilike('title', idOrName)
-    .limit(1)
-    .maybeSingle()
+  let q = sb.from('pages').select('id').eq('user_id', userId)
+  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { data, error } = await q.ilike('title', idOrName).limit(1).maybeSingle()
   if (error || !data) throw new Error(`Page "${idOrName}" not found`)
   return data.id as string
 }
@@ -119,7 +114,6 @@ export function parseActionCard(json: string): ActionCard | null {
 export async function createNode(
   supabase: SupabaseClient<Database>,
   card: ActionCard,
-  workspace: WorkspaceScope = 'main',
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<CreatedNode> {
@@ -136,15 +130,12 @@ export async function createNode(
   if (card.type === 'project' || card.type === 'routine') parentRef = card.area_id
   else if (card.type === 'action') parentRef = card.project_id ?? card.area_id
 
-  const parentId = parentRef
-    ? await resolveParentId(sb, user.id, parentRef, workspace, pondId)
-    : null
+  const parentId = parentRef ? await resolveParentId(sb, user.id, parentRef, pondId) : null
 
   const page = await createPage(supabase, user.id, {
     parentId,
     type: card.type,
     title: card.name,
-    workspace,
     pondId,
   })
   return { id: page.id }
