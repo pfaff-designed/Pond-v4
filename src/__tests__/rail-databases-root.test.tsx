@@ -76,6 +76,7 @@ function renderRail(
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
       onOpenDatabases={onOpenDatabases}

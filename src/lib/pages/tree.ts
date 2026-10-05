@@ -116,6 +116,24 @@ export function insertPageOptimistic(
 }
 
 /**
+ * Optimistically retitle a row in the pagesKey() cache so the rail shows the new
+ * name before `updateTitle`'s write lands. Returns the pre-rename rows so the
+ * caller can roll back if the write is refused (a sibling already has the title).
+ */
+export function applyRenameOptimistic(
+  queryClient: QueryClient,
+  rename: { id: string; title: string },
+  pondId: string | null
+): PageRow[] | undefined {
+  const key = pagesKey(pondId)
+  const snapshot = queryClient.getQueryData<PageRow[]>(key)
+  queryClient.setQueryData<PageRow[]>(key, (rows) =>
+    rows?.map((r) => (r.id === rename.id ? { ...r, title: rename.title } : r))
+  )
+  return snapshot
+}
+
+/**
  * Optimistically apply a MOVE (F25) to the pagesKey() cache so the rail
  * restructures instantly — before movePage's write lands. Sets the moved row's
  * `parent_id` and rewrites `order = index` for every id in the reindexed target

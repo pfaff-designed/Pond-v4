@@ -73,6 +73,7 @@ const meta = {
     onToggle: fn(),
     onAddChild: fn(),
     onDelete: fn(),
+    onRename: fn(),
     onLife: fn(),
     onToggleLife: fn(),
     onOpenDatabases: fn(),
@@ -1370,5 +1371,184 @@ export const EmptyRootHasNoChevron: Story = {
     await expect(life.querySelector('button[aria-hidden="true"]')).toBeNull()
     // the board selects nothing here, so the root draws no ＋ at all
     await expect(within(life).queryByRole('button')).not.toBeInTheDocument()
+  },
+}
+
+// ── Inline rename (KAN-21, `PondRail` `renaming`) ───────────────────────────
+
+/** The board's canon around `books`, the row `renaming` puts the field on. */
+const RENAME_TREE: RailNode[] = [
+  node('health', 'page', 'health', [], 0),
+  node(
+    'creativity',
+    'page',
+    'creativity',
+    [
+      node('kitchen', 'page', 'kitchen renovation', [], 0, 'creativity'),
+      node('books', 'page', 'books', [], 1, 'creativity'),
+      node('recipes', 'page', 'recipes', [], 2, 'creativity'),
+    ],
+    1
+  ),
+]
+
+const renameArgs = {
+  tree: RENAME_TREE,
+  expanded: new Set(['creativity']),
+  render: (args: ComponentProps<typeof RailView>) => <BothThemes {...args} />,
+}
+
+/** `field`'s ring (ink a(.2)) and ground, resolved per theme. */
+const RENAME_FIELD: Record<Theme, { ring: string; ground: string }> = {
+  light: { ring: 'rgba(27, 29, 20, 0.2) 0px 0px 0px 1px inset', ground: 'rgb(255, 255, 255)' },
+  dark: { ring: 'rgba(250, 249, 239, 0.2) 0px 0px 0px 1px inset', ground: 'rgb(27, 29, 20)' },
+}
+
+/** Both themes share one `onRename` spy, so each pass starts it afresh. */
+const clearRenames = (args: ComponentProps<typeof RailView>) => {
+  const spy = args.onRename as ReturnType<typeof fn>
+  spy.mockClear()
+}
+
+const treeRow = (scope: HTMLElement, id: string) =>
+  scope.querySelector<HTMLElement>(`[data-tree-row="${id}"]`)!
+
+/**
+ * `PondRail.dc.html` `field`: `flex: 1; padding: 1px 6px; margin: -2px 0;
+ * border-radius: 6; box-shadow: inset 0 0 0 1px a(.2); background #FFFFFF (ink:
+ * #1B1D14); color ink; font-weight 400`. ＋/× are gone while it is open; the
+ * treeitem keeps its role and the field is named `rename books`.
+ */
+export const Renaming: Story = {
+  args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
+  render: renameArgs.render,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const books = treeRow(scope, 'books')
+      const heightAtRest = books.getBoundingClientRect().height
+      await expect(
+        within(books).getByRole('button', { name: 'Add sub-page to books' })
+      ).toBeInTheDocument()
+
+      books.focus()
+      await fireEvent.keyDown(books, { key: 'F2' })
+      const field = within(books).getByRole<HTMLInputElement>('textbox', { name: 'rename books' })
+
+      await expect(books).toHaveAttribute('role', 'treeitem')
+      await expect(field).toHaveFocus()
+      await expect(field).toHaveValue('books')
+      await expect(field.selectionStart).toBe(0)
+      await expect(field.selectionEnd).toBe(5)
+
+      const css = getComputedStyle(field)
+      await expect(css.flexGrow).toBe('1')
+      await expect(css.minWidth).toBe('0px')
+      await expect(css.padding).toBe('1px 6px')
+      await expect(css.margin).toBe('-2px 0px')
+      await expect(css.borderTopLeftRadius).toBe('6px')
+      await expect(css.boxShadow).toBe(RENAME_FIELD[theme].ring)
+      await expect(css.backgroundColor).toBe(RENAME_FIELD[theme].ground)
+      await expect(css.color).toBe(INK[theme])
+      await expect(css.caretColor).toBe(INK[theme])
+      await expect(css.fontWeight).toBe('400')
+      await expect(css.outlineStyle).toBe('none')
+      // The board's own arithmetic: 1px padding against a -2px margin nets the
+      // field 2px SHORTER than the label it replaces, and nothing else in the row
+      // is taller, so the row is 2px shorter while open. Never taller.
+      await expect(books.getBoundingClientRect().height).toBe(heightAtRest - 2)
+
+      // No tools while renaming; neighbours are untouched.
+      await expect(within(books).queryByRole('button')).toBeNull()
+      await expect(within(treeRow(scope, 'recipes')).queryByRole('textbox')).toBeNull()
+
+      await fireEvent.keyDown(field, { key: 'Escape' })
+    }
+  },
+}
+
+/** F2 → type → ↵ keeps the title and hands focus back to the row. */
+export const RenameWithF2: Story = {
+  args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
+  render: renameArgs.render,
+  play: async ({ canvasElement, args }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const books = treeRow(scope, 'books')
+      clearRenames(args)
+
+      books.focus()
+      await fireEvent.keyDown(books, { key: 'F2' })
+      await userEvent.keyboard('reading{Enter}')
+
+      await expect(args.onRename).toHaveBeenCalledTimes(1)
+      await expect(args.onRename).toHaveBeenCalledWith('books', 'reading')
+      await expect(within(books).queryByRole('textbox')).toBeNull()
+      await expect(books).toHaveFocus()
+    }
+  },
+}
+
+/** Double-click opens the field; esc cancels, writes nothing, and the row has focus. */
+export const RenameDoubleClickEscape: Story = {
+  args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
+  render: renameArgs.render,
+  play: async ({ canvasElement, args }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const books = treeRow(scope, 'books')
+      clearRenames(args)
+
+      await userEvent.dblClick(books)
+      await expect(within(books).getByRole('textbox', { name: 'rename books' })).toHaveFocus()
+      await userEvent.keyboard('never kept{Escape}')
+
+      await expect(args.onRename).not.toHaveBeenCalled()
+      await expect(within(books).queryByRole('textbox')).toBeNull()
+      await expect(books).toHaveTextContent('books')
+      await expect(books).toHaveFocus()
+    }
+  },
+}
+
+/** Blur keeps — and an emptied field keeps the old title instead. */
+export const RenameBlurKeeps: Story = {
+  args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
+  render: renameArgs.render,
+  play: async ({ canvasElement, args }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const books = treeRow(scope, 'books')
+      clearRenames(args)
+
+      books.focus()
+      await fireEvent.keyDown(books, { key: 'F2' })
+      await userEvent.keyboard('reading')
+      await userEvent.tab()
+      await expect(args.onRename).toHaveBeenCalledTimes(1)
+      await expect(args.onRename).toHaveBeenCalledWith('books', 'reading')
+      await expect(within(books).queryByRole('textbox')).toBeNull()
+
+      clearRenames(args)
+      await fireEvent.keyDown(books, { key: 'F2' })
+      await userEvent.keyboard('   {Enter}')
+      await expect(args.onRename).not.toHaveBeenCalled()
+      await expect(books).toHaveTextContent('books')
+    }
+  },
+}
+
+/** The pond root and the databases foot row are system roots: F2 and double-click do nothing. */
+export const RenameSystemRoots: Story = {
+  args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
+  play: async ({ canvasElement }) => {
+    const scope = within(canvasElement)
+    for (const id of ['__life__', '__databases__']) {
+      const target = canvasElement.querySelector<HTMLElement>(`[data-tree-row="${id}"]`)!
+      await expect(target).toBeInTheDocument()
+      await fireEvent.keyDown(target, { key: 'F2' })
+      await userEvent.dblClick(target)
+    }
+    await expect(scope.queryByRole('textbox')).toBeNull()
   },
 }

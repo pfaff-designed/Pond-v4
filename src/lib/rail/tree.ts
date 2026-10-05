@@ -67,17 +67,16 @@ export function buildTree(rows: PageRow[]): RailNode[] {
 }
 
 /**
- * A node is a folder if it's top-level or has children (#108).
+ * A node is a folder when it has children (#108).
  *
  * There is no `type = 'area'` any more: "an area is a page with pages inside it;
- * it has no technical meaning" (design law), so folder-ness is computed. Every
- * top-level page counts even while empty — that keeps the five seeded pages
- * (Personal · Professional · Health · Finances · Creativity) as rail folders at
- * first run, and it is where a person naturally starts a new area. Any page
+ * it has no technical meaning" (design law), so folder-ness is computed, and a
+ * childless page — top-level or not — is a leaf: it draws no caret and sets no
+ * `aria-expanded` (APG: the attribute states that a node CAN expand). Any page
  * becomes a folder the moment it gains a child (composite pages included).
  */
 export function isFolderNode(node: RailNode): boolean {
-  return node.parentId === null || node.children.length > 0
+  return node.children.length > 0
 }
 
 /**
@@ -266,6 +265,7 @@ export type TreeKeyCommand =
   | { kind: 'open'; id: string }
   | { kind: 'delete'; id: string }
   | { kind: 'addChild'; id: string }
+  | { kind: 'rename'; id: string }
 
 /**
  * The pure keyboard rules: given a key pressed on row `id` within the visible
@@ -278,6 +278,7 @@ export type TreeKeyCommand =
  *   Enter/␣    open the row's page
  *   Delete/⌫   delete the row (never the Life root)
  *   +          add a child page
+ *   F2         rename the row in place (never the Life root)
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -330,6 +331,8 @@ export function treeKeyCommand(
       return isRoot ? null : { kind: 'delete', id }
     case '+':
       return { kind: 'addChild', id }
+    case 'F2':
+      return isRoot ? null : { kind: 'rename', id }
     default:
       return null
   }

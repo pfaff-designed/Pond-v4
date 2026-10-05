@@ -159,6 +159,7 @@
   --color-mn-hair: var(--mn-hair);
   --color-mn-hover-fill: var(--mn-hover-fill);
   --color-mn-rail-hover: var(--mn-rail-hover);
+  --color-mn-rail-field: var(--mn-rail-field);
   --color-mn-drag-ghost: var(--mn-drag-ghost);
   --color-mn-signal-dated: var(--mn-signal-dated);
   --color-mn-signal-highlight: var(--mn-signal-highlight);
@@ -298,6 +299,8 @@
   --mn-hair: rgb(27 29 20 / 0.055);
   --mn-hover-fill: rgb(27 29 20 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.07); /* PondRail row hover: sage wash, rail-only */
+  --mn-rail-field: #ffffff; /* PondRail `renaming` field: the one white ground */
+  --mn-rail-field-ring: rgb(27 29 20 / 0.2); /* its 1px inset ring, a(.2) */
   --mn-signal-dated: var(--raw-burnt-orange); /* the ONE dated thing per screen */
   --mn-signal-highlight: var(--raw-wheat); /* highlighted passages only */
   --mn-signal-highlight-ink: var(--raw-ink); /* wheat always carries ink text */
@@ -460,6 +463,8 @@
   --mn-hair: rgb(250 249 239 / 0.07);
   --mn-hover-fill: rgb(250 249 239 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.14);
+  --mn-rail-field: #1b1d14;
+  --mn-rail-field-ring: rgb(250 249 239 / 0.2);
   --mn-signal-dated: var(--raw-burnt-orange);
   --mn-signal-highlight: var(--raw-wheat);
   --mn-signal-highlight-ink: var(--raw-ink);

@@ -173,6 +173,7 @@ function RailWithPonds({ dark }: { dark: boolean }) {
           onToggle={fn()}
           onAddChild={fn()}
           onDelete={fn()}
+          onRename={fn()}
           onLife={fn()}
           onToggleLife={fn()}
           onOpenDatabases={fn()}

@@ -49,11 +49,13 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { createPage, deletePage, movePage } from '@/lib/pages/client'
+import { createPage, deletePage, movePage, updateTitle } from '@/lib/pages/client'
+import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
   applyMoveOptimistic,
+  applyRenameOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
@@ -97,6 +99,7 @@ import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { Caret } from '@/components/atoms/Caret'
+import { RailRenameField } from './RailRenameField'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -175,6 +178,12 @@ interface RailRowProps {
   onToggle: (id: string) => void
   onAddChild?: (id: string) => void
   onDelete?: (id: string) => void
+  /** Absent for rows that cannot be renamed from the rail (the pond root, databases). */
+  onRenameStart?: (id: string) => void
+  /** This row's label is the rename field (`PondRail` `renaming`). */
+  isRenaming?: boolean
+  onRenameKeep?: (id: string, value: string, refocus: boolean) => void
+  onRenameCancel?: (id: string) => void
   onFocus: (id: string) => void
   onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
 
@@ -214,6 +223,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     onToggle,
     onAddChild,
     onDelete,
+    onRenameStart,
+    isRenaming = false,
+    onRenameKeep,
+    onRenameCancel,
     onFocus,
     onKeyDown,
     draggable = false,
@@ -259,7 +272,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       aria-setsize={setSize}
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
-      draggable={draggable}
+      draggable={draggable && !isRenaming}
       onAnimationEnd={() => setSettled(true)}
       onDragStart={
         onDragStart
@@ -278,6 +291,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
       onClick={() => onSelect(id)}
+      onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
         // the roving focus back to the row.
@@ -357,71 +371,82 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         accent={accent}
         emphasis={isAreaRow || isSelected}
         leading={leading}
+        titleField={
+          isRenaming && onRenameKeep && onRenameCancel ? (
+            <RailRenameField
+              title={label}
+              onKeep={(value, refocus) => onRenameKeep(id, value, refocus)}
+              onCancel={() => onRenameCancel(id)}
+            />
+          ) : undefined
+        }
         trailing={
-          <>
-            {/* ＋ and × are REAL tab stops (t27). The selected row shows ＋ alone; a
+          isRenaming ? null : (
+            <>
+              {/* ＋ and × are REAL tab stops (t27). The selected row shows ＋ alone; a
                 hovered or focused row shows ＋ and ×; at rest the tools take no
                 width. The root is the workspace, not a page: it takes ＋ and never ×. */}
-            {(onAddChild || (!isRoot && onDelete)) && (
-              <span
-                data-part="row-tools"
-                className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
-                  showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
-                }`}
-              >
-                {onAddChild && (
-                  <button
-                    type="button"
-                    className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
-                    title="Add sub-page"
-                    aria-label={`Add sub-page to ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAddChild(id)
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M6 2.4v7.2M2.4 6h7.2"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                )}
-                {!isRoot && onDelete && (
-                  <span
-                    className={`flex overflow-hidden transition-opacity group-focus-within:max-w-5 group-focus-within:pl-2 group-focus-within:opacity-100 ${
-                      hovered ? 'max-w-5 pl-2 opacity-100' : 'max-w-0 pl-0 opacity-0'
-                    }`}
-                  >
+              {(onAddChild || (!isRoot && onDelete)) && (
+                <span
+                  data-part="row-tools"
+                  className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
+                    showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
+                  }`}
+                >
+                  {onAddChild && (
                     <button
                       type="button"
                       className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
-                      title="Delete page"
-                      aria-label={`Delete ${label}`}
+                      title="Add sub-page"
+                      aria-label={`Add sub-page to ${label}`}
                       disabled={isBusy}
                       onClick={(e) => {
                         e.stopPropagation()
-                        onDelete(id)
+                        onAddChild(id)
                       }}
                     >
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
                         <path
-                          d="M3 3l6 6M9 3l-6 6"
+                          d="M6 2.4v7.2M2.4 6h7.2"
                           stroke="currentColor"
                           strokeWidth="1.4"
                           strokeLinecap="round"
                         />
                       </svg>
                     </button>
-                  </span>
-                )}
-              </span>
-            )}
-          </>
+                  )}
+                  {!isRoot && onDelete && (
+                    <span
+                      className={`flex overflow-hidden transition-opacity group-focus-within:max-w-5 group-focus-within:pl-2 group-focus-within:opacity-100 ${
+                        hovered ? 'max-w-5 pl-2 opacity-100' : 'max-w-0 pl-0 opacity-0'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                        title="Delete page"
+                        aria-label={`Delete ${label}`}
+                        disabled={isBusy}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(id)
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M3 3l6 6M9 3l-6 6"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  )}
+                </span>
+              )}
+            </>
+          )
         }
         // `leading-[normal]` comes LAST on purpose. tailwind-merge counts
         // font-size as conflicting with leading (a `text-*` step can carry its
@@ -464,6 +489,8 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string) => void
   onDelete: (id: string) => void
+  /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
+  onRename: (id: string, title: string) => void
   onLife: () => void
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
@@ -604,6 +631,7 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onRename,
   onLife,
   onToggleLife,
   onOpenDatabases,
@@ -672,8 +700,13 @@ export function RailView({
 
   // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
   // keep firing on the newly focused row.
+  // A row that already holds focus INSIDE it (its rename field) is left alone:
+  // every pages refetch rebuilds `visibleIds`, and re-focusing the row here would
+  // blur the field and keep the rename half-typed.
   useEffect(() => {
-    if (focusedId && visibleIds.has(focusedId)) rowRefs.current.get(focusedId)?.focus()
+    if (!focusedId || !visibleIds.has(focusedId)) return
+    const row = rowRefs.current.get(focusedId)
+    if (row && !row.contains(document.activeElement)) row.focus()
   }, [focusedId, visibleIds])
 
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
@@ -696,6 +729,38 @@ export function RailView({
     else onSelect(id)
   }
 
+  // ── Inline rename (F2 / double-click) ───────────────────────────────────────
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+
+  /** The pond root and the databases foot row are system roots: not renamed here. */
+  const isRenameable = (id: string): boolean => {
+    if (id === LIFE_ID || id === DATABASES_PLACEHOLDER_ID) return false
+    const node = flat.find((f) => f.id === id)?.node
+    return node !== undefined && !isDatabasesRoot(node)
+  }
+
+  const handleRenameStart = (id: string) => {
+    if (isRenameable(id)) setRenamingId(id)
+  }
+
+  /** Closing the field, and — for ↵ / esc — handing focus back to the row. The
+   *  row is the same element before and after, so it is focused while the field
+   *  still exists; the field has settled by then, so the blur this raises is inert. */
+  const endRename = (id: string, refocus: boolean) => {
+    if (refocus) rowRefs.current.get(id)?.focus()
+    setRenamingId(null)
+  }
+
+  const handleRenameKeep = (id: string, value: string, refocus: boolean) => {
+    // Empty or unchanged keeps the old title: nothing to write.
+    const next = value.trim()
+    const current = flat.find((f) => f.id === id)?.node.title
+    endRename(id, refocus)
+    if (next !== '' && next !== current) onRename(id, next)
+  }
+
+  const handleRenameCancel = (id: string) => endRename(id, true)
+
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
     const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
@@ -703,7 +768,7 @@ export function RailView({
     e.preventDefault()
     // The databases root carries no ＋/×, so it takes no Delete or + either.
     const target = flat.find((f) => f.id === id)?.node
-    const isToolCommand = cmd.kind === 'delete' || cmd.kind === 'addChild'
+    const isToolCommand = cmd.kind === 'delete' || cmd.kind === 'addChild' || cmd.kind === 'rename'
     if (isToolCommand && target && isDatabasesRoot(target)) return
     switch (cmd.kind) {
       case 'focus':
@@ -723,6 +788,9 @@ export function RailView({
         break
       case 'addChild':
         onAddChild(cmd.id)
+        break
+      case 'rename':
+        handleRenameStart(cmd.id)
         break
     }
   }
@@ -887,6 +955,10 @@ export function RailView({
         // The databases root is a foot row, not a page: the board draws no tools on it.
         onAddChild={isDatabasesRoot(node) ? undefined : onAddChild}
         onDelete={isDatabasesRoot(node) ? undefined : onDelete}
+        onRenameStart={isDatabasesRoot(node) || isPlaceholder ? undefined : handleRenameStart}
+        isRenaming={renamingId === id}
+        onRenameKeep={handleRenameKeep}
+        onRenameCancel={handleRenameCancel}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         draggable={!isPlaceholder}
@@ -1247,6 +1319,29 @@ export function Rail() {
     }
   }
 
+  /**
+   * A kept rename: the title shows in the rail at once (the same optimistic cache
+   * write the other rail mutations use), then `updateTitle` — the call the page's
+   * own title editor persists through — refuses a sibling clash, in which case the
+   * old title is restored and the clash surfaced.
+   */
+  async function handleRename(id: string, title: string) {
+    const previous = nodeById.get(id)?.title ?? ''
+    const snapshot = applyRenameOptimistic(queryClient, { id, title }, pondId)
+    try {
+      await updateTitle(createClient(), id, title)
+    } catch (error) {
+      if (snapshot) queryClient.setQueryData<PageRow[]>(pagesKey(pondId), snapshot)
+      notify(
+        error instanceof DuplicateTitleError
+          ? `"${title}" already exists here`
+          : `Couldn't rename "${previous || 'Untitled'}"`
+      )
+    }
+    void queryClient.invalidateQueries({ queryKey: pagesKey() })
+    void queryClient.invalidateQueries({ queryKey: ['page', id] })
+  }
+
   function handleToggle(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -1338,6 +1433,7 @@ export function Rail() {
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onRename={handleRename}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
