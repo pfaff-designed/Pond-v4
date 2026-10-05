@@ -4,8 +4,9 @@
  *
  * `PondPicker.dc.html`'s `filtered` state splits each matched label `pre` / `hit` /
  * `post` and underlines the hit — a three-part split, never a background wash —
- * and drops the group labels while a query is live. A row whose label does not
- * match but whose short description does still lists, with that description as
+ * and drops the group labels while a query is live. Matching is the label and
+ * the row's short alias, nothing else (2c: "narrows by name and alias"): a row
+ * whose label does not match but whose alias does still lists, with that alias as
  * its hint and nothing underlined (the board's `entry log · dated table`).
  */
 
@@ -24,7 +25,9 @@ export interface SlashRow {
   id: string
   /** Pond's word for what this row inserts — lowercase, from the glossary or the board. */
   label: string
-  /** Short, lowercase; matched against the query and shown as the hint when it matched. */
+  /** A second name, short and lowercase; matched against the query and shown as the hint when it matched. */
+  alias?: string
+  /** Neither matched nor drawn. `AITerminal`'s `CHAT_COMMANDS` still supplies it and may not change. */
   description?: string
   /** The board's shortcut hint at rest — `#`, `"`, `-`, `[]`, `proposes`. */
   key?: string
@@ -124,8 +127,19 @@ export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase()
 }
 
+/**
+ * The DC's `mob` caps: the open list shows its first 12 entries, group heads
+ * counted; the templates pane shows 8 premade shapes. A query is never capped.
+ */
+export const MOBILE_ROW_CAP = 12
+export const MOBILE_PREMADE_CAP = 8
+
 /** The `rows` pane: grouped at rest, a flat match list under a query, a note when nothing matches. */
-export function rowEntries(rows: readonly SlashRow[], query: string): SlashEntry[] {
+export function rowEntries(
+  rows: readonly SlashRow[],
+  query: string,
+  cap: number = Infinity
+): SlashEntry[] {
   const q = normalizeQuery(query)
   if (!q) {
     const out: SlashEntry[] = []
@@ -145,27 +159,27 @@ export function rowEntries(rows: readonly SlashRow[], query: string): SlashEntry
         row,
       })
     }
-    return out
+    return out.slice(0, cap)
   }
   // Rows matched on their label lead (the board's `table` ahead of `entry log ·
-  // dated table`); rows matched only through their description follow.
+  // dated table`); rows matched only through their alias follow.
   const byLabel: SlashEntry[] = []
-  const byDescription: SlashEntry[] = []
+  const byAlias: SlashEntry[] = []
   for (const row of rows) {
     const onLabel = row.label.toLowerCase().includes(q)
-    const onDescription = !onLabel && row.description?.toLowerCase().includes(q)
-    if (!onLabel && !onDescription) continue
-    ;(onLabel ? byLabel : byDescription).push({
+    const onAlias = !onLabel && row.alias?.toLowerCase().includes(q)
+    if (!onLabel && !onAlias) continue
+    ;(onLabel ? byLabel : byAlias).push({
       kind: 'row',
       id: row.id,
       label: row.label,
       ...splitMatch(row.label, onLabel ? q : ''),
-      hint: onDescription ? row.description : row.key,
+      hint: onAlias ? row.alias : row.key,
       icon: row.icon,
       row,
     })
   }
-  const out = [...byLabel, ...byDescription]
+  const out = [...byLabel, ...byAlias]
   return out.length
     ? out
     : [
@@ -177,9 +191,12 @@ export function rowEntries(rows: readonly SlashRow[], query: string): SlashEntry
 }
 
 /** The `templates` pane: the twelve premade shapes (#261), then the person's own. */
-export function templateEntries(yours: readonly YourTemplate[] = []): SlashEntry[] {
+export function templateEntries(
+  yours: readonly YourTemplate[] = [],
+  premadeCap: number = TEMPLATE_KINDS.length
+): SlashEntry[] {
   const out: SlashEntry[] = [{ kind: 'group', label: 'premade' }]
-  for (const kind of TEMPLATE_KINDS) {
+  for (const kind of TEMPLATE_KINDS.slice(0, premadeCap)) {
     out.push({
       kind: 'row',
       id: `premade:${kind}`,

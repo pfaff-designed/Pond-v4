@@ -43,6 +43,9 @@ import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-e
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
 import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
+import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
+import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { useBelowMd } from '@/lib/layout/use-below-md'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import {
@@ -700,6 +703,12 @@ function useBlockEmptyState(
 }
 
 /**
+ * The open `/` list at its tallest, for choosing which way it grows: 12 rows,
+ * 3 group heads and the foot come to ~504px, and the list itself stops at 60vh.
+ */
+const slashMenuHeight = () => Math.min(504, window.innerHeight * 0.6 + 56)
+
+/**
  * One block row: drag handle + delete affordance + the module's own view, editable.
  * Rendering goes through the ModuleView registry — no per-type branches, so every
  * registered module (and any future one) is editable here with zero edits. Views
@@ -765,6 +774,16 @@ function BlockEditor({
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const belowMd = useBelowMd()
+  const [slashSide, setSlashSide] = useState<PickerSide>('bottom')
+  // The `/` menu hangs off the caret, not the block (2c: "opens at the caret").
+  const slashAnchor = useMemo<PickerAnchorBox>(
+    () => ({
+      getBoundingClientRect: () =>
+        rootRef.current ? caretRect(rootRef.current) : document.body.getBoundingClientRect(),
+    }),
+    []
+  )
   const frame = blockFrame(block)
   // The `/` menu's query is what follows the slash in THIS text block (#278): the
   // board has no filter input — the person keeps typing on the page.
@@ -785,8 +804,18 @@ function BlockEditor({
           // `/` typed into an EMPTY text block opens the menu (ticket-37, #278).
           // The slash STAYS as text — it is the query the person is typing, and
           // esc keeps it. Deleting it back out closes the menu.
-          if (was === '' && now === '/') onSlashKey?.()
-          else if (slashMenuOpen && !now.startsWith('/')) onSlashClose?.()
+          if (was === '' && now === '/') {
+            if (rootRef.current) {
+              setSlashSide(
+                sideTowardFreeSpace(
+                  caretRect(rootRef.current),
+                  window.innerHeight,
+                  slashMenuHeight()
+                )
+              )
+            }
+            onSlashKey?.()
+          } else if (slashMenuOpen && !now.startsWith('/')) onSlashClose?.()
         }
         onChange(nextBlock)
       }}
@@ -877,12 +906,14 @@ function BlockEditor({
         />
       )}
 
-      {/* The `/` menu, hung under this block (ticket-37, #278). */}
+      {/* The `/` menu, hung at the caret (ticket-37, #278; KAN-78). */}
       {slashMenuOpen && (
         <SlashMenu
           rows={slashRows}
           query={slashQuery}
-          anchor={rootRef}
+          anchor={slashAnchor}
+          side={slashSide}
+          size={belowMd ? 'mobile' : 'desktop'}
           onSelect={onSlashSelect ?? (() => {})}
           onPickTemplate={onSlashPickTemplate}
           onClose={onSlashClose ?? (() => {})}

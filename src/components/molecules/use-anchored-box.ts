@@ -12,7 +12,11 @@
 
 import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
 
-export type PickerAnchor = Element | null | RefObject<Element | null>
+/** All the glass needs of its anchor: an element, or a caret rect standing in for one. */
+export interface PickerAnchorBox {
+  getBoundingClientRect(): Pick<DOMRect, 'top' | 'bottom' | 'left'>
+}
+export type PickerAnchor = PickerAnchorBox | null | RefObject<PickerAnchorBox | null>
 export type PickerSide = 'top' | 'bottom'
 
 export function useAnchoredBox(anchor: PickerAnchor, side: PickerSide): CSSProperties | undefined {

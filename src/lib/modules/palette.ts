@@ -5,7 +5,7 @@
  * registered types and they do not line up: `list` and `checklist` are both `todo`
  * at different markers (#219), `gallery` / `chart` / `big number` are all `view` at
  * different modes (ADR 0007), and seven rows name no type at all. So a row is
- * `{ id, group, label, description, key, icon, type }` plus a factory in
+ * `{ id, group, label, alias, key, icon, type }` plus a factory in
  * {@link mintPreset}, and one type may contribute several rows.
  *
  * The derivation survives, sharpened: **every registered content type reaches the
@@ -30,14 +30,14 @@ import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
 const ROW_CHROME: Partial<
-  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string }>
+  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string; alias?: string }>
 > = {
   text: { group: 'text', icon: ICON.text },
   highlight: { group: 'text', icon: ICON.quote, key: '"' },
   image: { group: 'text', icon: ICON.file },
-  todo: { group: 'blocks', icon: ICON.check, key: '[]' },
+  todo: { group: 'blocks', icon: ICON.check, key: '[]', alias: 'todo' },
   table: { group: 'blocks', icon: ICON.table },
-  entries: { group: 'blocks', icon: ICON.log },
+  entries: { group: 'blocks', icon: ICON.log, alias: 'dated table' },
 }
 
 /**
@@ -51,7 +51,6 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'gallery',
-    description: 'a database’s records as cards with an image',
     icon: ICON.gallery,
   },
   {
@@ -59,7 +58,7 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'chart',
-    description: 'figures from a database, drawn over time',
+    alias: 'graph',
     icon: ICON.chart,
   },
   {
@@ -67,7 +66,6 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'big number',
-    description: 'one figure from a database, oversized',
     icon: ICON.number,
   },
 ] satisfies readonly (SlashRow & { id: ViewMode })[]
@@ -95,7 +93,6 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       type: 'text',
       group: 'text',
       label: 'heading',
-      description: 'a line that names what follows',
       key: '#',
       icon: ICON.heading,
     },
@@ -106,7 +103,6 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       type: 'todo',
       group: 'blocks',
       label: 'list',
-      description: 'things with nothing to tick off — groceries, names',
       key: '-',
       icon: ICON.list,
     },
@@ -163,7 +159,7 @@ const ownRows: SlashRow[] = Object.values(moduleDescriptors)
       type: d.type,
       group: chrome.group,
       label: d.label,
-      description: d.paletteDescription,
+      alias: chrome.alias,
       key: chrome.key,
       icon: chrome.icon,
     }
@@ -173,7 +169,6 @@ const templateRow: SlashRow = {
   id: 'page-from-template',
   group: 'templates',
   label: 'page from template',
-  description: 'one of the twelve shapes, or one of yours, as a nested page',
   icon: TPL_ICON,
   submenu: 'templates',
 }

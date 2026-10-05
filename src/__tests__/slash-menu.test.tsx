@@ -255,24 +255,57 @@ describe('filtered', () => {
     expect(table.querySelector('[data-part="post"]')!.textContent).toBe('ble')
     // (The board's fixture also lists `page from template` here with its hit at
     // index 13 — "pl" — which is fixture noise: that label contains no "ta".)
-    const n = options().length
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
-      `/ ta — ${n} ${n === 1 ? 'match' : 'matches'}`
-    )
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['table', 'entry log'])
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
     expect(labelOf(selected())).toBe('table')
   })
 
-  it('a row matched through its description shows that description as its hint, with nothing underlined', () => {
+  it('a row matched through its alias shows that alias as its hint, with nothing underlined', () => {
+    renderMenu({ query: 'ta' })
+    const log = options().find((o) => labelOf(o as HTMLElement) === 'entry log')!
+    expect(log.querySelector('[data-part="hit"]')!.textContent).toBe('')
+    expect(within(log).getByText('dated table')).toBeInTheDocument()
+  })
+
+  it('the aliases are entry log = dated table, checklist = todo, chart = graph', () => {
+    const alias = (id: string) => slashRows.find((r) => r.id === id)?.alias
+    expect(alias('entry-log')).toBe('dated table')
+    expect(alias('checklist')).toBe('todo')
+    expect(alias('chart')).toBe('graph')
+    for (const [query, label] of [
+      ['todo', 'checklist'],
+      ['graph', 'chart'],
+      ['dated', 'entry log'],
+    ]) {
+      const { unmount } = renderMenu({ query })
+      expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([label])
+      unmount()
+    }
+  })
+
+  it('matches the label and the alias only — a row’s description is not searched', () => {
     const rows: SlashRow[] = [
-      { id: 'a', label: 'entry log', description: 'a dated table', icon: { d: 'M0 0' } },
-      { id: 'b', label: 'chart', description: 'figures over time', icon: { d: 'M0 0' } },
+      { id: 'a', label: 'entry log', description: 'a dated ledger', icon: { d: 'M0 0' } },
     ]
-    renderMenu({ rows, query: 'table' })
-    expect(options()).toHaveLength(1)
-    const row = options()[0]
-    expect(row.querySelector('[data-part="hit"]')!.textContent).toBe('')
-    fireEvent.mouseLeave(row)
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ table — 1 match')
+    renderMenu({ rows, query: 'ledger' })
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+  })
+
+  it('a label match leads an alias match, and the first match stays selected as the query grows', () => {
+    const { rerender, onSelect, onClose, anchor } = renderMenu({ query: 't' })
+    expect(labelOf(selected())).toBe('text')
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query="ta"
+        anchor={anchor}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    )
+    expect(labelOf(selected())).toBe('table')
+    fireEvent.keyDown(anchor, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'table' }))
   })
 
   it('matching is case-insensitive and ignores surrounding space', () => {
@@ -289,6 +322,78 @@ describe('empty', () => {
       'nothing called “zz”. esc to keep it as text, or ask pond in the composer.'
     )
     expect(glass().querySelector('[data-part="foot"]')).toBeNull()
+  })
+})
+
+describe('a space when nothing matches', () => {
+  it('closes the menu and is not swallowed, so the typed text stays text', () => {
+    const { anchor, onClose } = renderMenu({ query: 'zz' })
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    anchor.dispatchEvent(space)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(space.defaultPrevented).toBe(false)
+  })
+
+  it('does nothing while something matches — a space inside `big number` is part of the query', () => {
+    const { anchor, onClose } = renderMenu({ query: 'big' })
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    anchor.dispatchEvent(space)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(space.defaultPrevented).toBe(false)
+  })
+})
+
+describe('mobile', () => {
+  it('is 340 wide with 11px 10px rows at 14, where desktop is 300 and 7px 10px at 12.5', () => {
+    const { unmount } = renderMenu()
+    expect(glass()).toHaveClass('w-[300px]')
+    expect(options()[0]).toHaveClass('py-[7px]', 'text-[12.5px]')
+    unmount()
+    renderMenu({ size: 'mobile' })
+    expect(glass()).toHaveClass('w-[340px]')
+    for (const o of options()) expect(o).toHaveClass('py-[11px]', 'px-[10px]', 'text-[14px]')
+  })
+
+  it('stops the open list at 12 entries, counting the group heads', () => {
+    renderMenu({ size: 'mobile' })
+    const entries = glass().querySelectorAll('[data-part="group"], [role="option"]')
+    expect(entries).toHaveLength(12)
+    expect([...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)).toEqual([
+      'text',
+      'blocks',
+    ])
+    expect(
+      options()
+        .map((o) => labelOf(o as HTMLElement))
+        .at(-1)
+    ).toBe('big number')
+  })
+
+  it('does not cap a query', () => {
+    renderMenu({ size: 'mobile', query: 'e' })
+    const desktop = options().length
+    expect(desktop).toBeGreaterThan(0)
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
+      `/ e — ${desktop} matches`
+    )
+  })
+
+  it('shows 8 premade shapes in the templates pane, then the person’s own', () => {
+    renderMenu({
+      size: 'mobile',
+      defaultPane: 'templates',
+      yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
+    })
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
+      ...TEMPLATE_KINDS.slice(0, 8),
+      'weeknight recipe',
+    ])
+    expect(glass().querySelector('[data-part="head"]')).toHaveClass('text-[13px]')
+  })
+
+  it('sets the empty note at 13', () => {
+    renderMenu({ size: 'mobile', query: 'zz' })
+    expect(glass().querySelector('[data-part="note"]')).toHaveClass('text-[13px]')
   })
 })
 
