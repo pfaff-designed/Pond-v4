@@ -1,11 +1,10 @@
 'use client'
 
 /**
- * The pieces of the diff card (#98), split out of `ModuleDiffCard` so the card
+ * The pieces of the diff card, split out of `ModuleDiffCard` so the card
  * itself reads as header → rows → footer:
  *   - {@link ChangeRows}   — one change as − / + rows, delegating to the module's
  *                            `differ` facet when it declares one;
- *   - {@link OriginalRows} — "show original": the target as it stands, no marks;
  *   - {@link NoteBox}      — the request-changes note to the proposer (6c frame 3).
  * All presentational; the card owns the state.
  */
@@ -58,25 +57,6 @@ export function ChangeRows({ change }: { change: ChangePreview }) {
       <PondMolecule kind="diff-line" variant="add" className={DIFF_LINE_CLASS}>
         <ModuleView type={after.type} data={after} />
       </PondMolecule>
-    </div>
-  )
-}
-
-/** The target as it stands — "show original". No diff marks, no red. */
-export function OriginalRows({ changes }: { changes: ChangePreview[] }) {
-  return (
-    <div data-part="original" className="space-y-[3px] font-mono text-[11px] leading-[1.75]">
-      {changes.map((change, i) =>
-        change.before ? (
-          <div key={i} className="rounded-mn-hair bg-mn-text/[0.04] px-2 py-[2px]">
-            <ModuleView type={change.before.type} data={change.before} />
-          </div>
-        ) : (
-          <div key={i} className="px-2 py-[2px] text-mn-text-secondary">
-            new block — nothing to show yet
-          </div>
-        )
-      )}
     </div>
   )
 }

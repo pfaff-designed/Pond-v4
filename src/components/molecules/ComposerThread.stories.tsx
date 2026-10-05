@@ -241,12 +241,11 @@ export const ThreadMobile: Story = {
   },
 }
 
-/** `folded`: beyond three turns the earlier ones fold; the fold opens them. */
+/** `thread`: three turns show only the latest, and the rest sit under `2 earlier turns`. */
 export const FoldPaper: Story = {
-  args: { turns: 5 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(3)
+    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
 
     const fold = canvas.getByRole('button', { name: '2 earlier turns' })
     const f = getComputedStyle(fold)
@@ -258,27 +257,42 @@ export const FoldPaper: Story = {
     await expectInk(f.color, 'paper', 0.68)
     const caret = fold.querySelector('svg')!
     await expect(caret.getAttribute('width')).toBe('9')
+    await expect(caret.getAttribute('height')).toBe('9')
+    await expect(caret.getAttribute('viewBox')).toBe('0 0 14 14')
+    await expect(caret.getAttribute('stroke-width')).toBe('1.4')
+    await expect(caret.querySelector('path')!.getAttribute('d')).toBe('M3.5 2 7 5 3.5 8')
     await expect(getComputedStyle(caret).rotate).toBe('-90deg')
 
     await userEvent.click(fold)
-    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(5)
+    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(3)
     await expect(canvas.queryByText(/earlier turn/)).toBeNull()
   },
 }
 
 export const FoldInk: Story = {
-  args: { turns: 5, theme: 'ink' },
+  args: { theme: 'ink' },
   play: async ({ canvasElement }) => {
     const fold = within(canvasElement).getByRole('button', { name: '2 earlier turns' })
     await expectInk(getComputedStyle(fold).color, 'ink', 0.68)
   },
 }
 
-/** Three turns are all shown: nothing folds until the thread outgrows them. */
-export const ThreeTurnsDoNotFold: Story = {
+/** Two turns fold one; a single turn has nothing to fold. */
+export const TwoTurnsFoldOne: Story = {
+  args: { turns: 2 },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByRole('button', { name: '1 earlier turn' })
+    ).toBeInTheDocument()
+    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
+  },
+}
+
+export const OneTurnDoesNotFold: Story = {
+  args: { turns: 1 },
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).queryByText(/earlier turn/)).toBeNull()
-    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(3)
+    await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
   },
 }
 
@@ -286,7 +300,7 @@ export const ThreeTurnsDoNotFold: Story = {
 export const ProposingPaper: Story = {
   args: { proposing: true },
   play: async ({ canvasElement }) => {
-    const turn = canvasElement.querySelectorAll<HTMLElement>('[data-part="turn"]')[2]
+    const turn = canvasElement.querySelector<HTMLElement>('[data-part="turn"]')!
     await expect(within(turn).getByRole('group', { name: 'proposed edit' })).toBeInTheDocument()
     await expect(within(turn).getByRole('button', { name: 'accept' })).toBeInTheDocument()
   },

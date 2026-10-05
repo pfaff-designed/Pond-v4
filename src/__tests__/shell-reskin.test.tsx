@@ -83,7 +83,7 @@ jest.mock('@/lib/pages/client', () => ({
 // The composer's data layer is not what this file is about; its CHROME is
 // covered directly through TerminalDrawer below.
 jest.mock('@/components/organisms/AITerminal', () => ({
-  AITerminal: () => <section aria-label="Pond terminal" />,
+  AITerminal: () => <section aria-label="composer" />,
 }))
 
 import { RailView, type RailNode } from '@/components/organisms/Rail'
@@ -460,7 +460,7 @@ function renderDrawer(over: Partial<React.ComponentProps<typeof TerminalDrawer>>
 describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off the bottom', () => {
   it('is the glass card itself: 560 wide (360 below md), padding 14, gap 14, radius 20', () => {
     renderDrawer()
-    const card = screen.getByRole('region', { name: 'Pond terminal' })
+    const card = screen.getByRole('region', { name: 'composer' })
     expect(card.getAttribute('data-part')).toBe('composer-card')
     for (const cls of [
       'mn-glass',
@@ -481,7 +481,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
 
   it('is centred on the area right of the rail — calc(50% + 113px) — and 24px off the bottom', () => {
     renderDrawer()
-    const classes = screen.getByRole('region', { name: 'Pond terminal' }).className.split(' ')
+    const classes = screen.getByRole('region', { name: 'composer' }).className.split(' ')
     // The storyboards: left 246 / right 20 in a 1180 frame (rail 20+206+20).
     expect(classes).toContain('md:left-[calc(50%_+_113px)]')
     expect(classes).toContain('-translate-x-1/2')
@@ -502,7 +502,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     renderDrawer({ collapsed: true, onExpand })
     expect(screen.queryByText('body')).toBeNull()
     expect(screen.queryByText('footer')).toBeNull()
-    const tab = screen.getByRole('region', { name: 'Pond terminal' })
+    const tab = screen.getByRole('region', { name: 'composer' })
     const classes = tab.className.split(' ')
     for (const cls of [
       'mn-glass',
@@ -524,7 +524,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     renderDrawer({ collapsed: true, landed: true })
     expect(screen.getByText('pond answered')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /pond answered/ })).toBeInTheDocument()
-    const tab = screen.getByRole('region', { name: 'Pond terminal' })
+    const tab = screen.getByRole('region', { name: 'composer' })
     expect(tab.querySelector('[data-part="landed-dot"]')).not.toBeNull()
   })
 })
@@ -632,7 +632,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(main.querySelector('.sticky nav, nav.sticky')).toBeNull()
 
     // The composer is the shell's child too — its calc(50% + 113px) is against the shell.
-    const terminal = screen.getByRole('region', { name: 'Pond terminal' })
+    const terminal = screen.getByRole('region', { name: 'composer' })
     expect(terminal.parentElement).toBe(shell)
     expect(main.contains(terminal)).toBe(false)
 

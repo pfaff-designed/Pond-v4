@@ -18,6 +18,11 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
+jest.mock('@/lib/pond/context', () => ({
+  ...jest.requireActual('@/lib/pond/context'),
+  usePondId: () => 'pond-7',
+}))
+
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: {
@@ -175,6 +180,8 @@ describe('AITerminal — propose_changes card (#98)', () => {
       note: 'drop the second line',
       reason: 'note',
     })
+    // The route scopes the change-log record by pond; a note without it files into main.
+    expect(options.body.pondId).toBe('pond-7')
     // This turn's envelope already carries the decision, so the model reads it.
     const resolutions = options.body.resolutions as {
       changes: Record<string, string>
@@ -239,6 +246,7 @@ describe('AITerminal — propose_changes card (#98)', () => {
       { body: Record<string, unknown> },
     ]
     expect(options.body.requestChanges).toMatchObject({ toolCallId: 'pc1', reason: 'outdated' })
+    expect(options.body.pondId).toBe('pond-7')
   })
 
   it('two cards in one message offer accept all; one does not (C10)', async () => {

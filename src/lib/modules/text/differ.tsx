@@ -8,7 +8,7 @@ import type { TextBlock } from './schema'
 /**
  * Text `differ` (t16 branch 6 + Fix-4/F8) — the type-specific body slotted into the
  * shared `ModuleDiffCard` shell. Shows the change in typeset markdown (Markdown atom,
- * `terminal` variant) as `PondMolecule` diff-lines (#98, 6c frame 2), so the user sees
+ * `terminal` variant) as `PondMolecule` diff-lines, so the user sees
  * formatted content rather than raw markdown source.
  *
  * Before (if any) is a removal row — the ONE place red is spent (Make Noise rule:

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The PondComposer card (`PondComposer.dc.html` `glass`, board 2f; ADR 0011): one
+ * The PondComposer card (`PondComposer.dc.html` `glass`, board 2f): one
  * floating sheet of glass — 560 wide (360 below md), padding 14, gap 14, radius
  * 20 — holding the thread, then the line and toolbar. It is as tall as its
  * content and grows UPWARD from a fixed 24px inset, so nothing is resized by
@@ -17,7 +17,7 @@
  *
  * Collapsed, the card becomes the tab (`PondComposer` `collapsed`/`landed`): 30px of
  * the same glass on the shell's bottom edge, a pill riding its top edge with the
- * chevron, and `⌘J` beside it. When an answer arrived while it was closed the pill
+ * chevron, and `⌘J` below it. When an answer arrived while it was closed the pill
  * also says `pond answered`, in a 6px dot and words — never a ping, badge or count.
  */
 
@@ -86,7 +86,7 @@ export const TerminalDrawer = ({
     return (
       <section
         ref={cardRef}
-        aria-label="Pond terminal"
+        aria-label="composer"
         data-part="composer-card"
         data-state={landed ? 'landed' : 'collapsed'}
         className={cn(
@@ -149,7 +149,7 @@ export const TerminalDrawer = ({
   return (
     <section
       ref={cardRef}
-      aria-label="Pond terminal"
+      aria-label="composer"
       data-part="composer-card"
       className={`${CARD_PLACEMENT} mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text`}
     >

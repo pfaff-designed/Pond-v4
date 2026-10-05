@@ -4,8 +4,8 @@
  * composer's fold is testable without React.
  */
 
-/** Beyond this many turns the earlier ones fold into `N earlier turns`. */
-export const VISIBLE_TURNS = 3
+/** Only the latest turn stays open; every earlier one folds into `N earlier turns`. */
+export const VISIBLE_TURNS = 1
 
 interface TurnMessage {
   role: string
@@ -28,6 +28,6 @@ export const groupTurns = (messages: readonly TurnMessage[]): number[][] => {
   return turns
 }
 
-/** How many of the oldest turns fold away: none until the thread outgrows the visible few. */
+/** How many of the oldest turns fold away. */
 export const foldedTurnCount = (turnCount: number, visible = VISIBLE_TURNS): number =>
   Math.max(0, turnCount - visible)

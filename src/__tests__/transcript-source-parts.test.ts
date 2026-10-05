@@ -13,7 +13,7 @@
  */
 
 import type { UIMessage } from 'ai'
-import { toModelMessages } from '@/lib/conversation/transcript'
+import { toModelMessages, withoutWebSearch } from '@/lib/conversation/transcript'
 
 /** An assistant message shaped like a real sourced answer from the route. */
 function sourcedAssistantMessage(): UIMessage {
@@ -83,5 +83,72 @@ describe('transcript round-trip with source-url parts', () => {
         expect(c.type).not.toBe('source-url')
       }
     }
+  })
+})
+
+describe('withoutWebSearch — replaying a research turn on a turn without the web', () => {
+  const transcript = (): UIMessage[] =>
+    [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'price of pottery wheels?' }] },
+      sourcedAssistantMessage(),
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'thanks — cheapest one?' }] },
+    ] as UIMessage[]
+
+  const toolBlocks = (model: Awaited<ReturnType<typeof toModelMessages>>) =>
+    model.flatMap((m) =>
+      typeof m.content === 'string'
+        ? []
+        : (m.content as Array<{ type: string; toolName?: string }>).filter(
+            (c) => c.type === 'tool-call' || c.type === 'tool-result'
+          )
+    )
+
+  it('without the strip, the replay carries web_search call and result blocks', async () => {
+    const blocks = toolBlocks(await toModelMessages(transcript()))
+    expect(blocks.map((b) => b.toolName)).toEqual(['web_search', 'web_search'])
+  })
+
+  it('removes the search call and result, and keeps the answer text and citations', async () => {
+    const stripped = withoutWebSearch(transcript())
+    expect(toolBlocks(await toModelMessages(stripped))).toEqual([])
+    expect(JSON.stringify(await toModelMessages(stripped))).toContain('Beginner wheels run')
+    const parts = stripped[1].parts as Array<{ type: string }>
+    expect(parts.filter((p) => p.type === 'source-url')).toHaveLength(2)
+  })
+
+  it('strips the static tool-web_search part shape too', () => {
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'tool-web_search', toolCallId: 't1', state: 'output-available', input: {} },
+          { type: 'text', text: 'ok' },
+        ],
+      },
+    ] as unknown as UIMessage[]
+    expect(withoutWebSearch(messages)[0].parts.map((p) => p.type)).toEqual(['text'])
+  })
+
+  it('drops an assistant message that was nothing but the search', () => {
+    const messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          { type: 'tool-web_search', toolCallId: 't1', state: 'output-available', input: {} },
+        ],
+      },
+    ] as unknown as UIMessage[]
+    expect(withoutWebSearch(messages).map((m) => m.id)).toEqual(['u1'])
+  })
+
+  it('leaves a transcript with no search untouched', () => {
+    const messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+    ] as UIMessage[]
+    expect(withoutWebSearch(messages)).toEqual(messages)
   })
 })

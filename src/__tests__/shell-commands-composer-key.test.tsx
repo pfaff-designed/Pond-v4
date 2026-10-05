@@ -55,6 +55,19 @@ describe('ShellCommands — ⌘J toggles the composer', () => {
     expect(notPrevented).toBe(false)
   })
 
+  it('a held key toggles once: repeats are swallowed, not passed on', () => {
+    renderShell()
+    fireEvent.keyDown(document.body, { key: 'j', metaKey: true })
+    const repeatNotPrevented = fireEvent.keyDown(document.body, {
+      key: 'j',
+      metaKey: true,
+      repeat: true,
+    })
+
+    expect(toggled).toHaveBeenCalledTimes(1)
+    expect(repeatNotPrevented).toBe(false)
+  })
+
   it('is Cmd on a Mac — Ctrl+J is left to the browser', () => {
     renderShell()
     const notPrevented = fireEvent.keyDown(document.body, { key: 'j', ctrlKey: true })

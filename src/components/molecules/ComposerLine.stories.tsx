@@ -7,7 +7,7 @@ import { TerminalDrawer } from './TerminalDrawer'
 
 /**
  * The PondComposer card at rest, typing and streaming, in paper and ink —
- * `PondComposer.dc.html` renderVals (ADR 0011). Every assertion is a COMPUTED
+ * `PondComposer.dc.html` renderVals. Every assertion is a COMPUTED
  * value against the DC's literal, not the class that is supposed to produce it.
  */
 
@@ -128,7 +128,7 @@ const GLASS = {
 const parts = (root: HTMLElement, theme: Theme) => {
   const scope = within(root.querySelector<HTMLElement>(`[data-theme-probe="${theme}"]`)!)
   return {
-    card: scope.getByRole('region', { name: 'Pond terminal' }),
+    card: scope.getByRole('region', { name: 'composer' }),
     line: scope.getByRole<HTMLTextAreaElement>('textbox', { name: 'Message Pond' }),
     plus: scope.getByRole('button', { name: 'Attach a file' }),
     research: scope.getByRole('button', { name: 'research' }),
@@ -185,15 +185,20 @@ export const Rest: Story = {
       await expect(lineCss.fontSize).toBe('14px')
       await expect(lineCss.lineHeight).toBe('21px')
       await expect(lineCss.letterSpacing).toBe('0.28px')
+      await expect(lineCss.textTransform).toBe('none')
       await expect(lineCss.color).toBe(INK[theme].quiet)
       await expect(Math.round(line.getBoundingClientRect().height)).toBe(25)
 
       const plusCss = getComputedStyle(plus)
-      await expect(plus.textContent).toBe('＋')
+      const cross = plus.querySelector('svg')!
+      await expect(plus.textContent).toBe('')
+      await expect(cross.getAttribute('width')).toBe('12')
+      await expect(cross.getAttribute('stroke-width')).toBe('1.4')
+      await expect(cross.getAttribute('stroke-linecap')).toBe('round')
+      await expect(cross.querySelector('path')!.getAttribute('d')).toBe('M7 3v8M3 7h8')
       await expect(Math.round(plus.getBoundingClientRect().width)).toBe(28)
       await expect(Math.round(plus.getBoundingClientRect().height)).toBe(28)
       await expect(plusCss.borderTopLeftRadius).toBe('9999px')
-      await expect(plusCss.fontSize).toBe('13px')
       await expect(plusCss.color).toBe(INK[theme].meta)
       await expect(plusCss.backgroundColor).toBe(
         theme === 'paper' ? 'rgba(27, 29, 20, 0.07)' : 'rgba(250, 249, 239, 0.07)'

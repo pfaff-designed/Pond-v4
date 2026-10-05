@@ -150,10 +150,7 @@ describe('globals.css — red is diff removals only', () => {
 })
 
 describe('source sweep — red appears only where a diff removal is drawn', () => {
-  const RED_OWNERS = [
-    'src/app/globals.css',
-    'src/components/molecules/PondMolecule.tsx',
-  ]
+  const RED_OWNERS = ['src/app/globals.css', 'src/components/molecules/PondMolecule.tsx']
 
   it('raw-red / signal-removal are consumed by the diff surfaces alone', () => {
     const hits = linesMatching(/raw-red|signal-removal/)
@@ -225,7 +222,7 @@ function resolveInherited(el: Element, decls: RegExp): string | null {
  * Every rendered element that carries a wide tracking while sitting in a MONO
  * subtree — whether `font-mono` is on the element or on any ancestor. The
  * line-level source sweep below cannot see that inheritance, which is how both
- * of #220's misses (`ModuleDiffCard`'s `inferred` pill, and the false positive
+ * of the misses behind the line sweep (a wide-tracked pill in the diff card, and the false positive
  * on `BlockHandleMenu`'s group label) got through review.
  *
  * Uppercase elements are exempt: that is the board's eyebrow (see the table).
@@ -305,7 +302,6 @@ describe('rendered machine surfaces carry no wide tracking', () => {
     onRequestChanges: jest.fn(),
   })
 
-  /** A change the model inferred — the `inferred` pill is only drawn for this. */
   const inferredChange: ChangePreview = {
     op: 'create',
     before: null,
@@ -314,12 +310,12 @@ describe('rendered machine surfaces carry no wide tracking', () => {
     inferred: true,
   }
 
-  it('the diff card, including the inferred pill (the #220 miss)', () => {
+  it('the diff card, with the reason line an inferred change carries', () => {
     const { container } = render(
       <ModuleDiffCard changes={[inferredChange]} targetName="schedule" {...diffHandlers()} />
     )
-    // The pill is really on screen — otherwise this test would pass vacuously.
-    expect(screen.getByText('inferred')).toBeInTheDocument()
+    // The reason is really on screen — otherwise this test would pass vacuously.
+    expect(screen.getByText('the worktop follows the electrician by a week')).toBeInTheDocument()
     expect(wideTrackingOnMono(container)).toEqual([])
   })
 

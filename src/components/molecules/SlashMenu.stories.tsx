@@ -26,8 +26,7 @@ const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating
-  // family (ADR 0011); the picker board's own ink delta reads the same `.09`.
+  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating family.
   glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
@@ -113,7 +112,7 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
   await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
   // Below its field (`side="bottom"`, the default) the glass grows from its TOP
-  // edge — `.motion-menu`'s fallback origin. `side="top"` flips it (ComposerCommands).
+  // edge — `.motion-menu`'s fallback origin.
   await expect(g.transformOrigin).toBe('0px 0px')
 
   for (const group of glass.querySelectorAll<HTMLElement>('[data-part="group"]')) {
@@ -475,43 +474,13 @@ export const TemplatesNav: Story = {
   },
 }
 
-// ── the same menu in the composer ──────────────────────────────────────────────
+// ── rows matched through their description ────────────────────────────────────
 
-/**
- * `AITerminal` draws this menu for the thread commands: the list takes the host's
- * own name (`commands`), and anchored ABOVE the field it grows from its bottom
- * edge instead of its top — the computed origin, not the class that sets it.
- *
- * The rows mirror `AITerminal`'s `CHAT_COMMANDS`; they are not imported because
- * that organism is not loadable from a story. Which ids those rows run is
- * `AITerminal`'s own wiring and stays a feature test.
- */
-const COMPOSER_COMMANDS = [
-  { id: 'clear', label: '/clear', description: 'clear the thread and start again' },
-  { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
-  { id: 'save', label: '/save', description: 'save the thread to a page' },
+const DESCRIBED_ROWS = [
+  { id: 'summarise', label: '/summarise', description: 'put this thread in a few lines' },
+  { id: 'rename', label: '/rename', description: 'give this thread a name' },
+  { id: 'export', label: '/export', description: 'turn this thread into a page' },
 ]
-
-export const ComposerCommands: Story = {
-  args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', onSelect: fn() },
-  play: async ({ canvasElement, args }) => {
-    const glass = glassOf(canvasElement)
-    await expect(glass.querySelector('[role="listbox"]')!.getAttribute('aria-label')).toBe(
-      'commands'
-    )
-    await expect(labels(canvasElement)).toEqual(['/clear', '/handoff', '/save'])
-    // No `key` on these rows, so no hint rides at rest.
-    await expect(glass.querySelectorAll('[data-part="hint"]')).toHaveLength(0)
-
-    // `[--motion-menu-origin:bottom_left]` — read off the box, not the class
-    // string. `offsetHeight`, not the rect: the arrival keyframe scales the glass.
-    await expect(getComputedStyle(glass).transformOrigin).toBe(`0px ${glass.offsetHeight}px`)
-
-    const save = [...glass.querySelectorAll<HTMLElement>('[role="option"]')][2]
-    await userEvent.click(save)
-    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'save' }))
-  },
-}
 
 /**
  * A row matched through its DESCRIPTION rather than its label: the description
@@ -519,7 +488,7 @@ export const ComposerCommands: Story = {
  * is in all three descriptions and none of the three labels.
  */
 export const MatchedOnDescription: Story = {
-  args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', query: 'thread' },
+  args: { rows: DESCRIBED_ROWS, query: 'thread' },
   play: async ({ canvasElement }) => {
     const glass = glassOf(canvasElement)
     const rows = [...glass.querySelectorAll<HTMLElement>('[role="option"]')]
@@ -531,7 +500,7 @@ export const MatchedOnDescription: Story = {
       if (row.getAttribute('aria-selected') === 'true') {
         await expect(hint).toBeNull()
       } else {
-        await expect(COMPOSER_COMMANDS.map((c) => c.description)).toContain(hint!.textContent)
+        await expect(DESCRIBED_ROWS.map((c) => c.description)).toContain(hint!.textContent)
       }
     }
     await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(

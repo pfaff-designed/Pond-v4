@@ -1,5 +1,5 @@
 /**
- * The PondComposer card (KAN-61/62, `PondComposer.dc.html`, ADR 0011) as the app
+ * The PondComposer card (`PondComposer.dc.html`) as the app
  * assembles it: the line, the ＋ and the send — and nothing the board does not
  * draw. The card's pixel values are pinned in `ComposerLine.stories`; this pins
  * the behaviour that rides on them.
@@ -88,7 +88,7 @@ describe('the composer card — rest', () => {
 
     expect(line()).toHaveAttribute('placeholder', 'ask pond, or / for blocks')
     expect(line()).toHaveAttribute('rows', '1')
-    expect(screen.getByRole('button', { name: 'Attach a file' })).toHaveTextContent('＋')
+    expect(screen.getByRole('button', { name: 'Attach a file' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
 
@@ -332,7 +332,6 @@ describe('the composer card — the thread: head, fold, turns', () => {
     const head = document.querySelector('[data-part="thread-head"]')!
     expect(head).toHaveTextContent('thread · life')
     expect(head).toHaveTextContent('2 turns')
-    expect(screen.queryByText(/earlier turn/)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'new thread' }))
     await waitFor(() => expect(dissolveConversation).toHaveBeenCalled())
@@ -341,26 +340,34 @@ describe('the composer card — the thread: head, fold, turns', () => {
     expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
   })
 
-  it('beyond three turns the earlier ones fold, and the fold opens them', async () => {
-    mockMessages = thread(5)
+  it('only the latest turn stays open: the earlier ones fold, and the fold opens them', async () => {
+    mockMessages = thread(3)
     renderTerminal()
     await waitReady()
 
-    expect(document.querySelector('[data-part="thread-head"]')).toHaveTextContent('5 turns')
-    expect(youRows()).toHaveLength(3)
+    expect(document.querySelector('[data-part="thread-head"]')).toHaveTextContent('3 turns')
+    expect(youRows()).toHaveLength(1)
     expect(screen.queryByText('question 2')).toBeNull()
     expect(screen.getByText('question 3')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '2 earlier turns' }))
-    expect(youRows()).toHaveLength(5)
+    expect(youRows()).toHaveLength(3)
     expect(screen.queryByText(/earlier turn/)).toBeNull()
   })
 
-  it('three turns fold nothing', async () => {
-    mockMessages = thread(3)
+  it('a second turn folds the first', async () => {
+    mockMessages = thread(2)
     renderTerminal()
     await waitReady()
-    expect(youRows()).toHaveLength(3)
+    expect(youRows()).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '1 earlier turn' })).toBeInTheDocument()
+  })
+
+  it('one turn folds nothing', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+    expect(youRows()).toHaveLength(1)
     expect(screen.queryByText(/earlier turn/)).toBeNull()
   })
 

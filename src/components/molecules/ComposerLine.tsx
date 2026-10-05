@@ -86,7 +86,7 @@ export const ComposerLine = ({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           className={cn(
-            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] lowercase outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
+            'block max-h-[calc(6*1.5em_+_4px)] w-full resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-0.5 font-mono text-[16px] leading-[1.5] tracking-[0.02em] outline-none placeholder:text-mn-text-secondary disabled:opacity-60 md:text-[14px]',
             value ? 'text-mn-text' : 'text-mn-text-secondary'
           )}
         />
@@ -99,9 +99,21 @@ export const ComposerLine = ({
           title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
           onClick={onAttach}
           disabled={attachDisabled}
-          className="flex size-9 flex-none items-center justify-center rounded-mn-pill bg-mn-hover-fill text-[13px] text-mn-text-meta transition-colors hover:text-mn-text disabled:opacity-40 md:size-7"
+          className="flex size-9 flex-none items-center justify-center rounded-mn-pill bg-mn-hover-fill text-mn-text-meta transition-colors hover:text-mn-text disabled:opacity-40 md:size-7"
         >
-          ＋
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M7 3v8M3 7h8" />
+          </svg>
         </button>
         <button
           type="button"

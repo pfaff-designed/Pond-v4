@@ -468,7 +468,7 @@
   --mn-shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
   --mn-shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);
 
-  /* Floating glass on the dark ground (`PondComposer` renderVals, ink — ADR 0011):
+  /* Floating glass on the dark ground (`PondComposer` renderVals, ink):
      the tint is the dark card at .92 → .78, hairlined and lit by paper at low
      alpha. Every floating object reads these roles, so they all take it. */
   --mn-glass-bg: linear-gradient(160deg, rgba(48, 49, 42, 0.92), rgba(48, 49, 42, 0.78));

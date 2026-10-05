@@ -3,7 +3,7 @@ import { streamText, tool, stepCountIs } from 'ai'
 import type { UIMessage } from 'ai'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
-import { toModelMessages } from '@/lib/conversation/transcript'
+import { toModelMessages, withoutWebSearch } from '@/lib/conversation/transcript'
 import {
   applyResolutions,
   parseResolutions,
@@ -28,7 +28,7 @@ import {
 import { stepBudgetForPhase } from './step-budget'
 import { scopingContextNote } from './scoping'
 import { lifecycleContextNote } from '@/lib/conversation/lifecycle'
-import { webSearchTool, RESEARCH_OFF_NOTE } from './web-search'
+import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
-  let system = buildSystemPrompt()
+  let system = buildSystemPrompt(null, { research })
   const supabase = await createClient()
   const {
     data: { user },
@@ -161,9 +161,8 @@ export async function POST(req: Request) {
   // handles the paraphrases the heuristic can't see.
   const scopingNote = scopingContextNote(userText)
   if (scopingNote) contextBlocks.push(scopingNote)
-  if (!research) contextBlocks.push(RESEARCH_OFF_NOTE)
   if (contextBlocks.length > 0) {
-    system = buildSystemPrompt(contextBlocks.join('\n\n'))
+    system = buildSystemPrompt(contextBlocks.join('\n\n'), { research })
   }
 
   // Step budget by lifecycle phase (ticket-39 §4). A BUILD-OUT turn lands the
@@ -178,7 +177,8 @@ export async function POST(req: Request) {
   // ~0.1x and don't count against rate limits. system carries per-node context,
   // so a node switch rewrites the cache; within a node's thread every turn after
   // the first is a hit. Verify via usage.cacheReadInputTokens > 0 on turn 2.
-  const modelMessages = await toModelMessages(applyResolutions(messages, resolutions))
+  const resolved = applyResolutions(messages, resolutions)
+  const modelMessages = await toModelMessages(research ? resolved : withoutWebSearch(resolved))
   // @ai-sdk/anthropic reads cacheControl from part.providerOptions (part-level),
   // NOT message-level — so the breakpoint must go on the last content PART of the
   // last message. That caches the whole prefix up to it (tools + system + prior
@@ -200,47 +200,18 @@ export async function POST(req: Request) {
     }
   }
 
-  // Every tool but the web. `web_search` is provider-executed (ticket-29): Anthropic
-  // runs the search and the SDK surfaces cited results as `source-url` parts. It
-  // joins only on a question the person turned research on for.
+  // Client-resolved tools have no `execute`: the call renders a proposal card and the
+  // person's accept or reject rides the resolutions envelope. The web is not here —
+  // `web_search` joins only on a question research was turned on for.
   const chatTools = {
     create_page: tool(createPageTool),
-    // define_schema (#17): give an existing page a typed property schema (turn
-    // it into a collection). Client-resolved (no execute) — the tool call
-    // renders a proposal card and the user's Accept/Reject rides the
-    // resolutions envelope, exactly like create_page.
     define_schema: tool(defineSchemaTool),
-    // add_row (#18): add one schema-bound row to an existing collection.
-    // Client-resolved (no execute) — the tool call renders a proposal card and
-    // the user's Accept/Reject rides the resolutions envelope, exactly like
-    // define_schema. Distinct from create_page (ordinary sub-page).
     add_row: tool(addRowTool),
-    // promote_table (#29): CONVERT an existing freeform table block into a
-    // collection (infer schema from columns, rows→pages, table block→view).
-    // Client-resolved (no execute) — the tool call renders a proposal card and
-    // the user's Accept/Reject rides the resolutions envelope, exactly like
-    // add_row. Distinct from define_schema, which gives an empty page columns.
     promote_table: tool(promoteTableTool),
-    // configure_view (#19 slice 5): SELECT a layout (table/board/calendar/gallery)
-    // for an existing collection's rows, optionally grouped/sorted/filtered.
-    // Client-resolved (no execute) — the tool call renders a proposal card and the
-    // user's Accept/Reject rides the resolutions envelope, exactly like add_row.
     configure_view: tool(configureViewTool),
-    // link_records (#40): ADD-ONLY linking of EXISTING rows through an existing
-    // relation property, everything named by title. Client-resolved (no execute)
-    // — the tool call renders a proposal card, titles resolve to ids only on
-    // accept, and the user's Accept/Reject rides the resolutions envelope,
-    // exactly like add_row.
     link_records: tool(linkRecordsTool),
-    // propose_changes can now target ANY page the model names by id from the
-    // workspace outline, not just the open one (ticket-30): it edits the open
-    // page by default, or a page named via `targetPageId` after a read_page.
-    // Always offered — even from Life home, where the cross-page path is the
-    // whole point.
     propose_changes: tool(proposeChangesTool),
-    // read_page (ticket-30): fetch a named page's current blocks (with ids) so a
-    // cross-page edit references the right target blocks. Server-executed here so
-    // the closure can capture the per-request supabase client + user.
+    // `execute` closes over the per-request client and user.
     read_page: tool({
       ...readPageTool,
       execute: async ({ pageId }) => {
@@ -258,12 +229,7 @@ export async function POST(req: Request) {
         return formatRetrievedPages(pages)
       },
     }),
-    // ask_question (ticket-39): a branch-pause question card during build-out.
-    // Client-resolved (no execute) — the tool call renders the card and the
-    // user's pick rides the resolutions envelope, exactly like a proposal.
     ask_question: tool(askQuestionTool),
-    // suggest_followups (ticket-39): quiet follow-up chips under a reply.
-    // Client-resolved (no execute); clicking a chip sends its text.
     suggest_followups: tool(suggestFollowupsTool),
   }
 

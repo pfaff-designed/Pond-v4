@@ -1,5 +1,5 @@
 /**
- * The composer's clearance contract (`PondComposer`, ADR 0011) — one module so the
+ * The composer's clearance contract (`PondComposer`) — one module so the
  * card that FLOATS and the surfaces that PAD against it read the same numbers.
  * The card is as tall as its content and grows upward from a fixed inset; it
  * publishes its measured footprint (card + inset) as a CSS custom property on the

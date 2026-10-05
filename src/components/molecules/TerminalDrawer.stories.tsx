@@ -88,7 +88,7 @@ const shellOf = (canvasElement: HTMLElement) =>
 export const CentredRightOfTheRail: Story = {
   play: async ({ canvasElement }) => {
     const shell = shellOf(canvasElement).getBoundingClientRect()
-    const card = within(canvasElement).getByRole('region', { name: 'Pond terminal' })
+    const card = within(canvasElement).getByRole('region', { name: 'composer' })
     const box = card.getBoundingClientRect()
     await expect(Math.round(box.width)).toBe(560)
     await expect(box.left + box.width / 2 - shell.left).toBe(590 + 113)
@@ -129,7 +129,7 @@ const Themed = (theme: Theme) =>
 
 async function assertTab(canvasElement: HTMLElement, theme: Theme, landed: boolean) {
   const shell = shellOf(canvasElement).getBoundingClientRect()
-  const tab = within(canvasElement).getByRole('region', { name: 'Pond terminal' })
+  const tab = within(canvasElement).getByRole('region', { name: 'composer' })
   const box = tab.getBoundingClientRect()
   const style = getComputedStyle(tab)
 
@@ -234,7 +234,7 @@ export const CollapsedMobile: Story = {
     ),
   ],
   play: async ({ canvasElement }) => {
-    const tab = within(canvasElement).getByRole('region', { name: 'Pond terminal' })
+    const tab = within(canvasElement).getByRole('region', { name: 'composer' })
     await expect(Math.round(tab.getBoundingClientRect().width)).toBe(360)
   },
 }
@@ -263,7 +263,7 @@ export const PublishesItsClearanceToTheShell: Story = {
   play: async ({ canvas, canvasElement }) => {
     const shell = shellOf(canvasElement)
     const published = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
-    const card = () => canvas.getByRole('region', { name: 'Pond terminal' })
+    const card = () => canvas.getByRole('region', { name: 'composer' })
 
     // At rest: the card is 101 tall (14 + 25 + 14 + 32 + 14, plus the 1px border).
     await expect(published()).toBe('125px')

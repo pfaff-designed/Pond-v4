@@ -191,14 +191,15 @@ export const Withdrawn: Story = { args: { status: 'withdrawn' } }
 export const Undone: Story = { args: { status: 'undone' } }
 export const Reverted: Story = { args: { status: 'reverted' } }
 
-/** "show original": the target as it stands, no diff marks, no red. */
-export const ShowOriginal: Story = {
-  args: { changes: [edit, remove, create] },
+/** Nothing the board does not draw: no `open page`, no `show original`, no `inferred` pill. */
+export const DrawsOnlyWhatTheBoardDraws: Story = {
+  args: { changes: [{ ...create, inferred: true, reason: 'follows the electrician' }] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'show original' }))
-    await expect(canvas.getByText(/new block/)).toBeInTheDocument()
-    await expect(canvas.queryByText('electrician — confirmed, w/c 6 oct')).not.toBeInTheDocument()
+    await expect(canvas.getByText('follows the electrician')).toBeInTheDocument()
+    await expect(canvas.queryByText('inferred')).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'show original' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /open page/i })).not.toBeInTheDocument()
   },
 }
 
@@ -446,27 +447,6 @@ export const RejectedFoldsToOneLine: Story = {
 
     await userEvent.click(canvas.getByRole('button', { name: 'ask again' }))
     await expect(args.onAskAgain).toHaveBeenCalledTimes(1)
-  },
-}
-
-/** "show original": the target as it stands — every `before`, a note where there
- *  is none, no proposed text, and not one red pixel. Then back to the diff. */
-export const ShowOriginalHasNoRed: Story = {
-  args: { changes: [edit, remove, create] },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'show original' }))
-    const original = canvasElement.querySelector<HTMLElement>('[data-part="original"]')!
-    await expect(
-      within(original).getByText('electrician — provisional, w/c 29 sep')
-    ).toBeInTheDocument()
-    await expect(within(original).getByText('Weekly mileage')).toBeInTheDocument()
-    await expect(within(original).getByText(/new block/)).toBeInTheDocument()
-    await expect(redElements(canvasElement)).toHaveLength(0)
-    await expect(canvas.queryByText('electrician — confirmed, w/c 6 oct')).not.toBeInTheDocument()
-
-    await userEvent.click(canvas.getByRole('button', { name: 'show diff' }))
-    await expect(canvas.getByText('electrician — confirmed, w/c 6 oct')).toBeInTheDocument()
   },
 }
 

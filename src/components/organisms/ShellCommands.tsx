@@ -109,7 +109,8 @@ export function ShellCommands() {
       if (isComposerToggleKey(e)) {
         e.preventDefault()
         e.stopPropagation()
-        requestComposerToggle()
+        // A held key repeats keydown; it must not flap the card open and shut.
+        if (!e.repeat) requestComposerToggle()
       }
     }
     const openPalette = () => setPaletteOpen(true)

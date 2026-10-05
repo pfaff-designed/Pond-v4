@@ -27,8 +27,7 @@
  * render distinctly — `outdated` greys the card, drops accept and offers revise
  * (G2); `changes_requested` keeps the note that went to Pond under the card;
  * `rejected` folds the card to one line, "rejected — nothing changed", with
- * show proposal / ask again (6c frame 5). "show original" is available alongside
- * the diff: it swaps the rows for the target blocks as they stand.
+ * show proposal / ask again (6c frame 5).
  *
  * There is deliberately NO "busy while the write runs" state here (#98 review).
  * The terminal settles a card the instant it is clicked — `decideChanges` runs
@@ -47,7 +46,7 @@ import { cn } from '@/lib/utils'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { chipBaseClass } from '@/components/atoms/kicker'
 import { PondControl } from '@/components/atoms/PondControl'
-import { ChangeRows, NoteBox, OriginalRows } from './diff-card-parts'
+import { ChangeRows, NoteBox } from './diff-card-parts'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 
 export interface ModuleDiffCardProps {
@@ -58,8 +57,6 @@ export interface ModuleDiffCardProps {
   /** Ticket-30 review: the batch named a target page that does not exist. A
    *  notice replaces the body's promise and accepting will skip. */
   targetMissing?: boolean
-  /** When the target is a page OTHER than the open one, a way there. */
-  onOpenTarget?: () => void
   status?: ProposalStatus
   /** The request-changes note that went to Pond (status `changes_requested`). */
   note?: string
@@ -88,7 +85,6 @@ export function ModuleDiffCard({
   changes,
   targetName,
   targetMissing = false,
-  onOpenTarget,
   status = 'pending',
   note,
   revised = false,
@@ -102,7 +98,6 @@ export function ModuleDiffCard({
   className,
 }: ModuleDiffCardProps) {
   const [noteOpen, setNoteOpen] = useState(false)
-  const [showOriginal, setShowOriginal] = useState(false)
   const [showRejected, setShowRejected] = useState(false)
 
   const resolved = status !== 'pending'
@@ -169,188 +164,147 @@ export function ModuleDiffCard({
         </div>
       )}
       {!folded && (
-        <>
-          <div
-            data-part="diff-card"
-            className="mn-letter flex flex-col gap-[10px] rounded-mn-inner p-3 font-mono text-mn-text"
-          >
-            <div className="flex items-baseline gap-2 text-[11px]">
-              <span data-part="head" className="min-w-0 truncate">
-                {kind}
-                {targetName ? ` — ${targetName}` : ''}
-              </span>
-              <div className="flex-1" />
-              {onOpenTarget && (
-                <button
-                  type="button"
-                  onClick={onOpenTarget}
-                  className="text-mn-text-secondary underline underline-offset-2 hover:text-mn-text"
-                >
-                  open page
-                </button>
-              )}
-              <span className="whitespace-nowrap text-mn-text-secondary">
-                {count} change{count === 1 ? '' : 's'}
-              </span>
-            </div>
+        <div
+          data-part="diff-card"
+          className="mn-letter flex flex-col gap-[10px] rounded-mn-inner p-3 font-mono text-mn-text"
+        >
+          <div className="flex items-baseline gap-2 text-[11px]">
+            <span data-part="head" className="min-w-0 truncate">
+              {kind}
+              {targetName ? ` — ${targetName}` : ''}
+            </span>
+            <div className="flex-1" />
+            <span className="whitespace-nowrap text-mn-text-secondary">
+              {count} change{count === 1 ? '' : 's'}
+            </span>
+          </div>
 
-            {targetMissing && (
-              <p className="text-[11px] text-mn-text-meta">
-                target page not found — this proposal can’t be applied.
-              </p>
-            )}
-            {showOriginal ? (
-              <OriginalRows changes={changes} />
-            ) : (
-              <div className="flex flex-col gap-[3px]">
-                {changes.map((change, i) => (
-                  <div key={i} className="flex flex-col gap-[3px]">
-                    <ChangeRows change={change} />
-                    {(change.reason || change.inferred) && (
-                      <div className="flex items-baseline gap-2 px-2.5 text-[10.5px] text-mn-text-secondary">
-                        {change.inferred && (
-                          // Ticket-30: the model INFERRED this change as a side-effect.
-                          // The whole diff decides together now; the badge tells the
-                          // person what to name in a request-changes note.
-                          // #220 review: no board draws this pill, so it takes the
-                          // .02em the surrounding machine-surface text carries on
-                          // `Pond 06.03` — never tracking-wider (.1em), which is
-                          // looser than anything measured on mono anywhere.
-                          <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 tracking-[0.02em] text-mn-text">
-                            inferred
-                          </span>
-                        )}
-                        {change.reason && <span>{change.reason}</span>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* The actions, or the status the card settled on */}
-            {pending ? (
-              <>
-                <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
-                  <PondControl
-                    kind="button"
-                    variant="primary"
-                    label="accept"
-                    disabled={targetMissing}
-                    className={MOBILE_BUTTON}
-                    onClick={onAccept}
-                  />
-                  <span aria-hidden className="-ml-0.5 mr-1 text-mn-text-secondary">
-                    ⌘↵
-                  </span>
-                  <PondControl
-                    kind="button"
-                    variant="ghost"
-                    label="request changes"
-                    className={MOBILE_BUTTON}
-                    onClick={() => setNoteOpen(true)}
-                    disabled={noteOpen}
-                  />
-                  <PondControl
-                    kind="button"
-                    variant="ghost"
-                    label="reject"
-                    className={MOBILE_BUTTON}
-                    onClick={onReject}
-                  />
-                  <div className="flex-1" />
-                  {targetName && (
-                    <span data-part="target" className="min-w-0 truncate text-mn-text-secondary">
-                      {targetName}
-                    </span>
-                  )}
-                </div>
-                {noteOpen && (
-                  <NoteBox
-                    onCancel={() => setNoteOpen(false)}
-                    onSend={(text) => {
-                      setNoteOpen(false)
-                      onRequestChanges(text)
-                    }}
-                  />
+          {targetMissing && (
+            <p className="text-[11px] text-mn-text-meta">
+              target page not found — this proposal can’t be applied.
+            </p>
+          )}
+          <div className="flex flex-col gap-[3px]">
+            {changes.map((change, i) => (
+              <div key={i} className="flex flex-col gap-[3px]">
+                <ChangeRows change={change} />
+                {change.reason && (
+                  <div className="px-2.5 text-[10.5px] text-mn-text-secondary">{change.reason}</div>
                 )}
-              </>
-            ) : status === 'outdated' ? (
-              // G2: accept is withdrawn and revise is offered. The status reads as
-              // the outlined pill the change-log rows draw for it.
+              </div>
+            ))}
+          </div>
+
+          {/* The actions, or the status the card settled on */}
+          {pending ? (
+            <>
               <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
-                <span
-                  data-part="status"
-                  className="rounded-mn-pill border border-mn-line px-2 py-0.5"
-                >
-                  outdated
+                <PondControl
+                  kind="button"
+                  variant="primary"
+                  label="accept"
+                  disabled={targetMissing}
+                  className={MOBILE_BUTTON}
+                  onClick={onAccept}
+                />
+                <span aria-hidden className="-ml-0.5 mr-1 text-mn-text-secondary">
+                  ⌘↵
                 </span>
-                <span className="text-mn-text-secondary">
-                  the page changed after this was proposed
-                </span>
-                {onRevise && (
-                  <PondControl
-                    kind="button"
-                    variant="primary"
-                    label="revise"
-                    className={cn(MOBILE_BUTTON, 'ml-auto')}
-                    onClick={onRevise}
-                  />
+                <PondControl
+                  kind="button"
+                  variant="ghost"
+                  label="request changes"
+                  className={MOBILE_BUTTON}
+                  onClick={() => setNoteOpen(true)}
+                  disabled={noteOpen}
+                />
+                <PondControl
+                  kind="button"
+                  variant="ghost"
+                  label="reject"
+                  className={MOBILE_BUTTON}
+                  onClick={onReject}
+                />
+                <div className="flex-1" />
+                {targetName && (
+                  <span data-part="target" className="min-w-0 truncate text-mn-text-secondary">
+                    {targetName}
+                  </span>
                 )}
               </div>
-            ) : (
-              <>
-                {/* `rejected` already says so in the header line above (6c frame
+              {noteOpen && (
+                <NoteBox
+                  onCancel={() => setNoteOpen(false)}
+                  onSend={(text) => {
+                    setNoteOpen(false)
+                    onRequestChanges(text)
+                  }}
+                />
+              )}
+            </>
+          ) : status === 'outdated' ? (
+            // G2: accept is withdrawn and revise is offered. The status reads as
+            // the outlined pill the change-log rows draw for it.
+            <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
+              <span
+                data-part="status"
+                className="rounded-mn-pill border border-mn-line px-2 py-0.5"
+              >
+                outdated
+              </span>
+              <span className="text-mn-text-secondary">
+                the page changed after this was proposed
+              </span>
+              {onRevise && (
+                <PondControl
+                  kind="button"
+                  variant="primary"
+                  label="revise"
+                  className={cn(MOBILE_BUTTON, 'ml-auto')}
+                  onClick={onRevise}
+                />
+              )}
+            </div>
+          ) : (
+            <>
+              {/* `rejected` already says so in the header line above (6c frame
                     5, "rejected — nothing changed"); a second status element in
                     the footer of an unfolded rejected card said it twice. */}
-                {status !== 'rejected' && (
-                  <ProposalActions
-                    status={status}
-                    divider={false}
-                    onAccept={onAccept}
-                    onReject={onReject}
-                  />
-                )}
-                {status === 'changes_requested' && note && (
-                  // The note that went to the proposer stays under the card.
-                  <div
-                    data-part="note"
-                    className="flex flex-col gap-1 rounded-[10px] bg-mn-text/[0.04] px-[11px] py-[10px]"
-                  >
-                    <span className="text-[10.5px] text-mn-text-secondary">to pond</span>
-                    <span className="text-[12px] leading-[1.55] text-mn-text">{note}</span>
-                  </div>
-                )}
-              </>
-            )}
+              {status !== 'rejected' && (
+                <ProposalActions
+                  status={status}
+                  divider={false}
+                  onAccept={onAccept}
+                  onReject={onReject}
+                />
+              )}
+              {status === 'changes_requested' && note && (
+                // The note that went to the proposer stays under the card.
+                <div
+                  data-part="note"
+                  className="flex flex-col gap-1 rounded-[10px] bg-mn-text/[0.04] px-[11px] py-[10px]"
+                >
+                  <span className="text-[10.5px] text-mn-text-secondary">to pond</span>
+                  <span className="text-[12px] leading-[1.55] text-mn-text">{note}</span>
+                </div>
+              )}
+            </>
+          )}
 
-            {/* Fix-1 (F1a): honest skip notice — an accept that lands nothing says so. */}
-            {skippedCount > 0 && (
-              <div role="note" className="space-y-0.5 text-[10.5px] text-mn-text-meta">
-                {skippedReasons.length > 0 ? (
-                  skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
-                ) : (
-                  <p>
-                    {skippedCount} change{skippedCount > 1 ? 's' : ''} couldn’t be placed and{' '}
-                    {skippedCount > 1 ? 'were' : 'was'} skipped.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Below the card: show original ↔ show diff (6c frame 2) */}
-          <div className="flex items-center gap-[7px] text-[11px] tracking-[0.02em]">
-            <button
-              type="button"
-              aria-pressed={showOriginal}
-              onClick={() => setShowOriginal((v) => !v)}
-              className={cn(chipBaseClass, 'py-[6px] text-mn-text-meta')}
-            >
-              {showOriginal ? 'show diff' : 'show original'}
-            </button>
-          </div>
-        </>
+          {/* An accept that lands nothing says so. */}
+          {skippedCount > 0 && (
+            <div role="note" className="space-y-0.5 text-[10.5px] text-mn-text-meta">
+              {skippedReasons.length > 0 ? (
+                skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
+              ) : (
+                <p>
+                  {skippedCount} change{skippedCount > 1 ? 's' : ''} couldn’t be placed and{' '}
+                  {skippedCount > 1 ? 'were' : 'was'} skipped.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

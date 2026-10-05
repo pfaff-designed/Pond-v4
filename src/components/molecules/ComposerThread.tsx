@@ -12,7 +12,6 @@
  */
 
 import type { ReactNode } from 'react'
-import { Caret } from '@/components/atoms/Caret'
 import { cn } from '@/lib/utils'
 
 const RULE_CLASS = 'border-b border-mn-text/[0.09]'
@@ -80,7 +79,20 @@ export const EarlierTurns = ({ count, onExpand }: EarlierTurnsProps) => (
     onClick={onExpand}
     className="flex cursor-pointer items-center gap-[6px] px-[6px] text-left text-[11px] text-mn-text-secondary hover:text-mn-text"
   >
-    <Caret className="-rotate-90" />
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="-rotate-90"
+    >
+      <path d="M3.5 2 7 5 3.5 8" />
+    </svg>
     {count} earlier {count === 1 ? 'turn' : 'turns'}
   </button>
 )

@@ -29,8 +29,8 @@ describe('groupTurns', () => {
 })
 
 describe('foldedTurnCount', () => {
-  it('folds nothing up to three turns, then the oldest beyond them', () => {
-    expect([0, 1, 3, 4, 7].map((n) => foldedTurnCount(n))).toEqual([0, 0, 0, 1, 4])
+  it('keeps only the latest turn open: one turn folds nothing, two fold one', () => {
+    expect([0, 1, 2, 3, 7].map((n) => foldedTurnCount(n))).toEqual([0, 0, 1, 2, 6])
   })
 })
 

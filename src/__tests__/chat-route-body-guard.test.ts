@@ -25,7 +25,10 @@ jest.mock('@/lib/supabase/server', () => ({
     auth: { getUser: async () => ({ data: { user: null } }) },
   })),
 }))
-jest.mock('@/lib/conversation/transcript', () => ({ toModelMessages: async (m: unknown) => m }))
+jest.mock('@/lib/conversation/transcript', () => ({
+  ...jest.requireActual('@/lib/conversation/transcript'),
+  toModelMessages: async (m: unknown) => m,
+}))
 jest.mock('@/lib/context/assemble', () => ({
   buildChatContext: async () => null,
   // read_page's execute (ticket-30) calls these; the toolset assertions below only
@@ -41,6 +44,7 @@ jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 
 import { streamText } from 'ai'
 import { POST, parseChatBody } from '@/app/api/chat/route'
+import { SYSTEM_PROMPT, SYSTEM_PROMPT_WITHOUT_WEB } from '@/app/api/chat/prompt'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>
 
@@ -211,12 +215,53 @@ describe('POST /api/chat toolset (ticket-30 cross-page edits)', () => {
     expect(Object.keys(lastStreamTextArgs().tools)).not.toContain('web_search')
   })
 
-  it('tells the model it has no web this turn, and says nothing of the kind when research is on', async () => {
+  it('composes the RESEARCH section into the system prompt only when research is on', async () => {
     await post({ messages: [] })
-    expect(lastStreamTextArgs().system).toContain('[Web] Deep research is off')
+    expect(lastStreamTextArgs().system).toBe(SYSTEM_PROMPT_WITHOUT_WEB)
+    expect(lastStreamTextArgs().system).not.toContain('web_search')
 
     await post({ messages: [], research: true })
-    expect(lastStreamTextArgs().system).not.toContain('[Web]')
+    expect(lastStreamTextArgs().system).toBe(SYSTEM_PROMPT)
+    expect(lastStreamTextArgs().system).toContain('You have a web_search tool')
+  })
+
+  describe('replaying a research turn', () => {
+    const searched = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what do worktops cost?' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          {
+            type: 'dynamic-tool',
+            toolName: 'web_search',
+            toolCallId: 'srvtoolu_01',
+            state: 'output-available',
+            input: { query: 'worktop prices' },
+            output: [],
+            providerExecuted: true,
+          },
+          { type: 'text', text: 'About 300 a metre.' },
+        ],
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'and fitting?' }] },
+    ]
+    const partTypes = () =>
+      (
+        lastStreamTextArgs() as unknown as { messages: Array<{ parts: Array<{ type: string }> }> }
+      ).messages.flatMap((m) => m.parts.map((p) => p.type))
+
+    it('keeps the search parts while research is on', async () => {
+      await post({ messages: searched, research: true })
+      expect(partTypes()).toContain('dynamic-tool')
+    })
+
+    it('strips them, and keeps the answer text, when research is off', async () => {
+      await post({ messages: searched })
+      expect(partTypes()).not.toContain('dynamic-tool')
+      expect(partTypes()).toContain('text')
+    })
   })
 
   it('leaves every other tool in place either way', async () => {

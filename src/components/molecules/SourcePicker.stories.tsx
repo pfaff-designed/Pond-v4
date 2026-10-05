@@ -32,8 +32,7 @@ const INK = {
   paper: 'rgb(27, 29, 20)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating
-  // family (ADR 0011); the picker board's own ink delta reads the same `.09`.
+  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating family.
   glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
