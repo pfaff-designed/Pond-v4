@@ -6,7 +6,7 @@ import { TextView } from './view'
 import type { TextBlock } from './schema'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
+import { blockFrame } from '@/lib/modules/block-frame'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
 
 /**
@@ -228,7 +228,11 @@ async function assertFork(canvasElement: HTMLElement, theme: typeof LIGHT) {
   const card = cards[0]
   await expect(card.dataset.blockKind).toBe('list')
   const cs = getComputedStyle(card)
-  await expect(cs.width).toBe(`${POND_BLOCK_WIDTHS.list}px`)
+  // ADR 0008: the card fills its container, not the board's old 400px.
+  const p = card.parentElement!
+  const pcs = getComputedStyle(p)
+  const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+  await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
   await expect(cs.backgroundColor).toBe(theme.card)
   await expect(cs.borderTopLeftRadius).toBe('20px')
   const eyebrow = within(card).getByText('goal')

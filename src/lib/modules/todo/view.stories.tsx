@@ -6,7 +6,7 @@ import { TodoView } from './view'
 import type { TodoBlock } from './schema'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
+import { blockFrame } from '@/lib/modules/block-frame'
 
 /**
  * The check row and the `list` block (#219). The play functions assert the COMPUTED
@@ -664,7 +664,11 @@ export const InChecklistCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('checklist')
-    await expect(card.getBoundingClientRect().width).toBe(POND_BLOCK_WIDTHS.checklist)
+    // ADR 0008: the card fills its container, not the board's old per-kind px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.textContent).toContain('method')
     await expect(card.textContent).toContain('1 of 3')
     await assertMethod(canvasElement, onPaper())
@@ -684,7 +688,11 @@ export const InListCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('list')
-    await expect(card.getBoundingClientRect().width).toBe(POND_BLOCK_WIDTHS.list)
+    // ADR 0008: the card fills its container, not the board's old per-kind px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.textContent).toContain('items')
     await expect(card.textContent).toContain('5')
     await expect(card.textContent).not.toContain('of 5')

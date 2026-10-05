@@ -304,7 +304,11 @@ export function blockTombLine(
   return `This view showed ${name}, which was deleted on ${deletedOn}. It can be restored for ${restoreWindow}.`
 }
 
-/** The board's `W` map, verbatim. Mobile's 360 is a later slice. */
+/**
+ * The board's `W` map, verbatim. **Superseded for layout by ADR 0008** — blocks now
+ * FILL the content column (`PondBlock` renders `w-full`); this is kept only as the
+ * board record, not applied. Do not re-wire it into the card width (ADR 0004).
+ */
 export const POND_BLOCK_WIDTHS: Record<PondBlockKind, number> = {
   list: 400,
   checklist: 400,
