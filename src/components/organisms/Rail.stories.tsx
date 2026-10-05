@@ -787,9 +787,10 @@ export const InkMarks: Story = {
 }
 
 /**
- * `areaColours` on, as the board's `colour` map draws it: health sage, money navy
- * (mist on the dark ground). The colour paints the area's glyph and the dots of
- * the pages inside it — and nothing else: an area nobody coloured stays ink.
+ * `areaColours` on, as the board's `colour` map draws it: professional and money
+ * navy (mist on the dark ground), health sage, creativity mist. The colour paints
+ * the area's glyph and the dots of the pages inside it — and nothing else: an
+ * area nobody coloured stays ink.
  */
 export const ColouredMarks: Story = {
   args: {
@@ -797,8 +798,13 @@ export const ColouredMarks: Story = {
     pondName: 'make noise',
     expanded: new Set(['health', 'money']),
     marks: new Map<string, MarkSource>([
+      [
+        'professional',
+        { id: 'professional', parentId: null, title: 'professional', areaRole: 'area-c' },
+      ],
       ['health', { id: 'health', parentId: null, title: 'health', areaRole: 'area-a' }],
       ['money', { id: 'money', parentId: null, title: 'money', areaRole: 'area-c' }],
+      ['creativity', { id: 'creativity', parentId: null, title: 'creativity', areaRole: 'area-b' }],
     ]),
   },
   render: (args) => <BothThemes {...args} />,
@@ -818,9 +824,11 @@ export const ColouredMarks: Story = {
       await expect(slotColor(/^money/)).toBe(AREA[theme]['area-c'])
       await expect(dotColor(/budget/)).toBe(AREA[theme]['area-c'])
 
+      await expect(slotColor(/^professional/)).toBe(AREA[theme]['area-c'])
+      await expect(slotColor(/^creativity/)).toBe(AREA[theme]['area-b'])
+
       // uncoloured areas, and the root, stay ink
       await expect(slotColor(/^personal/)).toBe(INK[theme])
-      await expect(slotColor(/^creativity/)).toBe(INK[theme])
       await expect(
         getComputedStyle(row(/make noise/).querySelector<HTMLElement>('[data-pond-mark]')!).color
       ).toBe(INK[theme])
