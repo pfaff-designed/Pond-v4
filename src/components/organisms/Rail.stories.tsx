@@ -1011,8 +1011,31 @@ export const FootBand: Story = {
       // the foot's hairline is the only one: the tree draws none of its own
       await expect(getComputedStyle(tree).borderTopWidth).toBe('0px')
       await expect(scope.querySelectorAll('aside [class*="border-t"]')).toHaveLength(1)
-      // directly after the tree: no gap between them
-      await expect(plus.getBoundingClientRect().top).toBe(tree.getBoundingClientRect().bottom)
+      // directly after the last databases row: no gap between them
+      // (measured once the nested row's settle-in entrance has finished moving it)
+      await Promise.all(tree.getAnimations({ subtree: true }).map((a) => a.finished))
+      const dbRows = within(tree).getAllByRole('treeitem')
+      const lastDbRow = dbRows[dbRows.length - 1].getBoundingClientRect()
+      await expect(plus.getBoundingClientRect().top).toBe(lastDbRow.bottom)
+
+      // The scroller clips at its padding box: every row's 2px focus ring must
+      // fit inside it on all four sides, or a keyboard user loses the indicator.
+      const box = tree.getBoundingClientRect()
+      for (const row of dbRows) {
+        const r = row.getBoundingClientRect()
+        await expect(r.left - box.left).toBeGreaterThanOrEqual(2)
+        await expect(box.right - r.right).toBeGreaterThanOrEqual(2)
+      }
+      await expect(dbRows[0].getBoundingClientRect().top - box.top).toBeGreaterThanOrEqual(2)
+      await expect(box.bottom - lastDbRow.bottom).toBeGreaterThanOrEqual(2)
+
+      // The board's dbRow sets no colour: its label inherits full ink.
+      const dbTitle = canvas
+        .getByRole('treeitem', { name: /databases/ })
+        .querySelector<HTMLElement>('[data-part="title"]')!
+      await expect(getComputedStyle(dbTitle).color).toBe(
+        theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)'
+      )
 
       const type = getComputedStyle(plus)
       await expect(type.fontSize).toBe('11px')

@@ -248,9 +248,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // own voice onto the title via data-voice → CSS (see globals.css). full =
   // the selected row (ink-100); raised = an area/root row or an ancestor of the
   // selection (ink-80 meta); muted = a plain child row (ink-68). Hover lifts any
-  // row to full.
+  // row to full; the databases root is full at rest (the board's dbRow sets no
+  // colour, so it inherits ink-100).
   const labelVoice: 'full' | 'raised' | 'muted' =
-    isSelected || hovered ? 'full' : isOnPath || isRoot || isArea ? 'raised' : 'muted'
+    isSelected || hovered || isDbRoot ? 'full' : isOnPath || isRoot || isArea ? 'raised' : 'muted'
 
   return (
     <div
@@ -973,14 +974,16 @@ export function RailView({
           tree so the structure says what the rail says), then "＋ new page". The
           3px top padding plus the first row's 7px puts its content 10px below the
           hairline. The databases tree is capped at 40vh so an expanded root scrolls
-          inside the foot instead of swallowing the rail. */}
+          inside the foot instead of swallowing the rail. The scroller clips at its
+          padding box, so it carries 2px of padding (cancelled by a -2px margin) to
+          keep the rows' 2px focus ring visible. */}
       <div data-part="rail-foot" className="mx-2 mt-2.5 border-t border-mn-text/[0.09] pt-[3px]">
         {databasesFlat.length > 0 && (
           <div
             role="tree"
             aria-label="Databases"
             aria-multiselectable={false}
-            className="max-h-[40vh] overflow-y-auto"
+            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
           >
             {databasesFlat.map(renderRow)}
           </div>
