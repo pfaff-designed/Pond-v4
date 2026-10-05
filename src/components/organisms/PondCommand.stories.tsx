@@ -135,10 +135,23 @@ function Frame({
   )
 }
 
+/**
+ * Below Tailwind's `md` (768) the palette takes `PondPicker`'s phone sizes, so a
+ * story that left the width to the Storybook pane would draw a desktop frame at
+ * phone type in any pane narrower than 768. Every story names its screen: the
+ * desktop frames at 768, the narrowest desktop (the open 560 still fits a narrow
+ * pane), and the `· mobile` frames at an iPhone's 390.
+ */
+const VIEWPORTS = {
+  desktop: { name: 'desktop (md, 768)', styles: { width: '768px', height: '900px' } },
+  phone: { name: 'phone', styles: { width: '390px', height: '844px' } },
+}
+
 const meta = {
   title: 'Organisms/pickers/2g · the command palette',
   component: Frame,
-  parameters: { layout: 'fullscreen' },
+  parameters: { layout: 'fullscreen', viewport: { options: VIEWPORTS } },
+  globals: { viewport: { value: 'desktop', isRotated: false } },
   args: {},
 } satisfies Meta<typeof Frame>
 
@@ -240,6 +253,7 @@ async function assertResting(root: HTMLElement, p: Palette) {
 
 /** Open: 560 (360 below md), 40 + the body, the input in the path's place, the list under a hairline. */
 async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
+  await expect(window.innerWidth >= 768).toBe(m === DESKTOP)
   await assertBox(root, p)
   const box = boxOf(root)
   await expect(box.getAttribute('data-state')).toBe('open')
@@ -647,12 +661,6 @@ export const PondsInk: Story = {
 
 // ── mobile — `PondPicker`'s `mob` branch ───────────────────────────────────────
 
-/** An iPhone-width viewport, below Tailwind's `md` (768). */
-const MOBILE_VIEWPORT = {
-  viewport: {
-    options: { phone: { name: 'phone', styles: { width: '390px', height: '844px' } } },
-  },
-}
 const onPhone = { viewport: { value: 'phone', isRotated: false } }
 
 async function assertPhone() {
@@ -663,7 +671,6 @@ async function assertPhone() {
 export const MobileOpened: Story = {
   name: 'opened · mobile',
   args: { open: true },
-  parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
     await assertPhone()
@@ -675,7 +682,6 @@ export const MobileOpened: Story = {
 export const MobileTyping: Story = {
   name: 'typing · mobile',
   args: { open: true, defaultQuery: 'cab', items: paletteItemsFor('cab') },
-  parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
     await assertPhone()
@@ -687,7 +693,6 @@ export const MobileTyping: Story = {
 export const MobileEmpty: Story = {
   name: 'empty · mobile',
   args: { open: true, defaultQuery: 'cabnet' },
-  parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
     await assertPhone()
