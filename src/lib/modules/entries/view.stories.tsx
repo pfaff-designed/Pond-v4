@@ -5,7 +5,7 @@ import { expect, userEvent, within } from 'storybook/test'
 import { EntriesView } from './view'
 import { ENTRIES_EMPTY_LINE, type EntriesBlock } from './schema'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import { blockFrame, POND_BLOCK_WIDTHS } from '@/lib/modules/block-frame'
+import { blockFrame } from '@/lib/modules/block-frame'
 
 /**
  * The `entries` block (#250) — dated prose, serif only for the journal. The play
@@ -263,7 +263,11 @@ export const InLogCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('log')
-    await expect(card.getBoundingClientRect().width).toBe(POND_BLOCK_WIDTHS.log)
+    // ADR 0008: the card fills its container, not the board's old 460px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.textContent).toContain('3 entries')
     await assertJournal(canvasElement, INK, INK_68)
     // The rows fill the card's content box — fluid, not the molecule's fixed 420.

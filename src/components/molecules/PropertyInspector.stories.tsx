@@ -150,7 +150,11 @@ export const InPropertiesCard: Story = {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('properties')
     await expect(card.dataset.blockState).toBe('rest')
-    await expect(getComputedStyle(card).width).toBe('400px')
+    // ADR 0008: the card fills its container, not the board's old 400px.
+    const cp = card.parentElement!
+    const cps = getComputedStyle(cp)
+    const cavail = cp.clientWidth - parseFloat(cps.paddingLeft) - parseFloat(cps.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(cavail, 0)
     const head = card.firstElementChild as HTMLElement
     await expect(head.children[0].textContent).toBe('properties')
     await expect(head.children[0].className).toBe(pageEyebrowClass)

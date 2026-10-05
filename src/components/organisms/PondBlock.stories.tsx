@@ -420,8 +420,13 @@ async function assertFrames(canvasElement: HTMLElement, theme: Theme) {
     const c = card(canvasElement, kind)
     await expect(c).toBeTruthy()
     const cs = getComputedStyle(c)
-    // Geometry — the inline `style` numbers off the board.
-    await expect(cs.width).toBe(`${POND_BLOCK_WIDTHS[kind]}px`)
+    // Width (ADR 0008): every block FILLS the content column — here the Frames flex
+    // container — rather than the board's old per-kind px. The padding/radius/etc below
+    // are unchanged board values.
+    const p = c.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(c.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(cs.paddingTop).toBe('16px')
     await expect(cs.paddingBottom).toBe('16px')
     await expect(cs.paddingLeft).toBe('18px')
@@ -1193,7 +1198,11 @@ export const WithTableView: Story = {
     await expect(getComputedStyle(titles[1]).display).toBe('none')
     await expect(canvas.getByText('Bandsaw')).toBeVisible()
     const c = canvasElement.querySelector<HTMLElement>('[data-block-kind="table"]')!
-    await expect(getComputedStyle(c).width).toBe('500px')
+    // ADR 0008: the card fills its container, not the board's old 500px.
+    const p = c.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(c.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     // No `state` passed: the frame defaults to rest and stamps it on the card, so a
     // host that knows nothing about states still gets the board's resting card.
     await expect(c.dataset.blockState).toBe('rest')

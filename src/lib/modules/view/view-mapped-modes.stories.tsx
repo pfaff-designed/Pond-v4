@@ -206,7 +206,11 @@ export const GalleryInCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('gallery')
-    await expect(getComputedStyle(card).width).toBe('580px')
+    // ADR 0008: the card fills its container, not the board's old 580px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.querySelector('span')!.textContent).toBe('records')
     await assertGallery(canvasElement, LIGHT)
   },
@@ -356,7 +360,11 @@ export const GanttInCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('table')
-    await expect(getComputedStyle(card).width).toBe('500px')
+    // ADR 0008: the card fills its container, not the board's old 500px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.querySelector('span')!.textContent).toBe('tasks — timeline')
     await assertGantt(canvasElement, LIGHT)
   },
@@ -466,7 +474,11 @@ export const NumberInCard: Story = {
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
     await expect(card.dataset.blockKind).toBe('number')
-    await expect(getComputedStyle(card).width).toBe('400px')
+    // ADR 0008: the card fills its container, not the board's old 400px.
+    const p = card.parentElement!
+    const pcs = getComputedStyle(p)
+    const avail = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight)
+    await expect(card.getBoundingClientRect().width).toBeCloseTo(avail, 0)
     await expect(card.querySelector('span')!.textContent).toBe('this week')
     await assertNumber(canvasElement, LIGHT)
   },
