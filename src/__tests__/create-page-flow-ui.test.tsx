@@ -7,7 +7,7 @@
  * 2. CreatePageModal creates a `page` (never an `area`) under the chosen parent
  *    and navigates into the editor.
  * 3. The destination defaults to the current context (?nodeId) with an override.
- * 4. AITerminal create_page proposal card + /save picker (unchanged neighbours).
+ * 4. AITerminal create_page proposal card, and the composer sending `/save` as plain text.
  *
  * Integration-style RTL tests using Jest mocks for Supabase, @ai-sdk/react, and
  * next/navigation.
@@ -76,21 +76,6 @@ jest.mock('@/lib/conversation/client', () => ({
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
 
-// createNode is still used by SavePickerModal (opened via /save).
-const mockCreateNode = jest.fn().mockResolvedValue({ id: 'new-node-id' })
-jest.mock('@/lib/nodes/create', () => ({
-  createNode: (...args: unknown[]) => mockCreateNode(...args),
-  parseActionCard: jest.fn((json: string) => {
-    try {
-      const parsed = JSON.parse(json)
-      if (!parsed.type || !parsed.name) return null
-      return parsed
-    } catch {
-      return null
-    }
-  }),
-}))
-
 // Mock useChat from @ai-sdk/react (for AITerminal)
 const mockSendMessage = jest.fn()
 const mockAddToolOutput = jest.fn()
@@ -116,12 +101,6 @@ jest.mock('@ai-sdk/react', () => ({
     }
   }),
 }))
-
-// Stub fetch for SavePickerModal (returns empty extractions)
-global.fetch = jest.fn().mockResolvedValue({
-  ok: true,
-  json: async () => ({ extractions: [] }),
-} as Response)
 
 // ── Import components after mocks ─────────────────────────────────────────
 
@@ -377,15 +356,16 @@ describe('AITerminal — the palette’s question lands in an empty composer onl
   })
 })
 
-// ── AITerminal /save command opens picker ────────────────────────────────
+// ── The composer has no slash-commands ───────────────────────────────────
 
-describe('AITerminal — /save command opens picker', () => {
+describe('AITerminal — no thread slash-commands', () => {
   beforeEach(() => {
     mockMessages = []
     mockStatus = 'ready'
+    mockSendMessage.mockClear()
   })
 
-  it('opens SavePickerModal when /save is submitted', async () => {
+  it.each(['/save', '/clear', '/handoff'])('sends %s as an ordinary message', async (text) => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
 
@@ -393,12 +373,14 @@ describe('AITerminal — /save command opens picker', () => {
       expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled()
     })
 
-    const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
-    await user.type(textarea, '/save')
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), text)
+    expect(screen.queryByRole('listbox')).toBeNull()
     await user.keyboard('{Enter}')
 
-    await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: /save as/i })).toBeInTheDocument()
-    })
+    expect(screen.queryByRole('dialog', { name: /save as/i })).toBeNull()
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text }),
+      expect.anything()
+    )
   })
 })

@@ -10,7 +10,6 @@ import {
   saveTranscript,
   dissolveConversation,
 } from '@/lib/conversation/client'
-import { performHandoff } from '@/lib/conversation/handoff'
 import {
   resolveStampTarget,
   type ConversationResolutions,
@@ -61,8 +60,6 @@ import { configureViewFromProposal, resolveCollectionByName } from '@/lib/pages/
 import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-table'
 import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
-import { SavePickerModal } from './SavePickerModal'
-import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
 import {
   TextSelectionPopover,
   type SelectionContext,
@@ -143,15 +140,6 @@ import type {
   ViewAggValue,
   ViewFigureFormat,
 } from '@/lib/modules/view/schema'
-
-type CommandResult = 'clear' | 'handoff' | 'save' | null
-
-// The composer's `/` rows — the same `/` menu as the page's (#278), lowercase.
-const CHAT_COMMANDS: SlashRow[] = [
-  { id: 'clear', label: '/clear', description: 'clear the thread and start again' },
-  { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
-  { id: 'save', label: '/save', description: 'save the thread to a page' },
-]
 
 /** A propose_changes tool part — the generalized composition batch (t16 Phase 5).
  *  `targetPageId` (ticket-30) names a page OTHER than the open one to edit. */
@@ -361,14 +349,6 @@ function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowup
   return part.type === SUGGEST_FOLLOWUPS_TYPE
 }
 
-function parseCommand(text: string): CommandResult {
-  const t = text.trim()
-  if (t === '/clear') return 'clear'
-  if (t === '/handoff') return 'handoff'
-  if (t === '/save') return 'save'
-  return null
-}
-
 export function AITerminal() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -380,7 +360,6 @@ export function AITerminal() {
   const pondName = usePondName()
   const contextLabel = nodeName ?? pondName
 
-  const [isSavePickerOpen, setIsSavePickerOpen] = useState(false)
   const queryClient = useQueryClient()
   // Lazily created on first use, not at render — so an envless mount (Storybook,
   // CI) never constructs a real client and throws (#38); queryFns, effects and
@@ -646,7 +625,8 @@ export function AITerminal() {
       return last?.role === 'assistant' ? prev.slice(0, -1) : prev
     })
   }, [error, setMessages])
-  const [chatMenuOpen, setChatMenuOpen] = useState(false)
+  // Deep research: the only road to the web, off by default and spent per question.
+  const [research, setResearch] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isReady, setIsReady] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -1002,7 +982,7 @@ export function AITerminal() {
     }
   }, [effectiveCollapsed, isReady])
 
-  // ── Handle /clear ─────────────────────────────────────────────────────────
+  // ── New thread (the thread head) ──────────────────────────────────────────
   const handleClear = useCallback(async () => {
     if (!conversationId) return
     const supabase = getSupabase()
@@ -1017,33 +997,6 @@ export function AITerminal() {
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
   }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
-
-  // ── Handle /handoff ───────────────────────────────────────────────────────
-  // Extract entities from the transcript (Quick model), write them all, then
-  // dissolve and start a fresh session (build-brief §9).
-  const handleHandoff = useCallback(async () => {
-    if (!conversationId) return
-    const supabase = getSupabase()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return
-    const { freshConversation, written } = await performHandoff(
-      supabase,
-      conversationId,
-      user.id,
-      messages,
-      undefined,
-      pondId
-    )
-    if (written > 0) {
-      // #312: the pond-aware key, or the refetch misses the tree it just changed.
-      await queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
-    }
-    setConversationId(freshConversation.id)
-    setMessages([])
-    resetResolutions()
-  }, [conversationId, messages, queryClient, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
   // The phase moves on the OUTGOING user message (the user calls the shot): if a
@@ -1096,7 +1049,7 @@ export function AITerminal() {
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
       // #312: `pondId` so the route's context reads only this pond (`s6m5`).
-      const body = { nodeId, nodeType, pondId, resolutions: outgoing }
+      const body = { nodeId, nodeType, pondId, resolutions: outgoing, research }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
@@ -1113,6 +1066,7 @@ export function AITerminal() {
         sendMessage({ text: finalText, metadata }, { body })
       }
       setInput('')
+      setResearch(false)
     },
     [
       nextLifecycle,
@@ -1126,35 +1080,19 @@ export function AITerminal() {
       csvAttachment,
       fileParts,
       clearAttachments,
+      research,
     ]
   )
 
   // ── Send ──────────────────────────────────────────────────────────────────
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const text = input.trim()
     // An attachment can go out without accompanying text (#61); everything
     // else still requires a message.
     if ((!text && attachments.length === 0) || isStreaming) return
 
-    const command = parseCommand(text)
-    if (command === 'clear') {
-      setInput('')
-      await handleClear()
-      return
-    }
-    if (command === 'handoff') {
-      setInput('')
-      await handleHandoff()
-      return
-    }
-    if (command === 'save') {
-      setInput('')
-      setIsSavePickerOpen(true)
-      return
-    }
-
     sendText(text)
-  }, [input, isStreaming, attachments.length, handleClear, handleHandoff, sendText])
+  }, [input, isStreaming, attachments.length, sendText])
 
   // A follow-up chip / question option click sends its text as the next message
   // (ticket-39). Ignored mid-stream so a click can't interleave a turn.
@@ -1167,13 +1105,9 @@ export function AITerminal() {
   )
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"), innermost
-    // layer first. While the / menu is open it is that layer: SlashMenu takes esc
-    // on the document in the capture phase and stops it, so it closes — keeping
-    // the typed text (the board's `esc keep as text`) — and this handler never
-    // sees that press. The next esc reaches here: stop a stream and keep what
-    // arrived; else leave the field. It never clears what was typed (G1: a
-    // failed answer keeps what you typed).
+    // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"): stop a
+    // stream and keep what arrived; else leave the field. It never clears what was
+    // typed (G1: a failed answer keeps what you typed).
     if (e.key === 'Escape') {
       e.preventDefault()
       if (isStreaming) stop()
@@ -1183,7 +1117,6 @@ export function AITerminal() {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      setChatMenuOpen(false)
       handleSend()
     }
   }
@@ -2633,37 +2566,13 @@ export function AITerminal() {
         attachDisabled={isStreaming || !isReady}
         textareaRef={inputRef}
         anchorRef={composerRef}
-        onChange={(val) => {
-          setInput(val)
-          setChatMenuOpen(val === '/' || (val.startsWith('/') && !val.includes(' ')))
-        }}
+        research={research}
+        onToggleResearch={() => setResearch((on) => !on)}
+        onChange={setInput}
         onKeyDown={handleKeyDown}
         onAttach={handleAttachClick}
         onSend={handleSend}
         onStop={stop}
-        menu={
-          chatMenuOpen && (
-            <SlashMenu
-              rows={CHAT_COMMANDS}
-              query={input.slice(1)}
-              anchor={composerRef}
-              side="top"
-              label="commands"
-              onSelect={(row) => {
-                setChatMenuOpen(false)
-                setInput('')
-                if (row.id === 'clear') {
-                  handleClear()
-                } else if (row.id === 'handoff') {
-                  handleHandoff()
-                } else if (row.id === 'save') {
-                  setIsSavePickerOpen(true)
-                }
-              }}
-              onClose={() => setChatMenuOpen(false)}
-            />
-          )
-        }
         // The attach flow (#61): images/pdf/txt/md upload to storage and ride the
         // message; .csv keeps its inline-context path. The input is a persistent
         // hidden element (not a transient createElement) so the picker is
@@ -2697,11 +2606,6 @@ export function AITerminal() {
       >
         {messagesBody}
       </TerminalDrawer>
-      <SavePickerModal
-        isOpen={isSavePickerOpen}
-        messages={messages}
-        onClose={() => setIsSavePickerOpen(false)}
-      />
     </>
   )
 }

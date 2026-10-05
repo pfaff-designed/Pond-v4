@@ -3,8 +3,11 @@
 /**
  * The composer's input line and toolbar (`PondComposer.dc.html` `line` +
  * `toolbar`, board 2f): a borderless mono line that is one row at rest and grows
- * with its text, over a row holding ＋ (attach) and send. Presentational — the
+ * with its text, over a row holding ＋ (attach), the research toggle and send. Presentational — the
  * thread, the stream and the attach flow belong to the AITerminal around it.
+ *
+ * Research is the one road to the web: off by default, spent on a single
+ * question. Off it is ink .8 with no fill; on it takes an ink .07 wash and full ink.
  *
  * Send is a 32px circle (40 below md). Off, with nothing to send, it is a quiet
  * disabled fill; on, it is solid ink, and while an answer streams it becomes the
@@ -26,12 +29,13 @@ export interface ComposerLineProps {
   /** The attach control is inert mid-stream and until the thread has loaded. */
   attachDisabled: boolean
   textareaRef: RefObject<HTMLTextAreaElement | null>
-  /** The wrapper the `/` menu and the selection popover anchor to. */
+  /** The wrapper the selection popover anchors to. */
   anchorRef: RefObject<HTMLDivElement | null>
-  /** The `/` menu, rendered against the line. */
-  menu?: ReactNode
+  /** Deep research is on for the next question. */
+  research: boolean
   /** The hidden file input the ＋ opens. */
   attachInput?: ReactNode
+  onToggleResearch: () => void
   onChange: (value: string) => void
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
   onAttach: () => void
@@ -48,8 +52,9 @@ export const ComposerLine = ({
   attachDisabled,
   textareaRef,
   anchorRef,
-  menu,
+  research,
   attachInput,
+  onToggleResearch,
   onChange,
   onKeyDown,
   onAttach,
@@ -71,7 +76,6 @@ export const ComposerLine = ({
   return (
     <>
       <div ref={anchorRef} className="relative">
-        {menu}
         <textarea
           ref={textareaRef}
           value={value}
@@ -98,6 +102,31 @@ export const ComposerLine = ({
           className="flex size-9 flex-none items-center justify-center rounded-mn-pill bg-mn-hover-fill text-[13px] text-mn-text-meta transition-colors hover:text-mn-text disabled:opacity-40 md:size-7"
         >
           ＋
+        </button>
+        <button
+          type="button"
+          aria-pressed={research}
+          onClick={onToggleResearch}
+          className={cn(
+            'flex items-center gap-[7px] rounded-mn-pill px-3 py-[11px] transition-colors md:py-[7px]',
+            research ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-meta hover:text-mn-text'
+          )}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <circle cx="6.2" cy="6.2" r="4" />
+            <path d="M9.2 9.2 12.2 12.2" />
+          </svg>
+          research
         </button>
         <button
           type="button"

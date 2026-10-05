@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { useRef, useState } from 'react'
 
 import { ComposerLine } from './ComposerLine'
@@ -18,6 +18,7 @@ interface ComposerProps {
   initialValue?: string
   streaming?: boolean
   hasTurn?: boolean
+  initialResearch?: boolean
 }
 
 const Composer = ({
@@ -25,8 +26,10 @@ const Composer = ({
   initialValue = '',
   streaming = false,
   hasTurn = false,
+  initialResearch = false,
 }: ComposerProps) => {
   const [value, setValue] = useState(initialValue)
+  const [research, setResearch] = useState(initialResearch)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   return (
@@ -48,6 +51,8 @@ const Composer = ({
               attachDisabled={streaming}
               textareaRef={textareaRef}
               anchorRef={anchorRef}
+              research={research}
+              onToggleResearch={() => setResearch((on) => !on)}
               onChange={setValue}
               onKeyDown={fn()}
               onAttach={fn()}
@@ -79,6 +84,8 @@ const meta = {
     attachDisabled: false,
     textareaRef: { current: null },
     anchorRef: { current: null },
+    research: false,
+    onToggleResearch: fn(),
     onChange: fn(),
     onKeyDown: fn(),
     onAttach: fn(),
@@ -124,6 +131,7 @@ const parts = (root: HTMLElement, theme: Theme) => {
     card: scope.getByRole('region', { name: 'Pond terminal' }),
     line: scope.getByRole<HTMLTextAreaElement>('textbox', { name: 'Message Pond' }),
     plus: scope.getByRole('button', { name: 'Attach a file' }),
+    research: scope.getByRole('button', { name: 'research' }),
     send:
       scope.queryByRole('button', { name: 'Send' }) ?? scope.getByRole('button', { name: 'Stop' }),
     scope,
@@ -159,9 +167,9 @@ const BothThemes = (props: Omit<ComposerProps, 'theme'>) => (
 )
 
 /**
- * Rest: one 14px line at ink 68 (`ask pond, or / for blocks`), the 28px ＋, a
- * spacer, and a disabled 32px send in its off fill. Nothing else — no research
- * pill (KAN-76), no mic, no header strip.
+ * Rest: one 14px line at ink 68 (`ask pond, or / for blocks`), the 28px ＋, the
+ * research pill (off), a spacer, and a disabled 32px send in its off fill.
+ * Nothing else — no mic, no header strip.
  */
 export const Rest: Story = {
   render: () => <BothThemes />,
@@ -206,9 +214,89 @@ export const Rest: Story = {
       await expect(arrow.getAttribute('width')).toBe('12')
       await expect(arrow.getAttribute('stroke-width')).toBe('1.4')
 
-      await expect(scope.queryByText('research')).toBeNull()
       await expect(scope.queryByText('context:')).toBeNull()
       await expect(scope.queryByRole('separator')).toBeNull()
+    }
+  },
+}
+
+/** The pill's geometry and type — the DC `researchBtn`, the same on and off. */
+const expectResearchPill = async (pill: HTMLElement, plus: HTMLElement, send: HTMLElement) => {
+  const css = getComputedStyle(pill)
+  await expect(pill.textContent).toBe('research')
+  await expect(css.display).toBe('flex')
+  await expect(css.alignItems).toBe('center')
+  await expect(css.columnGap).toBe('7px')
+  await expect(css.padding).toBe('7px 12px')
+  await expect(css.borderTopLeftRadius).toBe('9999px')
+  await expect(css.fontSize).toBe('11px')
+  await expect(css.letterSpacing).toBe('0.22px')
+  await expect(css.fontFamily).toContain('PP Neue Montreal Mono')
+
+  const icon = pill.querySelector('svg')!
+  await expect(icon.getAttribute('width')).toBe('12')
+  await expect(icon.getAttribute('height')).toBe('12')
+  await expect(icon.getAttribute('stroke-width')).toBe('1.4')
+  await expect(icon.getAttribute('stroke-linecap')).toBe('round')
+  await expect(icon.querySelector('circle')!.getAttribute('r')).toBe('4')
+
+  // Toolbar order: ＋, research, spacer, send.
+  await expect(plus.nextElementSibling).toBe(pill)
+  await expect(pill.getBoundingClientRect().left).toBeGreaterThan(
+    plus.getBoundingClientRect().right
+  )
+  await expect(send.getBoundingClientRect().left).toBeGreaterThan(
+    pill.getBoundingClientRect().right
+  )
+}
+
+/** The pill eases between states; assert where it settles, not mid-transition. */
+const expectPillPaint = (pill: HTMLElement, color: string, background: string) =>
+  waitFor(() => {
+    const css = getComputedStyle(pill)
+    expect(css.color).toBe(color)
+    expect(css.backgroundColor).toBe(background)
+  })
+
+/**
+ * The research pill after ＋. Off: ink .8, no fill, `aria-pressed=false`. Click:
+ * ink .07 fill and full ink, `aria-pressed=true`; click again and it is off.
+ */
+export const Research: Story = {
+  render: () => <BothThemes />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const { research, plus, send } = parts(canvasElement, theme)
+      const wash = theme === 'paper' ? 'rgba(27, 29, 20, 0.07)' : 'rgba(250, 249, 239, 0.07)'
+      await expectResearchPill(research, plus, send)
+
+      await expect(research).toHaveAttribute('aria-pressed', 'false')
+      await expectPillPaint(research, INK[theme].meta, 'rgba(0, 0, 0, 0)')
+
+      await userEvent.click(research)
+      await expect(research).toHaveAttribute('aria-pressed', 'true')
+      await expectPillPaint(research, INK[theme].full, wash)
+      await expectResearchPill(research, plus, send)
+
+      await userEvent.click(research)
+      await expect(research).toHaveAttribute('aria-pressed', 'false')
+      await expectPillPaint(research, INK[theme].meta, 'rgba(0, 0, 0, 0)')
+    }
+  },
+}
+
+/** Research on at rest: the wash and full ink are the whole signal. */
+export const ResearchOn: Story = {
+  render: () => <BothThemes initialResearch />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const { research } = parts(canvasElement, theme)
+      await expect(research).toHaveAttribute('aria-pressed', 'true')
+      await expectPillPaint(
+        research,
+        INK[theme].full,
+        theme === 'paper' ? 'rgba(27, 29, 20, 0.07)' : 'rgba(250, 249, 239, 0.07)'
+      )
     }
   },
 }
@@ -282,8 +370,9 @@ export const Mobile: Story = {
   globals: { viewport: { value: 'mobile2', isRotated: false } },
   render: () => <Composer theme="paper" />,
   play: async ({ canvasElement }) => {
-    const { card, line, plus, send } = parts(canvasElement, 'paper')
+    const { card, line, plus, send, research } = parts(canvasElement, 'paper')
     await expect(Math.round(card.getBoundingClientRect().width)).toBe(360)
+    await expect(getComputedStyle(research).padding).toBe('11px 12px')
     await expect(getComputedStyle(line).fontSize).toBe('16px')
     await expect(getComputedStyle(line).lineHeight).toBe('24px')
     await expect(Math.round(plus.getBoundingClientRect().width)).toBe(36)

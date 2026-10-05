@@ -92,7 +92,7 @@ describe('the composer card — rest', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
 
-  it('draws nothing the board does not: no header strip, handle, mic, ghost line or research pill', async () => {
+  it('draws nothing the board does not: no header strip, handle, mic or ghost line', async () => {
     const { container } = renderTerminal()
     await waitReady()
 
@@ -100,7 +100,6 @@ describe('the composer card — rest', () => {
     expect(screen.queryByRole('button', { name: /clear conversation/i })).toBeNull()
     expect(screen.queryByRole('separator')).toBeNull()
     expect(screen.queryByRole('button', { name: /voice|dictate|microphone/i })).toBeNull()
-    expect(screen.queryByText('research')).toBeNull()
     expect(screen.queryByText('send')).toBeNull()
     expect(container.querySelector('#ghost-suggestion')).toBeNull()
     expect(container.querySelector('.motion-focus-draw')).toBeNull()
@@ -138,6 +137,56 @@ describe('the composer card — typing and sending', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Attach a file' }))
     expect(click).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the composer card — research, the only road to the web', () => {
+  const pill = () => screen.getByRole('button', { name: 'research' })
+  const sentBody = (call: number) => mockSendMessage.mock.calls[call][1].body
+
+  it('sits after ＋, off, and the first question carries research: false', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    expect(screen.getByRole('button', { name: 'Attach a file' }).nextElementSibling).toBe(pill())
+    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+
+    await user.type(line(), 'what is the going rate for a worktop?')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(sentBody(0).research).toBe(false)
+  })
+
+  it('toggles on, rides one question, and is off again for the next', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    await user.click(pill())
+    expect(pill()).toHaveAttribute('aria-pressed', 'true')
+
+    await user.type(line(), 'what do worktops cost today?')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(sentBody(0).research).toBe(true)
+    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+
+    await user.type(line(), 'and the fitting?')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(2))
+    expect(sentBody(1).research).toBe(false)
+  })
+
+  it('toggles back off without sending', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await waitReady()
+
+    await user.click(pill())
+    await user.click(pill())
+    expect(pill()).toHaveAttribute('aria-pressed', 'false')
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 })
 

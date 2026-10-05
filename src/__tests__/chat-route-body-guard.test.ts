@@ -53,6 +53,8 @@ describe('parseChatBody', () => {
       // #312: the pond scope of any change-log record this turn writes. Absent
       // when the body carries none — there is no default pond to fall back to.
       pondId: undefined,
+      // Deep research is off unless the person turned it on for this question.
+      research: false,
       // ticket-39: the envelope now also carries question-card answers.
       // #17 slice 5: and define_schema decisions (`schemas`).
       resolutions: {
@@ -86,6 +88,15 @@ describe('parseChatBody', () => {
     // trusting it into the insert.
     expect(parseChatBody({ messages: [], pondId: 7 })?.pondId).toBeUndefined()
     expect(parseChatBody({ messages: [] })?.pondId).toBeUndefined()
+  })
+
+  it('carries research only when it is exactly true', () => {
+    expect(parseChatBody({ messages: [], research: true })?.research).toBe(true)
+    expect(parseChatBody({ messages: [], research: false })?.research).toBe(false)
+    // Anything that is not a boolean true is off: the web is opt-in, never inferred.
+    for (const research of ['true', 1, {}, [], null]) {
+      expect(parseChatBody({ messages: [], research })?.research).toBe(false)
+    }
   })
 
   it('drops the retired "area" nodeType (#108) rather than carrying it', () => {
@@ -183,5 +194,36 @@ describe('POST /api/chat toolset (ticket-30 cross-page edits)', () => {
     expect(Object.keys(tools)).toEqual(
       expect.arrayContaining(['propose_changes', 'read_page', 'create_page', 'fetch_context'])
     )
+  })
+
+  it('keeps the web out of the request by default', async () => {
+    await post({ messages: [] })
+    expect(Object.keys(lastStreamTextArgs().tools)).not.toContain('web_search')
+  })
+
+  it('offers web_search only when research is on for the question', async () => {
+    await post({ messages: [], research: true })
+    expect(Object.keys(lastStreamTextArgs().tools)).toContain('web_search')
+  })
+
+  it.each(['true', 1, null, {}])('does not read research: %p as on', async (research) => {
+    await post({ messages: [], research })
+    expect(Object.keys(lastStreamTextArgs().tools)).not.toContain('web_search')
+  })
+
+  it('tells the model it has no web this turn, and says nothing of the kind when research is on', async () => {
+    await post({ messages: [] })
+    expect(lastStreamTextArgs().system).toContain('[Web] Deep research is off')
+
+    await post({ messages: [], research: true })
+    expect(lastStreamTextArgs().system).not.toContain('[Web]')
+  })
+
+  it('leaves every other tool in place either way', async () => {
+    await post({ messages: [] })
+    const off = Object.keys(lastStreamTextArgs().tools).sort()
+    await post({ messages: [], research: true })
+    const on = Object.keys(lastStreamTextArgs().tools).sort()
+    expect(on.filter((name) => name !== 'web_search')).toEqual(off)
   })
 })

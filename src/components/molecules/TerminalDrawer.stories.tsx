@@ -16,6 +16,7 @@ const Footer = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const [value, setValue] = useState('')
+  const [research, setResearch] = useState(false)
   return (
     <div className="flex flex-col gap-[14px]">
       <ComposerLine
@@ -27,6 +28,8 @@ const Footer = () => {
         attachDisabled={false}
         textareaRef={textareaRef}
         anchorRef={anchorRef}
+        research={research}
+        onToggleResearch={() => setResearch((on) => !on)}
         onChange={setValue}
         onKeyDown={fn()}
         onAttach={fn()}
