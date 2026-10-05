@@ -93,8 +93,17 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
-    useCollectionRows(collectionId)
+  const {
+    schema,
+    rows,
+    collectionName,
+    isLoading,
+    isError,
+    setValue,
+    addRow,
+    renameRow,
+    updateSchema,
+  } = useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
@@ -123,6 +132,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         config={data}
         schema={schema}
         rows={rows}
+        collectionName={collectionName}
         isLoading={isLoading}
         isError={isError}
         editable={editable}
@@ -151,6 +161,9 @@ export interface CollectionViewProps {
   config: ViewBlock
   schema: PropertySchema | null
   rows: CollectionRow[]
+  /** The database's own name — `9w`'s head row leads with it. Absent off a page
+   *  host (Storybook, the AI terminal), where the head row simply has no name. */
+  collectionName?: string
   isLoading?: boolean
   /** Either collection read failed — distinct from "no rows", which would be a lie. */
   isError?: boolean
@@ -181,6 +194,7 @@ export function CollectionView({
   config,
   schema,
   rows,
+  collectionName,
   isLoading,
   isError,
   editable,
@@ -249,6 +263,10 @@ export function CollectionView({
         <ViewControls
           config={config}
           schema={schema}
+          collectionName={collectionName}
+          // `processed`, not `rows`: the count names what this VIEW shows, so a
+          // filtered board must not report the collection's whole size.
+          recordCount={processed.length}
           onConfigChange={onConfigChange}
           onUpdateSchema={onUpdateSchema}
         />
@@ -346,35 +364,97 @@ const MODE_LABELS: Record<ViewMode, string> = {
 function ViewControls({
   config,
   schema,
+  collectionName,
+  recordCount,
   onConfigChange,
   onUpdateSchema,
 }: {
   config: ViewBlock
   schema: PropertySchema
+  collectionName?: string
+  recordCount?: number
   onConfigChange: (patch: Partial<ViewBlock>) => void
   onUpdateSchema?: (next: PropertySchema) => void
 }) {
   const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
+  // `9w`'s config line: `13 records · grouped by status`. The group-by clause only
+  // where the mode has one, so a table never claims a grouping it does not use.
+  const groupName =
+    config.mode === 'board' ? schema.find((d) => d.id === config.groupBy)?.name : undefined
+  const facts = [
+    recordCount === undefined ? null : `${recordCount} ${recordCount === 1 ? 'record' : 'records'}`,
+    groupName ? `grouped by ${groupName.toLowerCase()}` : null,
+  ].filter(Boolean)
+
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-mn-chrome shadow-mn-sm p-0.5">
-        {VIEW_MODES.map((m) => {
-          const active = config.mode === m
-          return (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onConfigChange({ mode: m })}
-              className={[
-                'rounded-mn-chrome px-2 py-0.5 text-xs transition-colors',
-                active ? 'bg-mn-wash text-mn-text' : 'text-mn-text-secondary hover:text-mn-text',
-              ].join(' ')}
-            >
-              {MODE_LABELS[m]}
-            </button>
-          )
-        })}
+      {/*
+        `Pond 09 Examples` 9w's head row — the database, what is in it, and the
+        views over it:
+
+            tasks   13 records · grouped by status
+                            board │ timeline │ table │ calendar │ list │ ＋ view
+
+        The segmented control is a PILL TRACK, not a row of buttons: an `ink .055`
+        ground at radius 999 with the active segment inverted to full ink on paper.
+
+        NOT YET (KAN-32, slices 2–3): what this lists. 9w lists the views that
+        EXIST — five named ones you created — and ends with `＋ view`. This still
+        lists all seven modes and flips the one block between them, which is
+        today's behaviour kept deliberately. `＋ view` is omitted rather than drawn
+        dead, since it needs the model.
+      */}
+      {/* `flex-wrap`: 9w draws the name and the bar on ONE line, but it has the
+          full canvas. In a 500px block (KAN-29) seven segments leave the name no
+          room at all — it truncated to a single letter. Wrapping the bar onto its
+          own line is the honest degradation; at full width the row reads as 9w
+          draws it. */}
+      <div
+        data-part="view-head"
+        className="flex w-full flex-wrap items-center justify-between gap-x-[10px] gap-y-[6px] px-[4px] pt-[4px]"
+      >
+        <div className="flex min-w-0 items-baseline gap-[10px]">
+          {collectionName && (
+            <span data-part="db-name" className="truncate text-[15px] font-medium text-mn-text">
+              {collectionName}
+            </span>
+          )}
+          {facts.length > 0 && (
+            <span data-part="db-facts" className="text-[10.5px] font-medium text-mn-text-meta">
+              {facts.join(' · ')}
+            </span>
+          )}
+        </div>
+
+        <div
+          data-part="view-bar"
+          className="flex flex-none items-center gap-[4px] rounded-full bg-mn-text/[0.055] p-[3px] text-[10.5px] font-medium"
+        >
+          {VIEW_MODES.map((m) => {
+            const active = config.mode === m
+            return (
+              <button
+                key={m}
+                type="button"
+                data-part="view-segment"
+                data-active={active || undefined}
+                aria-pressed={active}
+                onClick={() => onConfigChange({ mode: m })}
+                className={[
+                  'rounded-full px-[10px] py-[4px] transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                  // The board's active segment is `#1B1D14` ground with `#FAF9EF`
+                  // text — the same inversion `ui/button`'s `primary` makes, so it
+                  // reassigns correctly in dark rather than staying ink-on-ink.
+                  active
+                    ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+                    : 'text-mn-text-secondary hover:text-mn-text',
+                ].join(' ')}
+              >
+                {MODE_LABELS[m]}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {config.mode === 'board' && groupOptions.length > 0 && (
@@ -680,7 +760,24 @@ function CollectionBoard({
 
   return (
     <div {...containerHandlers}>
-      <div className="flex gap-4 overflow-x-auto pb-1">
+      {/*
+        `Pond 06.21 Tasks` draws the board as a GRID of equal lanes, not a
+        horizontally scrolling row: `repeat(N, minmax(0,1fr))` at gap 10, where N
+        is the lane count (its own Tasks example renders `repeat(4,…)`).
+        The trailing `+ lane` affordance takes a column of its own when shown.
+
+        (`board-values.generated.json` also has a `kanban`/`lane` set under
+        PondTemplate — that is the MINIATURE inside a template preview card, lane
+        min-height 90 against 06.21's 380. Same design at two scales; this is the
+        full-size one.)
+      */}
+      <div
+        data-part="lanes"
+        className="grid gap-[10px]"
+        style={{
+          gridTemplateColumns: `repeat(${visibleGroups.length + (canEditColumns ? 1 : 0)}, minmax(0,1fr))`,
+        }}
+      >
         {visibleGroups.map((group) => {
           const key = groupKey(group.id)
           const isOver = editable && drag?.active && overKey === key
@@ -692,110 +789,134 @@ function CollectionBoard({
             <section
               key={key}
               ref={registerBucket(key)}
+              data-part="lane"
+              data-lane={group.label}
+              // The board's lane is a faint RECESSED wash — ink .04, radius 16,
+              // no shadow. The drop target brightens it rather than lifting it,
+              // because a lane that gains a shadow reads as a card, which is the
+              // thing it is deliberately not.
               className={[
-                'group/col min-w-[13rem] flex-1 rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
-                isOver ? 'bg-mn-wash shadow-mn-md' : 'bg-mn-card/40 shadow-mn-sm',
+                'group/col flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
+                'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                isOver ? 'bg-mn-text/[0.08]' : 'bg-mn-text/[0.04]',
               ].join(' ')}
             >
-              <header className="mb-2 flex items-center justify-between gap-2">
+              <header
+                data-part="lane-head"
+                className="flex items-center justify-between gap-2 px-[4px] pt-[3px] pb-[2px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
+              >
+                {/* 06.21's lane head is exactly two spans — `<span>to do</span>
+                    <span>3</span>` — so there is no option dot here. The one the
+                    board does not draw is not drawn (AGENTS.md). */}
                 <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <OptionDot color={group.color} />
                   {columnEditable ? (
                     <input
-                      aria-label={`Column name: ${group.label}`}
+                      aria-label={`Lane name: ${group.label}`}
                       value={group.label}
                       placeholder="Untitled"
                       autoFocus={group.id === focusColId}
                       onChange={(e) => renameColumn(group.id as string, e.target.value)}
                       // The typed name sits at full ink and the "Untitled" prompt a
-                      // tier below it (.68), so an unnamed column is legible AS unnamed.
+                      // tier below it (.68), so an unnamed lane is legible AS unnamed.
                       // Both tiers are legal; the two must never be the same one (#220).
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[0.65rem] font-medium tracking-[0.14em] text-mn-text uppercase outline-none placeholder:text-mn-text-secondary"
+                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[10.5px] font-medium tracking-[.1em] text-mn-text uppercase outline-none placeholder:text-mn-text-secondary"
                     />
                   ) : (
-                    <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
-                      {group.label}
+                    <span className="truncate">{group.label}</span>
+                  )}
+                  {columnEditable && (
+                    <span className="flex items-center opacity-0 transition-opacity group-hover/col:opacity-100 focus-within:opacity-100">
+                      <button
+                        type="button"
+                        aria-label={`Move ${group.label} left`}
+                        disabled={optIndex <= 0}
+                        onClick={() => group.id && moveColumn(group.id, 'left')}
+                        className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
+                      >
+                        {/* A chevron is a FUNCTIONAL mark, so it is hand-drawn at
+                            stroke-width 1.4 with round caps — `PROJECT_RULES` §
+                            Icons. A `‹` character is the expressive register and
+                            does not belong here. */}
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M7.5 3L4.5 6l3 3"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${group.label} right`}
+                        disabled={optIndex < 0 || optIndex >= optCount - 1}
+                        onClick={() => group.id && moveColumn(group.id, 'right')}
+                        className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M4.5 3l3 3-3 3"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
                     </span>
                   )}
                 </span>
-                {columnEditable && (
-                  <span className="flex items-center opacity-0 transition-opacity group-hover/col:opacity-100 focus-within:opacity-100">
-                    <button
-                      type="button"
-                      aria-label={`Move column left: ${group.label}`}
-                      disabled={optIndex <= 0}
-                      onClick={() => moveColumn(group.id as string, 'left')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path
-                          d="M7.5 3L4.5 6l3 3"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Move column right: ${group.label}`}
-                      disabled={optIndex < 0 || optIndex >= optCount - 1}
-                      onClick={() => moveColumn(group.id as string, 'right')}
-                      className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path
-                          d="M4.5 3l3 3-3 3"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </button>
-                  </span>
-                )}
-                <span className="text-[0.65rem] text-mn-text-secondary tabular-nums">
-                  {group.rows.length}
-                </span>
+                {/* The count INHERITS the head — 06.21's is a bare `<span>3</span>`
+                    with no font of its own. (`PondTemplate`'s `laneN` makes it mono
+                    at letterSpacing 0, but that is the miniature in a template
+                    preview card, not this.) */}
+                <span data-part="lane-n">{group.rows.length}</span>
               </header>
 
-              <ul className="space-y-2">
-                {group.rows.length === 0 && (
-                  <li className="py-1 text-xs text-mn-text-secondary/70">
-                    {editable ? 'Drop a card here' : 'Empty'}
-                  </li>
-                )}
-                {group.rows.map((row) => {
-                  const isDragging = drag?.active && drag.rowId === row.id
-                  return (
-                    <li
-                      key={row.id}
-                      // Click-to-preview (#64): a click on the card's passive body
-                      // opens its page preview; clicks on the card's own controls
-                      // (drag handle, title input, ×, ↗) stay theirs — the pure
-                      // filter decides. Keyboard access rides the ↗ button below.
-                      onClick={
-                        onOpenCard
-                          ? (e) => {
-                              if (shouldOpenCardFromClick(e.target)) onOpenCard(row.id)
-                            }
-                          : undefined
-                      }
-                      className={[
-                        'group/card relative flex items-start gap-1.5 rounded-mn-row bg-mn-card px-2 py-2 shadow-mn-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:shadow-mn-md motion-reduce:transition-none',
-                        isDragging ? 'opacity-30' : '',
-                        onOpenCard ? 'cursor-pointer' : '',
-                      ].join(' ')}
-                    >
+              {group.rows.map((row) => {
+                const isDragging = drag?.active && drag.rowId === row.id
+                return (
+                  <article
+                    key={row.id}
+                    data-part="card"
+                    // Click-to-preview (#64): a click on the card's passive body
+                    // opens its page preview; clicks on the card's own controls
+                    // (drag handle, title input, ↗) stay theirs — the pure filter
+                    // decides. Keyboard access rides the ↗ button below.
+                    onClick={
+                      onOpenCard
+                        ? (e) => {
+                            if (shouldOpenCardFromClick(e.target)) onOpenCard(row.id)
+                          }
+                        : undefined
+                    }
+                    // The board's card: card paper at radius 12, 10/11, gap 7, and
+                    // a TWO-LAYER shadow that matches no token — written out per
+                    // AGENTS.md rather than snapped to `--mn-shadow-card`, whose
+                    // second layer is `0 8px 24px` against this one's `0 2px 8px`.
+                    className={[
+                      // `group/card`: the ↗ reveals on THIS card's hover. Keyed to
+                      // the lane instead, hovering anywhere revealed it on every
+                      // card in the lane at once.
+                      'group/card flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
+                      // Both themes: the board's warm light shadow is invisible on
+                      // the dark ground, so the ink recipe is supplied the way every
+                      // other raw shadow in the repo does (`chart/card.tsx`).
+                      'shadow-[0_1px_2px_rgba(40,34,24,.06),0_2px_8px_rgba(40,34,24,.05)]',
+                      'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
+                      'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      isDragging ? 'opacity-30' : '',
+                      onOpenCard ? 'cursor-pointer' : '',
+                    ].join(' ')}
+                  >
+                    <div className="flex items-start gap-1.5">
                       {editable && (
                         <button
                           type="button"
                           aria-label={`Drag card: ${row.title || 'untitled'}`}
                           onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          className="mt-0.5 cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
+                          className="cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
                         >
                           ⠿
                         </button>
@@ -808,19 +929,11 @@ function CollectionBoard({
                             placeholder="Untitled"
                             autoFocus={row.id === focusRowId}
                             onChange={(e) => onRenameRow(row.id, e.target.value)}
-                            // Leave room for the hover delete × so a long title never slides under it.
-                            className="w-full border-0 bg-transparent p-0 pr-4 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
+                            className="w-full border-0 bg-transparent p-0 pr-4 text-[13.5px] leading-[1.35] text-mn-text outline-none placeholder:text-mn-text-secondary"
                           />
                         ) : (
-                          <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
-                        )}
-                        {chipDefs.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {chipDefs.map((def) => {
-                              const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
-                              if (!opt) return null
-                              return <OptionChip key={def.id} label={opt.label} color={opt.color} />
-                            })}
+                          <div className="text-[13.5px] leading-[1.35] text-mn-text">
+                            {row.title || 'Untitled'}
                           </div>
                         )}
                       </div>
@@ -832,38 +945,59 @@ function CollectionBoard({
                           aria-label={`Open card: ${row.title || 'untitled'}`}
                           title="Preview page"
                           onClick={() => onOpenCard(row.id)}
-                          className="mt-0.5 shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
+                          className="shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ↗
                         </button>
                       )}
-                    </li>
-                  )
-                })}
-              </ul>
+                    </div>
+                    {chipDefs.length > 0 && (
+                      // The board's meta row: wrapping, gap 4/10, 500 at 11px on
+                      // the .8 ink tier — a row of facts, not a stack of chips.
+                      <div
+                        data-part="card-meta"
+                        className="flex flex-wrap gap-x-[10px] gap-y-[4px] text-[11px] font-medium text-mn-text-meta"
+                      >
+                        {chipDefs.map((def) => {
+                          const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
+                          if (!opt) return null
+                          return <OptionChip key={def.id} label={opt.label} color={opt.color} />
+                        })}
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
 
+              {/* `6i`… no: 06.21 — "The last line of every lane is ＋ task." It is a
+                  line INSIDE the lane, after the cards, not a button beside it.
+                  Pond's word for a row in a database is `record`; the board says
+                  `task` because its records are tasks. */}
               {editable && onAddRow && (
                 <button
                   type="button"
+                  data-part="lane-add"
                   onClick={() => addCard(group.id)}
-                  className="mt-2 w-full rounded-mn-row px-2 py-1 text-left text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
+                  className="rounded-[8px] p-[4px] text-left text-[11px] font-medium text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
                 >
-                  + Add card
+                  ＋ record
                 </button>
               )}
             </section>
           )
         })}
 
-        {/* Trailing "+ Add column" — appends a new option to the group-by property
-            and focuses its header for naming (board-authoring Slice 4). */}
+        {/* Trailing `+ lane` — appends a new option to the group-by property and
+            focuses its header for naming (board-authoring Slice 4). It takes a
+            lane's column so the grid stays even. */}
         {canEditColumns && (
           <button
             type="button"
             onClick={addColumn}
-            className="min-w-[9rem] shrink-0 self-start rounded-mn-inner border border-dashed border-mn-hair px-3 py-2 text-left text-xs text-mn-text-secondary transition-colors hover:border-mn-text hover:bg-mn-wash hover:text-mn-text"
+            data-part="add-lane"
+            className="flex min-h-[380px] items-start rounded-[16px] border border-dashed border-mn-hair p-[7px] text-left text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase transition-colors hover:border-mn-text hover:text-mn-text"
           >
-            + Add column
+            ＋ lane
           </button>
         )}
       </div>
@@ -871,11 +1005,13 @@ function CollectionBoard({
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-mn-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
+          className="pointer-events-none fixed z-50 w-52 -rotate-[0.6deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-mn-lg motion-reduce:rotate-none"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
-          <div className="font-medium text-mn-text">{draggingRow.title || 'Untitled'}</div>
+          <div className="text-[13.5px] leading-[1.35] text-mn-text">
+            {draggingRow.title || 'Untitled'}
+          </div>
         </div>
       )}
     </div>

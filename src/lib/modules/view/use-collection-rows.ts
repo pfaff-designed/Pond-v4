@@ -50,6 +50,8 @@ export interface CollectionData {
   schema: PropertySchema | null
   /** The row children reduced to id + title + value map, in `order`. */
   rows: CollectionRow[]
+  /** The collection page's own title — `9w`'s head row names the database. */
+  collectionName: string
   /** True until BOTH the schema page and the rows have first resolved. */
   isLoading: boolean
   /**
@@ -249,6 +251,8 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
   return {
     schema,
     rows,
+    /** The collection page's own title — `9w`'s head row names the database. */
+    collectionName: page?.title ?? '',
     isLoading: !!collectionId && (pagePending || rowsPending),
     isError: !!collectionId && (pageError || rowsError),
     setValue,
