@@ -16,7 +16,8 @@ import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
-import { DiffRow } from '@/components/atoms/DiffRow'
+import { PondMolecule } from '@/components/molecules/PondMolecule'
+import { DIFF_LINE_CLASS } from '@/components/molecules/diff-line-class'
 import { Button } from '@/components/ui/button'
 import { proposalButtonClass } from '@/components/molecules/ProposalActions'
 
@@ -28,9 +29,9 @@ export function ChangeRows({ change }: { change: ChangePreview }) {
   if (op === 'remove') {
     if (!before) return null
     return (
-      <DiffRow kind="remove">
+      <PondMolecule kind="diff-line" variant="remove" className={DIFF_LINE_CLASS}>
         <ModuleView type={before.type} data={before} />
-      </DiffRow>
+      </PondMolecule>
     )
   }
   // create / edit both end in a proposed `after`.
@@ -48,15 +49,15 @@ export function ChangeRows({ change }: { change: ChangePreview }) {
 
   // Fallback (and the type-morph case): each side through ModuleView.
   return (
-    <div className="space-y-[3px]">
+    <div className="flex flex-col gap-[3px]">
       {op === 'edit' && before && (
-        <DiffRow kind="remove">
+        <PondMolecule kind="diff-line" variant="remove" className={DIFF_LINE_CLASS}>
           <ModuleView type={before.type} data={before} />
-        </DiffRow>
+        </PondMolecule>
       )}
-      <DiffRow kind="add">
+      <PondMolecule kind="diff-line" variant="add" className={DIFF_LINE_CLASS}>
         <ModuleView type={after.type} data={after} />
-      </DiffRow>
+      </PondMolecule>
     </div>
   )
 }
@@ -93,7 +94,7 @@ export function NoteBox({
   return (
     <div
       data-part="note-box"
-      className="mx-3 mb-3 flex flex-col gap-2 rounded-[10px] bg-background px-[11px] py-[10px] shadow-[inset_0_0_0_1px_var(--mn-text)]"
+      className="flex flex-col gap-2 rounded-[10px] bg-background px-[11px] py-[10px] shadow-[inset_0_0_0_1px_var(--mn-text)]"
     >
       <span className="font-mono text-[10.5px] lowercase text-mn-text-secondary">to pond</span>
       <textarea

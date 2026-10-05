@@ -152,7 +152,6 @@ describe('globals.css — red is diff removals only', () => {
 describe('source sweep — red appears only where a diff removal is drawn', () => {
   const RED_OWNERS = [
     'src/app/globals.css',
-    'src/components/atoms/DiffRow.tsx',
     'src/components/molecules/PondMolecule.tsx',
   ]
 

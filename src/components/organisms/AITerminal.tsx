@@ -24,6 +24,7 @@ import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
+  TOGGLE_COMPOSER_EVENT,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
@@ -39,7 +40,7 @@ import {
   type PageProposal,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
-import { machineEyebrowClass } from '@/components/atoms/kicker'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
@@ -73,6 +74,9 @@ import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
+import { EarlierTurns, ThreadHead, Turn, YouRow } from '@/components/molecules/ComposerThread'
+import { foldedTurnCount, groupTurns } from '@/lib/conversation/turns'
+import { areaOf } from '@/lib/pages/crumbs'
 import { ComposerLine } from '@/components/molecules/ComposerLine'
 import { Markdown } from '@/components/molecules/Markdown'
 import { StageText } from '@/components/molecules/StageText'
@@ -148,27 +152,6 @@ const CHAT_COMMANDS: SlashRow[] = [
   { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
   { id: 'save', label: '/save', description: 'save the thread to a page' },
 ]
-
-// Remembered collapse (ticket-24).
-const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
-
-// Tiny persisted-state helpers: localStorage can throw (privacy modes, quota),
-// and the composer must degrade to defaults rather than crash.
-function readStored(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writeStored(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    /* ignore persistence failures */
-  }
-}
 
 /** A propose_changes tool part — the generalized composition batch (t16 Phase 5).
  *  `targetPageId` (ticket-30) names a page OTHER than the open one to edit. */
@@ -735,24 +718,32 @@ export function AITerminal() {
 
   const handleAttachClick = useCallback(() => attachInputRef.current?.click(), [])
 
-  // ── Collapse (ticket-24) ───────────────────────────────────────────────────
+  // ── Collapse (KAN-62) ──────────────────────────────────────────────────────
   // The card is as tall as its content and publishes its real footprint to the
-  // shell (TerminalDrawer), so what's being read can always scroll clear. Only
-  // the collapse is remembered across sessions.
+  // shell (TerminalDrawer), so what's being read can always scroll clear. Collapse
+  // is the session's alone — `PondComposer` draws no remembered state, so the
+  // composer opens expanded every time. ⌘J, Esc and the thread head's × take it to
+  // the tab; the tab, ⌘J and any request for the input bring it back.
   const [isCollapsed, setIsCollapsed] = useState(false)
-  // Restore the persisted collapse on mount. Client-only by design: reading
-  // localStorage during SSR/hydration would mismatch the server markup.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
-    setIsCollapsed(readStored(TERMINAL_COLLAPSED_KEY) === '1')
-  }, [])
-  const toggleCollapsed = useCallback(() => {
-    setIsCollapsed((prev) => {
-      const next = !prev
-      writeStored(TERMINAL_COLLAPSED_KEY, next ? '1' : '0')
-      return next
-    })
-  }, [])
+  // The thread whose earlier turns have been opened (`N earlier turns`), named by
+  // its first message — so a fresh thread folds again without anyone resetting it.
+  const [earlierOpenFrom, setEarlierOpenFrom] = useState<string | null>(null)
+  // The last answer that had finished arriving. The tab reports `pond answered`
+  // when this has moved on since the composer was closed.
+  const lastSettledAnswerId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role !== 'assistant') continue
+      if (i === messages.length - 1 && isStreaming) continue
+      return messages[i].id
+    }
+    return null
+  }, [messages, isStreaming])
+  const [answerSeenAtCollapse, setAnswerSeenAtCollapse] = useState<string | null>(null)
+  const collapseComposer = useCallback(() => {
+    setAnswerSeenAtCollapse(lastSettledAnswerId)
+    setIsCollapsed(true)
+  }, [lastSettledAnswerId])
+  const handleExpand = useCallback(() => setIsCollapsed(false), [])
 
   // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
   // Robustness (ticket-24): a *collapsed* input is unmounted, so a synchronous
@@ -784,10 +775,7 @@ export function AITerminal() {
       // never overwritten (there is no undo for it); the question still gets focus.
       const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
       if (text) setInput((prev) => (prev.trim() ? prev : text))
-      setIsCollapsed((prev) => {
-        if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
-        return false
-      })
+      setIsCollapsed(false)
       focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
@@ -970,9 +958,34 @@ export function AITerminal() {
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
   // Force the composer open while a proposal needs review — a hidden decision is
-  // worse than a tall card. Derived (not an effect): the user's stored collapse
-  // preference is untouched, so it re-applies once the proposal resolves.
+  // worse than a tall card. Derived (not an effect): the person's collapse is
+  // untouched, so it re-applies once the proposal resolves.
   const effectiveCollapsed = isCollapsed && !hasUnresolvedProposal
+  const answerLanded =
+    effectiveCollapsed &&
+    lastSettledAnswerId !== null &&
+    lastSettledAnswerId !== answerSeenAtCollapse
+
+  // ⌘J (ShellCommands owns the key; this is the answer to it): closed → open and
+  // into the input; open → closed. While a proposal is open the composer is held
+  // open, so the key only returns focus to the input rather than queueing a close
+  // that would fire when the card resolves.
+  useEffect(() => {
+    function onToggleRequest() {
+      if (effectiveCollapsed) {
+        setIsCollapsed(false)
+        focusInputSoon()
+        return
+      }
+      if (hasUnresolvedProposal) {
+        focusInputSoon()
+        return
+      }
+      collapseComposer()
+    }
+    window.addEventListener(TOGGLE_COMPOSER_EVENT, onToggleRequest)
+    return () => window.removeEventListener(TOGGLE_COMPOSER_EVENT, onToggleRequest)
+  }, [effectiveCollapsed, hasUnresolvedProposal, collapseComposer, focusInputSoon])
 
   // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the composer
   // finished uncollapsing). Runs after the commit that mounts the textarea.
@@ -1197,10 +1210,9 @@ export function AITerminal() {
         target.blur()
         return
       }
-      setIsCollapsed(true)
-      writeStored(TERMINAL_COLLAPSED_KEY, '1')
+      collapseComposer()
     },
-    [isStreaming, stop]
+    [isStreaming, stop, collapseComposer]
   )
 
   // Open the thread at a message (#97): a page's made-from chip asks for the
@@ -1209,10 +1221,7 @@ export function AITerminal() {
   useEffect(() => {
     function onOpenThreadMessage(e: Event) {
       const { messageId } = (e as CustomEvent<OpenThreadMessageDetail>).detail ?? {}
-      setIsCollapsed((prev) => {
-        if (prev) writeStored(TERMINAL_COLLAPSED_KEY, '0')
-        return false
-      })
+      setIsCollapsed(false)
       requestAnimationFrame(() => {
         const el = messageId
           ? document.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
@@ -1967,612 +1976,613 @@ export function AITerminal() {
   }
   const lastQuestion = questionBefore(messages.length)
 
-  const messagesBody = messages.length > 0 && (
-    <div
-      className="max-h-[calc(100dvh-14rem)] min-h-0 overflow-y-auto"
-      onKeyDown={handleBodyKeyDown}
-    >
-      <div className="w-full space-y-5 px-1.5">
-        {messages.map((message, messageIndex) => {
-          const text = message.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { type: 'text'; text: string }).text)
-            .join('')
-          const isLastAssistant = messageIndex === lastAssistantIndex
-          const answerStreaming = isLastAssistant && isStreaming
-          const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
-          const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
-          // S8: what Pond read before this answer, taken from the STAMP written when
-          // the answer landed (never recomputed from live navigation — see the
-          // stamping effect above). Only an answer still arriving has no stamp yet,
-          // and that one row is live by definition.
-          const read =
-            message.role === 'assistant'
-              ? (readStamp(message.metadata) ??
-                readChips({
-                  contextLabel,
-                  parts: message.parts as ReadPartLike[],
-                  resolvePageName,
-                }))
-              : []
-          const cardsForMessage = Object.values(pageProposals).filter(
-            (p) => p.messageId === message.id
-          )
-          const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
-          // Sent file attachments (#61): a user message's file parts render as
-          // inert chips (no remove — the message is already out).
-          const attachmentParts = (
-            message.parts as Array<{
-              type: string
-              url?: string
-              mediaType?: string
-              filename?: string
-            }>
-          ).filter((p) => p.type === 'file' && typeof p.url === 'string')
-          const changeBatches = (message.parts as Array<{ type: string }>).filter(
-            isProposeChangesPart
-          )
-          const createPageParts = (message.parts as Array<{ type: string }>).filter(
-            isCreatePagePart
-          )
-          const defineSchemaParts = (message.parts as Array<{ type: string }>).filter(
-            isDefineSchemaPart
-          )
-          const addRowParts = (message.parts as Array<{ type: string }>).filter(isAddRowPart)
-          const promoteTableParts = (message.parts as Array<{ type: string }>).filter(
-            isPromoteTablePart
-          )
-          const configureViewParts = (message.parts as Array<{ type: string }>).filter(
-            isConfigureViewPart
-          )
-          const linkRecordsParts = (message.parts as Array<{ type: string }>).filter(
-            isLinkRecordsPart
-          )
-          // Ticket-39: branch-pause question cards + follow-up chips, both client-
-          // resolved tool parts on the assistant message.
-          const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
-          const followupParts = (message.parts as Array<{ type: string }>).filter(
-            isSuggestFollowupsPart
-          )
-          // Web-search citations (ticket-29): the route streams `source-url` parts for
-          // each cited result; collect them so the answer carries a Sources row.
-          const sources: Source[] = (
-            message.parts as Array<{
-              type: string
-              sourceId?: string
-              url?: string
-              title?: string
-            }>
-          )
-            .filter((p) => p.type === 'source-url' && typeof p.url === 'string')
-            .map((p, i) => ({
-              sourceId: p.sourceId ?? `${message.id}-src-${i}`,
-              url: p.url!,
-              title: p.title,
-            }))
-          // #98 — one diff card per propose_changes batch ("one card per page
-          // touched"), decided as a whole. While the tool input is still
-          // streaming, `part.input` is partially parsed JSON — block payloads can
-          // be missing required fields, and the module views render them
-          // unvalidated — so a streaming batch waits for its complete input.
-          const batchById = new Map<string, ModuleChange[]>()
-          const diffCards: ProposalGroupCard[] = []
-          for (const part of changeBatches) {
-            if (part.state === 'input-streaming') continue
-            const rawChanges = part.input?.changes ?? []
-            batchById.set(part.toolCallId, rawChanges)
-            // The stamped target (ticket-30): `crossPage` is set when the batch
-            // resolved to a real page other than the open one, and the diff is
-            // read against THAT page's blocks.
-            const target = changeTargets[part.toolCallId]
-            const targetMissing = target?.missing === true
-            const crossPage = target && !targetMissing && target.nodeId !== nodeId ? target : null
-            const targetBlocks = crossPage
-              ? (blocksForTarget.get(crossPage.nodeId) ?? [])
-              : (currentPage?.blocks ?? [])
-            diffCards.push({
-              id: part.toolCallId,
-              changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
-              status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
-              targetName: target?.nodeName || contextLabel,
-              targetMissing,
-              onOpenTarget: crossPage ? () => openTargetPage(crossPage) : undefined,
-              note: changeNotes[part.toolCallId],
-              revised: !!revisions[part.toolCallId],
-              skippedCount: changeSkipped[part.toolCallId] ?? 0,
-              skippedReasons: changeSkipReasons[part.toolCallId] ?? [],
-            })
-          }
-          const allIndices = (id: string) => (batchById.get(id) ?? []).map((_, i) => i)
-          const pendingDiffIds = diffCards.filter((c) => c.status === 'pending').map((c) => c.id)
-          // A request-changes note renders under its card (from the envelope),
-          // not as a second "you" line in the thread.
-          const isRequestChangesNote =
-            message.role === 'user' &&
-            !!(message.metadata as { requestChanges?: unknown } | undefined)?.requestChanges
+  const renderMessage = (message: (typeof messages)[number], messageIndex: number) => {
+    const text = message.parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as { type: 'text'; text: string }).text)
+      .join('')
+    const isLastAssistant = messageIndex === lastAssistantIndex
+    const answerStreaming = isLastAssistant && isStreaming
+    const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
+    const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
+    // S8: what Pond read before this answer, taken from the STAMP written when
+    // the answer landed (never recomputed from live navigation — see the
+    // stamping effect above). Only an answer still arriving has no stamp yet,
+    // and that one row is live by definition.
+    const read =
+      message.role === 'assistant'
+        ? (readStamp(message.metadata) ??
+          readChips({
+            contextLabel,
+            parts: message.parts as ReadPartLike[],
+            resolvePageName,
+          }))
+        : []
+    const cardsForMessage = Object.values(pageProposals).filter((p) => p.messageId === message.id)
+    const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
+    // Sent file attachments (#61): a user message's file parts render as
+    // inert chips (no remove — the message is already out).
+    const attachmentParts = (
+      message.parts as Array<{
+        type: string
+        url?: string
+        mediaType?: string
+        filename?: string
+      }>
+    ).filter((p) => p.type === 'file' && typeof p.url === 'string')
+    const changeBatches = (message.parts as Array<{ type: string }>).filter(isProposeChangesPart)
+    const createPageParts = (message.parts as Array<{ type: string }>).filter(isCreatePagePart)
+    const defineSchemaParts = (message.parts as Array<{ type: string }>).filter(isDefineSchemaPart)
+    const addRowParts = (message.parts as Array<{ type: string }>).filter(isAddRowPart)
+    const promoteTableParts = (message.parts as Array<{ type: string }>).filter(isPromoteTablePart)
+    const configureViewParts = (message.parts as Array<{ type: string }>).filter(
+      isConfigureViewPart
+    )
+    const linkRecordsParts = (message.parts as Array<{ type: string }>).filter(isLinkRecordsPart)
+    // Ticket-39: branch-pause question cards + follow-up chips, both client-
+    // resolved tool parts on the assistant message.
+    const questionParts = (message.parts as Array<{ type: string }>).filter(isAskQuestionPart)
+    const followupParts = (message.parts as Array<{ type: string }>).filter(isSuggestFollowupsPart)
+    // Web-search citations (ticket-29): the route streams `source-url` parts for
+    // each cited result; collect them so the answer carries a Sources row.
+    const sources: Source[] = (
+      message.parts as Array<{
+        type: string
+        sourceId?: string
+        url?: string
+        title?: string
+      }>
+    )
+      .filter((p) => p.type === 'source-url' && typeof p.url === 'string')
+      .map((p, i) => ({
+        sourceId: p.sourceId ?? `${message.id}-src-${i}`,
+        url: p.url!,
+        title: p.title,
+      }))
+    // #98 — one diff card per propose_changes batch ("one card per page
+    // touched"), decided as a whole. While the tool input is still
+    // streaming, `part.input` is partially parsed JSON — block payloads can
+    // be missing required fields, and the module views render them
+    // unvalidated — so a streaming batch waits for its complete input.
+    const batchById = new Map<string, ModuleChange[]>()
+    const diffCards: ProposalGroupCard[] = []
+    for (const part of changeBatches) {
+      if (part.state === 'input-streaming') continue
+      const rawChanges = part.input?.changes ?? []
+      batchById.set(part.toolCallId, rawChanges)
+      // The stamped target (ticket-30): `crossPage` is set when the batch
+      // resolved to a real page other than the open one, and the diff is
+      // read against THAT page's blocks.
+      const target = changeTargets[part.toolCallId]
+      const targetMissing = target?.missing === true
+      const crossPage = target && !targetMissing && target.nodeId !== nodeId ? target : null
+      const targetBlocks = crossPage
+        ? (blocksForTarget.get(crossPage.nodeId) ?? [])
+        : (currentPage?.blocks ?? [])
+      diffCards.push({
+        id: part.toolCallId,
+        changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
+        status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
+        targetName: target?.nodeName || contextLabel,
+        targetMissing,
+        onOpenTarget: crossPage ? () => openTargetPage(crossPage) : undefined,
+        note: changeNotes[part.toolCallId],
+        revised: !!revisions[part.toolCallId],
+        skippedCount: changeSkipped[part.toolCallId] ?? 0,
+        skippedReasons: changeSkipReasons[part.toolCallId] ?? [],
+      })
+    }
+    const allIndices = (id: string) => (batchById.get(id) ?? []).map((_, i) => i)
+    const pendingDiffIds = diffCards.filter((c) => c.status === 'pending').map((c) => c.id)
+    // A request-changes note renders under its card (from the envelope),
+    // not as a second "you" line in the thread.
+    const isRequestChangesNote =
+      message.role === 'user' &&
+      !!(message.metadata as { requestChanges?: unknown } | undefined)?.requestChanges
 
-          return (
-            <div key={message.id} data-message-id={message.id} className="space-y-3">
-              {message.role === 'user' && attachmentParts.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {attachmentParts.map((p, i) => (
-                    <FileAttachmentChip
-                      key={`${message.id}-file-${i}`}
-                      filename={p.filename ?? 'attachment'}
-                      url={p.url!}
-                      mediaType={p.mediaType ?? ''}
-                    />
-                  ))}
-                </div>
-              )}
-              {text &&
-                !isRequestChangesNote &&
-                (message.role === 'user' ? (
-                  // The question sits in mono (`Pond 06.01` 6a frame 2, PondComposer
-                  // `youRow`): "you" · the line · when it was said, 12.5px at ink .8,
-                  // the words themselves in full ink. The machine surface is lowercase
-                  // chrome, but the person's words keep their own case.
-                  <div
-                    data-part="you-row"
-                    className="flex items-baseline gap-1.5 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-meta"
-                  >
-                    <span className="font-medium lowercase">you</span>
-                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">
-                      {text}
-                    </span>
-                    {sentLabel && <span className="text-[10.5px]">{sentLabel}</span>}
-                  </div>
-                ) : (
-                  // The answer is Pond talking, not a page: the sans at reading scale
-                  // (13.5px / 1.55) under a "pond" eyebrow — never the serif, which is
-                  // for the page only (PROJECT_RULES "Where answers live"). Read chips
-                  // sit under every answer (S8). Arrives with one calm breath
-                  // (mn-arrive). Streaming-safe: `text` grows token-by-token and
-                  // react-markdown re-parses each partial (ticket-20); the caret shows
-                  // while this answer is still arriving.
-                  <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                    <span className={machineEyebrowClass}>pond</span>
-                    <div className="relative">
-                      <Markdown variant="answer">{text}</Markdown>
-                      {answerStreaming && (
-                        <span
-                          aria-hidden
-                          data-part="stream-caret"
-                          className="ml-[3px] inline-block h-[17px] w-[9px] translate-y-[2px] bg-mn-text/[0.22] align-baseline"
-                        />
-                      )}
-                    </div>
-                    {sources.length > 0 && <SourceList sources={sources} />}
-                    <ReadChips read={read} />
-                  </div>
-                ))}
-              {/* Sources can arrive on an assistant message with no text (rare, but the
+    return (
+      <div key={message.id} data-message-id={message.id} className="space-y-3">
+        {message.role === 'user' && attachmentParts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {attachmentParts.map((p, i) => (
+              <FileAttachmentChip
+                key={`${message.id}-file-${i}`}
+                filename={p.filename ?? 'attachment'}
+                url={p.url!}
+                mediaType={p.mediaType ?? ''}
+              />
+            ))}
+          </div>
+        )}
+        {text &&
+          !isRequestChangesNote &&
+          (message.role === 'user' ? (
+            <YouRow text={text} time={sentLabel} />
+          ) : (
+            // The answer is Pond talking, not a page: the sans at reading scale
+            // (15px / 1.6) under a "pond" eyebrow — never the serif, which is
+            // for the page only (PROJECT_RULES "Where answers live"). Read chips
+            // sit under every answer (S8). Arrives with one calm breath
+            // (mn-arrive). Streaming-safe: `text` grows token-by-token and
+            // react-markdown re-parses each partial (ticket-20); the caret shows
+            // while this answer is still arriving.
+            <div data-part="answer" className="mn-arrive flex flex-col gap-[7px]">
+              <span className={pageEyebrowClass}>pond</span>
+              <div className="relative">
+                <Markdown variant="answer">{text}</Markdown>
+                {answerStreaming && (
+                  <span
+                    aria-hidden
+                    data-part="stream-caret"
+                    className="ml-[3px] inline-block h-[17px] w-[9px] translate-y-[3px] bg-mn-text/[0.22] align-baseline"
+                  />
+                )}
+              </div>
+              {sources.length > 0 && <SourceList sources={sources} />}
+              <ReadChips read={read} />
+            </div>
+          ))}
+        {/* Sources can arrive on an assistant message with no text (rare, but the
                 citation should still show) — same attributed treatment. */}
-              {message.role !== 'user' && !text && sources.length > 0 && (
-                <div data-part="answer" className="mn-arrive flex flex-col gap-1.5">
-                  <span className={machineEyebrowClass}>pond</span>
-                  <SourceList sources={sources} />
-                  <ReadChips read={read} />
-                </div>
-              )}
-              {/* #97: the `new page — proposed` card(s) for this answer. A pending card
+        {message.role !== 'user' && !text && sources.length > 0 && (
+          <div data-part="answer" className="mn-arrive flex flex-col gap-[7px]">
+            <span className={pageEyebrowClass}>pond</span>
+            <SourceList sources={sources} />
+            <ReadChips read={read} />
+          </div>
+        )}
+        {/* #97: the `new page — proposed` card(s) for this answer. A pending card
                   is editable in place; make page is the only write; cancel returns
                   to the thread. Re-seeded pending cards (6d closing) render live. */}
-              {cardsForMessage.map((proposal) => (
-                <PageProposalCard
-                  key={proposal.id}
-                  className="mn-arrive"
-                  name={proposal.name}
-                  parentId={proposal.parentId}
-                  kind={proposal.kind}
-                  parentOptions={parentOptions}
-                  status={proposal.status}
-                  error={pageProposalErrors[proposal.id]}
-                  onNameChange={(name) => editPageProposal(proposal.id, { name })}
-                  onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
-                  onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
-                  onMakePage={() => void makePage(proposal.id)}
-                  onCancel={() => cancelPageProposal(proposal.id)}
-                  onOpenPage={proposal.pageId ? () => openMadePage(proposal) : undefined}
-                />
-              ))}
-              {/* The actions under the latest answer (6a frames 2–3): make this a
+        {cardsForMessage.map((proposal) => (
+          <PageProposalCard
+            key={proposal.id}
+            className="mn-arrive"
+            name={proposal.name}
+            parentId={proposal.parentId}
+            kind={proposal.kind}
+            parentOptions={parentOptions}
+            status={proposal.status}
+            error={pageProposalErrors[proposal.id]}
+            onNameChange={(name) => editPageProposal(proposal.id, { name })}
+            onParentChange={(parentId) => editPageProposal(proposal.id, { parentId })}
+            onKindChange={(kind) => editPageProposal(proposal.id, { kind })}
+            onMakePage={() => void makePage(proposal.id)}
+            onCancel={() => cancelPageProposal(proposal.id)}
+            onOpenPage={proposal.pageId ? () => openMadePage(proposal) : undefined}
+          />
+        ))}
+        {/* The actions under the latest answer (6a frames 2–3): make this a
                   page / ask again — or stop while it streams. Nothing else (W4). */}
-              {message.role === 'assistant' && isLastAssistant && (text || isStreaming) && (
-                <AnswerActions
-                  streaming={answerStreaming}
-                  canMakePage={!!text && !hasOpenCard}
-                  onMakePage={() => {
-                    const q = questionBefore(messageIndex)
-                    proposePage({
-                      messageId: message.id,
-                      question: q.text,
-                      askedAt: q.sentAt,
-                      prose: text,
-                      read,
-                    })
-                  }}
-                  onAskAgain={() => {
-                    // "ask again" asks the same question as a NEW turn; the earlier
-                    // answer stays in the thread (threads keep every answer).
-                    const q = questionBefore(messageIndex).text
-                    if (q && !isStreaming) sendText(q)
-                  }}
-                  onStop={stop}
-                />
-              )}
-              {diffCards.length > 0 && (
-                <div className="mn-arrive">
-                  <ProposalGroup
-                    cards={diffCards}
-                    onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
-                    onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
-                    onRequestChanges={(id, note) =>
-                      sendRequestChanges(id, allIndices(id).length, note, 'note')
-                    }
-                    onRevise={(id) =>
-                      sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
-                    }
-                    onAskAgain={() => {
-                      const q = questionBefore(messageIndex).text
-                      if (q && !isStreaming) sendText(q)
-                    }}
-                    onAcceptAll={() => {
-                      // Sequentially (#98 review). Each accept is a
-                      // read-modify-write of its target page's whole block
-                      // array, and two cards in one message can name the SAME
-                      // page — fired in parallel they both read the pre-write
-                      // blocks and the second save silently drops the first
-                      // batch. `writeAcceptedChanges` serialises per page as
-                      // well (the lock is the guarantee, since a second click
-                      // or another surface can race too); awaiting here also
-                      // keeps the toast receipts in card order.
-                      void (async () => {
-                        for (const id of pendingDiffIds) {
-                          await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
-                        }
-                      })()
-                    }}
-                    onRejectAll={() => {
-                      for (const id of pendingDiffIds) decideChanges(id, allIndices(id), 'rejected')
-                    }}
-                  />
-                </div>
-              )}
-              {createPageParts.map((part) => {
-                // Same streaming caveat as above: a partially-parsed `blocks` array
-                // crashes the block previews (e.g. TableView on undefined rows).
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                if (!input?.title || !input.type) return null
-                const status = createDecisions[part.toolCallId] ?? 'pending'
-                const selectedParentId =
-                  createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
-                return (
-                  <CreatePageProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    title={input.title}
-                    type={input.type}
-                    kind={input.kind}
-                    blocks={input.blocks ?? []}
-                    reason={input.reason}
-                    status={status}
-                    selectedParentId={selectedParentId}
-                    parentOptions={parentOptions}
-                    onParentChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'creates',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
-                    onReject={() => rejectCard('creates', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* define_schema proposal cards (#17 slice 5): turn an existing page
+        {message.role === 'assistant' && isLastAssistant && (text || isStreaming) && (
+          <AnswerActions
+            streaming={answerStreaming}
+            canMakePage={!!text && !hasOpenCard}
+            onMakePage={() => {
+              const q = questionBefore(messageIndex)
+              proposePage({
+                messageId: message.id,
+                question: q.text,
+                askedAt: q.sentAt,
+                prose: text,
+                read,
+              })
+            }}
+            onAskAgain={() => {
+              // "ask again" asks the same question as a NEW turn; the earlier
+              // answer stays in the thread (threads keep every answer).
+              const q = questionBefore(messageIndex).text
+              if (q && !isStreaming) sendText(q)
+            }}
+            onStop={stop}
+          />
+        )}
+        {diffCards.length > 0 && (
+          <div className="mn-arrive">
+            <ProposalGroup
+              cards={diffCards}
+              onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
+              onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
+              onRequestChanges={(id, note) =>
+                sendRequestChanges(id, allIndices(id).length, note, 'note')
+              }
+              onRevise={(id) =>
+                sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
+              }
+              onAskAgain={() => {
+                const q = questionBefore(messageIndex).text
+                if (q && !isStreaming) sendText(q)
+              }}
+              onAcceptAll={() => {
+                // Sequentially (#98 review). Each accept is a
+                // read-modify-write of its target page's whole block
+                // array, and two cards in one message can name the SAME
+                // page — fired in parallel they both read the pre-write
+                // blocks and the second save silently drops the first
+                // batch. `writeAcceptedChanges` serialises per page as
+                // well (the lock is the guarantee, since a second click
+                // or another surface can race too); awaiting here also
+                // keeps the toast receipts in card order.
+                void (async () => {
+                  for (const id of pendingDiffIds) {
+                    await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                  }
+                })()
+              }}
+              onRejectAll={() => {
+                for (const id of pendingDiffIds) decideChanges(id, allIndices(id), 'rejected')
+              }}
+            />
+          </div>
+        )}
+        {createPageParts.map((part) => {
+          // Same streaming caveat as above: a partially-parsed `blocks` array
+          // crashes the block previews (e.g. TableView on undefined rows).
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          if (!input?.title || !input.type) return null
+          const status = createDecisions[part.toolCallId] ?? 'pending'
+          const selectedParentId =
+            createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
+          return (
+            <CreatePageProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              title={input.title}
+              type={input.type}
+              kind={input.kind}
+              blocks={input.blocks ?? []}
+              reason={input.reason}
+              status={status}
+              selectedParentId={selectedParentId}
+              parentOptions={parentOptions}
+              onParentChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'creates',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptCreatePage(part.toolCallId, input, selectedParentId)}
+              onReject={() => rejectCard('creates', part.toolCallId)}
+            />
+          )
+        })}
+        {/* define_schema proposal cards (#17 slice 5): turn an existing page
                   into a collection. Client-resolved; Accept writes the schema and
                   the decision rides the resolutions envelope so the card goes
                   inert and the model stops re-proposing. */}
-              {defineSchemaParts.map((part) => {
-                // Same streaming caveat as the other cards: a partially-parsed
-                // `properties` array would render an incomplete preview.
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                const properties = input?.properties ?? []
-                if (!input?.pageId || properties.length === 0) return null
-                const status = schemaDecisions[part.toolCallId] ?? 'pending'
-                const selectedTargetId = schemaTarget[part.toolCallId] ?? input.pageId
-                // #52 fix 1 — flag rollups whose relation won't resolve to a relation on
-                // the RESULTING collection (existing schema of the selected target + the
-                // proposed props), recomputed as the picker changes. Same test the accept
-                // path applies, so preview and receipt never disagree.
-                const targetSchema =
-                  readSchema(allPages.find((p) => p.id === selectedTargetId)?.props) ?? []
-                const unresolvableRollups = unresolvableRollupNames(properties, targetSchema)
-                return (
-                  <DefineSchemaProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    properties={properties}
-                    reason={input.reason}
-                    status={status}
-                    selectedTargetId={selectedTargetId}
-                    targetOptions={parentOptions}
-                    resolveTargetTitle={resolveTargetTitle}
-                    unresolvableRollups={unresolvableRollups}
-                    resolvedInertRollups={schemaInertRollups[part.toolCallId]}
-                    onTargetChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'schemas',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
-                    onReject={() => rejectCard('schemas', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* add_row proposal cards (#18): add a schema-bound row to an existing
+        {defineSchemaParts.map((part) => {
+          // Same streaming caveat as the other cards: a partially-parsed
+          // `properties` array would render an incomplete preview.
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          const properties = input?.properties ?? []
+          if (!input?.pageId || properties.length === 0) return null
+          const status = schemaDecisions[part.toolCallId] ?? 'pending'
+          const selectedTargetId = schemaTarget[part.toolCallId] ?? input.pageId
+          // #52 fix 1 — flag rollups whose relation won't resolve to a relation on
+          // the RESULTING collection (existing schema of the selected target + the
+          // proposed props), recomputed as the picker changes. Same test the accept
+          // path applies, so preview and receipt never disagree.
+          const targetSchema =
+            readSchema(allPages.find((p) => p.id === selectedTargetId)?.props) ?? []
+          const unresolvableRollups = unresolvableRollupNames(properties, targetSchema)
+          return (
+            <DefineSchemaProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              properties={properties}
+              reason={input.reason}
+              status={status}
+              selectedTargetId={selectedTargetId}
+              targetOptions={parentOptions}
+              resolveTargetTitle={resolveTargetTitle}
+              unresolvableRollups={unresolvableRollups}
+              resolvedInertRollups={schemaInertRollups[part.toolCallId]}
+              onTargetChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'schemas',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptDefineSchema(part.toolCallId, input, selectedTargetId)}
+              onReject={() => rejectCard('schemas', part.toolCallId)}
+            />
+          )
+        })}
+        {/* add_row proposal cards (#18): add a schema-bound row to an existing
                   collection. Client-resolved; Accept creates the row and the
                   decision rides the resolutions envelope so the card goes inert and
                   the model stops re-proposing. */}
-              {addRowParts.map((part) => {
-                // Same streaming caveat as the other cards: a partially-parsed
-                // `props` map would render an incomplete preview.
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                if (!input?.collectionId) return null
-                const status = rowDecisions[part.toolCallId] ?? 'pending'
-                const selectedTargetId = rowTarget[part.toolCallId] ?? input.collectionId
-                return (
-                  <AddRowProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    title={input.title}
-                    props={input.props ?? {}}
-                    reason={input.reason}
-                    status={status}
-                    selectedTargetId={selectedTargetId}
-                    targetOptions={collectionOptions}
-                    onTargetChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'rows',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
-                    onReject={() => rejectCard('rows', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* promote_table proposal cards (#29): CONVERT an existing freeform
+        {addRowParts.map((part) => {
+          // Same streaming caveat as the other cards: a partially-parsed
+          // `props` map would render an incomplete preview.
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          if (!input?.collectionId) return null
+          const status = rowDecisions[part.toolCallId] ?? 'pending'
+          const selectedTargetId = rowTarget[part.toolCallId] ?? input.collectionId
+          return (
+            <AddRowProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              title={input.title}
+              props={input.props ?? {}}
+              reason={input.reason}
+              status={status}
+              selectedTargetId={selectedTargetId}
+              targetOptions={collectionOptions}
+              onTargetChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'rows',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptAddRow(part.toolCallId, input, selectedTargetId)}
+              onReject={() => rejectCard('rows', part.toolCallId)}
+            />
+          )
+        })}
+        {/* promote_table proposal cards (#29): CONVERT an existing freeform
                   table block into a collection. Client-resolved; the preview columns
                   are inferred from the host page's table (read here, mirroring the
                   accept path). Accept writes and the decision rides the resolutions
                   envelope so the card goes inert and the model stops re-proposing. */}
-              {promoteTableParts.map((part) => {
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                if (!input?.pageId) return null
-                const status = promotionDecisions[part.toolCallId] ?? 'pending'
-                const selectedTargetId = promotionTarget[part.toolCallId] ?? input.pageId
-                // Preview from the SELECTED page's table (the AI's proposed block id
-                // only applies to its proposed page).
-                const targetPage = allPages.find((p) => p.id === selectedTargetId)
-                const livePreview = tablePromotionPreview(
-                  targetPage,
-                  selectedTargetId === input.pageId ? input.blockId : undefined
-                )
-                // Accepting replaces the table with a view, so the live preview then
-                // reads null — fall back to the snapshot frozen at accept time so the
-                // resolved card keeps its columns + "Table converted" line.
-                // The store keeps the frozen snapshot structurally (columns:
-                // readonly unknown[]) to stay React-free; it never inspects columns,
-                // so reading them back as the terminal's PromotedColumn[] is safe.
-                const preview =
-                  livePreview ??
-                  (promotionSnapshot[part.toolCallId] as
-                    | { columns: PromotedColumn[]; rowCount: number; tableTitle?: string }
-                    | undefined)
-                // No resolvable table AND no snapshot (still loading, or a stale/
-                // hallucinated id): hold the card back rather than show an empty one.
-                if (!preview) return null
-                return (
-                  <PromoteTableProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    tableTitle={preview.tableTitle}
-                    columns={preview.columns}
-                    rowCount={preview.rowCount}
-                    reason={input.reason}
-                    status={status}
-                    selectedTargetId={selectedTargetId}
-                    targetOptions={tableHostOptions}
-                    onTargetChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'promotions',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() =>
-                      acceptPromoteTable(part.toolCallId, input, selectedTargetId, preview)
-                    }
-                    onReject={() => rejectCard('promotions', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* configure_view proposal cards (#19 slice 5): SELECT a layout
+        {promoteTableParts.map((part) => {
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          if (!input?.pageId) return null
+          const status = promotionDecisions[part.toolCallId] ?? 'pending'
+          const selectedTargetId = promotionTarget[part.toolCallId] ?? input.pageId
+          // Preview from the SELECTED page's table (the AI's proposed block id
+          // only applies to its proposed page).
+          const targetPage = allPages.find((p) => p.id === selectedTargetId)
+          const livePreview = tablePromotionPreview(
+            targetPage,
+            selectedTargetId === input.pageId ? input.blockId : undefined
+          )
+          // Accepting replaces the table with a view, so the live preview then
+          // reads null — fall back to the snapshot frozen at accept time so the
+          // resolved card keeps its columns + "Table converted" line.
+          // The store keeps the frozen snapshot structurally (columns:
+          // readonly unknown[]) to stay React-free; it never inspects columns,
+          // so reading them back as the terminal's PromotedColumn[] is safe.
+          const preview =
+            livePreview ??
+            (promotionSnapshot[part.toolCallId] as
+              { columns: PromotedColumn[]; rowCount: number; tableTitle?: string } | undefined)
+          // No resolvable table AND no snapshot (still loading, or a stale/
+          // hallucinated id): hold the card back rather than show an empty one.
+          if (!preview) return null
+          return (
+            <PromoteTableProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              tableTitle={preview.tableTitle}
+              columns={preview.columns}
+              rowCount={preview.rowCount}
+              reason={input.reason}
+              status={status}
+              selectedTargetId={selectedTargetId}
+              targetOptions={tableHostOptions}
+              onTargetChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'promotions',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptPromoteTable(part.toolCallId, input, selectedTargetId, preview)}
+              onReject={() => rejectCard('promotions', part.toolCallId)}
+            />
+          )
+        })}
+        {/* configure_view proposal cards (#19 slice 5): SELECT a layout
                   (table/board/calendar/gallery) for an existing collection's rows,
                   optionally grouped/sorted/filtered. Client-resolved; Accept upserts
                   the view block and the decision rides the resolutions envelope so the
                   card goes inert and the model stops re-proposing. */}
-              {configureViewParts.map((part) => {
-                // Same streaming caveat as the other cards: a partially-parsed input
-                // would render an incomplete preview.
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                if (!input?.pageId || !input?.mode) return null
-                const status = viewDecisions[part.toolCallId] ?? 'pending'
-                // A LINKED view (#41) names ANOTHER collection to draw; pre-resolve
-                // that name to its id so the picker lands on it (and disambiguates a
-                // duplicate title). An inline view falls back to the proposed pageId.
-                const preResolvedTarget = input.targetCollection
-                  ? resolveCollectionByName(allPages, input.targetCollection)
-                  : null
-                const selectedTargetId =
-                  viewTarget[part.toolCallId] ?? preResolvedTarget ?? input.pageId
-                return (
-                  <ConfigureViewProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    mode={input.mode}
-                    groupBy={input.groupBy}
-                    sort={input.sort}
-                    filter={input.filter}
-                    chart={input.chart}
-                    bigNumber={input.bigNumber}
-                    reason={input.reason}
-                    status={status}
-                    replacedActiveView={viewReplaced[part.toolCallId] === true}
-                    selectedTargetId={selectedTargetId}
-                    targetOptions={collectionOptions}
-                    destinationLabel={input.targetCollection ? 'Draw rows from' : 'Configure on'}
-                    onTargetChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'views',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
-                    onReject={() => rejectCard('views', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* link_records proposal cards (#40): link EXISTING rows through an
+        {configureViewParts.map((part) => {
+          // Same streaming caveat as the other cards: a partially-parsed input
+          // would render an incomplete preview.
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          if (!input?.pageId || !input?.mode) return null
+          const status = viewDecisions[part.toolCallId] ?? 'pending'
+          // A LINKED view (#41) names ANOTHER collection to draw; pre-resolve
+          // that name to its id so the picker lands on it (and disambiguates a
+          // duplicate title). An inline view falls back to the proposed pageId.
+          const preResolvedTarget = input.targetCollection
+            ? resolveCollectionByName(allPages, input.targetCollection)
+            : null
+          const selectedTargetId = viewTarget[part.toolCallId] ?? preResolvedTarget ?? input.pageId
+          return (
+            <ConfigureViewProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              mode={input.mode}
+              groupBy={input.groupBy}
+              sort={input.sort}
+              filter={input.filter}
+              chart={input.chart}
+              bigNumber={input.bigNumber}
+              reason={input.reason}
+              status={status}
+              replacedActiveView={viewReplaced[part.toolCallId] === true}
+              selectedTargetId={selectedTargetId}
+              targetOptions={collectionOptions}
+              destinationLabel={input.targetCollection ? 'Draw rows from' : 'Configure on'}
+              onTargetChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'views',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptConfigureView(part.toolCallId, input, selectedTargetId)}
+              onReject={() => rejectCard('views', part.toolCallId)}
+            />
+          )
+        })}
+        {/* link_records proposal cards (#40): link EXISTING rows through an
                   existing relation, everything named by TITLE. Client-resolved;
                   Accept resolves titles→ids strictly and appends the links, and
                   the decision rides the resolutions envelope so the card goes
                   inert and the model stops re-proposing. */}
-              {linkRecordsParts.map((part) => {
-                // Same streaming caveat as the other cards: a partially-parsed
-                // toRows array would render an incomplete preview.
-                if (part.state === 'input-streaming') return null
-                const input = part.input
-                if (!input?.fromRow || !input?.relation || !input?.toRows?.length) return null
-                const status = linkDecisions[part.toolCallId] ?? 'pending'
-                // Pre-resolve the proposed source-collection NAME to its id so
-                // the picker lands on it (and disambiguates a duplicate title),
-                // exactly like a linked view's targetCollection.
-                const preResolvedTarget = input.fromCollection
-                  ? resolveCollectionByName(allPages, input.fromCollection)
-                  : null
-                const selectedTargetId = linkTarget[part.toolCallId] ?? preResolvedTarget ?? ''
-                return (
-                  <LinkRecordsProposalCard
-                    key={part.toolCallId}
-                    className="mn-arrive"
-                    fromRow={input.fromRow}
-                    relation={input.relation}
-                    toRows={input.toRows}
-                    reason={input.reason}
-                    error={linkErrors[part.toolCallId]}
-                    status={status}
-                    selectedTargetId={selectedTargetId}
-                    targetOptions={collectionOptions}
-                    onTargetChange={(id) =>
-                      dispatch({
-                        kind: 'pickDestination',
-                        type: 'links',
-                        id: part.toolCallId,
-                        destinationId: id,
-                      })
-                    }
-                    onAccept={() => acceptLinkRecords(part.toolCallId, input, selectedTargetId)}
-                    onReject={() => rejectCard('links', part.toolCallId)}
-                  />
-                )
-              })}
-              {/* Branch-pause question cards (ticket-39 §2): a decision that is the
-                  user's to make. Answering rides the resolutions envelope; an
-                  answered card renders inert. */}
-              {questionParts.map((part) => {
-                if (part.state === 'input-streaming') return null
-                const q = part.input
-                if (!q?.question || !Array.isArray(q.options) || q.options.length === 0) return null
-                return (
-                  <QuestionCard
-                    key={part.toolCallId}
-                    question={q.question}
-                    options={q.options}
-                    branch={q.branch}
-                    answer={questionAnswers[part.toolCallId]?.answer}
-                    onAnswer={(answer, via) => answerQuestion(part.toolCallId, answer, via)}
-                  />
-                )
-              })}
-              {/* Follow-up chips (ticket-39 §3): quiet suggestions below the reply;
-                  clicking one sends its text. Disabled mid-stream. */}
-              {followupParts.map((part) => {
-                if (part.state === 'input-streaming') return null
-                const chips = part.input?.suggestions ?? []
-                if (chips.length === 0) return null
-                return (
-                  <FollowupChips
-                    key={part.toolCallId}
-                    chips={chips}
-                    label="Next"
-                    disabled={isStreaming}
-                    onPick={handleChipPick}
-                  />
-                )
-              })}
-            </div>
+        {linkRecordsParts.map((part) => {
+          // Same streaming caveat as the other cards: a partially-parsed
+          // toRows array would render an incomplete preview.
+          if (part.state === 'input-streaming') return null
+          const input = part.input
+          if (!input?.fromRow || !input?.relation || !input?.toRows?.length) return null
+          const status = linkDecisions[part.toolCallId] ?? 'pending'
+          // Pre-resolve the proposed source-collection NAME to its id so
+          // the picker lands on it (and disambiguates a duplicate title),
+          // exactly like a linked view's targetCollection.
+          const preResolvedTarget = input.fromCollection
+            ? resolveCollectionByName(allPages, input.fromCollection)
+            : null
+          const selectedTargetId = linkTarget[part.toolCallId] ?? preResolvedTarget ?? ''
+          return (
+            <LinkRecordsProposalCard
+              key={part.toolCallId}
+              className="mn-arrive"
+              fromRow={input.fromRow}
+              relation={input.relation}
+              toRows={input.toRows}
+              reason={input.reason}
+              error={linkErrors[part.toolCallId]}
+              status={status}
+              selectedTargetId={selectedTargetId}
+              targetOptions={collectionOptions}
+              onTargetChange={(id) =>
+                dispatch({
+                  kind: 'pickDestination',
+                  type: 'links',
+                  id: part.toolCallId,
+                  destinationId: id,
+                })
+              }
+              onAccept={() => acceptLinkRecords(part.toolCallId, input, selectedTargetId)}
+              onReject={() => rejectCard('links', part.toolCallId)}
+            />
           )
         })}
-        {/* Stage line (ticket-32 + Fix-5/F10): shown while streaming whenever a tool
-            is still running — even after reply text has started arriving. A long tool
-            call (read_page, web_search) alongside growing text would otherwise look
-            stalled; the stage line stays until the tool part settles. Falls back to
-            THINKING_STAGE_TEXT while the model is working but no narratable tool is
-            active yet. */}
-        {isStreaming && lastAssistantHasActiveTool && (
-          <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
-        )}
-        {/* An error keeps nothing (6a frame 2; PondComposer `errRow`): the partial
-            answer was dropped above; say so and offer the question again. */}
-        {error && !isStreaming && (
-          <div
-            role="alert"
-            data-part="error-row"
-            className="flex flex-wrap items-center gap-2.5 font-mono text-[12px] lowercase tracking-[0.02em] text-mn-text-meta"
-          >
-            <span>pond couldn’t finish this answer. nothing was kept.</span>
-            {lastQuestion.text && (
-              <button
-                type="button"
-                onClick={() => sendText(lastQuestion.text)}
-                className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-[11px] text-mn-text-meta transition-colors hover:text-foreground"
-              >
-                ask again
-              </button>
-            )}
-          </div>
-        )}
-        <div ref={bottomRef} />
+        {/* Branch-pause question cards (ticket-39 §2): a decision that is the
+                  user's to make. Answering rides the resolutions envelope; an
+                  answered card renders inert. */}
+        {questionParts.map((part) => {
+          if (part.state === 'input-streaming') return null
+          const q = part.input
+          if (!q?.question || !Array.isArray(q.options) || q.options.length === 0) return null
+          return (
+            <QuestionCard
+              key={part.toolCallId}
+              question={q.question}
+              options={q.options}
+              branch={q.branch}
+              answer={questionAnswers[part.toolCallId]?.answer}
+              onAnswer={(answer, via) => answerQuestion(part.toolCallId, answer, via)}
+            />
+          )
+        })}
+        {/* Follow-up chips (ticket-39 §3): quiet suggestions below the reply;
+                  clicking one sends its text. Disabled mid-stream. */}
+        {followupParts.map((part) => {
+          if (part.state === 'input-streaming') return null
+          const chips = part.input?.suggestions ?? []
+          if (chips.length === 0) return null
+          return (
+            <FollowupChips
+              key={part.toolCallId}
+              chips={chips}
+              label="Next"
+              disabled={isStreaming}
+              onPick={handleChipPick}
+            />
+          )
+        })}
       </div>
-    </div>
+    )
+  }
+
+  const turns = groupTurns(messages)
+  const earlierOpen = earlierOpenFrom !== null && earlierOpenFrom === messages[0]?.id
+  const foldedCount = earlierOpen ? 0 : foldedTurnCount(turns.length)
+  const shownTurns = turns.slice(foldedCount)
+  const threadArea = (nodeId ? areaOf(allPages, nodeId) : null) ?? contextLabel
+
+  const messagesBody = messages.length > 0 && (
+    <>
+      {turns.length > 1 && (
+        <ThreadHead
+          area={threadArea}
+          turns={turns.length}
+          onNewThread={() => void handleClear()}
+          onClose={collapseComposer}
+        />
+      )}
+      <div
+        className="max-h-[calc(100dvh-14rem)] min-h-0 overflow-y-auto"
+        onKeyDown={handleBodyKeyDown}
+      >
+        <div className="flex w-full flex-col gap-[14px]">
+          {foldedCount > 0 && (
+            <EarlierTurns
+              count={foldedCount}
+              onExpand={() => setEarlierOpenFrom(messages[0]?.id ?? null)}
+            />
+          )}
+          {shownTurns.map((indices, shownIndex) => (
+            <Turn key={messages[indices[0]].id}>
+              {indices.map((index) => renderMessage(messages[index], index))}
+              {shownIndex === shownTurns.length - 1 && (
+                <>
+                  {/* Stage line (ticket-32 + Fix-5/F10): shown while streaming whenever a tool
+                  is still running — even after reply text has started arriving. A long tool
+                  call (read_page, web_search) alongside growing text would otherwise look
+                  stalled; the stage line stays until the tool part settles. Falls back to
+                  THINKING_STAGE_TEXT while the model is working but no narratable tool is
+                  active yet. */}
+                  {isStreaming && lastAssistantHasActiveTool && (
+                    <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+                  )}
+                  {/* An error keeps nothing (6a frame 2; PondComposer `errRow`): the partial
+                  answer was dropped above; say so and offer the question again. */}
+                  {error && !isStreaming && (
+                    <div
+                      role="alert"
+                      data-part="error-row"
+                      className="flex flex-wrap items-center gap-2.5 font-mono text-[12px] lowercase tracking-[0.02em] text-mn-text-meta"
+                    >
+                      <span>pond couldn’t finish this answer. nothing was kept.</span>
+                      {lastQuestion.text && (
+                        <button
+                          type="button"
+                          onClick={() => sendText(lastQuestion.text)}
+                          className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-[11px] text-mn-text-meta transition-colors hover:text-foreground"
+                        >
+                          ask again
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </Turn>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+    </>
   )
 
   // Send is off with nothing to send; mid-stream it is the stop square.
@@ -2681,7 +2691,8 @@ export function AITerminal() {
       <TextSelectionPopover onAsk={handleAskFromSelection} disabled={isStreaming} />
       <TerminalDrawer
         collapsed={effectiveCollapsed}
-        onToggleCollapsed={toggleCollapsed}
+        landed={answerLanded}
+        onExpand={handleExpand}
         footer={inputFooter}
       >
         {messagesBody}

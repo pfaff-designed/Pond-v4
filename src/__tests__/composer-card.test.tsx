@@ -1,12 +1,12 @@
 /**
- * The PondComposer card (KAN-61, `PondComposer.dc.html`, ADR 0011) as the app
+ * The PondComposer card (KAN-61/62, `PondComposer.dc.html`, ADR 0011) as the app
  * assembles it: the line, the ＋ and the send — and nothing the board does not
  * draw. The card's pixel values are pinned in `ComposerLine.stories`; this pins
  * the behaviour that rides on them.
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -54,6 +54,9 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { dissolveConversation } from '@/lib/conversation/client'
+import { requestComposerToggle } from '@/lib/terminal-focus'
 
 const renderTerminal = () =>
   render(
@@ -177,22 +180,151 @@ describe('the composer card — streaming', () => {
   })
 })
 
-describe('the composer card — collapse (held at its minimum until KAN-62)', () => {
-  it('a remembered collapse shows a bare tab, and the tab brings the card back', async () => {
+const turn = (n: number) => [
+  { id: `u${n}`, role: 'user', parts: [{ type: 'text', text: `question ${n}` }] },
+  { id: `a${n}`, role: 'assistant', parts: [{ type: 'text', text: `answer ${n}` }] },
+]
+const thread = (turns: number) => Array.from({ length: turns }, (_, i) => turn(i + 1)).flat()
+
+describe('the composer card — collapse is the session’s, and ⌘J is its key', () => {
+  it('opens expanded every time: nothing about the collapse is remembered', async () => {
     window.localStorage.setItem('pond:terminal-collapsed', '1')
     renderTerminal()
-
-    const tab = await screen.findByRole('button', { name: 'Expand terminal' })
-    expect(screen.queryByRole('textbox', { name: 'Message Pond' })).toBeNull()
-    fireEvent.click(tab)
-
     await waitReady()
-    expect(window.localStorage.getItem('pond:terminal-collapsed')).toBe('0')
+
+    act(() => requestComposerToggle())
+    await screen.findByRole('button', { name: 'Open composer' })
+    expect(window.localStorage.getItem('pond:terminal-collapsed')).toBe('1')
+    expect(window.localStorage.length).toBe(1)
+  })
+
+  it('⌘J closes the card to its tab, and brings it back with the line focused', async () => {
+    renderTerminal()
+    await waitReady()
+
+    act(() => requestComposerToggle())
+    expect(screen.queryByRole('textbox', { name: 'Message Pond' })).toBeNull()
+    expect(screen.getByText('⌘J')).toBeInTheDocument()
+
+    act(() => requestComposerToggle())
+    await waitReady()
+    await waitFor(() => expect(line()).toHaveFocus())
+  })
+
+  it('the tab brings the card back', async () => {
+    renderTerminal()
+    await waitReady()
+    act(() => requestComposerToggle())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
+    await waitReady()
+  })
+
+  it('esc from the body closes the card, without remembering it', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    fireEvent.keyDown(screen.getByText('answer 1'), { key: 'Escape' })
+    await screen.findByRole('button', { name: 'Open composer' })
+    expect(window.localStorage.getItem('pond:terminal-collapsed')).toBeNull()
+  })
+
+  it('the tab says “pond answered” when an answer finished while it was closed', async () => {
+    mockMessages = askedOnce
+    mockStatus = 'streaming'
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = (
+      <QueryClientProvider client={client}>
+        <AITerminal />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeTruthy())
+
+    act(() => requestComposerToggle())
+    expect(screen.queryByText('pond answered')).toBeNull()
+
+    mockMessages = thread(1)
+    mockStatus = 'ready'
+    rerender(tree)
+    expect(await screen.findByText('pond answered')).toBeInTheDocument()
+
+    // Opening it reads the answer; closing it again has nothing new to report.
+    fireEvent.click(screen.getByRole('button', { name: /Open composer/ }))
+    await waitReady()
+    act(() => requestComposerToggle())
+    expect(screen.queryByText('pond answered')).toBeNull()
   })
 
   it('no longer remembers a dragged height', async () => {
     renderTerminal()
     await waitReady()
     expect(window.localStorage.getItem('pond:terminal-height')).toBeNull()
+  })
+})
+
+describe('the composer card — the thread: head, fold, turns', () => {
+  const youRows = () => document.querySelectorAll('[data-part="you-row"]')
+
+  it('one turn draws no head — the head names a thread, not a question', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+    expect(document.querySelector('[data-part="thread-head"]')).toBeNull()
+    expect(document.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
+  })
+
+  it('names the thread and counts its turns; ✕ closes it and new thread clears it', async () => {
+    mockMessages = thread(2)
+    renderTerminal()
+    await waitReady()
+
+    const head = document.querySelector('[data-part="thread-head"]')!
+    expect(head).toHaveTextContent('thread · life')
+    expect(head).toHaveTextContent('2 turns')
+    expect(screen.queryByText(/earlier turn/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'new thread' }))
+    await waitFor(() => expect(dissolveConversation).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close composer' }))
+    expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
+  })
+
+  it('beyond three turns the earlier ones fold, and the fold opens them', async () => {
+    mockMessages = thread(5)
+    renderTerminal()
+    await waitReady()
+
+    expect(document.querySelector('[data-part="thread-head"]')).toHaveTextContent('5 turns')
+    expect(youRows()).toHaveLength(3)
+    expect(screen.queryByText('question 2')).toBeNull()
+    expect(screen.getByText('question 3')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '2 earlier turns' }))
+    expect(youRows()).toHaveLength(5)
+    expect(screen.queryByText(/earlier turn/)).toBeNull()
+  })
+
+  it('three turns fold nothing', async () => {
+    mockMessages = thread(3)
+    renderTerminal()
+    await waitReady()
+    expect(youRows()).toHaveLength(3)
+    expect(screen.queryByText(/earlier turn/)).toBeNull()
+  })
+
+  it('a turn holds the question and its answer under a “pond” eyebrow, in the sans', async () => {
+    mockMessages = thread(1)
+    renderTerminal()
+    await waitReady()
+
+    const turnEl = document.querySelector('[data-part="turn"]')!
+    expect(turnEl).toContainElement(screen.getByText('question 1'))
+    const answer = turnEl.querySelector('[data-part="answer"]')!
+    expect(within(answer as HTMLElement).getByText('pond').className).toBe(pageEyebrowClass)
+    // The answer voice itself (15px sans) is pinned in ComposerThread.stories.
+    expect(screen.getByText('answer 1')).toHaveAttribute('data-variant', 'answer')
   })
 })

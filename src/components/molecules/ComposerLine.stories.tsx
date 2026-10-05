@@ -36,7 +36,7 @@ const Composer = ({
     >
       <TerminalDrawer
         collapsed={false}
-        onToggleCollapsed={fn()}
+        onExpand={fn()}
         footer={
           <div className="flex flex-col gap-[14px]">
             <ComposerLine

@@ -8,6 +8,10 @@
  * raises a decoupled request (`lib/shell-commands`) that this organism answers.
  * ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key).
  *
+ * Also owns ⌘J, the composer's open/close key (`Pond 02` 2f): it asks, the composer
+ * answers (`requestComposerToggle`). Unlike ⌘K it is Cmd on Apple platforms and Ctrl
+ * elsewhere and never both, so Ctrl+J on a Mac is left to the browser.
+ *
  * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
  * open the New page dialog here: name-first, defaulting the destination to the
  * page in view, then landing in the editor. `ask pond about “q”` lands in the
@@ -19,7 +23,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
-import { requestTerminalFocus } from '@/lib/terminal-focus'
+import {
+  isComposerToggleKey,
+  requestComposerToggle,
+  requestTerminalFocus,
+} from '@/lib/terminal-focus'
 import { OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
@@ -94,6 +102,14 @@ export function ShellCommands() {
         e.preventDefault()
         e.stopPropagation()
         setPaletteOpen((prev) => !prev)
+        return
+      }
+      // "From anywhere" (2f), text fields included — the composer's own input is
+      // where ⌘J is most often pressed. Capture phase so an editor cannot swallow it.
+      if (isComposerToggleKey(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        requestComposerToggle()
       }
     }
     const openPalette = () => setPaletteOpen(true)

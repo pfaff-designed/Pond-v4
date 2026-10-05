@@ -51,7 +51,7 @@ export const READING_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[1.0625rem] leading
  */
 export const TERMINAL_PROSE_CLASS = `${PROSE_BASE_CLASS} text-[0.95rem] leading-[1.6]`
 
-/** The composer answer voice (#97) — the sans at 13.5px / 1.55, never the serif.
+/** The composer answer voice (#97) — the sans at 15px / 1.6, never the serif.
  *  Defined in markdown-answer.tsx; re-exported so the molecule stays the one import. */
 export { ANSWER_PROSE_CLASS } from './markdown-answer'
 

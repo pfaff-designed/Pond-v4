@@ -153,6 +153,9 @@ export interface PondMoleculeProps {
    * input sits in the value cell, so `PropertyInspector` renders the molecule
    * rather than restating its grid to edit a value — the same move as
    * `onTitleChange` on a list-row. Absent, the value atom draws as before.
+   *
+   * diff-line — a block's rendered content in place of the title string, so a
+   * proposed change shows the module itself, struck or not (the diff card).
    */
   children?: ReactNode
   className?: string
@@ -714,6 +717,7 @@ export function PondMolecule({
       <div
         data-kind={kind}
         data-state={state}
+        data-variant={variant}
         className={cn(
           'flex items-baseline gap-2.5 rounded-lg px-2.5 py-1 font-mono lowercase leading-[1.6]',
           mobile ? 'w-[330px] text-[12.5px]' : 'w-[380px] text-[11.5px]',
@@ -728,17 +732,17 @@ export function PondMolecule({
         >
           {removal ? '−' : '+'}
         </span>
-        <span
+        <div
           data-part="title"
           className={cn(
-            'min-w-0',
+            'min-w-0 flex-1',
             removal
               ? 'text-mn-text-secondary line-through decoration-mn-signal-removal'
               : 'text-mn-text'
           )}
         >
-          {displayTitle}
-        </span>
+          {children ?? displayTitle}
+        </div>
         {displayMeta !== '' && (
           <span data-part="meta" className={cellMeta}>
             {displayMeta}

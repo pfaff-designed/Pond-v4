@@ -451,12 +451,7 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
 
 function renderDrawer(over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {}) {
   return render(
-    <TerminalDrawer
-      collapsed={false}
-      onToggleCollapsed={jest.fn()}
-      footer={<div>footer</div>}
-      {...over}
-    >
+    <TerminalDrawer collapsed={false} onExpand={jest.fn()} footer={<div>footer</div>} {...over}>
       <div>body</div>
     </TerminalDrawer>
   )
@@ -502,12 +497,35 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(screen.queryByText(/context:/)).toBeNull()
   })
 
-  it('collapsed is a bare tab that brings the card back', () => {
-    const onToggleCollapsed = jest.fn()
-    renderDrawer({ collapsed: true, onToggleCollapsed })
+  it('collapsed is the tab: 30 high on the bottom edge, a pill with ⌘J, and it brings the card back', () => {
+    const onExpand = jest.fn()
+    renderDrawer({ collapsed: true, onExpand })
     expect(screen.queryByText('body')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Expand terminal' }))
-    expect(onToggleCollapsed).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('footer')).toBeNull()
+    const tab = screen.getByRole('region', { name: 'Pond terminal' })
+    const classes = tab.className.split(' ')
+    for (const cls of [
+      'mn-glass',
+      'h-[30px]',
+      'bottom-0',
+      'border-b-0',
+      'rounded-[14px_16px_0_0]',
+    ]) {
+      expect(classes).toContain(cls)
+    }
+    expect(classes).not.toContain('bottom-6')
+    expect(screen.getByText('⌘J')).toBeInTheDocument()
+    expect(screen.queryByText('pond answered')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
+    expect(onExpand).toHaveBeenCalledTimes(1)
+  })
+
+  it('landed adds the dot and “pond answered” to the pill — never a count or a badge', () => {
+    renderDrawer({ collapsed: true, landed: true })
+    expect(screen.getByText('pond answered')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /pond answered/ })).toBeInTheDocument()
+    const tab = screen.getByRole('region', { name: 'Pond terminal' })
+    expect(tab.querySelector('[data-part="landed-dot"]')).not.toBeNull()
   })
 })
 
@@ -521,12 +539,12 @@ describe('composer clearance — the card publishes its real footprint, the surf
     expect(composerClearancePadding()).toBe(`calc(var(${COMPOSER_CLEARANCE_VAR}, 125px) + 24px)`)
   })
 
-  function renderInShell() {
+  function renderInShell(collapsed = false) {
     const shell = document.createElement('div')
     shell.setAttribute('data-part', 'shell')
     document.body.appendChild(shell)
     const utils = render(
-      <TerminalDrawer collapsed={false} onToggleCollapsed={jest.fn()} footer={<div>footer</div>}>
+      <TerminalDrawer collapsed={collapsed} onExpand={jest.fn()} footer={<div>footer</div>}>
         <div>body</div>
       </TerminalDrawer>,
       { container: shell }
@@ -542,6 +560,13 @@ describe('composer clearance — the card publishes its real footprint, the surf
     // gone with the card — no stale clearance left on the shell
     unmount()
     expect(read()).toBe('')
+    height.mockRestore()
+  })
+
+  it('the collapsed tab sits on the edge, so it publishes its height with no inset', () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(30)
+    const { read } = renderInShell(true)
+    expect(read()).toBe('30px')
     height.mockRestore()
   })
 })

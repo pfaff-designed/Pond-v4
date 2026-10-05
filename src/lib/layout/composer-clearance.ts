@@ -18,9 +18,12 @@ export const COMPOSER_CLEARANCE_VAR = '--pond-composer-clearance'
 /** Air between a surface's last line and the composer's top edge, once scrolled to the end. */
 export const COMPOSER_CLEARANCE_GAP = 24
 
+/** The collapsed tab sits on the shell's bottom edge, with no inset below it. */
+export const COMPOSER_TAB_INSET = 0
+
 /** The footprint the card publishes: its own height plus the inset below it. */
-export const composerFootprintPx = (cardHeight: number): number =>
-  cardHeight + COMPOSER_BOTTOM_INSET
+export const composerFootprintPx = (cardHeight: number, inset = COMPOSER_BOTTOM_INSET): number =>
+  cardHeight + inset
 
 /**
  * The bottom padding a page surface carries so its last lines clear the

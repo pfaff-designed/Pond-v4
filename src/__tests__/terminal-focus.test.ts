@@ -3,7 +3,13 @@
  * fires FOCUS_TERMINAL_EVENT; AITerminal listens for the same constant. Pinning
  * the string ensures they stay in sync across merges.
  */
-import { FOCUS_TERMINAL_EVENT, requestTerminalFocus } from '@/lib/terminal-focus'
+import {
+  FOCUS_TERMINAL_EVENT,
+  TOGGLE_COMPOSER_EVENT,
+  isComposerToggleKey,
+  requestComposerToggle,
+  requestTerminalFocus,
+} from '@/lib/terminal-focus'
 
 describe('terminal-focus', () => {
   it('FOCUS_TERMINAL_EVENT is a stable non-empty string', () => {
@@ -17,5 +23,46 @@ describe('terminal-focus', () => {
     requestTerminalFocus()
     expect(listener).toHaveBeenCalledTimes(1)
     window.removeEventListener(FOCUS_TERMINAL_EVENT, listener)
+  })
+})
+
+describe('the composer toggle (⌘J)', () => {
+  it('requestComposerToggle dispatches the toggle event on window', () => {
+    const listener = jest.fn()
+    window.addEventListener(TOGGLE_COMPOSER_EVENT, listener)
+    requestComposerToggle()
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener(TOGGLE_COMPOSER_EVENT, listener)
+  })
+
+  describe('the key is Cmd+J on Apple platforms and Ctrl+J everywhere else — never both', () => {
+    const platform = (value: string) =>
+      jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue(value)
+    const press = (init: KeyboardEventInit) =>
+      isComposerToggleKey(new KeyboardEvent('keydown', init))
+
+    afterEach(() => jest.restoreAllMocks())
+
+    it('on a Mac', () => {
+      platform('MacIntel')
+      expect(press({ key: 'j', metaKey: true })).toBe(true)
+      expect(press({ key: 'J', metaKey: true })).toBe(true)
+      expect(press({ key: 'j', ctrlKey: true })).toBe(false)
+      expect(press({ key: 'j', metaKey: true, ctrlKey: true })).toBe(false)
+    })
+
+    it('on Windows and Linux', () => {
+      platform('Win32')
+      expect(press({ key: 'j', ctrlKey: true })).toBe(true)
+      expect(press({ key: 'j', metaKey: true })).toBe(false)
+    })
+
+    it('not with another modifier, nor another key', () => {
+      platform('MacIntel')
+      expect(press({ key: 'j', metaKey: true, shiftKey: true })).toBe(false)
+      expect(press({ key: 'j', metaKey: true, altKey: true })).toBe(false)
+      expect(press({ key: 'k', metaKey: true })).toBe(false)
+      expect(press({ key: 'j' })).toBe(false)
+    })
   })
 })

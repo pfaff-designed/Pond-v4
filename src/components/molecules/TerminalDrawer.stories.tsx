@@ -57,7 +57,7 @@ const meta = {
   globals: { viewport: { value: 'desktop', isRotated: false } },
   args: {
     collapsed: false,
-    onToggleCollapsed: fn(),
+    onExpand: fn(),
     children: null,
     footer: <Footer />,
   },
@@ -106,14 +106,133 @@ export const DrawsNothingButTheCard: Story = {
   },
 }
 
-/** Collapsed: a bare tab; the line and toolbar are gone. */
-export const Collapsed: Story = {
+// ── `PondComposer` `collapsed` / `landed`: the tab, in paper and ink ───────────
+//
+// Every assertion is the COMPUTED value against the DC's literal (`tabWrap`,
+// `tabPill`, `landedDot`, `tabKey`), at the desktop breakpoint (W = 560).
+
+type Theme = 'paper' | 'ink'
+
+const INK: Record<Theme, string> = { paper: '27, 29, 20', ink: '250, 249, 239' }
+
+const Themed = (theme: Theme) =>
+  function ThemedDecorator(Story: () => React.ReactElement) {
+    return (
+      <div className={theme === 'ink' ? 'dark' : ''}>
+        <Story />
+      </div>
+    )
+  }
+
+async function assertTab(canvasElement: HTMLElement, theme: Theme, landed: boolean) {
+  const shell = shellOf(canvasElement).getBoundingClientRect()
+  const tab = within(canvasElement).getByRole('region', { name: 'Pond terminal' })
+  const box = tab.getBoundingClientRect()
+  const style = getComputedStyle(tab)
+
+  // tabWrap: 560 × 30, radius 14 16 0 0, no bottom border, on the bottom edge
+  await expect(Math.round(box.width)).toBe(560)
+  await expect(Math.round(box.height)).toBe(30)
+  await expect(style.borderTopLeftRadius).toBe('14px')
+  await expect(style.borderTopRightRadius).toBe('16px')
+  await expect(style.borderBottomLeftRadius).toBe('0px')
+  await expect(style.borderBottomRightRadius).toBe('0px')
+  await expect(style.borderBottomWidth).toBe('0px')
+  await expect(box.left + box.width / 2 - shell.left).toBe(590 + 113)
+  await expect(shell.bottom - box.bottom).toBe(0)
+  await expect(style.backgroundImage).toContain(
+    theme === 'ink' ? 'rgba(48, 49, 42, 0.92)' : 'rgba(255, 255, 255, 0.86)'
+  )
+  // The shadow is thrown UP: pill.boxShadow.
+  await expect(style.boxShadow).toBe(
+    theme === 'ink'
+      ? 'rgba(250, 249, 239, 0.06) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.3) 0px -8px 28px 0px'
+      : 'rgba(255, 255, 255, 0.7) 0px 1px 0px 0px inset, rgba(40, 34, 24, 0.12) 0px -8px 28px 0px'
+  )
+
+  // tabPill: top -13 from the tab's padding edge (the 1px glass border sits outside it,
+  // exactly as in the DC), centred, 26 high, padding 0 14, gap 8, mono 11
+  const pill = tab.querySelector<HTMLElement>('[data-part="tab-pill"]')!
+  const pillBox = pill.getBoundingClientRect()
+  const pillStyle = getComputedStyle(pill)
+  await expect(Math.round(box.top - pillBox.top)).toBe(12)
+  await expect(Math.round(pillBox.height)).toBe(26)
+  await expect(pillBox.left + pillBox.width / 2).toBeCloseTo(box.left + box.width / 2, 0)
+  await expect(pillStyle.paddingLeft).toBe('14px')
+  await expect(pillStyle.paddingRight).toBe('14px')
+  await expect(pillStyle.columnGap).toBe('8px')
+  await expect(pillStyle.fontSize).toBe('11px')
+  await expect(pillStyle.fontFamily).toMatch(/Mono|monospace/)
+  await expect(parseFloat(pillStyle.borderTopLeftRadius)).toBeGreaterThanOrEqual(13)
+  await expect(pillStyle.boxShadow).toBe(style.boxShadow)
+  const chevron = pill.querySelector('svg')!
+  await expect(chevron.getAttribute('width')).toBe('10')
+  await expect(chevron.querySelector('path')!.getAttribute('d')).toBe('M2 6.5 5 3.5l3 3')
+
+  // landedDot 6 × 6 in ink + `pond answered`, only when something landed
+  const dot = pill.querySelector<HTMLElement>('[data-part="landed-dot"]')
+  if (!landed) {
+    await expect(dot).toBeNull()
+    await expect(within(pill).queryByText('pond answered')).toBeNull()
+  } else {
+    await expect(within(pill).getByText('pond answered')).toBeInTheDocument()
+    const dotStyle = getComputedStyle(dot!)
+    await expect(dotStyle.width).toBe('6px')
+    await expect(dotStyle.height).toBe('6px')
+    await expect(dotStyle.backgroundColor).toBe(`rgb(${INK[theme]})`)
+  }
+
+  // tabKey: ⌘J, mono 10.5, ink .68, margin-top 12
+  const key = within(tab).getByText('⌘J')
+  const keyStyle = getComputedStyle(key)
+  await expect(keyStyle.fontSize).toBe('10.5px')
+  await expect(keyStyle.marginTop).toBe('12px')
+  await expect(keyStyle.color).toBe(`rgba(${INK[theme]}, 0.68)`)
+}
+
+export const CollapsedPaper: Story = {
   args: { collapsed: true },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.queryByRole('textbox')).toBeNull()
-    await userEvent.click(canvas.getByRole('button', { name: 'Expand terminal' }))
-    await expect(args.onToggleCollapsed).toHaveBeenCalledTimes(1)
+    await assertTab(canvasElement, 'paper', false)
+    await userEvent.click(canvas.getByRole('button', { name: 'Open composer' }))
+    await expect(args.onExpand).toHaveBeenCalledTimes(1)
+  },
+}
+
+export const CollapsedInk: Story = {
+  args: { collapsed: true },
+  decorators: [Themed('ink')],
+  play: async ({ canvasElement }) => assertTab(canvasElement, 'ink', false),
+}
+
+/** An answer arrived while it was closed: a 6px dot and `pond answered`, nothing else. */
+export const LandedPaper: Story = {
+  args: { collapsed: true, landed: true },
+  play: async ({ canvasElement }) => assertTab(canvasElement, 'paper', true),
+}
+
+export const LandedInk: Story = {
+  args: { collapsed: true, landed: true },
+  decorators: [Themed('ink')],
+  play: async ({ canvasElement }) => assertTab(canvasElement, 'ink', true),
+}
+
+/** Below md the tab is 360 wide, like the card. */
+export const CollapsedMobile: Story = {
+  args: { collapsed: true },
+  globals: { viewport: { value: 'mobile2', isRotated: false } },
+  decorators: [
+    (Story) => (
+      <div data-part="shell" className="relative h-[20rem] w-[414px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const tab = within(canvasElement).getByRole('region', { name: 'Pond terminal' })
+    await expect(Math.round(tab.getBoundingClientRect().width)).toBe(360)
   },
 }
 

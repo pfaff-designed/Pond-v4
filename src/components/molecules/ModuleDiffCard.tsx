@@ -6,6 +6,11 @@
  * rows, and the three buttons. Accept and reject take the WHOLE diff; to keep
  * only part of it you request changes (AUDIT "Decided, 26 sep", 6c).
  *
+ * The card is `PondComposer` `diffCard` (board 2f): padding 12, gap 10, radius 14, paper
+ * with the card shadow; a head (`proposed edit — {target}` · `N changes`), the lines as
+ * `PondMolecule` diff-lines, then `PondControl` buttons — accept (primary), `⌘↵`,
+ * request changes and reject (ghost) — and the target page's name at the right.
+ *
  * Each change renders by `op` —
  *   - `create` → an addition row (no "before"),
  *   - `edit`   → a removal row then an addition row (a type-morph shows the old
@@ -13,10 +18,10 @@
  *   - `remove` → a removal row.
  * The typed body is delegated to the module's `differ` facet when it declares one
  * (today only `text`); otherwise each side renders through the read-only
- * `ModuleView` inside a {@link DiffRow}.
+ * `ModuleView` inside a diff-line.
  *
- * The card is a machine surface: PP Neue Montreal Mono, lowercase, 10.5–12.5px.
- * Red `#C55347` is spent on removals and nothing else.
+ * The card is a machine surface: PP Neue Montreal Mono, 10.5–11.5px. Red `#C55347` is
+ * spent on removals and nothing else.
  *
  * Statuses (W6): `pending` shows the buttons; the seven settled statuses each
  * render distinctly — `outdated` greys the card, drops accept and offers revise
@@ -37,17 +42,13 @@
  * block carries a display-only placeholder id until accept mints the real one.
  */
 
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { ChangePreview } from '@/lib/modules/preview'
-import { machineEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
-import { Button } from '@/components/ui/button'
+import { chipBaseClass } from '@/components/atoms/kicker'
+import { PondControl } from '@/components/atoms/PondControl'
 import { ChangeRows, NoteBox, OriginalRows } from './diff-card-parts'
-import {
-  ProposalActions,
-  proposalButtonClass,
-  type ProposalStatus,
-} from '@/components/molecules/ProposalActions'
+import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 
 export interface ModuleDiffCardProps {
   /** Every change in the batch, in emission order. */
@@ -79,6 +80,10 @@ export interface ModuleDiffCardProps {
   className?: string
 }
 
+/** `PondControl` size is a prop, not a breakpoint: below md the DC draws the 44px
+ *  button (14px type, 20px sides), so the card says so in classes. */
+const MOBILE_BUTTON = 'max-md:h-11 max-md:px-5 max-md:text-[14px]'
+
 export function ModuleDiffCard({
   changes,
   targetName,
@@ -104,17 +109,30 @@ export function ModuleDiffCard({
   const kind = revised ? 'revised edit' : 'proposed edit'
   const count = changes.length
   const folded = status === 'rejected' && !showRejected
+  const pending = status === 'pending'
+
+  // ⌘↵ takes the whole diff, from anywhere on the card except a field of its own
+  // (the request-changes note sends on ⌘↵ itself).
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!pending || targetMissing || e.defaultPrevented) return
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return
+    const field = (e.target as HTMLElement).tagName
+    if (field === 'TEXTAREA' || field === 'INPUT') return
+    e.preventDefault()
+    onAccept()
+  }
 
   return (
     <div
       role="group"
       aria-label={kind}
       data-status={status}
+      onKeyDown={handleKeyDown}
       className={cn(
         // ticket-41: on resolve the card SETTLES to inert — eases opacity down
         // and a hair of scale (motion-resolve transition) instead of snapping
         // grey, so a decision reads as the card coming to rest. Guarded.
-        'motion-resolve space-y-2 text-left',
+        'motion-resolve flex flex-col gap-2 text-left',
         resolved && 'scale-[0.99] opacity-70',
         className
       )}
@@ -152,76 +170,101 @@ export function ModuleDiffCard({
       )}
       {!folded && (
         <>
-          <div className="mn-letter overflow-hidden rounded-mn-inner">
-            {/* Header — the machine eyebrow: "proposed edit — <page>" · "N changes" */}
-            <div className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className={cn(machineEyebrowClass, 'min-w-0 truncate')}>
+          <div
+            data-part="diff-card"
+            className="mn-letter flex flex-col gap-[10px] rounded-mn-inner p-3 font-mono text-mn-text"
+          >
+            <div className="flex items-baseline gap-2 text-[11px]">
+              <span data-part="head" className="min-w-0 truncate">
                 {kind}
                 {targetName ? ` — ${targetName}` : ''}
               </span>
-              <span className="flex flex-none items-center gap-2 font-mono text-[10.5px] lowercase text-mn-text-meta">
-                {onOpenTarget && (
-                  <button
-                    type="button"
-                    onClick={onOpenTarget}
-                    className="underline underline-offset-2 hover:text-mn-text"
-                  >
-                    open page
-                  </button>
-                )}
-                <span>
-                  {count} change{count === 1 ? '' : 's'}
-                </span>
+              <div className="flex-1" />
+              {onOpenTarget && (
+                <button
+                  type="button"
+                  onClick={onOpenTarget}
+                  className="text-mn-text-secondary underline underline-offset-2 hover:text-mn-text"
+                >
+                  open page
+                </button>
+              )}
+              <span className="whitespace-nowrap text-mn-text-secondary">
+                {count} change{count === 1 ? '' : 's'}
               </span>
             </div>
 
-            {/* Body — the diff rows, or the original when asked for */}
-            <div className="px-3 pb-2">
-              {targetMissing && (
-                <p className="mb-2 font-mono text-[11px] lowercase text-mn-text-meta">
-                  target page not found — this proposal can’t be applied.
-                </p>
-              )}
-              {showOriginal ? (
-                <OriginalRows changes={changes} />
-              ) : (
-                <div className="space-y-2">
-                  {changes.map((change, i) => (
-                    <div key={i} className="space-y-1">
-                      <ChangeRows change={change} />
-                      {(change.reason || change.inferred) && (
-                        <div className="flex items-baseline gap-2 px-2 font-mono text-[10.5px] lowercase text-mn-text-secondary">
-                          {change.inferred && (
-                            // Ticket-30: the model INFERRED this change as a side-effect.
-                            // The whole diff decides together now; the badge tells the
-                            // person what to name in a request-changes note.
-                            // #220 review: no board draws this pill, so it takes the
-                            // .02em the surrounding machine-surface text carries on
-                            // `Pond 06.03` — never tracking-wider (.1em), which is
-                            // looser than anything measured on mono anywhere.
-                            <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 tracking-[0.02em] text-mn-text">
-                              inferred
-                            </span>
-                          )}
-                          {change.reason && <span>{change.reason}</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {targetMissing && (
+              <p className="text-[11px] text-mn-text-meta">
+                target page not found — this proposal can’t be applied.
+              </p>
+            )}
+            {showOriginal ? (
+              <OriginalRows changes={changes} />
+            ) : (
+              <div className="flex flex-col gap-[3px]">
+                {changes.map((change, i) => (
+                  <div key={i} className="flex flex-col gap-[3px]">
+                    <ChangeRows change={change} />
+                    {(change.reason || change.inferred) && (
+                      <div className="flex items-baseline gap-2 px-2.5 text-[10.5px] text-mn-text-secondary">
+                        {change.inferred && (
+                          // Ticket-30: the model INFERRED this change as a side-effect.
+                          // The whole diff decides together now; the badge tells the
+                          // person what to name in a request-changes note.
+                          // #220 review: no board draws this pill, so it takes the
+                          // .02em the surrounding machine-surface text carries on
+                          // `Pond 06.03` — never tracking-wider (.1em), which is
+                          // looser than anything measured on mono anywhere.
+                          <span className="rounded-mn-pill bg-mn-selected-fill px-2 py-0.5 tracking-[0.02em] text-mn-text">
+                            inferred
+                          </span>
+                        )}
+                        {change.reason && <span>{change.reason}</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {/* Footer — buttons, or the status the card settled on */}
-            {status === 'pending' ? (
+            {/* The actions, or the status the card settled on */}
+            {pending ? (
               <>
-                <ProposalActions
-                  status="pending"
-                  disabled={targetMissing}
-                  onAccept={onAccept}
-                  onReject={onReject}
-                  onRequestChanges={noteOpen ? undefined : () => setNoteOpen(true)}
-                />
+                <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
+                  <PondControl
+                    kind="button"
+                    variant="primary"
+                    label="accept"
+                    disabled={targetMissing}
+                    className={MOBILE_BUTTON}
+                    onClick={onAccept}
+                  />
+                  <span aria-hidden className="-ml-0.5 mr-1 text-mn-text-secondary">
+                    ⌘↵
+                  </span>
+                  <PondControl
+                    kind="button"
+                    variant="ghost"
+                    label="request changes"
+                    className={MOBILE_BUTTON}
+                    onClick={() => setNoteOpen(true)}
+                    disabled={noteOpen}
+                  />
+                  <PondControl
+                    kind="button"
+                    variant="ghost"
+                    label="reject"
+                    className={MOBILE_BUTTON}
+                    onClick={onReject}
+                  />
+                  <div className="flex-1" />
+                  {targetName && (
+                    <span data-part="target" className="min-w-0 truncate text-mn-text-secondary">
+                      {targetName}
+                    </span>
+                  )}
+                </div>
                 {noteOpen && (
                   <NoteBox
                     onCancel={() => setNoteOpen(false)}
@@ -235,25 +278,24 @@ export function ModuleDiffCard({
             ) : status === 'outdated' ? (
               // G2: accept is withdrawn and revise is offered. The status reads as
               // the outlined pill the change-log rows draw for it.
-              <div className="flex flex-wrap items-center gap-[7px] border-t border-mn-hair px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
                 <span
                   data-part="status"
-                  className="rounded-mn-pill border border-mn-line px-2 py-0.5 font-mono text-[10.5px] lowercase"
+                  className="rounded-mn-pill border border-mn-line px-2 py-0.5"
                 >
                   outdated
                 </span>
-                <span className="font-mono text-[10.5px] lowercase text-mn-text-secondary">
+                <span className="text-mn-text-secondary">
                   the page changed after this was proposed
                 </span>
                 {onRevise && (
-                  <Button
-                    size="sm"
+                  <PondControl
+                    kind="button"
                     variant="primary"
-                    className={cn(proposalButtonClass, 'ml-auto')}
+                    label="revise"
+                    className={cn(MOBILE_BUTTON, 'ml-auto')}
                     onClick={onRevise}
-                  >
-                    revise
-                  </Button>
+                  />
                 )}
               </div>
             ) : (
@@ -262,15 +304,20 @@ export function ModuleDiffCard({
                     5, "rejected — nothing changed"); a second status element in
                     the footer of an unfolded rejected card said it twice. */}
                 {status !== 'rejected' && (
-                  <ProposalActions status={status} onAccept={onAccept} onReject={onReject} />
+                  <ProposalActions
+                    status={status}
+                    divider={false}
+                    onAccept={onAccept}
+                    onReject={onReject}
+                  />
                 )}
                 {status === 'changes_requested' && note && (
                   // The note that went to the proposer stays under the card.
                   <div
                     data-part="note"
-                    className="mx-3 mb-3 flex flex-col gap-1 rounded-[10px] bg-mn-text/[0.04] px-[11px] py-[10px] font-mono"
+                    className="flex flex-col gap-1 rounded-[10px] bg-mn-text/[0.04] px-[11px] py-[10px]"
                   >
-                    <span className="text-[10.5px] lowercase text-mn-text-secondary">to pond</span>
+                    <span className="text-[10.5px] text-mn-text-secondary">to pond</span>
                     <span className="text-[12px] leading-[1.55] text-mn-text">{note}</span>
                   </div>
                 )}
@@ -279,10 +326,7 @@ export function ModuleDiffCard({
 
             {/* Fix-1 (F1a): honest skip notice — an accept that lands nothing says so. */}
             {skippedCount > 0 && (
-              <div
-                role="note"
-                className="space-y-0.5 px-3 pb-2 font-mono text-[10.5px] lowercase text-mn-text-meta"
-              >
+              <div role="note" className="space-y-0.5 text-[10.5px] text-mn-text-meta">
                 {skippedReasons.length > 0 ? (
                   skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
                 ) : (
@@ -296,7 +340,7 @@ export function ModuleDiffCard({
           </div>
 
           {/* Below the card: show original ↔ show diff (6c frame 2) */}
-          <div className="flex items-center gap-[7px] font-mono text-[11px] tracking-[0.02em]">
+          <div className="flex items-center gap-[7px] text-[11px] tracking-[0.02em]">
             <button
               type="button"
               aria-pressed={showOriginal}
