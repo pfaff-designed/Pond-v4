@@ -2,7 +2,7 @@
  * UI tests for the manual page-creation flow (ticket-26) and its neighbours.
  *
  * Tests:
- * 1. The rail's ＋ (via requestCreatePage → ShellCommands, #96) opens the
+ * 1. A new-page request (requestCreatePage → ShellCommands, #96) opens the
  *    CreatePageModal (no more instant dead-end create).
  * 2. CreatePageModal creates a `page` (never an `area`) under the chosen parent
  *    and navigates into the editor.
@@ -148,9 +148,9 @@ function renderWithQuery(ui: React.ReactElement, queryClient = makeQueryClient()
   }
 }
 
-// ── ＋ new page opens the creation modal ──────────────────────────────────
+// ── a new-page request opens the creation modal ──────────────────────────────────
 
-describe('ShellCommands — ＋ new page opens the New page modal', () => {
+describe('ShellCommands — a new-page request opens the New page modal', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
     mockCreatePage.mockClear().mockResolvedValue({ id: 'new-page-id', type: 'page', title: '' })

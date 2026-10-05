@@ -4,9 +4,8 @@
  * The shell's command owner (#96; was `TopBar`). Renders NO chrome of its own.
  *
  * The Make Noise shell has no top-right cluster: the ⌘K affordance sits in the
- * breadcrumb pill (`Pond 02` 2t) and "＋ new page" in the rail foot
- * (`PondRail`). Both surfaces raise a decoupled request (`lib/shell-commands`)
- * and this organism answers it, owning the two surfaces once:
+ * breadcrumb pill (`Pond 02` 2t). It raises a decoupled request
+ * (`lib/shell-commands`) and this organism answers it, owning the two surfaces once:
  *
  *   ⌘K   the palette (#279): pages, records and actions in one list. What it
  *        lists is `lib/pages/palette-items` over the shared `['pages']` cache;
@@ -90,7 +89,7 @@ export function ShellCommands() {
 
   // Global ⌘K / Ctrl+K → toggle the palette. Registered in the *capture* phase on
   // the document so it fires before any focused editor/input can swallow it.
-  // The decoupled requests (breadcrumb ⌘K chip, rail ＋) arrive as window events.
+  // The decoupled requests (breadcrumb ⌘K chip) arrive as window events.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {

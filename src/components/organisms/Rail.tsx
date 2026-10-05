@@ -67,7 +67,6 @@ import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
-import { requestCreatePage } from '@/lib/shell-commands'
 import {
   LIFE_ID,
   buildTree,
@@ -296,7 +295,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
       className={`group relative flex items-center rounded-mn-row outline-none
-        ${isDbRoot ? 'gap-[9px] px-2 py-[7px]' : 'gap-[7px] py-[5px] pr-2'}
+        ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
         focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
         ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
@@ -464,8 +463,9 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
-  /** The foot's "＋ new page" (PondRail): opens the name-first New page dialog. */
-  onNewPage: () => void
+  /** The foot's `settings` row. Absent until a settings surface exists: the row then
+   *  renders `aria-disabled` and does nothing. */
+  onOpenSettings?: () => void
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -480,7 +480,7 @@ const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 /**
  * The databases root's mark (#101; PondRail's foot row): a hand-drawn cylinder in
  * `currentColor` — a functional mark, not an area glyph, since the root is the
- * pond's SECOND root (3c), not one of Life's areas. 13px, stroke 1.4, round caps.
+ * pond's SECOND root (3c), not one of Life's areas. 13px, stroke 1.4, round caps and joins.
  */
 const DATABASES_MARK = (
   <span className="inline-flex flex-none items-center" aria-hidden>
@@ -492,6 +492,7 @@ const DATABASES_MARK = (
       stroke="currentColor"
       strokeWidth="1.4"
       strokeLinecap="round"
+      strokeLinejoin="round"
     >
       <ellipse cx="7" cy="3.4" rx="4.6" ry="1.6" />
       <path d="M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6" />
@@ -607,7 +608,7 @@ export function RailView({
   onDelete,
   onLife,
   onToggleLife,
-  onNewPage,
+  onOpenSettings,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -909,12 +910,10 @@ export function RailView({
       className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      {/* The head: the pond's name as a small-meta label — sans 500 / 11, uppercase,
-          .14em, NO mark — with the reminders bell at the right. The storyboards
-          (`Pond 05 Shell`, `Pond 06.21`) win over `PondRail`'s 13.5 glyph head
-          (ADR 0010). The switcher chevron appears only once there is a pond to
-          list: before migration 0018 `listPonds()` returns [] and the head is the
-          plain name, rather than an affordance that opens an empty menu. */}
+      {/* The head (`PondRail.dc.html`): the pond's glyph and name, the reminders bell at
+          the right. The switcher chevron appears only once there is a pond to list:
+          before migration 0018 `listPonds()` returns [] and the head is the plain
+          name, rather than an affordance that opens an empty menu. */}
       <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
 
       <div
@@ -969,15 +968,16 @@ export function RailView({
         )}
       </div>
 
-      {/* The foot (`Pond 06.21`): ONE band under a single hairline inset 8px each
-          side — the databases root (3c / #101: the pond's SECOND root, its own ARIA
-          tree so the structure says what the rail says), then "＋ new page". The
-          3px top padding plus the first row's 7px puts its content 10px below the
-          hairline. The databases tree is capped at 40vh so an expanded root scrolls
-          inside the foot instead of swallowing the rail. The scroller clips at its
-          padding box, so it carries 2px of padding (cancelled by a -2px margin) to
-          keep the rows' 2px focus ring visible. */}
-      <div data-part="rail-foot" className="mx-2 mt-2.5 border-t border-mn-text/[0.09] pt-[3px]">
+      {/* The foot (`PondRail.dc.html`): full-width hairline, then the databases root
+          (3c / #101: the pond's SECOND root, its own ARIA tree so the structure says
+          what the rail says) and `settings`. The databases tree is capped at 40vh so
+          an expanded root scrolls inside the foot instead of swallowing the rail. The
+          scroller clips at its padding box, so it carries 2px of padding (cancelled by
+          a -2px margin) to keep the rows' 2px focus ring visible. */}
+      <div
+        data-part="rail-foot"
+        className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
+      >
         {databasesFlat.length > 0 && (
           <div
             role="tree"
@@ -990,11 +990,30 @@ export function RailView({
         )}
         <button
           type="button"
-          onClick={onNewPage}
-          aria-label="New page"
-          className="block w-full cursor-pointer rounded-mn-row px-2 py-[7px] text-left text-[11px] leading-[normal] font-medium text-mn-text-meta outline-none focus-visible:ring-2 focus-visible:ring-mn-area-b"
+          data-part="settings"
+          onClick={onOpenSettings}
+          aria-disabled={onOpenSettings ? undefined : true}
+          className={`block w-full px-2 py-[6px] text-left text-[12.5px] leading-[normal] text-mn-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-mn-area-b ${
+            onOpenSettings ? 'cursor-pointer' : 'cursor-default'
+          }`}
         >
-          ＋ new page
+          <span className="inline-flex items-center gap-2">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              aria-hidden
+              className="flex-none"
+            >
+              <circle cx="7" cy="7" r="2.2" />
+              <path d="M7 1.4v1.8M7 10.8v1.8M1.4 7h1.8M10.8 7h1.8M3 3l1.3 1.3M9.7 9.7 11 11M3 11l1.3-1.3M9.7 4.3 11 3" />
+            </svg>
+            settings
+          </span>
         </button>
       </div>
     </aside>
@@ -1309,7 +1328,6 @@ export function Rail() {
         onDelete={handleDelete}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
-        onNewPage={requestCreatePage}
         canDrop={canDrop}
         onMove={handleMove}
       />

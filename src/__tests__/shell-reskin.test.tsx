@@ -246,7 +246,6 @@ function node(
 const TREE: RailNode[] = [node('health', 'Health', [node('sleep', 'Sleep', [], 'health')])]
 
 function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
-  const onNewPage = jest.fn()
   const utils = render(
     <RailView
       tree={TREE}
@@ -263,13 +262,12 @@ function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
       onDelete={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
-      onNewPage={onNewPage}
       canDrop={() => true}
       onMove={jest.fn()}
       {...over}
     />
   )
-  return { ...utils, onNewPage }
+  return utils
 }
 
 describe('RailView — the pond name header (AC3)', () => {
@@ -293,13 +291,15 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(head).not.toHaveTextContent('Pond')
   })
 
-  it('the head is padded 0 16px 18px, name left and bell right (storyboard)', () => {
+  it('the head is padded 0 16px 12px, name left and bell right, centred, gap 8 (PondRail head)', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.className).toMatch(/\bpx-4\b/)
-    expect(head.className).toMatch(/\bpb-\[18px\]/)
+    expect(head.className).toMatch(/\bpb-3\b/)
+    expect(head.className).toMatch(/\bgap-2\b/)
     expect(head.className).toMatch(/\bjustify-between\b/)
-    expect(head.className).toMatch(/\bitems-baseline\b/)
+    expect(head.className).toMatch(/\bitems-center\b/)
+    expect(head.className).not.toMatch(/\bitems-baseline\b/)
   })
 
   it('the rail is a floating PAPER card (the card role, no glass), not a docked column', () => {
@@ -319,29 +319,43 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(RAIL_WIDTH_PX).toBe(206)
   })
 
-  it('the head is a small-meta LABEL with no mark — `Pond 05 Shell`, all 18 frames', () => {
-    // The two boards conflict: `Pond 02 Component library`'s PondRail card draws
-    // a mask glyph + a larger lowercase name, while every one of `Pond 05 Shell`'s
-    // 18 frames renders the head as sans 500 / 11, uppercase, .14em tracking, with
-    // NO mark. The shell board wins — it is the storyboard for this surface and is
-    // unanimous; PROJECT_RULES scopes the mask-glyph register to AREA and PAGE
-    // marks and a pond is neither; and ADR 0003 puts small meta at 11.
+  it("the head is the pond's 13px glyph and its name at 13.5 / 500, full ink (PondRail head)", () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     const name = container.querySelector<HTMLElement>('[data-part="pond-name"]')!
-    expect(name.className).toMatch(/\btext-mn-11\b/)
-    expect(name.className).toMatch(/\buppercase\b/)
-    expect(name.className).toMatch(/tracking-\[0\.14em\]/)
-    // No mark of any register in the head — not the pond mark, not an area mark.
-    expect(head.querySelector('[data-pond-mark]')).toBeNull()
+    expect(name.className).toMatch(/text-\[13\.5px\]/)
+    expect(name.className).toMatch(/\bfont-medium\b/)
+    expect(name.className).toMatch(/\btruncate\b/)
+    expect(name.className).toMatch(/\btext-mn-text\b/)
+    expect(name.className).not.toMatch(/\b(uppercase|tracking-)/)
+    // The pond's own mark (a plain mask, no area hue), 13px; `waves-02` until the
+    // pond names a glyph of its own.
+    const glyph = head.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
+    expect(glyph.style.width).toBe('13px')
+    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
     expect(head.querySelector('[data-area-mark]')).toBeNull()
-    expect(head.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
   })
 
-  it('the foot carries "＋ new page" (PondRail foot), raising onNewPage', () => {
-    const { onNewPage } = renderRail()
-    fireEvent.click(screen.getByRole('button', { name: 'New page' }))
-    expect(onNewPage).toHaveBeenCalledTimes(1)
+  it('the foot is databases and settings — no "＋ new page"', () => {
+    renderRail()
+    expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
+    expect(screen.queryByText(/＋ new page$/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'settings' })).toBeInTheDocument()
+  })
+
+  it('settings raises onOpenSettings; with no handler it is aria-disabled and inert', () => {
+    const onOpenSettings = jest.fn()
+    const { unmount } = renderRail({ onOpenSettings })
+    const live = screen.getByRole('button', { name: 'settings' })
+    expect(live).not.toHaveAttribute('aria-disabled')
+    fireEvent.click(live)
+    expect(onOpenSettings).toHaveBeenCalledTimes(1)
+    unmount()
+
+    renderRail()
+    const dead = screen.getByRole('button', { name: 'settings' })
+    expect(dead).toHaveAttribute('aria-disabled', 'true')
+    expect(() => fireEvent.click(dead)).not.toThrow()
   })
 })
 
@@ -574,10 +588,9 @@ describe('composer clearance — the drawer publishes its real height, the surfa
 // ── The pond's name ─────────────────────────────────────────────────────────
 
 describe('defaultPondName — the M1 seam for the pond name', () => {
-  // #101 review: lowercase. The rail's source copy in `Pond 05 Shell` is lowercase
-  // throughout (life, personal, journal, notes); the capitals in the boards are the
-  // eyebrow's own `text-transform: uppercase`, which the head class already carries
-  // (asserted above). The data is lowercase; the transform is presentational.
+  // #101 review: lowercase. The rail's source copy is lowercase throughout (life,
+  // personal, journal, notes) and the head applies no text-transform, so the data
+  // is what the head shows.
   it('names the first pond, lowercase', () => {
     expect(defaultPondName()).toBe('life')
   })
@@ -595,7 +608,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     )
   }
 
-  it('rail = paper card with the pond name; ⌘K lives in the breadcrumb, ＋ in the rail foot', async () => {
+  it('rail = paper card with the pond name; ⌘K lives in the breadcrumb, settings in the rail foot', async () => {
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
@@ -608,10 +621,9 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(kButtons[0].closest('nav[aria-label="Breadcrumb"]')).not.toBeNull()
     expect(container.querySelector('.fixed')).toBeNull()
 
-    // One "New page" affordance, in the rail foot.
-    const plus = screen.getAllByRole('button', { name: 'New page' })
-    expect(plus).toHaveLength(1)
-    expect(aside.contains(plus[0])).toBe(true)
+    // The rail foot is databases and settings; no "New page" button anywhere.
+    expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
+    expect(aside.contains(screen.getByRole('button', { name: 'settings' }))).toBe(true)
   })
 
   it('the breadcrumb and the composer are SHELL-level absolutes, not column children (measured)', async () => {
@@ -650,7 +662,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })
 
-  it('the breadcrumb ⌘K opens the palette; the rail ＋ opens the New page dialog', async () => {
+  it('the breadcrumb ⌘K opens the palette', async () => {
     renderShell()
     const k = (await screen.findAllByRole('button', { name: 'Command palette (⌘K)' }))[0]
     await act(async () => {
@@ -660,10 +672,5 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(await screen.findByRole('combobox', { name: 'command palette' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'esc' }))
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'New page' }))
-    })
-    expect(await screen.findByRole('textbox', { name: /page title/i })).toBeInTheDocument()
   })
 })

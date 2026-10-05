@@ -224,7 +224,6 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
       onDelete={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
-      onNewPage={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
     />
@@ -471,7 +470,6 @@ describe('Rail — the seed title resolves too', () => {
         onDelete={jest.fn()}
         onLife={jest.fn()}
         onToggleLife={jest.fn()}
-        onNewPage={jest.fn()}
         canDrop={() => true}
         onMove={jest.fn()}
       />

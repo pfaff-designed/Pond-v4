@@ -102,8 +102,7 @@ type Story = StoryObj<typeof meta>
 
 /**
  * Before migration 0018 the table does not exist, `listPonds` answers PGRST205,
- * and the head renders exactly what it rendered before ponds existed: the name,
- * and NO chevron.
+ * and the head renders the glyph and the name, and NO chevron.
  *
  * This is the state that matters most while the table is missing, and the one
  * that fails silently — a switcher that opens an empty menu is the dead
@@ -119,10 +118,16 @@ export const BeforeTheTableExists: Story = {
 
     const name = canvasElement.querySelector('[data-part="pond-name"]')
     await expect(name).toHaveTextContent('life')
-    // Board `word` is 500 / 13.5; the head SHIPS `Pond 05 Shell`'s 11 / .14em /
-    // uppercase and #319 ruled for the board, so the type treatment is a recorded
-    // divergence and is deliberately not asserted here. What is asserted is the
-    // part both boards agree on: no chevron, hence no svg, and nothing to click.
+    // Board `word`: 500 / 13.5, no transform, full ink. No chevron, hence no svg,
+    // and nothing to click.
+    const type = getComputedStyle(name!)
+    await expect(type.fontSize).toBe('13.5px')
+    await expect(type.fontWeight).toBe('500')
+    await expect(type.textTransform).toBe('none')
+    await expect(type.letterSpacing).toBe('normal')
+    await expect(
+      canvasElement.querySelector<HTMLElement>('[data-icon="waves-02"]')!.style.width
+    ).toBe('13px')
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
     await expect(canvasElement.querySelector('[data-part="pond-switcher"]')).toBeNull()
     await expect(canvasElement.querySelector('svg')).toBeNull()

@@ -7,10 +7,9 @@
  * pond, with ⌘1, ⌘2 and ⌘3 to jump straight to one." And: "the switcher IS the
  * rail header. Nothing else in the rail changes until you pick."
  *
- * Head treatment follows the storyboards (ADR 0010: a storyboard wins over
- * `PondRail`'s component card) — `Pond 05 Shell` and `Pond 06.21` draw the head
- * as sans 500 / 11, uppercase, .14em, no mark, padded `0 16px 18px`, baseline
- * aligned with the name left and `trailing` (the reminders bell) right.
+ * The head is `PondRail.dc.html`'s (ADR 0011: the component DC is the spec): the
+ * pond's 13px glyph, its name at 13.5 / 500 in full ink, and a 9px chevron, padded
+ * `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
  *
  * Deliberately not here, each recorded as fog on #312: ⌘1–⌘3 (the shortcut
  * collides with browser tab switching, AUDIT K1), `manage ponds` (settings has no
@@ -23,12 +22,13 @@ import { useRouter } from 'next/navigation'
 import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 
-/** The storyboard's 9×9 chevron: `margin-left:6px`, `currentColor` at opacity .8
- *  over ink — the .8 ink tier, so `text-mn-text-meta` rather than an opacity fade
- *  of the stroke. Rotates when open. */
+/** The board's `swChev`: the rail's 9×9 caret path, the .68 ink tier, pointing down
+ *  at rest and up while the menu is open. */
 function SwitcherChevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -41,11 +41,11 @@ function SwitcherChevron({ open }: { open: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className={`ml-[6px] flex-none text-mn-text-meta transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
-        open ? 'rotate-180' : ''
+      className={`flex-none text-mn-text-secondary transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
+        open ? '-rotate-90' : 'rotate-90'
       }`}
     >
-      <path d="M2 3.5 L4.5 6 L7 3.5" />
+      <path d="M3.5 2 L7 5 L3.5 8" />
     </svg>
   )
 }
@@ -108,14 +108,29 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   }
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
-  // returns []. The head then renders exactly as it did before — a name, no
-  // chevron — rather than offering a switcher that cannot list anything.
+  // returns []. The head then renders the glyph and name without the chevron —
+  // rather than offering a switcher that cannot list anything.
   const hasPonds = ponds.length > 0
+
+  const switcherClass =
+    'flex min-w-0 items-center gap-[7px] rounded-[8px] px-[6px] py-[4px] -mx-[6px] -my-[4px] select-none'
+  const label = (
+    <>
+      <PondMark glyph={active?.glyph ?? LIFE_GLYPH} />
+      <span
+        data-part="pond-name"
+        className="min-w-0 truncate font-sans text-[13.5px] leading-[normal] font-medium text-mn-text"
+      >
+        {active?.name ?? fallbackName}
+      </span>
+      {hasPonds && <SwitcherChevron open={open} />}
+    </>
+  )
 
   return (
     <div
       data-part="rail-head"
-      className="relative flex items-baseline justify-between px-4 pb-[18px]"
+      className="relative flex items-center justify-between gap-2 px-4 pb-3"
     >
       {hasPonds ? (
         <button
@@ -127,25 +142,12 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
             setOpen((v) => !v)
             setNaming(false)
           }}
-          className={`-mx-[6px] -my-[4px] flex min-w-0 items-center rounded-[8px] px-[6px] py-[4px] select-none ${
-            open ? 'bg-mn-text/[0.07]' : 'bg-transparent'
-          }`}
+          className={`${switcherClass} ${open ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
         >
-          <span
-            data-part="pond-name"
-            className="text-mn-11 text-foreground min-w-0 truncate font-sans leading-[normal] font-medium tracking-[0.14em] uppercase"
-          >
-            {active?.name ?? fallbackName}
-          </span>
-          <SwitcherChevron open={open} />
+          {label}
         </button>
       ) : (
-        <span
-          data-part="pond-name"
-          className="text-mn-11 text-foreground min-w-0 truncate font-sans leading-[normal] font-medium tracking-[0.14em] uppercase select-none"
-        >
-          {fallbackName}
-        </span>
+        <span className={switcherClass}>{label}</span>
       )}
 
       {trailing}
@@ -161,10 +163,11 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
               setNaming(false)
             }}
           />
+          {/* The board's `top: 44` is from the rail's top edge; the head starts 18px down. */}
           <div
             role="menu"
             aria-label="Ponds"
-            className="mn-glass absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
+            className="mn-glass absolute top-[26px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
           >
             <div className="px-[10px] pt-[6px] pb-[4px] font-mono text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
               ponds
