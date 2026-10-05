@@ -517,3 +517,19 @@ export function PondAtom({
     </span>
   )
 }
+
+/**
+ * The `due` atom's `today` state (`Pond 02` 2u, drawn on 6u.1's cards): a burnt-orange
+ * pill carrying ink — the screen's one dated mark. Every other date is plain text, and
+ * late is said in words, never in colour, so this is the only state that paints.
+ */
+export function PondDueToday({ className }: { className?: string }) {
+  return (
+    <span
+      data-part="due-today"
+      className={cn('rounded-[5px] bg-mn-signal-dated px-[6px] py-[1px] text-raw-ink', className)}
+    >
+      today
+    </span>
+  )
+}

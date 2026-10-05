@@ -7,10 +7,11 @@
  * component test: the frame's class recipe and computed values are asserted in
  * `PondBlock.stories.tsx`, and this file holds the data underneath them.
  *
- * `null` from `blockFrame()` means the block takes NO block card, and exactly two
+ * `null` from `blockFrame()` means the block takes NO block card, and exactly three
  * do: an UNLABELLED text block, which is bare prose (`PondTemplate.dc.html`:
- * `bare = k === 'text' && !label`), and a chart drawn as the CARD, which is its own
- * (`PondChart`, #227). A compact chart mark keeps the block card.
+ * `bare = k === 'text' && !label`), a chart drawn as the CARD, which is its own
+ * (`PondChart`, #227), and a board, whose lanes sit on the page (`Pond 06.21`
+ * 6u.1). A compact chart mark keeps the block card.
  */
 import {
   blockFrame,
@@ -150,9 +151,9 @@ const FRAMES: ReadonlyArray<[string, Block, BlockFrame | null]> = [
     { kind: 'table', heading: 'table', headNote: '' },
   ],
   [
-    'view board → the table card',
+    'view board → no block card: 6u.1 sets the lanes on the page',
     { id: 'v', type: 'view', mode: 'board' },
-    { kind: 'table', heading: 'board', headNote: '' },
+    null,
   ],
   [
     'view calendar → the table card',
@@ -165,9 +166,14 @@ const FRAMES: ReadonlyArray<[string, Block, BlockFrame | null]> = [
     { kind: 'table', heading: 'gantt', headNote: '' },
   ],
   [
-    'a labelled view keeps its mode’s card; the label replaces the mode name',
+    'a labelled board still takes no block card',
     { id: 'v', type: 'view', label: 'tasks — board', mode: 'board' },
-    { kind: 'table', heading: 'tasks — board', headNote: '' },
+    null,
+  ],
+  [
+    'a labelled view keeps its mode’s card; the label replaces the mode name',
+    { id: 'v', type: 'view', label: 'tasks — calendar', mode: 'calendar' },
+    { kind: 'table', heading: 'tasks — calendar', headNote: '' },
   ],
   [
     'a labelled gallery view',

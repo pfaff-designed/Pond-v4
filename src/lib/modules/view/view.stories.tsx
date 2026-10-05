@@ -224,22 +224,20 @@ export const TableEmptyBare: Story = {
 // ── The view bar ───────────────────────────────────────────────────────────────
 
 /**
- * `Pond 09 Examples` 9w's head row (KAN-34, slice 1 of KAN-32):
+ * `Pond 06.21 Tasks` 6u.1's head row (KAN-59):
  *
- *     tasks   13 records · grouped by status
- *                     board │ timeline │ table │ calendar │ list │ ＋ view
+ *     tasks   grouped by status                 board │ timeline │ table │ calendar
  *
- * Values read inline from 9w:
+ * `list` is the fifth segment and arrives with the list mode (KAN-63).
+ *
+ * Values read inline from 6u.1:
  *
  *   head      flex · space-between · padding 4px 4px 0
  *   name      15px / 500
- *   facts     10.5px / 500 / ink .8
+ *   facts     10.5px / 500 / ink .8 — read-only text, no record count, no select
  *   track     ink .055 · padding 3 · radius 999 · gap 4 · 10.5 / 500
  *   active    #1B1D14 ground · #FAF9EF text · 4px 10px · radius 999
  *   inactive  ink .68, same padding, no ground
- *
- * NOT asserted here because it is not built: `＋ view`, and the bar listing the
- * views that EXIST rather than all seven modes. Both need the model (KAN-32).
  */
 export const ViewBarGeometry: Story = {
   args: {
@@ -261,8 +259,10 @@ export const ViewBarGeometry: Story = {
 
     const facts = head.querySelector<HTMLElement>('[data-part="db-facts"]')!
     await expect(pxOf(getComputedStyle(facts).fontSize)).toBeCloseTo(10.5, 1)
-    // The config line: what is in the database, and how this view reads it.
-    await expect(facts).toHaveTextContent(`${rows.length} records · grouped by status`)
+    // How this view reads the database — and nothing else: no record count.
+    await expect(facts).toHaveTextContent(/^grouped by status$/)
+    // …as text. There is no group-by select.
+    await expect(within(head).queryByRole('combobox')).toBeNull()
 
     const bar = getComputedStyle(head.querySelector<HTMLElement>('[data-part="view-bar"]')!)
     await expect(pxOf(bar.columnGap)).toBeCloseTo(4, 1)
@@ -280,7 +280,7 @@ export const ViewBarGeometry: Story = {
     await expectTier(as.backgroundColor, 'ink', 1)
     await expectTier(as.color, 'paper', 1)
     // …and it is the mode the config names.
-    await expect(active).toHaveTextContent('Board')
+    await expect(active).toHaveTextContent(/^board$/)
   },
 }
 
@@ -316,6 +316,64 @@ export const ViewBarGeometryInk: Story = {
   },
 }
 
+/** The switcher is the four modes that exist, lowercase, in the board's order. */
+export const ViewBarSegments: Story = {
+  args: {
+    config: boardConfig,
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const segments = [...canvasElement.querySelectorAll('[data-part="view-segment"]')]
+    await expect(segments.map((el) => el.textContent)).toEqual([
+      'board',
+      'timeline',
+      'table',
+      'calendar',
+    ])
+  },
+}
+
+/** Timeline is the gantt mode: its segment writes `gantt`, and lights when the block is one. */
+export const ViewBarTimelineIsGantt: Story = {
+  args: {
+    config: ganttConfig,
+    schema: ganttSchema,
+    rows: ganttRows,
+    collectionName: 'plan',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('button', { name: 'timeline' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'board' }))
+    await expect(args.onConfigChange).toHaveBeenCalledWith({ mode: 'board' })
+  },
+}
+
+/** Gallery, chart and big number are their own blocks (ADR 0009): no switcher over them. */
+export const ViewBarAbsentOnOwnBlocks: Story = {
+  args: {
+    config: galleryConfig,
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector('[data-part="view-bar"]')).toBeNull()
+    await expect(canvasElement.querySelector('[data-part="db-name"]')).toBeInTheDocument()
+  },
+}
+
 /** The group-by clause belongs to the mode that has one — a table claims no grouping. */
 export const ViewBarFactsPerMode: Story = {
   args: {
@@ -327,9 +385,7 @@ export const ViewBarFactsPerMode: Story = {
     onConfigChange: fn(),
   },
   play: async ({ canvasElement }) => {
-    const facts = canvasElement.querySelector<HTMLElement>('[data-part="db-facts"]')!
-    await expect(facts).toHaveTextContent(`${rows.length} records`)
-    await expect(facts.textContent).not.toMatch(/grouped by/)
+    await expect(canvasElement.querySelector('[data-part="db-facts"]')).toBeNull()
   },
 }
 
@@ -491,19 +547,32 @@ export const BoardGeometryInk: Story = {
 }
 
 /**
- * The ↗ belongs to the card under the pointer. Keyed to the LANE instead — which
- * is what shipped — hovering anywhere revealed it on every card at once.
+ * What the board does not draw is not there, on an editable board with every
+ * handler wired: no lane name input, no lane arrows, no `＋ lane`, no card `⠿`
+ * handle and no card `↗`. The card itself is what drags and what opens.
  */
-export const BoardOpenArrowIsPerCard: Story = {
-  args: { config: boardConfig, schema, rows, onOpenCard: fn() },
+export const BoardDrawsNoControlsTheBoardDoesNot: Story = {
+  args: {
+    config: boardConfig,
+    schema,
+    rows,
+    editable: true,
+    onAddRow: fn(async () => null),
+    onRenameRow: fn(),
+    onUpdateSchema: fn(),
+    onOpenCard: fn(),
+  },
   play: async ({ canvasElement }) => {
-    const cards = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="card"]')]
-    await expect(cards.length).toBeGreaterThan(1)
-    // Every card carries its own hover group, and the arrow keys off THAT.
-    for (const c of cards) await expect(c.className).toContain('group/card')
-    const arrow = within(cards[0]).getByRole('button', { name: /^Open card/ })
-    await expect(arrow.className).toContain('group-hover/card:')
-    await expect(arrow.className).not.toContain('group-hover/col:')
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByLabelText(/^Lane name/)).not.toBeInTheDocument()
+    await expect(canvas.queryByLabelText(/^Move .* (left|right)$/)).not.toBeInTheDocument()
+    await expect(canvas.queryByText('＋ lane')).not.toBeInTheDocument()
+    await expect(canvas.queryByLabelText(/^Drag card/)).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /^Open card/ })).not.toBeInTheDocument()
+    // The lane heads are plain text, not fields.
+    for (const head of canvasElement.querySelectorAll('[data-part="lane-head"]')) {
+      await expect(head.querySelector('input')).toBeNull()
+    }
   },
 }
 
@@ -524,6 +593,7 @@ export const BoardAddIsTheLastLineOfTheLane: Story = {
     await expect(pxOf(cs.padding)).toBeCloseTo(4, 1)
     await expect(pxOf(cs.fontSize)).toBeCloseTo(11, 1)
     await expectTier(cs.color, 'ink', 0.68)
+    await expect(add).toHaveTextContent('＋ task')
   },
 }
 
@@ -552,7 +622,7 @@ export const BoardDragBetweenColumns: Story = {
   render: (args) => <StatefulView config={args.config} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const handle = canvas.getByLabelText('Drag card: Trim the rim')
+    const handle = canvas.getByText('Trim the rim').closest<HTMLElement>('[data-part="card"]')!
     const doneColumn = canvas.getByText('Done').closest('section') as HTMLElement
 
     const grip = handle.getBoundingClientRect()
@@ -573,12 +643,139 @@ export const BoardDragBetweenColumns: Story = {
 
 /** Board with no valid group-by: a calm hint rather than an empty frame. */
 export const BoardNeedsGroupBy: Story = {
-  args: { config: { id: 'v', type: 'view', mode: 'board' }, schema, rows },
+  args: {
+    config: { id: 'v', type: 'view', mode: 'board' },
+    schema: schema.filter((d) => d.type !== 'status' && d.type !== 'select'),
+    rows,
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(
       canvas.getByText('This board needs a group-by (select or status) property.')
     ).toBeInTheDocument()
+  },
+}
+
+/**
+ * With no group-by control (6u.1), a board that names none still draws lanes: the
+ * first status property. A board that names a property which is gone does not.
+ */
+export const BoardInfersGroupBy: Story = {
+  args: {
+    config: { id: 'v', type: 'view', mode: 'board' },
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('grouped by status')).toBeInTheDocument()
+    await expect(canvas.getByText('Doing').closest('section')).toBeInTheDocument()
+  },
+}
+
+export const BoardNamingAMissingGroupByStaysBroken: Story = {
+  args: { config: { id: 'v', type: 'view', mode: 'board', groupBy: 'gone' }, schema, rows },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByText('This board needs a group-by (select or status) property.')
+    ).toBeInTheDocument()
+  },
+}
+
+// ── Board card meta (6u.1) ─────────────────────────────────────────────────────
+
+const localIso = (offsetDays: number) => {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const taskSchema: PropertySchema = [
+  {
+    id: 't-status',
+    name: 'status',
+    type: 'status',
+    options: [
+      { id: 't-todo', label: 'to do' },
+      { id: 't-done', label: 'done' },
+    ],
+  },
+  { id: 't-due', name: 'due', type: 'date' },
+  { id: 't-repeat', name: 'repeats', type: 'text' },
+]
+
+const taskRows: CollectionRow[] = [
+  {
+    id: 'k1',
+    title: 'chase the cabinet quote',
+    values: { 't-status': 't-todo', 't-due': localIso(0), 't-repeat': 'every 4 days' },
+  },
+  {
+    id: 'k2',
+    title: 'choose oak veneer finish',
+    values: { 't-status': 't-todo', 't-due': '2026-10-23' },
+  },
+  {
+    id: 'k3',
+    title: 'skip hire returned',
+    values: { 't-status': 't-done', 't-due': '2026-10-15' },
+  },
+  { id: 'k4', title: 'order samples', values: { 't-status': 't-todo' } },
+]
+
+/**
+ * 6u.1's card meta, in order: the due atom, then the repeat tag. Today is the one
+ * burnt-orange mark (`#D96629`, ink text); every other date is plain `.8` ink. A
+ * done card's title steps down to `.68`.
+ */
+export const BoardCardMeta: Story = {
+  args: {
+    config: { id: 'v', type: 'view', mode: 'board', groupBy: 't-status' },
+    schema: taskSchema,
+    rows: taskRows,
+  },
+  play: async ({ canvasElement }) => {
+    const cardOf = (title: string) =>
+      within(canvasElement).getByText(title).closest<HTMLElement>('[data-part="card"]')!
+
+    const today =
+      cardOf('chase the cabinet quote').querySelector<HTMLElement>('[data-part="due-today"]')!
+    await expect(today).toHaveTextContent('today')
+    const ts = getComputedStyle(today)
+    await expect(ts.backgroundColor).toBe('rgb(217, 102, 41)')
+    await expect(pxOf(ts.borderRadius)).toBeCloseTo(5, 1)
+    await expect(pxOf(ts.paddingLeft)).toBeCloseTo(6, 1)
+    await expect(pxOf(ts.paddingTop)).toBeCloseTo(1, 1)
+    await expectTier(ts.color, 'ink', 1)
+
+    const repeat = cardOf('chase the cabinet quote').querySelector<HTMLElement>(
+      '[data-part="card-repeat"]'
+    )!
+    await expect(repeat).toHaveTextContent('every 4 days')
+    await expect(repeat.querySelector('svg')).toHaveAttribute('stroke-width', '1.4')
+
+    const plain = cardOf('choose oak veneer finish').querySelector<HTMLElement>(
+      '[data-part="card-due"]'
+    )!
+    await expect(plain).toHaveTextContent('fri 23')
+    await expect(plain.getAttribute('data-part')).not.toBe('due-today')
+    await expect(getComputedStyle(plain).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+
+    // A card with no date draws no due atom, and no meta row at all.
+    await expect(cardOf('order samples').querySelector('[data-part="card-meta"]')).toBeNull()
+
+    // Only today paints orange.
+    await expect(canvasElement.querySelectorAll('[data-part="due-today"]')).toHaveLength(1)
+
+    const doneTitle = within(cardOf('skip hire returned')).getByText('skip hire returned')
+    await expectTier(getComputedStyle(doneTitle).color, 'ink', 0.68)
+    const openTitle = within(cardOf('choose oak veneer finish')).getByText(
+      'choose oak veneer finish'
+    )
+    await expectTier(getComputedStyle(openTitle).color, 'ink', 1)
   },
 }
 
@@ -920,11 +1117,11 @@ export const BigNumberNoValues: Story = {
 }
 
 /**
- * #111 AC 5 — the mode switcher offers chart and big-number beside the older modes,
- * and switching to one keeps the SAME database: only the view config changes, so the
- * records are still there when you switch back.
+ * Switching modes keeps the SAME database: only the view config changes, so the
+ * records are still there when you switch back. Chart, gallery and big number are
+ * their own blocks (ADR 0009) and are not offered here.
  */
-export const SwitchTableToBigNumber: Story = {
+export const SwitchBetweenViews: Story = {
   args: { config: tableConfig, schema, rows },
   render: function Render(args) {
     const [config, setConfig] = useState<ViewBlock>(args.config)
@@ -940,21 +1137,16 @@ export const SwitchTableToBigNumber: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // The switcher offers every mode, the two new ones included.
-    await expect(canvas.getByRole('button', { name: 'Chart' })).toBeInTheDocument()
+    for (const gone of ['Chart', 'chart', 'Big number', 'big number', 'Gallery', 'gallery']) {
+      await expect(canvas.queryByRole('button', { name: gone })).not.toBeInTheDocument()
+    }
     await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
 
-    // Switch to the big number: an unconfigured mode INFERS a drawable figure from the
-    // schema (first numeric field, summed) rather than showing nothing — the same
-    // tolerance a gantt has when its date properties aren't named.
-    await userEvent.click(canvas.getByRole('button', { name: 'Big number' }))
-    await expect(canvas.getByRole('status', { name: 'Priority: 6' })).toBeInTheDocument()
-    // The picker rewrites only the view config — here, down to counting records.
-    await userEvent.selectOptions(canvas.getByLabelText('Figure'), '')
-    await expect(canvas.getByRole('status', { name: 'Records: 4' })).toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'board' }))
+    await expect(canvas.getByText('Doing').closest('section')).toBeInTheDocument()
+    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
 
-    // Back to the table: the records were never copied or moved.
-    await userEvent.click(canvas.getByRole('button', { name: 'Table' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'table' }))
     await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
     await expect(canvas.getByText('Celadon glaze test')).toBeInTheDocument()
   },

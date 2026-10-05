@@ -432,11 +432,14 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
  * #260 confirmed all three mapped modes against `PondBlock.dc.html`'s `W`: `gallery`
  * is its own 580 card and `big-number` the 400 `number` card, while `gantt` stays
  * in the 500 `table` card — the block board has no gantt kind and `PondTemplate`
- * gives it no width of its own, exactly as `board`, `calendar` and `chart`.
+ * gives it no width of its own, exactly as `calendar` and `chart`.
+ *
+ * `board` is absent: 6u.1 lays its lanes straight on the page, so it takes no card.
  */
-const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
+type FramedViewMode = Exclude<ViewMode, 'board'>
+
+const VIEW_KIND: Record<FramedViewMode, PondBlockKind> = {
   table: 'table',
-  board: 'table',
   calendar: 'table',
   gantt: 'table',
   chart: 'table',
@@ -444,9 +447,8 @@ const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
   'big-number': 'number',
 }
 
-const VIEW_HEADING: Record<ViewMode, string> = {
+const VIEW_HEADING: Record<FramedViewMode, string> = {
   table: 'table',
-  board: 'board',
   calendar: 'calendar',
   gantt: 'gantt',
   chart: 'chart',
@@ -529,7 +531,9 @@ export function blockFrame(block: Block): BlockFrame | null {
       // own paper, shadow, head and footer. A card inside a card is drawn by no
       // board, so the frame steps aside. The compact marks (#259) are the
       // template's, and keep its card.
-      if (isChartCard(block)) return null
+      // 6u.1 sets the board's lanes straight on the page the same way, so it
+      // takes no card either (`FramedViewMode` excludes it).
+      if (block.mode === 'board' || isChartCard(block)) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
       return {

@@ -164,8 +164,8 @@ export const ClickCardOpensPreview: StoryObj = {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(body.queryByRole('dialog')).not.toBeInTheDocument())
 
-    // Reopen via the keyboard-reachable ↗ affordance.
-    await userEvent.click(canvas.getByRole('button', { name: 'Open card: Wedge stoneware' }))
+    // Reopen from another card's body.
+    await userEvent.click(canvas.getByText('Wedge stoneware'))
     await expect(body.getByRole('dialog')).toBeInTheDocument()
     await expect(body.getByText('This page has no content yet.')).toBeInTheDocument()
 
@@ -230,8 +230,12 @@ export const EditableBoardCardControls: StoryObj = {
     await expect(canvas.getByTestId('opened')).toHaveTextContent('none')
     // No board draws a per-card delete, even on an editable board (#223).
     await expect(canvas.queryByRole('button', { name: /delete card/i })).not.toBeInTheDocument()
-    // The ↗ affordance still opens, from the keyboard as much as the pointer.
-    await userEvent.click(canvas.getByRole('button', { name: 'Open card: Wedge stoneware' }))
+    // A click on the card's passive body still opens; there is no ↗ button.
+    await expect(canvas.queryByRole('button', { name: /open card/i })).not.toBeInTheDocument()
+    // (An editable card's title is an input, so the body is the card's own padding.)
+    await userEvent.click(
+      canvas.getByDisplayValue('Wedge stoneware').closest<HTMLElement>('[data-part="card"]')!
+    )
     await expect(canvas.getByTestId('opened')).toHaveTextContent('row-2')
   },
 }

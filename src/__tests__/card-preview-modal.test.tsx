@@ -204,11 +204,9 @@ describe('CollectionBoard — card click opens the preview (AC 1 seam)', () => {
     expect(onOpenCard).toHaveBeenCalledWith('row-1')
   })
 
-  it('exposes a keyboard-reachable ↗ open affordance per card', async () => {
-    const { onOpenCard } = renderBoard()
-    await userEvent.click(screen.getByRole('button', { name: 'Open card: Wedge stoneware' }))
-    expect(onOpenCard).toHaveBeenCalledTimes(1)
-    expect(onOpenCard).toHaveBeenCalledWith('row-2')
+  it('draws no ↗ open button — 6u.1 draws none; the card body is the way in', () => {
+    renderBoard()
+    expect(screen.queryByRole('button', { name: /Open card/ })).not.toBeInTheDocument()
   })
 
   // #223 deleted the per-card × — no board draws one — so the card's only own
@@ -229,8 +227,8 @@ describe('CollectionBoard — card click opens the preview (AC 1 seam)', () => {
     expect(screen.queryByRole('button', { name: /Delete card/ })).not.toBeInTheDocument()
   })
 
-  it('renders cards without the open affordance when onOpenCard is absent', () => {
-    render(<CollectionView config={boardConfig} schema={boardSchema} rows={boardRows} />)
-    expect(screen.queryByRole('button', { name: /Open card/ })).not.toBeInTheDocument()
+  it('draws no drag handle, even on an editable board — the card itself drags', () => {
+    renderBoard({ editable: true, onRenameRow: jest.fn() })
+    expect(screen.queryByLabelText(/Drag card/)).not.toBeInTheDocument()
   })
 })
