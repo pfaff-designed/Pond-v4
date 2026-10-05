@@ -65,7 +65,11 @@ import { markAccent } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/crumbs'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
-import { isDatabasesRoot } from '@/lib/pages/databases-root'
+import {
+  DATABASES_ROOT_TITLE,
+  getOrCreateDatabasesRoot,
+  isDatabasesRoot,
+} from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
@@ -115,6 +119,24 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // the label body only: no padding, no wash.
 
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
+/** The foot's databases row while the pond has no databases root: the board always draws it. */
+const DATABASES_PLACEHOLDER_ID = '__databases__'
+const DATABASES_PLACEHOLDER_ROW: FlatRow = {
+  id: DATABASES_PLACEHOLDER_ID,
+  node: {
+    id: DATABASES_PLACEHOLDER_ID,
+    parentId: null,
+    type: 'page',
+    title: DATABASES_ROOT_TITLE,
+    order: 0,
+    children: [],
+  },
+  depth: 0,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+}
+
 const INDENT_STEP = 14
 /** The board row's own left padding; depth indentation adds to it. */
 const INDENT_BASE = 4
@@ -139,9 +161,6 @@ interface RailRowProps {
   isArea?: boolean
   /** The databases root: the foot band's first row, drawn without a caret. */
   isDbRoot?: boolean
-  /** Whether the selected row shows its ＋ at rest. Off while the rail is empty or
-   *  loading, where the board selects nothing. */
-  plusWhenSelected?: boolean
   posInSet?: number
   setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
@@ -186,7 +205,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isRoot = false,
     isArea = false,
     isDbRoot = false,
-    plusWhenSelected = true,
     posInSet,
     setSize,
     accent,
@@ -228,7 +246,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
-  const showPlus = (isSelected && plusWhenSelected) || hovered
+  const showPlus = isSelected || hovered
 
   return (
     <div
@@ -282,11 +300,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
           top/bottom edge; pointer-events-none so it never eats a drag event.
-          The into-highlight is the ring on the row itself (above). */}
+          The board draws it 58px from the card's left and 16px from its right;
+          the row sits 8px inside the card, hence 50 and 8. It is out of flow on
+          purpose: an in-flow line would move the row under the pointer and
+          flicker the zone. The into-highlight is the ring on the row itself. */}
       {(dropZone === 'before' || dropZone === 'after') && (
         <span
           aria-hidden
-          className={`pointer-events-none absolute right-4 left-[58px] h-0.5 rounded-mn-hair bg-mn-text ${
+          data-part="drop-line"
+          className={`pointer-events-none absolute right-2 left-[50px] h-0.5 rounded-mn-hair bg-mn-text ${
             dropZone === 'before' ? '-top-px' : '-bottom-px'
           }`}
         />
@@ -444,6 +466,8 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
+  /** Open the databases root, creating it first when the pond has none yet. */
+  onOpenDatabases: () => void
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -582,6 +606,7 @@ export function RailView({
   onDelete,
   onLife,
   onToggleLife,
+  onOpenDatabases,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -600,7 +625,8 @@ export function RailView({
   // #101 / 3c: the databases root is the pond's SECOND root — "life for reading,
   // databases for data". PondRail draws it after the Life tree, at the foot, so
   // it is lifted out of Life's areas here and flattened on its own (its row at
-  // depth 0, its databases at depth 1), present only once the pond has one.
+  // depth 0, its databases at depth 1). The board always draws the row: until
+  // the pond has a root it is a placeholder that creates the root when opened.
   const databasesRoot = useMemo(() => tree.find(isDatabasesRoot) ?? null, [tree])
   const lifeTree = useMemo(
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
@@ -612,7 +638,7 @@ export function RailView({
         ? flattenVisible([databasesRoot], expanded, true)
             .slice(1) // drop the synthetic Life row flattenVisible always leads with
             .map((f) => ({ ...f, depth: f.depth - 1 }))
-        : [],
+        : [DATABASES_PLACEHOLDER_ROW],
     [databasesRoot, expanded]
   )
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
@@ -665,6 +691,11 @@ export function RailView({
     if (document.activeElement === document.body) rowRefs.current.get(fallback)?.focus()
   }, [flat, focusedId, visibleIds])
 
+  const handleSelect = (id: string) => {
+    if (id === DATABASES_PLACEHOLDER_ID) onOpenDatabases()
+    else onSelect(id)
+  }
+
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
     const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
@@ -685,7 +716,7 @@ export function RailView({
         break
       case 'open':
         if (cmd.id === LIFE_ID) onLife()
-        else onSelect(cmd.id)
+        else handleSelect(cmd.id)
         break
       case 'delete':
         onDelete(cmd.id)
@@ -789,6 +820,8 @@ export function RailView({
     // two calls would walk the ancestor chain twice for the same answer. Not for
     // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
+    // The placeholder is no page: nothing can be dragged from it or dropped on it.
+    const isPlaceholder = id === DATABASES_PLACEHOLDER_ID
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
@@ -806,17 +839,17 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        isSelected={selectedId === null}
+        // `PondRail` `empty`: the lone root is not selected and draws no ＋.
+        isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
         isRoot
-        plusWhenSelected={!isEmpty && !isLoading}
         posInSet={posInSet}
         setSize={setSize}
         leading={<AreaMark glyph={pondGlyph} />}
         onSelect={onLife}
         onToggle={onToggleLife}
-        onAddChild={onAddChild}
+        onAddChild={isEmpty ? undefined : onAddChild}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
@@ -849,22 +882,22 @@ export function RailView({
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
-        onSelect={onSelect}
+        onSelect={handleSelect}
         onToggle={onToggle}
         // The databases root is a foot row, not a page: the board draws no tools on it.
         onAddChild={isDatabasesRoot(node) ? undefined : onAddChild}
         onDelete={isDatabasesRoot(node) ? undefined : onDelete}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
-        draggable
+        draggable={!isPlaceholder}
         isDragging={draggingId === id}
         dropZone={dropZoneFor(id)}
         isDropRejected={isDropRejected(id)}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
+        onDragStart={isPlaceholder ? undefined : handleDragStart}
+        onDragOver={isPlaceholder ? undefined : handleDragOver}
+        onDragLeave={isPlaceholder ? undefined : handleDragLeave}
+        onDrop={isPlaceholder ? undefined : handleDrop}
+        onDragEnd={isPlaceholder ? undefined : handleDragEnd}
       />
     )
   }
@@ -895,7 +928,7 @@ export function RailView({
       >
         <div className="min-h-0 flex-1 overflow-y-auto px-2">
           <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-            {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+            {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
           </div>
 
           {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
@@ -917,7 +950,7 @@ export function RailView({
           )}
           {!isLoading && isEmpty && (
             <p
-              className="mt-2 mr-4 ml-[34px] text-[12.5px] leading-[1.5] text-mn-text-secondary"
+              className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
               role="status"
             >
               no pages yet. ＋ new page, or ask pond to start one.
@@ -950,16 +983,14 @@ export function RailView({
         data-part="rail-foot"
         className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
       >
-        {databasesFlat.length > 0 && (
-          <div
-            role="tree"
-            aria-label="Databases"
-            aria-multiselectable={false}
-            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
-          >
-            {databasesFlat.map(renderRow)}
-          </div>
-        )}
+        <div
+          role="tree"
+          aria-label="Databases"
+          aria-multiselectable={false}
+          className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+        >
+          {databasesFlat.map(renderRow)}
+        </div>
         {/* Not interactive until a settings surface exists (KAN-74): like the bell,
             a dead button is worse than none. */}
         <div
@@ -1098,6 +1129,24 @@ export function Rail() {
     const result = await fn(supabase, user.id)
     await queryClient.invalidateQueries({ queryKey: pagesKey() })
     return result
+  }
+
+  const openingDatabases = useRef(false)
+
+  /** The databases row with no root behind it: create the root through the one
+   *  existing path (`getOrCreateDatabasesRoot`, also what creating a database
+   *  uses), then open it. */
+  async function handleOpenDatabases() {
+    if (openingDatabases.current) return
+    openingDatabases.current = true
+    try {
+      const root = await withUser((sb, uid) => getOrCreateDatabasesRoot(sb, uid, pondId))
+      if (root) navigateTo({ id: root.id, type: 'page', title: DATABASES_ROOT_TITLE })
+    } catch {
+      notify("Couldn't open databases")
+    } finally {
+      openingDatabases.current = false
+    }
   }
 
   async function handleAddChild(id: string) {
@@ -1291,6 +1340,7 @@ export function Rail() {
         onDelete={handleDelete}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
+        onOpenDatabases={handleOpenDatabases}
         canDrop={canDrop}
         onMove={handleMove}
       />
