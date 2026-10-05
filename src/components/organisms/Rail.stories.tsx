@@ -5,7 +5,7 @@ import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/tes
 import { RailView, type RailNode } from './Rail'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import type { AreaRole } from '@/lib/rail/glyph-library'
-import { derivedRole, type MarkSource } from '@/lib/pages/mark'
+import type { MarkSource } from '@/lib/pages/mark'
 
 const node = (
   id: string,
@@ -608,71 +608,121 @@ export const PaperCardComputed: Story = {
   },
 }
 
+/** The board's own pond (`PondRail.dc.html` `CANON`), so the glyph map is read against it. */
+const BOARD_TREE: RailNode[] = [
+  node('personal', 'page', 'personal', [], 0),
+  node('professional', 'page', 'professional', [], 1),
+  node(
+    'health',
+    'page',
+    'health',
+    [
+      node('workouts', 'page', 'workouts', [], 0, 'health'),
+      node('sleep', 'page', 'sleep', [], 1, 'health'),
+    ],
+    2
+  ),
+  node('money', 'page', 'money', [node('budget', 'page', 'budget', [], 0, 'money')], 3),
+  node('creativity', 'page', 'creativity', [], 4),
+]
+
+/** `PondRail.dc.html` `G`, row by row. */
+const BOARD_GLYPHS: [string, string][] = [
+  ['personal', 'house'],
+  ['professional', 'ramp'],
+  ['health', 'heart'],
+  ['money', 'ring'],
+  ['creativity', 'star-01'],
+]
+
+const INK: Record<Theme, string> = {
+  light: 'rgb(27, 29, 20)',
+  dark: 'rgb(250, 249, 239)',
+}
+
 /**
- * #91's glyph wiring, with no chosen marks anywhere: a mapped area row leads
- * with its DEFAULT glyph, tinted with the area role its id derives, and drops
- * its dot; an unmapped top-level area keeps its `KindDot`; a nested page carries
- * neither. The Life root leads with its waves glyph in ink (`var(--mn-text)`), not an
- * area hue — #229 paints a hue there only once a person picks one.
- *
- * The tint is read as a COLOUR, in both themes, against `--mn-area-*` resolved:
- * `glyph-marks` matched `/^var\(--mn-area-[abc]\)$/` on the inline style, which
- * a theme that resolved the role to the wrong hue would still satisfy — and
- * `area-c` is the one that genuinely differs (navy → mist on dark).
+ * `areaColours` off (`PondRail.dc.html`: `tint = areaColours ?? false`): with no
+ * colour chosen anywhere every mark is ink — the root's glyph, each area's glyph
+ * and the page dots inside them — and the glyphs are the board's map. The root
+ * wears the pond's own glyph, not a fixed one.
  */
-export const DerivedAreaMarks: Story = {
+export const InkMarks: Story = {
   args: {
-    // 'Financial' is what pre-#108 seeds wrote; the map still answers for it.
-    tree: [...TREE, node('fin', 'page', 'Financial', [], 4)],
-    expanded: new Set(['health', 'personal']),
+    tree: BOARD_TREE,
+    pondName: 'make noise',
+    pondGlyph: 'lightning-03',
+    expanded: new Set(['health', 'money']),
   },
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
       const canvas = within(probe(canvasElement, theme))
       const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+      const slotOf = (name: RegExp) => row(name).querySelector<HTMLElement>('[data-area-mark]')!
 
-      // The Life root: its glyph, in ink — and no hand-drawn half-disc left over.
-      const life = row(/life/)
-      await expect(life.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeInTheDocument()
-      await expect(life.querySelector('circle')).toBeNull()
-      const lifeSlot = life.querySelector<HTMLElement>('[data-area-mark]')!
-      await expect(getComputedStyle(lifeSlot).color).toBe(
-        theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)'
-      )
+      const root = row(/make noise/)
+      await expect(root.querySelector('[data-icon="lightning-03"]')).toBeInTheDocument()
+      await expect(root.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
+      await expect(getComputedStyle(slotOf(/make noise/)).color).toBe(INK[theme])
 
-      // Mapped areas lead with their fixed default glyph, in the derived role's
-      // hue, and the dot retires. `areaGlyph`'s own table is pure logic and stays
-      // in jest; what is pinned here is that the rail WIRES it through.
-      const MAPPED: [RegExp, string, string][] = [
-        [/Health/, 'leaf-01', 'health'],
-        [/Personal/, 'house', 'personal'],
-        [/Creativity/, 'flower-05', 'creativity'],
-        [/Financial/, 'stairs-01', 'fin'],
-      ]
-      for (const [name, glyph, id] of MAPPED) {
-        const el = row(name)
+      for (const [title, glyph] of BOARD_GLYPHS) {
+        const el = row(new RegExp(`^${title}`))
         await expect(el.querySelector(`[data-icon="${glyph}"]`)).toBeInTheDocument()
         await expect(el.querySelector('[data-part="dot"]')).toBeNull()
-        const slot = el.querySelector<HTMLElement>('[data-area-mark]')!
-        await expect(getComputedStyle(slot).color).toBe(AREA[theme][derivedRole(id)])
-        // The board draws the mark at 13 square (`PondRail.rows[].mark`).
-        const mark = slot.querySelector<HTMLElement>('[data-icon]')!.getBoundingClientRect()
-        await expect(mark.width).toBe(13)
-        await expect(mark.height).toBe(13)
+        await expect(getComputedStyle(slotOf(new RegExp(`^${title}`))).color).toBe(INK[theme])
+        // the board draws the mark at 13 square
+        const box = el.querySelector<HTMLElement>('[data-icon]')!.getBoundingClientRect()
+        await expect(box.width).toBe(13)
+        await expect(box.height).toBe(13)
       }
 
-      // An unmapped TOP-LEVEL area still speaks the area voice — through the dot.
-      const scratch = row(/Scratchpad/)
-      await expect(scratch.querySelector('[data-icon]')).toBeNull()
-      await expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
-
-      // Nested pages carry no glyph until someone chooses one (#108); like every
-      // row without a glyph they draw the dot.
-      for (const name of [/Sleep/, /Food/, /Trips/]) {
-        await expect(row(name).querySelector('[data-icon]')).toBeNull()
-        await expect(row(name).querySelector('[data-part="dot"]')).toBeInTheDocument()
+      // the dots inside an area are the muted ink, not a hue
+      for (const name of [/workouts/, /sleep/, /budget/]) {
+        const dot = row(name).querySelector<HTMLElement>('[data-part="dot"]')!
+        await expect(dot).toBeInTheDocument()
+        await expect(dot.style.background).toBe('')
+        await expect(dot.className).toContain('bg-mn-text/50')
       }
+    }
+  },
+}
+
+/**
+ * `areaColours` on, as the board's `colour` map draws it: health sage, money navy
+ * (mist on the dark ground). The colour paints the area's glyph and the dots of
+ * the pages inside it — and nothing else: an area nobody coloured stays ink.
+ */
+export const ColouredMarks: Story = {
+  args: {
+    tree: BOARD_TREE,
+    pondName: 'make noise',
+    expanded: new Set(['health', 'money']),
+    marks: new Map<string, MarkSource>([
+      ['health', { id: 'health', parentId: null, title: 'health', areaRole: 'area-a' }],
+      ['money', { id: 'money', parentId: null, title: 'money', areaRole: 'area-c' }],
+    ]),
+  },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const canvas = within(probe(canvasElement, theme))
+      const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+      const slotColor = (name: RegExp) =>
+        getComputedStyle(row(name).querySelector<HTMLElement>('[data-area-mark]')!).color
+      const dotColor = (name: RegExp) =>
+        getComputedStyle(row(name).querySelector<HTMLElement>('[data-part="dot"]')!).backgroundColor
+
+      await expect(slotColor(/^health/)).toBe(AREA[theme]['area-a'])
+      await expect(dotColor(/workouts/)).toBe(AREA[theme]['area-a'])
+      await expect(dotColor(/sleep/)).toBe(AREA[theme]['area-a'])
+
+      await expect(slotColor(/^money/)).toBe(AREA[theme]['area-c'])
+      await expect(dotColor(/budget/)).toBe(AREA[theme]['area-c'])
+
+      // uncoloured areas, and the root, stay ink
+      await expect(slotColor(/^personal/)).toBe(INK[theme])
+      await expect(slotColor(/^creativity/)).toBe(INK[theme])
+      await expect(slotColor(/make noise/)).toBe(INK[theme])
     }
   },
 }

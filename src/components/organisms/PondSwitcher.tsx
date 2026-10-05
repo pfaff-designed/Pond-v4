@@ -25,7 +25,7 @@ import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
-import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { usePondGlyph } from '@/lib/pond/glyph'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
 function Plus() {
@@ -64,6 +64,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   // — the shell then resolved back to the first pond and the new pond showed its
   // pages. Both now read the same provider.
   const { pond: active, ponds, addPond } = usePond()
+  const pondGlyph = usePondGlyph()
 
   async function create(name: string) {
     if (pending) return
@@ -93,7 +94,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     'flex min-w-0 items-center gap-[7px] rounded-[8px] px-[6px] py-[4px] -mx-[6px] -my-[4px] select-none'
   const label = (
     <>
-      <PondMark glyph={active?.glyph ?? LIFE_GLYPH} />
+      <PondMark glyph={pondGlyph} />
       <span
         data-part="pond-name"
         className="min-w-0 truncate font-sans text-[13.5px] leading-[normal] font-medium text-mn-text"

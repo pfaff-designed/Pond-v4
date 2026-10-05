@@ -61,8 +61,9 @@ import { usePondId } from '@/lib/pond/context'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
-import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/crumbs'
+import { usePondGlyph } from '@/lib/pond/glyph'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
@@ -421,6 +422,9 @@ export interface RailViewProps {
    * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
   pondName: string
+  /** The pond's own glyph — the root row's mark, the same one the head draws.
+   *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
+  pondGlyph?: string
   /**
    * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
    * and every row falls back to its derived mark, which is what the rail did
@@ -446,10 +450,6 @@ export interface RailViewProps {
   /** Commit a drag→drop move (reparent/reorder). No-ops are absorbed downstream. */
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
-
-/** The Life root's mark — the waves glyph in ink. An area colour is painted only
- *  when the person has chosen one (#229); ink is the default. */
-const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 
 /**
  * The databases root's mark: a hand-drawn cylinder in `currentColor` — a functional
@@ -562,12 +562,13 @@ function rowMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMa
  */
 function areaMark(node: RailNode, mark: PageMark): ReactNode {
   if (!isAreaRow(node) && !mark.glyphIsOwn) return undefined
-  return mark.glyph ? <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} /> : undefined
+  return mark.glyph ? <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} /> : undefined
 }
 
 export function RailView({
   tree,
   pondName,
+  pondGlyph = LIFE_GLYPH,
   marks,
   selectedId,
   expanded,
@@ -812,7 +813,7 @@ export function RailView({
         plusWhenSelected={!isEmpty && !isLoading}
         posInSet={posInSet}
         setSize={setSize}
-        leading={LIFE_MARK}
+        leading={<AreaMark glyph={pondGlyph} />}
         onSelect={onLife}
         onToggle={onToggleLife}
         onAddChild={onAddChild}
@@ -842,13 +843,8 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         // The databases root carries its own functional mark, no area colour (#101).
-        accent={
-          isDatabasesRoot(node)
-            ? undefined
-            : isAreaRow(node) || mark.roleIsOwn
-              ? areaRoleColor(mark.role)
-              : undefined
-        }
+        // Everywhere else the dot is ink until the person colours its area.
+        accent={isDatabasesRoot(node) ? undefined : markAccent(mark.role)}
         leading={isDatabasesRoot(node) ? DATABASES_MARK : areaMark(node, mark)}
         // ticket-41: a row revealed on expand (any non-top-level row) settles in
         // rather than popping. Keyed by id, so only newly-mounted rows animate.
@@ -1001,6 +997,7 @@ export function Rail() {
   const queryClient = useQueryClient()
   const pondId = usePondId()
   const pondName = usePondName()
+  const pondGlyph = usePondGlyph()
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -1280,6 +1277,7 @@ export function Rail() {
       <RailView
         tree={tree}
         pondName={pondName}
+        pondGlyph={pondGlyph}
         marks={marks}
         selectedId={selectedNodeId}
         expanded={expanded}

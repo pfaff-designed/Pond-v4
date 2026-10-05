@@ -20,7 +20,7 @@
 
 import type { PageRow } from '@/lib/pages/tree'
 import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
-import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { withoutDatabasesRoot } from '@/lib/pages/databases-root'
 
 export interface ChildCardModel {
@@ -31,7 +31,8 @@ export interface ChildCardModel {
   stat: string
   /** Quiet caption — how much is inside + recency. */
   sub: string
-  accent: string
+  /** The page-kind dot's colour; undefined while nobody has chosen one (ink). */
+  accent?: string
 }
 
 /** "today" · "3d ago" · "2w ago" — calm, coarse recency. */
@@ -137,9 +138,9 @@ function toCard(
     stat: String(total),
     sub: [insideLabel(direct, total), ago && `updated ${ago}`].filter(Boolean).join(' · '),
     // A page-kind dot is a MARK — "Area colours (marks only — area glyph +
-    // page-kind dots)" (AGENTS.md §Design language) — so it carries a theme role,
-    // resolved through the same inheritance walk as every other mark (#134).
-    accent: areaRoleColor(resolveMark(row.id, marks).role),
+    // page-kind dots)" (AGENTS.md §Design language) — so it carries a theme role
+    // only when one was chosen, via the same inheritance walk as every other mark.
+    accent: markAccent(resolveMark(row.id, marks).role),
   }
 }
 
