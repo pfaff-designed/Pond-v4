@@ -108,7 +108,8 @@ function Frame({
 }
 
 const meta = {
-  title: 'Organisms/PondPicker/Slash',
+  // `∕` (U+2215), not `/`: a slash in a title is Storybook's path separator.
+  title: 'Organisms/pickers/2c · ∕ menu',
   component: Frame,
   parameters: { layout: 'centered' },
   args: { query: '' },
@@ -242,16 +243,19 @@ async function assertOpen(root: HTMLElement, p: Palette, mobile = false) {
 
 /** The board's base: three groups, `text` selected, the foot legend. Light. */
 export const Open: Story = {
+  name: 'open',
   play: async ({ canvasElement }) => assertOpen(canvasElement, PAPER),
 }
 
 /** The same frame on the dark ground — ink flips, the glass follows the Shell's dark recipe. */
 export const OpenInk: Story = {
+  name: 'open · ink',
   args: { ink: true },
   play: async ({ canvasElement }) => assertOpen(canvasElement, INK),
 }
 
 export const OpenMobile: Story = {
+  name: 'open · mobile',
   args: { size: 'mobile' },
   play: async ({ canvasElement }) => assertOpen(canvasElement, PAPER, true),
 }
@@ -261,6 +265,7 @@ export const OpenMobile: Story = {
  * 340 → right edge 607): the glass slides left and stays 12px inside the viewport.
  */
 export const OpenMobileNearRightEdge: Story = {
+  tags: ['!dev'],
   args: { size: 'mobile', anchorFromRight: 80 },
   play: async ({ canvasElement }) => {
     // The glass animates in, so its rect is mid-scale; its `left` is the placement.
@@ -295,16 +300,19 @@ async function assertFiltered(root: HTMLElement, p: Palette, mobile = false) {
 
 /** `/ta` typed on the page: the hit underlined, the groups gone, the count in the foot. */
 export const Filtered: Story = {
+  name: 'filtered',
   args: { query: 'ta' },
   play: async ({ canvasElement }) => assertFiltered(canvasElement, PAPER),
 }
 
 export const FilteredMobile: Story = {
+  name: 'filtered · mobile',
   args: { query: 'ta', size: 'mobile' },
   play: async ({ canvasElement }) => assertFiltered(canvasElement, PAPER, true),
 }
 
 export const FilteredInk: Story = {
+  name: 'filtered · ink',
   args: { query: 'ta', ink: true },
   play: async ({ canvasElement }) => assertFiltered(canvasElement, INK),
 }
@@ -330,16 +338,19 @@ async function assertEmpty(root: HTMLElement, p: Palette, mobile = false) {
 
 /** `/zz`: the note, in the board's words, and no foot. */
 export const Empty: Story = {
+  name: 'empty',
   args: { query: 'zz' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
 }
 
 export const EmptyMobile: Story = {
+  name: 'empty · mobile',
   args: { query: 'zz', size: 'mobile' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER, true),
 }
 
 export const EmptyInk: Story = {
+  name: 'empty · ink',
   args: { query: 'zz', ink: true },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
 }
@@ -379,16 +390,19 @@ async function assertTemplates(root: HTMLElement, p: Palette, mobile = false) {
 
 /** The submenu: head, the twelve premade shapes (#261), `yours`, and its own foot. */
 export const Templates: Story = {
+  name: 'templates',
   args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn() },
   play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER),
 }
 
 export const TemplatesMobile: Story = {
+  name: 'templates · mobile',
   args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), size: 'mobile' },
   play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER, true),
 }
 
 export const TemplatesInk: Story = {
+  name: 'templates · ink',
   args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), ink: true },
   play: async ({ canvasElement }) => assertTemplates(canvasElement, INK),
 }
@@ -397,6 +411,7 @@ export const TemplatesInk: Story = {
 
 /** From the field: ↓↓ then ↵ inserts the third row; esc only closes and keeps the text. */
 export const Keys: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn(), onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
@@ -421,6 +436,7 @@ export const Keys: Story = {
  * one selection, one wash — and a click on the hovered row inserts it.
  */
 export const Hovered: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -461,6 +477,7 @@ const selectedLabel = (root: HTMLElement) =>
  * screen would show.
  */
 export const KeyEdges: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn() },
   play: async ({ canvasElement }) => {
     const field = within(canvasElement).getByLabelText('page')
@@ -487,6 +504,7 @@ export const KeyEdges: Story = {
  * so `/zz` followed by ↵ reaches the page and keeps the typed text as text.
  */
 export const EmptyKeepsEnter: Story = {
+  tags: ['!dev'],
   args: { query: 'zz', onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText('page')
@@ -506,6 +524,7 @@ export const EmptyKeepsEnter: Story = {
  * a premade shape picks that kind.
  */
 export const TemplatesNav: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn(), onPickTemplate: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -555,6 +574,7 @@ export const TemplatesNav: Story = {
  * the blocks, so `/table` still finds the table.
  */
 export const EmptyPage: Story = {
+  tags: ['!dev'],
   args: {
     defaultPane: 'templates',
     yourTemplates: YOURS,
@@ -576,6 +596,7 @@ export const EmptyPage: Story = {
 
 /** The `pages` group closes the open list: `page`, then `nested page`, each with the page mark. */
 export const PagesGroup: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const glass = glassOf(canvasElement)
     const groups = [...glass.querySelectorAll('[data-part="group"]')]
@@ -605,6 +626,7 @@ const COMPOSER_COMMANDS = [
 ]
 
 export const ComposerCommands: Story = {
+  tags: ['!dev'],
   args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -630,6 +652,7 @@ export const ComposerCommands: Story = {
  * field keeps the space and everything before it as plain text, like esc.
  */
 export const SpaceKeepsText: Story = {
+  tags: ['!dev'],
   args: { query: 'zz', onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText<HTMLTextAreaElement>('page')
