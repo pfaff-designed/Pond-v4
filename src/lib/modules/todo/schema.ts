@@ -89,7 +89,6 @@ export const todoDescriptor: ModuleDescriptor<TodoBlock> = {
   // the `/` menu also offers it as `list` at the dot marker (#219, palette.ts).
   label: 'checklist',
   schema: todoSchema,
-  paletteDescription: 'things to tick off — tasks, steps, a packing list',
   description:
     'A list of items. With the default marker "check" it is a checklist, each item toggleable done/undone — tasks, steps, packing lists, anything to track completion on. ' +
     'Set marker "dot" for a plain bulleted list with nothing to tick off (groceries, names, things to remember), or marker "none" for a list of links or named things with a short summary beside each. ' +

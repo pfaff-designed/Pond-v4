@@ -63,12 +63,10 @@ import {
   GLASS,
   GLASS_ABOVE,
   GROUP,
-  HEAD,
-  HEAD_MOBILE,
   HEAD_TEXT,
   LIST,
-  NOTE,
-  NOTE_MOBILE,
+  SLASH_SIZES,
+  type PickerSize,
 } from './picker-chrome'
 import { Row, type RowEntry } from './slash-row'
 import { useAnchoredBox, type PickerAnchor, type PickerSide } from './use-anchored-box'
@@ -97,11 +95,8 @@ export interface SlashMenuProps {
   /** Portal target; defaults to `document.body`. Stories theme it. */
   container?: HTMLElement | null
   /** The DC's `size`: touch rows, a wider glass, a shorter list. @default 'desktop' */
-  size?: 'desktop' | 'mobile'
+  size?: PickerSize
 }
-
-/** The slash kind's width — the one chrome value that is this kind's own. */
-const WIDTH = { desktop: 'w-[300px]', mobile: 'w-[340px]' } as const
 
 export function SlashMenu({
   rows,
@@ -119,10 +114,9 @@ export function SlashMenu({
   size = 'desktop',
 }: SlashMenuProps) {
   const mobile = size === 'mobile'
+  const chrome = SLASH_SIZES[size]
   const [pane, setPane] = useState<SlashPane>(defaultPane)
-  // Opened on its templates rather than walked into: typing is then a search for a
-  // block, which the templates pane does not take, so the first change of query
-  // returns to the rows.
+  // A menu opened on its templates returns to the rows when the query first changes.
   const [ledByTemplates, setLedByTemplates] = useState(defaultPane === 'templates')
   const [seenQuery, setSeenQuery] = useState(query)
   if (query !== seenQuery) {
@@ -214,11 +208,11 @@ export function SlashMenu({
       data-part="glass"
       data-kind="slash"
       data-pane={pane}
-      className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${WIDTH[size]}`}
+      className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${chrome.width}`}
       style={style}
     >
       {pane === 'templates' && (
-        <div data-part="head" className={mobile ? HEAD_MOBILE : HEAD}>
+        <div data-part="head" className={chrome.head}>
           <span data-part="head-text" className={HEAD_TEXT}>
             page from template
           </span>
@@ -244,7 +238,7 @@ export function SlashMenu({
           }
           if (entry.kind === 'note') {
             return (
-              <div key="note" data-part="note" className={mobile ? NOTE_MOBILE : NOTE}>
+              <div key="note" data-part="note" className={chrome.note}>
                 {entry.text}
               </div>
             )
@@ -255,7 +249,7 @@ export function SlashMenu({
               key={entry.id}
               entry={entry}
               selected={at === active}
-              mobile={mobile}
+              size={size}
               onHover={() => select(at)}
               onPick={() => pick(entry)}
             />

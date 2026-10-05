@@ -240,9 +240,9 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
   })
 })
 
-// ── KAN-58: the `pages` group and the person's own templates ──────────────────
+// ── the `pages` group and the person's own templates ──────────────────
 
-describe('the / menu on an empty page makes pages (KAN-58)', () => {
+describe('the / menu on an empty page makes pages', () => {
   async function openSlash(typed: string) {
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
     const editor = await screen.findByPlaceholderText('Write something…')
@@ -289,6 +289,40 @@ describe('the / menu on an empty page makes pages (KAN-58)', () => {
     )
   })
 
+  it('removes the `/…` block by id, so a block inserted above it during the awaits survives', async () => {
+    renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
+    const { editor } = await openSlash('page')
+    await screen.findByRole('listbox', { name: 'page from template' })
+    fireEvent.change(editor, { target: { value: '/page' } })
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+
+    // `page` is a sibling, so making it waits on the parent lookup — held here.
+    let release: (page: unknown) => void = () => {}
+    mockGetPage.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const row = within(menu)
+      .getAllByRole('option')
+      .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page')!
+    fireEvent.click(row)
+    await waitFor(() => expect(mockGetPage).toHaveBeenCalled())
+
+    // While it waits, a block goes in above the `/…` block and moves its index.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Insert block' })[0])
+    const between = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.click(
+      within(between)
+        .getAllByRole('option')
+        .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'text')!
+    )
+    // The new block opens typeable; the `/page` block, blurred by the click, is read-only.
+    await screen.findByPlaceholderText('Write something…')
+    expect(screen.getByText('/page')).toBeInTheDocument()
+
+    release({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('/page')).not.toBeInTheDocument())
+    expect(screen.getByPlaceholderText('Write something…')).toHaveValue('')
+  })
+
   it('a template of yours is listed under `yours` and applied whole, stamped once with where it came from', async () => {
     mockListTemplates.mockResolvedValue([
       {
@@ -316,5 +350,54 @@ describe('the / menu on an empty page makes pages (KAN-58)', () => {
     expect(input.blocks).toEqual([
       { id: expect.not.stringMatching(/^old-1$/), type: 'text', content: 'chickpeas, harissa' },
     ])
+  })
+})
+
+describe('the between-blocks `+` lists what the `/` menu does', () => {
+  const originalMatchMedia = window.matchMedia
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia
+  })
+
+  const yours = {
+    id: 't1',
+    name: 'weeknight recipe',
+    kind: 'page',
+    origin: 'yours',
+    createdAt: NOW,
+    updatedAt: NOW,
+    blocks: [{ id: 'old-1', type: 'text', content: 'chickpeas' }],
+  }
+
+  it('offers yours and applies one as a child page', async () => {
+    mockListTemplates.mockResolvedValue([yours])
+    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: quote })
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Insert block' }))[0])
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.click(
+      within(menu)
+        .getAllByRole('option')
+        .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'page from template')!
+    )
+    fireEvent.click(await screen.findByText('weeknight recipe'))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
+    expect(mockCreatePage.mock.calls[0][2]).toMatchObject({
+      parentId: 'page-1',
+      title: 'weeknight recipe',
+    })
+  })
+
+  it('draws the mobile glass below the md breakpoint', async () => {
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: quote })
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Insert block' }))[0])
+    await screen.findByRole('listbox', { name: 'blocks' })
+    expect(document.querySelector('[data-part="glass"]')).toHaveClass('w-[340px]')
   })
 })

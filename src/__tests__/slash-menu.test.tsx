@@ -13,14 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
-import {
-  slashRows,
-  mintPreset,
-  pagePlacement,
-  BOARD_ORDER,
-  HEADING_PREFIX,
-  WITHHELD,
-} from '@/lib/modules/palette'
+import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { readHandoff } from './helpers/handoff'
@@ -122,12 +115,10 @@ describe('the / menu speaks Pond’s words only', () => {
     }
   })
 
-  it('every descriptor names itself in Pond’s words, with a short lowercase palette line', () => {
+  it('every descriptor names itself in Pond’s words', () => {
     for (const d of Object.values(moduleDescriptors)) {
       expect(ALLOWED.has(d.label)).toBe(true)
       expect(d.label).toBe(d.label.toLowerCase())
-      expect(d.paletteDescription).toBe(d.paletteDescription.toLowerCase())
-      expect(d.paletteDescription.length).toBeLessThan(80)
     }
   })
 })
@@ -183,10 +174,9 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
   it('the `pages` group makes pages, not blocks: its rows mint nothing and say where the page goes', () => {
     expect(mintPreset('page')).toBeNull()
     expect(mintPreset('nested-page')).toBeNull()
-    expect(pagePlacement('page')).toBe('sibling')
-    expect(pagePlacement('nested-page')).toBe('child')
-    expect(pagePlacement('table')).toBeNull()
-    expect(pagePlacement('page-from-template')).toBeNull()
+    expect(slashRows.find((r) => r.id === 'page')?.placement).toBe('sibling')
+    expect(slashRows.find((r) => r.id === 'nested-page')?.placement).toBe('child')
+    expect(slashRows.filter((r) => r.placement).map((r) => r.id)).toEqual(['page', 'nested-page'])
   })
 
   it('leaves out the two rows nothing can serve: `page link` and `pond — update`', () => {
@@ -305,14 +295,6 @@ describe('filtered', () => {
       expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([label])
       unmount()
     }
-  })
-
-  it('matches the label and the alias only — a row’s description is not searched', () => {
-    const rows: SlashRow[] = [
-      { id: 'a', label: 'entry log', description: 'a dated ledger', icon: { d: 'M0 0' } },
-    ]
-    renderMenu({ rows, query: 'ledger' })
-    expect(screen.queryAllByRole('option')).toHaveLength(0)
   })
 
   it('a label match leads an alias match, and the first match stays selected as the query grows', () => {

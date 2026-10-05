@@ -152,9 +152,9 @@ type CommandResult = 'clear' | 'handoff' | 'save' | null
 
 // The composer's `/` rows — the same `/` menu as the page's (#278), lowercase.
 const CHAT_COMMANDS: SlashRow[] = [
-  { id: 'clear', label: '/clear', description: 'clear the thread and start again' },
-  { id: 'handoff', label: '/handoff', description: 'keep what matters and start a fresh thread' },
-  { id: 'save', label: '/save', description: 'save the thread to a page' },
+  { id: 'clear', label: '/clear' },
+  { id: 'handoff', label: '/handoff' },
+  { id: 'save', label: '/save' },
 ]
 
 // Remembered drawer ergonomics (ticket-24).

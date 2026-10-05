@@ -24,6 +24,7 @@ import {
   type TemplatePick,
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
+import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { slashRows } from '@/lib/modules/palette'
 
 /**
@@ -36,12 +37,14 @@ export function InsertBetween({
   onPickTemplate,
   yourTemplates,
   onOpenChange,
+  size,
 }: {
   onInsert: (row: SlashRow) => void
   onPickTemplate?: (pick: TemplatePick) => void
   yourTemplates?: readonly YourTemplate[]
   /** The host reads this to fetch what the menu lists only while it is open. */
   onOpenChange?: (open: boolean) => void
+  size?: PickerSize
 }) {
   const [open, setOpenState] = useState(false)
   const setOpen = (next: boolean) => {
@@ -73,6 +76,7 @@ export function InsertBetween({
             setOpen(false)
           }}
           yourTemplates={yourTemplates}
+          size={size}
           onPickTemplate={
             onPickTemplate &&
             ((pick) => {

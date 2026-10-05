@@ -114,14 +114,6 @@ export interface ModuleDescriptor<T = unknown, Path extends string = NestedIdPat
   /** One NL line: purpose + when-to-use. Feeds the AI composition catalog (t16). */
   description: string
   /**
-   * The `/` menu's short line for this block (#278): lowercase, under ~80
-   * characters, in Pond's words. The menu matches a typed query against it and
-   * shows it as the row's hint when the match came through it rather than the
-   * label. The long `description` above is the AI catalog text and never reaches
-   * the menu.
-   */
-  paletteDescription: string
-  /**
    * Full-fidelity text rendering of a block — the prompt body and the embedding
    * source. REQUIRED: a block the model cannot read here is silently destroyed on
    * the next wholesale `edit` (the model re-emits what it can see). Must render

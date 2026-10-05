@@ -11,6 +11,7 @@
  */
 
 import { TEMPLATE_KINDS, type TemplateKind } from '@/lib/templates/types'
+import { BOX_HEIGHT, LIST_MAX_VH, SLASH_SIZES, type PickerSize } from './picker-chrome'
 
 export interface SlashIcon {
   /** A path on the board's 14 × 14 grid, stroked at 1.4 — or filled when `filled`. */
@@ -27,8 +28,6 @@ export interface SlashRow {
   label: string
   /** A second name, short and lowercase; matched against the query and shown as the hint when it matched. */
   alias?: string
-  /** Neither matched nor drawn. `AITerminal`'s `CHAT_COMMANDS` still supplies it and may not change. */
-  description?: string
   /** The board's shortcut hint at rest — `#`, `"`, `-`, `[]`, `proposes`. */
   key?: string
   icon?: SlashIcon
@@ -38,6 +37,8 @@ export interface SlashRow {
   type?: string
   /** The row opens a pane rather than inserting. */
   submenu?: 'templates'
+  /** The row makes a page rather than a block: beside the current page, or under it. */
+  placement?: 'sibling' | 'child'
 }
 
 export type TemplatePick =
@@ -133,6 +134,24 @@ export function normalizeQuery(query: string): string {
  */
 export const MOBILE_ROW_CAP = 12
 export const MOBILE_PREMADE_CAP = 8
+
+/**
+ * How tall the open list can get at `size`, for choosing which way the glass grows
+ * before it renders: the entries it would list, stopped at the list's own cap,
+ * plus the foot and the glass's padding.
+ */
+export function slashMenuHeight(
+  rows: readonly SlashRow[],
+  size: PickerSize,
+  viewportHeight: number
+): number {
+  const entries = rowEntries(rows, '', size === 'mobile' ? MOBILE_ROW_CAP : undefined)
+  const list = entries.reduce(
+    (height, e) => height + (e.kind === 'group' ? BOX_HEIGHT.group : SLASH_SIZES[size].rowHeight),
+    0
+  )
+  return Math.min(list, viewportHeight * LIST_MAX_VH) + BOX_HEIGHT.foot + BOX_HEIGHT.glass
+}
 
 /** The `rows` pane: grouped at rest, a flat match list under a query, a note when nothing matches. */
 export function rowEntries(

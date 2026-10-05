@@ -17,10 +17,8 @@
  * `highlight` (#249) and `entries` (#250) appear for free, and
  * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * Two board rows are absent on purpose. `page link`: no block or inline page link
- * exists to insert (`PageLinkCapabilities` serves kanban cards only). `pond —
- * update`: a Pond-authored proposal is born in the chat route from a model tool
- * call, and no client path writes one. Neither is stood in for here (ADR 0005).
+ * `page link` and `pond — update` have no row: no block or inline page link exists
+ * to insert, and there is no `pond — update` block type.
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
@@ -176,19 +174,11 @@ const templateRow: SlashRow = {
   submenu: 'templates',
 }
 
-/**
- * The `pages` group leaves the page: each row makes a page rather than a block, so
- * it mints none and the host acts on it. `page` is a sibling of the current page,
- * `nested page` its child.
- */
-const PAGE_ROWS = [
-  { id: 'page', group: 'pages', label: 'page', icon: ICON.page },
-  { id: 'nested-page', group: 'pages', label: 'nested page', icon: ICON.page },
-] satisfies readonly SlashRow[]
-
-/** Where the page a `pages` row makes sits, or null for any other row. */
-export const pagePlacement = (rowId: string): 'sibling' | 'child' | null =>
-  rowId === 'page' ? 'sibling' : rowId === 'nested-page' ? 'child' : null
+/** The `pages` group makes pages, not blocks: no row mints one, and the host acts on `placement`. */
+const PAGE_ROWS: readonly SlashRow[] = [
+  { id: 'page', group: 'pages', label: 'page', icon: ICON.page, placement: 'sibling' },
+  { id: 'nested-page', group: 'pages', label: 'nested page', icon: ICON.page, placement: 'child' },
+]
 
 const rank = (row: SlashRow) => {
   const i = BOARD_ORDER.indexOf(row.id)

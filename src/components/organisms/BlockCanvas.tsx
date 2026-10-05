@@ -43,12 +43,13 @@ import {
   type TemplatePick,
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
-import type { SlashPane } from '@/components/molecules/slash-entries'
+import { slashMenuHeight, type SlashPane } from '@/components/molecules/slash-entries'
+import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
 import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
-import { slashRows, mintPreset, emptyBlockForType, pagePlacement } from '@/lib/modules/palette'
+import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -238,6 +239,7 @@ export function BlockCanvas({
     () => templates.filter((t) => t.origin === 'yours').map((t) => ({ id: t.id, name: t.name })),
     [templates]
   )
+  const slashSize: PickerSize = useBelowMd() ? 'mobile' : 'desktop'
   // A page with nothing on it yet opens the menu on its templates (6f).
   const isBlankBesides = (index: number) =>
     blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
@@ -321,7 +323,7 @@ export function BlockCanvas({
   // — `list` is `todo` at the dot marker, `chart` is `view` in chart mode — so the
   // palette mints it; a row with no factory is a no-op, never a crash.
   function insertBlockAt(at: number, row: SlashRow) {
-    if (makePageFromRow(row.id, null)) return
+    if (makePageFromRow(row, null)) return
     const source = sourceBlockOf(row.id)
     if (source) {
       openSourcePicker(source, at, false)
@@ -485,19 +487,15 @@ export function BlockCanvas({
     }
   }
 
-  // The pages a `/` pick makes — `page from template › ↵ new nested page` (#278),
-  // `page` and `nested page` (KAN-58): the page the template describes, or a blank
-  // one, UNDER this page or beside it, through the same seams the AI's create_page
-  // path uses (`instantiateTemplate`, #261), then go there. A person's own template
-  // (`yours`) is copied with its content and stamped with where it came from, once
-  // (`provenance.ts`). The `/…` text block that summoned the menu was a command, so
-  // it goes. There is no page-link block to leave in its place (the DC draws one in
-  // 6k), so the new page's rail row is the only mark of it.
-  async function makePage(
+  // The page a `/` pick makes, under this page or beside it, through the seams the
+  // AI's create_page path uses (`instantiateTemplate`). A person's own template is
+  // copied with its content and stamped once with where it came from. The `/…` block
+  // that summoned the menu goes — by id, since the awaits below outlive any index.
+  const makePage = async (
     source: NewPage | null,
     placement: 'sibling' | 'child',
-    replaceAt: number | null
-  ) {
+    replaceId: string | null
+  ) => {
     if (!source) return
     try {
       const supabase = getSupabase()
@@ -516,7 +514,7 @@ export function BlockCanvas({
         pondId,
       })
       if (source.schema) await defineSchema(supabase, created.id, source.schema)
-      if (replaceAt !== null) onChange(blocksRef.current.filter((_, bi) => bi !== replaceAt))
+      if (replaceId !== null) onChange(blocksRef.current.filter((b) => b.id !== replaceId))
       insertPageOptimistic(
         queryClient,
         {
@@ -534,7 +532,7 @@ export function BlockCanvas({
     }
   }
 
-  async function newPageFromPick(pick: TemplatePick): Promise<NewPage | null> {
+  const newPageFromPick = async (pick: TemplatePick): Promise<NewPage | null> => {
     if (pick.origin === 'premade') return instantiateTemplate(PREMADE_TEMPLATES[pick.kind])
     const template =
       templates.find((t) => t.id === pick.id) ?? (await getTemplate(getSupabase(), pick.id))
@@ -546,13 +544,21 @@ export function BlockCanvas({
     }
   }
 
-  const makePageFromTemplate = async (pick: TemplatePick, replaceAt: number | null) =>
-    makePage(await newPageFromPick(pick), 'child', replaceAt)
+  const makePageFromTemplate = async (pick: TemplatePick, replaceId: string | null) =>
+    makePage(await newPageFromPick(pick), 'child', replaceId)
 
-  const makePageFromRow = (rowId: string, replaceAt: number | null) => {
-    const placement = pagePlacement(rowId)
-    if (placement) void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, replaceAt)
-    return placement !== null
+  const makePageFromRow = (row: SlashRow, replaceId: string | null) => {
+    if (!row.placement) return false
+    void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), row.placement, replaceId)
+    return true
+  }
+
+  // What every `/` inserter shares, so each host lists and behaves the same.
+  const inserterProps = {
+    size: slashSize,
+    yourTemplates,
+    onPickTemplate: (pick: TemplatePick) => void makePageFromTemplate(pick, null),
+    onOpenChange: setInsertMenuOpen,
   }
 
   // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
@@ -580,12 +586,7 @@ export function BlockCanvas({
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
         <div ref={canvasRef} className="space-y-0">
-          <InsertBetween
-            onInsert={(row) => insertBlockAt(0, row)}
-            onPickTemplate={(pick) => void makePageFromTemplate(pick, null)}
-            yourTemplates={yourTemplates}
-            onOpenChange={setInsertMenuOpen}
-          />
+          <InsertBetween onInsert={(row) => insertBlockAt(0, row)} {...inserterProps} />
           {blocks.map((block, i) => (
             <React.Fragment key={block.id}>
               <BlockEditor
@@ -599,13 +600,14 @@ export function BlockCanvas({
                 onSlashKey={() => setSlashMenuOpenAt(i)}
                 slashMenuOpen={slashMenuOpenAt === i}
                 slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+                slashSize={slashSize}
                 yourTemplates={yourTemplates}
                 onSlashSelect={(row) => {
                   // Replace the `/…` text block at i with the picked row's block
                   // (the `/` gesture: text block → chosen block). The three
                   // source rows go through the picker first (#280).
                   setSlashMenuOpenAt(null)
-                  if (makePageFromRow(row.id, i)) return
+                  if (makePageFromRow(row, block.id)) return
                   const source = sourceBlockOf(row.id)
                   if (source) {
                     openSourcePicker(source, i, true)
@@ -618,7 +620,7 @@ export function BlockCanvas({
                 }}
                 onSlashPickTemplate={(pick) => {
                   setSlashMenuOpenAt(null)
-                  void makePageFromTemplate(pick, i)
+                  void makePageFromTemplate(pick, block.id)
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
                 menuOpen={menuOpenAt === i}
@@ -651,7 +653,7 @@ export function BlockCanvas({
                   setDraggingIndex(null)
                 }}
               />
-              <InsertBetween onInsert={(item) => insertBlockAt(i + 1, item)} />
+              <InsertBetween onInsert={(item) => insertBlockAt(i + 1, item)} {...inserterProps} />
             </React.Fragment>
           ))}
         </div>
@@ -772,12 +774,6 @@ function useBlockEmptyState(
 }
 
 /**
- * The open `/` list at its tallest, for choosing which way it grows: 12 rows,
- * 3 group heads and the foot come to ~504px, and the list itself stops at 60vh.
- */
-const slashMenuHeight = () => Math.min(504, window.innerHeight * 0.6 + 56)
-
-/**
  * One block row: drag handle + delete affordance + the module's own view, editable.
  * Rendering goes through the ModuleView registry — no per-type branches, so every
  * registered module (and any future one) is editable here with zero edits. Views
@@ -805,6 +801,7 @@ function BlockEditor({
   onSlashPickTemplate,
   slashMenuOpen,
   slashPane = 'rows',
+  slashSize = 'desktop',
   yourTemplates,
   onSlashSelect,
   onSlashClose,
@@ -829,6 +826,7 @@ function BlockEditor({
   onSlashKey?: () => void
   slashMenuOpen?: boolean
   slashPane?: SlashPane
+  slashSize?: PickerSize
   yourTemplates?: readonly YourTemplate[]
   onSlashSelect?: (row: SlashRow) => void
   onSlashPickTemplate?: (pick: TemplatePick) => void
@@ -847,7 +845,6 @@ function BlockEditor({
   const [dragArmed, setDragArmed] = useState(false)
   const handleRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  const belowMd = useBelowMd()
   const [slashSide, setSlashSide] = useState<PickerSide>('bottom')
   // The `/` menu hangs off the caret, not the block (2c: "opens at the caret").
   const slashAnchor = useMemo<PickerAnchorBox>(
@@ -874,7 +871,7 @@ function BlockEditor({
         if (nextBlock.type === 'text' && block.type === 'text') {
           const was = (block as { content: string }).content
           const now = (nextBlock as { content: string }).content
-          // `/` typed into an EMPTY text block opens the menu (ticket-37, #278).
+          // `/` typed into an EMPTY text block opens the menu.
           // The slash STAYS as text — it is the query the person is typing, and
           // esc keeps it. Deleting it back out closes the menu.
           if (was === '' && now === '/') {
@@ -883,7 +880,7 @@ function BlockEditor({
                 sideTowardFreeSpace(
                   caretRect(rootRef.current),
                   window.innerHeight,
-                  slashMenuHeight()
+                  slashMenuHeight(slashRows, slashSize, window.innerHeight)
                 )
               )
             }
@@ -979,14 +976,14 @@ function BlockEditor({
         />
       )}
 
-      {/* The `/` menu, hung at the caret (ticket-37, #278; KAN-78). */}
+      {/* The `/` menu hangs at the caret. */}
       {slashMenuOpen && (
         <SlashMenu
           rows={slashRows}
           query={slashQuery}
           anchor={slashAnchor}
           side={slashSide}
-          size={belowMd ? 'mobile' : 'desktop'}
+          size={slashSize}
           onSelect={onSlashSelect ?? (() => {})}
           onPickTemplate={onSlashPickTemplate}
           yourTemplates={yourTemplates}

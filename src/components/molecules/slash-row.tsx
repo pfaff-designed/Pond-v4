@@ -27,15 +27,11 @@
 
 import type { ReactNode } from 'react'
 
+import { SLASH_SIZES, type PickerSize } from './picker-chrome'
 import type { SlashEntry } from './slash-entries'
 
 export type RowEntry = Extract<SlashEntry, { kind: 'row' }>
 
-const ROW_BASE =
-  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] font-mono tracking-[.01em]'
-const ROW = `${ROW_BASE} py-[7px] text-[12.5px]`
-/** The DC's `mob` row: `11px 10px` at 14 where desktop is `7px 10px` at 12.5. */
-const ROW_MOBILE = `${ROW_BASE} py-[11px] text-[14px]`
 /** The board's `sub` on a mono row: inline after the label. */
 const SUB = 'min-w-0 truncate text-[10.5px] text-mn-text-secondary'
 /** The board's `hint`: the key at rest, at the row's end. */
@@ -51,12 +47,12 @@ export function Row({
   selected,
   onHover,
   onPick,
-  mobile = false,
+  size = 'desktop',
 }: {
   entry: RowEntry
   selected: boolean
-  /** The DC's `size="mobile"` row. @default false */
-  mobile?: boolean
+  /** @default 'desktop' */
+  size?: PickerSize
   onHover: () => void
   onPick: () => void
 }) {
@@ -66,7 +62,7 @@ export function Row({
       role="option"
       aria-selected={selected}
       data-part="row"
-      className={`${mobile ? ROW_MOBILE : ROW} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
+      className={`${SLASH_SIZES[size].row} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
       onMouseEnter={onHover}
       onClick={onPick}
     >
