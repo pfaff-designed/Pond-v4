@@ -81,7 +81,7 @@ export function isFolderNode(node: RailNode): boolean {
 }
 
 /**
- * Does this row carry the AREA voice — the raised label, the accent, the default
+ * Does this row carry the AREA voice — the full-ink label, the accent, the default
  * glyph (#91)? A TOP-LEVEL page does (#108): that is where a person's areas live
  * and the only rows the fixed title→glyph defaults are written for. Per-page
  * glyph/colour is #91's own work; this only replaces the old `type === 'area'`.
@@ -237,7 +237,7 @@ export function flattenVisible(
 ): FlatRow[] {
   const root = rootTitle ? { ...LIFE_NODE, title: rootTitle } : LIFE_NODE
   const out: FlatRow[] = [
-    { id: LIFE_ID, node: root, depth: 0, isFolder: true, posInSet: 1, setSize: 1 },
+    { id: LIFE_ID, node: root, depth: 0, isFolder: roots.length > 0, posInSet: 1, setSize: 1 },
   ]
   const walk = (nodes: RailNode[], depth: number) => {
     nodes.forEach((node, i) => {

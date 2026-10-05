@@ -256,17 +256,17 @@ describe('Rail — area marks ride the glyph system', () => {
   // #108: the area voice (accent dot / glyph) rides TOP-LEVEL rows, since there is
   // no `type = 'area'` left to test and the fixed glyph defaults are written for
   // the seeded top-level areas. Per-page glyph/colour is #91's own work.
-  it('an unmapped top-level area keeps the KindDot mark; nested pages carry neither', () => {
+  it('an unmapped top-level area keeps the KindDot mark; nested pages carry the dot, no glyph', () => {
     const { getByRole } = renderRail()
     const scratch = getByRole('treeitem', { name: /Scratchpad/ })
     expect(scratch.querySelector('[data-icon]')).toBeNull()
     expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
     const food = getByRole('treeitem', { name: /Food/ })
     expect(food.querySelector('[data-icon]')).toBeNull()
-    expect(food.querySelector('[data-part="dot"]')).toBeNull()
+    expect(food.querySelector('[data-part="dot"]')).toBeInTheDocument()
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
-    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
+    expect(sleep.querySelector('[data-part="dot"]')).toBeInTheDocument()
   })
 })
 
@@ -442,13 +442,13 @@ describe('Rail — an explicit mark reaches the rail (#134)', () => {
     expect(dot.style.background).toBe('var(--mn-area-b)')
   })
 
-  it('leaves an untouched nested row with no mark at all', () => {
+  it('leaves an untouched nested row with the ink dot and no glyph or colour', () => {
     const { getByRole } = renderRail(railMarks([{ ...HEALTH, areaRole: 'area-c' }, SLEEP]))
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
-    // Asserted as ABSENCE of the element — the earlier version read a style off a
-    // node that was never there, so it could not have failed.
-    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
+    const dot = sleep.querySelector<HTMLElement>('[data-part="dot"]')!
+    expect(dot).toBeInTheDocument()
+    expect(dot.style.background).toBe('')
   })
 })
 

@@ -128,7 +128,6 @@ interface RailRowProps {
   isExpanded: boolean
   isSelected: boolean
   /** An ancestor of the selection — the trail reads at a raised tone (t25). */
-  isOnPath: boolean
   /** The single roving tab stop lands here; arrow keys move it (APG tree). */
   isFocused: boolean
   isBusy: boolean
@@ -178,7 +177,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isFolder,
     isExpanded,
     isSelected,
-    isOnPath,
     isFocused,
     isBusy,
     isRoot = false,
@@ -216,18 +214,14 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const [settled, setSettled] = useState(false)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
-  /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): an area
-   *  row carries 13.5 type, everything deeper 13. */
-  const isAreaRow = depth <= 1
-  // The rail's "you are here" trail: three ink tiers on the row label. The
-  // list-row molecule renders one tone (mockup default), so the rail docks its
-  // own voice onto the title via data-voice → CSS (see globals.css). full =
-  // the selected row (ink-100); raised = an area/root row or an ancestor of the
-  // selection (ink-80 meta); muted = a plain child row (ink-68). Hover lifts any
-  // row to full; the databases root is full at rest (the board's dbRow sets no
-  // colour, so it inherits ink-100).
-  const labelVoice: 'full' | 'raised' | 'muted' =
-    isSelected || hovered || isDbRoot ? 'full' : isOnPath || isRoot || isArea ? 'raised' : 'muted'
+  /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): the root and
+   *  an area row carry 13.5 type, everything deeper 13. Read off the node, not the
+   *  depth, because the databases tree is flattened from its own root. */
+  const isAreaRow = isRoot || isArea
+  // Ink tiers on the label: root, area rows, the selected row and the hovered row
+  // are full ink; every other page row is the .68 tier. The databases root has no
+  // colour of its own in the board, so it is full at rest.
+  const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
 
   return (
     <div
@@ -240,8 +234,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       aria-setsize={setSize}
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
-      data-on-path={isOnPath || undefined}
-      data-voice={labelVoice}
       draggable={draggable}
       onAnimationEnd={() => setSettled(true)}
       onDragStart={
@@ -273,11 +265,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       }}
       className={`group relative flex items-center rounded-mn-row outline-none
         ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
-        focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
+        focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0
+        ${isArea && !isDbRoot ? 'mt-1' : ''}
         ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
-        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
+        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-text/50 ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
       style={isDbRoot ? undefined : { paddingLeft: padLeft }}
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
@@ -292,15 +285,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         />
       )}
 
-      {/* Indentation guides — one hairline per ancestor level, brightened a
-          touch on the selected/on-path trail so the eye follows depth home. */}
+      {/* Indentation guides — one hairline per ancestor level. */}
       {Array.from({ length: depth }).map((_, i) => (
         <span
           key={i}
           aria-hidden
-          className={`absolute top-0 bottom-0 w-px ${
-            isSelected || isOnPath ? 'bg-mn-line' : 'bg-mn-hair'
-          }`}
+          className="absolute top-0 bottom-0 w-px bg-mn-text/[0.09]"
           style={{ left: INDENT_BASE + i * INDENT_STEP + GUIDE_OFFSET }}
         />
       ))}
@@ -312,7 +302,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid w-[9px] flex-shrink-0 place-items-center text-mn-text-secondary transition-colors hover:text-mn-text"
+          className="grid w-[9px] flex-shrink-0 place-items-center text-mn-text-secondary"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -327,19 +317,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       <PondMolecule
         kind="list-row"
-        // Always `rest`: the molecule's `selected` / `hover` states paint a wash on
-        // the label body alone, and the host paints it across the whole row.
-        state="rest"
+        // `selected` is what turns the dot to full ink; the wash it would also paint on
+        // the label body is cleared, because the host paints it across the whole row.
+        state={isSelected ? 'selected' : 'rest'}
         title={label}
         meta=""
         handle={false}
-        // `accent` is already gated (top-level, or a role the person chose), so the
-        // extra `isArea` here made the colour-only case unreachable: setting just a
-        // hue on a nested page painted the breadcrumb and kicker and left the rail
-        // row with no dot at all. Round three caught the dead branch.
-        dot={!isRoot && accent !== undefined && leading === undefined}
+        // Every row without a glyph draws the dot; `accent` only recolours it.
+        dot={leading === undefined}
         accent={accent}
-        emphasis={isRoot || isArea || isSelected}
+        emphasis={isAreaRow || isSelected}
         leading={leading}
         trailing={
           <>
@@ -347,11 +334,11 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 REAL tab stops so keyboard/AT users reach them without a pointer
                 (t27). The root (Life) is the workspace, not a row: no add/delete. */}
             {!isRoot && (onAddChild || onDelete) && (
-              <span className="flex flex-none items-center gap-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+              <span className="-ml-[7px] flex max-w-0 flex-none items-center gap-2 overflow-hidden opacity-0 transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 group-hover:ml-0 group-hover:max-w-16 group-hover:opacity-100">
                 {onAddChild && (
                   <button
                     type="button"
-                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
                     title="Add sub-page"
                     aria-label={`Add sub-page to ${label}`}
                     disabled={isBusy}
@@ -373,7 +360,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 {onDelete && (
                   <button
                     type="button"
-                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
+                    className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
                     title="Delete page"
                     aria-label={`Delete ${label}`}
                     disabled={isBusy}
@@ -400,17 +387,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // font-size as conflicting with leading (a `text-*` step can carry its
         // own), so a size appended after it silently drops it — #252's bug
         // class — and the row springs back to preflight's 1.5.
-        className={`min-h-0 w-full min-w-0 flex-1 ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
+        className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           isAreaRow ? '' : ' text-[13px]'
-        } leading-[normal]`}
+        }${isFullInk ? '' : ' text-mn-text-secondary'} leading-[normal]`}
       />
     </div>
   )
 })
 
 // ── Presentational rail ──────────────────────────────────────────────────────
-
-const NO_PATH: ReadonlySet<string> = new Set()
 
 export interface RailViewProps {
   tree: RailNode[]
@@ -426,8 +411,6 @@ export interface RailViewProps {
    */
   marks?: ReadonlyMap<string, MarkSource>
   selectedId: string | null
-  /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
-  pathIds?: ReadonlySet<string>
   expanded: Set<string>
   /** Whether the Life root is expanded (reveals the whole tree). */
   lifeExpanded: boolean
@@ -570,7 +553,6 @@ export function RailView({
   pondName,
   marks,
   selectedId,
-  pathIds = NO_PATH,
   expanded,
   lifeExpanded,
   busyId,
@@ -800,10 +782,9 @@ export function RailView({
         // (#101 review). `usePondName()` supplies it, also lowercase.
         title={pondName}
         depth={0}
-        isFolder
+        isFolder={isFolder}
         isExpanded={lifeExpanded}
         isSelected={selectedId === null}
-        isOnPath={false}
         isFocused={rovingId === id}
         isBusy={false}
         isRoot
@@ -831,7 +812,6 @@ export function RailView({
         isFolder={isFolder}
         isExpanded={expanded.has(id)}
         isSelected={id === selectedId}
-        isOnPath={id !== selectedId && pathIds.has(id)}
         isFocused={rovingId === id}
         isBusy={id === busyId}
         isArea={isAreaRow(node)}
@@ -1026,16 +1006,6 @@ export function Rail() {
     return map
   }, [tree])
   const selectedNodeId = searchParams.get('nodeId')
-
-  // The ancestor ids of the selected node — the rail renders these at a raised
-  // tone so the trail to "you are here" reads even in a deep tree (ticket-25).
-  const pathIds = useMemo<ReadonlySet<string>>(
-    () =>
-      selectedNodeId
-        ? new Set(ancestorPath(pages, selectedNodeId).map((c) => c.id))
-        : new Set<string>(),
-    [pages, selectedNodeId]
-  )
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
@@ -1285,7 +1255,6 @@ export function Rail() {
         pondName={pondName}
         marks={marks}
         selectedId={selectedNodeId}
-        pathIds={pathIds}
         expanded={expanded}
         lifeExpanded={lifeExpanded}
         busyId={busyId}

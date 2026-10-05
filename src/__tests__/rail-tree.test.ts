@@ -124,7 +124,7 @@ describe('isFolderNode', () => {
   })
 })
 
-// #108: the area VOICE (raised label, accent, default glyph) is a different
+// #108: the area VOICE (full-ink label, accent, default glyph) is a different
 // question from folder-ness, so it is its own named rule.
 describe('isAreaRow', () => {
   it('a top-level page is an area row, childless or not', () => {
@@ -151,6 +151,10 @@ describe('flattenVisible', () => {
       posInSet: 1,
       setSize: 1,
     })
+  })
+
+  it('a root with nothing under it is not a folder', () => {
+    expect(flattenVisible([], new Set(), true)[0]).toMatchObject({ id: LIFE_ID, isFolder: false })
   })
 
   it('life collapsed → only the Life row', () => {

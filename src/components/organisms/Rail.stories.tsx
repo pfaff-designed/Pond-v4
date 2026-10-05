@@ -234,51 +234,6 @@ export const AriaCoordinates: Story = {
   },
 }
 
-/**
- * The trail to the current node (ticket-25): ancestors of the selection carry
- * the raised on-path tone (data-on-path) so "you are here" reads in the rail;
- * the selected row and off-path rows don't.
- */
-export const PathToSelection: Story = {
-  args: {
-    expanded: new Set(['personal', 'food']),
-    selectedId: 'recipes',
-    pathIds: new Set(['personal', 'food']),
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.getByRole('treeitem', { name: /Personal/ })).toHaveAttribute('data-on-path')
-    await expect(canvas.getByRole('treeitem', { name: /Food/ })).toHaveAttribute('data-on-path')
-    // the selected row itself uses the selected treatment, not the path tone
-    await expect(canvas.getByRole('treeitem', { name: /Recipes/ })).not.toHaveAttribute(
-      'data-on-path'
-    )
-    // an area off the path stays at resting tone
-    await expect(canvas.getByRole('treeitem', { name: /Health/ })).not.toHaveAttribute(
-      'data-on-path'
-    )
-
-    // The three-tier label VOICE the trail is drawn with (`data-voice` → CSS ink
-    // tiers; the list-row molecule itself renders one tone, so the rail docks its
-    // own). `Food` isolates the on-path raise from the area/root raise — it is a
-    // nested plain page, not a top-level area — and `Trips` is its off-path
-    // sibling at the same depth. Guards the #95-review regression where the
-    // TreeRow→PondMolecule absorption flattened every row to one tone, and the
-    // #108 follow-up where a top-level control row read raised for being an area.
-    const voice = (name: RegExp) =>
-      canvas.getByRole('treeitem', { name }).getAttribute('data-voice')
-    const VOICES: [RegExp, string][] = [
-      [/Recipes/, 'full'], // selected
-      [/Food/, 'raised'], // on-path ancestor (a nested plain page, not an area)
-      [/Personal/, 'raised'], // on-path ancestor
-      [/Trips/, 'muted'], // plain, off the selection path
-    ]
-    for (const [name, expected] of VOICES) await expect(voice(name)).toBe(expected)
-    // the regression guard: an on-path ancestor must NOT read like a plain row
-    await expect(voice(/Food/)).not.toBe(voice(/Trips/))
-  },
-}
-
 /** The caret toggles a folder without navigating; the name opens the page. */
 export const Interactions: Story = {
   play: async ({ canvas, args }) => {
@@ -326,6 +281,27 @@ export const HoverCrud: Story = {
     await expect(args.onDelete).toHaveBeenCalledWith('scratch')
     // the Life root has no CRUD affordances
     await expect(canvas.queryByRole('button', { name: /Delete Life/ })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * The tools reserve no width at rest — the label owns the whole row — and
+ * appear on keyboard focus-within as well as on hover.
+ */
+export const HoverCrudReservesNoWidth: Story = {
+  play: async ({ canvas }) => {
+    const scratch = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const tools = canvas.getByRole('button', { name: 'Delete Scratchpad' }).parentElement!
+    await expect(tools.getBoundingClientRect().width).toBe(0)
+    await expect(getComputedStyle(tools).opacity).toBe('0')
+    const title = scratch.querySelector<HTMLElement>('[data-part="title"]')!
+    const row = scratch.getBoundingClientRect()
+    // 8px right padding is all that sits between the label's box and the row's edge
+    await expect(Math.round(row.right - title.getBoundingClientRect().right)).toBe(8)
+
+    canvas.getByRole('button', { name: 'Delete Scratchpad' }).focus()
+    await waitFor(() => expect(getComputedStyle(tools).opacity).toBe('1'))
+    await expect(tools.getBoundingClientRect().width).toBeGreaterThan(24)
   },
 }
 
@@ -646,10 +622,11 @@ export const DerivedAreaMarks: Story = {
       await expect(scratch.querySelector('[data-icon]')).toBeNull()
       await expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
 
-      // Nested pages carry neither until someone chooses one (#108).
+      // Nested pages carry no glyph until someone chooses one (#108); like every
+      // row without a glyph they draw the dot.
       for (const name of [/Sleep/, /Food/, /Trips/]) {
         await expect(row(name).querySelector('[data-icon]')).toBeNull()
-        await expect(row(name).querySelector('[data-part="dot"]')).toBeNull()
+        await expect(row(name).querySelector('[data-part="dot"]')).toBeInTheDocument()
       }
     }
   },
@@ -713,11 +690,11 @@ export const ChosenMarks: Story = {
       await expect(getComputedStyle(dot).backgroundColor).toBe(AREA[theme]['area-b'])
       await expect(row(/Marathon/).querySelector('[data-icon]')).toBeNull()
 
-      // 4. untouched nested row: no mark of either register. Asserted as the
-      //    ABSENCE of the element — an earlier version read a style off a node
-      //    that was never there, so it could not have failed.
+      // 4. untouched nested row: no glyph, just the ink dot. Asserted as the
+      //    ABSENCE of the glyph element — an earlier version read a style off a
+      //    node that was never there, so it could not have failed.
       await expect(row(/Trips/).querySelector('[data-icon]')).toBeNull()
-      await expect(row(/Trips/).querySelector('[data-part="dot"]')).toBeNull()
+      await expect(row(/Trips/).querySelector('[data-part="dot"]')).toBeInTheDocument()
     }
   },
 }
@@ -1073,5 +1050,93 @@ export const FootWithoutDatabases: Story = {
     const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
     await expect(foot.children).toHaveLength(1)
     await expect(foot.firstElementChild).toHaveTextContent('settings')
+  },
+}
+
+/**
+ * The row recipe (`PondRail.dc.html` `mk`), computed in both themes: root and
+ * area rows (d <= 1) and the selected row are full ink, a page row is the .68
+ * tier. Every row without a glyph draws the 7×7 dot — ink .5 at rest, full ink
+ * when selected. The guides are one 1px hairline at ink .09 (paper .09 on dark),
+ * and an area row after the root opens 4px of space above it.
+ */
+export const RowRecipe: Story = {
+  args: { expanded: new Set(['health']), selectedId: 'sleep' },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const INK = {
+      light: [27, 29, 20],
+      dark: [250, 249, 239],
+    } as const
+    const expectInk = async (css: string, theme: Theme, alpha: number) => {
+      const [r, g, b, a] = toRgba(css)
+      const [er, eg, eb] = INK[theme]
+      for (const [got, want] of [
+        [r, er],
+        [g, eg],
+        [b, eb],
+      ])
+        await expect(Math.abs(got - want)).toBeLessThan(1)
+      await expect(Math.abs(a - alpha)).toBeLessThan(0.005)
+    }
+
+    for (const theme of THEMES) {
+      const canvas = within(probe(canvasElement, theme))
+      const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+      const titleColor = (name: RegExp) =>
+        getComputedStyle(row(name).querySelector<HTMLElement>('[data-part="title"]')!).color
+      const dotOf = (name: RegExp) => row(name).querySelector<HTMLElement>('[data-part="dot"]')!
+
+      // area rows and the root: full ink
+      await expectInk(titleColor(/life/), theme, 1)
+      await expectInk(titleColor(/Health/), theme, 1)
+      await expectInk(titleColor(/Scratchpad/), theme, 1)
+      // a page row: .68; the selected page row: full
+      await expectInk(titleColor(/Marathon/), theme, 0.68)
+      await expectInk(titleColor(/Sleep/), theme, 1)
+
+      // the dot exists on a leaf page (ink .5 at rest) and on a childless area
+      const marathonDot = dotOf(/Marathon/)
+      await expect(marathonDot).toBeInTheDocument()
+      const box = marathonDot.getBoundingClientRect()
+      await expect([box.width, box.height]).toEqual([7, 7])
+      await expect(getComputedStyle(marathonDot).borderTopLeftRadius).toBe('2px')
+      await expectInk(getComputedStyle(marathonDot).backgroundColor, theme, 0.5)
+      await expect(dotOf(/Scratchpad/)).toBeInTheDocument()
+      // the selected row's dot is full ink
+      await expectInk(getComputedStyle(dotOf(/Sleep/)).backgroundColor, theme, 1)
+
+      // guides: one hairline per ancestor level, ink .09, in both themes
+      const guides = [...row(/Sleep/).querySelectorAll<HTMLElement>(':scope > span.w-px')]
+      await expect(guides).toHaveLength(2)
+      for (const guide of guides) {
+        await expectInk(getComputedStyle(guide).backgroundColor, theme, 0.09)
+        await expect(guide.getBoundingClientRect().width).toBe(1)
+      }
+
+      // the chevron is the .68 tier and points down when open
+      const caret = row(/Health/).querySelector<SVGSVGElement>('button svg')!
+      await expect(caret.getAttribute('viewBox')).toBe('0 0 9 9')
+      await expect(caret).toHaveClass('rotate-90')
+      await expect(getComputedStyle(caret).color).toBe(
+        theme === 'light' ? 'rgba(27, 29, 20, 0.68)' : 'rgba(250, 249, 239, 0.68)'
+      )
+
+      // area rows after the root: 4px above; the root and nested rows: none
+      await expect(getComputedStyle(row(/Health/)).marginTop).toBe('4px')
+      await expect(getComputedStyle(row(/Scratchpad/)).marginTop).toBe('4px')
+      await expect(getComputedStyle(row(/life/)).marginTop).toBe('0px')
+      await expect(getComputedStyle(row(/Marathon/)).marginTop).toBe('0px')
+    }
+  },
+}
+
+/** A root with nothing under it is not a folder: no chevron, no aria-expanded. */
+export const EmptyRootHasNoChevron: Story = {
+  args: { tree: [], isEmpty: true },
+  play: async ({ canvas }) => {
+    const life = canvas.getByRole('treeitem', { name: /life/ })
+    await expect(life).not.toHaveAttribute('aria-expanded')
+    await expect(life.querySelector('button')).toBeNull()
   },
 }
