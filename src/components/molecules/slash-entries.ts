@@ -19,7 +19,7 @@ export interface SlashIcon {
 }
 
 /** The board's group labels for the slash kind (`PondPicker.dc.html`'s `G(…)` calls). */
-export type SlashGroup = 'text' | 'blocks' | 'templates'
+export type SlashGroup = 'text' | 'blocks' | 'templates' | 'pages'
 
 export interface SlashRow {
   id: string

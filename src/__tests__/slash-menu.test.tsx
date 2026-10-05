@@ -13,7 +13,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
-import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
+import {
+  slashRows,
+  mintPreset,
+  pagePlacement,
+  BOARD_ORDER,
+  HEADING_PREFIX,
+  WITHHELD,
+} from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 import { readHandoff } from './helpers/handoff'
@@ -173,6 +180,21 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     })
   })
 
+  it('the `pages` group makes pages, not blocks: its rows mint nothing and say where the page goes', () => {
+    expect(mintPreset('page')).toBeNull()
+    expect(mintPreset('nested-page')).toBeNull()
+    expect(pagePlacement('page')).toBe('sibling')
+    expect(pagePlacement('nested-page')).toBe('child')
+    expect(pagePlacement('table')).toBeNull()
+    expect(pagePlacement('page-from-template')).toBeNull()
+  })
+
+  it('leaves out the two rows nothing can serve: `page link` and `pond — update`', () => {
+    const labels = slashRows.map((r) => r.label)
+    expect(labels).not.toContain('page link')
+    expect(labels).not.toContain('pond — update')
+  })
+
   it('the board draws no `board` row, so the menu offers none', () => {
     expect(slashRows.some((r) => r.id === 'board' || r.label === 'board')).toBe(false)
   })
@@ -191,6 +213,8 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/big number',
       'blocks/entry log',
       'templates/page from template',
+      'pages/page',
+      'pages/nested page',
     ])
   })
 
@@ -207,7 +231,7 @@ describe('open', () => {
     expect(glass().querySelector('input')).toBeNull()
     expect(glass()).toHaveClass('mn-glass', 'rounded-mn-card')
     const groups = [...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
-    expect(groups).toEqual(['text', 'blocks', 'templates'])
+    expect(groups).toEqual(['text', 'blocks', 'templates', 'pages'])
     expect(labelOf(selected())).toBe('text')
     expect(within(selected()).getByText('↵')).toBeInTheDocument()
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
@@ -397,6 +421,46 @@ describe('mobile', () => {
   })
 })
 
+describe('opened on the templates', () => {
+  it('leads with the templates, and the first change of query returns to the blocks', () => {
+    const { rerender, anchor, onSelect, onClose } = renderMenu({ defaultPane: 'templates' })
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    expect(glass().querySelector('[data-part="head"]')!.textContent).toBe('page from template')
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query="t"
+        anchor={anchor}
+        defaultPane="templates"
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    )
+    expect(glass()).toHaveAttribute('data-pane', 'rows')
+    expect(glass().querySelector('[data-part="head"]')).toBeNull()
+  })
+
+  it('a pane walked into stays through a query — only an opening on the templates gives way', () => {
+    const { rerender, anchor, onSelect, onClose } = renderMenu()
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    rerender(
+      <SlashMenu rows={slashRows} query="t" anchor={anchor} onSelect={onSelect} onClose={onClose} />
+    )
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+  })
+
+  it('lists the person’s own templates under `yours`, and picking one hands back its id', () => {
+    const { onPickTemplate } = renderMenu({
+      defaultPane: 'templates',
+      yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
+    })
+    fireEvent.click(options().find((o) => labelOf(o as HTMLElement) === 'weeknight recipe')!)
+    expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
+  })
+})
+
 describe('templates', () => {
   it('↵ on `page from template` opens the submenu: head, the twelve premade shapes, the foot', () => {
     const { anchor, onSelect } = renderMenu()
@@ -467,7 +531,7 @@ describe('keys arrive from the field the person is typing in', () => {
     fireEvent.keyDown(anchor, { key: 'ArrowUp' })
     expect(labelOf(selected())).toBe('text')
     for (let i = 0; i < 30; i++) fireEvent.keyDown(anchor, { key: 'ArrowDown' })
-    expect(labelOf(selected())).toBe('page from template')
+    expect(labelOf(selected())).toBe('nested page')
   })
 
   it('esc keeps the typed text: it closes the menu and does not touch the field', () => {

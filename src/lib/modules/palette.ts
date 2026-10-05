@@ -17,9 +17,10 @@
  * `highlight` (#249) and `entries` (#250) appear for free, and
  * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * Board rows with no factory yet — `page link`, `pond — update`, `page`,
- * `nested page` — are NOT invented here (ADR 0005). They are #281. `heading` left
- * that list: it needed no new block type, only the `text` block's own markdown.
+ * Two board rows are absent on purpose. `page link`: no block or inline page link
+ * exists to insert (`PageLinkCapabilities` serves kanban cards only). `pond —
+ * update`: a Pond-authored proposal is born in the chat route from a model tool
+ * call, and no client path writes one. Neither is stood in for here (ADR 0005).
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
@@ -140,8 +141,10 @@ export const BOARD_ORDER: readonly string[] = [
   'big-number',
   'entry-log',
   'page-from-template',
+  'page',
+  'nested-page',
 ]
-const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates']
+const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates', 'pages']
 
 /** A row's id is its board label as a slug: `embed / file` → `embed-file`, `entry log` → `entry-log`. */
 const slug = (label: string) =>
@@ -173,6 +176,20 @@ const templateRow: SlashRow = {
   submenu: 'templates',
 }
 
+/**
+ * The `pages` group leaves the page: each row makes a page rather than a block, so
+ * it mints none and the host acts on it. `page` is a sibling of the current page,
+ * `nested page` its child.
+ */
+const PAGE_ROWS = [
+  { id: 'page', group: 'pages', label: 'page', icon: ICON.page },
+  { id: 'nested-page', group: 'pages', label: 'nested page', icon: ICON.page },
+] satisfies readonly SlashRow[]
+
+/** Where the page a `pages` row makes sits, or null for any other row. */
+export const pagePlacement = (rowId: string): 'sibling' | 'child' | null =>
+  rowId === 'page' ? 'sibling' : rowId === 'nested-page' ? 'child' : null
+
 const rank = (row: SlashRow) => {
   const i = BOARD_ORDER.indexOf(row.id)
   return i === -1 ? BOARD_ORDER.length : i
@@ -185,6 +202,7 @@ export const slashRows: readonly SlashRow[] = [
   ...ownRows,
   ...Object.values(VARIANT_ROWS).flat(),
   templateRow,
+  ...PAGE_ROWS,
 ].sort((a, b) => groupRank(a) - groupRank(b) || rank(a) - rank(b))
 
 /**

@@ -120,6 +120,18 @@ export function SlashMenu({
 }: SlashMenuProps) {
   const mobile = size === 'mobile'
   const [pane, setPane] = useState<SlashPane>(defaultPane)
+  // Opened on its templates rather than walked into: typing is then a search for a
+  // block, which the templates pane does not take, so the first change of query
+  // returns to the rows.
+  const [ledByTemplates, setLedByTemplates] = useState(defaultPane === 'templates')
+  const [seenQuery, setSeenQuery] = useState(query)
+  if (query !== seenQuery) {
+    setSeenQuery(query)
+    if (ledByTemplates) {
+      setLedByTemplates(false)
+      setPane('rows')
+    }
+  }
   // The selection is keyed to what it was made against, so a new query or pane
   // starts at the first row without an effect writing state.
   const [sel, setSel] = useState({ pane, query, index: 0 })
@@ -134,9 +146,14 @@ export function SlashMenu({
   )
   const select = (index: number) => setSel({ pane, query, index })
 
+  const openPane = (next: SlashPane) => {
+    setLedByTemplates(false)
+    setPane(next)
+  }
+
   const pick = (item: RowEntry) => {
     if (item.template) onPickTemplate?.(item.template)
-    else if (item.row?.submenu) setPane(item.row.submenu)
+    else if (item.row?.submenu) openPane(item.row.submenu)
     else if (item.row) onSelect(item.row)
   }
 
@@ -153,10 +170,10 @@ export function SlashMenu({
         onClose()
         handled = false
       } else if (e.key === 'Enter' && item) pick(item)
-      else if (e.key === 'ArrowRight' && item?.row?.submenu) setPane(item.row.submenu)
+      else if (e.key === 'ArrowRight' && item?.row?.submenu) openPane(item.row.submenu)
       else if (e.key === 'ArrowRight' && item?.template && onPreviewTemplate)
         onPreviewTemplate(item.template)
-      else if (e.key === 'ArrowLeft' && pane === 'templates') setPane('rows')
+      else if (e.key === 'ArrowLeft' && pane === 'templates') openPane('rows')
       else handled = false
       if (handled) {
         e.preventDefault()

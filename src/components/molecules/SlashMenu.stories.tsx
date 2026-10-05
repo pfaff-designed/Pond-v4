@@ -4,6 +4,7 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { SlashMenu, type SlashMenuProps } from './SlashMenu'
 import { slashRows } from '@/lib/modules/palette'
+import { ICON } from './slash-entries'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
 /**
@@ -199,10 +200,10 @@ async function assertOpen(root: HTMLElement, p: Palette, mobile = false) {
   await expect(glass.querySelector('[data-part="head"]')).toBeNull()
   await expect(
     [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
-  ).toEqual(mobile ? ['text', 'blocks'] : ['text', 'blocks', 'templates'])
+  ).toEqual(mobile ? ['text', 'blocks'] : ['text', 'blocks', 'templates', 'pages'])
   // Mobile: the first 12 entries, the group heads counted — so 10 rows, to `big number`.
   await expect(glass.querySelectorAll('[data-part="group"], [role="option"]')).toHaveLength(
-    mobile ? 12 : 15
+    mobile ? 12 : slashRows.length + 4
   )
   await expect(labels(root)).toEqual(
     (mobile ? slashRows.slice(0, 10) : slashRows).map((r) => r.label)
@@ -439,7 +440,7 @@ export const KeyEdges: Story = {
     }
 
     await userEvent.keyboard('{ArrowDown>30/}')
-    await expect(selectedLabel(canvasElement)).toBe('page from template')
+    await expect(selectedLabel(canvasElement)).toBe('nested page')
   },
 }
 
@@ -505,6 +506,46 @@ export const TemplatesNav: Story = {
       origin: 'premade',
       kind: TEMPLATE_KINDS[3],
     })
+  },
+}
+
+// ── an empty page, and the person's own templates ──────────────────────────────
+
+/**
+ * On an empty page the menu opens on its templates (6f), `yours` after the
+ * premade, with the person's own picked by id. Typing a block's name returns to
+ * the blocks, so `/table` still finds the table.
+ */
+export const EmptyPage: Story = {
+  args: {
+    defaultPane: 'templates',
+    yourTemplates: YOURS,
+    onPickTemplate: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    await expect(glass.getAttribute('data-pane')).toBe('templates')
+    await expect(
+      [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
+    ).toEqual(['premade', 'yours'])
+    const mine = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (r) => r.querySelector('[data-part="label"]')!.textContent === 'weeknight recipe'
+    )!
+    await userEvent.click(mine)
+    await expect(args.onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
+  },
+}
+
+/** The `pages` group closes the open list: `page`, then `nested page`, each with the page mark. */
+export const PagesGroup: Story = {
+  play: async ({ canvasElement }) => {
+    const glass = glassOf(canvasElement)
+    const groups = [...glass.querySelectorAll('[data-part="group"]')]
+    await expect(groups.at(-1)!.textContent).toBe('pages')
+    await expect(labels(canvasElement).slice(-2)).toEqual(['page', 'nested page'])
+    const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-2)!
+    await expect(page.querySelector('svg path')!.getAttribute('d')).toBe(ICON.page.d)
+    await expect(page.querySelector('[data-part="hint"]')).toBeNull()
   },
 }
 

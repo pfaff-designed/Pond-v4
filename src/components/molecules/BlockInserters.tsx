@@ -18,7 +18,12 @@
  */
 
 import { useState } from 'react'
-import { SlashMenu, type SlashRow, type TemplatePick } from '@/components/molecules/SlashMenu'
+import {
+  SlashMenu,
+  type SlashRow,
+  type TemplatePick,
+  type YourTemplate,
+} from '@/components/molecules/SlashMenu'
 import { slashRows } from '@/lib/modules/palette'
 
 /**
@@ -29,11 +34,20 @@ import { slashRows } from '@/lib/modules/palette'
 export function InsertBetween({
   onInsert,
   onPickTemplate,
+  yourTemplates,
+  onOpenChange,
 }: {
   onInsert: (row: SlashRow) => void
   onPickTemplate?: (pick: TemplatePick) => void
+  yourTemplates?: readonly YourTemplate[]
+  /** The host reads this to fetch what the menu lists only while it is open. */
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    onOpenChange?.(next)
+  }
   const [btnEl, setBtnEl] = useState<HTMLButtonElement | null>(null)
   return (
     <div className="group relative h-4 flex items-center" role="separator">
@@ -58,6 +72,7 @@ export function InsertBetween({
             onInsert(row)
             setOpen(false)
           }}
+          yourTemplates={yourTemplates}
           onPickTemplate={
             onPickTemplate &&
             ((pick) => {
