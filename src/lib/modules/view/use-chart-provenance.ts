@@ -9,8 +9,7 @@
  *                           page surface this is a cache hit** — `BlockCanvas`
  *                           mounts that hook above every view block. It is NOT a
  *                           hit on the hosts where `ViewView` renders without
- *                           `BlockCanvas` (a diff card, the create-page proposal,
- *                           `CardPreviewModal`); there this is the first observer
+ *                           `BlockCanvas` (a diff card, the create-page proposal); there this is the first observer
  *                           and it does fetch. That is honest rather than ideal:
  *                           the alternative is passing the trail down through four
  *                           hosts for a footer, and an empty cache degrades to the

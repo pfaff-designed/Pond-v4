@@ -549,7 +549,7 @@ export const BoardGeometryInk: Story = {
 /**
  * What the board does not draw is not there, on an editable board with every
  * handler wired: no lane name input, no lane arrows, no `＋ lane`, no card `⠿`
- * handle and no card `↗`. The card itself is what drags and what opens.
+ * handle and no card `↗`. The card itself is what drags and what selects.
  */
 export const BoardDrawsNoControlsTheBoardDoesNot: Story = {
   args: {
@@ -560,7 +560,6 @@ export const BoardDrawsNoControlsTheBoardDoesNot: Story = {
     onAddRow: fn(async () => null),
     onRenameRow: fn(),
     onUpdateSchema: fn(),
-    onOpenCard: fn(),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -776,6 +775,246 @@ export const BoardCardMeta: Story = {
       'choose oak veneer finish'
     )
     await expectTier(getComputedStyle(openTitle).color, 'ink', 1)
+  },
+}
+
+/**
+ * Burnt orange is the one dated thing per screen. With three cards due today only the
+ * first in RENDER order (lane order, then card order) wears the pill — here the row
+ * that comes first in the data sits in the later lane, so it is not the orange one.
+ * The others read `today` as a plain date: 11px / 500 / ink .8.
+ */
+export const BoardOnlyTheFirstTodayIsOrange: Story = {
+  args: {
+    config: { id: 'v', type: 'view', mode: 'board', groupBy: 't-status' },
+    schema: taskSchema,
+    rows: [
+      {
+        id: 'd1',
+        title: 'ship the invoice',
+        values: { 't-status': 't-done', 't-due': localIso(0) },
+      },
+      {
+        id: 'd2',
+        title: 'call the joiner',
+        values: { 't-status': 't-todo', 't-due': localIso(0) },
+      },
+      {
+        id: 'd3',
+        title: 'confirm the delivery',
+        values: { 't-status': 't-todo', 't-due': localIso(0) },
+      },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const cardOf = (title: string) =>
+      within(canvasElement).getByText(title).closest<HTMLElement>('[data-part="card"]')!
+
+    await expect(canvasElement.querySelectorAll('[data-part="due-today"]')).toHaveLength(1)
+    await expect(
+      cardOf('call the joiner').querySelector('[data-part="due-today"]')
+    ).toHaveTextContent('today')
+
+    for (const title of ['confirm the delivery', 'ship the invoice']) {
+      const card = cardOf(title)
+      await expect(card.querySelector('[data-part="due-today"]')).toBeNull()
+      const plain = card.querySelector<HTMLElement>('[data-part="card-due"]')!
+      await expect(plain).toHaveTextContent('today')
+      const cs = getComputedStyle(plain)
+      await expect(cs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+      await expect(pxOf(cs.fontSize)).toBeCloseTo(11, 1)
+      await expect(cs.fontWeight).toBe('500')
+      await expectTier(cs.color, 'ink', 0.8)
+    }
+  },
+}
+
+// ── Card selection + the record peek (6u.2) ────────────────────────────────────
+
+const peekSchema: PropertySchema = [...taskSchema, { id: 't-notes', name: 'notes', type: 'text' }]
+
+const peekRows: CollectionRow[] = [
+  {
+    id: 'k1',
+    title: 'chase the cabinet quote',
+    values: { 't-status': 't-todo', 't-due': '2026-10-23' },
+  },
+  {
+    id: 'k2',
+    title: 'choose oak veneer finish',
+    values: { 't-status': 't-todo', 't-notes': 'sample 3' },
+  },
+  { id: 'k3', title: 'skip hire returned', values: { 't-status': 't-done' } },
+]
+
+const peekArgs = {
+  config: { id: 'v', type: 'view', mode: 'board', groupBy: 't-status' } as ViewBlock,
+  schema: peekSchema,
+  rows: peekRows,
+}
+
+const cardByTitle = (root: HTMLElement, title: string) =>
+  within(root).getByText(title).closest<HTMLElement>('[data-part="card"]')!
+
+/**
+ * 6u.2: a click selects the card — an ink .5 outline, 1.5px, offset 1 — and the record
+ * opens beside the view at right 44 / top 150, 330 wide. Another card swaps the record;
+ * the lanes stay live (no scrim); Esc and empty paper close it.
+ */
+export const BoardCardSelectsAndPeeks: Story = {
+  args: peekArgs,
+  play: async ({ canvasElement }) => {
+    const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
+    await expect(peek()).toBeNull()
+
+    const first = cardByTitle(canvasElement, 'chase the cabinet quote')
+    await userEvent.click(first)
+    await expect(first).toHaveAttribute('aria-current', 'true')
+    const outline = getComputedStyle(first)
+    // Chrome snaps outline widths to whole device pixels (1.5 → 1 at DPR 1), so the
+    // computed value cannot prove the 1.5; the class is what writes it.
+    await expect(first.className).toContain('outline-[1.5px]')
+    await expect(pxOf(outline.outlineWidth)).toBeGreaterThanOrEqual(1)
+    await expect(pxOf(outline.outlineOffset)).toBeCloseTo(1, 1)
+    await expect(outline.outlineStyle).toBe('solid')
+    await expect(lightnessOf(outline.outlineColor)).toBeLessThan(0.25)
+    await expect(alphaOf(outline.outlineColor)).toBeCloseTo(0.5, 1)
+
+    const p = peek()!
+    const ps = getComputedStyle(p)
+    await expect(ps.position).toBe('fixed')
+    await expect(pxOf(ps.right)).toBeCloseTo(44, 1)
+    await expect(pxOf(ps.top)).toBeCloseTo(150, 1)
+    await expect(pxOf(ps.width)).toBeCloseTo(330, 1)
+    await expect(pxOf(ps.borderTopLeftRadius)).toBeCloseTo(20, 1)
+    await expect(ps.paddingTop).toBe('16px')
+    await expect(ps.paddingLeft).toBe('12px')
+    await expect(ps.paddingBottom).toBe('12px')
+    await expect(pxOf(ps.rowGap)).toBeCloseTo(6, 1)
+    await expect(shadowLayers(ps.boxShadow)).toHaveLength(2)
+
+    const title = within(p).getByText('chase the cabinet quote')
+    const ts = getComputedStyle(title)
+    await expect(pxOf(ts.fontSize)).toBeCloseTo(16, 1)
+    await expect(ts.fontWeight).toBe('500')
+    // No scrim, no trap: another card is still a live click and swaps the record.
+    const second = cardByTitle(canvasElement, 'choose oak veneer finish')
+    await userEvent.click(second)
+    await expect(first).not.toHaveAttribute('aria-current')
+    await expect(second).toHaveAttribute('aria-current', 'true')
+    await expect(within(peek()!).getByText('choose oak veneer finish')).toBeInTheDocument()
+    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+
+    await userEvent.keyboard('{Escape}')
+    await expect(peek()).toBeNull()
+    await expect(second).not.toHaveAttribute('aria-current')
+
+    await userEvent.click(first)
+    await expect(peek()).not.toBeNull()
+    await userEvent.click(canvasElement.querySelector('[data-part="lanes"]')!)
+    await expect(peek()).toBeNull()
+  },
+}
+
+/**
+ * The peek draws the schema's fields and only those: grid 92 / 1fr, gap 10, padding
+ * 7 / 8, radius 8, 13.5px; labels 500 / 11 / ink .8; an empty value is a `—` at ink .68.
+ */
+export const RecordPeekFields: Story = {
+  args: peekArgs,
+  play: async ({ canvasElement }) => {
+    await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
+    const peek = canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!
+    const fields = [...peek.querySelectorAll<HTMLElement>('[data-part="peek-field"]')]
+    await expect(fields.map((f) => f.firstElementChild!.textContent)).toEqual(
+      peekSchema.map((d) => d.name)
+    )
+
+    const row = getComputedStyle(fields[0])
+    await expect(row.gridTemplateColumns.startsWith('92px ')).toBe(true)
+    await expect(pxOf(row.columnGap)).toBeCloseTo(10, 1)
+    await expect(row.paddingTop).toBe('7px')
+    await expect(row.paddingLeft).toBe('8px')
+    await expect(pxOf(row.borderTopLeftRadius)).toBeCloseTo(8, 1)
+    await expect(pxOf(row.fontSize)).toBeCloseTo(13.5, 1)
+
+    const label = getComputedStyle(fields[0].firstElementChild!)
+    await expect(pxOf(label.fontSize)).toBeCloseTo(11, 1)
+    await expect(label.fontWeight).toBe('500')
+    await expectTier(label.color, 'ink', 0.8)
+
+    // due is empty on this record: a read-only dash at the .68 tier.
+    const dueRow = fields.find((f) => f.firstElementChild!.textContent === 'due')!
+    const dash = dueRow.lastElementChild as HTMLElement
+    await expect(dash).toHaveTextContent('—')
+    await expectTier(getComputedStyle(dash).color, 'ink', 0.68)
+    await expect(within(peek).getByText('sample 3')).toBeInTheDocument()
+  },
+}
+
+/** `open ›` is drawn only when the host can navigate, and asks for the row's page. */
+export const RecordPeekOpensTheRowPage: Story = {
+  args: { ...peekArgs, onOpenRow: fn() },
+  play: async ({ canvasElement, args }) => {
+    await userEvent.click(cardByTitle(canvasElement, 'skip hire returned'))
+    const open = within(canvasElement).getByRole('button', { name: 'open ›' })
+    const os = getComputedStyle(open)
+    await expect(pxOf(os.fontSize)).toBeCloseTo(11, 1)
+    await expect(os.fontWeight).toBe('500')
+    await expectTier(os.color, 'ink', 0.68)
+    await userEvent.click(open)
+    await expect(args.onOpenRow).toHaveBeenCalledWith('k3')
+  },
+}
+
+export const RecordPeekWithoutHostHasNoOpen: Story = {
+  args: peekArgs,
+  play: async ({ canvasElement }) => {
+    await userEvent.click(cardByTitle(canvasElement, 'skip hire returned'))
+    await expect(
+      within(canvasElement).queryByRole('button', { name: 'open ›' })
+    ).not.toBeInTheDocument()
+  },
+}
+
+/** An edit in the peek is the person's own edit: it lands on the record and on its card. */
+export const RecordPeekEditsTheRecord: Story = {
+  args: peekArgs,
+  render: (args) => (
+    <StatefulView config={args.config} initialRows={peekRows} schema={peekSchema} />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(cardByTitle(canvasElement, 'choose oak veneer finish'))
+    const peek = within(canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!)
+    await userEvent.selectOptions(peek.getByLabelText('status value'), 't-done')
+    // The card moved to the done lane, and the peek's checkbox draws filled.
+    const doneLane = canvas.getByText('done', { selector: 'header span' }).closest('section')!
+    await expect(within(doneLane).getByText('choose oak veneer finish')).toBeInTheDocument()
+  },
+}
+
+/**
+ * A card is a keyboard stop: Enter or Space on the card selects it and moves focus into
+ * the peek; Esc closes it and hands focus back to the card.
+ */
+export const BoardCardIsKeyboardReachable: Story = {
+  args: peekArgs,
+  play: async ({ canvasElement }) => {
+    const card = cardByTitle(canvasElement, 'skip hire returned')
+    await expect(card).toHaveAttribute('tabindex', '0')
+    card.focus()
+    await userEvent.keyboard('{Enter}')
+    const peek = canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')!
+    await expect(card).toHaveAttribute('aria-current', 'true')
+    await expect(peek.contains(document.activeElement)).toBe(true)
+
+    await userEvent.keyboard('{Escape}')
+    await expect(canvasElement.querySelector('[data-part="record-peek"]')).toBeNull()
+    await expect(document.activeElement).toBe(card)
+
+    await userEvent.keyboard(' ')
+    await expect(canvasElement.querySelector('[data-part="record-peek"]')).not.toBeNull()
   },
 }
 

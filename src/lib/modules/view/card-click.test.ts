@@ -1,9 +1,9 @@
 /**
  * Unit tests for the board-card click filter (#64).
  *
- * A card opens its page preview on click, but it can also host interactive
+ * A card is selected on click, but it can also host interactive
  * children — the title input, a calendar card's drag handle. A click that lands
- * on (or inside) any of those must NOT also open the preview; only a click on the
+ * on (or inside) any of those must NOT also select it; only a click on the
  * card's passive body should.
  */
 import { shouldOpenCardFromClick } from './card-click'

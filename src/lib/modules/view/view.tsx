@@ -19,7 +19,7 @@
  * reschedule) and gallery (read-only card grid) are slice 4.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock, ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -64,27 +64,24 @@ import {
   GANTT_TRACK,
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
-import { PondControl } from '@/components/atoms/PondControl'
 import { PondDueToday } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
   coerceValue,
   optionForValue,
+  ROW_TYPE,
   PROPERTY_TYPES,
   type PropertyDef,
   type PropertySchema,
   type PropertyType,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import { RelationValueField } from '@/components/organisms/RelationValueField'
-import { RollupValueField } from '@/components/organisms/RollupValueField'
-// Deliberate cycle with renderers.tsx (via the modal's read-only ModuleView
-// dispatch) — same shape as page/view.tsx's, and safe for the same reason: the
-// component is only *invoked* at React render time, never at module eval.
-import { CardPreviewModal } from '@/components/organisms/CardPreviewModal'
+import { usePageLinks } from '../page-link/context'
 import { shouldOpenCardFromClick } from './card-click'
 import { dueAtom } from './due'
+import { Cell, OptionChip } from './cells'
+import { RecordPeek } from './record-peek'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -116,45 +113,36 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
     : undefined
 
-  // Card → page preview (#64). A row IS a page, so the clicked card's row id is
-  // the page to preview; the modal fetches its blocks and offers "Open page".
-  // `preview` survives close so the exit transition keeps its content.
-  const [preview, setPreview] = useState<{ id: string; title: string } | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const openCard = useCallback(
-    (rowId: string) => {
-      setPreview({ id: rowId, title: rows.find((r) => r.id === rowId)?.title ?? '' })
-      setPreviewOpen(true)
-    },
-    [rows]
-  )
+  // A row IS a page: `open ›` on the record peek navigates to it through the page-link
+  // seam. Absent off a page host (Storybook, the AI terminal), where the peek omits it.
+  const links = usePageLinks()
+  const openRow = links
+    ? (rowId: string) =>
+        links.navigateToPage({
+          id: rowId,
+          title: rows.find((r) => r.id === rowId)?.title || 'Untitled',
+          type: ROW_TYPE,
+        })
+    : undefined
 
   return (
-    <>
-      <CollectionView
-        config={data}
-        schema={schema}
-        rows={rows}
-        collectionName={collectionName}
-        isLoading={isLoading}
-        isError={isError}
-        editable={editable}
-        linked={!!data.collectionId}
-        onEdit={setValue}
-        onAddRow={addRow}
-        onRenameRow={renameRow}
-        onConfigChange={onConfigChange}
-        onUpdateSchema={editable ? updateSchema : undefined}
-        onOpenCard={openCard}
-        chartProvenance={chartProvenance}
-      />
-      <CardPreviewModal
-        rowId={preview?.id ?? null}
-        fallbackTitle={preview?.title}
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-      />
-    </>
+    <CollectionView
+      config={data}
+      schema={schema}
+      rows={rows}
+      collectionName={collectionName}
+      isLoading={isLoading}
+      isError={isError}
+      editable={editable}
+      linked={!!data.collectionId}
+      onEdit={setValue}
+      onAddRow={addRow}
+      onRenameRow={renameRow}
+      onConfigChange={onConfigChange}
+      onUpdateSchema={editable ? updateSchema : undefined}
+      onOpenRow={openRow}
+      chartProvenance={chartProvenance}
+    />
   )
 }
 
@@ -185,10 +173,9 @@ export interface CollectionViewProps {
   /** Replace the collection's property schema — manual column + property editing
    *  (board-authoring Slice 4). Absent on read-only / Storybook hosts. */
   onUpdateSchema?: (next: PropertySchema) => void
-  /** Open a card's page preview (#64) — a row IS a page, so this receives the
-   *  row id. Present on the live host (ViewView mounts the modal); absent on
-   *  Storybook/static renders, where cards stay plain (no dead affordance). */
-  onOpenCard?: (rowId: string) => void
+  /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
+   *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
+  onOpenRow?: (rowId: string) => void
   /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
   chartProvenance?: ChartProvenance
 }
@@ -207,7 +194,7 @@ export function CollectionView({
   onRenameRow,
   onConfigChange,
   onUpdateSchema,
-  onOpenCard,
+  onOpenRow,
   chartProvenance,
 }: CollectionViewProps) {
   const processed = useMemo(
@@ -280,7 +267,7 @@ export function CollectionView({
           onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
-          onOpenCard={onOpenCard}
+          onOpenRow={onOpenRow}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
@@ -314,8 +301,8 @@ export function CollectionView({
             totalRows={rows.length}
             provenance={chartProvenance}
             /* `editable` gates it, as every other mode's insert is gated: a diff
-               card, a create-page proposal and `CardPreviewModal` all render this
-               view with no `editable`, and an `add a row` there would write to the
+               card and a create-page proposal both render this view with no
+               `editable`, and an `add a row` there would write to the
                collection from a surface whose whole job is to be reviewed —
                "pages change only through the person's own edits or an accepted
                diff" (`PROJECT_RULES.md`). */
@@ -633,7 +620,7 @@ function CollectionBoard({
   onEdit,
   onAddRow,
   onRenameRow,
-  onOpenCard,
+  onOpenRow,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
@@ -642,7 +629,7 @@ function CollectionBoard({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  onOpenCard?: (rowId: string) => void
+  onOpenRow?: (rowId: string) => void
 }) {
   const groupDef = pickGroupDef(schema, groupBy)
   const grouped = useMemo(() => groupRows(rows, schema, groupDef?.id), [rows, schema, groupDef])
@@ -668,6 +655,54 @@ function CollectionBoard({
       },
     })
 
+  // The selected card, and how it was chosen: a keyboard open moves focus into the
+  // peek; a pointer one leaves it where the person is. Derived against `rows`, so a
+  // card that is deleted or filtered away closes its own peek.
+  const [selection, setSelection] = useState<{ id: string; via: 'pointer' | 'keyboard' } | null>(
+    null
+  )
+  const selectedRow = selection ? rows.find((r) => r.id === selection.id) : undefined
+  const boardRef = useRef<HTMLDivElement>(null)
+  // A drag that ends over its own card still fires a click — it must not select.
+  const draggedRef = useRef(false)
+  useEffect(() => {
+    if (drag?.active) draggedRef.current = true
+  }, [drag?.active])
+
+  const selectedId = selectedRow?.id
+  useEffect(() => {
+    if (!selectedId) return
+    const close = () => {
+      const peek = boardRef.current?.querySelector('[data-part="record-peek"]')
+      const focusInPeek = !!peek?.contains(document.activeElement)
+      setSelection(null)
+      if (focusInPeek) {
+        boardRef.current?.querySelector<HTMLElement>(`[data-row-id="${selectedId}"]`)?.focus()
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    // Empty paper closes; a card, the peek and any popup it opens do not.
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element)) return
+      if (
+        e.target.closest(
+          '[data-part="card"], [data-part="record-peek"], [role="dialog"], [role="listbox"], [role="menu"]'
+        )
+      ) {
+        return
+      }
+      setSelection(null)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [selectedId])
+
   if (!grouped) {
     return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
   }
@@ -678,7 +713,9 @@ function CollectionBoard({
   const addCard = async (optionId: string | null) => {
     if (!onAddRow) return
     const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
-    if (id) setFocusRowId(id)
+    if (!id) return
+    setFocusRowId(id)
+    setSelection({ id, via: 'pointer' })
   }
 
   // Hide the trailing "No <name>" bucket while it's empty — a fresh board then reads
@@ -695,9 +732,19 @@ function CollectionBoard({
     (d) =>
       (d.type === 'select' || d.type === 'status') && d.id !== boardDef.id && d.id !== repeatDef?.id
   )
+  // Burnt orange is the ONE dated thing per screen (PROJECT_RULES): only the first
+  // card due today, in render order, wears the pill. The rest read `today` as a date.
+  const dueOf = (row: CollectionRow) =>
+    dateDef ? dueAtom(String(coerceValue(dateDef, row.values[dateDef.id]) ?? ''), now) : null
+  const orangeTodayId = visibleGroups
+    .flatMap((g) => g.rows)
+    .find((r) => dueOf(r)?.kind === 'today')?.id
+  const selectedLane = selectedRow
+    ? visibleGroups.find((g) => g.rows.some((r) => r.id === selectedRow.id))
+    : undefined
 
   return (
-    <div {...containerHandlers}>
+    <div ref={boardRef} {...containerHandlers}>
       {/*
         `Pond 06.21 Tasks` draws the board as a GRID of equal lanes, not a
         horizontally scrolling row: `repeat(N, minmax(0,1fr))` at gap 10, where N
@@ -754,14 +801,27 @@ function CollectionBoard({
 
               {group.rows.map((row) => {
                 const isDragging = drag?.active && drag.rowId === row.id
-                const due = dateDef
-                  ? dueAtom(String(coerceValue(dateDef, row.values[dateDef.id]) ?? ''), now)
-                  : null
+                const due = dueOf(row)
+                const isSelected = row.id === selectedRow?.id
                 const repeat = repeatDef ? displayValue(repeatDef, row.values[repeatDef.id]) : ''
                 return (
                   <article
                     key={row.id}
                     data-part="card"
+                    data-row-id={row.id}
+                    // A card is a keyboard stop: Enter or Space on the card itself (not
+                    // on the title input inside it) selects it and opens its peek.
+                    // `aria-current` marks the selected one — `aria-pressed` and
+                    // `aria-selected` are not valid on an article holding an input.
+                    tabIndex={0}
+                    aria-label={row.title || 'Untitled'}
+                    aria-current={isSelected ? 'true' : undefined}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return
+                      if (e.key !== 'Enter' && e.key !== ' ') return
+                      e.preventDefault()
+                      setSelection({ id: row.id, via: 'keyboard' })
+                    }}
                     // The card itself is the drag target: a press anywhere on it
                     // starts a candidate drag, and below the hook's threshold it
                     // stays a click — so the title input still takes focus. Buttons
@@ -775,16 +835,18 @@ function CollectionBoard({
                           }
                         : undefined
                     }
-                    // Click-to-preview (#64): a click on the card's passive body
-                    // opens its page preview; clicks on the card's own controls
-                    // (the title input) stay theirs — the pure filter decides.
-                    onClick={
-                      onOpenCard
-                        ? (e) => {
-                            if (shouldOpenCardFromClick(e.target)) onOpenCard(row.id)
-                          }
-                        : undefined
-                    }
+                    // A click on the card's passive body selects it; its own controls
+                    // keep their clicks — the pure filter decides. The title input
+                    // selects through its own click below.
+                    onClick={(e) => {
+                      if (draggedRef.current) {
+                        draggedRef.current = false
+                        return
+                      }
+                      if (shouldOpenCardFromClick(e.target)) {
+                        setSelection({ id: row.id, via: 'pointer' })
+                      }
+                    }}
                     // The board's card: card paper at radius 12, 10/11, gap 7, and
                     // a TWO-LAYER shadow that matches no token — written out per
                     // AGENTS.md rather than snapped to `--mn-shadow-card`, whose
@@ -797,8 +859,12 @@ function CollectionBoard({
                       'shadow-[0_1px_2px_rgba(40,34,24,.06),0_2px_8px_rgba(40,34,24,.05)]',
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      // Selected: a 1.5px ink .5 outline offset 1 (paper .5 on the dark
+                      // ground — `mn-text` flips). The rest shadow does not change.
+                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
                       isDragging ? 'opacity-30' : '',
-                      onOpenCard ? 'cursor-pointer' : editable ? 'cursor-grab' : '',
+                      editable ? 'cursor-grab' : 'cursor-pointer',
                     ].join(' ')}
                   >
                     {editable && onRenameRow ? (
@@ -807,6 +873,10 @@ function CollectionBoard({
                         value={row.title}
                         placeholder="Untitled"
                         autoFocus={row.id === focusRowId}
+                        onClick={() => {
+                          if (draggedRef.current) return
+                          setSelection({ id: row.id, via: 'pointer' })
+                        }}
                         onChange={(e) => onRenameRow(row.id, e.target.value)}
                         className={[
                           'w-full border-0 bg-transparent p-0 text-[13.5px] leading-[1.35] outline-none placeholder:text-mn-text-secondary',
@@ -830,7 +900,10 @@ function CollectionBoard({
                         data-part="card-meta"
                         className="flex flex-wrap gap-x-[10px] gap-y-[4px] text-[11px] font-medium text-mn-text-meta"
                       >
-                        {due?.kind === 'today' && <PondDueToday />}
+                        {due?.kind === 'today' && row.id === orangeTodayId && <PondDueToday />}
+                        {due?.kind === 'today' && row.id !== orangeTodayId && (
+                          <span data-part="card-due">today</span>
+                        )}
                         {due?.kind === 'date' && <span data-part="card-due">{due.label}</span>}
                         {repeat && (
                           <span
@@ -869,10 +942,27 @@ function CollectionBoard({
         })}
       </div>
 
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={selectedLane?.label.trim().toLowerCase() === 'done'}
+          now={now}
+          editable={editable}
+          focusOnOpen={selection?.via === 'keyboard'}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
+
       {/* Floating clone that tracks the pointer — the lift. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 -rotate-[0.6deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-mn-lg motion-reduce:rotate-none"
+          // The drag lift: rotated -1.2deg with its own two-layer shadow, per the
+          // board — it matches no token. The rotation is dropped under reduced motion.
+          className="pointer-events-none fixed z-50 w-52 -rotate-[1.2deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-[0_2px_4px_rgba(40,34,24,.08),0_10px_24px_rgba(40,34,24,.12)] motion-reduce:rotate-none dark:shadow-[0_2px_4px_rgba(0,0,0,.3),0_10px_24px_rgba(0,0,0,.4)]"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
@@ -1317,216 +1407,5 @@ function CollectionGantt({
         </ul>
       </div>
     </div>
-  )
-}
-
-// ── Cells & chips ───────────────────────────────────────────────────────────────
-
-/** One table cell — an inline editor when editable, a resolved read display otherwise. */
-function Cell({
-  def,
-  value,
-  editable,
-  onChange,
-  schema,
-  rowValues,
-}: {
-  def: PropertyDef
-  value: PropertyValue
-  editable: boolean
-  onChange: (value: PropertyValue) => void
-  /** The row's collection schema — a rollup reads its sibling relation def from here. */
-  schema?: PropertySchema
-  /** The row's values — a rollup reads its sibling relation's linked ids from here. */
-  rowValues?: Record<string, unknown>
-}) {
-  const label = `${def.name} value`
-
-  // A rollup is derived + never stored (#20): resolve its sibling relation (by
-  // relationId) from the row's schema + values and let the connected field fetch +
-  // compute. Always read-only, regardless of `editable`.
-  if (def.type === 'rollup') {
-    const relationDef = schema?.find((d) => d.id === def.relationId)
-    const relationValue = relationDef ? coerceValue(relationDef, rowValues?.[relationDef.id]) : []
-    return <RollupValueField def={def} relationDef={relationDef} relationValue={relationValue} />
-  }
-
-  if (!editable) {
-    if (def.type === 'select' || def.type === 'status') {
-      const opt = optionForValue(def, value)
-      return opt ? <OptionChip label={opt.label} color={opt.color} /> : <Dash />
-    }
-    if (def.type === 'checkbox') {
-      return value === true ? (
-        <span aria-label="checked" className="inline-grid place-items-center">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-            <path
-              d="M2.5 6.5l2.5 2.5 4.5-6"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      ) : (
-        <Dash />
-      )
-    }
-    if (def.type === 'relation') {
-      // Read-only host: chips (clickable), no picker (#20 decision 6).
-      return <RelationValueField def={def} value={value} editable={false} onChange={onChange} />
-    }
-    const text = displayValue(def, value)
-    return text ? <span>{text}</span> : <Dash />
-  }
-
-  const cellInput =
-    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-mn-text-meta outline-none placeholder:text-mn-text-secondary'
-
-  switch (def.type) {
-    case 'number':
-      return (
-        <input
-          type="number"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'number' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        />
-      )
-    case 'date':
-      return (
-        <input
-          type="date"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        />
-      )
-    case 'checkbox':
-      // `PondControl kind="checkbox"` (#221) — the standalone control of
-      // `PondControl.dc.html` (14 / 4 / .68), alone in a table cell; not the
-      // check-row's `PondAtom` box, not `PondTemplate`'s row box.
-      return (
-        <PondControl
-          kind="checkbox"
-          label={null}
-          aria-label={label}
-          on={value === true}
-          onCheckedChange={(next) => onChange(next)}
-        />
-      )
-    case 'select':
-    case 'status': {
-      // Bind the option *id*, resolving through optionForValue so a legacy
-      // label-stored value (a pre-slice-1 row, #18) still selects its option
-      // instead of falling back to "—". An edit then writes the canonical id.
-      const selected = optionForValue(def, value)?.id ?? (typeof value === 'string' ? value : '')
-      return (
-        <select
-          className={cellInput}
-          aria-label={label}
-          value={selected}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        >
-          <option value="">—</option>
-          {(def.options ?? []).map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      )
-    }
-    case 'relation':
-      // Editable host: chips + a scoped picker (#20 slice 6).
-      return <RelationValueField def={def} value={value} editable onChange={onChange} />
-    case 'text':
-    default:
-      return (
-        <input
-          type="text"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        />
-      )
-  }
-}
-
-function Dash() {
-  return <span className="text-mn-text-secondary">—</span>
-}
-
-/** A select/status value chip: a colored dot + the option label. */
-function OptionChip({ label, color }: { label: string; color?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-mn-chrome border border-mn-line bg-mn-surface px-1.5 py-0.5 text-xs text-mn-text-meta">
-      <OptionDot color={color} />
-      {label}
-    </span>
-  )
-}
-
-// Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
-// the Make Noise system). Each maps to the nearest MN house hue, all --raw-* tokens
-// (issue: MN reskin #1). Since #220 freed the three signals, the warm half of that
-// rainbow collapses: red / rose / rust / pink / orange / amber all land on rose, and
-// yellow / lime join the greens on sage. So these twenty-two names resolve to FIVE
-// swatches — olive-mid, rose, sage, mist, navy — plus ink for `accent`. Two option
-// colours can therefore draw the same dot; the label beside it is what distinguishes
-// them. A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
-const TOKEN_DOT: Record<string, string> = {
-  // neutrals → the house neutral-400
-  zinc: 'var(--raw-olive-mid)',
-  gray: 'var(--raw-olive-mid)',
-  slate: 'var(--raw-olive-mid)',
-  stone: 'var(--raw-olive-mid)',
-  // reds + warms → the dusty-rose swatch, the one warm the palette sanctions for
-  // option dots. Red is diff removals, burnt orange the ONE dated thing per screen
-  // and wheat highlighted passages only (PROJECT_RULES § Colors), so none of the
-  // three signals may tint a dot (#220). Six names share this one swatch.
-  red: 'var(--raw-rose)',
-  rose: 'var(--raw-rose)',
-  rust: 'var(--raw-rose)',
-  pink: 'var(--raw-rose)',
-  orange: 'var(--raw-rose)',
-  amber: 'var(--raw-rose)',
-  // yellows → sage (the nearest area mark to lime / yellow-green)
-  yellow: 'var(--raw-sage)',
-  lime: 'var(--raw-sage)',
-  // greens → sage
-  green: 'var(--raw-sage)',
-  emerald: 'var(--raw-sage)',
-  teal: 'var(--raw-sage)',
-  // pale cools → mist
-  cyan: 'var(--raw-mist)',
-  sky: 'var(--raw-mist)',
-  blue: 'var(--raw-mist)',
-  // deep cools → navy
-  indigo: 'var(--raw-navy)',
-  violet: 'var(--raw-navy)',
-  purple: 'var(--raw-navy)',
-  // the sanctioned accent role
-  accent: 'var(--mn-text)',
-}
-
-function OptionDot({ color }: { color?: string }) {
-  let background = 'var(--mn-line)'
-  if (color) {
-    if (/^(#|rgb|hsl)/i.test(color)) background = color
-    else background = TOKEN_DOT[color.toLowerCase()] ?? 'var(--mn-line)'
-  }
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-2 w-2 shrink-0 rounded-full"
-      style={{ backgroundColor: background }}
-    />
   )
 }

@@ -500,8 +500,8 @@ describe('BlockCanvas — a card chart is its own card; it is not wrapped in a b
     expect(collection.addRow).toHaveBeenCalledTimes(1)
   })
 
-  // `add a row` writes to the collection. A diff card, the create-page proposal and
-  // `CardPreviewModal` all render this view with NO `editable` — a working insert
+  // `add a row` writes to the collection. A diff card and the create-page proposal
+  // both render this view with NO `editable` — a working insert
   // there would change a page from a surface whose whole job is to be reviewed.
   // `PROJECT_RULES.md`: pages change only through the person's own edits or an
   // accepted diff.
