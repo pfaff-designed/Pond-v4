@@ -93,8 +93,17 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
-    useCollectionRows(collectionId)
+  const {
+    schema,
+    rows,
+    collectionName,
+    isLoading,
+    isError,
+    setValue,
+    addRow,
+    renameRow,
+    updateSchema,
+  } = useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
@@ -123,6 +132,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
         config={data}
         schema={schema}
         rows={rows}
+        collectionName={collectionName}
         isLoading={isLoading}
         isError={isError}
         editable={editable}
@@ -151,6 +161,9 @@ export interface CollectionViewProps {
   config: ViewBlock
   schema: PropertySchema | null
   rows: CollectionRow[]
+  /** The database's own name — `9w`'s head row leads with it. Absent off a page
+   *  host (Storybook, the AI terminal), where the head row simply has no name. */
+  collectionName?: string
   isLoading?: boolean
   /** Either collection read failed — distinct from "no rows", which would be a lie. */
   isError?: boolean
@@ -181,6 +194,7 @@ export function CollectionView({
   config,
   schema,
   rows,
+  collectionName,
   isLoading,
   isError,
   editable,
@@ -249,6 +263,8 @@ export function CollectionView({
         <ViewControls
           config={config}
           schema={schema}
+          collectionName={collectionName}
+          recordCount={rows.length}
           onConfigChange={onConfigChange}
           onUpdateSchema={onUpdateSchema}
         />
@@ -346,35 +362,97 @@ const MODE_LABELS: Record<ViewMode, string> = {
 function ViewControls({
   config,
   schema,
+  collectionName,
+  recordCount,
   onConfigChange,
   onUpdateSchema,
 }: {
   config: ViewBlock
   schema: PropertySchema
+  collectionName?: string
+  recordCount?: number
   onConfigChange: (patch: Partial<ViewBlock>) => void
   onUpdateSchema?: (next: PropertySchema) => void
 }) {
   const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
+  // `9w`'s config line: `13 records · grouped by status`. The group-by clause only
+  // where the mode has one, so a table never claims a grouping it does not use.
+  const groupName =
+    config.mode === 'board' ? schema.find((d) => d.id === config.groupBy)?.name : undefined
+  const facts = [
+    recordCount === undefined ? null : `${recordCount} ${recordCount === 1 ? 'record' : 'records'}`,
+    groupName ? `grouped by ${groupName.toLowerCase()}` : null,
+  ].filter(Boolean)
+
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-mn-chrome shadow-mn-sm p-0.5">
-        {VIEW_MODES.map((m) => {
-          const active = config.mode === m
-          return (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onConfigChange({ mode: m })}
-              className={[
-                'rounded-mn-chrome px-2 py-0.5 text-xs transition-colors',
-                active ? 'bg-mn-wash text-mn-text' : 'text-mn-text-secondary hover:text-mn-text',
-              ].join(' ')}
-            >
-              {MODE_LABELS[m]}
-            </button>
-          )
-        })}
+      {/*
+        `Pond 09 Examples` 9w's head row — the database, what is in it, and the
+        views over it:
+
+            tasks   13 records · grouped by status
+                            board │ timeline │ table │ calendar │ list │ ＋ view
+
+        The segmented control is a PILL TRACK, not a row of buttons: an `ink .055`
+        ground at radius 999 with the active segment inverted to full ink on paper.
+
+        NOT YET (KAN-32, slices 2–3): what this lists. 9w lists the views that
+        EXIST — five named ones you created — and ends with `＋ view`. This still
+        lists all seven modes and flips the one block between them, which is
+        today's behaviour kept deliberately. `＋ view` is omitted rather than drawn
+        dead, since it needs the model.
+      */}
+      {/* `flex-wrap`: 9w draws the name and the bar on ONE line, but it has the
+          full canvas. In a 500px block (KAN-29) seven segments leave the name no
+          room at all — it truncated to a single letter. Wrapping the bar onto its
+          own line is the honest degradation; at full width the row reads as 9w
+          draws it. */}
+      <div
+        data-part="view-head"
+        className="flex w-full flex-wrap items-center justify-between gap-x-[10px] gap-y-[6px] px-[4px] pt-[4px]"
+      >
+        <div className="flex min-w-0 items-baseline gap-[10px]">
+          {collectionName && (
+            <span data-part="db-name" className="truncate text-[15px] font-medium text-mn-text">
+              {collectionName}
+            </span>
+          )}
+          {facts.length > 0 && (
+            <span data-part="db-facts" className="text-[10.5px] font-medium text-mn-text-meta">
+              {facts.join(' · ')}
+            </span>
+          )}
+        </div>
+
+        <div
+          data-part="view-bar"
+          className="flex flex-none items-center gap-[4px] rounded-full bg-mn-text/[0.055] p-[3px] text-[10.5px] font-medium"
+        >
+          {VIEW_MODES.map((m) => {
+            const active = config.mode === m
+            return (
+              <button
+                key={m}
+                type="button"
+                data-part="view-segment"
+                data-active={active || undefined}
+                aria-pressed={active}
+                onClick={() => onConfigChange({ mode: m })}
+                className={[
+                  'rounded-full px-[10px] py-[4px] transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                  // The board's active segment is `#1B1D14` ground with `#FAF9EF`
+                  // text — the same inversion `ui/button`'s `primary` makes, so it
+                  // reassigns correctly in dark rather than staying ink-on-ink.
+                  active
+                    ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+                    : 'text-mn-text-secondary hover:text-mn-text',
+                ].join(' ')}
+              >
+                {MODE_LABELS[m]}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {config.mode === 'board' && groupOptions.length > 0 && (

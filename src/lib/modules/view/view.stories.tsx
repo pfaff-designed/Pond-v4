@@ -221,6 +221,129 @@ export const TableEmptyBare: Story = {
   },
 }
 
+// ── The view bar ───────────────────────────────────────────────────────────────
+
+/**
+ * `Pond 09 Examples` 9w's head row (KAN-34, slice 1 of KAN-32):
+ *
+ *     tasks   13 records · grouped by status
+ *                     board │ timeline │ table │ calendar │ list │ ＋ view
+ *
+ * Values read inline from 9w:
+ *
+ *   head      flex · space-between · padding 4px 4px 0
+ *   name      15px / 500
+ *   facts     10.5px / 500 / ink .8
+ *   track     ink .055 · padding 3 · radius 999 · gap 4 · 10.5 / 500
+ *   active    #1B1D14 ground · #FAF9EF text · 4px 10px · radius 999
+ *   inactive  ink .68, same padding, no ground
+ *
+ * NOT asserted here because it is not built: `＋ view`, and the bar listing the
+ * views that EXIST rather than all seven modes. Both need the model (KAN-32).
+ */
+export const ViewBarGeometry: Story = {
+  args: {
+    config: boardConfig,
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
+    const hs = getComputedStyle(head)
+    await expect(hs.justifyContent).toBe('space-between')
+    await expect(pxOf(hs.paddingLeft)).toBeCloseTo(4, 1)
+
+    const name = getComputedStyle(head.querySelector<HTMLElement>('[data-part="db-name"]')!)
+    await expect(pxOf(name.fontSize)).toBeCloseTo(15, 1)
+
+    const facts = head.querySelector<HTMLElement>('[data-part="db-facts"]')!
+    await expect(pxOf(getComputedStyle(facts).fontSize)).toBeCloseTo(10.5, 1)
+    // The config line: what is in the database, and how this view reads it.
+    await expect(facts).toHaveTextContent(`${rows.length} records · grouped by status`)
+
+    const bar = getComputedStyle(head.querySelector<HTMLElement>('[data-part="view-bar"]')!)
+    await expect(pxOf(bar.columnGap)).toBeCloseTo(4, 1)
+    await expect(pxOf(bar.padding)).toBeCloseTo(3, 1)
+    // A pill TRACK, not a row of buttons — a tinted ground at .055.
+    await expectTier(bar.backgroundColor, 'ink', 0.055)
+
+    const active = canvasElement.querySelector<HTMLElement>(
+      '[data-part="view-segment"][data-active]'
+    )!
+    const as = getComputedStyle(active)
+    await expect(pxOf(as.paddingLeft)).toBeCloseTo(10, 1)
+    await expect(pxOf(as.paddingTop)).toBeCloseTo(4, 1)
+    // Inverted: full-ink ground, paper text.
+    await expectTier(as.backgroundColor, 'ink', 1)
+    await expectTier(as.color, 'paper', 1)
+    // …and it is the mode the config names.
+    await expect(active).toHaveTextContent('Board')
+  },
+}
+
+export const ViewBarGeometryInk: Story = {
+  args: {
+    config: boardConfig,
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
+    // The track's tint and the active segment's inversion both reassign.
+    await expectTier(
+      getComputedStyle(head.querySelector<HTMLElement>('[data-part="view-bar"]')!).backgroundColor,
+      'paper',
+      0.055
+    )
+    const as = getComputedStyle(
+      canvasElement.querySelector<HTMLElement>('[data-part="view-segment"][data-active]')!
+    )
+    await expectTier(as.backgroundColor, 'paper', 1)
+    await expectTier(as.color, 'ink', 1)
+  },
+}
+
+/** The group-by clause belongs to the mode that has one — a table claims no grouping. */
+export const ViewBarFactsPerMode: Story = {
+  args: {
+    config: { id: 'v', type: 'view', mode: 'table' } as ViewBlock,
+    schema,
+    rows,
+    collectionName: 'tasks',
+    editable: true,
+    onConfigChange: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const facts = canvasElement.querySelector<HTMLElement>('[data-part="db-facts"]')!
+    await expect(facts).toHaveTextContent(`${rows.length} records`)
+    await expect(facts.textContent).not.toMatch(/grouped by/)
+  },
+}
+
+/** Off a page host there is no database name — the row simply omits it. */
+export const ViewBarWithoutAName: Story = {
+  args: { config: boardConfig, schema, rows, editable: true, onConfigChange: fn() },
+  play: async ({ canvasElement }) => {
+    const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
+    await expect(head.querySelector('[data-part="db-name"]')).toBeNull()
+    // The bar is still there — the views do not depend on the name.
+    await expect(head.querySelector('[data-part="view-bar"]')).toBeInTheDocument()
+  },
+}
+
 // ── Board ──────────────────────────────────────────────────────────────────────
 
 /**
