@@ -32,6 +32,7 @@
  * (#252). A plain portal, not base-ui's Popover (#278 measured its jsdom cost).
  */
 
+import type { ReactNode } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -66,6 +67,31 @@ export interface CommandPaletteProps {
   defaultQuery?: string
   /** Portal target; defaults to `document.body`. Stories theme it. */
   container?: HTMLElement | null
+  /**
+   * SHEET MODE — `Pond 06.09` (`6i`) frame 3.
+   *
+   * Picking a page action does not open a second surface over the palette: the
+   * palette BECOMES the sheet in place, keeping its glass, its position and its
+   * head. So the listbox is replaced by `body`, and the head's input stops being
+   * a combobox and becomes the sheet's one field.
+   *
+   * The host owns the field's value, because the same value is the sheet's
+   * subject — one owner, read twice, never derived in two places.
+   */
+  sheet?: PaletteSheet | null
+}
+
+export interface PaletteSheet {
+  /** Replaces the listbox, inside the same glass. */
+  body: ReactNode
+  /** The head input's value — the sheet's one field. */
+  value: string
+  onValueChange: (value: string) => void
+  placeholder?: string
+  /** ⏎ in the field. */
+  onSubmit: () => void
+  /** Names the field for assistive tech, since it is no longer "command palette". */
+  label: string
 }
 
 const WASH = 'fixed inset-0 z-[99] bg-mn-surface/[0.62]'
@@ -97,6 +123,7 @@ export function CommandPalette({
   suggested,
   defaultQuery = '',
   container,
+  sheet = null,
 }: CommandPaletteProps) {
   const listId = useId()
   const [query, setQuery] = useState(defaultQuery)
@@ -144,6 +171,15 @@ export function CommandPalette({
   }, [onClose])
 
   function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    // In sheet mode the field is a name, not a query: ⏎ saves, and the list
+    // keys (arrows, ⌫-clears-scope) have nothing to act on.
+    if (sheet) {
+      if (e.key === 'Enter') {
+        sheet.onSubmit()
+        e.preventDefault()
+      }
+      return
+    }
     if (e.key === 'ArrowDown') select(Math.min(active + 1, rows.length - 1))
     else if (e.key === 'ArrowUp') select(Math.max(active - 1, 0))
     else if (e.key === 'Enter') {
@@ -168,17 +204,21 @@ export function CommandPalette({
           )}
           <input
             ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={sheet ? sheet.value : query}
+            onChange={(e) => (sheet ? sheet.onValueChange : setQuery)(e.target.value)}
             onKeyDown={onInputKey}
-            placeholder={scope ? '' : 'jump to a page, or > for actions'}
+            placeholder={
+              sheet ? (sheet.placeholder ?? '') : scope ? '' : 'jump to a page, or > for actions'
+            }
             className={INPUT}
-            role="combobox"
-            aria-label="command palette"
-            aria-expanded="true"
-            aria-controls={listId}
-            aria-autocomplete="list"
-            aria-activedescendant={rows[active] ? rowId(active) : undefined}
+            // Sheet mode is a plain text field — there is no list to own, so the
+            // combobox role and its aria wiring would describe something absent.
+            role={sheet ? undefined : 'combobox'}
+            aria-label={sheet ? sheet.label : 'command palette'}
+            aria-expanded={sheet ? undefined : 'true'}
+            aria-controls={sheet ? undefined : listId}
+            aria-autocomplete={sheet ? undefined : 'list'}
+            aria-activedescendant={sheet || !rows[active] ? undefined : rowId(active)}
             autoComplete="off"
             spellCheck={false}
           />
@@ -186,43 +226,52 @@ export function CommandPalette({
             esc
           </button>
         </div>
-        <div
-          id={listId}
-          role="listbox"
-          aria-label="pages, records and actions"
-          className="flex max-h-[60vh] flex-col gap-[2px] overflow-y-auto"
-        >
-          {entries.map((entry, i) => {
-            if (entry.kind === 'group')
+        {sheet ? (
+          <div data-part="sheet">{sheet.body}</div>
+        ) : (
+          <div
+            id={listId}
+            role="listbox"
+            aria-label="pages, records and actions"
+            className="flex max-h-[60vh] flex-col gap-[2px] overflow-y-auto"
+          >
+            {entries.map((entry, i) => {
+              if (entry.kind === 'group')
+                return (
+                  <div key={`g-${i}`} data-part="group" className={GROUP}>
+                    {entry.label}
+                  </div>
+                )
+              if (entry.kind === 'note')
+                return (
+                  <div key={`n-${i}`} data-part="note" className={NOTE}>
+                    {entry.text}
+                  </div>
+                )
+              const at = indexOf.get(entry) ?? -1
               return (
-                <div key={`g-${i}`} data-part="group" className={GROUP}>
-                  {entry.label}
-                </div>
+                <PaletteRow
+                  key={entry.item.id}
+                  id={rowId(at)}
+                  entry={entry}
+                  selected={at === active}
+                  onHover={() => select(at)}
+                  onPick={() => onSelect(entry.item)}
+                />
               )
-            if (entry.kind === 'note')
-              return (
-                <div key={`n-${i}`} data-part="note" className={NOTE}>
-                  {entry.text}
-                </div>
-              )
-            const at = indexOf.get(entry) ?? -1
-            return (
-              <PaletteRow
-                key={entry.item.id}
-                id={rowId(at)}
-                entry={entry}
-                selected={at === active}
-                onHover={() => select(at)}
-                onPick={() => onSelect(entry.item)}
-              />
-            )
-          })}
-        </div>
-        <div data-part="foot" className={FOOT}>
-          {PALETTE_FOOT.map((f) => (
-            <span key={f}>{f}</span>
-          ))}
-        </div>
+            })}
+          </div>
+        )}
+        {/* The foot's `↑↓ move · ↵ open` hints describe the LIST. In sheet mode
+            there is no list, and the board draws the sheet's own buttons there
+            instead, so the hints would be describing something absent. */}
+        {!sheet && (
+          <div data-part="foot" className={FOOT}>
+            {PALETTE_FOOT.map((f) => (
+              <span key={f}>{f}</span>
+            ))}
+          </div>
+        )}
       </div>
     </>,
     container ?? document.body

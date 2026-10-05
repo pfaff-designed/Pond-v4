@@ -1,161 +1,123 @@
 'use client'
 
 /**
- * The name-and-keep sheet — `Pond 06.09` (`6i`) frame 4, "name it, choose what
- * it keeps".
+ * The name-and-keep sheet's BODY — `Pond 06.09` (`6i`) frame 3, "name it, choose
+ * what it keeps".
  *
- * Reached from the ⌘K palette, never the `/` menu. The board is explicit about
- * why: "Saving is a page action, so it lives in the command palette, not the /
- * menu" (frame 3).
+ * This is a body, not a surface. The board does not open a second thing over the
+ * ⌘K palette: the palette **becomes** the sheet, keeping its glass, its position
+ * and its head, and the head's input becomes the sheet's one field. So the glass,
+ * the wash, the name field and the `esc` affordance all belong to
+ * `CommandPalette`'s sheet mode; what lives here is everything below the rule:
  *
- * Every value below is read inline from the board's markup, not eyeballed:
+ *     ⌘K   weeknight recipe|          ← CommandPalette's head, in sheet mode
+ *     ─────────────────────────
+ *     keep                            ← from here down is this file
+ *      ■ structure and labels
+ *      ■ placeholder text
+ *      □ this page's content
+ *     6 blocks — big number, list, checklist, heading, text, entry log
+ *     [save template] [cancel]
  *
- *   name row   padding 10/12/12 · border-bottom 1px ink .09 · 13.5
- *              caret 1.5×14 · #1B1D14 · translateY(2px) · margin-left 2px
- *   keep label padding 10/12/4 · 10.5 · tracking .04em · ink .68
- *   check row  padding 8/12 · gap 10 · 12.5
- *   box        12×12 · radius 3 · on `#1B1D14` · off inset 1.4px ink .68
- *   foot       gap 7 · padding 10/12/6
- *   primary    padding 7/13 · radius 999 · 500 · 11 · `#1B1D14` on paper
- *   secondary  the same metrics · ink .07 ground · ink .8
+ * Reached from the palette, never the `/` menu — frame 2: "Saving is a page
+ * action, so it lives in the command palette, not the / menu."
  *
- * The box's off state (12 / 3 / inset 1.4px ink .68) is exactly `PondControl
- * kind="checkbox"`, so the rows wrap the control rather than hand-rolling a
- * square — the shadcn/base-ui primitive underneath carries the ARIA state
- * machine and the keyboard handling.
+ * Every value is read inline from the board's markup:
+ *
+ *   keep label  padding 10/12/4 · 10.5 · tracking .04em · ink .68
+ *   check row   padding 8/12 · gap 10 · 12.5
+ *   box         12×12 · radius 3 · on `#1B1D14` · off inset 1.4px ink .68
+ *   summary     padding 8/12/4 · 10.5 · tracking .04em · ink .68
+ *   foot        gap 7 · padding 10/12/6
  *
  * ## Three boxes, one of them live
  *
- * The board draws THREE: `structure and labels`, `placeholder text` (both on)
- * and `this page's content` (off). That is the frame's own caption rendered as
- * controls — "by default a saved template is the stack, the labels and the
- * placeholders."
+ * The board draws THREE: `structure and labels`, `placeholder text` (both on) and
+ * `this page's content` (off) — the frame's own caption rendered as controls:
+ * "by default a saved template is the stack, the labels and the placeholders."
  *
- * Only the third has a specified meaning. What *unticking* `structure and
- * labels` or `placeholder text` should produce is not captioned anywhere, and a
- * template with no structure is not a thing the board describes. So those two
- * render in `PondControl`'s own `disabled` state — one of the eight states
- * `PondControl.dc.html` specifies — exactly the precedent #316 set for the
- * new-pond sheet: nothing is missing from the board, and nothing pretends to be
- * live. Their semantics are an open question on KAN-10.
+ * Only the third has a specified meaning. What *unticking* either of the first
+ * two should produce is captioned nowhere, and a template with no structure is
+ * not a thing the board describes. So those two render in `PondControl`'s own
+ * `disabled` state — the precedent #316 set for the new-pond sheet: nothing is
+ * missing from the board, and nothing pretends to be live.
  */
 
-import { useRef, useState } from 'react'
 import { PondControl } from '@/components/atoms/PondControl'
 
-/**
- * Mounted only while open, so its state initialises from the page once and a
- * cancelled save leaves no typing behind. Resetting in an effect instead would
- * be a `set-state-in-effect` — and would briefly render last time's values.
- */
-export interface SaveAsTemplateSheetProps {
-  /** The page being saved — its title seeds the name field. */
-  pageTitle: string
-  /** Saving. The sheet stays open and shows the message on a rejection. */
-  onSave: (input: { name: string; keepContent: boolean }) => Promise<void>
-  onClose: () => void
+export interface SaveAsTemplateBodyProps {
+  /** Ticked: keep this page's content instead of placeholders. */
+  keepContent: boolean
+  onKeepContentChange: (keep: boolean) => void
+  /** `6 blocks — big number, list, …` — see `lib/templates/summary.ts`. */
+  summary: string
+  /** False while the name is empty or a save is in flight. */
+  canSave: boolean
+  saving: boolean
+  /** A rejected save keeps the sheet open carrying this. */
+  error: string | null
+  onSave: () => void
+  onCancel: () => void
 }
 
-export function SaveAsTemplateSheet({ pageTitle, onSave, onClose }: SaveAsTemplateSheetProps) {
-  const [name, setName] = useState(pageTitle)
-  const [keepContent, setKeepContent] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const nameRef = useRef<HTMLInputElement | null>(null)
-
-  const trimmed = name.trim()
-
-  async function save() {
-    if (trimmed === '' || saving) return
-    setSaving(true)
-    setError(null)
-    try {
-      await onSave({ name: trimmed, keepContent })
-      onClose()
-    } catch (err) {
-      // A same-pond name collision is the person's to resolve — `createTemplate`
-      // raises `DuplicateTemplateNameError` and deliberately does NOT auto-suffix
-      // the way `createPage` does. So the sheet stays open with the message.
-      setError(err instanceof Error ? err.message : 'Could not save the template')
-      setSaving(false)
-    }
-  }
-
+export function SaveAsTemplateBody({
+  keepContent,
+  onKeepContentChange,
+  summary,
+  canSave,
+  saving,
+  error,
+  onSave,
+  onCancel,
+}: SaveAsTemplateBodyProps) {
   return (
-    <div
-      data-part="scrim"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-mn-paper/[0.62]"
-      onClick={onClose}
-    >
+    <div data-part="save-as-template">
       <div
-        data-part="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Save page as template"
-        className="mn-glass mt-[120px] w-[320px] overflow-hidden rounded-[16px] text-mn-text"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose()
-        }}
+        data-part="keep-label"
+        className="px-[12px] pt-[10px] pb-[4px] text-[10.5px] tracking-[.04em] text-mn-text-secondary"
       >
-        {/* name — the board's one live field, its caret drawn beside the value */}
+        keep
+      </div>
+
+      {/* The two the board draws on and never captions unticking for. */}
+      <KeepRow label="structure and labels" on disabled />
+      <KeepRow label="placeholder text" on disabled />
+      {/* The one live choice: off by default, per the frame's caption. */}
+      <KeepRow label="this page’s content" on={keepContent} onCheckedChange={onKeepContentChange} />
+
+      {/* What the template will contain, before you commit to it. */}
+      <div
+        data-part="summary"
+        className="px-[12px] pt-[8px] pb-[4px] text-[10.5px] tracking-[.04em] text-mn-text-secondary"
+      >
+        {summary}
+      </div>
+
+      {error && (
         <div
-          data-part="name"
-          className="flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[12px] pt-[10px] pb-[12px] text-[13.5px]"
+          data-part="error"
+          role="alert"
+          className="px-[12px] pt-[4px] pb-[4px] text-[11px] tracking-[.02em] text-mn-text-secondary"
         >
-          <input
-            ref={nameRef}
-            autoFocus
-            aria-label="Template name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void save()
-            }}
-            className="min-w-0 flex-1 truncate bg-transparent text-inherit caret-mn-text outline-none placeholder:text-mn-text-secondary"
-            placeholder="name this template"
-          />
+          {error}
         </div>
+      )}
 
-        <div
-          data-part="keep-label"
-          className="px-[12px] pt-[10px] pb-[4px] text-[10.5px] tracking-[.04em] text-mn-text-secondary"
-        >
-          keep
-        </div>
-
-        {/* The two the board draws on and does not specify unticking for. */}
-        <KeepRow label="structure and labels" on disabled />
-        <KeepRow label="placeholder text" on disabled />
-        {/* The one live choice (KAN-10): off by default, per the frame's caption. */}
-        <KeepRow label="this page’s content" on={keepContent} onCheckedChange={setKeepContent} />
-
-        {error && (
-          <div
-            data-part="error"
-            role="alert"
-            className="px-[12px] pt-[8px] pb-[4px] text-[11px] tracking-[.02em] text-mn-text-secondary"
-          >
-            {error}
-          </div>
-        )}
-
-        <div data-part="foot" className="flex gap-[7px] px-[12px] pt-[10px] pb-[6px]">
-          <PondControl
-            kind="button"
-            variant="primary"
-            label={saving ? 'saving…' : 'save template'}
-            disabled={trimmed === '' || saving}
-            onClick={() => void save()}
-          />
-          <PondControl kind="button" variant="secondary" label="cancel" onClick={onClose} />
-        </div>
+      <div data-part="foot" className="flex gap-[7px] px-[12px] pt-[10px] pb-[6px]">
+        <PondControl
+          kind="button"
+          variant="primary"
+          label={saving ? 'saving…' : 'save template'}
+          disabled={!canSave}
+          onClick={onSave}
+        />
+        <PondControl kind="button" variant="secondary" label="cancel" onClick={onCancel} />
       </div>
     </div>
   )
 }
 
-/** One `keep` row: the board's 8/12 row with a 12px box at gap 10. */
+/** One `keep` row: the board's 8/12 row with its box at gap 10. */
 function KeepRow({
   label,
   on,

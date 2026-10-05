@@ -149,6 +149,73 @@ describe('getTemplate', () => {
 
 // ── createTemplate ────────────────────────────────────────────────────────────
 
+describe('createTemplate — the pond is always stamped (KAN-10)', () => {
+  /**
+   * A template with a null `pond_id` is invisible: `listTemplates` filters on the
+   * pond, so the row is saved and gone. Worse, `templates_name_uniq` is keyed
+   * `(pond_id, lower(btrim(name)))` and NULLs are DISTINCT in a unique index — so
+   * two null-pond templates with the same name do not even collide.
+   *
+   * This is not theoretical. Found in the browser on 2026-10-04: a `?pond=` naming
+   * a pond that had since been deleted makes `resolveActivePond` return null by
+   * design (it never substitutes another pond silently), so the whole shell runs
+   * unscoped and hands `createTemplate` a null. Two invisible duplicates landed,
+   * and nothing anywhere went red — every unit test, the pglite suite and the
+   * browser all looked fine.
+   *
+   * `createPage` already guards this the same way; templates did not.
+   */
+  it('resolves the person’s first pond when the caller has none', async () => {
+    const ponds = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'pond-first' }, error: null }),
+    })
+    const templates = makeChain({
+      single: jest.fn().mockResolvedValue({ data: templateRow(), error: null }),
+    })
+    const sb = {
+      from: jest.fn((table: string) => (table === 'ponds' ? ponds : templates)),
+    }
+
+    await createTemplate(sb as never, 'user-1', { name: 'Weekly review', kind: 'page' })
+
+    expect(templates.insert.mock.calls[0][0]).toMatchObject({ pond_id: 'pond-first' })
+  })
+
+  it('prefers the pond the caller names over the fallback', async () => {
+    const ponds = makeChain({
+      maybeSingle: jest.fn().mockResolvedValue({ data: { id: 'pond-first' }, error: null }),
+    })
+    const templates = makeChain({
+      single: jest.fn().mockResolvedValue({ data: templateRow(), error: null }),
+    })
+    const sb = { from: jest.fn((t: string) => (t === 'ponds' ? ponds : templates)) }
+
+    await createTemplate(sb as never, 'user-1', {
+      name: 'Weekly review',
+      kind: 'page',
+      pondId: 'pond-named',
+    })
+
+    expect(templates.insert.mock.calls[0][0]).toMatchObject({ pond_id: 'pond-named' })
+    // The fallback is not even consulted when the caller knows its pond.
+    expect(sb.from).not.toHaveBeenCalledWith('ponds')
+  })
+
+  it('still writes when there is genuinely no pond — before 0018, or no row yet', async () => {
+    // `firstPondId` answers null on ANY failure, which means "no pond scope" —
+    // the behaviour every caller had before ponds existed. The template is still
+    // saved rather than the save failing.
+    const chain = makeChain({
+      single: jest.fn().mockResolvedValue({ data: templateRow(), error: null }),
+    })
+    const sb = makeSupabase(chain)
+
+    await createTemplate(sb as never, 'user-1', { name: 'Weekly review', kind: 'page' })
+
+    expect(chain.insert.mock.calls[0][0]).not.toHaveProperty('pond_id')
+  })
+})
+
 describe('createTemplate', () => {
   it('inserts user_id, name, kind, blocks and origin, returning the saved row', async () => {
     const chain = makeChain({

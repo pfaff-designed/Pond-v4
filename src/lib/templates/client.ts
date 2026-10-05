@@ -21,6 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
+import { firstPondId } from '@/lib/pond/first'
 import {
   isTemplateKind,
   isTemplateOrigin,
@@ -153,11 +154,22 @@ export async function createTemplate(
   userId: string,
   input: CreateTemplateInput
 ): Promise<PondTemplate> {
+  // #312/B4: stamp the pond. `listTemplates` filters on it, so an unstamped
+  // template is invisible in every pond — saved, and gone.
+  //
+  // KAN-10: resolving an absent pond here rather than writing null is the same
+  // guard `createPage` already makes, and for the same reason. It is not
+  // theoretical: a `?pond=` naming a pond that has since been DELETED makes
+  // `resolveActivePond` return null by design (it never substitutes another
+  // pond silently), so the whole shell runs unscoped and every caller hands us
+  // null. Writing it through produced two invisible rows — and, because NULLs
+  // are distinct in a unique index, `templates_name_uniq` could not even catch
+  // them as duplicates of each other.
+  const pondId = input.pondId ?? (await firstPondId(supabase, userId))
+
   const insert = {
     user_id: userId,
-    // #312/B4: stamp the pond. `listTemplates` filters on it, so an unstamped
-    // template was invisible everywhere. `workspace` is gone (0020).
-    ...(input.pondId ? { pond_id: input.pondId } : {}),
+    ...(pondId ? { pond_id: pondId } : {}),
     name: input.name.trim(),
     kind: input.kind,
     blocks: input.blocks ?? [],
