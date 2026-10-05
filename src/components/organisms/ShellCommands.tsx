@@ -21,7 +21,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
-import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
+import type { PaletteItem } from '@/components/molecules/CommandPalette'
+import { NewPondSheet } from '@/components/organisms/NewPondSheet'
+import { ShellPalette } from '@/components/organisms/ShellPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { isPaletteChord, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
@@ -30,12 +32,15 @@ import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import { usePondId } from '@/lib/pond/context'
+import { pondHref } from '@/lib/pond/active'
+import { useCreatePond } from '@/lib/pond/use-create-pond'
 import { SaveAsTemplateBody } from '@/components/organisms/SaveAsTemplateSheet'
 import { templateSummary } from '@/lib/templates/summary'
 import { getPage } from '@/lib/pages/client'
 import { createTemplate } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
 import type { Block } from '@/lib/modules/content'
+import { ROW_TYPE } from '@/lib/properties/schema'
 import { createClient } from '@/lib/supabase/client'
 
 const RECENT_PAGES_KEY = 'pond:recent-pages'
@@ -78,6 +83,9 @@ export function ShellCommands() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createTitle, setCreateTitle] = useState('')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // `new pond “q”`: the sheet is open, holding the name the palette handed over.
+  const [naming, setNaming] = useState<string | null>(null)
+  const { create, pending, failure, clearFailure } = useCreatePond()
   const pondId = usePondId()
   const pondName = usePondName()
 
@@ -160,6 +168,10 @@ export function ShellCommands() {
         setCreateOpen(true)
         return
       }
+      if (item.action === 'new-pond') {
+        setNaming(item.query ?? '')
+        return
+      }
       if (item.action === 'ask-pond') {
         requestTerminalFocus(item.query)
         return
@@ -181,6 +193,14 @@ export function ShellCommands() {
           const page = await getPage(createClient(), currentNodeId)
           setSaveTemplateFor({ id: currentNodeId, title, blocks: page?.blocks ?? [] })
         })()
+        return
+      }
+      if (item.kind === 'pond') {
+        router.push(pondHref(item.id))
+        return
+      }
+      if (item.kind === 'record') {
+        router.push(workspaceUrl({ id: item.id, type: ROW_TYPE, title: item.label }))
         return
       }
       const page = pages.find((p) => p.id === item.id)
@@ -243,8 +263,24 @@ export function ShellCommands() {
         defaultParentId={parent.id}
         defaultTitle={createTitle}
       />
+      {naming !== null && (
+        <NewPondSheet
+          defaultName={naming}
+          onCreate={(name) =>
+            void create(name).then((made) => {
+              if (made) setNaming(null)
+            })
+          }
+          onCancel={() => {
+            setNaming(null)
+            clearFailure()
+          }}
+          pending={pending}
+          failure={failure}
+        />
+      )}
       {(paletteOpen || saveTemplateFor) && (
-        <CommandPalette
+        <ShellPalette
           items={items}
           scope={scope}
           pondName={pondName}

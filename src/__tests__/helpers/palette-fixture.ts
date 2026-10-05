@@ -7,7 +7,7 @@
  *
  * The rows are `PondPicker.dc.html`'s palette frames: the three recent pages,
  * the pages and records its `typing` / `record` / `empty` / `scoped` states
- * list, the `ponds` stub (⌘2 — multi-pond is M3), and its actions. `Savings` is
+ * list, a `pond` row, and its actions. `Savings` is
  * the one row the board does not draw: a page whose title is capitalised, so a
  * guard that the CHROME is lowercase is exercised against page content that
  * keeps its case (ADR 0004 §4 — "a page's name is page content quoted inside a
@@ -70,25 +70,41 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
     path: ['personal', 'journal'],
   },
   { id: 'transactions', label: 'transactions', kind: 'database', sub: 'money', path: ['money'] },
-  { id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' },
-  {
-    id: 'adobe',
-    label: 'adobe creative cloud',
-    kind: 'record',
-    sub: 'subscriptions · renews 28 sep',
-  },
   {
     id: 'make-noise',
     label: 'make noise',
     kind: 'pond',
     sub: 'pond · switch',
     glyph: 'lightning-03',
-    key: '⌘2',
   },
   { id: 'chase', label: 'chase the cabinet quote', kind: 'action' },
   { id: 'log-workout', label: 'log a workout', kind: 'action' },
   { id: 'log-meal', label: 'log a meal', kind: 'action' },
   { id: 'log-sleep', label: 'log sleep', kind: 'action' },
+]
+
+/**
+ * What the host feeds under `records` for a query — the palette lists these as
+ * handed over and never re-filters them (a field match has no label hit). The
+ * live source is `lib/pages/palette-records`, tested against a mocked data layer;
+ * these are only the board's two frames, for the pure list and the stories.
+ */
+export const PALETTE_RECORDS: Readonly<Record<string, readonly PaletteItem[]>> = {
+  cab: [{ id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' }],
+  adobe: [
+    {
+      id: 'adobe',
+      label: 'adobe creative cloud',
+      kind: 'record',
+      sub: 'subscriptions · renews 28 sep',
+    },
+  ],
+}
+
+/** The fixture list as the shell would hand it for `query`: pages and actions, plus its records. */
+export const paletteItemsFor = (query: string): readonly PaletteItem[] => [
+  ...PALETTE_ITEMS,
+  ...(PALETTE_RECORDS[query] ?? []),
 ]
 
 /**

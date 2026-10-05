@@ -18,15 +18,22 @@ import { CommandPalette } from '@/components/molecules/CommandPalette'
 import {
   ASK_POND_ID,
   NEW_PAGE_ID,
+  NEW_POND_ID,
   PALETTE_FOOT,
   PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteEntry,
+  type PaletteItem,
 } from '@/components/molecules/palette-entries'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import type { PageRow } from '@/lib/pages/tree'
-import { PALETTE_ITEMS, PALETTE_SUGGESTED, paletteChrome } from './helpers/palette-fixture'
+import {
+  PALETTE_ITEMS,
+  PALETTE_SUGGESTED,
+  paletteChrome,
+  paletteItemsFor,
+} from './helpers/palette-fixture'
 import { readHandoff } from './helpers/handoff'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
@@ -56,6 +63,7 @@ const shape = (entries: PaletteEntry[]) =>
 const groupsOf = (entries: PaletteEntry[]) =>
   entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
 /** One query per state — `sav` reaches the capitalised `Savings`. */
+const MONEY_SCOPE = { id: 'money', label: 'money' }
 const QUERIES = ['', 'cab', '> log', 'adobe', 'cabnet', 'make', 'sav']
 
 // ── The list, state by state ───────────────────────────────────────────────────
@@ -111,7 +119,7 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('typing: pages, then records, then actions — matched ones, then `ask pond about “q”`', () => {
-    const entries = paletteEntries(PALETTE_ITEMS, 'cab')
+    const entries = paletteEntries(paletteItemsFor('cab'), 'cab')
     expect(shape(entries)).toEqual([
       'G:pages',
       'page:cabinet plan',
@@ -127,6 +135,47 @@ describe('paletteEntries — the board’s states', () => {
     expect(ask).toMatchObject({ item: { kind: 'action', query: 'cab' } })
   })
 
+  it('a record is listed as the host searched it — a field match with no label hit is not filtered out', () => {
+    const byField: PaletteItem = {
+      id: 'r1',
+      label: 'quote',
+      kind: 'record',
+      sub: 'tasks · vendor: acme cabinets',
+    }
+    const entries = paletteEntries([...PALETTE_ITEMS, byField], 'acme')
+    expect(shape(entries)).toEqual([
+      'G:records',
+      'record:quote',
+      'G:actions',
+      'action:ask pond about “acme”',
+    ])
+    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor: acme cabinets', hit: '' })
+    // Records never sit under a scope or a `>`.
+    expect(
+      shape(paletteEntries([...PALETTE_ITEMS, byField], 'acme', { scope: MONEY_SCOPE }))
+    ).not.toContain('record:quote')
+    expect(shape(paletteEntries([...PALETTE_ITEMS, byField], '> log'))).not.toContain(
+      'record:quote'
+    )
+  })
+
+  it('ponds: `new pond “q”` stands among the actions only where a pond matched, ahead of `ask pond`', () => {
+    const entries = paletteEntries(PALETTE_ITEMS, 'make', { pondName: 'life' })
+    expect(shape(entries)).toEqual([
+      'G:ponds',
+      'pond:make noise',
+      'G:pages in life',
+      'page:make this a page',
+      'G:actions',
+      'action:new pond “make”',
+      'action:ask pond about “make”',
+    ])
+    expect(entries.find((e) => e.kind === 'row' && e.item.id === NEW_POND_ID)).toMatchObject({
+      item: { action: 'new-pond', query: 'make' },
+    })
+    expect(shape(paletteEntries(PALETTE_ITEMS, 'cab'))).not.toContain('action:new pond “cab”')
+  })
+
   it('actions: a leading `>` drops pages and records, and no group label is drawn', () => {
     expect(shape(paletteEntries(PALETTE_ITEMS, '> log'))).toEqual([
       'action:log a workout',
@@ -139,7 +188,7 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('record: a record is first class, with the field that matched under it', () => {
-    const entries = paletteEntries(PALETTE_ITEMS, 'adobe')
+    const entries = paletteEntries(paletteItemsFor('adobe'), 'adobe')
     expect(shape(entries)).toEqual([
       'G:records',
       'record:adobe creative cloud',
@@ -179,7 +228,6 @@ describe('paletteEntries — the board’s states', () => {
       'action:new page “cabnet” under life',
       'G:did you mean',
       'page:cabinet plan',
-      'record:cabinet quote',
     ])
     expect(entries[2]).toMatchObject({
       item: { id: NEW_PAGE_ID, action: 'new-page', query: 'cabnet' },

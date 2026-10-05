@@ -93,11 +93,19 @@ export interface NewPondSheetProps {
   onCancel: () => void
   pending?: boolean
   failure?: string | null
+  /** The name already typed — the palette's `new pond “q”` hands over its `q`. */
+  defaultName?: string
 }
 
-export function NewPondSheet({ onCreate, onCancel, pending, failure }: NewPondSheetProps) {
+export function NewPondSheet({
+  onCreate,
+  onCancel,
+  pending,
+  failure,
+  defaultName = '',
+}: NewPondSheetProps) {
   const [step, setStep] = useState(1)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(defaultName)
 
   const last = step === 3
 

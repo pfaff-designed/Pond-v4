@@ -8,6 +8,7 @@ import {
   PALETTE_ITEMS,
   PALETTE_SUGGESTED,
   paletteChrome,
+  paletteItemsFor,
 } from '@/__tests__/helpers/palette-fixture'
 
 /**
@@ -20,9 +21,10 @@ import {
  *
  * The rows are `helpers/palette-fixture` — the one fixture the jest suite reads
  * too, and not an export of this file (Storybook would list it as a story).
- * `ponds` is STUBBED there with a `pond` item (⌘2); the shell lists none —
- * multi-pond is M3 (ADR 0002). `suggested` is likewise a fixture: the shell
- * passes none until it can infer them (#285).
+ * The live records and ponds come from the shell (`ShellPalette`, tested against a
+ * mocked data layer); here a `pond` row and the records for `cab` and `adobe` are
+ * the board's frames. `suggested` is likewise a fixture: the shell passes none until
+ * it can infer them (#285).
  */
 
 const PAPER = {
@@ -369,11 +371,11 @@ async function assertTyping(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
 
 /** `cab`: pages, then records, then actions; the hit underlined, never washed. */
 export const Typing: Story = {
-  args: { defaultQuery: 'cab' },
+  args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
   play: async ({ canvasElement }) => assertTyping(canvasElement, PAPER),
 }
 export const TypingInk: Story = {
-  args: { defaultQuery: 'cab', ink: true },
+  args: { defaultQuery: 'cab', items: paletteItemsFor('cab'), ink: true },
   play: async ({ canvasElement }) => assertTyping(canvasElement, INK),
 }
 
@@ -411,11 +413,11 @@ async function assertRecord(root: HTMLElement, p: Palette) {
 
 /** `adobe`: a record is first class, the matched field under its name. */
 export const Record: Story = {
-  args: { defaultQuery: 'adobe' },
+  args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe') },
   play: async ({ canvasElement }) => assertRecord(canvasElement, PAPER),
 }
 export const RecordInk: Story = {
-  args: { defaultQuery: 'adobe', ink: true },
+  args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe'), ink: true },
   play: async ({ canvasElement }) => assertRecord(canvasElement, INK),
 }
 
@@ -436,7 +438,6 @@ async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) 
     'ask pond about “cabnet”',
     'new page “cabnet” under life',
     'cabinet plan',
-    'cabinet quote',
   ])
   await expect(root.querySelector('[aria-selected="true"] [data-part="label"]')!.textContent).toBe(
     'ask pond about “cabnet”'
@@ -485,19 +486,29 @@ export const ScopedInk: Story = {
   play: async ({ canvasElement }) => assertScoped(canvasElement, INK),
 }
 
-// ── ponds (stub — M3) ──────────────────────────────────────────────────────────
+// ── ponds ──────────────────────────────────────────────────────────
 
 async function assertPonds(root: HTMLElement, p: Palette) {
   await assertChrome(root, p)
   await expect(groups(root)).toEqual(['ponds', 'pages in life', 'actions'])
-  await expect(labels(root)).toEqual(['make noise', 'make this a page', 'ask pond about “make”'])
+  await expect(labels(root)).toEqual([
+    'make noise',
+    'make this a page',
+    'new pond “make”',
+    'ask pond about “make”',
+  ])
+  await expect(
+    [...glassOf(root).querySelectorAll('[data-kind="pond"] [data-part="sub"]')].map(
+      (x) => x.textContent
+    )
+  ).toEqual(['pond · switch'])
   const pond = glassOf(root).querySelector<HTMLElement>('[data-kind="pond"]')!
   await expect(pond.getAttribute('aria-selected')).toBe('true')
   await expect(pond.querySelector('[data-part="hint"]')).toBeNull()
   await assertHit(root, 'make noise', 'make')
 }
 
-/** `make`: a pond above the pages (6m). Stubbed with a `pond` item — multi-pond is M3. */
+/** `make`: a pond above the pages (6m), and `new pond “make”` among the actions. */
 export const Ponds: Story = {
   args: { defaultQuery: 'make' },
   play: async ({ canvasElement }) => assertPonds(canvasElement, PAPER),
@@ -533,7 +544,7 @@ export const MobileOpened: Story = {
 
 /** `cab`: the sub-line is 13 on a phone, the hit still underlined. */
 export const MobileTyping: Story = {
-  args: { defaultQuery: 'cab' },
+  args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
@@ -624,7 +635,7 @@ export const Dismissal: Story = {
  * hovering a row selects it (and the input says so), and a click opens it.
  */
 export const Pointer: Story = {
-  args: { onSelect: fn() },
+  args: { onSelect: fn(), items: paletteItemsFor('cab') },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
     const input = glass.querySelector<HTMLInputElement>('input')!

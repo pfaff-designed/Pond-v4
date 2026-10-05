@@ -69,6 +69,8 @@ export interface CommandPaletteProps {
   parentTitle?: string
   /** The `opened` state's `suggested` actions, when the host can infer them (#285). */
   suggested?: readonly PaletteItem[]
+  /** The query as it changes — how the host learns what to search records for. */
+  onQueryChange?: (query: string) => void
   /** Opens with this already typed — stories render the board's frames. */
   defaultQuery?: string
   /** Portal target; defaults to `document.body`. Stories theme it. */
@@ -128,6 +130,7 @@ export function CommandPalette({
   parentTitle,
   suggested,
   defaultQuery = '',
+  onQueryChange,
   container,
   sheet = null,
 }: CommandPaletteProps) {
@@ -175,6 +178,12 @@ export function CommandPalette({
     }
   }, [onClose])
 
+  function handleInput(value: string) {
+    if (sheet) return sheet.onValueChange(value)
+    setQuery(value)
+    onQueryChange?.(value)
+  }
+
   function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
     // In sheet mode the field is a name, not a query: ⏎ saves, and the list
     // keys (arrows, ⌫-clears-scope) have nothing to act on.
@@ -210,7 +219,7 @@ export function CommandPalette({
           <input
             ref={inputRef}
             value={sheet ? sheet.value : query}
-            onChange={(e) => (sheet ? sheet.onValueChange : setQuery)(e.target.value)}
+            onChange={(e) => handleInput(e.target.value)}
             onKeyDown={onInputKey}
             placeholder={
               sheet ? (sheet.placeholder ?? '') : scope ? '' : 'jump to a page, or > for actions'
