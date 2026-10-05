@@ -523,7 +523,7 @@ describe('displayValue', () => {
   })
 })
 
-// ── pickGroupDef / pickRepeatDef (KAN-59) ────────────────────────────────────
+// ── pickGroupDef / pickRepeatDef ─────────────────────────────────────────────
 
 describe('pickGroupDef', () => {
   const status = { id: 'st', name: 'status', type: 'status' as const, options: [] }
@@ -543,9 +543,16 @@ describe('pickGroupDef', () => {
     expect(pickGroupDef([due], undefined)).toBeUndefined()
   })
 
-  it('does not regroup a view whose named property is gone or the wrong type', () => {
-    expect(pickGroupDef([status, due], 'gone')).toBeUndefined()
-    expect(pickGroupDef([status, due], 'd')).toBeUndefined()
+  it('falls back to the default grouping when the named property is gone or the wrong type', () => {
+    // `groupBy` is shared by board, calendar and list: a calendar's date property
+    // must not leave the board with no lanes after a mode switch.
+    expect(pickGroupDef([status, stage, due], 'gone')).toBe(status)
+    expect(pickGroupDef([stage, status, due], 'd')).toBe(status)
+    expect(pickGroupDef([due, stage], 'd')).toBe(stage)
+  })
+
+  it('returns undefined for a bad name when nothing can group', () => {
+    expect(pickGroupDef([due], 'd')).toBeUndefined()
   })
 })
 

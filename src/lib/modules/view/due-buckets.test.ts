@@ -132,7 +132,32 @@ describe('pickDoneState', () => {
       { id: 'd', name: 'due', type: 'date' },
     ]
     expect(pickDoneState(noDone)).toBeNull()
-    expect(groupRowsByDue([row('a', '2026-10-21', 'a')], noDone, WED)!.done).toBeNull()
+  })
+
+  it('reads the property the view groups by, not just the first status', () => {
+    const grouped: PropertySchema = [
+      { id: 'd', name: 'due', type: 'date' },
+      {
+        id: 'st',
+        name: 'status',
+        type: 'status',
+        options: [
+          { id: 'x', label: 'open' },
+          { id: 'y', label: 'closed' },
+        ],
+      },
+      {
+        id: 'sg',
+        name: 'stage',
+        type: 'select',
+        options: [
+          { id: 'a', label: 'doing' },
+          { id: 'z', label: 'done' },
+        ],
+      },
+    ]
+    expect(pickDoneState(grouped)).toBeNull()
+    expect(pickDoneState(grouped, 'sg')).toMatchObject({ doneId: 'z', openId: 'a' })
   })
 
   it('is null with no status or select at all', () => {

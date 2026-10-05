@@ -49,13 +49,14 @@ export interface DoneState {
 const isDoneLabel = (label: string) => label.trim().toLowerCase() === 'done'
 
 /**
- * The tick's rule. The record's own status/select (the same property the board lanes
- * on) carries done-ness: ticking writes its option labelled `done`, unticking writes
- * the first option that is not. A schema with no such option has nothing for a tick
- * to write, so it returns null and the list draws its checkboxes inert.
+ * The tick's rule. The record's status/select — the view's group property when it is
+ * one, else the first status or select, exactly as the board lanes — carries
+ * done-ness: ticking writes its option labelled `done`, unticking the first option
+ * that is not. A schema with no such option has nothing for a tick to write, so it
+ * returns null and the checkboxes are drawn inert.
  */
-export function pickDoneState(schema: PropertySchema): DoneState | null {
-  const def = pickGroupDef(schema, undefined)
+export function pickDoneState(schema: PropertySchema, groupBy?: string): DoneState | null {
+  const def = pickGroupDef(schema, groupBy)
   const options = def?.options ?? []
   const done = options.find((o) => isDoneLabel(o.label))
   const open = options.find((o) => !isDoneLabel(o.label))
@@ -83,10 +84,10 @@ export function groupRowsByDue(
   schema: PropertySchema,
   now: Date,
   groupBy?: string
-): { dateDef: PropertyDef; done: DoneState | null; buckets: DueBucket[] } | null {
+): { dateDef: PropertyDef; buckets: DueBucket[] } | null {
   const dateDef = pickDateDef(schema, groupBy)
   if (!dateDef) return null
-  const done = pickDoneState(schema)
+  const done = pickDoneState(schema, groupBy)
 
   const today = localEpochDay(now)
   // Monday on or before today. `getDay()` is 0 for Sunday, so Sunday is six days in.
@@ -117,7 +118,6 @@ export function groupRowsByDue(
 
   return {
     dateDef,
-    done,
     buckets: DUE_BUCKETS.flatMap((id) => {
       const entries = buckets.get(id)
       if (!entries) return []

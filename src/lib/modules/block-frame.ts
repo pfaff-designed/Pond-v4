@@ -435,11 +435,19 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
  * in the 500 `table` card — the block board has no gantt kind and `PondTemplate`
  * gives it no width of its own, exactly as `calendar` and `chart`.
  *
- * `board` is absent: 6u.1 lays its lanes straight on the page, so it takes no card.
- * `list` is absent too: 6v's list IS a card (radius 20, 16/18) and draws its own, so
- * a frame around it would be a card inside a card.
+ * `board` is absent: its lanes lie straight on the page. `list` is absent: it is a
+ * card of its own, and a frame around it would be a card inside a card.
  */
 type FramedViewMode = Exclude<ViewMode, 'board' | 'list'>
+
+/**
+ * A view that sets itself on the page without the block card: the board's lanes, the
+ * list (its own card) and the chart card (`PondChart` draws its own paper). The one
+ * predicate the frame and the summary line both read.
+ */
+export function isFramelessView(block: ViewBlock): boolean {
+  return block.mode === 'board' || block.mode === 'list' || isChartCard(block)
+}
 
 const VIEW_KIND: Record<FramedViewMode, PondBlockKind> = {
   table: 'table',
@@ -534,15 +542,13 @@ export function blockFrame(block: Block): BlockFrame | null {
       // own paper, shadow, head and footer. A card inside a card is drawn by no
       // board, so the frame steps aside. The compact marks (#259) are the
       // template's, and keep its card.
-      // 6u.1 sets the board's lanes straight on the page the same way, so it
-      // takes no card either, and 6v's list brings its own (`FramedViewMode`
-      // excludes both).
-      if (block.mode === 'board' || block.mode === 'list' || isChartCard(block)) return null
+      if (isFramelessView(block)) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
       return {
-        kind: VIEW_KIND[block.mode],
-        heading: blockLabel(block) ?? VIEW_HEADING[block.mode],
+        // Every mode `isFramelessView` passes is a `FramedViewMode`.
+        kind: VIEW_KIND[block.mode as FramedViewMode],
+        heading: blockLabel(block) ?? VIEW_HEADING[block.mode as FramedViewMode],
         headNote: '',
       }
     case 'image': {

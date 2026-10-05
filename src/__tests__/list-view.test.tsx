@@ -37,11 +37,12 @@ const rows: CollectionRow[] = [
 
 const config: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
 
-const row = (title: string) => screen.getByRole('listitem', { name: title })
+const titleButton = (title: string) => screen.getByRole('button', { name: title })
+const row = (title: string) => titleButton(title).closest('li')!
 const peek = () => document.querySelector<HTMLElement>('[data-part="record-peek"]')
 
 const renderList = (props: Partial<React.ComponentProps<typeof CollectionList>> = {}) =>
-  render(<CollectionList schema={schema} rows={rows} today={WED} {...props} />)
+  render(<CollectionList viewKey="v" schema={schema} rows={rows} today={WED} {...props} />)
 
 describe('list — what is drawn', () => {
   it('groups the rows by due, in 6v’s order, in a single card', () => {
@@ -73,7 +74,9 @@ describe('list — what is drawn', () => {
   })
 
   it('names the missing property rather than drawing an empty card', () => {
-    render(<CollectionList schema={schema.filter((d) => d.type !== 'date')} rows={rows} />)
+    render(
+      <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
+    )
     expect(screen.getByText('This list needs a date property.')).toBeInTheDocument()
   })
 
@@ -150,6 +153,7 @@ describe('list — the tick', () => {
     ]
     render(
       <CollectionList
+        viewKey="v"
         schema={noDone}
         rows={[{ id: 'a', title: 'A', values: { s: 'open', d: '2026-10-21' } }]}
         today={WED}
@@ -162,24 +166,33 @@ describe('list — the tick', () => {
 })
 
 describe('list — selection and the record peek', () => {
-  it('a row is a tab stop named by its title', () => {
+  it('the title button is the tab stop, named by the title — the row is not focusable', () => {
     renderList()
-    expect(row('Cabinet quote')).toHaveAttribute('tabindex', '0')
+    expect(titleButton('Cabinet quote')).not.toHaveAttribute('tabindex', '-1')
+    expect(row('Cabinet quote')).not.toHaveAttribute('tabindex')
+    expect(row('Cabinet quote')).not.toHaveAttribute('role')
+    expect(row('Cabinet quote').querySelectorAll('[tabindex]')).toHaveLength(0)
   })
 
   it('a click selects the row and opens its record', () => {
     renderList()
-    fireEvent.click(row('Cabinet quote'))
-    expect(row('Cabinet quote')).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(titleButton('Cabinet quote'))
+    expect(titleButton('Cabinet quote')).toHaveAttribute('aria-current', 'true')
     expect(within(peek()!).getByText('Cabinet quote')).toBeInTheDocument()
+  })
+
+  it('a click on the row beside the title selects it too', () => {
+    renderList()
+    fireEvent.click(row('Cabinet quote'))
+    expect(row('Cabinet quote').querySelector('[aria-current="true"]')).not.toBeNull()
   })
 
   it('another row swaps the record', () => {
     renderList()
-    fireEvent.click(row('Cabinet quote'))
-    fireEvent.click(row('Chase the quote'))
+    fireEvent.click(titleButton('Cabinet quote'))
+    fireEvent.click(titleButton('Chase the quote'))
     expect(document.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
-    expect(row('Cabinet quote')).not.toHaveAttribute('aria-current')
+    expect(titleButton('Cabinet quote')).not.toHaveAttribute('aria-current')
   })
 
   it.each([['{Enter}'], [' ']])(
@@ -187,7 +200,7 @@ describe('list — selection and the record peek', () => {
     async (key) => {
       const user = userEvent.setup()
       renderList()
-      row('Cabinet quote').focus()
+      titleButton('Cabinet quote').focus()
       await user.keyboard(key)
       expect(peek()!.contains(document.activeElement)).toBe(true)
     }
@@ -196,16 +209,16 @@ describe('list — selection and the record peek', () => {
   it('Esc closes the peek and returns focus to the row', async () => {
     const user = userEvent.setup()
     renderList()
-    row('Cabinet quote').focus()
+    titleButton('Cabinet quote').focus()
     await user.keyboard('{Enter}')
     await user.keyboard('{Escape}')
     expect(peek()).toBeNull()
-    expect(document.activeElement).toBe(row('Cabinet quote'))
+    expect(document.activeElement).toBe(titleButton('Cabinet quote'))
   })
 
   it('empty paper closes it; a row or the peek does not', () => {
     renderList()
-    fireEvent.click(row('Cabinet quote'))
+    fireEvent.click(titleButton('Cabinet quote'))
     fireEvent.pointerDown(row('Chase the quote'))
     fireEvent.pointerDown(peek()!)
     expect(peek()).not.toBeNull()
@@ -215,14 +228,22 @@ describe('list — selection and the record peek', () => {
 
   it('the peek marks a done record done', () => {
     renderList()
-    fireEvent.click(row('Dehumidifier'))
+    fireEvent.click(titleButton('Dehumidifier'))
     expect(peek()!.querySelector('[data-part="peek-head"] [data-done]')).not.toBeNull()
+  })
+
+  it('the peek head ticks the record through onEdit', async () => {
+    const onEdit = jest.fn()
+    renderList({ editable: true, onEdit })
+    fireEvent.click(titleButton('Chase the quote'))
+    await userEvent.click(within(peek()!).getByRole('checkbox', { name: 'Chase the quote done' }))
+    expect(onEdit).toHaveBeenCalledWith('b', 's', 'done')
   })
 
   it('`open ›` navigates through onOpenRow', () => {
     const onOpenRow = jest.fn()
     renderList({ onOpenRow })
-    fireEvent.click(row('Cabinet quote'))
+    fireEvent.click(titleButton('Cabinet quote'))
     fireEvent.click(screen.getByRole('button', { name: 'open ›' }))
     expect(onOpenRow).toHaveBeenCalledWith('a')
   })
@@ -251,6 +272,38 @@ describe('list — in the view', () => {
       'list',
     ])
     expect(screen.getByRole('button', { name: 'list' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it.each(['board', 'list'] as const)(
+    'switching from a date-grouped calendar to %s keeps the lanes and groups',
+    (mode) => {
+      render(
+        <CollectionView
+          config={{ ...config, mode, groupBy: 'd' }}
+          schema={schema}
+          rows={rows}
+          collectionName="tasks"
+          editable
+          onConfigChange={jest.fn()}
+        />
+      )
+      const part = mode === 'board' ? 'lane' : 'list-group'
+      expect(document.querySelectorAll(`[data-part="${part}"]`).length).toBeGreaterThan(0)
+    }
+  )
+
+  it('draws no add-property control', () => {
+    render(
+      <CollectionView
+        config={config}
+        schema={schema}
+        rows={rows}
+        collectionName="tasks"
+        editable
+        onConfigChange={jest.fn()}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /add property|add field/i })).toBeNull()
   })
 
   it('the switcher writes `list` into the block config', () => {

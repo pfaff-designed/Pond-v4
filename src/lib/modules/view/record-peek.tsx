@@ -12,15 +12,19 @@
  */
 
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { usePageCanvas } from '../page-canvas'
 import { coerceValue, type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { Cell, Dash } from './cells'
 import { displayValue, type CollectionRow } from './apply'
 import { dueAtom } from './due'
+import { DueMark } from './due-mark'
+import { RecordCheck } from './record-check'
 
 const VALUE_INPUT =
   'w-full border-0 bg-transparent p-0 text-[13.5px] text-mn-text outline-none placeholder:text-mn-text-secondary'
 
-/** A read-only value: a date as the due atom (plain — only the board's first `today` is orange), the rest resolved. */
+/** A read-only value: a date as the due text (never the pill — the view owns that), the rest resolved. */
 function ReadValue({
   def,
   row,
@@ -35,8 +39,7 @@ function ReadValue({
   const value = coerceValue(def, row.values[def.id])
   if (def.type === 'date') {
     const atom = typeof value === 'string' ? dueAtom(value, now) : null
-    if (!atom) return <Dash />
-    return <span>{atom.kind === 'today' ? 'today' : atom.label}</span>
+    return atom ? <DueMark due={atom} orange={false} part="peek-due" /> : <Dash />
   }
   if (
     def.type === 'text' ||
@@ -63,6 +66,7 @@ export function RecordPeek({
   row,
   schema,
   done,
+  onToggleDone,
   now,
   editable,
   focusOnOpen,
@@ -72,8 +76,10 @@ export function RecordPeek({
 }: {
   row: CollectionRow
   schema: PropertySchema
-  /** The record sits in a `done` lane — the head's checkbox draws filled. */
+  /** The record is done — the head's checkbox draws filled. */
   done: boolean
+  /** Ticks or unticks the record; absent leaves the checkbox inert. */
+  onToggleDone?: () => void
   now: Date
   editable?: boolean
   /** Move focus into the peek on mount — set when the card was opened from the keyboard. */
@@ -88,47 +94,24 @@ export function RecordPeek({
   useEffect(() => {
     if (focusOnOpen) peekRef.current?.focus()
   }, [focusOnOpen])
-  return (
+  const canvas = usePageCanvas()
+  const peek = (
     <aside
       data-part="record-peek"
       aria-label={`Record: ${title}`}
       tabIndex={-1}
       ref={peekRef}
-      // The board's float: paper at radius 20, 16/12/12, gap 6, two layers of the
-      // peek's own shadow — it matches no token. Fixed to the window so a scrolled
-      // page keeps it beside the view; `right 44 / top 150` are 6u.2's.
+      // Positioned against the page canvas (it is portaled there): `right 44 / top 150`
+      // are 6u.2's, and it scrolls with the page. Radius 20, 16/12/12, gap 6, and two
+      // layers of its own shadow that match no token.
       className={[
-        'fixed top-[150px] right-[44px] z-30 flex w-[330px] flex-col gap-[6px] rounded-[20px] bg-mn-card px-[12px] pt-[16px] pb-[12px] outline-none',
+        'absolute top-[150px] right-[44px] z-30 flex w-[330px] flex-col gap-[6px] rounded-[20px] bg-mn-card px-[12px] pt-[16px] pb-[12px] outline-none',
         'shadow-[0_2px_6px_rgba(40,34,24,.08),0_20px_54px_rgba(40,34,24,.18)]',
         'dark:shadow-[0_2px_6px_rgba(0,0,0,.3),0_20px_54px_rgba(0,0,0,.45)]',
       ].join(' ')}
     >
       <div data-part="peek-head" className="flex items-start gap-[10px] px-[8px] pb-[8px]">
-        <span
-          aria-hidden
-          data-done={done || undefined}
-          className={[
-            'flex size-[15px] flex-none items-center justify-center rounded-[4px]',
-            done
-              ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-              : 'ring-[1.4px] ring-mn-mark-faint ring-inset',
-          ].join(' ')}
-        >
-          {done && (
-            <svg
-              width="9"
-              height="9"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M2 5.2 4.2 7.4 8 2.8" />
-            </svg>
-          )}
-        </span>
+        <RecordCheck done={done} label={`${title} done`} onToggle={onToggleDone} />
         {editable && onRenameRow ? (
           <input
             aria-label="Record title"
@@ -175,4 +158,5 @@ export function RecordPeek({
       ))}
     </aside>
   )
+  return canvas?.element ? createPortal(peek, canvas.element) : peek
 }

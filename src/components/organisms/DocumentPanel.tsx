@@ -59,6 +59,7 @@ import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePond } from '@/lib/pond/context'
+import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import type { Block } from '@/lib/documents/types'
@@ -289,7 +290,7 @@ export function DocumentPanel() {
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
   // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
-  // title row draws no button for it (6u.1 draws none).
+  // title row draws no button for it.
   const { overlay: changesOverlay } = usePageChangesPanel(pageId)
   // Typed properties (#17): present only when the page carries a schema (it is
   // a collection). Read here, above the early returns, so the JSX below stays flat.
@@ -309,7 +310,7 @@ export function DocumentPanel() {
   // nothing here reads a type tag — a page with pages inside it is simply a page
   // with a children grid under its content (#108, #234).
   return (
-    <div className="h-full overflow-y-auto">
+    <PageCanvas className="h-full overflow-y-auto">
       {/* #58: the column's max-width is user-set (was a fixed max-w-2xl) — the
           handle on the right edge drags/arrow-keys it, useContentWidth clamps
           and persists it. Everything inside (the #57 timeline's %-positioned
@@ -416,6 +417,6 @@ export function DocumentPanel() {
       </div>
 
       {changesOverlay}
-    </div>
+    </PageCanvas>
   )
 }

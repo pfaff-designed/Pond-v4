@@ -40,7 +40,7 @@ export function Cell({
 }) {
   const label = `${def.name} value`
 
-  // A rollup is derived + never stored (#20): resolve its sibling relation (by
+  // A rollup is derived + never stored: resolve its sibling relation (by
   // relationId) from the row's schema + values and let the connected field fetch +
   // compute. Always read-only, regardless of `editable`.
   if (def.type === 'rollup') {
@@ -72,7 +72,7 @@ export function Cell({
       )
     }
     if (def.type === 'relation') {
-      // Read-only host: chips (clickable), no picker (#20 decision 6).
+      // Read-only host: chips (clickable), no picker.
       return <RelationValueField def={def} value={value} editable={false} onChange={onChange} />
     }
     const text = displayValue(def, value)
@@ -106,7 +106,7 @@ export function Cell({
         />
       )
     case 'checkbox':
-      // `PondControl kind="checkbox"` (#221) — the standalone control of
+      // `PondControl kind="checkbox"` — the standalone control of
       // `PondControl.dc.html` (14 / 4 / .68), alone in a table cell; not the
       // check-row's `PondAtom` box, not `PondTemplate`'s row box.
       return (
@@ -121,7 +121,7 @@ export function Cell({
     case 'select':
     case 'status': {
       // Bind the option *id*, resolving through optionForValue so a legacy
-      // label-stored value (a pre-slice-1 row, #18) still selects its option
+      // label-stored value (a row stored before options had ids) still selects its option
       // instead of falling back to "—". An edit then writes the canonical id.
       const selected = optionForValue(def, value)?.id ?? (typeof value === 'string' ? value : '')
       return (
@@ -141,7 +141,7 @@ export function Cell({
       )
     }
     case 'relation':
-      // Editable host: chips + a scoped picker (#20 slice 6).
+      // Editable host: chips + a scoped picker.
       return <RelationValueField def={def} value={value} editable onChange={onChange} />
     case 'text':
     default:
@@ -174,7 +174,7 @@ export function OptionChip({ label, color }: { label: string; color?: string }) 
 
 // Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
 // the Make Noise system). Each maps to the nearest MN house hue, all --raw-* tokens
-// (issue: MN reskin #1). Since #220 freed the three signals, the warm half of that
+// Since the three signals are spoken for, the warm half of that
 // rainbow collapses: red / rose / rust / pink / orange / amber all land on rose, and
 // yellow / lime join the greens on sage. So these twenty-two names resolve to FIVE
 // swatches — olive-mid, rose, sage, mist, navy — plus ink for `accent`. Two option
@@ -189,7 +189,7 @@ const TOKEN_DOT: Record<string, string> = {
   // reds + warms → the dusty-rose swatch, the one warm the palette sanctions for
   // option dots. Red is diff removals, burnt orange the ONE dated thing per screen
   // and wheat highlighted passages only (PROJECT_RULES § Colors), so none of the
-  // three signals may tint a dot (#220). Six names share this one swatch.
+  // three signals may tint a dot. Six names share this one swatch.
   red: 'var(--raw-rose)',
   rose: 'var(--raw-rose)',
   rust: 'var(--raw-rose)',

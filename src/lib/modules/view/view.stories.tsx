@@ -5,6 +5,7 @@ import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
 import { CollectionView } from './view'
 import { CollectionList } from './list'
 import { PondBlock } from '@/components/organisms/PondBlock'
+import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
 import type { PropertySchema, PropertyValue } from '@/lib/properties/schema'
@@ -561,7 +562,6 @@ export const BoardDrawsNoControlsTheBoardDoesNot: Story = {
     editable: true,
     onAddRow: fn(async () => null),
     onRenameRow: fn(),
-    onUpdateSchema: fn(),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -677,12 +677,23 @@ export const BoardInfersGroupBy: Story = {
   },
 }
 
-export const BoardNamingAMissingGroupByStaysBroken: Story = {
-  args: { config: { id: 'v', type: 'view', mode: 'board', groupBy: 'gone' }, schema, rows },
+/**
+ * `groupBy` is shared by board, calendar and list. After a switch from a calendar it
+ * names a date property (or one since deleted); the board falls back to the default
+ * lanes rather than a dead end.
+ */
+export const BoardWithAStaleGroupByFallsBackToLanes: Story = {
+  args: {
+    config: { id: 'v', type: 'view', mode: 'board', groupBy: 'p-due' },
+    schema,
+    rows,
+    editable: true,
+    onConfigChange: fn(),
+  },
   play: async ({ canvasElement }) => {
-    await expect(
-      within(canvasElement).getByText('This board needs a group-by (select or status) property.')
-    ).toBeInTheDocument()
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('grouped by status')).toBeInTheDocument()
+    await expect(canvasElement.querySelectorAll('[data-part="lane"]').length).toBeGreaterThan(0)
   },
 }
 
@@ -855,8 +866,22 @@ const peekArgs = {
   rows: peekRows,
 }
 
+const listRowOf = (root: HTMLElement, title: string) =>
+  [...root.querySelectorAll<HTMLElement>('[data-part="list-row"]')].find(
+    (row) => row.querySelector('[data-row-focus]')?.textContent === title
+  )!
+
 const cardByTitle = (root: HTMLElement, title: string) =>
   within(root).getByText(title).closest<HTMLElement>('[data-part="card"]')!
+
+/** A page's canvas: the one element views draw their peek against. */
+const onPageCanvas: NonNullable<Story['decorators']> = [
+  (Story) => (
+    <PageCanvas className="h-[720px] w-[1000px] overflow-y-auto">
+      <Story />
+    </PageCanvas>
+  ),
+]
 
 /**
  * 6u.2: a click selects the card — an ink .5 outline, 1.5px, offset 1 — and the record
@@ -865,6 +890,7 @@ const cardByTitle = (root: HTMLElement, title: string) =>
  */
 export const BoardCardSelectsAndPeeks: Story = {
   args: peekArgs,
+  decorators: onPageCanvas,
   play: async ({ canvasElement }) => {
     const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
     await expect(peek()).toBeNull()
@@ -884,7 +910,9 @@ export const BoardCardSelectsAndPeeks: Story = {
 
     const p = peek()!
     const ps = getComputedStyle(p)
-    await expect(ps.position).toBe('fixed')
+    // Against the canvas, not the window: a block's overflow cannot clip it.
+    await expect(ps.position).toBe('absolute')
+    await expect(p.parentElement).toBe(canvasElement.querySelector('[data-part="page-canvas"]'))
     await expect(pxOf(ps.right)).toBeCloseTo(44, 1)
     await expect(pxOf(ps.top)).toBeCloseTo(150, 1)
     await expect(pxOf(ps.width)).toBeCloseTo(330, 1)
@@ -1071,7 +1099,7 @@ const listArgs = {
 }
 
 const renderList = (props: Partial<ComponentProps<typeof CollectionList>> = {}) => (
-  <CollectionList schema={listSchema} rows={listRows} today={LIST_TODAY} {...props} />
+  <CollectionList viewKey="v" schema={listSchema} rows={listRows} today={LIST_TODAY} {...props} />
 )
 
 async function assertListGeometry(root: HTMLElement, base: 'ink' | 'paper') {
@@ -1134,8 +1162,8 @@ export const ListMatchesTheBoard: Story = {
       'done',
     ])
     await expect(
-      [...groups[1].querySelectorAll('[data-part="list-row"]')].map((r) =>
-        r.getAttribute('aria-label')
+      [...groups[1].querySelectorAll('[data-part="list-row"]')].map(
+        (r) => r.querySelector('[data-row-focus]')?.textContent
       )
     ).toEqual(['confirm alcove at 84cm', 'chase the cabinet quote'])
     await expect(canvasElement.querySelectorAll('[data-part="list-card"]')).toHaveLength(1)
@@ -1193,8 +1221,7 @@ export const ListOnlyTheFirstTodayIsOrange: Story = {
       ],
     }),
   play: async ({ canvasElement }) => {
-    const rowOf = (title: string) =>
-      canvasElement.querySelector<HTMLElement>(`[data-part="list-row"][aria-label="${title}"]`)!
+    const rowOf = (title: string) => listRowOf(canvasElement, title)
     await expect(canvasElement.querySelectorAll('[data-part="due-today"]')).toHaveLength(1)
     const pill = rowOf('call the joiner').querySelector<HTMLElement>('[data-part="due-today"]')!
     await expect(getComputedStyle(pill).backgroundColor).toBe('rgb(217, 102, 41)')
@@ -1235,37 +1262,99 @@ export const ListReadOnlyBoxesAreInert: Story = {
   },
 }
 
-/** A row is a tab stop; click or Enter selects it and opens the record peek beside the view. */
+/**
+ * The row's title is its tab stop; click or Enter selects the record and opens the peek.
+ * The row itself is not focusable, and focus returns to the title when the peek closes.
+ */
 export const ListRowSelectsAndPeeks: Story = {
   args: listArgs,
+  decorators: onPageCanvas,
   render: () => renderList({ editable: true, onEdit: fn() }),
   play: async ({ canvasElement }) => {
-    const rowOf = (title: string) =>
-      canvasElement.querySelector<HTMLElement>(`[data-part="list-row"][aria-label="${title}"]`)!
+    const rowOf = (title: string) => listRowOf(canvasElement, title)
+    const titleOf = (title: string) => within(rowOf(title)).getByRole('button', { name: title })
     const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
 
     const first = rowOf('chase the cabinet quote')
-    await expect(first).toHaveAttribute('tabindex', '0')
-    await userEvent.click(first)
-    await expect(first).toHaveAttribute('aria-current', 'true')
+    await expect(first).not.toHaveAttribute('tabindex')
+    await expect(first.querySelectorAll('[tabindex]')).toHaveLength(0)
+    await userEvent.click(titleOf('chase the cabinet quote'))
+    await expect(titleOf('chase the cabinet quote')).toHaveAttribute('aria-current', 'true')
     await expect(within(peek()!).getByText('chase the cabinet quote')).toBeInTheDocument()
+    await expect(peek()!.parentElement).toBe(
+      canvasElement.querySelector('[data-part="page-canvas"]')
+    )
     const outline = getComputedStyle(first)
     await expect(outline.outlineStyle).toBe('solid')
     await expect(alphaOf(outline.outlineColor)).toBeCloseTo(0.5, 1)
 
-    const second = rowOf('order the worktop')
-    await userEvent.click(second)
+    await userEvent.click(titleOf('order the worktop'))
     await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
-    await expect(first).not.toHaveAttribute('aria-current')
+    await expect(titleOf('chase the cabinet quote')).not.toHaveAttribute('aria-current')
 
     await userEvent.keyboard('{Escape}')
     await expect(peek()).toBeNull()
 
-    rowOf('skip hire returned').focus()
+    titleOf('skip hire returned').focus()
     await userEvent.keyboard('{Enter}')
     await expect(peek()!.contains(document.activeElement)).toBe(true)
     await userEvent.keyboard('{Escape}')
-    await expect(document.activeElement).toBe(rowOf('skip hire returned'))
+    await expect(document.activeElement).toBe(titleOf('skip hire returned'))
+  },
+}
+
+/**
+ * A board and a list on one page, both holding records due today: the page shows one
+ * orange pill (the board's, first in the document) and one peek, whichever view the
+ * record was chosen in.
+ */
+export const PageHoldsOneOrangeAndOnePeek: Story = {
+  args: listArgs,
+  decorators: onPageCanvas,
+  render: () => (
+    <>
+      <CollectionView
+        config={{ id: 'page-board', type: 'view', mode: 'board', groupBy: 't-status' }}
+        schema={taskSchema}
+        rows={[
+          {
+            id: 'b1',
+            title: 'board record',
+            values: { 't-status': 't-todo', 't-due': localIso(0) },
+          },
+        ]}
+        collectionName="tasks"
+        editable
+        onConfigChange={fn()}
+      />
+      <CollectionView
+        config={{ id: 'page-list', type: 'view', mode: 'list' }}
+        schema={taskSchema}
+        rows={[
+          {
+            id: 'l1',
+            title: 'list record',
+            values: { 't-status': 't-todo', 't-due': localIso(0) },
+          },
+        ]}
+        collectionName="tasks"
+        editable
+        onConfigChange={fn()}
+      />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const pills = canvasElement.querySelectorAll('[data-part="due-today"]')
+    await expect(pills).toHaveLength(1)
+    await expect(canvasElement.querySelector('[data-part="lanes"]')!.contains(pills[0])).toBe(true)
+    await expectTier(getComputedStyle(pills[0]).color, 'ink', 1)
+
+    await userEvent.click(cardByTitle(canvasElement, 'board record'))
+    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'list record' }))
+    const peeks = canvasElement.querySelectorAll('[data-part="record-peek"]')
+    await expect(peeks).toHaveLength(1)
+    await expect(peeks[0]).toHaveTextContent('list record')
   },
 }
 

@@ -79,8 +79,12 @@ export interface PondAtomProps {
   glyph?: string
   /** Area colour — tints MARKS ONLY (icon glyph + dot), never text/ground. */
   color?: 'ink' | 'sage' | 'mist' | 'navy'
-  /** kind="date" — the one dated thing: a burnt-orange dot. */
-  due?: boolean
+  /**
+   * kind="date" — the one dated thing. `true` draws a burnt-orange dot beside the
+   * date; `'today'` draws the pill (burnt orange carrying ink) in place of it, with
+   * `value` defaulting to the word `today`.
+   */
+  due?: boolean | 'today'
   /** kind="checkbox" — checked. */
   on?: boolean
   /** Show the error note (state="error"). @default true */
@@ -280,6 +284,20 @@ export function PondAtom({
   const loading = state === 'loading'
   const error = state === 'error'
   const disabled = state === 'disabled'
+
+  /* ── date, due today: the pill (`Pond 02` 2u) ── */
+  if (kind === 'date' && due === 'today') {
+    return (
+      <span
+        data-kind="date"
+        data-state={state}
+        data-part="due-today"
+        className={cn('rounded-[5px] bg-mn-signal-dated px-[6px] py-[1px] text-raw-ink', className)}
+      >
+        {value ?? 'today'}
+      </span>
+    )
+  }
 
   /* ── divider: a hairline rule ── */
   if (kind === 'divider') {
@@ -514,22 +532,6 @@ export function PondAtom({
           {noteText}
         </span>
       )}
-    </span>
-  )
-}
-
-/**
- * The `due` atom's `today` state (`Pond 02` 2u, drawn on 6u.1's cards): a burnt-orange
- * pill carrying ink — the screen's one dated mark. Every other date is plain text, and
- * late is said in words, never in colour, so this is the only state that paints.
- */
-export function PondDueToday({ className }: { className?: string }) {
-  return (
-    <span
-      data-part="due-today"
-      className={cn('rounded-[5px] bg-mn-signal-dated px-[6px] py-[1px] text-raw-ink', className)}
-    >
-      today
     </span>
   )
 }

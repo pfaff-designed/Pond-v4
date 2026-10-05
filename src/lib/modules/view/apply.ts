@@ -220,21 +220,18 @@ export function groupRows(
 }
 
 /**
- * Which select/status property a board buckets by. The one the view names, when it
- * names a select/status property; a view that names NONE gets the first status
- * property, else the first select — so a freshly inserted `/board` draws lanes
- * instead of a dead end (the switcher has no group-by control, 6u.1). A view that
- * names a property which is gone or the wrong type still gets undefined: that is a
- * broken config, and the board says so rather than quietly regrouping.
+ * Which select/status property a board buckets by: the one the view names, when it is
+ * a select or status. `groupBy` is shared by every mode (a calendar or list names a
+ * date there), so anything else — unset, gone, or the wrong type — falls back to the
+ * first status property, else the first select. Switching a view back to a board then
+ * always finds its lanes.
  */
 export function pickGroupDef(
   schema: PropertySchema,
   groupBy: string | undefined
 ): PropertyDef | undefined {
-  if (groupBy) {
-    const named = defById(schema, groupBy)
-    return named?.type === 'select' || named?.type === 'status' ? named : undefined
-  }
+  const named = groupBy ? defById(schema, groupBy) : undefined
+  if (named?.type === 'select' || named?.type === 'status') return named
   return schema.find((d) => d.type === 'status') ?? schema.find((d) => d.type === 'select')
 }
 

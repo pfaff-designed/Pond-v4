@@ -19,7 +19,7 @@
  * reschedule) and gallery (read-only card grid) are slice 4.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock, ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -64,22 +64,20 @@ import {
   GANTT_TRACK,
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
-import { PondDueToday } from '@/components/atoms/PondAtom'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
   coerceValue,
   optionForValue,
   ROW_TYPE,
-  PROPERTY_TYPES,
-  type PropertyDef,
   type PropertySchema,
-  type PropertyType,
   type PropertyValue,
 } from '@/lib/properties/schema'
 import { usePageLinks } from '../page-link/context'
-import { shouldOpenCardFromClick } from './card-click'
-import { dueAtom } from './due'
+import { dueOfRow, firstOrangeToday } from './due'
+import { DueMark } from './due-mark'
+import { useDoneToggle } from './use-done-toggle'
+import { useOrangeToday } from '../page-canvas'
 import { Cell, OptionChip, RepeatMark } from './cells'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
@@ -95,17 +93,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const {
-    schema,
-    rows,
-    collectionName,
-    isLoading,
-    isError,
-    setValue,
-    addRow,
-    renameRow,
-    updateSchema,
-  } = useCollectionRows(collectionId)
+  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow } =
+    useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
@@ -118,7 +107,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
   // seam. Absent off a page host (Storybook, the AI terminal), where the peek omits it.
   const links = usePageLinks()
-  const openRow = links
+  const handleOpenRow = links
     ? (rowId: string) =>
         links.navigateToPage({
           id: rowId,
@@ -141,8 +130,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onAddRow={addRow}
       onRenameRow={renameRow}
       onConfigChange={onConfigChange}
-      onUpdateSchema={editable ? updateSchema : undefined}
-      onOpenRow={openRow}
+      onOpenRow={handleOpenRow}
       chartProvenance={chartProvenance}
     />
   )
@@ -172,9 +160,6 @@ export interface CollectionViewProps {
   /** Rewrite the view block's own config — the mode switcher
    *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
   onConfigChange?: (patch: Partial<ViewBlock>) => void
-  /** Replace the collection's property schema — manual column + property editing
-   *  (board-authoring Slice 4). Absent on read-only / Storybook hosts. */
-  onUpdateSchema?: (next: PropertySchema) => void
   /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
    *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
   onOpenRow?: (rowId: string) => void
@@ -195,10 +180,12 @@ export function CollectionView({
   onAddRow,
   onRenameRow,
   onConfigChange,
-  onUpdateSchema,
   onOpenRow,
   chartProvenance,
 }: CollectionViewProps) {
+  // What the page canvas keys this view's peek and orange pill by.
+  const instanceKey = useId()
+  const viewKey = config.id ?? instanceKey
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
     [rows, schema, config]
@@ -257,13 +244,13 @@ export function CollectionView({
           schema={schema}
           collectionName={collectionName}
           onConfigChange={onConfigChange}
-          onUpdateSchema={onUpdateSchema}
         />
       )}
       {config.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
           rows={processed}
+          viewKey={viewKey}
           groupBy={config.groupBy}
           editable={editable}
           onEdit={onEdit}
@@ -273,6 +260,7 @@ export function CollectionView({
         />
       ) : config.mode === 'list' ? (
         <CollectionList
+          viewKey={viewKey}
           schema={schema}
           rows={processed}
           groupBy={config.groupBy}
@@ -366,13 +354,11 @@ function ViewControls({
   schema,
   collectionName,
   onConfigChange,
-  onUpdateSchema,
 }: {
   config: ViewBlock
   schema: PropertySchema
   collectionName?: string
   onConfigChange: (patch: Partial<ViewBlock>) => void
-  onUpdateSchema?: (next: PropertySchema) => void
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -446,98 +432,7 @@ function ViewControls({
       {config.mode === 'big-number' && (
         <BigNumberControls config={config} schema={schema} onConfigChange={onConfigChange} />
       )}
-
-      {onUpdateSchema && <AddPropertyControl onAdd={(def) => onUpdateSchema([...schema, def])} />}
     </div>
-  )
-}
-
-/**
- * Manual "+ Add property" affordance (board-authoring Slice 4). Reveals a terse
- * inline form — a name and a type — and appends a new PropertyDef to the schema,
- * bypassing the AI (decision 3). Adding a `date` property is the honest way to
- * unlock Gantt/Timeline/Calendar (add Start + End, fill dates, switch to Gantt).
- * Relation/rollup are omitted — they need a target/aggregate the AI resolves, so
- * they stay conversational this pass.
- */
-const ADDABLE_TYPES = PROPERTY_TYPES.filter(
-  (t) => t !== 'relation' && t !== 'rollup'
-) as PropertyType[]
-
-function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [type, setType] = useState<PropertyType>('date')
-
-  const commit = () => {
-    const def: PropertyDef = {
-      id: crypto.randomUUID(),
-      name: name.trim() || 'Untitled',
-      type,
-    }
-    // select/status carry a (initially empty) option list — columns are then added
-    // on the board itself (or cells become a picker in the table).
-    if (type === 'select' || type === 'status') def.options = []
-    onAdd(def)
-    setName('')
-    setType('date')
-    setOpen(false)
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-mn-chrome px-2 py-0.5 text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
-      >
-        + Add property
-      </button>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        aria-label="New property name"
-        autoFocus
-        value={name}
-        placeholder="Property name"
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') setOpen(false)
-        }}
-        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none placeholder:text-mn-text-secondary"
-      />
-      <select
-        aria-label="New property type"
-        value={type}
-        onChange={(e) => setType(e.target.value as PropertyType)}
-        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
-      >
-        {ADDABLE_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={commit}
-        className="rounded-mn-chrome bg-mn-wash px-2 py-0.5 text-xs text-mn-text transition-colors hover:bg-mn-text hover:text-mn-surface"
-      >
-        Add
-      </button>
-      <button
-        type="button"
-        aria-label="Cancel adding property"
-        onClick={() => setOpen(false)}
-        className="rounded-mn-chrome px-1 py-0.5 text-xs text-mn-text-secondary transition-colors hover:text-mn-text"
-      >
-        ×
-      </button>
-    </span>
   )
 }
 
@@ -631,6 +526,7 @@ function CollectionTable({
 const NULL_BUCKET = '__none__'
 
 function CollectionBoard({
+  viewKey,
   schema,
   rows,
   groupBy,
@@ -640,6 +536,8 @@ function CollectionBoard({
   onRenameRow,
   onOpenRow,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
@@ -659,11 +557,9 @@ function CollectionBoard({
   // day it was drawn on until it next renders fresh.
   const [now] = useState(() => new Date())
 
-  // Card drag between columns (finding F4), now shared with the calendar via the
-  // hook. Dropping into a bucket writes that option id onto the group-by property;
-  // the "No <name>" bucket clears the value (null). A no-op drop into the same
-  // column is idempotent — the optimistic cache dedupes it.
-  const { drag, overKey, registerBucket, onCardPointerDown, containerHandlers } =
+  // Dropping into a lane writes that option id onto the group-by property; the
+  // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
+  const { drag, overKey, registerBucket, onCardPointerDown, isClickSuppressed, containerHandlers } =
     usePointerBucketDrag({
       editable: !!editable,
       onDrop: (rowId, key) => {
@@ -677,68 +573,52 @@ function CollectionBoard({
     rootRef: boardRef,
     selection,
     selectedRow,
-    select: setSelection,
-  } = useRecordSelection(rows)
-  // A drag that ends over its own card still fires a click — it must not select.
-  const draggedRef = useRef(false)
-  useEffect(() => {
-    if (drag?.active) draggedRef.current = true
-  }, [drag?.active])
+    select,
+    selectWithPointer,
+    rowProps,
+    keyboardProps,
+  } = useRecordSelection(rows, viewKey, { isClickSuppressed })
+  const done = useDoneToggle({ schema, groupBy, editable, onEdit })
+
+  // Hide the trailing "No <name>" lane while it's empty — a fresh board then reads as
+  // just its status lanes. It reappears the moment a card lands there unset.
+  const visibleGroups = (grouped?.groups ?? []).filter((g) => g.id !== null || g.rows.length > 0)
+  const dueOf = dueOfRow(pickDateDef(schema, undefined), now)
+  const orangeTodayId = useOrangeToday(
+    viewKey,
+    boardRef,
+    firstOrangeToday(
+      visibleGroups.flatMap((g) => g.rows),
+      dueOf,
+      done.isDone
+    )
+  )
 
   if (!grouped) {
     return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
   }
-  const { def: boardDef, groups } = grouped
+  const { def: boardDef } = grouped
 
-  // "＋ task": mint a row seeded with this column's status (null → the "No <name>"
-  // bucket), then focus its title so you can name it immediately.
-  const addCard = async (optionId: string | null) => {
+  // "＋ task": mint a row seeded with this lane's status (null → the "No <name>"
+  // lane), then focus its title so you can name it immediately.
+  const handleAddCard = async (optionId: string | null) => {
     if (!onAddRow) return
     const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
     if (!id) return
     setFocusRowId(id)
-    setSelection({ id, via: 'pointer' })
+    select({ id, via: 'pointer' })
   }
 
-  // Hide the trailing "No <name>" bucket while it's empty — a fresh board then reads
-  // as a clean set of just its status columns. It reappears the moment a card lands
-  // there unset (a drag-out or a statusless add).
-  const visibleGroups = groups.filter((g) => g.id !== null || g.rows.length > 0)
-
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
-  // A card's meta row: the row's date as the due atom, then its repeat tag, then the
-  // other select/status properties as context chips.
-  const dateDef = pickDateDef(schema, undefined)
   const repeatDef = pickRepeatDef(schema)
-  const chipDefs = schema.filter(
-    (d) =>
-      (d.type === 'select' || d.type === 'status') && d.id !== boardDef.id && d.id !== repeatDef?.id
-  )
-  // Burnt orange is the ONE dated thing per screen (PROJECT_RULES): only the first
-  // card due today, in render order, wears the pill. The rest read `today` as a date.
-  const dueOf = (row: CollectionRow) =>
-    dateDef ? dueAtom(String(coerceValue(dateDef, row.values[dateDef.id]) ?? ''), now) : null
-  const orangeTodayId = visibleGroups
-    .flatMap((g) => g.rows)
-    .find((r) => dueOf(r)?.kind === 'today')?.id
-  const selectedLane = selectedRow
-    ? visibleGroups.find((g) => g.rows.some((r) => r.id === selectedRow.id))
-    : undefined
 
   return (
     <div ref={boardRef} {...containerHandlers}>
       {/*
-        `Pond 06.21 Tasks` draws the board as a GRID of equal lanes, not a
-        horizontally scrolling row: `repeat(N, minmax(0,1fr))` at gap 10, where N
-        is the lane count (its own Tasks example renders `repeat(4,…)`). The
-        lanes are the board's whole structure — a lane is an option of the group-by
-        property, so adding, renaming and reordering them is editing that property,
-        which the board does not do.
-
-        (`board-values.generated.json` also has a `kanban`/`lane` set under
-        PondTemplate — that is the MINIATURE inside a template preview card, lane
-        min-height 90 against 06.21's 380. Same design at two scales; this is the
-        full-size one.)
+        The board is a GRID of equal lanes, not a horizontally scrolling row:
+        `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
+        the group-by property, so adding, renaming and reordering lanes is editing
+        that property, which the board does not do.
       */}
       <div
         data-part="lanes"
@@ -748,18 +628,14 @@ function CollectionBoard({
         {visibleGroups.map((group) => {
           const key = groupKey(group.id)
           const isOver = editable && drag?.active && overKey === key
-          // A card in the lane named `done` is a finished one: its title steps down a tier.
-          const laneDone = group.label.trim().toLowerCase() === 'done'
           return (
             <section
               key={key}
               ref={registerBucket(key)}
               data-part="lane"
               data-lane={group.label}
-              // The board's lane is a faint RECESSED wash — ink .04, radius 16,
-              // no shadow. The drop target brightens it rather than lifting it,
-              // because a lane that gains a shadow reads as a card, which is the
-              // thing it is deliberately not.
+              // A faint recessed wash — ink .04, radius 16, no shadow. The drop target
+              // brightens it rather than lifting it: a lane with a shadow reads as a card.
               className={[
                 'flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
                 'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
@@ -770,44 +646,27 @@ function CollectionBoard({
                 data-part="lane-head"
                 className="flex items-center justify-between gap-2 px-[4px] pt-[3px] pb-[2px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
               >
-                {/* 06.21's lane head is exactly two spans — `<span>to do</span>
-                    <span>3</span>` — so there is no option dot here. The one the
-                    board does not draw is not drawn (AGENTS.md). The count
-                    INHERITS the head: it is a bare `<span>3</span>` with no font of
-                    its own. (`PondTemplate`'s `laneN` makes it mono at
-                    letterSpacing 0, but that is the miniature in a template
-                    preview card, not this.) */}
+                {/* Two bare spans, no option dot; the count inherits the head's type. */}
                 <span className="truncate">{group.label}</span>
                 <span data-part="lane-n">{group.rows.length}</span>
               </header>
 
               {group.rows.map((row) => {
                 const isDragging = drag?.active && drag.rowId === row.id
-                const due = dueOf(row)
                 const isSelected = row.id === selectedRow?.id
+                const rowDone = done.isDone(row)
                 const repeat = repeatDef ? displayValue(repeatDef, row.values[repeatDef.id]) : ''
+                const due = dueOf(row)
+                const titleTone = rowDone ? 'text-mn-text-secondary' : 'text-mn-text'
                 return (
                   <article
                     key={row.id}
                     data-part="card"
-                    data-row-id={row.id}
-                    // A card is a keyboard stop: Enter or Space on the card itself (not
-                    // on the title input inside it) selects it and opens its peek.
-                    // `aria-current` marks the selected one — `aria-pressed` and
-                    // `aria-selected` are not valid on an article holding an input.
-                    tabIndex={0}
                     aria-label={row.title || 'Untitled'}
-                    aria-current={isSelected ? 'true' : undefined}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return
-                      if (e.key !== 'Enter' && e.key !== ' ') return
-                      e.preventDefault()
-                      setSelection({ id: row.id, via: 'keyboard' })
-                    }}
-                    // The card itself is the drag target: a press anywhere on it
-                    // starts a candidate drag, and below the hook's threshold it
-                    // stays a click — so the title input still takes focus. Buttons
-                    // and links keep their own presses.
+                    {...rowProps(row.id)}
+                    {...keyboardProps(row.id)}
+                    // The card is the drag target: a press anywhere on it starts a
+                    // candidate drag, and below the hook's threshold it stays a click.
                     onPointerDown={
                       editable
                         ? (e) => {
@@ -817,32 +676,14 @@ function CollectionBoard({
                           }
                         : undefined
                     }
-                    // A click on the card's passive body selects it; its own controls
-                    // keep their clicks — the pure filter decides. The title input
-                    // selects through its own click below.
-                    onClick={(e) => {
-                      if (draggedRef.current) {
-                        draggedRef.current = false
-                        return
-                      }
-                      if (shouldOpenCardFromClick(e.target)) {
-                        setSelection({ id: row.id, via: 'pointer' })
-                      }
-                    }}
-                    // The board's card: card paper at radius 12, 10/11, gap 7, and
-                    // a TWO-LAYER shadow that matches no token — written out per
-                    // AGENTS.md rather than snapped to `--mn-shadow-card`, whose
-                    // second layer is `0 8px 24px` against this one's `0 2px 8px`.
+                    // The shadow matches no token (`--mn-shadow-card`'s second layer is
+                    // 0 8px 24px), so it is written out.
                     className={[
                       'flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
-                      // Both themes: the board's warm light shadow is invisible on
-                      // the dark ground, so the ink recipe is supplied the way every
-                      // other raw shadow in the repo does (`chart/card.tsx`).
                       'shadow-[0_1px_2px_rgba(40,34,24,.06),0_2px_8px_rgba(40,34,24,.05)]',
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                      // Selected: a 1.5px ink .5 outline offset 1 (paper .5 on the dark
-                      // ground — `mn-text` flips). The rest shadow does not change.
+                      // `mn-text` flips to paper in dark, so the outline does too.
                       'outline-[1.5px] outline-offset-1 outline-mn-text/50',
                       isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
                       isDragging ? 'opacity-30' : '',
@@ -855,38 +696,24 @@ function CollectionBoard({
                         value={row.title}
                         placeholder="Untitled"
                         autoFocus={row.id === focusRowId}
-                        onClick={() => {
-                          if (draggedRef.current) return
-                          setSelection({ id: row.id, via: 'pointer' })
-                        }}
+                        onClick={() => selectWithPointer(row.id)}
                         onChange={(e) => onRenameRow(row.id, e.target.value)}
                         className={[
                           'w-full border-0 bg-transparent p-0 text-[13.5px] leading-[1.35] outline-none placeholder:text-mn-text-secondary',
-                          laneDone ? 'text-mn-text-secondary' : 'text-mn-text',
+                          titleTone,
                         ].join(' ')}
                       />
                     ) : (
-                      <div
-                        className={[
-                          'text-[13.5px] leading-[1.35]',
-                          laneDone ? 'text-mn-text-secondary' : 'text-mn-text',
-                        ].join(' ')}
-                      >
+                      <div className={['text-[13.5px] leading-[1.35]', titleTone].join(' ')}>
                         {row.title || 'Untitled'}
                       </div>
                     )}
-                    {(due || repeat || chipDefs.length > 0) && (
-                      // The board's meta row: wrapping, gap 4/10, 500 at 11px on
-                      // the .8 ink tier — a row of facts, not a stack of chips.
+                    {(due || repeat) && (
                       <div
                         data-part="card-meta"
                         className="flex flex-wrap gap-x-[10px] gap-y-[4px] text-[11px] font-medium text-mn-text-meta"
                       >
-                        {due?.kind === 'today' && row.id === orangeTodayId && <PondDueToday />}
-                        {due?.kind === 'today' && row.id !== orangeTodayId && (
-                          <span data-part="card-due">today</span>
-                        )}
-                        {due?.kind === 'date' && <span data-part="card-due">{due.label}</span>}
+                        <DueMark due={due} orange={row.id === orangeTodayId} part="card-due" />
                         {repeat && (
                           <span
                             data-part="card-repeat"
@@ -896,24 +723,18 @@ function CollectionBoard({
                             {repeat}
                           </span>
                         )}
-                        {chipDefs.map((def) => {
-                          const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
-                          if (!opt) return null
-                          return <OptionChip key={def.id} label={opt.label} color={opt.color} />
-                        })}
                       </div>
                     )}
                   </article>
                 )
               })}
 
-              {/* 06.21: "The last line of every lane is ＋ task." It is a line
-                  INSIDE the lane, after the cards, not a button beside it. */}
+              {/* The last line of every lane is ＋ task, inside the lane. */}
               {editable && onAddRow && (
                 <button
                   type="button"
                   data-part="lane-add"
-                  onClick={() => addCard(group.id)}
+                  onClick={() => handleAddCard(group.id)}
                   className="rounded-[8px] p-[4px] text-left text-[11px] font-medium text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
                 >
                   ＋ task
@@ -929,7 +750,8 @@ function CollectionBoard({
           key={selectedRow.id}
           row={selectedRow}
           schema={schema}
-          done={selectedLane?.label.trim().toLowerCase() === 'done'}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
           now={now}
           editable={editable}
           focusOnOpen={selection?.via === 'keyboard'}
@@ -939,11 +761,9 @@ function CollectionBoard({
         />
       )}
 
-      {/* Floating clone that tracks the pointer — the lift. */}
+      {/* The card lifted under the pointer: rotated -1.2deg, its own two-layer shadow. */}
       {draggingRow && drag && (
         <div
-          // The drag lift: rotated -1.2deg with its own two-layer shadow, per the
-          // board — it matches no token. The rotation is dropped under reduced motion.
           className="pointer-events-none fixed z-50 w-52 -rotate-[1.2deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-[0_2px_4px_rgba(40,34,24,.08),0_10px_24px_rgba(40,34,24,.12)] motion-reduce:rotate-none dark:shadow-[0_2px_4px_rgba(0,0,0,.3),0_10px_24px_rgba(0,0,0,.4)]"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden

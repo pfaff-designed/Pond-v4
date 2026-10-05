@@ -3,6 +3,9 @@
  * `wed 23`, and today reads `today`. Pure, so the clock is the caller's argument.
  */
 
+import { coerceValue, type PropertyDef } from '@/lib/properties/schema'
+import type { CollectionRow } from './apply'
+
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
 export type DueAtom = { kind: 'today' } | { kind: 'date'; label: string }
@@ -20,4 +23,22 @@ export function dueAtom(value: string, now: Date): DueAtom | null {
   // Local midnight, so the weekday never drifts a day with the timezone.
   const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
   return { kind: 'date', label: `${WEEKDAYS[day.getDay()]} ${day.getDate()}` }
+}
+
+/** A row's due atom, read from `dateDef`; the closure every view draws its rows with. */
+export const dueOfRow =
+  (dateDef: PropertyDef | undefined, now: Date) =>
+  (row: CollectionRow): DueAtom | null =>
+    dateDef ? dueAtom(String(coerceValue(dateDef, row.values[dateDef.id]) ?? ''), now) : null
+
+/**
+ * The record that wears the orange `today` pill within one view: the first open
+ * record due today, in the order `rows` is drawn. A finished record never does.
+ */
+export function firstOrangeToday(
+  rows: readonly CollectionRow[],
+  dueOf: (row: CollectionRow) => DueAtom | null,
+  isDone: (row: CollectionRow) => boolean
+): string | undefined {
+  return rows.find((row) => !isDone(row) && dueOf(row)?.kind === 'today')?.id
 }
