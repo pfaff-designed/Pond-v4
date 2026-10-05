@@ -85,7 +85,7 @@ const ink: Decorator = (Story) => (
 )
 
 const meta = {
-  title: 'Organisms/PondRail/Switcher',
+  title: 'Organisms/2r · the rail',
   component: PondSwitcher,
   parameters: {
     layout: 'fullscreen',
@@ -113,6 +113,7 @@ type Story = StoryObj<typeof meta>
  * session the client resolves to [], which is the before-0018 list.
  */
 export const BeforeTheTableExists: Story = {
+  tags: ['!dev'],
   decorators: [inRailHead, paper],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -303,12 +304,14 @@ async function assertOpenMenu(canvasElement: HTMLElement, theme: 'light' | 'dark
 
 /** `PondRail` `switcher`, paper: the menu's values, measured from the rail card. */
 export const MenuOpen: Story = {
+  name: 'switcher',
   render: () => <RailWithPonds dark={false} />,
   play: ({ canvasElement }) => assertOpenMenu(canvasElement, 'light'),
 }
 
 /** `PondRail` `switcher`, ink: the same menu on the dark roles. */
 export const MenuOpenDark: Story = {
+  name: 'switcher · ink',
   render: () => <RailWithPonds dark />,
   play: ({ canvasElement }) => assertOpenMenu(canvasElement, 'dark'),
 }
@@ -334,6 +337,7 @@ function SheetHarness({ pending, failure = null }: SheetHarnessProps) {
  * nothing pretends to be live.
  */
 export const TheSheet: Story = {
+  name: 'new',
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -364,6 +368,7 @@ export const TheSheet: Story = {
 
 /** Dark is two papers, and the sheet's scrim inverts with them: ink at .62. */
 export const TheSheetDark: Story = {
+  name: 'new · ink',
   decorators: [ink],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -380,6 +385,7 @@ export const TheSheetDark: Story = {
  * what it does".
  */
 export const WalkingTheThreeSteps: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -408,6 +414,7 @@ export const WalkingTheThreeSteps: Story = {
  * empty name is legal: the column default supplies the name.
  */
 export const SkipMakesItStraightAway: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -423,6 +430,7 @@ export const SkipMakesItStraightAway: Story = {
  * never made.
  */
 export const MakingItFailed: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness failure='relation "ponds" does not exist' />,
   play: async ({ canvasElement }) => {
@@ -439,6 +447,7 @@ export const MakingItFailed: Story = {
  * there is no second `make pond` to click.
  */
 export const Pending: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness pending />,
   play: async ({ canvasElement }) => {

@@ -51,12 +51,12 @@ const TREE: RailNode[] = [
 ]
 
 const meta = {
-  title: 'Organisms/PondRail/Rail',
+  title: 'Organisms/2r · the rail',
   component: RailView,
   parameters: { layout: 'fullscreen' },
   decorators: [
-    (Story) => (
-      <div className="h-screen bg-mn-surface">
+    (Story, { parameters }) => (
+      <div className={`h-screen bg-mn-surface ${parameters.theme === 'ink' ? 'dark' : ''}`}>
         <Story />
       </div>
     ),
@@ -88,6 +88,7 @@ type Story = StoryObj<typeof meta>
 
 /** Resting rail: Life root open, area folders collapsed, children hidden. */
 export const Resting: Story = {
+  name: 'rest',
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     // life is the root treeitem, and the whole thing is one tree. (#96: the pond's
@@ -107,8 +108,14 @@ export const Resting: Story = {
   },
 }
 
+export const RestInk: Story = {
+  name: 'rest · ink',
+  parameters: { theme: 'ink' },
+}
+
 /** Collapsing the Life root hides the entire tree beneath it. */
 export const LifeCollapsed: Story = {
+  tags: ['!dev'],
   args: { lifeExpanded: false },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -129,6 +136,7 @@ export const LifeCollapsed: Story = {
  * one molecule per row, no row drawn by hand and none left behind.
  */
 export const Expanded: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['health', 'personal']), selectedId: 'sleep' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -149,6 +157,102 @@ export const Expanded: Story = {
   },
 }
 
+/** The board's `deep` tree (`PondRail.dc.html` `DEEP_PIN` + `DEEP`): five levels down, `ground floor` selected. */
+const DEEP_TREE: RailNode[] = [
+  node('creativity', 'page', 'creativity', [
+    node(
+      'kitchen',
+      'page',
+      'kitchen renovation',
+      [
+        node(
+          'floorplan',
+          'page',
+          'floorplan',
+          [
+            node(
+              'ground',
+              'page',
+              'ground floor',
+              [
+                node('electrics', 'page', 'electrics', [], 0, 'ground'),
+                node(
+                  'plumbing',
+                  'page',
+                  'plumbing',
+                  [node('sink', 'page', 'sink move', [], 0, 'plumbing')],
+                  1,
+                  'ground'
+                ),
+                node('lighting', 'page', 'lighting', [], 2, 'ground'),
+              ],
+              0,
+              'floorplan'
+            ),
+            node(
+              'first',
+              'page',
+              'first floor',
+              [node('landing', 'page', 'landing', [], 0, 'first')],
+              1,
+              'floorplan'
+            ),
+            node('loft', 'page', 'loft', [], 2, 'floorplan'),
+          ],
+          0,
+          'kitchen'
+        ),
+        node(
+          'suppliers',
+          'page',
+          'suppliers',
+          [node('quotes', 'page', 'quotes', [], 0, 'suppliers')],
+          1,
+          'kitchen'
+        ),
+        node('kitchen-budget', 'page', 'budget', [], 2, 'kitchen'),
+        node('notes', 'page', 'notes', [], 3, 'kitchen'),
+      ],
+      0,
+      'creativity'
+    ),
+    node(
+      'books',
+      'page',
+      'books',
+      [node('reading', 'page', 'reading list', [], 0, 'books')],
+      1,
+      'creativity'
+    ),
+    node(
+      'recipes',
+      'page',
+      'recipes',
+      [node('soups', 'page', 'soups', [], 0, 'recipes')],
+      2,
+      'creativity'
+    ),
+  ]),
+]
+
+const deepArgs = {
+  tree: DEEP_TREE,
+  pondName: 'make noise',
+  expanded: new Set(['creativity', 'kitchen', 'floorplan', 'ground']),
+  selectedId: 'ground',
+}
+
+export const Deep: Story = {
+  name: 'deep',
+  args: deepArgs,
+}
+
+export const DeepInk: Story = {
+  name: 'deep · ink',
+  args: deepArgs,
+  parameters: { theme: 'ink' },
+}
+
 /**
  * The board's row geometry, pinned on the treeitem HOST. `PondRail.dc.html`
  * renders its rows at `padding '5px 8px 5px 4px'` / `gap 7` / `radius 10` /
@@ -160,6 +264,7 @@ export const Expanded: Story = {
  * browser catches it.
  */
 export const BoardRowGeometry: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['health', 'personal']) },
   play: async ({ canvasElement }) => {
     const hosts = [
@@ -215,6 +320,7 @@ export const BoardRowGeometry: Story = {
  * the attribute entirely rather than claiming to be a collapsed folder.
  */
 export const AriaCoordinates: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['health']) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -246,6 +352,7 @@ export const AriaCoordinates: Story = {
 
 /** The caret toggles a folder without navigating; the name opens the page. */
 export const Interactions: Story = {
+  tags: ['!dev'],
   play: async ({ canvas, args }) => {
     // caret click on Health toggles, does not open
     const health = canvas.getByRole('treeitem', { name: /Health/ })
@@ -265,6 +372,7 @@ export const Interactions: Story = {
 
 /** The Life root's caret is a collapse-all for the whole tree. */
 export const LifeCaretCollapsesAll: Story = {
+  tags: ['!dev'],
   play: async ({ canvas, args }) => {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     const caret = life.querySelector('svg')?.closest('button') as HTMLButtonElement
@@ -283,6 +391,7 @@ const isShown = (el: HTMLElement) =>
  * takes ＋ and never ×.
  */
 export const HoverCrud: Story = {
+  name: 'hover',
   play: async ({ canvas, args }) => {
     const add = canvas.getByRole('button', { name: 'Add sub-page to Scratchpad' })
     const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
@@ -305,11 +414,20 @@ export const HoverCrud: Story = {
   },
 }
 
+export const HoverInk: Story = {
+  name: 'hover · ink',
+  parameters: { theme: 'ink' },
+  play: async ({ canvas }) => {
+    await userEvent.hover(canvas.getByRole('treeitem', { name: /Scratchpad/ }))
+  },
+}
+
 /**
  * The selected row shows ＋ alone (`hasPlus`: selected, not hovered); hovering it
  * adds ×. Every other row stays bare at rest.
  */
 export const SelectedRowShowsPlus: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['personal', 'food']), selectedId: 'recipes' },
   play: async ({ canvas }) => {
     const recipes = canvas.getByRole('treeitem', { name: /Recipes/ })
@@ -328,6 +446,7 @@ export const SelectedRowShowsPlus: Story = {
 
 /** The root row: ＋ when selected or hovered, × never (a pond's root can't be deleted). */
 export const RootRowTools: Story = {
+  tags: ['!dev'],
   play: async ({ canvas, args }) => {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     const add = within(life).getByRole('button', { name: 'Add sub-page to life' })
@@ -343,6 +462,7 @@ export const RootRowTools: Story = {
  * appear on keyboard focus-within as well as on hover.
  */
 export const HoverCrudReservesNoWidth: Story = {
+  tags: ['!dev'],
   play: async ({ canvas }) => {
     const scratch = canvas.getByRole('treeitem', { name: /Scratchpad/ })
     const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
@@ -366,6 +486,7 @@ export const HoverCrudReservesNoWidth: Story = {
  * onDelete (same confirm/undo path as ×); + raises onAddChild.
  */
 export const KeyboardNav: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     const life = canvas.getByRole('treeitem', { name: /life/ })
@@ -404,6 +525,7 @@ export const KeyboardNav: Story = {
  * no chevron — and the bell is decorative, never a button.
  */
 export const PaperCardHead: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const aside = canvasElement.querySelector('aside')!
     await expect(aside).toHaveClass('bg-mn-card')
@@ -427,6 +549,7 @@ export const PaperCardHead: Story = {
  * not a button, not a tab stop.
  */
 export const FootSettings: Story = {
+  tags: ['!dev'],
   play: async ({ canvas, canvasElement }) => {
     await expect(canvas.queryByRole('button', { name: 'New page' })).not.toBeInTheDocument()
     const settings = canvasElement.querySelector<HTMLElement>('[data-part="settings"]')!
@@ -447,6 +570,7 @@ const cardOf = (canvasElement: HTMLElement) =>
  * stepped in by `(i % 3) * 14`.
  */
 export const Loading: Story = {
+  name: 'loading',
   args: { tree: [], isLoading: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -480,6 +604,7 @@ export const Loading: Story = {
  * verbatim, at `margin 8px 16px 0 34px` measured from the CARD edge, 12.5 / 1.5.
  */
 export const Empty: Story = {
+  name: 'empty',
   args: { tree: [], isEmpty: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -512,6 +637,7 @@ export const Empty: Story = {
  * line is measured from the CARD, not the row.
  */
 export const DropLine: Story = {
+  tags: ['!dev'],
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -541,6 +667,27 @@ export const DropLine: Story = {
 
       await fireEvent.dragEnd(health)
       await waitFor(() => expect(scope.querySelector('[data-part="drop-line"]')).toBeNull())
+    }
+  },
+}
+
+/** `PondRail` `dragging`, held: Health lifted over Scratchpad, ghost and drop line both showing. */
+export const Dragging: Story = {
+  name: 'dragging',
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const canvas = within(scope)
+      const target = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+      await fireEvent.dragStart(canvas.getByRole('treeitem', { name: /Health/ }), {
+        dataTransfer: new DataTransfer(),
+      })
+      await fireEvent.dragOver(target, {
+        dataTransfer: new DataTransfer(),
+        clientY: target.getBoundingClientRect().top + 1,
+      })
+      await waitFor(() => expect(scope.querySelector('[data-part="drop-line"]')).not.toBeNull())
     }
   },
 }
@@ -638,6 +785,7 @@ const probe = (root: HTMLElement, theme: Theme) =>
  * `padding 0 16px 12px`, centred, `gap 8`.
  */
 export const PaperCardComputed: Story = {
+  tags: ['!dev'],
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -743,6 +891,7 @@ const BOARD_GLYPHS: [string, string][] = [
  * wears the pond's own glyph, not a fixed one.
  */
 export const InkMarks: Story = {
+  tags: ['!dev'],
   args: {
     tree: BOARD_TREE,
     pondName: 'make noise',
@@ -793,6 +942,7 @@ export const InkMarks: Story = {
  * area nobody coloured stays ink.
  */
 export const ColouredMarks: Story = {
+  name: 'rest · area colours',
   args: {
     tree: BOARD_TREE,
     pondName: 'make noise',
@@ -849,6 +999,7 @@ export const ColouredMarks: Story = {
  * nested page showed in the breadcrumb and the kicker and nowhere in the rail.
  */
 export const ChosenMarks: Story = {
+  tags: ['!dev'],
   args: {
     expanded: new Set(['health', 'personal']),
     marks: new Map<string, MarkSource>([
@@ -924,6 +1075,7 @@ const DATABASES: RailNode = node(
 )
 
 export const DatabasesRoot: Story = {
+  tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -980,6 +1132,7 @@ export const DatabasesRoot: Story = {
 
 /** One keyboard order across both trees: ↓ from Life's last row lands on databases, ↑ returns. */
 export const KeyboardIntoDatabases: Story = {
+  tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -1004,6 +1157,7 @@ export const KeyboardIntoDatabases: Story = {
  * with its glyph and no tools, and opening it (click or Enter) asks for the root.
  */
 export const DatabasesRowAlwaysDrawn: Story = {
+  tags: ['!dev'],
   play: async ({ canvas, args }) => {
     const foot = canvas.getByRole('tree', { name: 'Databases' })
     const row = within(foot).getByRole('treeitem', { name: /databases/ })
@@ -1027,6 +1181,7 @@ export const DatabasesRowAlwaysDrawn: Story = {
 
 /** The databases row is a foot row: no ＋/× on it, and none on Delete or + either. */
 export const DatabasesRootHasNoTools: Story = {
+  tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   play: async ({ canvas, args }) => {
     const root = canvas.getByRole('treeitem', { name: /databases/ })
@@ -1054,6 +1209,7 @@ export const DatabasesRootHasNoTools: Story = {
  * its own `bg-mn-text/5` hover is the molecule's board, not the rail's.
  */
 export const RowWashes: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['health']), selectedId: 'sleep' },
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
@@ -1110,6 +1266,7 @@ export const RowWashes: Story = {
  * (neutral-600 on dark) with the lifted shadow — follows the pointer.
  */
 export const DragGhost: Story = {
+  tags: ['!dev'],
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
     const GHOST = {
@@ -1198,6 +1355,7 @@ const toRgba = (value: string): number[] => {
  * so it cannot swallow the rail.
  */
 export const FootBand: Story = {
+  tags: ['!dev'],
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
@@ -1289,6 +1447,7 @@ export const FootBand: Story = {
 
 /** With no databases root the foot is still the databases row, then `settings`. */
 export const FootWithoutDatabasesRoot: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
     await expect(foot.children).toHaveLength(2)
@@ -1306,6 +1465,7 @@ export const FootWithoutDatabasesRoot: Story = {
  * and an area row after the root opens 4px of space above it.
  */
 export const RowRecipe: Story = {
+  tags: ['!dev'],
   args: { expanded: new Set(['health']), selectedId: 'sleep' },
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
@@ -1378,6 +1538,7 @@ export const RowRecipe: Story = {
 
 /** A root with nothing under it is not a folder: no chevron, no aria-expanded. */
 export const EmptyRootHasNoChevron: Story = {
+  tags: ['!dev'],
   args: { tree: [], isEmpty: true },
   play: async ({ canvas }) => {
     const life = canvas.getByRole('treeitem', { name: /life/ })
@@ -1434,6 +1595,7 @@ const treeRow = (scope: HTMLElement, id: string) =>
  * treeitem keeps its role and the field is named `rename books`.
  */
 export const Renaming: Story = {
+  name: 'renaming',
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   render: renameArgs.render,
   play: async ({ canvasElement }) => {
@@ -1483,6 +1645,7 @@ export const Renaming: Story = {
 
 /** F2 → type → ↵ keeps the title and hands focus back to the row. */
 export const RenameWithF2: Story = {
+  tags: ['!dev'],
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   render: renameArgs.render,
   play: async ({ canvasElement, args }) => {
@@ -1505,6 +1668,7 @@ export const RenameWithF2: Story = {
 
 /** Double-click opens the field; esc cancels, writes nothing, and the row has focus. */
 export const RenameDoubleClickEscape: Story = {
+  tags: ['!dev'],
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   render: renameArgs.render,
   play: async ({ canvasElement, args }) => {
@@ -1527,6 +1691,7 @@ export const RenameDoubleClickEscape: Story = {
 
 /** Blur keeps — and an emptied field keeps the old title instead. */
 export const RenameBlurKeeps: Story = {
+  tags: ['!dev'],
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   render: renameArgs.render,
   play: async ({ canvasElement, args }) => {
@@ -1554,6 +1719,7 @@ export const RenameBlurKeeps: Story = {
 
 /** The pond root and the databases foot row are system roots: F2 and double-click do nothing. */
 export const RenameSystemRoots: Story = {
+  tags: ['!dev'],
   args: { tree: renameArgs.tree, expanded: renameArgs.expanded },
   play: async ({ canvasElement }) => {
     const scope = within(canvasElement)
