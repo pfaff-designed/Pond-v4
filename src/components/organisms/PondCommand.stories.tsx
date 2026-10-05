@@ -246,6 +246,11 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
   await expect(box.offsetWidth).toBe(m.width)
   const body = part(root, 'body')!
   await expect(box.offsetHeight).toBe(40 + body.offsetHeight)
+  // The board sets no line-height anywhere: every layer inherits `normal`, which
+  // is what makes a row 18 + one line (34.5 at 13.5px), not preflight's 1.5.
+  for (const el of box.querySelectorAll<HTMLElement>('*')) {
+    await expect(getComputedStyle(el).lineHeight).toBe('normal')
+  }
   await expect(part(root, 'chip')!.textContent).toBe('esc')
   await expect(getComputedStyle(part(root, 'path')!).opacity).toBe('0')
 

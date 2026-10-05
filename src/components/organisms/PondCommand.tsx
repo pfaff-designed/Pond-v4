@@ -130,7 +130,7 @@ const enter = (i: number): CSSProperties => {
 const REST_CHROME_PX = 124
 
 const BOX =
-  'mn-glass relative box-border overflow-hidden rounded-[20px] font-sans text-mn-text [--open-w:min(360px,calc(100vw_-_24px))] md:[--open-w:560px]'
+  'mn-glass relative box-border overflow-hidden rounded-[20px] font-sans leading-[normal] text-mn-text [--open-w:min(360px,calc(100vw_-_24px))] md:[--open-w:560px]'
 const LIFT =
   'cursor-pointer transition-[transform,box-shadow] duration-[var(--motion-quick)] ease-[var(--ease-mn)] hover:-translate-y-px hover:[box-shadow:inset_0_1px_0_rgba(255,255,255,.7),0_24px_60px_rgba(40,34,24,.18)] dark:hover:[box-shadow:var(--mn-glass-shadow)]'
 const OPENER = `${FOCUS_VISIBLE_RING} absolute inset-0 rounded-[20px] text-left`
@@ -149,7 +149,7 @@ const BODY = 'absolute top-[39px] left-[-1px] w-[var(--open-w)]'
 const LIST = 'flex max-h-[60vh] flex-col gap-[2px] overflow-y-auto px-[10px] pt-[6px]'
 const GROUP = `${pageEyebrowClass} px-[12px] pt-[8px] pb-[4px]`
 const NOTE =
-  'px-[12px] py-[10px] font-mono text-[13px] leading-[1.55] text-mn-text-meta [text-wrap:pretty] md:text-[12px]'
+  'px-[12px] py-[10px] font-mono text-[13px] text-mn-text-meta md:text-[12px]'
 const FOOT =
   'mt-[6px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[22px] pt-[10px] pb-[14px] font-mono text-[10.5px] text-mn-text-secondary'
 
