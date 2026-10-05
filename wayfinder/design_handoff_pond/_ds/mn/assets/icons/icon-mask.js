@@ -42,6 +42,8 @@
   }
 
   function apply(el, name, base) {
+    if (el.__mnIcon === name && el.style.mask) return Promise.resolve()
+    el.__mnIcon = name
     el.style.background = el.style.background || 'currentColor'
     return load(name, base).then((u) => paint(el, u))
   }
