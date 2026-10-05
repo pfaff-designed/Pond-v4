@@ -11,13 +11,18 @@
 # (_ds/mn). Leaves the repo-owned docs alone: AUDIT.md (carries the Decided log),
 # PROJECT_RULES.md and README.md. Skips the archive and the pre-split backup,
 # which are history, not spec. Regenerates board-values so its guard stays green.
+#
+# _ds/mn is replaced wholesale (rsync --delete): never patch it in the mirror.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
 
 SRC="${1:-$HOME/Downloads/UI mockups for Pond}"
+[ -d "$SRC" ] || { echo "no such folder: $SRC" >&2; exit 1; }
+SRC="$(cd "$SRC" && pwd)"
+cd "$(git rev-parse --show-toplevel)"
 DEST="wayfinder/design_handoff_pond"
 
 [ -f "$SRC/PondRail.dc.html" ] || { echo "not an export root: $SRC" >&2; exit 1; }
+[ -d "$SRC/_ds/mn" ] || { echo "export has no _ds/mn: $SRC" >&2; exit 1; }
 
 shopt -s nullglob
 copied=0

@@ -12,9 +12,9 @@ ADR 0010 ruled that, for the five shell surfaces, the composed storyboards (`Pon
 
 That ruling was made against a stale mirror. `wayfinder/design_handoff_pond/` had been synced from the export's own `design_handoff_pond/` subfolder, which is an older bundle than the export's root. In the current export:
 
-- every rail in every storyboard is `<dc-import name="PondRail">` (189 imports), so the storyboards _render_ the component. The "11px uppercase `life` + bell, no pond glyph" head that ADR 0010 adopted no longer exists anywhere;
+- every rail in `Pond 04`, `Pond 05`, `06.01`–`06.21` and `Pond 09` is `<dc-import name="PondRail">`, all placed identically, so the storyboards _render_ the component (only `Pond 07 Edges` keeps two pasted rails in a different layout). The "11px uppercase `life` + bell, no pond glyph" head that ADR 0010 adopted no longer exists anywhere;
 - `PondRail` itself changed: the foot is `databases` + `settings` (no `＋ new page` row), and the selected row shows ＋ for a new page inside;
-- the composer and pickers are imported in most storyboards (33 and 37 imports), but `Pond 05 Shell` still carries pasted copies, which the mockups' own notes call out as not yet swapped.
+- the composer and pickers are not yet swapped: outside `Pond 02`, only `06.13`, `06.14` and `06.17` import `PondComposer` and only `06.13` imports `PondPicker`. `Pond 05 Shell` still pastes copies of both, which is where ADR 0010's palette and composer measurements came from.
 
 The user's direction (2026-10-05): the components must reflect the components in `Pond 02 Component library`.
 
