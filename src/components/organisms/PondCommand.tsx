@@ -130,7 +130,7 @@ const enter = (i: number): CSSProperties => {
 const REST_CHROME_PX = 124
 
 const BOX =
-  'mn-glass relative box-border overflow-hidden rounded-[20px] font-sans leading-[normal] text-mn-text [--open-w:min(360px,calc(100vw_-_24px))] md:[--open-w:560px]'
+  'mn-glass relative box-border overflow-clip rounded-[20px] font-sans leading-[normal] text-mn-text [--open-w:min(360px,calc(100vw_-_24px))] md:[--open-w:560px]'
 const LIFT =
   'cursor-pointer transition-[transform,box-shadow] duration-[var(--motion-quick)] ease-[var(--ease-mn)] hover:-translate-y-px hover:[box-shadow:inset_0_1px_0_rgba(255,255,255,.7),0_24px_60px_rgba(40,34,24,.18)] dark:hover:[box-shadow:var(--mn-glass-shadow)]'
 const OPENER = `${FOCUS_VISIBLE_RING} absolute inset-0 rounded-[20px] text-left`

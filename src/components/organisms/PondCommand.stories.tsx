@@ -175,7 +175,9 @@ async function assertBox(root: HTMLElement, p: Palette) {
   const box = boxOf(root)
   const b = getComputedStyle(box)
   await expect(b.boxSizing).toBe('border-box')
-  await expect(b.overflow).toBe('hidden')
+  // The board's `overflow: hidden`, as `clip`: it paints the same, but the box can
+  // never be scrolled — see `assertOpening`.
+  await expect(b.overflow).toBe('clip')
   await expect(b.borderTopLeftRadius).toBe('20px')
   await expect(b.color).toBe(p.ink)
   await expect(b.borderTopWidth).toBe('1px')
@@ -430,6 +432,12 @@ async function assertOpening(root: HTMLElement, p: Palette) {
   await expect(box.offsetWidth).toBeGreaterThan(restW)
   await expect(box.offsetWidth).toBeLessThan(560)
   await expect(box.offsetHeight).toBeLessThan(40 + part(root, 'body')!.offsetHeight)
+  // Mid-growth the box is shorter than what it holds. It must never become a
+  // scroll container, or moving the selection (`scrollIntoView`) scrolls the
+  // whole inside up under the top edge.
+  await expect(getComputedStyle(box).overflow).toBe('clip')
+  box.scrollTop = 20
+  await expect(box.scrollTop).toBe(0)
   await expect(part(root, 'chip')!.textContent).toBe('esc')
   await expect(getComputedStyle(part(root, 'path')!).opacity).toBe('0')
   await expect(getComputedStyle(part(root, 'head')!).opacity).toBe('1')
