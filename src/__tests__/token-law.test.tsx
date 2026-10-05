@@ -569,6 +569,64 @@ describe('source hygiene — no press-* class, no literal hex (#92)', () => {
   })
 })
 
+// ── Tokens are authoritative: no raw hex colour in production CODE ───────────
+//
+// #92 (above) banned hex in the two colour-taking atoms. This widens the ban to
+// ALL production source so the token layer wins by construction: every colour
+// must resolve through a role token (globals.css → `_ds/mn/tokens/`), which makes
+// a 6/8-digit hex literal anywhere in code a token-layer bypass — the exact thing
+// `PROJECT_RULES § Colors` forbids ("All values are raw palette values … Never
+// invent colors").
+//
+// Doc COMMENTS are exempt on purpose. The house convention is to cite a board's
+// measured value inline — `on #1B1D14`, `red #C55347`, `filled … #FFEFAE` — and
+// that citation is the design files winning, not a leak. So the sweep reads CODE
+// with comments blanked out, and only `globals.css` (the token layer itself) may
+// spell raw hex in code.
+//
+// Scope is 6- and 8-digit hex only: a 3-digit form would collide with the issue
+// refs (`#312`) that pepper comments, and the design system has no shorthand
+// colours — every palette value is a full `#RRGGBB`.
+
+const TOKEN_LAYER = 'src/app/globals.css'
+
+/**
+ * Blank out `//` line and `/* *\/` block comments while PRESERVING newlines and
+ * length, so a hit's reported `file:line` stays accurate. Conservative toward
+ * passing: stripping only ever removes text, so it can hide a contrived hex but
+ * never invent one.
+ */
+function codeWithoutComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length))
+}
+
+/** A full `#RRGGBB` or `#RRGGBBAA` colour literal. */
+const HEX_COLOUR = /#[0-9a-fA-F]{6}\b([0-9a-fA-F]{2})?/
+
+describe('tokens are authoritative — no raw hex colour in production code (#92 widened)', () => {
+  it('every colour resolves through a role token; only globals.css spells raw hex', () => {
+    const offenders = sourceFiles()
+      .filter((file) => file !== TOKEN_LAYER)
+      .flatMap((file) =>
+        codeWithoutComments(read(file))
+          .split('\n')
+          .flatMap((line, i) => (HEX_COLOUR.test(line) ? [`${file}:${i + 1}`] : []))
+      )
+    expect(offenders).toEqual([])
+  })
+
+  it('the sweep reads CODE, not comments — a cited board value never trips it', () => {
+    // The guard is only safe if it leaves the house's inline citations alone, so
+    // prove both halves against the shapes directly rather than trusting them.
+    const commented = `// board dueDot: 7×7 · #D96629\n/* filled #FFEFAE on #1B1D14 */\nconst x = 1`
+    expect(HEX_COLOUR.test(codeWithoutComments(commented))).toBe(false)
+    const inCode = `const bad = { color: '#FAF9EF' }`
+    expect(HEX_COLOUR.test(codeWithoutComments(inCode))).toBe(true)
+  })
+})
+
 // ── The cva axes of ui/button.tsx — provable only in source ─────────────────
 
 describe('ui/button.tsx — the cva axes (#221 / #230)', () => {

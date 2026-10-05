@@ -223,6 +223,162 @@ export const TableEmptyBare: Story = {
 
 // ── Board ──────────────────────────────────────────────────────────────────────
 
+/**
+ * The board's geometry, from `Pond 06.21 Tasks` (KAN-31).
+ *
+ * The stories below this block assert TEXT. These assert the computed values, in
+ * both themes — the board draws each lane as a faint recessed wash, and a lane
+ * rendered as a raised card passes every text assertion while looking wrong.
+ *
+ *   lanes     grid · repeat(N,minmax(0,1fr)) · gap 10   (NOT a scrolling row)
+ *   lane      flex column · gap 7 · padding 7 · radius 16 · ink .04 · min-h 380
+ *   laneHead  3px 4px 2px · 10.5 · 500 · tracking .1em · uppercase · ink .68
+ *   laneN     inherits the head (06.21's is a bare span)
+ *   card      card paper · radius 12 · 10/11 · gap 7 · two-layer shadow
+ *   title     13.5 / 1.35
+ *   ＋        padding 4 · 11 · 500 · ink .68
+ *
+ * (`PondTemplate`'s `kanban`/`lane` set is the MINIATURE inside a template preview
+ * card — lane min-height 90 against this 380. Same design, two scales.)
+ */
+const pxOf = (v: string) => parseFloat(v)
+
+/**
+ * Tailwind v4 computes an alpha variant (`bg-mn-text/[0.04]`) to **oklab**, not
+ * rgba, so a string compare is useless here. These read the two things that
+ * actually carry the meaning: how transparent it is, and whether the base is ink
+ * or paper — which is the whole of what reassigns between themes.
+ */
+function alphaOf(color: string): number {
+  if (/^rgb\(/.test(color) && !color.includes('/')) return 1
+  if (color === 'rgba(0, 0, 0, 0)') return 0
+  const m = color.match(/(?:\/|,)\s*([\d.]+%?)\s*\)\s*$/)
+  if (!m) return NaN
+  return m[1].endsWith('%') ? parseFloat(m[1]) / 100 : parseFloat(m[1])
+}
+/** Perceptual lightness: oklab's first component, or luma from rgb. Ink ≈ .2, paper ≈ .98. */
+function lightnessOf(color: string): number {
+  const ok = color.match(/^oklab\(\s*([\d.]+)/)
+  if (ok) return parseFloat(ok[1])
+  const rgb = color.match(/(\d+),\s*(\d+),\s*(\d+)/)
+  if (!rgb) return NaN
+  const [r, g, b] = [1, 2, 3].map((i) => parseInt(rgb[i], 10) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+/**
+ * PAINTED `box-shadow` layers, outermost first. Tailwind composes ring + shadow
+ * through `0 0 #0000` placeholders, and `ring-0` leaves a zero-width coloured
+ * ring — neither paints a pixel, so both are dropped and only what the board
+ * draws remains. (Same filter as `PondControl.stories.tsx`.)
+ */
+function shadowLayers(boxShadow: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let cur = ''
+  for (const ch of boxShadow) {
+    if (ch === '(') depth++
+    if (ch === ')') depth--
+    if (ch === ',' && depth === 0) {
+      out.push(cur.trim())
+      cur = ''
+    } else cur += ch
+  }
+  if (cur.trim()) out.push(cur.trim())
+  return out.filter((l) => !/^rgba\(0, 0, 0, 0\) /.test(l) && !/ 0px 0px 0px 0px( inset)?$/.test(l))
+}
+
+/** `ink` is the dark base, `paper` the light one — whichever colour space says it. */
+async function expectTier(color: string, base: 'ink' | 'paper', alpha: number) {
+  await expect(alphaOf(color)).toBeCloseTo(alpha, 2)
+  const l = lightnessOf(color)
+  if (base === 'ink') await expect(l).toBeLessThan(0.5)
+  else await expect(l).toBeGreaterThan(0.7)
+}
+
+async function assertBoardGeometry(root: HTMLElement, base: 'ink' | 'paper') {
+  const lanes = root.querySelector<HTMLElement>('[data-part="lanes"]')!
+  const ls = getComputedStyle(lanes)
+  await expect(ls.display).toBe('grid')
+  await expect(pxOf(ls.gap)).toBeCloseTo(10, 1)
+  // Equal columns, one per lane — every track the same width.
+  const tracks = ls.gridTemplateColumns.split(' ').map(pxOf)
+  await expect(tracks.length).toBeGreaterThan(1)
+  for (const t of tracks) await expect(t).toBeCloseTo(tracks[0], 0)
+
+  const lane = root.querySelector<HTMLElement>('[data-part="lane"]')!
+  const cs = getComputedStyle(lane)
+  await expect(pxOf(cs.padding)).toBeCloseTo(7, 1)
+  await expect(pxOf(cs.borderRadius)).toBeCloseTo(16, 1)
+  await expect(pxOf(cs.minHeight)).toBeCloseTo(380, 1)
+  await expect(pxOf(cs.rowGap)).toBeCloseTo(7, 1)
+  // A WASH, not a card: a tinted ground and no shadow of its own.
+  await expectTier(cs.backgroundColor, base, 0.04)
+  await expect(cs.boxShadow).toBe('none')
+
+  const head = getComputedStyle(root.querySelector<HTMLElement>('[data-part="lane-head"]')!)
+  await expect(pxOf(head.fontSize)).toBeCloseTo(10.5, 1)
+  await expect(head.textTransform).toBe('uppercase')
+  await expectTier(head.color, base, 0.68)
+  // .1em at 10.5px = 1.05px — not the 0.14em this shipped with.
+  await expect(pxOf(head.letterSpacing)).toBeCloseTo(1.05, 1)
+
+  // The count inherits the head: 06.21's is a bare `<span>3</span>`. It must NOT
+  // be mono — that is `PondTemplate`'s `laneN`, which belongs to the miniature.
+  const n = getComputedStyle(root.querySelector<HTMLElement>('[data-part="lane-n"]')!)
+  await expect(n.fontFamily).toBe(head.fontFamily)
+  await expect(n.letterSpacing).toBe(head.letterSpacing)
+}
+
+export const BoardGeometry: Story = {
+  args: { config: boardConfig, schema, rows },
+  play: async ({ canvasElement }) => {
+    await assertBoardGeometry(canvasElement, 'ink')
+
+    const card = getComputedStyle(canvasElement.querySelector<HTMLElement>('[data-part="card"]')!)
+    await expect(pxOf(card.borderRadius)).toBeCloseTo(12, 1)
+    await expect(pxOf(card.paddingTop)).toBeCloseTo(10, 1)
+    await expect(pxOf(card.paddingLeft)).toBeCloseTo(11, 1)
+    await expect(pxOf(card.rowGap)).toBeCloseTo(7, 1)
+    // Two PAINTED layers — the board's own, which matches no shadow token.
+    await expect(shadowLayers(card.boxShadow)).toHaveLength(2)
+  },
+}
+
+export const BoardGeometryInk: Story = {
+  args: { config: boardConfig, schema, rows },
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    // Geometry is identical between themes; only the tiers reassign.
+    await assertBoardGeometry(canvasElement, 'paper')
+  },
+}
+
+/**
+ * 06.21: "The last line of every lane is ＋ task." A line INSIDE the lane, after
+ * the cards — not a button beside or below it. Pond's word for a row in a
+ * database is `record`; the board says `task` because its records are tasks.
+ */
+export const BoardAddIsTheLastLineOfTheLane: Story = {
+  args: { config: boardConfig, schema, rows, editable: true, onAddRow: fn(async () => null) },
+  play: async ({ canvasElement }) => {
+    const lane = canvasElement.querySelector<HTMLElement>('[data-part="lane"]')!
+    const add = lane.querySelector<HTMLElement>('[data-part="lane-add"]')!
+    await expect(add).toBeInTheDocument()
+    // Last child of the lane, after every card.
+    await expect(lane.lastElementChild).toBe(add)
+    const cs = getComputedStyle(add)
+    await expect(pxOf(cs.padding)).toBeCloseTo(4, 1)
+    await expect(pxOf(cs.fontSize)).toBeCloseTo(11, 1)
+    await expectTier(cs.color, 'ink', 0.68)
+  },
+}
+
 /** Read-only board grouped by status: one column per option + a "No Status" bucket. */
 export const BoardReadOnly: Story = {
   args: { config: boardConfig, schema, rows },
