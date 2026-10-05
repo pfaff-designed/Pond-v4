@@ -7,9 +7,8 @@
  * pond, with ⌘1, ⌘2 and ⌘3 to jump straight to one." And: "the switcher IS the
  * rail header. Nothing else in the rail changes until you pick."
  *
- * The head is `PondRail.dc.html`'s (ADR 0011: the component DC is the spec): the
- * pond's 13px glyph, its name at 13.5 / 500 in full ink, and a 9px chevron, padded
- * `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
+ * The head is the pond's 13px glyph, its name at 13.5 / 500 in full ink and a 9px
+ * chevron, padded `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
  *
  * Deliberately not here, each recorded as fog on #312: ⌘1–⌘3 (the shortcut
  * collides with browser tab switching, AUDIT K1), `manage ponds` (settings has no
@@ -22,33 +21,11 @@ import { useRouter } from 'next/navigation'
 import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
-
-/** The board's `swChev`: the rail's 9×9 caret path, the .68 ink tier, pointing down
- *  at rest and up while the menu is open. */
-function SwitcherChevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="9"
-      height="9"
-      viewBox="0 0 9 9"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className={`flex-none text-mn-text-secondary transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
-        open ? '-rotate-90' : 'rotate-90'
-      }`}
-    >
-      <path d="M3.5 2 L7 5 L3.5 8" />
-    </svg>
-  )
-}
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
 function Plus() {
@@ -123,7 +100,9 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       >
         {active?.name ?? fallbackName}
       </span>
-      {hasPonds && <SwitcherChevron open={open} />}
+      {hasPonds && (
+        <Caret className={`text-mn-text-secondary ${open ? '-rotate-90' : 'rotate-90'}`} />
+      )}
     </>
   )
 

@@ -1,18 +1,10 @@
 'use client'
 
 /**
- * The pond's name — what the rail header shows (AUDIT C3, trimmed by ADR 0002
- * to a NAME: no chevron, no switcher in the head itself).
- *
- * Since #312 there IS a pond row to read, so the name comes from it. The
- * constant below is the only fallback left: outside the shell's `PondProvider`
- * (Storybook, an envless render) or before migration 0018 made the table, where
- * the first pond is always `life`.
- *
- * Lowercase (#101 review): the rail's source copy in `Pond 05 Shell` is
- * lowercase throughout (life, personal, journal, notes) and the capitals in the
- * boards are the eyebrow's own `text-transform: uppercase`, a presentational
- * rule the CSS already carries. The data is lowercase; the transform is the view's.
+ * The pond's name — what the rail header shows. It comes from the pond row; the
+ * constant below is the only fallback, used outside the shell's `PondProvider`
+ * (Storybook, an envless render) or before migration 0018 made the table. It is
+ * lowercase because nothing downstream transforms the name's case.
  */
 
 import { usePond } from './context'

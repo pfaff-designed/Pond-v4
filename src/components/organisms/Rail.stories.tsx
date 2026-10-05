@@ -94,7 +94,7 @@ export const Resting: Story = {
     const tree = canvas.getByRole('tree', { name: 'Workspace' })
     await expect(tree).toBeInTheDocument()
     await expect(within(tree).getByText('life')).toBeInTheDocument()
-    // The root row carries its mark and name only — the old `all` caption is gone.
+    // The root row carries its mark and name only.
     await expect(canvas.getByRole('treeitem', { name: /life/ })).not.toHaveTextContent(/\ball\b/)
     await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
     await expect(canvas.getByText('Health')).toBeInTheDocument()
@@ -368,7 +368,7 @@ export const KeyboardNav: Story = {
 /**
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
  * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's glyph and
- * name (`PondRail.dc.html` head: 13.5 / 500, full ink) with the reminders bell at
+ * name (13.5 / 500, full ink) with the reminders bell at
  * the right. With no pond provider there are no ponds, so no switcher button and
  * no chevron — and the bell is decorative, never a button.
  */
@@ -391,26 +391,18 @@ export const PaperCardHead: Story = {
 }
 
 /**
- * The foot has no "＋ new page": `PondRail.dc.html` draws the databases root and
- * `settings`, and nothing else. `settings` has no surface yet, so without a
- * handler it is `aria-disabled` and inert; with one it raises it.
+ * The foot is the databases root and `settings`, and nothing else — no
+ * "＋ new page". `settings` has no surface yet, so it is plain text with a gear:
+ * not a button, not a tab stop.
  */
 export const FootSettings: Story = {
-  args: { onOpenSettings: fn() },
-  play: async ({ canvas, args }) => {
+  play: async ({ canvas, canvasElement }) => {
     await expect(canvas.queryByRole('button', { name: 'New page' })).not.toBeInTheDocument()
-    const settings = canvas.getByRole('button', { name: 'settings' })
-    await expect(settings).not.toHaveAttribute('aria-disabled')
-    await userEvent.click(settings)
-    await expect(args.onOpenSettings).toHaveBeenCalledTimes(1)
-  },
-}
-
-export const FootSettingsInert: Story = {
-  play: async ({ canvas }) => {
-    const settings = canvas.getByRole('button', { name: 'settings' })
-    await expect(settings).toHaveAttribute('aria-disabled', 'true')
-    await userEvent.click(settings)
+    const settings = canvasElement.querySelector<HTMLElement>('[data-part="settings"]')!
+    await expect(settings).toHaveTextContent('settings')
+    await expect(settings.tagName).toBe('DIV')
+    await expect(settings.querySelector('button, a, [tabindex]')).toBeNull()
+    await expect(canvas.queryByRole('button', { name: 'settings' })).not.toBeInTheDocument()
   },
 }
 
@@ -516,13 +508,12 @@ const probe = (root: HTMLElement, theme: Theme) =>
  * The rail is a floating PAPER card, in pixels, in both themes — and its head is
  * the pond's glyph and name.
  *
- * Replaces `shell-reskin`'s `bg-mn-card` / `shadow-mn-card` / `rounded-mn-card`
- * class assertions and its `globals.css` text scrapes for `--mn-surface` / `--mn-card` / `--mn-radius-card` /
- * `--mn-shadow-card`: the class names could all be right while the roles behind
- * them resolved to the wrong paper. These read the paper off the element.
+ * The paper is read off the element rather than inferred from class names: the
+ * classes could all be right while the roles behind them (`--mn-surface`,
+ * `--mn-card`, `--mn-radius-card`, `--mn-shadow-card`) resolved to the wrong paper.
  *
- * Head from `PondRail.dc.html` (ADR 0011): the 13px pond glyph, the name at
- * 13.5 / 500 in full ink, `padding 0 16px 12px`, centred, `gap 8`.
+ * Head: the 13px pond glyph, the name at 13.5 / 500 in full ink,
+ * `padding 0 16px 12px`, centred, `gap 8`.
  */
 export const PaperCardComputed: Story = {
   render: (args) => <BothThemes {...args} />,
@@ -583,15 +574,13 @@ export const PaperCardComputed: Story = {
       await expect(bell).not.toBeNull()
       await expect(bell.closest('[role="tree"]')).toBeNull()
       await expect(bell.getAttribute('aria-hidden')).toBe('true')
-      await expect(bell.querySelector('button, a, [tabindex]')).toBeNull()
-      await expect(getComputedStyle(bell).gap).toBe('10px')
-      const bellSvg = bell.querySelector('svg')!
-      const bellBox = bellSvg.getBoundingClientRect()
+      await expect(bell.hasAttribute('tabindex')).toBe(false)
+      const bellBox = bell.getBoundingClientRect()
       await expect(bellBox.width).toBe(12)
       await expect(bellBox.height).toBe(12)
-      await expect(bellSvg.getAttribute('viewBox')).toBe('0 0 14 14')
-      await expect(getComputedStyle(bellSvg).strokeWidth).toBe('1.4px')
-      await expect(getComputedStyle(bellSvg).color).toBe(
+      await expect(bell.getAttribute('viewBox')).toBe('0 0 14 14')
+      await expect(getComputedStyle(bell).strokeWidth).toBe('1.4px')
+      await expect(getComputedStyle(bell).color).toBe(
         theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
       )
     }
@@ -739,7 +728,7 @@ export const ChosenMarks: Story = {
  * FOOT band, under the one hairline: its own ARIA tree, so the
  * structure says what the rail says rather than nesting data inside life.
  *
- * Geometry from `PondRail.dc.html`'s dbRow (ADR 0011): `padding 6px 8px`
+ * Geometry: `padding 6px 8px`
  * (the foot supplies the 10px under the hairline), `gap 9`, `font-size 13.5` /
  * `font-weight 500`, radius 10, and no chevron. Its mark is a hand-drawn
  * cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round caps and
@@ -981,7 +970,7 @@ const toRgba = (value: string): number[] => {
 }
 
 /**
- * The foot (`PondRail.dc.html` `foot`): a flex column, `gap 2`, `padding 10px 8px 0`,
+ * The foot: a flex column, `gap 2`, `padding 10px 8px 0`,
  * under a `border-top 1px` at ink .09 (paper .09 on dark) that runs the card's
  * FULL width — no margin above it, none beside it. Then the databases tree and
  * the `settings` row (`newRow`: padding 6px 8px, 12.5, ink .68; a 12px gear and an
@@ -1026,7 +1015,7 @@ export const FootBand: Story = {
 
       // databases tree first, then settings — in ONE element
       const tree = canvas.getByRole('tree', { name: 'Databases' })
-      const settings = canvas.getByRole('button', { name: 'settings' })
+      const settings = scope.querySelector<HTMLElement>('[data-part="settings"]')!
       await expect([...foot.children]).toEqual([tree, settings])
       await expect(getComputedStyle(tree).maxHeight).not.toBe('none')
       // the foot's hairline is the only one: the tree draws none of its own
@@ -1083,6 +1072,6 @@ export const FootWithoutDatabases: Story = {
   play: async ({ canvasElement }) => {
     const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
     await expect(foot.children).toHaveLength(1)
-    await expect(foot.firstElementChild).toHaveAccessibleName('settings')
+    await expect(foot.firstElementChild).toHaveTextContent('settings')
   },
 }

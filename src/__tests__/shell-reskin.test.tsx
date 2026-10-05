@@ -8,8 +8,7 @@
  * verbatim) — all three inset from the edges, none docked. The breadcrumb and
  * composer are SHELL-level absolutes centred at calc(50% + 13px) (measured in
  * `Pond 05 Shell`), and the composer publishes its real height so the surfaces
- * pad against ONE value. The rail header is the pond's NAME — no switcher, no
- * chevron (ADR 0002 trims C3 to a name; the switcher is M3).
+ * pad against ONE value. The rail header is the pond's glyph and name.
  *
  * Source: wayfinder/design_handoff_pond — `Pond 05 Shell` 5af (the shell
  * frame), `PondRail` (head / loading / empty states), `Pond 02` 2t (the
@@ -285,13 +284,13 @@ describe('RailView — the pond name header (AC3)', () => {
     // The only svg is the bell's — a chevron would be a second one.
     const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
     expect(head.querySelectorAll('svg')).toHaveLength(1)
-    expect(bell.querySelector('svg')).not.toBeNull()
+    expect(bell.tagName.toLowerCase()).toBe('svg')
     expect(bell).toHaveAttribute('aria-hidden', 'true')
     expect(bell.closest('[role="tree"]')).toBeNull()
     expect(head).not.toHaveTextContent('Pond')
   })
 
-  it('the head is padded 0 16px 12px, name left and bell right, centred, gap 8 (PondRail head)', () => {
+  it('the head is padded 0 16px 12px, name left and bell right, centred, gap 8', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.className).toMatch(/\bpx-4\b/)
@@ -340,22 +339,9 @@ describe('RailView — the pond name header (AC3)', () => {
     renderRail()
     expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
     expect(screen.queryByText(/＋ new page$/)).toBeNull()
-    expect(screen.getByRole('button', { name: 'settings' })).toBeInTheDocument()
-  })
-
-  it('settings raises onOpenSettings; with no handler it is aria-disabled and inert', () => {
-    const onOpenSettings = jest.fn()
-    const { unmount } = renderRail({ onOpenSettings })
-    const live = screen.getByRole('button', { name: 'settings' })
-    expect(live).not.toHaveAttribute('aria-disabled')
-    fireEvent.click(live)
-    expect(onOpenSettings).toHaveBeenCalledTimes(1)
-    unmount()
-
-    renderRail()
-    const dead = screen.getByRole('button', { name: 'settings' })
-    expect(dead).toHaveAttribute('aria-disabled', 'true')
-    expect(() => fireEvent.click(dead)).not.toThrow()
+    // Plain text until a settings surface exists — not a button.
+    expect(screen.getByText('settings')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'settings' })).toBeNull()
   })
 })
 
@@ -588,9 +574,7 @@ describe('composer clearance — the drawer publishes its real height, the surfa
 // ── The pond's name ─────────────────────────────────────────────────────────
 
 describe('defaultPondName — the M1 seam for the pond name', () => {
-  // #101 review: lowercase. The rail's source copy is lowercase throughout (life,
-  // personal, journal, notes) and the head applies no text-transform, so the data
-  // is what the head shows.
+  // The head applies no text-transform, so the data's case is what the head shows.
   it('names the first pond, lowercase', () => {
     expect(defaultPondName()).toBe('life')
   })
@@ -623,7 +607,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
 
     // The rail foot is databases and settings; no "New page" button anywhere.
     expect(screen.queryByRole('button', { name: 'New page' })).toBeNull()
-    expect(aside.contains(screen.getByRole('button', { name: 'settings' }))).toBe(true)
+    expect(aside.contains(screen.getByText('settings'))).toBe(true)
   })
 
   it('the breadcrumb and the composer are SHELL-level absolutes, not column children (measured)', async () => {

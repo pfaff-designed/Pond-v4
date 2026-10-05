@@ -91,6 +91,7 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { Caret } from '@/components/atoms/Caret'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -118,30 +119,6 @@ const INDENT_STEP = 14
 const INDENT_BASE = 4
 /** Half the caret slot (9px) — where a guide sits under its ancestor's caret. */
 const GUIDE_OFFSET = 4
-
-/** A calm authored chevron — rotates on expand, no glyph substitution. */
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="9"
-      height="9"
-      viewBox="0 0 10 10"
-      fill="none"
-      aria-hidden
-      className={`transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
-        open ? 'rotate-90' : ''
-      }`}
-    >
-      <path
-        d="M3.5 2 L7 5 L3.5 8"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
 
 interface RailRowProps {
   id: string
@@ -342,7 +319,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
             onToggle(id)
           }}
         >
-          <Chevron open={isExpanded} />
+          <Caret className={isExpanded ? 'rotate-90' : undefined} />
         </button>
       ) : (
         <span className="w-[9px] flex-shrink-0" aria-hidden />
@@ -463,9 +440,6 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   onLife: () => void
   onToggleLife: () => void
-  /** The foot's `settings` row. Absent until a settings surface exists: the row then
-   *  renders `aria-disabled` and does nothing. */
-  onOpenSettings?: () => void
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
@@ -478,9 +452,9 @@ export interface RailViewProps {
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 
 /**
- * The databases root's mark (#101; PondRail's foot row): a hand-drawn cylinder in
- * `currentColor` — a functional mark, not an area glyph, since the root is the
- * pond's SECOND root (3c), not one of Life's areas. 13px, stroke 1.4, round caps and joins.
+ * The databases root's mark: a hand-drawn cylinder in `currentColor` — a functional
+ * mark, not an area glyph, since the root is the pond's SECOND root (3c), not one of
+ * Life's areas. 13px, stroke 1.4, round caps and joins.
  */
 const DATABASES_MARK = (
   <span className="inline-flex flex-none items-center" aria-hidden>
@@ -501,27 +475,27 @@ const DATABASES_MARK = (
 )
 
 /**
- * The head's reminders bell (`Pond 05 Shell` / `Pond 06.21`): 12×12, stroke 1.4,
- * round caps, the .8 ink tier. A decorative mark — opening `coming up` is #198,
- * and a dead button is worse than none, so it is neither focusable nor a button.
+ * The head's reminders bell: 12×12, stroke 1.4, round caps, the .8 ink tier. A
+ * decorative mark — opening `coming up` is #198, and a dead button is worse than
+ * none, so it is neither focusable nor a button.
  */
 const REMINDERS_BELL = (
-  <span data-part="reminders-bell" aria-hidden className="flex items-center gap-[10px]">
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="flex-none self-center text-mn-text-meta"
-    >
-      <path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z" />
-      <path d="M5.8 12.4h2.4" />
-    </svg>
-  </span>
+  <svg
+    data-part="reminders-bell"
+    aria-hidden
+    width="12"
+    height="12"
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="flex-none text-mn-text-meta"
+  >
+    <path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z" />
+    <path d="M5.8 12.4h2.4" />
+  </svg>
 )
 
 const TRANSPARENT_GIF =
@@ -608,7 +582,6 @@ export function RailView({
   onDelete,
   onLife,
   onToggleLife,
-  onOpenSettings,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -910,10 +883,9 @@ export function RailView({
       className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      {/* The head (`PondRail.dc.html`): the pond's glyph and name, the reminders bell at
-          the right. The switcher chevron appears only once there is a pond to list:
-          before migration 0018 `listPonds()` returns [] and the head is the plain
-          name, rather than an affordance that opens an empty menu. */}
+      {/* The switcher chevron appears only once there is a pond to list: before
+          migration 0018 `listPonds()` returns [] and the head is the plain name,
+          rather than an affordance that opens an empty menu. */}
       <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
 
       <div
@@ -968,12 +940,12 @@ export function RailView({
         )}
       </div>
 
-      {/* The foot (`PondRail.dc.html`): full-width hairline, then the databases root
-          (3c / #101: the pond's SECOND root, its own ARIA tree so the structure says
-          what the rail says) and `settings`. The databases tree is capped at 40vh so
-          an expanded root scrolls inside the foot instead of swallowing the rail. The
-          scroller clips at its padding box, so it carries 2px of padding (cancelled by
-          a -2px margin) to keep the rows' 2px focus ring visible. */}
+      {/* The foot: a full-width hairline, then the databases root (3c / #101: the
+          pond's SECOND root, its own ARIA tree so the structure says what the rail
+          says) and `settings`. The databases tree is capped at 40vh so an expanded
+          root scrolls inside the foot instead of swallowing the rail. The scroller
+          clips at its padding box, so it carries 2px of padding (cancelled by a -2px
+          margin) to keep the rows' 2px focus ring visible. */}
       <div
         data-part="rail-foot"
         className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
@@ -988,14 +960,11 @@ export function RailView({
             {databasesFlat.map(renderRow)}
           </div>
         )}
-        <button
-          type="button"
+        {/* Not interactive until a settings surface exists (KAN-74): like the bell,
+            a dead button is worse than none. */}
+        <div
           data-part="settings"
-          onClick={onOpenSettings}
-          aria-disabled={onOpenSettings ? undefined : true}
-          className={`block w-full px-2 py-[6px] text-left text-[12.5px] leading-[normal] text-mn-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-mn-area-b ${
-            onOpenSettings ? 'cursor-pointer' : 'cursor-default'
-          }`}
+          className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
         >
           <span className="inline-flex items-center gap-2">
             <svg
@@ -1014,7 +983,7 @@ export function RailView({
             </svg>
             settings
           </span>
-        </button>
+        </div>
       </div>
     </aside>
   )

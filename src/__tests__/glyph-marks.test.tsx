@@ -231,7 +231,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
 }
 
 describe('Rail — area marks ride the glyph system', () => {
-  it('the Life root leads with the waves-02 glyph (LifeMark retired)', () => {
+  it('the Life root leads with the waves-02 glyph', () => {
     const { getByRole } = renderRail()
     const life = getByRole('treeitem', { name: /life/ })
     const glyph = life.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!

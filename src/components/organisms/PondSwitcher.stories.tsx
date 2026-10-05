@@ -118,8 +118,7 @@ export const BeforeTheTableExists: Story = {
 
     const name = canvasElement.querySelector('[data-part="pond-name"]')
     await expect(name).toHaveTextContent('life')
-    // Board `word`: 500 / 13.5, no transform, full ink. No chevron, hence no svg,
-    // and nothing to click.
+    // 500 / 13.5, no transform. No chevron, hence no svg, and nothing to click.
     const type = getComputedStyle(name!)
     await expect(type.fontSize).toBe('13.5px')
     await expect(type.fontWeight).toBe('500')

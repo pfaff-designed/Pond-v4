@@ -3,17 +3,15 @@
 /**
  * The shell's command owner (#96; was `TopBar`). Renders NO chrome of its own.
  *
- * The Make Noise shell has no top-right cluster: the ⌘K affordance sits in the
- * breadcrumb pill (`Pond 02` 2t). It raises a decoupled request
- * (`lib/shell-commands`) and this organism answers it, owning the two surfaces once:
+ * Owns the ⌘K palette (#279): pages, records and actions in one list, over the
+ * shared `['pages']` cache via `lib/pages/palette-items`. The breadcrumb's ⌘K chip
+ * raises a decoupled request (`lib/shell-commands`) that this organism answers.
+ * ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key).
  *
- *   ⌘K   the palette (#279): pages, records and actions in one list. What it
- *        lists is `lib/pages/palette-items` over the shared `['pages']` cache;
- *        the rows it mints from the query (`ask pond about “q”`, `new page “q”`)
- *        land here as the composer prefilled, or the New page dialog named.
- *        ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key).
- *   ＋    the New page creation flow (ticket-26): a name-first dialog that
- *        defaults the destination to the page in view, then lands in the editor.
+ * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
+ * open the New page dialog here: name-first, defaulting the destination to the
+ * page in view, then landing in the editor. `ask pond about “q”` lands in the
+ * composer prefilled.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -22,7 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
-import { CREATE_PAGE_EVENT, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
+import { OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { fetchPages } from '@/lib/pages/tree'
@@ -89,7 +87,7 @@ export function ShellCommands() {
 
   // Global ⌘K / Ctrl+K → toggle the palette. Registered in the *capture* phase on
   // the document so it fires before any focused editor/input can swallow it.
-  // The decoupled requests (breadcrumb ⌘K chip) arrive as window events.
+  // The breadcrumb's ⌘K chip arrives as a window event.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
@@ -99,17 +97,11 @@ export function ShellCommands() {
       }
     }
     const openPalette = () => setPaletteOpen(true)
-    const openCreate = () => {
-      setCreateTitle('')
-      setCreateOpen(true)
-    }
     document.addEventListener('keydown', onKey, { capture: true })
     window.addEventListener(OPEN_PALETTE_EVENT, openPalette)
-    window.addEventListener(CREATE_PAGE_EVENT, openCreate)
     return () => {
       document.removeEventListener('keydown', onKey, { capture: true })
       window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
-      window.removeEventListener(CREATE_PAGE_EVENT, openCreate)
     }
   }, [])
 
