@@ -229,3 +229,26 @@ function OptionDot({ color }: { color?: string }) {
     />
   )
 }
+
+/** The repeat tag's mark (`Pond 02` 2u): hand-drawn, 11px, stroke 1.4, round caps. */
+export function RepeatMark() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="flex-none"
+      aria-hidden
+    >
+      <path d="M2.2 6a3.8 3.8 0 0 1 6.6-2.6" />
+      <path d="M9 1.6v2.2H6.8" />
+      <path d="M9.8 6a3.8 3.8 0 0 1-6.6 2.6" />
+      <path d="M3 10.4V8.2h2.2" />
+    </svg>
+  )
+}

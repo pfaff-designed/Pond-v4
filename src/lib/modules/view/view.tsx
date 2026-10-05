@@ -80,8 +80,10 @@ import {
 import { usePageLinks } from '../page-link/context'
 import { shouldOpenCardFromClick } from './card-click'
 import { dueAtom } from './due'
-import { Cell, OptionChip } from './cells'
+import { Cell, OptionChip, RepeatMark } from './cells'
 import { RecordPeek } from './record-peek'
+import { CollectionList } from './list'
+import { useRecordSelection } from './use-record-selection'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -269,6 +271,16 @@ export function CollectionView({
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
         />
+      ) : config.mode === 'list' ? (
+        <CollectionList
+          schema={schema}
+          rows={processed}
+          groupBy={config.groupBy}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
           schema={schema}
@@ -329,8 +341,7 @@ export function CollectionView({
 
 /**
  * The switcher's segments, in `Pond 06.21` 6u.1's order and words. `timeline` is the
- * `gantt` mode. `list` is the fifth segment and is added with the list mode itself
- * (KAN-63) — a segment for a mode that does not exist would be a dead control.
+ * `gantt` mode, and `list` is the fifth segment (6v).
  * Gallery, chart and big number are not here: each is its own block (ADR 0009), so
  * a block in one of those modes draws no switcher at all.
  */
@@ -339,6 +350,7 @@ const VIEW_SEGMENTS: readonly { mode: ViewMode; label: string }[] = [
   { mode: 'gantt', label: 'timeline' },
   { mode: 'table', label: 'table' },
   { mode: 'calendar', label: 'calendar' },
+  { mode: 'list', label: 'list' },
 ]
 
 /**
@@ -362,8 +374,14 @@ function ViewControls({
   onConfigChange: (patch: Partial<ViewBlock>) => void
   onUpdateSchema?: (next: PropertySchema) => void
 }) {
-  const groupName =
-    config.mode === 'board' ? pickGroupDef(schema, config.groupBy)?.name.toLowerCase() : undefined
+  // The head's fact: a board reads its lanes' property, a list the date it groups by.
+  const groupDef =
+    config.mode === 'board'
+      ? pickGroupDef(schema, config.groupBy)
+      : config.mode === 'list'
+        ? pickDateDef(schema, config.groupBy)
+        : undefined
+  const groupName = groupDef?.name.toLowerCase()
   const switchable = VIEW_SEGMENTS.some((s) => s.mode === config.mode)
 
   return (
@@ -655,53 +673,17 @@ function CollectionBoard({
       },
     })
 
-  // The selected card, and how it was chosen: a keyboard open moves focus into the
-  // peek; a pointer one leaves it where the person is. Derived against `rows`, so a
-  // card that is deleted or filtered away closes its own peek.
-  const [selection, setSelection] = useState<{ id: string; via: 'pointer' | 'keyboard' } | null>(
-    null
-  )
-  const selectedRow = selection ? rows.find((r) => r.id === selection.id) : undefined
-  const boardRef = useRef<HTMLDivElement>(null)
+  const {
+    rootRef: boardRef,
+    selection,
+    selectedRow,
+    select: setSelection,
+  } = useRecordSelection(rows)
   // A drag that ends over its own card still fires a click — it must not select.
   const draggedRef = useRef(false)
   useEffect(() => {
     if (drag?.active) draggedRef.current = true
   }, [drag?.active])
-
-  const selectedId = selectedRow?.id
-  useEffect(() => {
-    if (!selectedId) return
-    const close = () => {
-      const peek = boardRef.current?.querySelector('[data-part="record-peek"]')
-      const focusInPeek = !!peek?.contains(document.activeElement)
-      setSelection(null)
-      if (focusInPeek) {
-        boardRef.current?.querySelector<HTMLElement>(`[data-row-id="${selectedId}"]`)?.focus()
-      }
-    }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    // Empty paper closes; a card, the peek and any popup it opens do not.
-    const handlePointerDown = (e: PointerEvent) => {
-      if (!(e.target instanceof Element)) return
-      if (
-        e.target.closest(
-          '[data-part="card"], [data-part="record-peek"], [role="dialog"], [role="listbox"], [role="menu"]'
-        )
-      ) {
-        return
-      }
-      setSelection(null)
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown)
-      document.removeEventListener('pointerdown', handlePointerDown)
-    }
-  }, [selectedId])
 
   if (!grouped) {
     return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
@@ -972,29 +954,6 @@ function CollectionBoard({
         </div>
       )}
     </div>
-  )
-}
-
-/** The repeat tag's mark (`Pond 02` 2u): hand-drawn, 11px, stroke 1.4, round caps. */
-function RepeatMark() {
-  return (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 12 12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="flex-none"
-      aria-hidden
-    >
-      <path d="M2.2 6a3.8 3.8 0 0 1 6.6-2.6" />
-      <path d="M9 1.6v2.2H6.8" />
-      <path d="M9.8 6a3.8 3.8 0 0 1-6.6 2.6" />
-      <path d="M3 10.4V8.2h2.2" />
-    </svg>
   )
 }
 

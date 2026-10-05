@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
 
 import { CollectionView } from './view'
+import { CollectionList } from './list'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
@@ -316,7 +317,7 @@ export const ViewBarGeometryInk: Story = {
   },
 }
 
-/** The switcher is the four modes that exist, lowercase, in the board's order. */
+/** The switcher is the five modes that exist, lowercase, in the board's order. */
 export const ViewBarSegments: Story = {
   args: {
     config: boardConfig,
@@ -333,6 +334,7 @@ export const ViewBarSegments: Story = {
       'timeline',
       'table',
       'calendar',
+      'list',
     ])
   },
 }
@@ -1015,6 +1017,292 @@ export const BoardCardIsKeyboardReachable: Story = {
 
     await userEvent.keyboard(' ')
     await expect(canvasElement.querySelector('[data-part="record-peek"]')).not.toBeNull()
+  },
+}
+
+// ── List (6v) ──────────────────────────────────────────────────────────────────
+
+/** A fixed Wednesday, so the buckets read the same on any day the suite runs. */
+const LIST_TODAY = new Date(2026, 9, 21)
+
+const listSchema: PropertySchema = [
+  {
+    id: 'l-status',
+    name: 'status',
+    type: 'status',
+    options: [
+      { id: 'l-todo', label: 'to do' },
+      { id: 'l-done', label: 'done' },
+    ],
+  },
+  { id: 'l-due', name: 'due', type: 'date' },
+  { id: 'l-repeat', name: 'repeats', type: 'text' },
+]
+
+const listRows: CollectionRow[] = [
+  { id: 'l1', title: 'cabinet quote', values: { 'l-status': 'l-todo', 'l-due': '2026-10-21' } },
+  {
+    id: 'l2',
+    title: 'chase the cabinet quote',
+    values: { 'l-status': 'l-todo', 'l-due': '2026-10-23', 'l-repeat': 'every 4 days' },
+  },
+  {
+    id: 'l3',
+    title: 'confirm alcove at 84cm',
+    values: { 'l-status': 'l-todo', 'l-due': '2026-10-22' },
+  },
+  { id: 'l4', title: 'order the worktop', values: { 'l-status': 'l-todo', 'l-due': '2026-10-27' } },
+  {
+    id: 'l5',
+    title: 'check the dehumidifier',
+    values: { 'l-status': 'l-done', 'l-due': '2026-10-19', 'l-repeat': 'every mon' },
+  },
+  {
+    id: 'l6',
+    title: 'skip hire returned',
+    values: { 'l-status': 'l-done', 'l-due': '2026-10-13' },
+  },
+]
+
+const listArgs = {
+  config: { id: 'v', type: 'view', mode: 'list' } as ViewBlock,
+  schema: listSchema,
+  rows: listRows,
+}
+
+const renderList = (props: Partial<ComponentProps<typeof CollectionList>> = {}) => (
+  <CollectionList schema={listSchema} rows={listRows} today={LIST_TODAY} {...props} />
+)
+
+async function assertListGeometry(root: HTMLElement, base: 'ink' | 'paper') {
+  const card = getComputedStyle(root.querySelector<HTMLElement>('[data-part="list-card"]')!)
+  await expect(pxOf(card.borderTopLeftRadius)).toBeCloseTo(20, 1)
+  await expect(card.paddingTop).toBe('16px')
+  await expect(card.paddingLeft).toBe('18px')
+  await expect(pxOf(card.rowGap)).toBeCloseTo(20, 1)
+  await expect(shadowLayers(card.boxShadow)).toHaveLength(2)
+
+  const label = getComputedStyle(root.querySelector<HTMLElement>('[data-part="list-group-label"]')!)
+  await expect(pxOf(label.fontSize)).toBeCloseTo(10.5, 1)
+  await expect(label.fontWeight).toBe('500')
+  await expect(pxOf(label.letterSpacing)).toBeCloseTo(1.05, 1)
+  await expect(label.textTransform).toBe('uppercase')
+  await expect(pxOf(label.paddingBottom)).toBeCloseTo(4, 1)
+  await expectTier(label.color, base, 0.68)
+
+  const row = getComputedStyle(root.querySelector<HTMLElement>('[data-part="list-row"]')!)
+  await expect(pxOf(row.columnGap)).toBeCloseTo(11, 1)
+  await expect(pxOf(row.fontSize)).toBeCloseTo(14, 1)
+  await expect(row.paddingTop).toBe('8px')
+  await expect(row.paddingLeft).toBe('6px')
+  await expect(row.marginLeft).toBe('-6px')
+  await expect(pxOf(row.borderTopLeftRadius)).toBeCloseTo(8, 1)
+  await expect(pxOf(row.borderBottomWidth)).toBeCloseTo(1, 1)
+  await expect(alphaOf(row.borderBottomColor)).toBeCloseTo(0.055, 2)
+
+  const box = root.querySelector<HTMLElement>('[data-part="list-row"] [role="checkbox"]')!
+  const bs = getComputedStyle(box)
+  await expect(pxOf(bs.width)).toBeCloseTo(15, 1)
+  await expect(pxOf(bs.height)).toBeCloseTo(15, 1)
+  await expect(pxOf(bs.borderTopLeftRadius)).toBeCloseTo(4, 1)
+
+  const due = getComputedStyle(root.querySelector<HTMLElement>('[data-part="list-due"]')!)
+  await expect(pxOf(due.minWidth)).toBeCloseTo(64, 1)
+  await expect(due.textAlign).toBe('right')
+  await expect(pxOf(due.fontSize)).toBeCloseTo(11, 1)
+  await expect(due.fontWeight).toBe('500')
+  await expectTier(due.color, base, 0.8)
+
+  // A done row steps down to .68 and fills its box with the ink.
+  const doneRow = root.querySelector<HTMLElement>('[data-part="list-row"][data-done]')!
+  await expectTier(getComputedStyle(doneRow).color, base, 0.68)
+  const doneBox = getComputedStyle(doneRow.querySelector<HTMLElement>('[role="checkbox"]')!)
+  await expectTier(doneBox.backgroundColor, base, 1)
+  await expect(doneRow.querySelector('[role="checkbox"] svg')).not.toBeNull()
+}
+
+/** 6v: one card, groups in the board's order — today, this week, next week, done. */
+export const ListMatchesTheBoard: Story = {
+  args: listArgs,
+  render: () => renderList(),
+  play: async ({ canvasElement }) => {
+    const groups = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="list-group"]')]
+    await expect(groups.map((g) => g.dataset.group)).toEqual([
+      'today',
+      'this week',
+      'next week',
+      'done',
+    ])
+    await expect(
+      [...groups[1].querySelectorAll('[data-part="list-row"]')].map((r) =>
+        r.getAttribute('aria-label')
+      )
+    ).toEqual(['confirm alcove at 84cm', 'chase the cabinet quote'])
+    await expect(canvasElement.querySelectorAll('[data-part="list-card"]')).toHaveLength(1)
+    // A single card: the list is not wrapped in a block frame, and has no eyebrow.
+    await expect(canvasElement.querySelector('[data-part="list-eyebrow"]')).toBeNull()
+    await assertListGeometry(canvasElement, 'ink')
+
+    const repeat = canvasElement.querySelector<HTMLElement>('[data-part="list-repeat"]')!
+    await expect(repeat).toHaveTextContent('every 4 days')
+    await expect(repeat.querySelector('svg')).toHaveAttribute('stroke-width', '1.4')
+    await expectTier(getComputedStyle(repeat).color, 'ink', 0.8)
+  },
+}
+
+export const ListMatchesTheBoardInk: Story = {
+  args: listArgs,
+  render: () => renderList(),
+  decorators: [
+    (Story) => (
+      <div className="dark bg-raw-ink p-mn-4">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await assertListGeometry(canvasElement, 'paper')
+    const card = getComputedStyle(
+      canvasElement.querySelector<HTMLElement>('[data-part="list-card"]')!
+    )
+    for (const l of shadowLayers(card.boxShadow)) await expect(lightnessOf(l)).toBeLessThan(0.25)
+  },
+}
+
+/** One orange `today` per screen: only the first open record due today wears it. */
+export const ListOnlyTheFirstTodayIsOrange: Story = {
+  args: listArgs,
+  render: () =>
+    renderList({
+      rows: [
+        {
+          id: 'a',
+          title: 'ship the invoice',
+          values: { 'l-status': 'l-done', 'l-due': '2026-10-21' },
+        },
+        {
+          id: 'b',
+          title: 'call the joiner',
+          values: { 'l-status': 'l-todo', 'l-due': '2026-10-21' },
+        },
+        {
+          id: 'c',
+          title: 'confirm the delivery',
+          values: { 'l-status': 'l-todo', 'l-due': '2026-10-21' },
+        },
+      ],
+    }),
+  play: async ({ canvasElement }) => {
+    const rowOf = (title: string) =>
+      canvasElement.querySelector<HTMLElement>(`[data-part="list-row"][aria-label="${title}"]`)!
+    await expect(canvasElement.querySelectorAll('[data-part="due-today"]')).toHaveLength(1)
+    const pill = rowOf('call the joiner').querySelector<HTMLElement>('[data-part="due-today"]')!
+    await expect(getComputedStyle(pill).backgroundColor).toBe('rgb(217, 102, 41)')
+    for (const title of ['confirm the delivery', 'ship the invoice']) {
+      const due = rowOf(title).querySelector<HTMLElement>('[data-part="list-due"]')!
+      await expect(due).toHaveTextContent('today')
+      await expect(due.querySelector('[data-part="due-today"]')).toBeNull()
+    }
+  },
+}
+
+/** The tick is the person's own edit: it writes the `done` status, and unticks to the first open one. */
+export const ListTickWritesStatus: Story = {
+  args: { ...listArgs, onEdit: fn() },
+  render: (args) => renderList({ editable: true, onEdit: args.onEdit }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('checkbox', { name: 'chase the cabinet quote done' }))
+    await expect(args.onEdit).toHaveBeenLastCalledWith('l2', 'l-status', 'l-done')
+    await userEvent.click(canvas.getByRole('checkbox', { name: 'skip hire returned done' }))
+    await expect(args.onEdit).toHaveBeenLastCalledWith('l6', 'l-status', 'l-todo')
+    // The tick is its own control: it did not select the row.
+    await expect(canvasElement.querySelector('[data-part="record-peek"]')).toBeNull()
+  },
+}
+
+/** A read-only list ticks nothing — the boxes are drawn, inert. */
+export const ListReadOnlyBoxesAreInert: Story = {
+  args: { ...listArgs, onEdit: fn() },
+  render: (args) => renderList({ onEdit: args.onEdit }),
+  play: async ({ canvasElement, args }) => {
+    const box = within(canvasElement).getByRole('checkbox', {
+      name: 'chase the cabinet quote done',
+    })
+    await expect(box).toBeDisabled()
+    await userEvent.click(box)
+    await expect(args.onEdit).not.toHaveBeenCalled()
+  },
+}
+
+/** A row is a tab stop; click or Enter selects it and opens the record peek beside the view. */
+export const ListRowSelectsAndPeeks: Story = {
+  args: listArgs,
+  render: () => renderList({ editable: true, onEdit: fn() }),
+  play: async ({ canvasElement }) => {
+    const rowOf = (title: string) =>
+      canvasElement.querySelector<HTMLElement>(`[data-part="list-row"][aria-label="${title}"]`)!
+    const peek = () => canvasElement.querySelector<HTMLElement>('[data-part="record-peek"]')
+
+    const first = rowOf('chase the cabinet quote')
+    await expect(first).toHaveAttribute('tabindex', '0')
+    await userEvent.click(first)
+    await expect(first).toHaveAttribute('aria-current', 'true')
+    await expect(within(peek()!).getByText('chase the cabinet quote')).toBeInTheDocument()
+    const outline = getComputedStyle(first)
+    await expect(outline.outlineStyle).toBe('solid')
+    await expect(alphaOf(outline.outlineColor)).toBeCloseTo(0.5, 1)
+
+    const second = rowOf('order the worktop')
+    await userEvent.click(second)
+    await expect(canvasElement.querySelectorAll('[data-part="record-peek"]')).toHaveLength(1)
+    await expect(first).not.toHaveAttribute('aria-current')
+
+    await userEvent.keyboard('{Escape}')
+    await expect(peek()).toBeNull()
+
+    rowOf('skip hire returned').focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(peek()!.contains(document.activeElement)).toBe(true)
+    await userEvent.keyboard('{Escape}')
+    await expect(document.activeElement).toBe(rowOf('skip hire returned'))
+  },
+}
+
+/**
+ * 6v's head: the database's name, `grouped by due`, and the switcher with `list`
+ * lit — all drawn above the card, none inside it.
+ */
+export const ListHeadAndSwitcher: Story = {
+  args: { ...listArgs, collectionName: 'tasks', editable: true, onConfigChange: fn() },
+  play: async ({ canvasElement, args }) => {
+    const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
+    await expect(head).toHaveTextContent('tasks')
+    await expect(head).toHaveTextContent('grouped by due')
+    const segments = [...canvasElement.querySelectorAll('[data-part="view-segment"]')]
+    await expect(segments.map((s) => s.textContent)).toEqual([
+      'board',
+      'timeline',
+      'table',
+      'calendar',
+      'list',
+    ])
+    await expect(
+      canvasElement.querySelector('[data-part="view-segment"][data-active]')
+    ).toHaveTextContent('list')
+    await expect(canvasElement.querySelector('[data-part="list-card"]')!.contains(head)).toBe(false)
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'board' }))
+    await expect(args.onConfigChange).toHaveBeenCalledWith({ mode: 'board' })
+  },
+}
+
+/** A collection with no date property has nothing to group by, and says so. */
+export const ListNeedsADate: Story = {
+  args: { ...listArgs, schema: listSchema.filter((d) => d.type !== 'date') },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByText('This list needs a date property.')
+    ).toBeInTheDocument()
   },
 }
 

@@ -61,6 +61,11 @@ describe('blockWord — each block’s name', () => {
       'board',
     ],
     [
+      'a list draws its own card, so it is named by its mode',
+      { id: 'l', type: 'view', mode: 'list' },
+      'list',
+    ],
+    [
       'a gallery view is already its own word',
       { id: 'g', type: 'view', mode: 'gallery' },
       'gallery',

@@ -54,9 +54,14 @@ export function blockWord(block: Block): string {
   // not one of `VIEW_MODES` comes back shaped but kindless, and a summary line
   // must never render `undefined` at the person.
   if (frame?.kind) return KIND_WORD[frame.kind] ?? frame.kind
-  // No frame: bare prose, or a view that sits on the page without a card — the
-  // board's lanes and the chart card — which the board names by its mode.
-  if (block.type === 'view' && (block.mode === 'board' || block.mode === 'chart')) return block.mode
+  // No frame: bare prose, or a view that draws its own surface instead of the block
+  // card — the board's lanes, the list card, the chart card — named by its mode.
+  if (
+    block.type === 'view' &&
+    (block.mode === 'board' || block.mode === 'list' || block.mode === 'chart')
+  ) {
+    return block.mode
+  }
   if (block.type === 'text') {
     return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
   }

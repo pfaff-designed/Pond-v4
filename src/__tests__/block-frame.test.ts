@@ -156,6 +156,11 @@ const FRAMES: ReadonlyArray<[string, Block, BlockFrame | null]> = [
     null,
   ],
   [
+    'view list → no block card: 6v’s list is its own card',
+    { id: 'v', type: 'view', mode: 'list' },
+    null,
+  ],
+  [
     'view calendar → the table card',
     { id: 'v', type: 'view', mode: 'calendar' },
     { kind: 'table', heading: 'calendar', headNote: '' },
