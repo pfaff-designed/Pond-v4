@@ -1,8 +1,9 @@
 /**
  * ⌘K has one owner: `ShellCommands`. It opens the palette, closes it, and closes
  * the save-as-template sheet the palette becomes (`Pond 06.09` frame 3) — and a
- * press while the sheet is open must not raise the list behind it. `CommandPalette`
- * itself handles esc and a press outside, and nothing else.
+ * press while the sheet is open must not raise the list behind it. `PondCommand`
+ * itself handles a click on it, esc and a press outside, and nothing else. A close
+ * is a 150ms collapse, so the list leaves once it has finished.
  */
 
 import React from 'react'
@@ -62,7 +63,7 @@ describe('ShellCommands — ⌘K is Ctrl+K off a Mac, and never both on one plat
     press({ metaKey: true })
     expect(await screen.findByRole('combobox', LIST)).toBeInTheDocument()
     press({ metaKey: true })
-    expect(screen.queryByRole('combobox', LIST)).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('combobox', LIST)).toBeNull())
   })
 
   it('elsewhere: Ctrl+K toggles; the Windows key does nothing', async () => {
@@ -73,7 +74,7 @@ describe('ShellCommands — ⌘K is Ctrl+K off a Mac, and never both on one plat
     press({ ctrlKey: true })
     expect(await screen.findByRole('combobox', LIST)).toBeInTheDocument()
     press({ ctrlKey: true })
-    expect(screen.queryByRole('combobox', LIST)).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('combobox', LIST)).toBeNull())
   })
 })
 

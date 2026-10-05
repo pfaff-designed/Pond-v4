@@ -1,5 +1,5 @@
 /**
- * What the ⌘K palette lists for a query — pure, so `CommandPalette.tsx` only
+ * What the ⌘K palette lists for a query — pure, so `PondCommand.tsx` only
  * draws (#279, child b of #226). The states are `PondPicker.dc.html`'s
  * `kind="palette"` frames and `Pond 02` 2g's captions:
  *

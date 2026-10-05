@@ -1,16 +1,7 @@
 /**
- * Decoupled shell commands — the same shape as `terminal-focus`. The palette is
- * owned once, at the shell level, by `ShellCommands`, which listens for these
- * events; a presentational molecule (the breadcrumb) raises them and never
- * imports a modal.
+ * The ⌘K chord, read the same way by its one owner (`ShellCommands`) wherever
+ * it is pressed.
  */
-
-export const OPEN_PALETTE_EVENT = 'pond:open-palette'
-
-/** Open the ⌘K command palette. */
-export function requestCommandPalette() {
-  window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))
-}
 
 interface NavigatorWithUserAgentData extends Navigator {
   userAgentData?: { platform: string }

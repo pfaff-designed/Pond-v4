@@ -29,6 +29,8 @@
  * Class strings are template literals, not `cn()` (#252).
  */
 
+import type { CSSProperties } from 'react'
+
 import { Icon } from '@/components/atoms/Icon'
 
 import type { PaletteEntry } from './palette-entries'
@@ -47,12 +49,15 @@ export function PaletteRow({
   selected,
   onHover,
   onPick,
+  style,
 }: {
   id: string
   entry: PaletteRowEntry
   selected: boolean
   onHover: () => void
   onPick: () => void
+  /** The host's entry motion (`PondCommand` staggers each row in). */
+  style?: CSSProperties
 }) {
   const { item } = entry
   const isAction = item.kind === 'action'
@@ -68,6 +73,7 @@ export function PaletteRow({
       data-part="row"
       data-kind={item.kind}
       className={`${ROW} ${ink} ${wash}`}
+      style={style}
       onMouseEnter={onHover}
       onClick={onPick}
     >

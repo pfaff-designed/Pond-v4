@@ -1,15 +1,17 @@
 'use client'
 
 /**
- * The shell's command owner (#96; was `TopBar`). Renders NO chrome of its own.
+ * The shell's command owner (#96; was `TopBar`). Renders `PondCommand` — the
+ * breadcrumb and the ⌘K palette as one element (`Pond 02` 2g) — at the shell's
+ * top centre (`Pond 05 Shell`: top 20, left calc(50% + 13px), translateX(-50%)),
+ * showing the path the open page publishes (`lib/layout/command-path`).
  *
- * Owns the ⌘K palette (#279): pages, records and actions in one list, over the
- * shared `['pages']` cache via `lib/pages/palette-items`. The breadcrumb's ⌘K chip
- * raises a decoupled request (`lib/shell-commands`) that this organism answers.
- * ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key). This file is
- * its one owner: it opens the palette, closes it, and closes the save-as-template
- * sheet the palette becomes — `CommandPalette` itself only handles esc and a press
- * outside.
+ * It feeds the palette what only the shell can know: pages, records and actions
+ * in one list over the shared `['pages']` cache (`lib/pages/palette-items`), the
+ * records matching what is typed, and the other ponds. ⌘K is Ctrl+K off a Mac
+ * (AUDIT K3). This file is its one owner: it opens the palette, closes it, and
+ * closes the save-as-template sheet the palette becomes — `PondCommand` itself
+ * handles a click on it, esc and a press outside.
  *
  * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
  * open the New page dialog here: name-first, defaulting the destination to the
@@ -21,18 +23,27 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
-import type { PaletteItem } from '@/components/molecules/CommandPalette'
+import type { PaletteItem } from '@/components/molecules/palette-entries'
+import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
-import { ShellPalette } from '@/components/organisms/ShellPalette'
+import { PondCommand, type PaletteSheet } from '@/components/organisms/PondCommand'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
-import { isPaletteChord, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
+import { isPaletteChord } from '@/lib/shell-commands'
+import { useCommandPath } from '@/lib/layout/command-path'
 import { workspaceUrl } from '@/lib/pages/nav'
-import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
+import {
+  newPageParent,
+  paletteItems,
+  paletteScope,
+  pondItems,
+} from '@/lib/pages/palette-items'
+import { usePaletteRecords } from '@/lib/pages/use-palette-records'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
-import { usePondId } from '@/lib/pond/context'
+import { usePond, usePondId } from '@/lib/pond/context'
 import { pondHref } from '@/lib/pond/active'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { SaveAsTemplateBody } from '@/components/organisms/SaveAsTemplateSheet'
 import { templateSummary } from '@/lib/templates/summary'
 import { getPage } from '@/lib/pages/client'
@@ -45,6 +56,9 @@ import { createClient } from '@/lib/supabase/client'
 const RECENT_PAGES_KEY = 'pond:recent-pages'
 /** `Pond 02` 2g: "before anything is typed: the last three pages". */
 const RECENT_MAX = 3
+
+/** `Pond 05 Shell`'s placement: centred on the whole shell, 20px off its top. */
+const PLACEMENT = 'absolute top-5 left-[calc(50%_+_13px)] w-max -translate-x-1/2'
 
 interface RecentEntry {
   id: string
@@ -82,37 +96,46 @@ export function ShellCommands() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createTitle, setCreateTitle] = useState('')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
   const pondId = usePondId()
   const pondName = usePondName()
+  const { pond, ponds } = usePond()
+  const published = useCommandPath()
 
   const { data: pages = [] } = useQuery({
     queryKey: pagesKey(pondId),
     queryFn: () => fetchPages(pondId),
   })
+  const records = usePaletteRecords(normalizeQuery(query))
 
-  const closePalette = useCallback(() => setPaletteOpen(false), [])
+  // Before the open page has published its path, the pill reads the pond's root.
+  const path = published ?? { glyph: pond?.glyph ?? LIFE_GLYPH, trail: [], current: pondName }
 
   // Recents are read as the palette opens, so a page opened from it lists next time.
   const items = useMemo(
     () =>
       paletteOpen
-        ? paletteItems(
-            pages,
-            readRecents().map((r) => r.id),
-            currentNodeId
-          )
+        ? [
+            ...paletteItems(
+              pages,
+              readRecents().map((r) => r.id),
+              currentNodeId
+            ),
+            ...pondItems(ponds, pond?.id ?? null),
+            ...records,
+          ]
         : [],
-    [pages, paletteOpen, currentNodeId]
+    [pages, paletteOpen, currentNodeId, ponds, pond, records]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
   /**
    * `6i` frame 3. Saving is a page action, so the sheet opens on the page in
    * view — and the palette BECOMES the sheet rather than being covered by one,
    * so the name, the tick and the in-flight state live here and are handed to
-   * `CommandPalette`'s sheet mode. One owner for the name: it is both the head's
-   * field and the template's name.
+   * `PondCommand`'s sheet mode. One owner for the name: it is both the field and
+   * the template's name.
    */
   const [saveTemplateFor, setSaveTemplateFor] = useState<{
     id: string
@@ -133,8 +156,7 @@ export function ShellCommands() {
 
   // Global ⌘K → toggle the palette, or close the sheet it launched (the list is not
   // open then, so a toggle would raise it behind the sheet). Capture phase on the
-  // document, so it fires before a focused editor/input can swallow it. The
-  // breadcrumb's ⌘K chip arrives as a window event.
+  // document, so it fires before a focused editor/input can swallow it.
   const templateSheetOpen = saveTemplateFor !== null
   const pondSheetOpen = naming !== null
   useEffect(() => {
@@ -146,14 +168,18 @@ export function ShellCommands() {
       else if (pondSheetOpen) closeNewPondSheet()
       else setPaletteOpen((prev) => !prev)
     }
-    const openPalette = () => setPaletteOpen(true)
     document.addEventListener('keydown', onKey, { capture: true })
-    window.addEventListener(OPEN_PALETTE_EVENT, openPalette)
-    return () => {
-      document.removeEventListener('keydown', onKey, { capture: true })
-      window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
-    }
+    return () => document.removeEventListener('keydown', onKey, { capture: true })
   }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet])
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) setPaletteOpen(true)
+      else if (templateSheetOpen) closeTemplateSheet()
+      else setPaletteOpen(false)
+    },
+    [templateSheetOpen, closeTemplateSheet]
+  )
 
   // One owner for where a new page files: the palette's row names `parent.title`
   // and the dialog opens on `parent.id` — never derived twice.
@@ -164,20 +190,6 @@ export function ShellCommands() {
 
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
-      closePalette()
-      if (item.action === 'new-page') {
-        setCreateTitle(item.query ?? '')
-        setCreateOpen(true)
-        return
-      }
-      if (item.action === 'new-pond') {
-        setNaming(item.query ?? '')
-        return
-      }
-      if (item.action === 'ask-pond') {
-        requestTerminalFocus(item.query)
-        return
-      }
       if (item.action === 'save-as-template') {
         // The row lists only with a page open, so `currentNodeId` is set here.
         if (!currentNodeId) return
@@ -191,10 +203,27 @@ export function ShellCommands() {
         // summary of what the template will contain ("6 blocks — …"), so the
         // sheet cannot be drawn without them. `fetchPages` is a lean projection
         // with no `blocks`, and the open page's cache belongs to DocumentPanel.
+        // The list stays open until the sheet replaces it, so the box never
+        // collapses between the two.
         void (async () => {
           const page = await getPage(createClient(), currentNodeId)
           setSaveTemplateFor({ id: currentNodeId, title, blocks: page?.blocks ?? [] })
+          setPaletteOpen(false)
         })()
+        return
+      }
+      setPaletteOpen(false)
+      if (item.action === 'new-page') {
+        setCreateTitle(item.query ?? '')
+        setCreateOpen(true)
+        return
+      }
+      if (item.action === 'new-pond') {
+        setNaming(item.query ?? '')
+        return
+      }
+      if (item.action === 'ask-pond') {
+        requestTerminalFocus(item.query)
         return
       }
       if (item.kind === 'pond') {
@@ -211,16 +240,11 @@ export function ShellCommands() {
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [closePalette, pages, router, currentNodeId]
+    [pages, router, currentNodeId]
   )
 
   /**
    * Save the page in view as a template (KAN-10 / #157, board `6i`).
-   *
-   * The page's BLOCKS are fetched here rather than held in state: the palette
-   * reads `fetchPages`, a lean projection with no `blocks` at all, and the open
-   * page's own cache belongs to `DocumentPanel`. One read at save time is both
-   * simpler and certain to be current.
    *
    * `templateBlocksFrom` is what decides what the template carries — by default
    * the stack, the labels and the placeholders, never the content (`6i` frame 4).
@@ -257,6 +281,40 @@ export function ShellCommands() {
     }
   }, [saveTemplateFor, templateName, keepContent, savingTemplate, pondId, closeTemplateSheet])
 
+  const sheet = useMemo<PaletteSheet | null>(
+    () =>
+      saveTemplateFor
+        ? {
+            body: (
+              <SaveAsTemplateBody
+                keepContent={keepContent}
+                onKeepContentChange={setKeepContent}
+                summary={templateSummary(saveTemplateFor.blocks)}
+                canSave={templateName.trim() !== '' && !savingTemplate}
+                saving={savingTemplate}
+                error={templateError}
+                onSave={() => void saveAsTemplate()}
+                onCancel={closeTemplateSheet}
+              />
+            ),
+            value: templateName,
+            onValueChange: setTemplateName,
+            placeholder: 'name this template',
+            onSubmit: () => void saveAsTemplate(),
+            label: 'Template name',
+          }
+        : null,
+    [
+      saveTemplateFor,
+      keepContent,
+      templateName,
+      savingTemplate,
+      templateError,
+      saveAsTemplate,
+      closeTemplateSheet,
+    ]
+  )
+
   return (
     <>
       <CreatePageModal
@@ -266,39 +324,19 @@ export function ShellCommands() {
         defaultTitle={createTitle}
       />
       {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
-      {(paletteOpen || saveTemplateFor) && (
-        <ShellPalette
-          items={items}
-          scope={scope}
-          pondName={pondName}
-          parentTitle={parent.title}
-          onSelect={handlePaletteSelect}
-          onClose={saveTemplateFor ? closeTemplateSheet : closePalette}
-          sheet={
-            saveTemplateFor
-              ? {
-                  body: (
-                    <SaveAsTemplateBody
-                      keepContent={keepContent}
-                      onKeepContentChange={setKeepContent}
-                      summary={templateSummary(saveTemplateFor.blocks)}
-                      canSave={templateName.trim() !== '' && !savingTemplate}
-                      saving={savingTemplate}
-                      error={templateError}
-                      onSave={() => void saveAsTemplate()}
-                      onCancel={closeTemplateSheet}
-                    />
-                  ),
-                  value: templateName,
-                  onValueChange: setTemplateName,
-                  placeholder: 'name this template',
-                  onSubmit: () => void saveAsTemplate(),
-                  label: 'Template name',
-                }
-              : null
-          }
-        />
-      )}
+      <PondCommand
+        className={PLACEMENT}
+        path={path}
+        open={paletteOpen || templateSheetOpen}
+        onOpenChange={handleOpenChange}
+        items={items}
+        scope={scope}
+        pondName={pondName}
+        parentTitle={parent.title}
+        onSelect={handlePaletteSelect}
+        onQueryChange={setQuery}
+        sheet={sheet}
+      />
     </>
   )
 }

@@ -45,7 +45,6 @@ jest.mock('@/lib/pond/context', () => ({
 jest.mock('@/lib/pond/client', () => ({ createPond: jest.fn(), listPonds: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
-import { ShellPalette } from '@/components/organisms/ShellPalette'
 import { searchRecords } from '@/lib/pages/palette-records'
 
 const search = searchRecords as jest.Mock
@@ -131,18 +130,6 @@ describe('records', () => {
   })
 })
 
-it('a palette opened with a query already typed searches records for it', async () => {
-  render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <ShellPalette items={[]} defaultQuery="Cab " onSelect={jest.fn()} onClose={jest.fn()} />
-    </QueryClientProvider>
-  )
-  await rowNamed(/cab inet quote/)
-  expect(search).toHaveBeenCalledWith({ marker: 'client' }, 'p-life', 'cab')
-})
-
 describe('ponds', () => {
   it('another pond lists under `ponds`, above `pages in life`, as `pond · switch` with no ⌘n hint', async () => {
     renderShell()
@@ -177,7 +164,9 @@ describe('ponds', () => {
     fireEvent.click(await rowNamed(/new pond “make”/))
     const sheet = await screen.findByRole('dialog', { name: 'New pond' })
     expect(within(sheet).getByRole('textbox')).toHaveValue('make')
-    expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    )
   })
 })
 
@@ -191,7 +180,9 @@ describe('⌘K while the New pond sheet is open', () => {
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New pond' })).toBeNull())
-    expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    )
     expect(screen.queryByRole('listbox')).toBeNull()
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })

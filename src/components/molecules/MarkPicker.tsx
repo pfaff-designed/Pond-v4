@@ -4,7 +4,7 @@
  * The mark picker (issue #134) — choose a page's glyph and its area colour.
  *
  * Purely presentational: the current mark and both intents are injected, and the
- * connected `PageMarkButton` organism owns the write. Press aesthetics — kicker
+ * host (`NewPondSheet`) owns the write. Press aesthetics — kicker
  * headings, mono meta, hairline rules — matching `BacklinksSection` and
  * `PageChangesSection`.
  *

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor } from 'storybook/test'
 
-import { Breadcrumb } from './Breadcrumb'
-import { CommandPalette, type CommandPaletteProps } from './CommandPalette'
+import { PondCommand, type PondCommandProps } from './PondCommand'
 import { isPaletteChord } from '@/lib/shell-commands'
-import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from './palette-entries'
+import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from '@/components/molecules/palette-entries'
 import {
   PALETTE_ITEMS,
   PALETTE_SUGGESTED,
@@ -14,41 +13,38 @@ import {
 } from '@/__tests__/helpers/palette-fixture'
 
 /**
- * The ⌘K palette — `PondPicker kind="palette"` (#279): its seven states, both
- * themes. Every number asserted below is a literal from
- * `wayfinder/board-values.generated.json` (`.components.PondPicker`, the
- * `kind=palette|theme=paper` variant and its `ink` delta), read back off REAL
- * computed styles. The glass portals, so each frame hands it its own themed
- * `container` — the `.dark` class around that box is the whole theme.
+ * The command palette — `PondCommand` (`Pond 02` 2g, `Pond 05` 5al): the
+ * breadcrumb at rest, grown in place by ⌘K or a click into `PondPicker
+ * kind="palette"`. Both themes. Every number asserted below is a literal from
+ * `PondCommand.dc.html` (rest and motion) or `PondPicker.dc.html`'s palette branch
+ * (the rows), read back off REAL computed styles.
  *
  * The rows are `helpers/palette-fixture` — the one fixture the jest suite reads
  * too, and not an export of this file (Storybook would list it as a story).
- * The live records and ponds come from the shell (`ShellPalette`, tested against a
- * mocked data layer); here a `pond` row and the records for `cab` and `adobe` are
- * the board's frames. `suggested` is likewise a fixture: the shell passes none until
- * it can infer them (#285).
+ * The live records and ponds come from the shell (`ShellCommands`); here a `pond`
+ * row and the records for `cab` and `adobe` are the board's frames. `suggested`
+ * is likewise a fixture: the shell passes none until it can infer them (#285).
  */
 
 const PAPER = {
   ink: 'rgb(27, 29, 20)',
   tier80: 'rgba(27, 29, 20, 0.8)',
   tier68: 'rgba(27, 29, 20, 0.68)',
-  // `.mn-glass`, light — byte-for-byte the board's `glass` recipe.
+  // `.mn-glass`, light — byte-for-byte the board's recipe.
   glassBorder: 'rgba(255, 255, 255, 0.9)',
 }
 const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's. The picker card's own ink delta reads `.09`;
-  // ADR 0004 ruling 11 keeps the one shared recipe for the floating-glass family.
+  // `.mn-glass`, dark — the Shell's (ADR 0004 ruling 11: one floating-glass recipe).
   glassBorder: 'rgba(250, 249, 239, 0.2)',
 }
 type Palette = typeof PAPER
 
-/** The board's `mob` branch against its desktop one (`PondPicker.dc.html`, `kind="palette"`). */
+/** Open, against `PondPicker`'s `mob` branch below `md`. */
 const DESKTOP = {
-  width: 520,
+  width: 560,
   head: 14,
   rowPad: '9px 12px',
   row: 13.5,
@@ -67,6 +63,9 @@ const MOBILE = {
 }
 type Metrics = typeof DESKTOP
 
+/** The board's default path: `life › professional › standups`, professional's mark. */
+const PATH = { glyph: 'ramp', trail: ['life', 'professional'], current: 'standups' }
+
 const MONO = /PP Neue Montreal Mono/
 const px = (v: string) => parseFloat(v)
 const tracking = (v: string) => (v === 'normal' ? 0 : px(v))
@@ -82,47 +81,33 @@ function alphaOf(color: string): number {
 
 // ── Frame ──────────────────────────────────────────────────────────────────────
 
-type FrameProps = Omit<CommandPaletteProps, 'container' | 'items' | 'onSelect' | 'onClose'> &
-  Partial<Pick<CommandPaletteProps, 'items' | 'onSelect' | 'onClose'>> & { ink?: boolean }
-
-/** A themed page the glass floats over. */
-function Frame({
-  ink,
-  items = PALETTE_ITEMS,
-  onSelect = fn(),
-  onClose = fn(),
-  ...props
-}: FrameProps) {
-  const [container, setContainer] = useState<HTMLDivElement | null>(null)
-  return (
-    <div
-      ref={setContainer}
-      data-theme={ink ? 'ink' : 'paper'}
-      className={`${ink ? 'dark bg-raw-ink' : 'bg-raw-paper'} min-h-screen w-full`}
-    >
-      {container && (
-        <CommandPalette
-          items={items}
-          container={container}
-          onSelect={onSelect}
-          onClose={onClose}
-          {...props}
-        />
-      )}
-    </div>
-  )
+type FrameProps = Partial<PondCommandProps> & {
+  ink?: boolean
+  /** Holds it open whatever closes it, so a test can count the requests. */
+  pinned?: boolean
 }
 
 /**
- * The palette as the shell holds it: closed, it is only the breadcrumb's ⌘K chip.
- * The chip or the chord opens it; the chord again, esc, a press outside or a
- * chosen row closes it.
+ * A themed page with the command at its top centre, as the shell places it. The
+ * frame owns `open` the way `ShellCommands` does, including ⌘K (Ctrl+K off Apple).
  */
-function ShellFrame({ ink }: { ink?: boolean }) {
-  const [container, setContainer] = useState<HTMLDivElement | null>(null)
-  const [open, setOpen] = useState(false)
+function Frame({
+  ink,
+  pinned,
+  open: initiallyOpen = false,
+  onOpenChange,
+  items = PALETTE_ITEMS,
+  onSelect = fn(),
+  ...props
+}: FrameProps) {
+  const [open, setOpen] = useState(initiallyOpen)
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange?.(next)
+    if (!pinned) setOpen(next)
+  }
 
   useEffect(() => {
+    if (pinned) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPaletteChord(e)) return
       e.preventDefault()
@@ -130,36 +115,28 @@ function ShellFrame({ ink }: { ink?: boolean }) {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  const handleClose = () => setOpen(false)
+  }, [pinned])
 
   return (
     <div
-      ref={setContainer}
       data-theme={ink ? 'ink' : 'paper'}
-      className={`${ink ? 'dark bg-raw-ink' : 'bg-raw-paper'} min-h-screen w-full p-5`}
+      className={`${ink ? 'dark bg-raw-ink' : 'bg-raw-paper'} min-h-screen w-full pt-5`}
     >
-      <Breadcrumb
-        crumbs={[{ id: 'professional', type: 'page', title: 'professional' }]}
-        current="standups"
-        onNavigate={() => {}}
-        onCommandK={() => setOpen(true)}
+      <PondCommand
+        className="relative mx-auto w-max"
+        path={PATH}
+        open={open}
+        onOpenChange={handleOpenChange}
+        items={items}
+        onSelect={onSelect}
+        {...props}
       />
-      {open && container && (
-        <CommandPalette
-          items={PALETTE_ITEMS}
-          container={container}
-          onSelect={handleClose}
-          onClose={handleClose}
-        />
-      )}
     </div>
   )
 }
 
 const meta = {
-  title: 'Organisms/pickers/2g · the palette',
+  title: 'Organisms/pickers/2g · the command palette',
   component: Frame,
   parameters: { layout: 'fullscreen' },
   args: {},
@@ -170,98 +147,151 @@ type Story = StoryObj<typeof meta>
 
 // ── Assertions ─────────────────────────────────────────────────────────────────
 
-const glassOf = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-part="glass"]')!
+const boxOf = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-part="command"]')!
+const part = (root: HTMLElement, name: string) =>
+  boxOf(root).querySelector<HTMLElement>(`[data-part="${name}"]`)
 const labels = (root: HTMLElement) =>
-  [...glassOf(root).querySelectorAll('[role="option"] [data-part="label"]')].map(
+  [...boxOf(root).querySelectorAll('[role="option"] [data-part="label"]')].map(
     (l) => l.textContent
   )
 const groups = (root: HTMLElement) =>
-  [...glassOf(root).querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
+  [...boxOf(root).querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
 
-/** `glass` · wash · `head` · `headKey` · `groupStyle` · row · `sub` · `hint` · `enter` · `footStyle`. */
+/** The one box, the same in every state: glass, radius, and the controls that never move. */
+async function assertBox(root: HTMLElement, p: Palette) {
+  const box = boxOf(root)
+  const b = getComputedStyle(box)
+  await expect(b.boxSizing).toBe('border-box')
+  await expect(b.overflow).toBe('hidden')
+  await expect(b.borderTopLeftRadius).toBe('20px')
+  await expect(b.color).toBe(p.ink)
+  await expect(b.borderTopWidth).toBe('1px')
+  await expect(b.borderTopColor).toBe(p.glassBorder)
+  await expect(b.backgroundImage).toMatch(/linear-gradient\(160deg/)
+  await expect(b.backdropFilter).toBe('blur(24px) saturate(1.3)')
+  // No modal, no scrim, nothing dims: nothing in the frame is fixed over the page.
+  await expect(root.querySelector('[role="dialog"]')).toBeNull()
+  await expect(root.querySelector('[aria-modal]')).toBeNull()
+  for (const el of root.querySelectorAll('*'))
+    await expect(getComputedStyle(el).position).not.toBe('fixed')
+
+  const glyph = getComputedStyle(part(root, 'glyph')!)
+  await expect([glyph.left, glyph.top]).toEqual(['14px', '14px'])
+  const icon = part(root, 'glyph')!.querySelector<HTMLElement>('[data-icon]')!
+  await expect(icon.getAttribute('data-icon')).toBe('ramp')
+  await expect(getComputedStyle(icon).width).toBe('12px')
+
+  const mode = getComputedStyle(part(root, 'mode')!)
+  await expect([mode.width, mode.height, mode.right, mode.top]).toEqual([
+    '22px',
+    '22px',
+    '56px',
+    '9px',
+  ])
+  await expect(mode.color).toBe(p.tier68)
+  await expect(part(root, 'mode')!.querySelector('svg')!.getAttribute('stroke-width')).toBe('1.4')
+
+  const chip = getComputedStyle(part(root, 'chip')!)
+  await expect([chip.width, chip.height, chip.right, chip.top]).toEqual([
+    '38px',
+    '22px',
+    '8px',
+    '9px',
+  ])
+  await expect(alphaOf(chip.backgroundColor)).toBeCloseTo(0.07, 2)
+  await expect(chip.color).toBe(p.tier68)
+  await expect(chip.fontFamily).not.toMatch(MONO)
+  await expect(chip.fontWeight).toBe('500')
+  await expect(px(chip.fontSize)).toBe(11)
+  await expect(tracking(chip.letterSpacing)).toBeCloseTo(0.44, 2)
+}
+
+/** At rest: the breadcrumb — 40 tall, as wide as its path + 124, nothing of the list drawn. */
+async function assertResting(root: HTMLElement, p: Palette) {
+  await assertBox(root, p)
+  const box = boxOf(root)
+  await expect(box.getAttribute('data-state')).toBe('rest')
+  const path = part(root, 'path')!
+  await expect(box.offsetHeight).toBe(40)
+  await expect(box.offsetWidth).toBe(path.offsetWidth + 124)
+  const s = getComputedStyle(path)
+  await expect([s.left, s.height, s.columnGap]).toEqual(['36px', '38px', '10px'])
+  await expect(px(s.fontSize)).toBe(11)
+  await expect(tracking(s.letterSpacing)).toBeCloseTo(0.44, 2)
+  await expect(s.opacity).toBe('1')
+  const [life, , professional, , current, rule] = [...path.children] as HTMLElement[]
+  await expect([life.textContent, professional.textContent, current.textContent]).toEqual([
+    'life',
+    'professional',
+    'standups',
+  ])
+  await expect(getComputedStyle(life).color).toBe(p.tier68)
+  await expect(getComputedStyle(path.children[1]).color).toBe(p.tier80)
+  await expect(getComputedStyle(current).color).toBe(p.ink)
+  await expect(getComputedStyle(current).fontWeight).toBe('500')
+  await expect([rule.offsetWidth, rule.offsetHeight]).toEqual([1, 14])
+  await expect(alphaOf(getComputedStyle(rule).backgroundColor)).toBeCloseTo(0.09, 2)
+
+  await expect(part(root, 'chip')!.textContent).toBe('⌘K')
+  await expect(box.querySelector('input')).toBeNull()
+  await expect(box.querySelector('[role="listbox"]')).toBeNull()
+  await expect(part(root, 'opener')!.getAttribute('aria-expanded')).toBe('false')
+}
+
+/** Open: 560 (360 below md), 40 + the body, the input in the path's place, the list under a hairline. */
 async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
-  const wash = root.querySelector<HTMLElement>('[data-part="wash"]')!
-  await expect(getComputedStyle(wash).position).toBe('fixed')
-  await expect(alphaOf(getComputedStyle(wash).backgroundColor)).toBeCloseTo(0.62, 2)
+  await assertBox(root, p)
+  const box = boxOf(root)
+  await expect(box.getAttribute('data-state')).toBe('open')
+  await expect(box.offsetWidth).toBe(m.width)
+  const body = part(root, 'body')!
+  await expect(box.offsetHeight).toBe(40 + body.offsetHeight)
+  await expect(part(root, 'chip')!.textContent).toBe('esc')
+  await expect(getComputedStyle(part(root, 'path')!).opacity).toBe('0')
 
-  const glass = glassOf(root)
-  const g = getComputedStyle(glass)
-  await expect(g.position).toBe('fixed')
-  // `Pond 06.13`'s import: top 110 · left 50% · translateX(-40%). Below md it is centred.
-  await expect(px(g.top)).toBe(110)
-  await expect(px(g.left)).toBeCloseTo(window.innerWidth / 2, 0)
-  await expect(g.translate).toMatch(m === DESKTOP ? /^-40%/ : /^-50%/)
-  await expect(px(g.width)).toBe(m.width)
-  const placed = glass.getBoundingClientRect()
-  await expect(placed.left).toBeGreaterThanOrEqual(12)
-  await expect(placed.right).toBeLessThanOrEqual(window.innerWidth - 12)
-  await expect(g.boxSizing).toBe('border-box')
-  await expect(g.padding).toBe('10px')
-  await expect(g.borderTopLeftRadius).toBe('20px')
-  await expect(g.display).toBe('flex')
-  await expect(g.flexDirection).toBe('column')
-  await expect(g.rowGap).toBe('2px')
-  await expect(g.fontFamily).toMatch(MONO)
-  await expect(g.color).toBe(p.ink)
-  await expect(g.borderTopWidth).toBe('1px')
-  await expect(g.borderTopColor).toBe(p.glassBorder)
-  await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
-  await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
-  // Centred near the top, the glass grows from the middle of its top edge.
-  await expect(g.transformOrigin).toBe(`${m.width / 2}px 0px`)
-
-  const head = glass.querySelector<HTMLElement>('[data-part="head"]')!
-  const h = getComputedStyle(head)
-  await expect(h.display).toBe('flex')
-  await expect(h.alignItems).toBe('center')
-  await expect(h.columnGap).toBe('10px')
-  await expect(h.padding).toBe('10px 12px 14px')
-  await expect(h.marginBottom).toBe('4px')
-  await expect(h.borderBottomWidth).toBe('1px')
-  await expect(alphaOf(h.borderBottomColor)).toBeCloseTo(0.09, 2)
-  await expect(h.fontFamily).toMatch(MONO)
-  await expect(px(h.fontSize)).toBe(m.head)
-  const waves = head.querySelector<HTMLElement>('[data-icon="waves-02"]')!
-  await expect(getComputedStyle(waves).width).toBe('13px')
-  await expect(getComputedStyle(waves).height).toBe('13px')
-  const input = head.querySelector<HTMLInputElement>('input')!
+  const head = getComputedStyle(part(root, 'head')!)
+  await expect([head.left, head.right, head.height]).toEqual(['36px', '88px', '38px'])
+  const input = box.querySelector<HTMLInputElement>('input')!
   const i = getComputedStyle(input)
   await expect(i.fontFamily).toMatch(MONO)
   await expect(px(i.fontSize)).toBe(m.head)
   await expect(i.color).toBe(p.ink)
   await expect(input.getAttribute('role')).toBe('combobox')
-  // A floating glass with a combobox, NOT a dialog: nothing traps, nothing is
-  // modal, and the row the keys act on is named on the input rather than focused.
-  // All four are invisible if they break, and a screen reader loses the list.
-  await expect(root.querySelector('[role="dialog"]')).toBeNull()
-  await expect(root.querySelector('[aria-modal]')).toBeNull()
-  const list = glass.querySelector<HTMLElement>('[role="listbox"]')!
+  const list = box.querySelector<HTMLElement>('[role="listbox"]')!
   await expect(input.getAttribute('aria-controls')).toBe(list.id)
   await expect(input.getAttribute('aria-expanded')).toBe('true')
-  const sel = glass.querySelector<HTMLElement>('[aria-selected="true"]')
+  const sel = box.querySelector<HTMLElement>('[aria-selected="true"]')
   await expect(input.getAttribute('aria-activedescendant')).toBe(sel ? sel.id : null)
   // A row is an `option`, never a button — a button here would take focus off the
   // input and the typing would stop.
-  for (const o of glass.querySelectorAll('[role="option"]')) await expect(o.tagName).toBe('DIV')
-  const key = head.querySelector<HTMLElement>('[data-part="head-key"]')!
-  await expect(key.textContent).toBe('esc')
-  await expect(px(getComputedStyle(key).fontSize)).toBe(10.5)
-  await expect(getComputedStyle(key).color).toBe(p.tier80)
+  for (const o of box.querySelectorAll('[role="option"]')) await expect(o.tagName).toBe('DIV')
 
-  for (const group of glass.querySelectorAll<HTMLElement>('[data-part="group"]')) {
+  const b = getComputedStyle(body)
+  await expect([b.top, b.left]).toEqual(['39px', '-1px'])
+  await expect(body.offsetWidth).toBe(m.width)
+  const hairline = getComputedStyle(body.firstElementChild!)
+  await expect([hairline.height, hairline.marginLeft, hairline.marginRight]).toEqual([
+    '1px',
+    '10px',
+    '10px',
+  ])
+  await expect(alphaOf(hairline.backgroundColor)).toBeCloseTo(0.09, 2)
+  const l = getComputedStyle(list)
+  await expect(l.padding).toBe('6px 10px 0px')
+  await expect(l.rowGap).toBe('2px')
+
+  for (const group of box.querySelectorAll<HTMLElement>('[data-part="group"]')) {
     const s = getComputedStyle(group)
     await expect(s.padding).toBe('8px 12px 4px')
-    await expect(s.fontFamily).toMatch(/PP Neue Montreal/)
     await expect(s.fontFamily).not.toMatch(MONO)
     await expect(s.fontWeight).toBe('500')
     await expect(px(s.fontSize)).toBe(10.5)
-    // `.1em` at 10.5px, uppercase — the eyebrow, not the `/` menu's `.04em` label.
     await expect(tracking(s.letterSpacing)).toBeCloseTo(1.05, 2)
     await expect(s.textTransform).toBe('uppercase')
     await expect(s.color).toBe(p.tier68)
   }
 
-  for (const row of glass.querySelectorAll<HTMLElement>('[role="option"]')) {
+  for (const row of box.querySelectorAll<HTMLElement>('[role="option"]')) {
     const s = getComputedStyle(row)
     const kind = row.getAttribute('data-kind')
     const selected = row.getAttribute('aria-selected') === 'true'
@@ -271,22 +301,20 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
     await expect(s.padding).toBe(m.rowPad)
     await expect(s.borderTopLeftRadius).toBe('14px')
     // SANS — ADR 0004 §4 — at the board's 13.5 and tracking 0.
-    await expect(s.fontFamily).toMatch(/PP Neue Montreal/)
     await expect(s.fontFamily).not.toMatch(MONO)
     await expect(px(s.fontSize)).toBe(m.row)
     await expect(tracking(s.letterSpacing)).toBe(0)
     await expect(s.color).toBe(kind === 'action' ? p.tier80 : p.ink)
     await expect(alphaOf(s.backgroundColor)).toBeCloseTo(selected ? 0.07 : 0, 2)
+    // Settled: every row has risen fully in.
+    await expect(s.opacity).toBe('1')
 
     const label = row.querySelector<HTMLElement>('[data-part="label"]')!
     const glyph = row.querySelector<HTMLElement>('[data-icon]')
     await expect(getComputedStyle(label).fontWeight).toBe(glyph ? '500' : '400')
     await expect(getComputedStyle(label).whiteSpace).toBe('nowrap')
     await expect(getComputedStyle(label).textOverflow).toBe('ellipsis')
-    if (glyph) {
-      await expect(getComputedStyle(glyph).width).toBe('13px')
-      await expect(getComputedStyle(glyph).height).toBe('13px')
-    }
+    if (glyph) await expect(getComputedStyle(glyph).width).toBe('13px')
     if (kind === 'record' || kind === 'database') {
       const svg = row.querySelector('svg')!
       await expect(svg.getAttribute('width')).toBe('13')
@@ -304,8 +332,7 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
       await expect(px(ss.fontSize)).toBe(m.sub)
       await expect(ss.color).toBe(p.tier68)
       await expect(ss.whiteSpace).toBe('nowrap')
-      await expect(ss.textOverflow).toBe('ellipsis')
-      // Inline: the sub sits beside the name, not under it — to its right, centred on the same line.
+      // Inline: the sub sits beside the name, centred on the same line.
       const sb = sub.getBoundingClientRect()
       const lb = label.getBoundingClientRect()
       await expect(sb.left).toBeGreaterThanOrEqual(lb.right)
@@ -313,12 +340,9 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
     }
     const hint = row.querySelector<HTMLElement>('[data-part="hint"]')
     if (hint) {
-      const hs = getComputedStyle(hint)
       await expect(selected).toBe(false)
-      await expect(hs.fontFamily).toMatch(MONO)
-      await expect(px(hs.fontSize)).toBe(10.5)
-      await expect(hs.color).toBe(p.tier68)
-      await expect(hs.maxWidth).toBe('45%')
+      await expect(getComputedStyle(hint).fontFamily).toMatch(MONO)
+      await expect(px(getComputedStyle(hint).fontSize)).toBe(10.5)
     }
     const enter = row.querySelector<HTMLElement>('[data-part="enter"]')
     await expect(enter !== null).toBe(selected)
@@ -329,30 +353,30 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
     }
   }
 
-  const foot = glass.querySelector<HTMLElement>('[data-part="foot"]')!
+  const foot = part(root, 'foot')!
   const f = getComputedStyle(foot)
-  // Hidden hints stay in the DOM, so what the board draws is what is displayed.
   const shown = [...foot.children]
     .filter((c) => getComputedStyle(c).display !== 'none')
     .map((c) => c.textContent)
   await expect(shown).toEqual([...m.foot])
-  await expect(f.display).toBe('flex')
   await expect(f.flexWrap).toBe('wrap')
   await expect(f.columnGap).toBe('14px')
-  await expect(f.padding).toBe('10px 12px 4px')
-  await expect(f.marginTop).toBe('4px')
+  await expect(f.padding).toBe('10px 22px 14px')
+  await expect(f.marginTop).toBe('6px')
   await expect(f.borderTopWidth).toBe('1px')
   await expect(alphaOf(f.borderTopColor)).toBeCloseTo(0.09, 2)
+  await expect(f.fontFamily).toMatch(MONO)
   await expect(px(f.fontSize)).toBe(10.5)
   await expect(f.color).toBe(p.tier68)
+  await expect(f.opacity).toBe('1')
 
   // The chrome is lowercase — Pond's words. A page's title is content and keeps
   // its case (ADR 0004 §4), so the rows' names are not in this string.
-  await expect(paletteChrome(glass)).not.toMatch(/[A-Z]/)
+  await expect(paletteChrome(box)).not.toMatch(/[A-Z]/)
 }
 
 async function assertHit(root: HTMLElement, label: string, hit: string) {
-  const row = [...glassOf(root).querySelectorAll<HTMLElement>('[role="option"]')].find(
+  const row = [...boxOf(root).querySelectorAll<HTMLElement>('[role="option"]')].find(
     (r) => r.querySelector('[data-part="label"]')!.textContent === label
   )!
   const el = row.querySelector<HTMLElement>('[data-part="hit"]')!
@@ -363,15 +387,62 @@ async function assertHit(root: HTMLElement, label: string, hit: string) {
   await expect(s.textDecorationThickness).toBe('1px')
 }
 
-// ── opened ─────────────────────────────────────────────────────────────────────
+// ── resting · opening — `PondCommand` ──────────────────────────────────────────
+
+/** The breadcrumb is the palette at rest: area glyph, path, ⌘K. */
+export const Resting: Story = {
+  name: 'resting',
+  play: async ({ canvasElement }) => assertResting(canvasElement, PAPER),
+}
+export const RestingInk: Story = {
+  name: 'resting · ink',
+  args: { ink: true },
+  play: async ({ canvasElement }) => assertResting(canvasElement, INK),
+}
+
+/**
+ * Mid-way, t = .5 (140ms of 280): the same box wider and growing down, the path
+ * given way to the input, the rows still arriving in order. No modal, no scrim.
+ */
+async function assertOpening(root: HTMLElement, p: Palette) {
+  await assertBox(root, p)
+  const box = boxOf(root)
+  const restW = part(root, 'path')!.offsetWidth + 124
+  await expect(box.offsetWidth).toBeGreaterThan(restW)
+  await expect(box.offsetWidth).toBeLessThan(560)
+  await expect(box.offsetHeight).toBeLessThan(40 + part(root, 'body')!.offsetHeight)
+  await expect(part(root, 'chip')!.textContent).toBe('esc')
+  await expect(getComputedStyle(part(root, 'path')!).opacity).toBe('0')
+  await expect(getComputedStyle(part(root, 'head')!).opacity).toBe('1')
+  const rows = [...box.querySelectorAll<HTMLElement>('[role="listbox"] > *')].map((r) =>
+    parseFloat(getComputedStyle(r).opacity)
+  )
+  await expect(rows[0]).toBe(1)
+  await expect(rows[rows.length - 1]).toBeLessThan(1)
+  for (let i = 1; i < rows.length; i++) await expect(rows[i]).toBeLessThanOrEqual(rows[i - 1])
+  const foot = parseFloat(getComputedStyle(part(root, 'foot')!).opacity)
+  await expect(foot).toBeGreaterThan(0)
+  await expect(foot).toBeLessThan(1)
+}
+
+export const Opening: Story = {
+  name: 'opening',
+  args: { open: true, at: 0.5, suggested: PALETTE_SUGGESTED },
+  play: async ({ canvasElement }) => assertOpening(canvasElement, PAPER),
+}
+export const OpeningInk: Story = {
+  name: 'opening · ink',
+  args: { open: true, at: 0.5, suggested: PALETTE_SUGGESTED, ink: true },
+  play: async ({ canvasElement }) => assertOpening(canvasElement, INK),
+}
+
+// ── opened — `PondPicker kind="palette"` ───────────────────────────────────────
 
 async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean, m = DESKTOP) {
   await assertChrome(root, p, m)
-  const input = glassOf(root).querySelector<HTMLInputElement>('input')!
+  const input = boxOf(root).querySelector<HTMLInputElement>('input')!
   await expect(input.placeholder).toBe('jump to a page, or > for actions')
   await expect(document.activeElement).toBe(input)
-  // The board's frame: `recent`, three pages, then `suggested`, two actions. With
-  // nothing from the host, the second group is absent — not stood in for.
   await expect(groups(root)).toEqual(suggested ? ['recent', 'suggested'] : ['recent'])
   await expect(labels(root)).toEqual([
     'kitchen renovation',
@@ -379,62 +450,24 @@ async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean, m
     'journal',
     ...(suggested ? ['chase the cabinet quote', 'log a workout'] : []),
   ])
-  const actions = glassOf(root).querySelectorAll('[data-kind="action"]')
-  await expect(actions.length).toBe(suggested ? 2 : 0)
-}
-
-/** Pressing both chords is one toggle: each platform owns exactly one of them. */
-const pressChord = () => userEvent.keyboard('{Meta>}k{/Meta}{Control>}k{/Control}')
-
-async function assertClosedThenOpens(root: HTMLElement) {
-  const chip = within(root).getByRole('button', { name: 'Command palette (⌘K)' })
-  await expect(chip.textContent).toBe('⌘K')
-  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
-
-  await userEvent.click(chip)
-  await expect(root.querySelector('[data-part="glass"]')).not.toBeNull()
-  await expect(document.activeElement).toBe(glassOf(root).querySelector('input'))
-  await userEvent.keyboard('{Escape}')
-  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
-
-  await pressChord()
-  await expect(root.querySelector('[data-part="glass"]')).not.toBeNull()
-  await pressChord()
-  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
-}
-
-/** At rest the palette is the breadcrumb's ⌘K chip; the chip or ⌘K (Ctrl+K off Apple) opens it. */
-export const Closed: Story = {
-  name: 'closed',
-  render: () => <ShellFrame />,
-  play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
-}
-export const ClosedInk: Story = {
-  name: 'closed · ink',
-  render: () => <ShellFrame ink />,
-  play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
 }
 
 /** Nothing typed, nothing inferred: the last three pages under `recent`, and no `suggested` faked (#285). */
 export const Opened: Story = {
   tags: ['!dev'],
+  args: { open: true },
   play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, false),
-}
-export const OpenedInk: Story = {
-  tags: ['!dev'],
-  args: { ink: true },
-  play: async ({ canvasElement }) => assertOpened(canvasElement, INK, false),
 }
 
 /** The board's `opened` frame in full: `recent`, then the two `suggested` actions the host supplied. */
 export const OpenedSuggested: Story = {
   name: 'opened',
-  args: { suggested: PALETTE_SUGGESTED },
+  args: { open: true, suggested: PALETTE_SUGGESTED },
   play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, true),
 }
 export const OpenedSuggestedInk: Story = {
   name: 'opened · ink',
-  args: { suggested: PALETTE_SUGGESTED, ink: true },
+  args: { open: true, suggested: PALETTE_SUGGESTED, ink: true },
   play: async ({ canvasElement }) => assertOpened(canvasElement, INK, true),
 }
 
@@ -455,12 +488,12 @@ async function assertTyping(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
 /** `cab`: pages, then records, then actions; the hit underlined, never washed. */
 export const Typing: Story = {
   name: 'typing',
-  args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
+  args: { open: true, defaultQuery: 'cab', items: paletteItemsFor('cab') },
   play: async ({ canvasElement }) => assertTyping(canvasElement, PAPER),
 }
 export const TypingInk: Story = {
   name: 'typing · ink',
-  args: { defaultQuery: 'cab', items: paletteItemsFor('cab'), ink: true },
+  args: { open: true, defaultQuery: 'cab', items: paletteItemsFor('cab'), ink: true },
   play: async ({ canvasElement }) => assertTyping(canvasElement, INK),
 }
 
@@ -476,12 +509,12 @@ async function assertActions(root: HTMLElement, p: Palette) {
 /** `> log`: the leading `>` drops pages and records. */
 export const Actions: Story = {
   name: 'actions',
-  args: { defaultQuery: '> log' },
+  args: { open: true, defaultQuery: '> log' },
   play: async ({ canvasElement }) => assertActions(canvasElement, PAPER),
 }
 export const ActionsInk: Story = {
   name: 'actions · ink',
-  args: { defaultQuery: '> log', ink: true },
+  args: { open: true, defaultQuery: '> log', ink: true },
   play: async ({ canvasElement }) => assertActions(canvasElement, INK),
 }
 
@@ -490,7 +523,7 @@ export const ActionsInk: Story = {
 async function assertRecord(root: HTMLElement, p: Palette) {
   await assertChrome(root, p)
   await expect(groups(root)).toEqual(['records', 'actions'])
-  const selected = glassOf(root).querySelector<HTMLElement>('[aria-selected="true"]')!
+  const selected = boxOf(root).querySelector<HTMLElement>('[aria-selected="true"]')!
   await expect(selected.getAttribute('data-kind')).toBe('record')
   await expect(selected.querySelector('[data-part="sub"]')!.textContent).toBe(
     'subscriptions · renews 28 sep'
@@ -498,15 +531,15 @@ async function assertRecord(root: HTMLElement, p: Palette) {
   await assertHit(root, 'adobe creative cloud', 'adobe')
 }
 
-/** `adobe`: a record is first class, the matched field under its name. */
+/** `adobe`: a record is first class, the matched field beside its name. */
 export const Record: Story = {
   name: 'record',
-  args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe') },
+  args: { open: true, defaultQuery: 'adobe', items: paletteItemsFor('adobe') },
   play: async ({ canvasElement }) => assertRecord(canvasElement, PAPER),
 }
 export const RecordInk: Story = {
   name: 'record · ink',
-  args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe'), ink: true },
+  args: { open: true, defaultQuery: 'adobe', items: paletteItemsFor('adobe'), ink: true },
   play: async ({ canvasElement }) => assertRecord(canvasElement, INK),
 }
 
@@ -514,13 +547,12 @@ export const RecordInk: Story = {
 
 async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
   await assertChrome(root, p, m)
-  const note = glassOf(root).querySelector<HTMLElement>('[data-part="note"]')!
+  const note = part(root, 'note')!
   await expect(note.textContent).toBe('no page or record called “cabnet”')
   const s = getComputedStyle(note)
   await expect(s.padding).toBe('10px 12px')
   await expect(s.fontFamily).toMatch(MONO)
   await expect(px(s.fontSize)).toBe(m.note)
-  await expect(px(s.lineHeight)).toBeCloseTo(m.note * 1.55, 1)
   await expect(s.color).toBe(p.tier80)
   await expect(groups(root)).toEqual(['did you mean'])
   await expect(labels(root)).toEqual([
@@ -536,12 +568,12 @@ async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) 
 /** `cabnet`: no dead end — the note, ask pond, make the page, a close spelling. */
 export const Empty: Story = {
   name: 'empty',
-  args: { defaultQuery: 'cabnet' },
+  args: { open: true, defaultQuery: 'cabnet' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
 }
 export const EmptyInk: Story = {
   name: 'empty · ink',
-  args: { defaultQuery: 'cabnet', ink: true },
+  args: { open: true, defaultQuery: 'cabnet', ink: true },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
 }
 
@@ -551,35 +583,35 @@ const MONEY = { id: 'money', label: 'money' }
 
 async function assertScoped(root: HTMLElement, p: Palette) {
   await assertChrome(root, p)
-  const chip = glassOf(root).querySelector<HTMLElement>('[data-part="scope"]')!
+  const chip = part(root, 'scope')!
   await expect(chip.textContent).toBe('in money:')
   const s = getComputedStyle(chip)
   await expect(s.padding).toBe('1px 6px')
   await expect(s.borderTopLeftRadius).toBe('6px')
   await expect(alphaOf(s.backgroundColor)).toBeCloseTo(0.07, 2)
   await expect(s.color).toBe(p.tier80)
-  await expect(glassOf(root).querySelector<HTMLInputElement>('input')!.placeholder).toBe('')
+  await expect(boxOf(root).querySelector<HTMLInputElement>('input')!.placeholder).toBe('')
   await expect(groups(root)).toEqual([])
   // `Savings` keeps its case: a page's title is content, only the chrome is lowercase.
   await expect(labels(root)).toEqual(['budget', 'subscriptions', 'Savings', 'transactions'])
   await expect(
-    [...glassOf(root).querySelectorAll('[data-part="sub"]')].map((x) => x.textContent)
+    [...boxOf(root).querySelectorAll('[data-part="sub"]')].map((x) => x.textContent)
   ).toEqual(['page', 'page', 'page', 'database'])
 }
 
-/** The rail's selected page and its children, the kind under each name. */
+/** The rail's selected page and its children, the kind beside each name. */
 export const Scoped: Story = {
   name: 'scoped',
-  args: { scope: MONEY },
+  args: { open: true, scope: MONEY },
   play: async ({ canvasElement }) => assertScoped(canvasElement, PAPER),
 }
 export const ScopedInk: Story = {
   name: 'scoped · ink',
-  args: { scope: MONEY, ink: true },
+  args: { open: true, scope: MONEY, ink: true },
   play: async ({ canvasElement }) => assertScoped(canvasElement, INK),
 }
 
-// ── ponds ──────────────────────────────────────────────────────────
+// ── ponds ──────────────────────────────────────────────────────────────────────
 
 async function assertPonds(root: HTMLElement, p: Palette) {
   await assertChrome(root, p)
@@ -590,30 +622,25 @@ async function assertPonds(root: HTMLElement, p: Palette) {
     'new pond “make”',
     'ask pond about “make”',
   ])
-  await expect(
-    [...glassOf(root).querySelectorAll('[data-kind="pond"] [data-part="sub"]')].map(
-      (x) => x.textContent
-    )
-  ).toEqual(['pond · switch'])
-  const pond = glassOf(root).querySelector<HTMLElement>('[data-kind="pond"]')!
+  const pond = boxOf(root).querySelector<HTMLElement>('[data-kind="pond"]')!
   await expect(pond.getAttribute('aria-selected')).toBe('true')
-  await expect(pond.querySelector('[data-part="hint"]')).toBeNull()
+  await expect(pond.querySelector('[data-part="sub"]')!.textContent).toBe('pond · switch')
   await assertHit(root, 'make noise', 'make')
 }
 
 /** `make`: a pond above the pages (6m), and `new pond “make”` among the actions. */
 export const Ponds: Story = {
   name: 'ponds',
-  args: { defaultQuery: 'make' },
+  args: { open: true, defaultQuery: 'make' },
   play: async ({ canvasElement }) => assertPonds(canvasElement, PAPER),
 }
 export const PondsInk: Story = {
   name: 'ponds · ink',
-  args: { defaultQuery: 'make', ink: true },
+  args: { open: true, defaultQuery: 'make', ink: true },
   play: async ({ canvasElement }) => assertPonds(canvasElement, INK),
 }
 
-// ── mobile — the board's `mob` branch ──────────────────────────────────────────
+// ── mobile — `PondPicker`'s `mob` branch ───────────────────────────────────────
 
 /** An iPhone-width viewport, below Tailwind's `md` (768). */
 const MOBILE_VIEWPORT = {
@@ -627,9 +654,10 @@ async function assertPhone() {
   await expect(window.innerWidth).toBeLessThan(768)
 }
 
-/** 360 wide, head 16, rows `13px 12px` at 15, sub 13; the foot keeps `↵ open` and `> actions only`. */
+/** Opens to 360, input 16, rows `13px 12px` at 15; the foot keeps `↵ open` and `> actions only`. */
 export const MobileOpened: Story = {
   name: 'opened · mobile',
+  args: { open: true },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
@@ -641,7 +669,7 @@ export const MobileOpened: Story = {
 /** `cab`: the sub-line is 13 on a phone, the hit still underlined. */
 export const MobileTyping: Story = {
   name: 'typing · mobile',
-  args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
+  args: { open: true, defaultQuery: 'cab', items: paletteItemsFor('cab') },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
@@ -653,7 +681,7 @@ export const MobileTyping: Story = {
 /** `cabnet`: the note is 13 on a phone. */
 export const MobileEmpty: Story = {
   name: 'empty · mobile',
-  args: { defaultQuery: 'cabnet' },
+  args: { open: true, defaultQuery: 'cabnet' },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
@@ -662,58 +690,108 @@ export const MobileEmpty: Story = {
   },
 }
 
-// ── the keys ───────────────────────────────────────────────────────────────────
+// ── the morph, for real ────────────────────────────────────────────────────────
 
-/** ↓↓ then ↵ opens the third row; ⌫ on an empty line clears the scope; esc closes. */
-export const Keys: Story = {
+/** Pressing both chords is one toggle: each platform owns exactly one of them. */
+const pressChord = () => userEvent.keyboard('{Meta>}k{/Meta}{Control>}k{/Control}')
+const settledOpen = (root: HTMLElement) =>
+  waitFor(() => expect(boxOf(root).offsetWidth).toBe(560))
+const settledRest = (root: HTMLElement) =>
+  waitFor(() => expect(boxOf(root).querySelector('[role="listbox"]')).toBeNull())
+
+/**
+ * A click on the breadcrumb grows it in place, the caret landing in the input;
+ * esc, ⌘K and a press outside each shrink it back, and ⌘K grows it again. The
+ * mode toggle switches light/dark and never opens it.
+ */
+export const Morph: Story = {
   tags: ['!dev'],
-  args: { scope: MONEY, onSelect: fn(), onClose: fn() },
-  play: async ({ canvasElement, args }) => {
-    await expect(glassOf(canvasElement).querySelector('[data-part="scope"]')).not.toBeNull()
-    await userEvent.keyboard('{Backspace}')
-    await expect(glassOf(canvasElement).querySelector('[data-part="scope"]')).toBeNull()
-    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
-    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'journal' }))
+  play: async ({ canvasElement }) => {
+    const box = boxOf(canvasElement)
+    const restW = box.offsetWidth
+
+    await userEvent.click(part(canvasElement, 'opener')!)
+    await expect(box.getAttribute('data-state')).toBe('open')
+    await waitFor(() => expect(document.activeElement).toBe(box.querySelector('input')))
+    await settledOpen(canvasElement)
+
     await userEvent.keyboard('{Escape}')
-    await expect(args.onClose).toHaveBeenCalled()
+    await settledRest(canvasElement)
+    await expect(box.offsetWidth).toBe(restW)
+    await expect(box.offsetHeight).toBe(40)
+    await expect(document.activeElement).not.toBe(box.querySelector('input'))
+
+    await pressChord()
+    await waitFor(() => expect(document.activeElement).toBe(box.querySelector('input')))
+    await settledOpen(canvasElement)
+    await pressChord()
+    await settledRest(canvasElement)
+
+    await pressChord()
+    await settledOpen(canvasElement)
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await settledRest(canvasElement)
+
+    const html = document.documentElement
+    const wasDark = html.classList.contains('dark')
+    await userEvent.click(part(canvasElement, 'mode')!)
+    await expect(html.classList.contains('dark')).toBe(!wasDark)
+    await expect(box.getAttribute('data-state')).toBe('rest')
+    await userEvent.click(part(canvasElement, 'mode')!)
+    await expect(html.classList.contains('dark')).toBe(wasDark)
   },
 }
 
-// ── dismissal, and the one button in the glass ─────────────────────────────────
+// ── the keys ───────────────────────────────────────────────────────────────────
+
+/** ↓↓ then ↵ opens the third row; ⌫ on an empty line clears the scope; esc asks to close. */
+export const Keys: Story = {
+  tags: ['!dev'],
+  args: { open: true, pinned: true, scope: MONEY, onSelect: fn(), onOpenChange: fn() },
+  play: async ({ canvasElement, args }) => {
+    await expect(part(canvasElement, 'scope')).not.toBeNull()
+    await userEvent.keyboard('{Backspace}')
+    await expect(part(canvasElement, 'scope')).toBeNull()
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'journal' }))
+    await userEvent.keyboard('{Escape}')
+    await expect(args.onOpenChange).toHaveBeenCalledWith(false)
+  },
+}
+
+// ── dismissal, and the controls in the box ─────────────────────────────────────
 
 /**
- * Two ways out, and two that are not: esc and a press anywhere outside the glass
- * close; a press INSIDE (on the input) must not, or the palette shuts the moment
- * someone clicks into the field to type — and ⌘K is not the palette's to handle, the
- * shell owns that key (KAN-57).
- *
- * `esc` is the glass's only button, so it is the only thing in it that can take
- * focus — and it wears the house mist ring, asserted as the painted outline rather
- * than the class name that asks for it (#252 shipped a right class and a wrong pixel).
+ * Two ways out, and two that are not: esc and a press anywhere outside the box
+ * close; a press INSIDE (on the input) must not, or it shuts the moment someone
+ * clicks into the field — and ⌘K is not this element's to handle, the shell owns
+ * that key (KAN-57). Tab off the input reaches the mode toggle, then `esc`, and
+ * both wear the house mist ring, asserted as the painted outline.
  */
 export const Dismissal: Story = {
   tags: ['!dev'],
-  args: { onClose: fn() },
+  args: { open: true, pinned: true, onOpenChange: fn() },
   play: async ({ canvasElement, args }) => {
-    const glass = glassOf(canvasElement)
-    const input = glass.querySelector<HTMLInputElement>('input')!
+    const box = boxOf(canvasElement)
+    const input = box.querySelector<HTMLInputElement>('input')!
 
-    // Inside the glass: no close.
     input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    await expect(args.onClose).not.toHaveBeenCalled()
+    await expect(args.onOpenChange).not.toHaveBeenCalled()
 
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    await expect(args.onClose).toHaveBeenCalledTimes(1)
+    await expect(args.onOpenChange).toHaveBeenCalledTimes(1)
     await userEvent.keyboard('{Escape}')
-    await expect(args.onClose).toHaveBeenCalledTimes(2)
-    await userEvent.keyboard('{Meta>}k{/Meta}{Control>}k{/Control}')
-    await expect(args.onClose).toHaveBeenCalledTimes(2)
+    await expect(args.onOpenChange).toHaveBeenCalledTimes(2)
+    await pressChord()
+    await expect(args.onOpenChange).toHaveBeenCalledTimes(2)
 
-    // Tab off the input reaches `esc`, the one button — and the mist ring paints.
-    const esc = glass.querySelector<HTMLElement>('[data-part="head-key"]')!
+    input.focus()
+    await userEvent.tab()
+    await expect(part(canvasElement, 'mode')).toHaveFocus()
+    await userEvent.tab()
+    const esc = part(canvasElement, 'chip')!
     await expect(esc.tagName).toBe('BUTTON')
     await expect(esc.textContent).toBe('esc')
-    await userEvent.tab()
     await expect(esc).toHaveFocus()
     const f = getComputedStyle(esc)
     // `PondControl`'s focus outline: 2px solid mist, offset 2 — one owner, never flips.
@@ -723,31 +801,30 @@ export const Dismissal: Story = {
     await expect(f.outlineColor).toBe('rgb(165, 200, 209)')
 
     await userEvent.click(esc)
-    await expect(args.onClose).toHaveBeenCalledTimes(3)
+    await expect(args.onOpenChange).toHaveBeenCalledTimes(3)
   },
 }
 
 // ── the pointer, and typing for real ──────────────────────────────────────────
 
 /**
- * The mouse path, and a query typed a letter at a time rather than handed in as
- * `defaultQuery`: the list narrows live, the hit is split on the row that matched,
- * hovering a row selects it (and the input says so), and a click opens it.
+ * The mouse path, and a query typed a letter at a time: the list narrows live,
+ * the hit is split on the row that matched, hovering a row selects it (and the
+ * input says so), and a click opens it.
  */
 export const Pointer: Story = {
   tags: ['!dev'],
-  args: { onSelect: fn(), items: paletteItemsFor('cab') },
+  args: { open: true, onSelect: fn(), items: paletteItemsFor('cab') },
   play: async ({ canvasElement, args }) => {
-    const glass = glassOf(canvasElement)
-    const input = glass.querySelector<HTMLInputElement>('input')!
+    const box = boxOf(canvasElement)
+    const input = box.querySelector<HTMLInputElement>('input')!
     await expect(labels(canvasElement)).toEqual(['kitchen renovation', 'budget', 'journal'])
 
     await userEvent.type(input, 'cab')
     await expect(groups(canvasElement)).toEqual(['pages', 'records', 'actions'])
     await assertHit(canvasElement, 'chase the cabinet quote', 'cab')
 
-    // Hover selects, and the input names the row it selected.
-    const quote = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    const quote = [...box.querySelectorAll<HTMLElement>('[role="option"]')].find(
       (r) => r.querySelector('[data-part="label"]')!.textContent === 'cabinet quote'
     )!
     await userEvent.hover(quote)

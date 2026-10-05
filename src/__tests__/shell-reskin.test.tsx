@@ -3,21 +3,22 @@
  *
  * Paper, not frames: the wall and the modules are ONE sheet (#FAF9EF light /
  * #1B1D14 ground + #30312A cards dark), separated by shadow only. The rail is
- * a PAPER card (the card role, no blur) and the breadcrumb and the composer
- * FLOAT over that canvas on the floating-glass recipe (README § Surfaces, read
- * verbatim) — all three inset from the edges, none docked. The breadcrumb and
- * composer are SHELL-level absolutes centred at calc(50% + 13px) (measured in
+ * a PAPER card (the card role, no blur) and `PondCommand` (the breadcrumb that
+ * grows into the palette) and the composer FLOAT over that canvas on the
+ * floating-glass recipe (README § Surfaces, read verbatim) — all three inset from
+ * the edges, none docked. The pill and the composer are SHELL-level absolutes
+ * centred at calc(50% + 13px) (measured in
  * `Pond 05 Shell`), and the composer publishes its real height so the surfaces
  * pad against ONE value. The rail header is the pond's glyph and name.
  *
  * Source: wayfinder/design_handoff_pond — `Pond 05 Shell` 5af (the shell
- * frame), `PondRail` (head / loading / empty states), `Pond 02` 2t (the
- * breadcrumb pill). PROJECT_RULES.md and the README override the mockups.
+ * frame), `PondRail` (head / loading / empty states), `Pond 02` 2g (`PondCommand`,
+ * the path at rest). PROJECT_RULES.md and the README override the mockups.
  */
 import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 jest.mock('next/navigation', () => ({
@@ -87,7 +88,9 @@ jest.mock('@/components/organisms/AITerminal', () => ({
 }))
 
 import { RailView, type RailNode } from '@/components/organisms/Rail'
-import { Breadcrumb } from '@/components/molecules/Breadcrumb'
+import { commandPath } from '@/lib/pages/command-path'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import type { PageRow } from '@/lib/pages/tree'
 import { TerminalDrawer, TERMINAL_DEFAULT_HEIGHT } from '@/components/molecules/TerminalDrawer'
 import { WorkspaceShell } from '@/components/organisms/WorkspaceShell'
 import { defaultPondName } from '@/lib/pond/name'
@@ -116,11 +119,11 @@ const TOUCHED = [
   'src/components/organisms/Rail.tsx',
   'src/components/organisms/DocumentPanel.tsx',
   'src/components/organisms/ShellCommands.tsx',
-  'src/components/molecules/Breadcrumb.tsx',
+  'src/components/organisms/PondCommand.tsx',
   'src/components/molecules/TerminalDrawer.tsx',
   'src/components/molecules/ContentWidthHandle.tsx',
   'src/components/atoms/PondMark.tsx',
-  'src/lib/layout/breadcrumb-slot.tsx',
+  'src/lib/layout/command-path.tsx',
   'src/lib/layout/terminal-height.ts',
   'src/lib/layout/rail-width.ts',
   'src/app/globals.css',
@@ -360,85 +363,53 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
   })
 })
 
-// ── AC2: the breadcrumb pill ────────────────────────────────────────────────
+// ── AC2: the path `PondCommand` shows at rest ─────────────────────────────────
 
-describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', () => {
-  const crumbs = [{ id: 'health', type: 'page', title: 'Health' }]
+describe('commandPath — the root, the ancestors, then the page; led by its area’s mark (2g)', () => {
+  const at = '2026-01-01T00:00:00Z'
+  const ROWS: PageRow[] = [
+    { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
+    { id: 'sleep', parent_id: 'health', type: 'page', title: 'Sleep', order: 0, updated_at: at },
+    { id: 'root-db', parent_id: null, type: 'page', title: 'databases', order: 9, updated_at: at },
+    { id: 'db-1', parent_id: 'root-db', type: 'page', title: 'ingredients', order: 0, updated_at: at },
+  ]
+  const opts = (current: string) => ({ rootTitle: 'life', current, pondGlyph: LIFE_GLYPH })
 
-  it('is glass, pill-shaped, 40px tall, and leads with the pond mark at 12', () => {
-    const { container } = render(
-      <Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />
-    )
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(nav.className).toMatch(/\bmn-glass\b/)
-    expect(nav.className).toMatch(/\brounded-mn-pill\b/)
-    // `Pond 05 Shell`, measured: height 40, padding 8px 8px 8px 14px, gap 10.
-    expect(nav.className).toMatch(/\bh-10\b/)
-    expect(nav.className).toMatch(/\bpy-2\b/)
-    expect(nav.className).toMatch(/\bpr-2\b/)
-    expect(nav.className).toMatch(/\bpl-3\.5\b/)
-    expect(nav.className).toMatch(/\bgap-2\.5\b/)
-    // The pond's mark is the shared PondMark (plain mask in currentColor), not
-    // an AREA mark — #134's lead mark stays the only one.
-    const glyph = container.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
-    expect(glyph).toBeInTheDocument()
-    expect(glyph.style.width).toBe('12px')
-    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
-    expect(glyph.closest('[data-area-mark]')).toBeNull()
+  it('at the root: the root page alone, under the pond’s own mark', () => {
+    expect(commandPath(ROWS, null, opts('ignored'))).toEqual({
+      glyph: LIFE_GLYPH,
+      trail: [],
+      current: 'life',
+    })
   })
 
-  it("positions nothing itself — where the pill sits is the shell slot's job", () => {
-    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(nav.className).not.toMatch(/\b(absolute|fixed|sticky)\b/)
+  // `PondCommand.dc.html`: `GLYPH[path[1]] || GLYPH[path[0]]` — the area, else the root.
+  it('a page carries its area’s mark — the area itself when it is top-level', () => {
+    const healthMark = resolveMark('health', markIndex(ROWS)).glyph
+    expect(healthMark).not.toBeNull()
+    const area = commandPath(ROWS, 'health', opts('Health'))
+    const child = commandPath(ROWS, 'sleep', opts('Sleep'))
+    expect(area).toEqual({ glyph: healthMark, trail: ['life'], current: 'Health' })
+    expect(child).toEqual({ glyph: healthMark, trail: ['life', 'Health'], current: 'Sleep' })
   })
 
-  it('renders the ⌘K chip only when a handler is given, and raises it', () => {
-    const onCommandK = jest.fn()
-    const { rerender } = render(
-      <Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} onCommandK={onCommandK} />
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Command palette (⌘K)' }))
-    expect(onCommandK).toHaveBeenCalledTimes(1)
-    rerender(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Command palette (⌘K)' })).toBeNull()
-  })
-
-  // #101 review: `Pond 06.10`'s pill reads "life › creativity › recipes › …" —
-  // every segment lowercase, the root included, and no segment title-cased by the
-  // pill itself (a crumb is its page title verbatim).
-  it('the root crumb reads lowercase "life", and no segment is title-cased', () => {
-    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('life')).toBeInTheDocument()
-    expect(within(nav).queryByText('Life')).toBeNull()
-    expect(nav.className).not.toMatch(/\b(capitalize|uppercase|lowercase)\b/)
-    // The crumbs keep their pages' own casing — the pill never restyles them.
-    expect(within(nav).getByText('Health')).toBeInTheDocument()
+  // #101 review: every segment is the page title verbatim — the root reads
+  // lowercase "life", and nothing is title-cased by the pill.
+  it('segments are titles verbatim: the root lowercase, the pages in their own case', () => {
+    expect(commandPath(ROWS, 'sleep', opts('Sleep')).trail).toEqual(['life', 'Health'])
   })
 
   // 3c's two roots are peers, so a page under databases must not read as if it
-  // were inside life; the root crumb is the real page, so a click opens it.
-  it('starts at the databases root when given one, with no life ahead of it', () => {
-    const onNavigate = jest.fn()
-    const root = { id: 'root-db', type: 'page', title: 'databases' }
-    render(<Breadcrumb crumbs={[]} root={root} onNavigate={onNavigate} current="ingredients" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).queryByText('life')).toBeNull()
-    fireEvent.click(within(nav).getByText('databases'))
-    expect(onNavigate).toHaveBeenCalledWith(root)
-  })
-
-  it('the tail slot renders inside the pill in place of `current`', () => {
-    render(
-      <Breadcrumb
-        crumbs={crumbs}
-        onNavigate={jest.fn()}
-        tail={<input aria-label="Rename page" defaultValue="Sleep" />}
-      />
-    )
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByRole('textbox', { name: 'Rename page' })).toBeInTheDocument()
+  // were inside life.
+  it('starts at the databases root, never inside life; the root page reads simply "databases"', () => {
+    expect(commandPath(ROWS, 'db-1', opts('ingredients'))).toMatchObject({
+      trail: ['databases'],
+      current: 'ingredients',
+    })
+    expect(commandPath(ROWS, 'root-db', opts('databases'))).toMatchObject({
+      trail: [],
+      current: 'databases',
+    })
   })
 })
 
@@ -592,17 +563,17 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     )
   }
 
-  it('rail = paper card with the pond name; ⌘K lives in the breadcrumb, settings in the rail foot', async () => {
+  it('rail = paper card with the pond name; ⌘K lives in the command pill, settings in the rail foot', async () => {
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
     expect(aside.className).not.toMatch(/\bmn-glass\b/)
     expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
 
-    // One ⌘K affordance, inside the breadcrumb pill — the top-right cluster is gone.
-    const kButtons = await screen.findAllByRole('button', { name: 'Command palette (⌘K)' })
-    expect(kButtons).toHaveLength(1)
-    expect(kButtons[0].closest('nav[aria-label="Breadcrumb"]')).not.toBeNull()
+    // One ⌘K affordance, inside the command pill — the top-right cluster is gone.
+    const chips = [...container.querySelectorAll('[data-part="chip"]')]
+    expect(chips.map((c) => c.textContent)).toEqual(['⌘K'])
+    expect(chips[0].closest('[data-part="command"]')).not.toBeNull()
     expect(container.querySelector('.fixed')).toBeNull()
 
     // The rail foot is databases and settings; no "New page" button anywhere.
@@ -610,26 +581,22 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(aside.contains(screen.getByText('settings'))).toBe(true)
   })
 
-  it('the breadcrumb and the composer are SHELL-level absolutes, not column children (measured)', async () => {
+  it('the command pill and the composer are SHELL-level absolutes, not column children (measured)', async () => {
     const { container } = renderShell()
-    const nav = await screen.findByRole('navigation', { name: 'Breadcrumb' })
     const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
     const main = container.querySelector<HTMLElement>('main')!
+    const box = container.querySelector<HTMLElement>('[data-part="command"]')!
 
-    // The pill portals into the shell's slot: top 20, left calc(50% + 13px),
-    // translateX(-50%) — relative to the WHOLE shell, not the content column.
-    const slot = nav.closest<HTMLElement>('[data-part="breadcrumb-slot"]')!
-    expect(slot).not.toBeNull()
-    expect(slot.parentElement).toBe(shell)
-    expect(slot.className).toMatch(/\babsolute\b/)
-    expect(slot.className).toMatch(/\btop-5\b/)
-    expect(slot.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
-    expect(slot.className.split(' ')).toContain('-translate-x-1/2')
-    expect(main.contains(nav)).toBe(false)
-    // …and no sticky breadcrumb is left behind in the column. (#234: the root is
-    // an ordinary page, so the column carries the #58 width handle, whose grip is
-    // the one legitimate sticky inside it — the guard is against a pill, not that.)
-    expect(main.querySelector('.sticky nav, nav.sticky')).toBeNull()
+    // Top 20, left calc(50% + 13px), translateX(-50%) — relative to the WHOLE
+    // shell, not the content column; and it reads the open page's path.
+    const placed = box.parentElement!
+    expect(placed.parentElement).toBe(shell)
+    expect(placed.className).toMatch(/\babsolute\b/)
+    expect(placed.className).toMatch(/\btop-5\b/)
+    expect(placed.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
+    expect(placed.className.split(' ')).toContain('-translate-x-1/2')
+    expect(main.contains(box)).toBe(false)
+    expect(await screen.findByText('Life', { selector: '[data-part="current"]' })).toBeInTheDocument()
 
     // The composer is the shell's child too — its calc(50% + 13px) is against the shell.
     const terminal = screen.getByRole('region', { name: 'Pond terminal' })
@@ -646,15 +613,15 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })
 
-  it('the breadcrumb ⌘K opens the palette', async () => {
-    renderShell()
-    const k = (await screen.findAllByRole('button', { name: 'Command palette (⌘K)' }))[0]
+  it('a click on the pill grows it into the palette', async () => {
+    const { container } = renderShell()
+    const opener = container.querySelector<HTMLElement>('[data-part="opener"]')!
     await act(async () => {
-      fireEvent.click(k)
+      fireEvent.click(opener)
     })
-    // #279: a floating glass with a combobox, not a dialog.
+    // #279: a combobox in the same box, not a dialog.
     expect(await screen.findByRole('combobox', { name: 'command palette' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'esc' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'esc' }))
   })
 })

@@ -8,7 +8,7 @@
  * molecule's `field-row` kind is one uppercase label + exactly ONE value atom —
  * a bad fit for a relation value, which is a *list* of chips plus a functional
  * search picker (state, refs, a menu). That puts this with the functional
- * molecules (CommandPalette, SlashMenu), out of PondMolecule's presentational
+ * molecules (SlashMenu, the palette inside PondCommand), out of PondMolecule's presentational
  * scope; it stays a thin delegator composing PondAtom through RelationChip.
  * Its visual coverage lives in RelationValueField.stories (the organism host).
  *
