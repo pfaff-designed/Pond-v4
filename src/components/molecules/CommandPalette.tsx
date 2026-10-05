@@ -59,7 +59,7 @@ export type { PaletteItem, PaletteKind, PaletteScope } from './palette-entries'
 export interface CommandPaletteProps {
   items: readonly PaletteItem[]
   onSelect: (item: PaletteItem) => void
-  /** esc or a press outside. ⌘K is the shell's: `ShellCommands` owns opening and closing. */
+  /** esc or a press outside. */
   onClose: () => void
   /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
   scope?: PaletteScope | null
@@ -159,7 +159,7 @@ export function CommandPalette({
   }, [active, entries.length])
 
   // esc closes, in the capture phase so it never reaches the page's own handlers.
-  // A press outside the glass closes too. ⌘K is not handled here — see `onClose`.
+  // A press outside the glass closes too.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return

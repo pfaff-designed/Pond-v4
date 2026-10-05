@@ -18,11 +18,10 @@
 
 import { useState, type ReactNode } from 'react'
 import { usePond } from '@/lib/pond/context'
-import { useCreatePond } from '@/lib/pond/use-create-pond'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
-import { NewPondSheet } from './NewPondSheet'
+import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 
@@ -55,7 +54,6 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
   const { pond: active, ponds } = usePond()
-  const { create, pending, failure, clearFailure } = useCreatePond()
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
   // returns []. The head then renders the glyph and name without the chevron —
@@ -161,20 +159,11 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       )}
 
       {naming && (
-        <NewPondSheet
-          onCreate={(name) =>
-            void create(name).then((made) => {
-              if (!made) return
-              setNaming(false)
-              setOpen(false)
-            })
-          }
-          onCancel={() => {
+        <NewPondFlow
+          onClose={(created) => {
             setNaming(false)
-            clearFailure()
+            if (created) setOpen(false)
           }}
-          pending={pending}
-          failure={failure}
         />
       )}
     </div>

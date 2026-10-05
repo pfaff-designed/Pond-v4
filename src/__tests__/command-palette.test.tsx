@@ -140,7 +140,7 @@ describe('paletteEntries — the board’s states', () => {
       id: 'r1',
       label: 'quote',
       kind: 'record',
-      sub: 'tasks · vendor: acme cabinets',
+      sub: 'tasks · vendor acme cabinets',
     }
     const entries = paletteEntries([...PALETTE_ITEMS, byField], 'acme')
     expect(shape(entries)).toEqual([
@@ -149,7 +149,7 @@ describe('paletteEntries — the board’s states', () => {
       'G:actions',
       'action:ask pond about “acme”',
     ])
-    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor: acme cabinets', hit: '' })
+    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor acme cabinets', hit: '' })
     // Records never sit under a scope or a `>`.
     expect(
       shape(paletteEntries([...PALETTE_ITEMS, byField], 'acme', { scope: MONEY_SCOPE }))

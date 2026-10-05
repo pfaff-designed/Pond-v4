@@ -1,5 +1,5 @@
 /**
- * The ⌘K palette in the shell, with records and ponds (KAN-77): what the person
+ * The ⌘K palette in the shell, with records and ponds: what the person
  * types reaches the data layer once, debounced and pond-scoped; the answer lists
  * under `records` between `pages` and `actions`; ↵ opens the record's page; other
  * ponds list under `ponds` and switch; `new pond “q”` opens the New pond sheet.
@@ -45,6 +45,7 @@ jest.mock('@/lib/pond/context', () => ({
 jest.mock('@/lib/pond/client', () => ({ createPond: jest.fn(), listPonds: jest.fn() }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
+import { ShellPalette } from '@/components/organisms/ShellPalette'
 import { searchRecords } from '@/lib/pages/palette-records'
 
 const search = searchRecords as jest.Mock
@@ -52,7 +53,7 @@ const QUOTE = {
   id: 'r1',
   label: 'cabinet quote',
   kind: 'record',
-  sub: 'tasks · vendor: acme cabinets',
+  sub: 'tasks · vendor acme cabinets',
 }
 
 const renderShell = () =>
@@ -85,7 +86,7 @@ describe('records', () => {
     await openAndType('cab')
     const row = await rowNamed(/cab inet quote/)
     expect(groups()).toEqual(['pages', 'records', 'actions'])
-    expect(within(row).getByText('tasks · vendor: acme cabinets')).toBeInTheDocument()
+    expect(within(row).getByText('tasks · vendor acme cabinets')).toBeInTheDocument()
     expect(row.querySelector('[data-part="icon"] svg')).not.toBeNull()
   })
 
@@ -130,6 +131,18 @@ describe('records', () => {
   })
 })
 
+it('a palette opened with a query already typed searches records for it', async () => {
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <ShellPalette items={[]} defaultQuery="Cab " onSelect={jest.fn()} onClose={jest.fn()} />
+    </QueryClientProvider>
+  )
+  await rowNamed(/cab inet quote/)
+  expect(search).toHaveBeenCalledWith({ marker: 'client' }, 'p-life', 'cab')
+})
+
 describe('ponds', () => {
   it('another pond lists under `ponds`, above `pages in life`, as `pond · switch` with no ⌘n hint', async () => {
     renderShell()
@@ -165,6 +178,24 @@ describe('ponds', () => {
     const sheet = await screen.findByRole('dialog', { name: 'New pond' })
     expect(within(sheet).getByRole('textbox')).toHaveValue('make')
     expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+  })
+})
+
+describe('⌘K while the New pond sheet is open', () => {
+  it('closes it and does not raise the list behind it', async () => {
+    renderShell()
+    await openAndType('make')
+    fireEvent.click(await rowNamed(/new pond “make”/))
+    await screen.findByRole('dialog', { name: 'New pond' })
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New pond' })).toBeNull())
+    expect(screen.queryByRole('combobox', { name: 'command palette' })).toBeNull()
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(await screen.findByRole('combobox', { name: 'command palette' })).toBeInTheDocument()
   })
 })
 

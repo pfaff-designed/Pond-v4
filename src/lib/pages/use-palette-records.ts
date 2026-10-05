@@ -26,7 +26,7 @@ export function usePaletteRecords(query: string): PaletteItem[] {
     !!pondId && settled === query && query.length >= RECORD_MIN_QUERY && query[0] !== '>'
   const { data } = useQuery({
     queryKey: ['palette-records', pondId, settled],
-    queryFn: () => searchRecords(getSupabase(), pondId!, settled),
+    queryFn: () => (pondId ? searchRecords(getSupabase(), pondId, settled) : NONE),
     enabled,
     staleTime: 30_000,
   })

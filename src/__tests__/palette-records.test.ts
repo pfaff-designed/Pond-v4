@@ -1,5 +1,5 @@
 /**
- * The ⌘K palette's records source (KAN-77) against a stand-in for the data layer:
+ * The ⌘K palette's records source against a stand-in for the data layer:
  * what it asks Postgres for, how it escapes what was typed, and the sub-line it
  * writes for a title match and for a field match.
  */
@@ -59,7 +59,8 @@ function fakeSupabase(answer: (call: Call) => { data: Rows; error: Error | null 
 }
 
 const TASKS_SCHEMA: PropertyDef[] = [
-  { id: 'vendor', name: 'vendor', type: 'text' },
+  { id: 'vendor', name: 'Vendor', type: 'text' },
+  { id: 'renews', name: 'Renews', type: 'date' },
   { id: 'stage', name: 'stage', type: 'status', options: [{ id: 'o1', label: 'quoted' }] },
   { id: 'done', name: 'done', type: 'checkbox' },
 ]
@@ -107,7 +108,7 @@ describe('searchRecords', () => {
     ])
   })
 
-  it('a field match adds `· field: value` — and a status reads as its option’s label', async () => {
+  it('a field match adds `· field value` — no colon, the name lowercase, a status as its option’s label', async () => {
     const { client } = fakeSupabase((call) => {
       if (has(call, 'in')) return ok([TASKS])
       if (has(call, 'ilike')) return ok([])
@@ -118,11 +119,32 @@ describe('searchRecords', () => {
       ])
     })
     expect(await searchRecords(client, 'p', 'acme')).toEqual([
-      { id: 'r2', label: 'chase', kind: 'record', sub: 'tasks · vendor: Acme Cabinets' },
+      { id: 'r2', label: 'chase', kind: 'record', sub: 'tasks · vendor Acme Cabinets' },
     ])
     expect(await searchRecords(client, 'p', 'quoted')).toEqual([
-      { id: 'r3', label: 'sand', kind: 'record', sub: 'tasks · stage: quoted' },
+      { id: 'r3', label: 'sand', kind: 'record', sub: 'tasks · stage quoted' },
     ])
+  })
+
+  it('a date field reads as `d mmm`, lowercase — matched on what is shown or on the stored date', async () => {
+    const { client } = fakeSupabase((call) => {
+      if (has(call, 'in')) return ok([TASKS])
+      if (has(call, 'ilike')) return ok([])
+      return ok([
+        {
+          id: 'r5',
+          parent_id: 'tasks',
+          title: 'adobe creative cloud',
+          props: { renews: '2026-09-28' },
+        },
+      ])
+    })
+    const expected = [
+      { id: 'r5', label: 'adobe creative cloud', kind: 'record', sub: 'tasks · renews 28 sep' },
+    ]
+    expect(await searchRecords(client, 'p', 'sep')).toEqual(expected)
+    expect(await searchRecords(client, 'p', '2026-09')).toEqual(expected)
+    expect(await searchRecords(client, 'p', '28 sep')).toEqual(expected)
   })
 
   it('title matches lead, a row is listed once, and the whole list is capped', async () => {

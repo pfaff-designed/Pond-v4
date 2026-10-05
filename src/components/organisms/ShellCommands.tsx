@@ -22,7 +22,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import type { PaletteItem } from '@/components/molecules/CommandPalette'
-import { NewPondSheet } from '@/components/organisms/NewPondSheet'
+import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { ShellPalette } from '@/components/organisms/ShellPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { isPaletteChord, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
@@ -33,7 +33,6 @@ import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import { usePondId } from '@/lib/pond/context'
 import { pondHref } from '@/lib/pond/active'
-import { useCreatePond } from '@/lib/pond/use-create-pond'
 import { SaveAsTemplateBody } from '@/components/organisms/SaveAsTemplateSheet'
 import { templateSummary } from '@/lib/templates/summary'
 import { getPage } from '@/lib/pages/client'
@@ -85,7 +84,6 @@ export function ShellCommands() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
   const [naming, setNaming] = useState<string | null>(null)
-  const { create, pending, failure, clearFailure } = useCreatePond()
   const pondId = usePondId()
   const pondName = usePondName()
 
@@ -131,17 +129,21 @@ export function ShellCommands() {
     setTemplateError(null)
     setSavingTemplate(false)
   }, [])
-  // Global ⌘K → toggle the palette, or close the sheet the palette has become (the
-  // list is not open then, so a toggle would raise it behind the sheet). Capture
-  // phase on the document, so it fires before a focused editor/input can swallow it.
-  // The breadcrumb's ⌘K chip arrives as a window event.
-  const sheetOpen = saveTemplateFor !== null
+  const closeNewPondSheet = useCallback(() => setNaming(null), [])
+
+  // Global ⌘K → toggle the palette, or close the sheet it launched (the list is not
+  // open then, so a toggle would raise it behind the sheet). Capture phase on the
+  // document, so it fires before a focused editor/input can swallow it. The
+  // breadcrumb's ⌘K chip arrives as a window event.
+  const templateSheetOpen = saveTemplateFor !== null
+  const pondSheetOpen = naming !== null
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!isPaletteChord(e)) return
       e.preventDefault()
       e.stopPropagation()
-      if (sheetOpen) closeTemplateSheet()
+      if (templateSheetOpen) closeTemplateSheet()
+      else if (pondSheetOpen) closeNewPondSheet()
       else setPaletteOpen((prev) => !prev)
     }
     const openPalette = () => setPaletteOpen(true)
@@ -151,7 +153,7 @@ export function ShellCommands() {
       document.removeEventListener('keydown', onKey, { capture: true })
       window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
     }
-  }, [sheetOpen, closeTemplateSheet])
+  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet])
 
   // One owner for where a new page files: the palette's row names `parent.title`
   // and the dialog opens on `parent.id` — never derived twice.
@@ -263,22 +265,7 @@ export function ShellCommands() {
         defaultParentId={parent.id}
         defaultTitle={createTitle}
       />
-      {naming !== null && (
-        <NewPondSheet
-          defaultName={naming}
-          onCreate={(name) =>
-            void create(name).then((made) => {
-              if (made) setNaming(null)
-            })
-          }
-          onCancel={() => {
-            setNaming(null)
-            clearFailure()
-          }}
-          pending={pending}
-          failure={failure}
-        />
-      )}
+      {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
       {(paletteOpen || saveTemplateFor) && (
         <ShellPalette
           items={items}

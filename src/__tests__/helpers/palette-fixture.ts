@@ -83,12 +83,7 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'log-sleep', label: 'log sleep', kind: 'action' },
 ]
 
-/**
- * What the host feeds under `records` for a query — the palette lists these as
- * handed over and never re-filters them (a field match has no label hit). The
- * live source is `lib/pages/palette-records`, tested against a mocked data layer;
- * these are only the board's two frames, for the pure list and the stories.
- */
+/** What the host feeds under `records` for a query — listed as handed over, never re-filtered. */
 export const PALETTE_RECORDS: Readonly<Record<string, readonly PaletteItem[]>> = {
   cab: [{ id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' }],
   adobe: [

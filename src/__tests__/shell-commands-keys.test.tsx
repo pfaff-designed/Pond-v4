@@ -2,7 +2,7 @@
  * ⌘K has one owner: `ShellCommands`. It opens the palette, closes it, and closes
  * the save-as-template sheet the palette becomes (`Pond 06.09` frame 3) — and a
  * press while the sheet is open must not raise the list behind it. `CommandPalette`
- * itself handles esc and a press outside, and nothing else (KAN-57).
+ * itself handles esc and a press outside, and nothing else.
  */
 
 import React from 'react'

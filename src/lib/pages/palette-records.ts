@@ -1,5 +1,5 @@
 /**
- * The ⌘K palette's `records` source (KAN-77, `PondPicker` `typing` / `record`).
+ * The ⌘K palette's `records` source — `PondPicker`'s `typing` and `record` states.
  *
  * Records are `type='row'` pages, which `fetchPages` keeps out of the ['pages'] tree
  * on purpose — so the palette searches them itself, per query, and the result never
@@ -7,8 +7,9 @@
  * `pond_id` narrows to the pond in view), capped, and lists a record by its title or
  * by the first field whose value matches, which the row's sub-line then names:
  *
- *   `{database}`                         the match is on the title
- *   `{database} · {field}: {value}`      the match is on a field
+ *   `{database}`                      the match is on the title
+ *   `{database} · {field} {value}`    the match is on a field — `subscriptions · renews 28 sep`:
+ *                                     the field's name lowercase, a date as `d mmm`
  *
  * Field values live in `props` jsonb, which PostgREST cannot `ilike` without a cast
  * this codebase does not rely on. So titles are matched in SQL (exact at any volume)
@@ -20,7 +21,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { PaletteItem } from '@/components/molecules/palette-entries'
-import type { Database } from '@/lib/supabase/types'
+import { formatTick } from '@/lib/modules/view/gantt-shared'
+import type { Database, Json } from '@/lib/supabase/types'
 import {
   optionForValue,
   readSchema,
@@ -48,14 +50,19 @@ interface RecordRow {
   id: string
   parent_id: string | null
   title: string
-  props: Record<string, unknown> | null
+  props: Json
 }
 
 interface DatabaseRow {
   id: string
   title: string
-  props: Record<string, unknown> | null
+  props: Json
 }
+
+type Props = Record<string, unknown>
+
+const asProps = (json: Json): Props | null =>
+  json !== null && typeof json === 'object' && !Array.isArray(json) ? json : null
 
 const SEARCHABLE: ReadonlySet<PropertyDef['type']> = new Set([
   'text',
@@ -65,24 +72,37 @@ const SEARCHABLE: ReadonlySet<PropertyDef['type']> = new Set([
   'status',
 ])
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
+
+/** What the sub-line shows for a value: a date as the board writes it, a choice as its label. */
 const display = (def: PropertyDef, value: PropertyValue): string => {
   if (def.type === 'select' || def.type === 'status') {
     return optionForValue(def, value)?.label ?? ''
   }
+  if (def.type === 'date' && typeof value === 'string' && ISO_DATE.test(value)) {
+    return formatTick(value.slice(0, 10))
+  }
   return value === null || value === undefined ? '' : String(value)
 }
 
-/** The first searchable field of `row` whose value contains `q`, in schema order. */
+/**
+ * The first searchable field whose shown value — or, for a date, its stored ISO —
+ * contains `q`, in schema order. `name` is lowercase, as the board draws it.
+ */
 export const matchField = (
   schema: readonly PropertyDef[],
-  props: Record<string, unknown> | null,
+  props: Json,
   q: string
 ): { name: string; value: string } | null => {
-  const values = readValues(props)
+  const values = readValues(asProps(props))
   for (const def of schema) {
     if (!SEARCHABLE.has(def.type)) continue
-    const value = display(def, values[def.id] as PropertyValue)
-    if (value.toLowerCase().includes(q)) return { name: def.name, value }
+    const raw = values[def.id] as PropertyValue
+    const value = display(def, raw)
+    const searched = [value, def.type === 'date' ? String(raw ?? '') : '']
+    if (searched.some((text) => text.toLowerCase().includes(q))) {
+      return { name: def.name.toLowerCase(), value }
+    }
   }
   return null
 }
@@ -93,7 +113,7 @@ const recordItem = (
   field: { name: string; value: string } | null
 ): PaletteItem => {
   const where = database?.title || undefined
-  const sub = field ? [where, `${field.name}: ${field.value}`].filter(Boolean).join(' · ') : where
+  const sub = field ? [where, `${field.name} ${field.value}`].filter(Boolean).join(' · ') : where
   return { id: row.id, label: row.title || 'Untitled', kind: 'record', sub }
 }
 
@@ -104,6 +124,8 @@ export async function searchRecords(
   q: string,
   limit = RECORD_LIMIT
 ): Promise<PaletteItem[]> {
+  // The hand-authored `Database` types this select as `never[]`, so rows are cast
+  // to their real shape, as `fetchPages` does.
   const rows = () =>
     supabase
       .from('pages')
@@ -116,14 +138,14 @@ export async function searchRecords(
     .ilike('title', `%${escapeLike(q)}%`)
     .limit(limit)
   if (error) throw error
-  const byTitle = (titled ?? []) as unknown as RecordRow[]
+  const byTitle = (titled ?? []) as RecordRow[]
 
   let byField: RecordRow[] = []
   if (byTitle.length < limit) {
     const { data: scanned, error: scanError } = await rows().limit(SCAN_CAP)
     if (scanError) throw scanError
     const seen = new Set(byTitle.map((r) => r.id))
-    byField = ((scanned ?? []) as unknown as RecordRow[]).filter((r) => !seen.has(r.id))
+    byField = ((scanned ?? []) as RecordRow[]).filter((r) => !seen.has(r.id))
   }
 
   const parentIds = [...new Set([...byTitle, ...byField].flatMap((r) => r.parent_id ?? []))]
@@ -131,11 +153,11 @@ export async function searchRecords(
     ? await supabase.from('pages').select('id, title, props').in('id', parentIds)
     : { data: [], error: null }
   if (parentError) throw parentError
-  const databases = new Map(((parents ?? []) as unknown as DatabaseRow[]).map((d) => [d.id, d]))
+  const databases = new Map(((parents ?? []) as DatabaseRow[]).map((d) => [d.id, d]))
 
   const fieldHits = byField.flatMap((row) => {
     const database = row.parent_id ? databases.get(row.parent_id) : undefined
-    const field = matchField(readSchema(database?.props) ?? [], row.props, q)
+    const field = matchField(readSchema(asProps(database?.props ?? null)) ?? [], row.props, q)
     return field ? [recordItem(row, database, field)] : []
   })
   const titleHits = byTitle.map((row) =>
