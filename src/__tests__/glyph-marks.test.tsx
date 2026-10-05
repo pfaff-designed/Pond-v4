@@ -331,7 +331,9 @@ describe('DocumentPanel — the path it publishes leads with the area’s mark',
 
   it('a top-level page is its own area, so the path leads with its own mark', async () => {
     const { findByTestId } = renderPanel('health')
-    await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe('leaf-01'))
+    await waitFor(async () =>
+      expect(await publishedGlyph(findByTestId)).toBe(areaGlyph('Health'))
+    )
   })
 })
 
