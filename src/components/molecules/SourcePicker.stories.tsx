@@ -119,7 +119,7 @@ function Frame({
 }
 
 const meta = {
-  title: 'Molecules/SourcePicker',
+  title: 'Organisms/PondPicker/Source',
   component: Frame,
   parameters: { layout: 'centered' },
   args: { block: 'table' },

@@ -108,7 +108,7 @@ function Frame({
 }
 
 const meta = {
-  title: 'Molecules/SlashMenu',
+  title: 'Organisms/PondPicker/Slash',
   component: Frame,
   parameters: { layout: 'centered' },
   args: { query: '' },
