@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent } from 'storybook/test'
 
 import { CommandPalette, type CommandPaletteProps } from './CommandPalette'
-import { PALETTE_FOOT } from './palette-entries'
+import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from './palette-entries'
 import {
   PALETTE_ITEMS,
   PALETTE_SUGGESTED,
@@ -41,6 +41,27 @@ const INK = {
   glassBorder: 'rgba(250, 249, 239, 0.2)',
 }
 type Palette = typeof PAPER
+
+/** The board's `mob` branch against its desktop one (`PondPicker.dc.html`, `kind="palette"`). */
+const DESKTOP = {
+  width: 520,
+  head: 14,
+  rowPad: '9px 12px',
+  row: 13.5,
+  sub: 12.5,
+  note: 12,
+  foot: PALETTE_FOOT,
+}
+const MOBILE = {
+  width: 360,
+  head: 16,
+  rowPad: '13px 12px',
+  row: 15,
+  sub: 13,
+  note: 13,
+  foot: PALETTE_FOOT_MOBILE,
+}
+type Metrics = typeof DESKTOP
 
 const MONO = /PP Neue Montreal Mono/
 const px = (v: string) => parseFloat(v)
@@ -109,7 +130,7 @@ const groups = (root: HTMLElement) =>
   [...glassOf(root).querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
 
 /** `glass` · wash · `head` · `headKey` · `groupStyle` · row · `sub` · `hint` · `enter` · `footStyle`. */
-async function assertChrome(root: HTMLElement, p: Palette) {
+async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
   const wash = root.querySelector<HTMLElement>('[data-part="wash"]')!
   await expect(getComputedStyle(wash).position).toBe('fixed')
   await expect(alphaOf(getComputedStyle(wash).backgroundColor)).toBeCloseTo(0.62, 2)
@@ -117,8 +138,14 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   const glass = glassOf(root)
   const g = getComputedStyle(glass)
   await expect(g.position).toBe('fixed')
+  // `Pond 06.13`'s import: top 110 · left 50% · translateX(-40%). Below md it is centred.
   await expect(px(g.top)).toBe(110)
-  await expect(px(g.width)).toBe(520)
+  await expect(px(g.left)).toBeCloseTo(window.innerWidth / 2, 0)
+  await expect(g.translate).toMatch(m === DESKTOP ? /^-40%/ : /^-50%/)
+  await expect(px(g.width)).toBe(m.width)
+  const placed = glass.getBoundingClientRect()
+  await expect(placed.left).toBeGreaterThanOrEqual(12)
+  await expect(placed.right).toBeLessThanOrEqual(window.innerWidth - 12)
   await expect(g.boxSizing).toBe('border-box')
   await expect(g.padding).toBe('10px')
   await expect(g.borderTopLeftRadius).toBe('20px')
@@ -132,7 +159,7 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
   await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
   // Centred near the top, the glass grows from the middle of its top edge.
-  await expect(g.transformOrigin).toBe('260px 0px')
+  await expect(g.transformOrigin).toBe(`${m.width / 2}px 0px`)
 
   const head = glass.querySelector<HTMLElement>('[data-part="head"]')!
   const h = getComputedStyle(head)
@@ -144,14 +171,14 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(h.borderBottomWidth).toBe('1px')
   await expect(alphaOf(h.borderBottomColor)).toBeCloseTo(0.09, 2)
   await expect(h.fontFamily).toMatch(MONO)
-  await expect(px(h.fontSize)).toBe(14)
+  await expect(px(h.fontSize)).toBe(m.head)
   const waves = head.querySelector<HTMLElement>('[data-icon="waves-02"]')!
   await expect(getComputedStyle(waves).width).toBe('13px')
   await expect(getComputedStyle(waves).height).toBe('13px')
   const input = head.querySelector<HTMLInputElement>('input')!
   const i = getComputedStyle(input)
   await expect(i.fontFamily).toMatch(MONO)
-  await expect(px(i.fontSize)).toBe(14)
+  await expect(px(i.fontSize)).toBe(m.head)
   await expect(i.color).toBe(p.ink)
   await expect(input.getAttribute('role')).toBe('combobox')
   // A floating glass with a combobox, NOT a dialog: nothing traps, nothing is
@@ -192,12 +219,12 @@ async function assertChrome(root: HTMLElement, p: Palette) {
     await expect(s.display).toBe('flex')
     await expect(s.alignItems).toBe('center')
     await expect(s.columnGap).toBe('10px')
-    await expect(s.padding).toBe('9px 12px')
+    await expect(s.padding).toBe(m.rowPad)
     await expect(s.borderTopLeftRadius).toBe('14px')
     // SANS — ADR 0004 §4 — at the board's 13.5 and tracking 0.
     await expect(s.fontFamily).toMatch(/PP Neue Montreal/)
     await expect(s.fontFamily).not.toMatch(MONO)
-    await expect(px(s.fontSize)).toBe(13.5)
+    await expect(px(s.fontSize)).toBe(m.row)
     await expect(tracking(s.letterSpacing)).toBe(0)
     await expect(s.color).toBe(kind === 'action' ? p.tier80 : p.ink)
     await expect(alphaOf(s.backgroundColor)).toBeCloseTo(selected ? 0.07 : 0, 2)
@@ -225,7 +252,7 @@ async function assertChrome(root: HTMLElement, p: Palette) {
     const sub = row.querySelector<HTMLElement>('[data-part="sub"]')
     if (sub) {
       const ss = getComputedStyle(sub)
-      await expect(px(ss.fontSize)).toBe(12.5)
+      await expect(px(ss.fontSize)).toBe(m.sub)
       await expect(ss.color).toBe(p.tier68)
       await expect(ss.whiteSpace).toBe('nowrap')
       await expect(ss.textOverflow).toBe('ellipsis')
@@ -255,7 +282,11 @@ async function assertChrome(root: HTMLElement, p: Palette) {
 
   const foot = glass.querySelector<HTMLElement>('[data-part="foot"]')!
   const f = getComputedStyle(foot)
-  await expect(foot.textContent).toBe(PALETTE_FOOT.join(''))
+  // Hidden hints stay in the DOM, so what the board draws is what is displayed.
+  const shown = [...foot.children]
+    .filter((c) => getComputedStyle(c).display !== 'none')
+    .map((c) => c.textContent)
+  await expect(shown).toEqual([...m.foot])
   await expect(f.display).toBe('flex')
   await expect(f.flexWrap).toBe('wrap')
   await expect(f.columnGap).toBe('14px')
@@ -285,8 +316,8 @@ async function assertHit(root: HTMLElement, label: string, hit: string) {
 
 // ── opened ─────────────────────────────────────────────────────────────────────
 
-async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean) {
-  await assertChrome(root, p)
+async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean, m = DESKTOP) {
+  await assertChrome(root, p, m)
   const input = glassOf(root).querySelector<HTMLInputElement>('input')!
   await expect(input.placeholder).toBe('jump to a page, or > for actions')
   await expect(document.activeElement).toBe(input)
@@ -324,8 +355,8 @@ export const OpenedSuggestedInk: Story = {
 
 // ── typing ─────────────────────────────────────────────────────────────────────
 
-async function assertTyping(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertTyping(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
+  await assertChrome(root, p, m)
   await expect(groups(root)).toEqual(['pages', 'records', 'actions'])
   await expect(labels(root)).toEqual([
     'cabinet plan',
@@ -390,15 +421,15 @@ export const RecordInk: Story = {
 
 // ── empty ──────────────────────────────────────────────────────────────────────
 
-async function assertEmpty(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) {
+  await assertChrome(root, p, m)
   const note = glassOf(root).querySelector<HTMLElement>('[data-part="note"]')!
   await expect(note.textContent).toBe('no page or record called “cabnet”')
   const s = getComputedStyle(note)
   await expect(s.padding).toBe('10px 12px')
   await expect(s.fontFamily).toMatch(MONO)
-  await expect(px(s.fontSize)).toBe(12)
-  await expect(px(s.lineHeight)).toBeCloseTo(18.6, 1)
+  await expect(px(s.fontSize)).toBe(m.note)
+  await expect(px(s.lineHeight)).toBeCloseTo(m.note * 1.55, 1)
   await expect(s.color).toBe(p.tier80)
   await expect(groups(root)).toEqual(['did you mean'])
   await expect(labels(root)).toEqual([
@@ -476,6 +507,52 @@ export const PondsInk: Story = {
   play: async ({ canvasElement }) => assertPonds(canvasElement, INK),
 }
 
+// ── mobile — the board's `mob` branch ──────────────────────────────────────────
+
+/** An iPhone-width viewport, below Tailwind's `md` (768). */
+const MOBILE_VIEWPORT = {
+  viewport: {
+    options: { phone: { name: 'phone', styles: { width: '390px', height: '844px' } } },
+  },
+}
+const onPhone = { viewport: { value: 'phone', isRotated: false } }
+
+async function assertPhone() {
+  await expect(window.innerWidth).toBeLessThan(768)
+}
+
+/** 360 wide, head 16, rows `13px 12px` at 15, sub 13; the foot keeps `↵ open` and `> actions only`. */
+export const MobileOpened: Story = {
+  parameters: MOBILE_VIEWPORT,
+  globals: onPhone,
+  play: async ({ canvasElement }) => {
+    await assertPhone()
+    await assertOpened(canvasElement, PAPER, false, MOBILE)
+  },
+}
+
+/** `cab`: the sub-line is 13 on a phone, the hit still underlined. */
+export const MobileTyping: Story = {
+  args: { defaultQuery: 'cab' },
+  parameters: MOBILE_VIEWPORT,
+  globals: onPhone,
+  play: async ({ canvasElement }) => {
+    await assertPhone()
+    await assertTyping(canvasElement, PAPER, MOBILE)
+  },
+}
+
+/** `cabnet`: the note is 13 on a phone. */
+export const MobileEmpty: Story = {
+  args: { defaultQuery: 'cabnet' },
+  parameters: MOBILE_VIEWPORT,
+  globals: onPhone,
+  play: async ({ canvasElement }) => {
+    await assertPhone()
+    await assertEmpty(canvasElement, PAPER, MOBILE)
+  },
+}
+
 // ── the keys ───────────────────────────────────────────────────────────────────
 
 /** ↓↓ then ↵ opens the third row; ⌫ on an empty line clears the scope; esc closes. */
@@ -495,9 +572,10 @@ export const Keys: Story = {
 // ── dismissal, and the one button in the glass ─────────────────────────────────
 
 /**
- * Three ways out, and one way that is not: esc, the ⌘K that opened it, and a press
- * anywhere outside the glass all close; a press INSIDE (on the input) must not, or
- * the palette shuts the moment someone clicks into the field to type.
+ * Two ways out, and two that are not: esc and a press anywhere outside the glass
+ * close; a press INSIDE (on the input) must not, or the palette shuts the moment
+ * someone clicks into the field to type — and ⌘K is not the palette's to handle, the
+ * shell owns that key (KAN-57).
  *
  * `esc` is the glass's only button, so it is the only thing in it that can take
  * focus — and it wears the house mist ring, asserted as the painted outline rather
@@ -517,8 +595,8 @@ export const Dismissal: Story = {
     await expect(args.onClose).toHaveBeenCalledTimes(1)
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalledTimes(2)
-    await userEvent.keyboard('{Meta>}k{/Meta}')
-    await expect(args.onClose).toHaveBeenCalledTimes(3)
+    await userEvent.keyboard('{Meta>}k{/Meta}{Control>}k{/Control}')
+    await expect(args.onClose).toHaveBeenCalledTimes(2)
 
     // Tab off the input reaches `esc`, the one button — and the mist ring paints.
     const esc = glass.querySelector<HTMLElement>('[data-part="head-key"]')!
@@ -534,7 +612,7 @@ export const Dismissal: Story = {
     await expect(f.outlineColor).toBe('rgb(165, 200, 209)')
 
     await userEvent.click(esc)
-    await expect(args.onClose).toHaveBeenCalledTimes(4)
+    await expect(args.onClose).toHaveBeenCalledTimes(3)
   },
 }
 

@@ -19,6 +19,7 @@ import {
   ASK_POND_ID,
   NEW_PAGE_ID,
   PALETTE_FOOT,
+  PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteEntry,
 } from '@/components/molecules/palette-entries'
@@ -38,10 +39,9 @@ function boardPaletteBranch(): string {
   return html.slice(start, end)
 }
 const boardGroups = () => [...boardPaletteBranch().matchAll(/\bG\('([^']+)'\)/g)].map((m) => m[1])
-const boardFoot = () => {
-  const m = boardPaletteBranch().match(/const keys = \[([^\]]+)\]/)!
-  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
-}
+const quoted = (list: string) => [...list.matchAll(/'([^']+)'/g)].map((x) => x[1])
+const boardFoot = () => quoted(boardPaletteBranch().match(/const keys = \[([^\]]+)\]/)![1])
+const boardFootMobile = () => quoted(boardPaletteBranch().match(/foot = mob \? \[([^\]]+)\]/)![1])
 
 // The board's own rows, as items, are `helpers/palette-fixture` — shared with the stories.
 
@@ -70,6 +70,12 @@ describe('paletteEntries — the board’s states', () => {
 
   it('the foot legend is the board’s `keys`, verbatim', () => {
     expect([...PALETTE_FOOT]).toEqual(boardFoot())
+  })
+
+  it('the mobile foot is the board’s `mob` branch, verbatim, and a subset of the full legend', () => {
+    expect([...PALETTE_FOOT_MOBILE]).toEqual(boardFootMobile())
+    expect(boardFootMobile()).toEqual(['↵ open', '> actions only'])
+    for (const hint of PALETTE_FOOT_MOBILE) expect(PALETTE_FOOT).toContain(hint)
   })
 
   it('opened: the recent pages, then the `suggested` actions the host supplies, in the board’s order', () => {
@@ -376,17 +382,30 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
     )
   })
 
-  it('esc, ⌘K and a press outside close; esc is the one button, and it carries the ring', () => {
+  it('esc and a press outside close, ⌘K does not (the shell owns that key); esc is the one button, and it carries the ring', () => {
     const { onClose } = renderPalette()
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(onClose).toHaveBeenCalledTimes(1)
     fireEvent.pointerDown(document.body)
-    expect(onClose).toHaveBeenCalledTimes(3)
+    expect(onClose).toHaveBeenCalledTimes(2)
     fireEvent.pointerDown(input())
-    expect(onClose).toHaveBeenCalledTimes(3)
+    expect(onClose).toHaveBeenCalledTimes(2)
     const esc = screen.getByRole('button', { name: 'esc' })
     expect(esc.className).toMatch(/focus-visible:outline-mn-area-b/)
     expect(esc.className).not.toMatch(/outline-none/)
+  })
+
+  it('below md the foot hides the hints a touch screen has no key for; the rest stay', () => {
+    renderPalette()
+    const spans = [...glass().querySelectorAll('[data-part="foot"] span')]
+    expect(spans.map((f) => [f.textContent, f.classList.contains('max-md:hidden')])).toEqual([
+      ['↑↓ move', true],
+      ['↵ open', false],
+      ['> actions only', false],
+      ['esc close', true],
+    ])
   })
 
   it('scoped: the chip, no placeholder, and ⌫ on an empty line clears it', () => {
@@ -420,6 +439,38 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
 describe('the gut: nothing of the dialog survives in the source', () => {
   const palette = read('src/components/molecules/CommandPalette.tsx')
   const paletteRow = read('src/components/molecules/palette-row.tsx')
+
+  it('the placement is 06.13’s import, the mobile values are the `mob` branch, and the old ones are gone', () => {
+    const board = boardPaletteBranch() + readHandoff('PondPicker.dc.html')
+    expect(board).toMatch(/mob \? 360 : 520/)
+    expect(readHandoff('Pond 06.13 Create a pond.dc.html')).toMatch(
+      /left:50%;top:110px;transform:translateX\(-40%\)/
+    )
+    for (const cls of [
+      'fixed left-1/2 top-[110px]',
+      'w-[360px]',
+      'md:w-[520px]',
+      '-translate-x-1/2',
+      'md:-translate-x-[40%]',
+      'max-w-[calc(100vw-24px)]',
+    ])
+      expect(palette).toContain(cls)
+    expect(palette).toContain('bg-mn-surface/[0.62]')
+    expect(palette).not.toMatch(
+      /top-\[120px\]|w-\[560px\]|\/\[0?\.55\]|backdrop-blur|blur\(2px\)|calc\(50%-260px\)/
+    )
+    expect(palette).toMatch(/text-\[16px\] md:text-\[14px\]/)
+    expect(palette).toMatch(/text-\[13px\] leading-\[1\.55\].*md:text-\[12px\]/)
+    expect(paletteRow).toMatch(/py-\[13px\].*text-\[15px\].*md:py-\[9px\] md:text-\[13\.5px\]/)
+    expect(paletteRow).toMatch(/text-\[13px\] .*md:text-\[12\.5px\]/)
+  })
+
+  it('⌘K has one owner: the palette registers no chord, and the shell reads one platform-aware predicate', () => {
+    expect(palette).not.toMatch(/metaKey|ctrlKey|toLowerCase\(\) === 'k'/)
+    const shell = read('src/components/organisms/ShellCommands.tsx')
+    expect(shell).toMatch(/isPaletteChord/)
+    expect(shell).not.toMatch(/metaKey|ctrlKey/)
+  })
 
   it('no dialog chrome, no named type sizes, no `cn()`', () => {
     for (const src of [palette, paletteRow]) {

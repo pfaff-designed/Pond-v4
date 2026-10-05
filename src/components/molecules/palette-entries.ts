@@ -90,7 +90,10 @@ export const ASK_POND_ID = 'palette:ask-pond'
 export const NEW_PAGE_ID = 'palette:new-page'
 
 /** The board's foot legend — one for every state. */
-export const PALETTE_FOOT = ['↑↓ move', '↵ open', '> actions only', 'esc close'] as const
+export const PALETTE_FOOT: readonly string[] = ['↑↓ move', '↵ open', '> actions only', 'esc close']
+
+/** The foot below `md` — the board's `mob` branch drops the two hints a touch screen has no key for. */
+export const PALETTE_FOOT_MOBILE: readonly string[] = ['↵ open', '> actions only']
 
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3

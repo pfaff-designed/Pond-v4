@@ -10,18 +10,23 @@
  * `.components.PondPicker.variants["kind=palette|theme=paper"]` (the board's own
  * `renderVals()`), never measured off a served frame:
  *
- *   glass   520 · border-box · padding 10 · radius 20 · mono · ink · column · gap 2
- *           → `.mn-glass`: the board's light recipe byte for byte; dark is the
- *             Shell's through the same class (ADR 0004 ruling 11 — no second recipe)
+ *   glass   520 (mobile 360) · border-box · padding 10 · radius 20 · mono · ink ·
+ *           column · gap 2 → `.mn-glass`: the board's light recipe byte for byte;
+ *           dark is the Shell's through the same class (ADR 0004 ruling 11 — no
+ *           second recipe)
+ *   place   `Pond 06.13`'s import: top 110 · left 50% · translateX(-40%). Below
+ *           `md` it is centred instead — -40% of 360 pushes the glass past a
+ *           narrow viewport's edge, and the 12px clamp is `max-width`
  *   wash    paper at .62 behind it (`Pond 06.13`'s composed frame); dark takes
  *           the dark ground at the same alpha, since no dark frame draws one
- *   head    flex · gap 10 · 10px 12px 14px · mb 4 · 1px ink .09 · mono 14
+ *   head    flex · gap 10 · 10px 12px 14px · mb 4 · 1px ink .09 · mono 14 (mobile 16)
  *           waves glyph · [scope chip] · query · caret · `esc` at 10.5 / ink .8
  *   scope   1px 6px · radius 6 · ink .07 · ink .8
  *   group   8px 12px 4px · SANS 500 · 10.5 · .1em · uppercase · ink .68 — the page
  *           eyebrow (`kicker.ts`), not the `/` menu's lowercase mono label
- *   note    10px 12px · mono 12 · 1.55 · ink .8 · text-wrap pretty
- *   foot    flex wrap · gap 14 · 10px 12px 4px · mt 4 · 1px ink .09 · 10.5 · ink .68
+ *   note    10px 12px · mono 12 (mobile 13) · 1.55 · ink .8 · text-wrap pretty
+ *   foot    flex wrap · gap 14 · 10px 12px 4px · mt 4 · 1px ink .09 · 10.5 · ink .68;
+ *           mobile lists only `PALETTE_FOOT_MOBILE`
  *
  * The rows are `palette-row.tsx` (sans — ADR 0004 §4) and what they list is
  * `palette-entries.ts`. The caret is the input's own: the board's `caret` span
@@ -42,6 +47,7 @@ import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 import {
   PALETTE_FOOT,
+  PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteItem,
   type PaletteScope,
@@ -53,7 +59,7 @@ export type { PaletteItem, PaletteKind, PaletteScope } from './palette-entries'
 export interface CommandPaletteProps {
   items: readonly PaletteItem[]
   onSelect: (item: PaletteItem) => void
-  /** esc, ⌘K again, or a press outside. */
+  /** esc or a press outside. ⌘K is the shell's: `ShellCommands` owns opening and closing. */
   onClose: () => void
   /** The rail's selected page and its children (2g `scoped`); ⌫ on an empty line clears it. */
   scope?: PaletteScope | null
@@ -99,17 +105,17 @@ const WASH = 'fixed inset-0 z-[99] bg-mn-surface/[0.62]'
 // reads this origin and would otherwise fall back to top left (the composer's
 // mirror case, #278).
 const GLASS =
-  'mn-glass rounded-mn-card motion-menu [--motion-menu-origin:top_center] fixed left-[max(12px,calc(50%-260px))] top-[110px] z-[100] box-border flex w-[520px] max-w-[calc(100vw-24px)] flex-col gap-[2px] p-[10px] font-mono text-mn-text'
+  'mn-glass rounded-mn-card motion-menu [--motion-menu-origin:top_center] fixed left-1/2 top-[110px] z-[100] box-border flex w-[360px] max-w-[calc(100vw-24px)] -translate-x-1/2 flex-col md:w-[520px] md:-translate-x-[40%] gap-[2px] p-[10px] font-mono text-mn-text'
 const HEAD =
-  'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[12px] pt-[10px] pb-[14px] font-mono text-[14px]'
+  'mb-[4px] flex items-center gap-[10px] border-b border-mn-text/[0.09] px-[12px] pt-[10px] pb-[14px] font-mono text-[16px] md:text-[14px]'
 const INPUT =
-  'min-w-0 flex-1 bg-transparent font-mono text-[14px] text-mn-text caret-mn-text outline-none placeholder:text-mn-text-secondary'
+  'min-w-0 flex-1 bg-transparent font-mono text-[16px] text-mn-text md:text-[14px] caret-mn-text outline-none placeholder:text-mn-text-secondary'
 const SCOPE =
   'whitespace-nowrap rounded-[6px] bg-mn-text/[0.07] px-[6px] py-[1px] text-mn-text-meta'
 const HEAD_KEY = `${FOCUS_VISIBLE_RING} rounded-[4px] font-mono text-[10.5px] text-mn-text-meta`
 const GROUP = `${pageEyebrowClass} px-[12px] pt-[8px] pb-[4px]`
 const NOTE =
-  'px-[12px] py-[10px] font-mono text-[12px] leading-[1.55] text-mn-text-meta [text-wrap:pretty]'
+  'px-[12px] py-[10px] font-mono text-[13px] leading-[1.55] text-mn-text-meta [text-wrap:pretty] md:text-[12px]'
 const FOOT =
   'mt-[4px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[12px] pt-[10px] pb-[4px] text-[10.5px] text-mn-text-secondary'
 
@@ -149,12 +155,11 @@ export function CommandPalette({
       ?.scrollIntoView({ block: 'nearest' })
   }, [active, entries.length])
 
-  // esc closes; ⌘K while open closes (the toggle). Capture phase, so neither
-  // reaches the page's own handlers. A press outside the glass closes too.
+  // esc closes, in the capture phase so it never reaches the page's own handlers.
+  // A press outside the glass closes too. ⌘K is not handled here — see `onClose`.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const toggle = (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k'
-      if (e.key !== 'Escape' && !toggle) return
+      if (e.key !== 'Escape') return
       e.preventDefault()
       e.stopPropagation()
       onClose()
@@ -268,7 +273,12 @@ export function CommandPalette({
         {!sheet && (
           <div data-part="foot" className={FOOT}>
             {PALETTE_FOOT.map((f) => (
-              <span key={f}>{f}</span>
+              <span
+                key={f}
+                className={PALETTE_FOOT_MOBILE.includes(f) ? undefined : 'max-md:hidden'}
+              >
+                {f}
+              </span>
             ))}
           </div>
         )}

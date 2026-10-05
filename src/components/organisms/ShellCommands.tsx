@@ -6,7 +6,10 @@
  * Owns the ⌘K palette (#279): pages, records and actions in one list, over the
  * shared `['pages']` cache via `lib/pages/palette-items`. The breadcrumb's ⌘K chip
  * raises a decoupled request (`lib/shell-commands`) that this organism answers.
- * ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key).
+ * ⌘K is Ctrl+K off a Mac (AUDIT K3's Ctrl substitution, for this key). This file is
+ * its one owner: it opens the palette, closes it, and closes the save-as-template
+ * sheet the palette becomes — `CommandPalette` itself only handles esc and a press
+ * outside.
  *
  * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
  * open the New page dialog here: name-first, defaulting the destination to the
@@ -20,7 +23,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import { CommandPalette, type PaletteItem } from '@/components/molecules/CommandPalette'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
-import { OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
+import { isPaletteChord, OPEN_PALETTE_EVENT } from '@/lib/shell-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { fetchPages } from '@/lib/pages/tree'
@@ -85,26 +88,6 @@ export function ShellCommands() {
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])
 
-  // Global ⌘K / Ctrl+K → toggle the palette. Registered in the *capture* phase on
-  // the document so it fires before any focused editor/input can swallow it.
-  // The breadcrumb's ⌘K chip arrives as a window event.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        e.stopPropagation()
-        setPaletteOpen((prev) => !prev)
-      }
-    }
-    const openPalette = () => setPaletteOpen(true)
-    document.addEventListener('keydown', onKey, { capture: true })
-    window.addEventListener(OPEN_PALETTE_EVENT, openPalette)
-    return () => {
-      document.removeEventListener('keydown', onKey, { capture: true })
-      window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
-    }
-  }, [])
-
   // Recents are read as the palette opens, so a page opened from it lists next time.
   const items = useMemo(
     () =>
@@ -140,6 +123,28 @@ export function ShellCommands() {
     setTemplateError(null)
     setSavingTemplate(false)
   }, [])
+  // Global ⌘K → toggle the palette, or close the sheet the palette has become (the
+  // list is not open then, so a toggle would raise it behind the sheet). Capture
+  // phase on the document, so it fires before a focused editor/input can swallow it.
+  // The breadcrumb's ⌘K chip arrives as a window event.
+  const sheetOpen = saveTemplateFor !== null
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!isPaletteChord(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (sheetOpen) closeTemplateSheet()
+      else setPaletteOpen((prev) => !prev)
+    }
+    const openPalette = () => setPaletteOpen(true)
+    document.addEventListener('keydown', onKey, { capture: true })
+    window.addEventListener(OPEN_PALETTE_EVENT, openPalette)
+    return () => {
+      document.removeEventListener('keydown', onKey, { capture: true })
+      window.removeEventListener(OPEN_PALETTE_EVENT, openPalette)
+    }
+  }, [sheetOpen, closeTemplateSheet])
+
   // One owner for where a new page files: the palette's row names `parent.title`
   // and the dialog opens on `parent.id` — never derived twice.
   const parent = useMemo(

@@ -10,14 +10,15 @@
  * Every literal is `wayfinder/board-values.generated.json`
  * `.components.PondPicker.variants["kind=palette|theme=paper"]`:
  *
- *   row      flex · gap 10 · 9px 12px · radius 14 · sans 13.5 · tracking 0
+ *   row      flex · gap 10 · 9px 12px (mobile 13px 12px) · radius 14 · sans 13.5 (mobile 15) ·
+ *            tracking 0
  *            page / database / record / pond at full ink; action at ink .8
  *            selected: ink .07
  *   label    500 when the row leads with a glyph, else 400 · nowrap · ellipsis
  *   glyph    13 × 13 mask over currentColor — the `Icon` atom, a page's own mark
  *   svg      the board's `db` mark, 13 × 13 on a 14 grid at 1.4, in a wrap at ink .8
  *   >        an action's lead, mono 12.5
- *   sub      INLINE after the name · 12.5 · ink .68 · nowrap · ellipsis
+ *   sub      INLINE after the name · 12.5 (mobile 13) · ink .68 · nowrap · ellipsis
  *   hint     0 1 auto · max 45% · mono 10.5 · ink .68 — hidden on the selected row
  *   ↵        mono 10.5 · ink .8 — on the selected row
  *   match    underline · offset 3 · thickness 1, over #278's `pre` / `hit` / `post`
@@ -37,8 +38,8 @@ import { ENTER, HINT, MATCH, Mark } from './slash-row'
 export type PaletteRowEntry = Extract<PaletteEntry, { kind: 'row' }>
 
 const ROW =
-  'flex cursor-default items-center gap-[10px] rounded-[14px] px-[12px] py-[9px] font-sans text-[13.5px] tracking-[0]'
-const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
+  'flex cursor-default items-center gap-[10px] rounded-[14px] px-[12px] py-[13px] font-sans text-[15px] tracking-[0] md:py-[9px] md:text-[13.5px]'
+const SUB = 'min-w-0 truncate text-[13px] text-mn-text-secondary md:text-[12.5px]'
 
 export function PaletteRow({
   id,
