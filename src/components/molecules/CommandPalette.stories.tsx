@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { expect, fn, userEvent } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 
+import { Breadcrumb } from './Breadcrumb'
 import { CommandPalette, type CommandPaletteProps } from './CommandPalette'
+import { isPaletteChord } from '@/lib/shell-commands'
 import { PALETTE_FOOT, PALETTE_FOOT_MOBILE } from './palette-entries'
 import {
   PALETTE_ITEMS,
@@ -111,8 +113,53 @@ function Frame({
   )
 }
 
+/**
+ * The palette as the shell holds it: closed, it is only the breadcrumb's ⌘K chip.
+ * The chip or the chord opens it; the chord again, esc, a press outside or a
+ * chosen row closes it.
+ */
+function ShellFrame({ ink }: { ink?: boolean }) {
+  const [container, setContainer] = useState<HTMLDivElement | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isPaletteChord(e)) return
+      e.preventDefault()
+      setOpen((wasOpen) => !wasOpen)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const handleClose = () => setOpen(false)
+
+  return (
+    <div
+      ref={setContainer}
+      data-theme={ink ? 'ink' : 'paper'}
+      className={`${ink ? 'dark bg-raw-ink' : 'bg-raw-paper'} min-h-screen w-full p-5`}
+    >
+      <Breadcrumb
+        crumbs={[{ id: 'professional', type: 'page', title: 'professional' }]}
+        current="standups"
+        onNavigate={() => {}}
+        onCommandK={() => setOpen(true)}
+      />
+      {open && container && (
+        <CommandPalette
+          items={PALETTE_ITEMS}
+          container={container}
+          onSelect={handleClose}
+          onClose={handleClose}
+        />
+      )}
+    </div>
+  )
+}
+
 const meta = {
-  title: 'Molecules/CommandPalette',
+  title: 'Organisms/PondPicker/Palette',
   component: Frame,
   parameters: { layout: 'fullscreen' },
   args: {},
@@ -334,6 +381,36 @@ async function assertOpened(root: HTMLElement, p: Palette, suggested: boolean, m
   ])
   const actions = glassOf(root).querySelectorAll('[data-kind="action"]')
   await expect(actions.length).toBe(suggested ? 2 : 0)
+}
+
+/** Pressing both chords is one toggle: each platform owns exactly one of them. */
+const pressChord = () => userEvent.keyboard('{Meta>}k{/Meta}{Control>}k{/Control}')
+
+async function assertClosedThenOpens(root: HTMLElement) {
+  const chip = within(root).getByRole('button', { name: 'Command palette (⌘K)' })
+  await expect(chip.textContent).toBe('⌘K')
+  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
+
+  await userEvent.click(chip)
+  await expect(root.querySelector('[data-part="glass"]')).not.toBeNull()
+  await expect(document.activeElement).toBe(glassOf(root).querySelector('input'))
+  await userEvent.keyboard('{Escape}')
+  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
+
+  await pressChord()
+  await expect(root.querySelector('[data-part="glass"]')).not.toBeNull()
+  await pressChord()
+  await expect(root.querySelector('[data-part="glass"]')).toBeNull()
+}
+
+/** At rest the palette is the breadcrumb's ⌘K chip; the chip or ⌘K (Ctrl+K off Apple) opens it. */
+export const Closed: Story = {
+  render: () => <ShellFrame />,
+  play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
+}
+export const ClosedInk: Story = {
+  render: () => <ShellFrame ink />,
+  play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
 }
 
 /** Nothing typed, nothing inferred: the last three pages under `recent`, and no `suggested` faked (#285). */
