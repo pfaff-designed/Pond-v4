@@ -274,9 +274,9 @@ describe('treeKeyCommand', () => {
     expect(key('Delete', LIFE_ID)).toBeNull()
   })
 
-  it('+ adds a child — but never on the Life root', () => {
+  it('+ adds a child — on the Life root too, where it adds a top-level page', () => {
     expect(key('+', 'personal')).toEqual({ kind: 'addChild', id: 'personal' })
-    expect(key('+', LIFE_ID)).toBeNull()
+    expect(key('+', LIFE_ID)).toEqual({ kind: 'addChild', id: LIFE_ID })
   })
 
   it('unknown keys and stale ids return null (no focus jump)', () => {

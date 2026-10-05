@@ -263,24 +263,68 @@ export const LifeCaretCollapsesAll: Story = {
   },
 }
 
+const rowTools = (button: HTMLElement) => button.closest<HTMLElement>('[data-part="row-tools"]')!
+const isShown = (el: HTMLElement) =>
+  getComputedStyle(el).opacity === '1' && el.getBoundingClientRect().width > 0
+
 /**
- * Hover CRUD is present per row, revealed on hover / focus-within — and the
- * controls are REAL tab stops (ticket-27 keyboard reachability): no
- * tabindex=-1 on ＋/×.
+ * A hovered row shows ＋ and × (`PondRail.dc.html` `hasTools`) — and both are REAL
+ * tab stops (ticket-27 keyboard reachability): no tabindex=-1 on ＋/×. The root
+ * takes ＋ and never ×.
  */
 export const HoverCrud: Story = {
   play: async ({ canvas, args }) => {
-    const add = canvas.getByRole('button', { name: 'Add sub-page to Health' })
+    const add = canvas.getByRole('button', { name: 'Add sub-page to Scratchpad' })
     const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
-    // reachable by keyboard: not opted out of the tab order
     await expect(add).not.toHaveAttribute('tabindex', '-1')
     await expect(del).not.toHaveAttribute('tabindex', '-1')
+
+    await userEvent.hover(canvas.getByRole('treeitem', { name: /Scratchpad/ }))
+    await waitFor(() => expect(isShown(add) && isShown(del.parentElement!)).toBe(true))
+    // the board's `tools`: 12×12 marks, 8 apart
+    const mark = (button: HTMLElement) => button.querySelector('svg')!.getBoundingClientRect()
+    await expect(mark(add).width).toBe(12)
+    await expect(mark(del).width).toBe(12)
+    await expect(Math.round(mark(del).left - mark(add).right)).toBe(8)
     await userEvent.click(add)
-    await expect(args.onAddChild).toHaveBeenCalledWith('health')
+    await expect(args.onAddChild).toHaveBeenCalledWith('scratch')
     await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('scratch')
-    // the Life root has no CRUD affordances
-    await expect(canvas.queryByRole('button', { name: /Delete Life/ })).not.toBeInTheDocument()
+
+    await expect(canvas.queryByRole('button', { name: /Delete life/ })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * The selected row shows ＋ alone (`hasPlus`: selected, not hovered); hovering it
+ * adds ×. Every other row stays bare at rest.
+ */
+export const SelectedRowShowsPlus: Story = {
+  args: { expanded: new Set(['personal', 'food']), selectedId: 'recipes' },
+  play: async ({ canvas }) => {
+    const recipes = canvas.getByRole('treeitem', { name: /Recipes/ })
+    const add = within(recipes).getByRole('button', { name: 'Add sub-page to Recipes' })
+    const del = within(recipes).getByRole('button', { name: 'Delete Recipes' })
+    await expect(isShown(rowTools(add))).toBe(true)
+    await expect(del.parentElement!.getBoundingClientRect().width).toBe(0)
+
+    const trips = canvas.getByRole('button', { name: 'Add sub-page to Trips' })
+    await expect(rowTools(trips).getBoundingClientRect().width).toBe(0)
+
+    await userEvent.hover(recipes)
+    await waitFor(() => expect(isShown(del.parentElement!)).toBe(true))
+  },
+}
+
+/** The root row: ＋ when selected or hovered, × never (a pond's root can't be deleted). */
+export const RootRowTools: Story = {
+  play: async ({ canvas, args }) => {
+    const life = canvas.getByRole('treeitem', { name: /life/ })
+    const add = within(life).getByRole('button', { name: 'Add sub-page to life' })
+    await expect(isShown(rowTools(add))).toBe(true)
+    await expect(within(life).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
+    await userEvent.click(add)
+    await expect(args.onAddChild).toHaveBeenCalledWith('__life__')
   },
 }
 
@@ -291,7 +335,8 @@ export const HoverCrud: Story = {
 export const HoverCrudReservesNoWidth: Story = {
   play: async ({ canvas }) => {
     const scratch = canvas.getByRole('treeitem', { name: /Scratchpad/ })
-    const tools = canvas.getByRole('button', { name: 'Delete Scratchpad' }).parentElement!
+    const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
+    const tools = rowTools(del)
     await expect(tools.getBoundingClientRect().width).toBe(0)
     await expect(getComputedStyle(tools).opacity).toBe('0')
     const title = scratch.querySelector<HTMLElement>('[data-part="title"]')!
@@ -299,7 +344,7 @@ export const HoverCrudReservesNoWidth: Story = {
     // 8px right padding is all that sits between the label's box and the row's edge
     await expect(Math.round(row.right - title.getBoundingClientRect().right)).toBe(8)
 
-    canvas.getByRole('button', { name: 'Delete Scratchpad' }).focus()
+    del.focus()
     await waitFor(() => expect(getComputedStyle(tools).opacity).toBe('1'))
     await expect(tools.getBoundingClientRect().width).toBeGreaterThan(24)
   },
@@ -804,6 +849,28 @@ export const NoDatabasesRoot: Story = {
   },
 }
 
+/** The databases row is a foot row: no ＋/× on it, and none on Delete or + either. */
+export const DatabasesRootHasNoTools: Story = {
+  args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
+  play: async ({ canvas, args }) => {
+    const root = canvas.getByRole('treeitem', { name: /databases/ })
+    await expect(within(root).queryByRole('button')).not.toBeInTheDocument()
+    await userEvent.hover(root)
+    await expect(root.querySelector('[data-part="row-tools"]')).toBeNull()
+
+    root.focus()
+    await userEvent.keyboard('{Delete}')
+    await userEvent.keyboard('+')
+    await expect(args.onDelete).not.toHaveBeenCalled()
+    await expect(args.onAddChild).not.toHaveBeenCalled()
+
+    // its databases are ordinary rows
+    await expect(
+      canvas.getByRole('button', { name: 'Add sub-page to ingredients' })
+    ).toBeInTheDocument()
+  },
+}
+
 /**
  * The row wash lives on the treeitem HOST, so it covers the caret and the indent
  * (`PondRail.dc.html` row `background`): selected = ink .07, hover = the rail-only
@@ -1137,6 +1204,12 @@ export const EmptyRootHasNoChevron: Story = {
   play: async ({ canvas }) => {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     await expect(life).not.toHaveAttribute('aria-expanded')
-    await expect(life.querySelector('button')).toBeNull()
+    await expect(life.querySelector('button[aria-hidden="true"]')).toBeNull()
+    // the board selects nothing here, so the root draws no ＋ at rest
+    await expect(
+      rowTools(
+        within(life).getByRole('button', { name: 'Add sub-page to life' })
+      ).getBoundingClientRect().width
+    ).toBe(0)
   },
 }

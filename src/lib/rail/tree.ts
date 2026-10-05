@@ -277,7 +277,7 @@ export type TreeKeyCommand =
  *   ←          collapse an open folder; step out to the parent otherwise
  *   Enter/␣    open the row's page
  *   Delete/⌫   delete the row (never the Life root)
- *   +          add a child page (never the Life root)
+ *   +          add a child page
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -329,7 +329,7 @@ export function treeKeyCommand(
     case 'Backspace':
       return isRoot ? null : { kind: 'delete', id }
     case '+':
-      return isRoot ? null : { kind: 'addChild', id }
+      return { kind: 'addChild', id }
     default:
       return null
   }

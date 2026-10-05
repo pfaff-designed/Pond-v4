@@ -138,6 +138,9 @@ interface RailRowProps {
   isArea?: boolean
   /** The databases root: the foot band's first row, drawn without a caret. */
   isDbRoot?: boolean
+  /** Whether the selected row shows its ＋ at rest. Off while the rail is empty or
+   *  loading, where the board selects nothing. */
+  plusWhenSelected?: boolean
   posInSet?: number
   setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
@@ -182,6 +185,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isRoot = false,
     isArea = false,
     isDbRoot = false,
+    plusWhenSelected = true,
     posInSet,
     setSize,
     accent,
@@ -222,6 +226,8 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // are full ink; every other page row is the .68 tier. The databases root has no
   // colour of its own in the board, so it is full at rest.
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
+  // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
+  const showPlus = (isSelected && plusWhenSelected) || hovered
 
   return (
     <div
@@ -330,11 +336,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         leading={leading}
         trailing={
           <>
-            {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and
-                REAL tab stops so keyboard/AT users reach them without a pointer
-                (t27). The root (Life) is the workspace, not a row: no add/delete. */}
-            {!isRoot && (onAddChild || onDelete) && (
-              <span className="-ml-[7px] flex max-w-0 flex-none items-center gap-2 overflow-hidden opacity-0 transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 group-hover:ml-0 group-hover:max-w-16 group-hover:opacity-100">
+            {/* ＋ and × are REAL tab stops (t27). The selected row shows ＋ alone; a
+                hovered or focused row shows ＋ and ×; at rest the tools take no
+                width. The root is the workspace, not a page: it takes ＋ and never ×. */}
+            {(onAddChild || (!isRoot && onDelete)) && (
+              <span
+                data-part="row-tools"
+                className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
+                  showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
+                }`}
+              >
                 {onAddChild && (
                   <button
                     type="button"
@@ -357,27 +368,33 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                     </svg>
                   </button>
                 )}
-                {onDelete && (
-                  <button
-                    type="button"
-                    className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
-                    title="Delete page"
-                    aria-label={`Delete ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(id)
-                    }}
+                {!isRoot && onDelete && (
+                  <span
+                    className={`flex overflow-hidden transition-opacity group-focus-within:max-w-5 group-focus-within:pl-2 group-focus-within:opacity-100 ${
+                      hovered ? 'max-w-5 pl-2 opacity-100' : 'max-w-0 pl-0 opacity-0'
+                    }`}
                   >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M3 3l6 6M9 3l-6 6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
+                    <button
+                      type="button"
+                      className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                      title="Delete page"
+                      aria-label={`Delete ${label}`}
+                      disabled={isBusy}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(id)
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M3 3l6 6M9 3l-6 6"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </span>
                 )}
               </span>
             )}
@@ -652,6 +669,10 @@ export function RailView({
     const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
     if (!cmd) return
     e.preventDefault()
+    // The databases root carries no ＋/×, so it takes no Delete or + either.
+    const target = flat.find((f) => f.id === id)?.node
+    const isToolCommand = cmd.kind === 'delete' || cmd.kind === 'addChild'
+    if (isToolCommand && target && isDatabasesRoot(target)) return
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
@@ -788,11 +809,13 @@ export function RailView({
         isFocused={rovingId === id}
         isBusy={false}
         isRoot
+        plusWhenSelected={!isEmpty && !isLoading}
         posInSet={posInSet}
         setSize={setSize}
         leading={LIFE_MARK}
         onSelect={onLife}
         onToggle={onToggleLife}
+        onAddChild={onAddChild}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
@@ -832,8 +855,9 @@ export function RailView({
         settleOnMount={depth > 0}
         onSelect={onSelect}
         onToggle={onToggle}
-        onAddChild={onAddChild}
-        onDelete={onDelete}
+        // The databases root is a foot row, not a page: the board draws no tools on it.
+        onAddChild={isDatabasesRoot(node) ? undefined : onAddChild}
+        onDelete={isDatabasesRoot(node) ? undefined : onDelete}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         draggable
@@ -1080,13 +1104,16 @@ export function Rail() {
   }
 
   async function handleAddChild(id: string) {
+    // The root's ＋ adds a top-level page: the synthetic root is nobody's id.
+    const parentId = id === LIFE_ID ? null : id
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', pondId })
+        createPage(sb, uid, { parentId, type: 'page', title: 'Untitled', pondId })
       )
       // ensure the parent folder is open so the new child is visible
-      setExpanded((prev) => new Set(prev).add(id))
+      if (parentId === null) setLifeExpanded(true)
+      else setExpanded((prev) => new Set(prev).add(parentId))
       if (created) {
         // F26: seed the cache with the new row so the reveal nests it immediately,
         // rather than depending on the refetch having landed before we navigate.
@@ -1094,7 +1121,7 @@ export function Rail() {
           queryClient,
           {
             id: created.id,
-            parentId: id,
+            parentId,
             type: 'page',
             title: 'Untitled',
           },
