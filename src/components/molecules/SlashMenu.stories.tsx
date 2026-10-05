@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { SlashMenu, type SlashMenuProps } from './SlashMenu'
+import type { PickerAnchorBox } from './use-anchored-box'
 import { slashRows } from '@/lib/modules/palette'
 import { ICON } from './slash-entries'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
@@ -49,12 +50,36 @@ function alphaOf(color: string): number {
 // ── Frame ──────────────────────────────────────────────────────────────────────
 
 type FrameProps = Omit<SlashMenuProps, 'anchor' | 'container' | 'rows' | 'onSelect' | 'onClose'> &
-  Partial<Pick<SlashMenuProps, 'rows' | 'onSelect' | 'onClose'>> & { ink?: boolean }
+  Partial<Pick<SlashMenuProps, 'rows' | 'onSelect' | 'onClose'>> & {
+    ink?: boolean
+    /** Anchor the glass this far from the viewport's right edge instead of at the field. */
+    anchorFromRight?: number
+  }
 
 /** A field to type into, and a themed box the glass portals into. */
-function Frame({ ink, rows = slashRows, onSelect = fn(), onClose = fn(), ...props }: FrameProps) {
+function Frame({
+  ink,
+  anchorFromRight,
+  rows = slashRows,
+  onSelect = fn(),
+  onClose = fn(),
+  ...props
+}: FrameProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const anchor = useRef<HTMLTextAreaElement>(null)
+  const edgeAnchor = useMemo<PickerAnchorBox | null>(
+    () =>
+      anchorFromRight === undefined
+        ? null
+        : {
+            getBoundingClientRect: () => ({
+              top: 40,
+              bottom: 60,
+              left: window.innerWidth - anchorFromRight,
+            }),
+          },
+    [anchorFromRight]
+  )
   return (
     <div
       ref={setContainer}
@@ -71,7 +96,7 @@ function Frame({ ink, rows = slashRows, onSelect = fn(), onClose = fn(), ...prop
       {container && (
         <SlashMenu
           rows={rows}
-          anchor={anchor}
+          anchor={edgeAnchor ?? anchor}
           container={container}
           onSelect={onSelect}
           onClose={onClose}
@@ -229,6 +254,19 @@ export const OpenInk: Story = {
 export const OpenMobile: Story = {
   args: { size: 'mobile' },
   play: async ({ canvasElement }) => assertOpen(canvasElement, PAPER, true),
+}
+
+/**
+ * A caret near the right edge of a narrow viewport (587px-wide: caret at 267, glass
+ * 340 → right edge 607): the glass slides left and stays 12px inside the viewport.
+ */
+export const OpenMobileNearRightEdge: Story = {
+  args: { size: 'mobile', anchorFromRight: 80 },
+  play: async ({ canvasElement }) => {
+    // The glass animates in, so its rect is mid-scale; its `left` is the placement.
+    const left = px(getComputedStyle(glassOf(canvasElement)).left)
+    await expect(left).toBe(window.innerWidth - 12 - 340)
+  },
 }
 
 // ── filtered ───────────────────────────────────────────────────────────────────

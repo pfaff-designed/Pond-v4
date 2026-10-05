@@ -58,6 +58,7 @@ export type PickerSize = 'desktop' | 'mobile'
 export const SLASH_SIZES = {
   desktop: {
     width: 'w-[300px]',
+    widthPx: 300,
     head: HEAD,
     note: NOTE,
     row: `${ROW_BASE} py-[7px] text-[12.5px]`,
@@ -65,6 +66,7 @@ export const SLASH_SIZES = {
   },
   mobile: {
     width: 'w-[340px]',
+    widthPx: 340,
     head: `${HEAD_BASE} text-[13px]`,
     note: `${NOTE_BASE} text-[13px]`,
     row: `${ROW_BASE} py-[11px] text-[14px]`,
@@ -72,7 +74,7 @@ export const SLASH_SIZES = {
   },
 } as const satisfies Record<
   PickerSize,
-  { width: string; head: string; note: string; row: string; rowHeight: number }
+  { width: string; widthPx: number; head: string; note: string; row: string; rowHeight: number }
 >
 /** Box heights outside the rows, for sizing a glass before it renders: a group head, the foot, the glass's padding and border. */
 export const BOX_HEIGHT = { group: 26, foot: 32, glass: 18 } as const

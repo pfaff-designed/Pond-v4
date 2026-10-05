@@ -196,7 +196,7 @@ export function SlashMenu({
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   }, [onClose])
 
-  const style = useAnchoredBox(anchor, side)
+  const style = useAnchoredBox(anchor, side, chrome.widthPx)
   const foot = footItems(pane, query, items.length, onPreviewTemplate !== undefined)
   const indexOf = new Map(items.map((item, i) => [item, i]))
 
