@@ -19,7 +19,8 @@
  *   mode    22 × 22 at right 56, top 9 · a 13px half-disc at 1.4 · ink .68
  *   chip    38 × 22 at right 8, top 9 · radius 999 · ink .07 · ink .68 · sans 500 ·
  *           11 · .04em · `⌘K` until halfway, then `esc`
- *   input   left 36 · right 88 · h 38 · mono 14 (mobile 16, so iOS does not zoom)
+ *   input   left 36 · right 88 · h 38 · sans 500 13.5, the page rows' type — the board's
+ *           mono 14 read larger than the rows (mobile 16, so iOS does not zoom)
  *   body    left −1 · top 39 · 560 · a hairline at ink .09 inset 10 · rows 6px 10px 0,
  *           gap 2 · foot gap 14 · 10px 22px 14px · mt 6 · rule ink .09 · mono 10.5 ·
  *           ink .68
@@ -140,9 +141,9 @@ const MODE = `${FOCUS_VISIBLE_RING} absolute top-[9px] right-[56px] flex size-[2
 const CHIP =
   'absolute top-[9px] right-[8px] flex h-[22px] w-[38px] items-center justify-center rounded-full bg-mn-text/[0.07] font-sans text-[11px] font-medium tracking-[.04em] text-mn-text-secondary'
 const HEAD =
-  'absolute top-0 right-[88px] left-[36px] flex h-[38px] items-center gap-[10px] font-mono text-[16px] md:text-[14px]'
+  'absolute top-0 right-[88px] left-[36px] flex h-[38px] items-center gap-[10px] font-sans text-[16px] md:text-[13.5px]'
 const INPUT =
-  'w-full min-w-0 bg-transparent p-0 font-mono text-[16px] tracking-[0] text-mn-text caret-mn-text outline-none placeholder:text-mn-text-secondary md:text-[14px]'
+  'w-full min-w-0 bg-transparent p-0 font-sans text-[16px] font-medium tracking-[0] text-mn-text caret-mn-text outline-none placeholder:text-mn-text-secondary md:text-[13.5px]'
 const SCOPE =
   'whitespace-nowrap rounded-[6px] bg-mn-text/[0.07] px-[6px] py-[1px] text-mn-text-meta'
 const BODY = 'absolute top-[39px] left-[-1px] w-[var(--open-w)]'

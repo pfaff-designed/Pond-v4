@@ -45,7 +45,7 @@ type Palette = typeof PAPER
 /** Open, against `PondPicker`'s `mob` branch below `md`. */
 const DESKTOP = {
   width: 560,
-  head: 14,
+  head: 13.5,
   rowPad: '9px 12px',
   row: 13.5,
   sub: 12.5,
@@ -274,7 +274,8 @@ async function assertChrome(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
   await expect([head.left, head.right, head.height]).toEqual(['36px', '88px', '38px'])
   const input = box.querySelector<HTMLInputElement>('input')!
   const i = getComputedStyle(input)
-  await expect(i.fontFamily).toMatch(MONO)
+  await expect(i.fontFamily).not.toMatch(MONO)
+  await expect(i.fontWeight).toBe('500')
   await expect(px(i.fontSize)).toBe(m.head)
   await expect(i.color).toBe(p.ink)
   await expect(input.getAttribute('role')).toBe('combobox')

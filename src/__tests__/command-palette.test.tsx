@@ -574,7 +574,7 @@ describe('the gut: one morphing element — nothing of the dialog, the wash or t
     expect(command).not.toMatch(/scale\(|top-\[110px\]|-translate-x-\[40%\]/)
     expect(command).not.toMatch(/\btext-(xs|sm|base|lg|xl)\b/)
     expect(command).not.toMatch(/import \{ cn \}/)
-    expect(command).toMatch(/text-\[16px\] .*md:text-\[14px\]/)
+    expect(command).toMatch(/font-sans text-\[16px\] font-medium .*md:text-\[13\.5px\]/)
     expect(paletteRow).toMatch(/py-\[13px\].*text-\[15px\].*md:py-\[9px\] md:text-\[13\.5px\]/)
   })
 
