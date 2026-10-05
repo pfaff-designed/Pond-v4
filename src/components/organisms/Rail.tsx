@@ -913,7 +913,7 @@ export function RailView({
   // scrolling tree, and the foot.
   return (
     <aside
-      className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
+      className="bg-mn-card shadow-mn-card rounded-mn-card relative my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans has-[[data-part=pond-switcher][aria-expanded=true]]:overflow-visible"
       style={{ width: RAIL_WIDTH_PX }}
     >
       {/* The switcher chevron appears only once there is a pond to list: before
