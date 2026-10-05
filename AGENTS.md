@@ -94,6 +94,12 @@ The one thing that must survive is **engine logic the boards assume but do not d
 
 # The design handoff is the spec. Build from it; do not re-litigate it.
 
+**Sync before you build.** `wayfinder/design_handoff_pond/` is a mirror of the design export. Run
+`./scripts/sync-handoff.sh` before any parity slice; it reads the export's root, never its own
+`design_handoff_pond/` subfolder, which is an older bundle. On 2026-10-05 every rail build had been
+reading boards a revision out of date. Within the boards, the `Pond 02` component DC is the
+component's spec and a storyboard only places it (ADR 0011).
+
 `wayfinder/design_handoff_pond/` is a complete, high-fidelity specification of the whole product, and `docs/adr/` holds the decisions made since. Together they are the plan. **Read them and build.**
 
 **Never ask the user to re-decide something already settled.** Before raising any question, check all four: `PROJECT_RULES.md`, `AUDIT.md`'s "Decided, 26 sep" log, the inline values in the `.dc.html` mockups, and `docs/adr/`. A value written in the markup is not an open question. A behaviour in the Decided log is not an open question. If the spec is silent on something small, **pick the option most consistent with `PROJECT_RULES.md`, state the choice in the PR or issue body, and keep going.**

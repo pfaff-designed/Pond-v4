@@ -1,6 +1,6 @@
 # ADR 0010 — The composed shell frame wins over the component DC (for the five shell surfaces)
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0011
 - **Date:** 2026-10-04
 - **Deciders:** the user (product/design owner), with the agent
 - **Related:** ADR 0003 (THE DESIGN IS THE SOURCE OF TRUTH), ADR 0004 (board-conflict rulings — don't re-litigate); `PROJECT_RULES.md` authoritative-source order; the five shell-surface audits (2026-10-04: rail, composer, command palette, canvas, slash menu); `PondRail.dc.html` / `PondPicker.dc.html` / `PondComposer.dc.html`; `Pond 05 Shell.dc.html`; `Pond 06.21 Tasks.dc.html`
