@@ -200,11 +200,46 @@ export const Default: Story = {
  */
 export const Hidden: Story = {
   args: { stamp: { ...STAMP, hidden: true } },
+  render: (args) => (
+    <div className="flex flex-col items-start gap-6">
+      {/* A deliberate parking spot for the cursor — see `play`. */}
+      <div data-part="pointer-park" className="h-10 w-full" />
+      <MadeFromChip {...args} />
+    </div>
+  ),
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
+
+    /*
+     * Park the cursor BEFORE reading any colour.
+     *
+     * Browser mode drives a real cursor, and it stays wherever the previous
+     * story's last click left it — `Default` ends on `hide`. Whether that spot
+     * lands on this story's control is decided by TEXT METRICS: Storybook loads
+     * only `globals.css`, so `--font-mn-*` (set by next/font in the app's root
+     * layout) is never defined and the family falls through to the bare
+     * `'PP Neue Montreal'` name — present as a system font on a designer's Mac,
+     * absent on CI, where the fallback's different widths moved `hide` onto
+     * `show`.
+     *
+     * Then `hover:text-mn-text` replaced the meta tier with full ink — and
+     * because Chromium evaluates `:hover` a frame late, the first theme still
+     * read .68 and passed, so only the SECOND theme failed. That is why this was
+     * green on every machine with the fonts installed and red on CI.
+     *
+     * Parking uses a CLICK, not `hover`: this `userEvent` dispatches hover
+     * synthetically, so it cannot move the cursor — a click is what drives real
+     * input, and a click is what parked it in the first place.
+     */
+    const park = canvasElement.querySelector<HTMLElement>('[data-part="pointer-park"]')!
+    await userEvent.click(park)
+
     await inBothThemes(canvasElement, async (theme) => {
       const show = canvas.getByRole('button', { name: 'made from · show' })
       const css = getComputedStyle(show)
+      // If parking ever stops working, say so here rather than as a colour
+      // mismatch forty lines of interpolation later.
+      await expect(show.matches(':hover')).toBe(false)
       await expect(css.fontFamily).toContain('Mono')
       await expect(css.fontSize).toBe('10.5px')
       await expect(css.textTransform).toBe('lowercase')
