@@ -1,5 +1,5 @@
 /**
- * The rail's inline rename (KAN-21, `PondRail` `renaming`): F2 / double-click turns
+ * The rail's inline rename (`PondRail` `renaming`): F2 / double-click turns
  * a row's label into a field in place; ↵ keeps, esc cancels, blur keeps; empty or
  * unchanged keeps the old title. The pond root and the databases foot row are
  * system roots and never rename from here.
@@ -7,7 +7,10 @@
 
 import React from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClient } from '@tanstack/react-query'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
+import { applyRenameOptimistic, type PageRow } from '@/lib/pages/tree'
+import { pagesKey } from '@/lib/pages/keys'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -29,7 +32,7 @@ const creativity = node('creativity', 'creativity', [
 const scratch = node('scratch', 'scratch', [], null, 1)
 const databases = node('root-db', 'databases', [], null, 9)
 
-function setup(tree: RailNode[] = [creativity, scratch, databases]) {
+function setup(tree: RailNode[] = [creativity, scratch, databases], isEmpty = false) {
   const handlers = {
     onRename: jest.fn(),
     onDelete: jest.fn(),
@@ -45,7 +48,7 @@ function setup(tree: RailNode[] = [creativity, scratch, databases]) {
       lifeExpanded
       busyId={null}
       isLoading={false}
-      isEmpty={false}
+      isEmpty={isEmpty}
       onToggle={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
@@ -207,5 +210,82 @@ describe('rail — inline rename', () => {
     fireEvent.keyDown(row('databases'), { key: 'F2' })
     fireEvent.doubleClick(row('databases'))
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+})
+
+describe('rail — row tools and capabilities', () => {
+  it('the ＋ and × buttons are out of the Tab order: the tree has one roving stop', () => {
+    setup()
+    for (const name of ['Add sub-page to books', 'Delete books', 'Add sub-page to life']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('tabindex', '-1')
+    }
+    expect(screen.getAllByRole('treeitem').filter((r) => r.tabIndex === 0)).toHaveLength(1)
+  })
+
+  it('+ on the root adds a top-level page — unless the pond is empty', () => {
+    const populated = setup()
+    fireEvent.keyDown(row('life'), { key: '+' })
+    expect(populated.onAddChild).toHaveBeenCalledWith('__life__')
+    populated.unmount()
+
+    const empty = setup([], true)
+    fireEvent.keyDown(row('life'), { key: '+' })
+    expect(empty.onAddChild).not.toHaveBeenCalled()
+  })
+
+  it('the databases row takes none of +, Delete or F2', () => {
+    const { onAddChild, onDelete } = setup()
+    fireEvent.keyDown(row('databases'), { key: '+' })
+    fireEvent.keyDown(row('databases'), { key: 'Delete' })
+    fireEvent.keyDown(row('databases'), { key: 'F2' })
+    expect(onAddChild).not.toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('the root leads with the pond mark, not an area mark', () => {
+    setup()
+    expect(row('life').querySelector('[data-pond-mark]')).not.toBeNull()
+    expect(row('life').querySelector('[data-area-mark]')).toBeNull()
+  })
+})
+
+describe('applyRenameOptimistic', () => {
+  const at = '2026-01-01T00:00:00Z'
+  const rows = (): PageRow[] => [
+    { id: 'a', parent_id: null, type: 'page', title: 'a', order: 0, updated_at: at },
+    { id: 'b', parent_id: null, type: 'page', title: 'b', order: 1, updated_at: at },
+  ]
+  const key = pagesKey('pond-1')
+
+  it('changes only the named row', () => {
+    const client = new QueryClient()
+    client.setQueryData(key, rows())
+    applyRenameOptimistic(client, { id: 'a', title: 'renamed' }, 'pond-1')
+    expect(client.getQueryData<PageRow[]>(key)?.map((r) => r.title)).toEqual(['renamed', 'b'])
+  })
+
+  it('rolling back leaves a move and an add that landed in between untouched', () => {
+    const client = new QueryClient()
+    client.setQueryData(key, rows())
+    applyRenameOptimistic(client, { id: 'a', title: 'renamed' }, 'pond-1')
+
+    // interleaved: b is moved under a, and a new page c is added
+    client.setQueryData<PageRow[]>(key, (current) => [
+      ...(current ?? []).map((r) => (r.id === 'b' ? { ...r, parent_id: 'a' } : r)),
+      { id: 'c', parent_id: null, type: 'page', title: 'c', order: 2, updated_at: at },
+    ])
+
+    applyRenameOptimistic(client, { id: 'a', title: 'a' }, 'pond-1')
+    const after = client.getQueryData<PageRow[]>(key)!
+    expect(after.find((r) => r.id === 'a')?.title).toBe('a')
+    expect(after.find((r) => r.id === 'b')?.parent_id).toBe('a')
+    expect(after.map((r) => r.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('does nothing when the pond has no cached pages yet', () => {
+    const client = new QueryClient()
+    applyRenameOptimistic(client, { id: 'a', title: 'x' }, 'pond-1')
+    expect(client.getQueryData(key)).toBeUndefined()
   })
 })

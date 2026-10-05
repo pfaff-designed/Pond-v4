@@ -28,7 +28,7 @@ export interface RailNode {
 /**
  * The Life root as a RailNode — synthetic, no children of its own here. Its title
  * is lowercase, like every other line of the rail's source copy in `Pond 05 Shell`
- * (#101 review); where the boards show capitals it is a CSS transform.
+ * where the boards show capitals it is a CSS transform.
  */
 export const LIFE_NODE: RailNode = {
   id: LIFE_ID,
@@ -67,7 +67,7 @@ export function buildTree(rows: PageRow[]): RailNode[] {
 }
 
 /**
- * A node is a folder when it has children (#108).
+ * A node is a folder when it has children.
  *
  * There is no `type = 'area'` any more: "an area is a page with pages inside it;
  * it has no technical meaning" (design law), so folder-ness is computed, and a
@@ -81,12 +81,13 @@ export function isFolderNode(node: RailNode): boolean {
 
 /**
  * Does this row carry the AREA voice — the full-ink label, the accent, the default
- * glyph (#91)? A TOP-LEVEL page does (#108): that is where a person's areas live
- * and the only rows the fixed title→glyph defaults are written for. Per-page
- * glyph/colour is #91's own work; this only replaces the old `type === 'area'`.
+ * glyph? A TOP-LEVEL page does: that is where a person's areas live and the only
+ * rows the fixed title→glyph defaults are written for. A page's own chosen
+ * glyph/colour is resolved elsewhere (`resolveMark`).
  *
- * Deliberately NOT the same predicate as `isFolderNode` — a top-level page is a
- * folder AND an area row, but a nested page with children is a folder only. The
+ * Deliberately NOT the same predicate as `isFolderNode` — a childless top-level
+ * page is an area row but a leaf, and a nested page with children is a folder
+ * only. The
  * two rules answer different questions, so they stay two named functions.
  */
 export function isAreaRow(node: RailNode): boolean {

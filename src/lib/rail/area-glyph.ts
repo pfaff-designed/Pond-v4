@@ -5,9 +5,9 @@
  * glyph a person picks overrides these (`resolveMark`).
  *
  * Resolution is by TITLE, case- and whitespace-insensitive, because an area is
- * only a `pages` row that happens to have pages inside it (#108 dropped
+ * only a `pages` row that happens to have pages inside it (there is no
  * `type = 'area'`): there is no stable key besides its name. The board's
- * "money", what `seed_default_pages` writes ("Finances", #107) and the older
+ * "money", what `seed_default_pages` writes ("Finances") and the older
  * "Financial" all resolve. An unmapped area (a user's own, e.g. Food) resolves to nothing and keeps its
  * KindDot.
  */

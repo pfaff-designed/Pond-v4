@@ -299,8 +299,8 @@
   --mn-hair: rgb(27 29 20 / 0.055);
   --mn-hover-fill: rgb(27 29 20 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.07); /* PondRail row hover: sage wash, rail-only */
-  --mn-rail-field: #ffffff; /* PondRail `renaming` field: the one white ground */
-  --mn-rail-field-ring: rgb(27 29 20 / 0.2); /* its 1px inset ring, a(.2) */
+  --mn-rail-field: #ffffff; /* PondRail `renaming` field: white has no raw var */
+  --mn-rail-field-ring: rgb(from var(--raw-ink) r g b / 0.2); /* its 1px inset ring, a(.2) */
   --mn-signal-dated: var(--raw-burnt-orange); /* the ONE dated thing per screen */
   --mn-signal-highlight: var(--raw-wheat); /* highlighted passages only */
   --mn-signal-highlight-ink: var(--raw-ink); /* wheat always carries ink text */
@@ -463,8 +463,8 @@
   --mn-hair: rgb(250 249 239 / 0.07);
   --mn-hover-fill: rgb(250 249 239 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.14);
-  --mn-rail-field: #1b1d14;
-  --mn-rail-field-ring: rgb(250 249 239 / 0.2);
+  --mn-rail-field: var(--raw-ink);
+  --mn-rail-field-ring: rgb(from var(--raw-paper) r g b / 0.2);
   --mn-signal-dated: var(--raw-burnt-orange);
   --mn-signal-highlight: var(--raw-wheat);
   --mn-signal-highlight-ink: var(--raw-ink);
@@ -488,8 +488,12 @@
   --mn-glass-shadow: inset 0 1px 0 rgba(250, 249, 239, 0.12), 0 20px 54px rgba(0, 0, 0, 0.44);
 
   /* The pond switcher menu on the dark ground (`PondRail` `menu`, ink). */
-  --mn-menu-bg: linear-gradient(160deg, rgba(74, 73, 64, 0.96), rgba(74, 73, 64, 0.86));
-  --mn-menu-border: 1px solid rgba(250, 249, 239, 0.09);
+  --mn-menu-bg: linear-gradient(
+    160deg,
+    rgb(from var(--raw-neutral-600) r g b / 0.96),
+    rgb(from var(--raw-neutral-600) r g b / 0.86)
+  );
+  --mn-menu-border: 1px solid rgb(from var(--raw-paper) r g b / 0.09);
   --mn-menu-shadow: 0 20px 54px rgba(0, 0, 0, 0.45);
 
   /* The in-composer proposal card on the dark glass (PondComposer `diffCard`, ink). */

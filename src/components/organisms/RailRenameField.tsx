@@ -11,12 +11,9 @@ interface RailRenameFieldProps {
 }
 
 /**
- * `PondRail` `renaming` — the row's label as a field in place (`field`: padding
- * 1px 6px, margin -2px 0, radius 6, inset ring a(.2), the white ground; ink on
- * ink). ↵ keeps, esc cancels, blur keeps.
- *
- * It settles exactly once: ↵ and esc unmount the field while it holds focus, and
- * that unmount can raise a blur that would otherwise keep a second time.
+ * `PondRail` `renaming`: the row's label as a field in place. It settles exactly
+ * once — ↵ and esc unmount it while it holds focus, and the blur that raises must
+ * not keep a second time.
  */
 export function RailRenameField({ title, onKeep, onCancel }: RailRenameFieldProps) {
   const [draft, setDraft] = useState(title)

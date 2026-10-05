@@ -19,7 +19,7 @@
  * The inheritance walk is what keeps "a whole area reads as one hue" true once
  * someone has coloured it: a child with no role of its own takes its area's, and
  * an explicit role on the child is a deliberate exception. Null is the answer for
- * every page that has never been touched, so the migration needs no backfill.
+ * every page that has never been touched.
  *
  * Pure — no React, no Supabase, no colour values. A role becomes a colour in
  * exactly one place, `markAccent`.

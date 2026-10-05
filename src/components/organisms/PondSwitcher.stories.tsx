@@ -6,6 +6,7 @@ import { PondSwitcher } from './PondSwitcher'
 import { PondContext, PondProvider } from '@/lib/pond/context'
 import type { Pond } from '@/lib/pond/client'
 import { RailView } from './Rail'
+import { srgbAsRgba } from './story-colour'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 
 /**
@@ -228,10 +229,10 @@ async function assertOpenMenu(canvasElement: HTMLElement, theme: 'light' | 'dark
   await expect(css.position).toBe('absolute')
   await expect(css.zIndex).toBe('5')
 
-  await expect(css.backgroundImage).toBe(want.background)
+  await expect(srgbAsRgba(css.backgroundImage)).toBe(want.background)
   await expect(css.borderTopWidth).toBe('1px')
   await expect(css.borderTopStyle).toBe('solid')
-  await expect(css.borderTopColor).toBe(want.border)
+  await expect(srgbAsRgba(css.borderTopColor)).toBe(want.border)
   await expect(css.boxShadow).toBe(want.shadow)
   await expect(css.backdropFilter).toBe('blur(24px) saturate(1.3)')
   await expect(css.display).toBe('flex')

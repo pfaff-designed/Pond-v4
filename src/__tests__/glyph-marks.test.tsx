@@ -241,7 +241,9 @@ describe('Rail — area marks ride the glyph system', () => {
     const glyph = life.querySelector<HTMLElement>('[data-icon="lightning-03"]')!
     expect(glyph).toBeInTheDocument()
     expect(life.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
-    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-text)')
+    // The pond is not an area: its mark is the plain pond mark, in the row's ink.
+    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
+    expect(life.querySelector('[data-area-mark]')).toBeNull()
   })
 
   it('the Life root falls back to waves-02 when the pond names no glyph', () => {
@@ -482,7 +484,7 @@ describe('Rail — an explicit mark reaches the rail (#134)', () => {
 })
 
 describe('Rail — the seed title resolves too', () => {
-  it("an area titled 'Financial' (what pre-#108 seeds wrote) leads with ring", () => {
+  it("an area titled 'Financial' (what older seeds wrote) leads with ring", () => {
     const { getByRole } = render(
       <RailView
         tree={[node('fin', 'page', 'Financial')]}

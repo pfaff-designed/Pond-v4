@@ -41,7 +41,7 @@ const node = (
 /**
  * health[sleep, marathon] · personal[food[recipes], trips] · scratch
  *
- * #108: no row carries a type='area' any more — health/personal/food are areas
+ * No row carries a type='area' — health/personal/food are areas
  * only because they hold pages. `scratch` is top-level and childless: an area
  * row by voice, but a LEAF by structure — no caret, no aria-expanded. `trips`
  * and `sleep` are the nested leaves.
@@ -100,7 +100,7 @@ describe('buildTree', () => {
   })
 })
 
-// #108: folder-ness is computed — it has children. No type is read.
+// Folder-ness is computed — it has children. No type is read.
 describe('isFolderNode', () => {
   it('a childless top-level page is a leaf: it cannot expand, so it must not claim to', () => {
     expect(isFolderNode(node('a', 'page', 'A'))).toBe(false)
@@ -128,7 +128,7 @@ describe('isFolderNode', () => {
   })
 })
 
-// #108: the area VOICE (full-ink label, accent, default glyph) is a different
+// The area VOICE (full-ink label, accent, default glyph) is a different
 // question from folder-ness, so it is its own named rule.
 describe('isAreaRow', () => {
   it('a top-level page is an area row, childless or not', () => {

@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react'
 import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { RailView, type RailNode } from './Rail'
+import { srgbAsRgba } from './story-colour'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import type { AreaRole } from '@/lib/rail/glyph-library'
 import type { MarkSource } from '@/lib/pages/mark'
@@ -277,16 +278,16 @@ const isShown = (el: HTMLElement) =>
   getComputedStyle(el).opacity === '1' && el.getBoundingClientRect().width > 0
 
 /**
- * A hovered row shows ＋ and × (`PondRail.dc.html` `hasTools`) — and both are REAL
- * tab stops (ticket-27 keyboard reachability): no tabindex=-1 on ＋/×. The root
+ * A hovered row shows ＋ and × (`PondRail.dc.html` `hasTools`). Neither is a tab
+ * stop — the tree has the one roving stop — so both carry tabindex=-1. The root
  * takes ＋ and never ×.
  */
 export const HoverCrud: Story = {
   play: async ({ canvas, args }) => {
     const add = canvas.getByRole('button', { name: 'Add sub-page to Scratchpad' })
     const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
-    await expect(add).not.toHaveAttribute('tabindex', '-1')
-    await expect(del).not.toHaveAttribute('tabindex', '-1')
+    await expect(add).toHaveAttribute('tabindex', '-1')
+    await expect(del).toHaveAttribute('tabindex', '-1')
 
     await userEvent.hover(canvas.getByRole('treeitem', { name: /Scratchpad/ }))
     await waitFor(() => expect(isShown(add) && isShown(del.parentElement!)).toBe(true))
@@ -756,9 +757,12 @@ export const InkMarks: Story = {
       const slotOf = (name: RegExp) => row(name).querySelector<HTMLElement>('[data-area-mark]')!
 
       const root = row(/make noise/)
+      await expect(root.querySelector('[data-area-mark]')).toBeNull()
       await expect(root.querySelector('[data-icon="lightning-03"]')).toBeInTheDocument()
       await expect(root.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
-      await expect(getComputedStyle(slotOf(/make noise/)).color).toBe(INK[theme])
+      await expect(
+        getComputedStyle(root.querySelector<HTMLElement>('[data-pond-mark]')!).color
+      ).toBe(INK[theme])
 
       for (const [title, glyph] of BOARD_GLYPHS) {
         const el = row(new RegExp(`^${title}`))
@@ -817,7 +821,9 @@ export const ColouredMarks: Story = {
       // uncoloured areas, and the root, stay ink
       await expect(slotColor(/^personal/)).toBe(INK[theme])
       await expect(slotColor(/^creativity/)).toBe(INK[theme])
-      await expect(slotColor(/make noise/)).toBe(INK[theme])
+      await expect(
+        getComputedStyle(row(/make noise/).querySelector<HTMLElement>('[data-pond-mark]')!).color
+      ).toBe(INK[theme])
     }
   },
 }
@@ -1374,7 +1380,7 @@ export const EmptyRootHasNoChevron: Story = {
   },
 }
 
-// ── Inline rename (KAN-21, `PondRail` `renaming`) ───────────────────────────
+// ── Inline rename (`PondRail` `renaming`) ───────────────────────────
 
 /** The board's canon around `books`, the row `renaming` puts the field on. */
 const RENAME_TREE: RailNode[] = [
@@ -1447,7 +1453,7 @@ export const Renaming: Story = {
       await expect(css.padding).toBe('1px 6px')
       await expect(css.margin).toBe('-2px 0px')
       await expect(css.borderTopLeftRadius).toBe('6px')
-      await expect(css.boxShadow).toBe(RENAME_FIELD[theme].ring)
+      await expect(srgbAsRgba(css.boxShadow)).toBe(RENAME_FIELD[theme].ring)
       await expect(css.backgroundColor).toBe(RENAME_FIELD[theme].ground)
       await expect(css.color).toBe(INK[theme])
       await expect(css.caretColor).toBe(INK[theme])
