@@ -30,6 +30,13 @@ import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import { usePondId } from '@/lib/pond/context'
+import { SaveAsTemplateBody } from '@/components/organisms/SaveAsTemplateSheet'
+import { templateSummary } from '@/lib/templates/summary'
+import { getPage } from '@/lib/pages/client'
+import { createTemplate } from '@/lib/templates/client'
+import { templateBlocksFrom } from '@/lib/templates/from-page'
+import type { Block } from '@/lib/modules/content'
+import { createClient } from '@/lib/supabase/client'
 
 const RECENT_PAGES_KEY = 'pond:recent-pages'
 /** `Pond 02` 2g: "before anything is typed: the last three pages". */
@@ -113,12 +120,35 @@ export function ShellCommands() {
       paletteOpen
         ? paletteItems(
             pages,
-            readRecents().map((r) => r.id)
+            readRecents().map((r) => r.id),
+            currentNodeId
           )
         : [],
-    [pages, paletteOpen]
+    [pages, paletteOpen, currentNodeId]
   )
   const scope = useMemo(() => paletteScope(pages, currentNodeId), [pages, currentNodeId])
+  /**
+   * `6i` frame 3. Saving is a page action, so the sheet opens on the page in
+   * view — and the palette BECOMES the sheet rather than being covered by one,
+   * so the name, the tick and the in-flight state live here and are handed to
+   * `CommandPalette`'s sheet mode. One owner for the name: it is both the head's
+   * field and the template's name.
+   */
+  const [saveTemplateFor, setSaveTemplateFor] = useState<{
+    id: string
+    title: string
+    blocks: Block[]
+  } | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [keepContent, setKeepContent] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
+
+  const closeTemplateSheet = useCallback(() => {
+    setSaveTemplateFor(null)
+    setTemplateError(null)
+    setSavingTemplate(false)
+  }, [])
   // One owner for where a new page files: the palette's row names `parent.title`
   // and the dialog opens on `parent.id` — never derived twice.
   const parent = useMemo(
@@ -138,14 +168,76 @@ export function ShellCommands() {
         requestTerminalFocus(item.query)
         return
       }
+      if (item.action === 'save-as-template') {
+        // The row lists only with a page open, so `currentNodeId` is set here.
+        if (!currentNodeId) return
+        const open = pages.find((p) => p.id === currentNodeId)
+        const title = open?.title || 'Untitled'
+        setTemplateName(title)
+        setKeepContent(false)
+        setTemplateError(null)
+        setSavingTemplate(false)
+        // The BLOCKS are read now rather than at save time: `6i` frame 3 draws a
+        // summary of what the template will contain ("6 blocks — …"), so the
+        // sheet cannot be drawn without them. `fetchPages` is a lean projection
+        // with no `blocks`, and the open page's cache belongs to DocumentPanel.
+        void (async () => {
+          const page = await getPage(createClient(), currentNodeId)
+          setSaveTemplateFor({ id: currentNodeId, title, blocks: page?.blocks ?? [] })
+        })()
+        return
+      }
       const page = pages.find((p) => p.id === item.id)
       if (page) {
         writeRecent({ id: page.id, type: page.type, title: page.title })
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [closePalette, pages, router]
+    [closePalette, pages, router, currentNodeId]
   )
+
+  /**
+   * Save the page in view as a template (KAN-10 / #157, board `6i`).
+   *
+   * The page's BLOCKS are fetched here rather than held in state: the palette
+   * reads `fetchPages`, a lean projection with no `blocks` at all, and the open
+   * page's own cache belongs to `DocumentPanel`. One read at save time is both
+   * simpler and certain to be current.
+   *
+   * `templateBlocksFrom` is what decides what the template carries — by default
+   * the stack, the labels and the placeholders, never the content (`6i` frame 4).
+   */
+  const saveAsTemplate = useCallback(async () => {
+    const target = saveTemplateFor
+    const name = templateName.trim()
+    if (!target || name === '' || savingTemplate) return
+    setSavingTemplate(true)
+    setTemplateError(null)
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      await createTemplate(supabase, user.id, {
+        name,
+        // Saved shapes are the generic `page` kind; the twelve specific kinds
+        // belong to the premades (#155), which are code constants, not rows.
+        kind: 'page',
+        blocks: templateBlocksFrom(target.blocks, () => crypto.randomUUID(), { keepContent }),
+        // `listTemplates` filters on the pond, so an unstamped template would be
+        // invisible in every pond including this one.
+        pondId,
+      })
+      closeTemplateSheet()
+    } catch (err) {
+      // A same-pond name collision is the person's to resolve — `createTemplate`
+      // raises `DuplicateTemplateNameError` and deliberately does NOT auto-suffix
+      // the way `createPage` does. So the sheet stays open with the message.
+      setTemplateError(err instanceof Error ? err.message : 'Could not save the template')
+      setSavingTemplate(false)
+    }
+  }, [saveTemplateFor, templateName, keepContent, savingTemplate, pondId, closeTemplateSheet])
 
   return (
     <>
@@ -155,14 +247,37 @@ export function ShellCommands() {
         defaultParentId={parent.id}
         defaultTitle={createTitle}
       />
-      {paletteOpen && (
+      {(paletteOpen || saveTemplateFor) && (
         <CommandPalette
           items={items}
           scope={scope}
           pondName={pondName}
           parentTitle={parent.title}
           onSelect={handlePaletteSelect}
-          onClose={closePalette}
+          onClose={saveTemplateFor ? closeTemplateSheet : closePalette}
+          sheet={
+            saveTemplateFor
+              ? {
+                  body: (
+                    <SaveAsTemplateBody
+                      keepContent={keepContent}
+                      onKeepContentChange={setKeepContent}
+                      summary={templateSummary(saveTemplateFor.blocks)}
+                      canSave={templateName.trim() !== '' && !savingTemplate}
+                      saving={savingTemplate}
+                      error={templateError}
+                      onSave={() => void saveAsTemplate()}
+                      onCancel={closeTemplateSheet}
+                    />
+                  ),
+                  value: templateName,
+                  onValueChange: setTemplateName,
+                  placeholder: 'name this template',
+                  onSubmit: () => void saveAsTemplate(),
+                  label: 'Template name',
+                }
+              : null
+          }
         />
       )}
     </>

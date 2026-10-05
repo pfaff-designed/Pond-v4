@@ -35,9 +35,29 @@ export const ASK_POND_ACTION: PaletteItem = {
   action: 'ask-pond',
 }
 
+/**
+ * Board `6i` frame 3: "Saving is a page action, so it lives in the command
+ * palette, not the / menu." A page action, so it lists only when there is a page
+ * to save — `paletteItems` appends it on `openPageId` alone.
+ *
+ * The board draws a second row beside it, `save a copy as a page`. That is its
+ * own action and is not built (KAN-10 covers the template half only).
+ */
+export const SAVE_AS_TEMPLATE_ACTION: PaletteItem = {
+  id: 'action:save-as-template',
+  label: 'save page as template',
+  kind: 'action',
+  action: 'save-as-template',
+}
+
 export function paletteItems(
   rows: readonly PageRow[],
-  recentIds: readonly string[]
+  recentIds: readonly string[],
+  /**
+   * The page open right now, if any. Page actions list only when there is a page
+   * for them to act on (board `6i` frame 3).
+   */
+  openPageId?: string | null
 ): PaletteItem[] {
   const all = [...rows]
   const index = markIndex(all)
@@ -61,6 +81,7 @@ export function paletteItems(
     ...all.filter((r) => !recentSet.has(r.id)).map(item),
     NEW_PAGE_ACTION,
     ASK_POND_ACTION,
+    ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
   ]
 }
 
