@@ -264,7 +264,9 @@ export function CollectionView({
           config={config}
           schema={schema}
           collectionName={collectionName}
-          recordCount={rows.length}
+          // `processed`, not `rows`: the count names what this VIEW shows, so a
+          // filtered board must not report the collection's whole size.
+          recordCount={processed.length}
           onConfigChange={onConfigChange}
           onUpdateSchema={onUpdateSchema}
         />
@@ -831,7 +833,19 @@ function CollectionBoard({
                         onClick={() => group.id && moveColumn(group.id, 'left')}
                         className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                       >
-                        ‹
+                        {/* A chevron is a FUNCTIONAL mark, so it is hand-drawn at
+                            stroke-width 1.4 with round caps — `PROJECT_RULES` §
+                            Icons. A `‹` character is the expressive register and
+                            does not belong here. */}
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M7.5 3L4.5 6l3 3"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </button>
                       <button
                         type="button"
@@ -840,7 +854,15 @@ function CollectionBoard({
                         onClick={() => group.id && moveColumn(group.id, 'right')}
                         className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
                       >
-                        ›
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M4.5 3l3 3-3 3"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </button>
                     </span>
                   )}
@@ -874,8 +896,15 @@ function CollectionBoard({
                     // AGENTS.md rather than snapped to `--mn-shadow-card`, whose
                     // second layer is `0 8px 24px` against this one's `0 2px 8px`.
                     className={[
-                      'flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
+                      // `group/card`: the ↗ reveals on THIS card's hover. Keyed to
+                      // the lane instead, hovering anywhere revealed it on every
+                      // card in the lane at once.
+                      'group/card flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
+                      // Both themes: the board's warm light shadow is invisible on
+                      // the dark ground, so the ink recipe is supplied the way every
+                      // other raw shadow in the repo does (`chart/card.tsx`).
                       'shadow-[0_1px_2px_rgba(40,34,24,.06),0_2px_8px_rgba(40,34,24,.05)]',
+                      'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                       isDragging ? 'opacity-30' : '',
                       onOpenCard ? 'cursor-pointer' : '',
@@ -916,7 +945,7 @@ function CollectionBoard({
                           aria-label={`Open card: ${row.title || 'untitled'}`}
                           title="Preview page"
                           onClick={() => onOpenCard(row.id)}
-                          className="shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/col:opacity-100 hover:text-mn-text focus-visible:opacity-100"
+                          className="shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ↗
                         </button>

@@ -479,6 +479,31 @@ export const BoardGeometryInk: Story = {
   play: async ({ canvasElement }) => {
     // Geometry is identical between themes; only the tiers reassign.
     await assertBoardGeometry(canvasElement, 'paper')
+
+    // The CARD's shadow too. Asserting geometry alone is how a light-only
+    // `rgba(40,34,24,…)` shadow shipped: invisible on the dark ground, and every
+    // other raw shadow in the repo supplies its ink counterpart.
+    const card = getComputedStyle(canvasElement.querySelector<HTMLElement>('[data-part="card"]')!)
+    const layers = shadowLayers(card.boxShadow)
+    await expect(layers).toHaveLength(2)
+    for (const l of layers) await expect(lightnessOf(l)).toBeLessThan(0.25)
+  },
+}
+
+/**
+ * The ↗ belongs to the card under the pointer. Keyed to the LANE instead — which
+ * is what shipped — hovering anywhere revealed it on every card at once.
+ */
+export const BoardOpenArrowIsPerCard: Story = {
+  args: { config: boardConfig, schema, rows, onOpenCard: fn() },
+  play: async ({ canvasElement }) => {
+    const cards = [...canvasElement.querySelectorAll<HTMLElement>('[data-part="card"]')]
+    await expect(cards.length).toBeGreaterThan(1)
+    // Every card carries its own hover group, and the arrow keys off THAT.
+    for (const c of cards) await expect(c.className).toContain('group/card')
+    const arrow = within(cards[0]).getByRole('button', { name: /^Open card/ })
+    await expect(arrow.className).toContain('group-hover/card:')
+    await expect(arrow.className).not.toContain('group-hover/col:')
   },
 }
 
