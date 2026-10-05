@@ -3,7 +3,8 @@ import { expect, fn, userEvent, within } from 'storybook/test'
 import { useState } from 'react'
 
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { EarlierTurns, ThreadHead, Turn, YouRow } from './ComposerThread'
+import { AnswerActions } from './AnswerActions'
+import { AnswerError, EarlierTurns, ThreadHead, Turn, YouRow } from './ComposerThread'
 import { Markdown } from './Markdown'
 import { ModuleDiffCard } from './ModuleDiffCard'
 import { ReadChips } from './ReadChips'
@@ -12,7 +13,8 @@ import { foldedTurnCount } from '@/lib/conversation/turns'
 import type { ChangePreview } from '@/lib/modules/preview'
 
 /**
- * The composer thread in `PondComposer.dc.html`'s `thread` and `proposing` states,
+ * The composer thread in `PondComposer.dc.html`'s `answered`, `proposing`, `thread`
+ * and `error` states,
  * in paper and ink. Every assertion is a COMPUTED value against the DC's literal,
  * at the desktop breakpoint (mobile values where the DC gives them).
  */
@@ -72,14 +74,43 @@ const create: ChangePreview = {
   after: { id: '__preview__', type: 'text', content: 'worktop template — w/c 13 oct' },
 }
 
+/** How the latest turn ends — the `PondComposer` states that carry a turn. */
+type LatestTurn = 'thread' | 'answered' | 'proposing' | 'error'
+
 interface ThreadProps {
   theme: Theme
   /** Turns in the thread, the latest last. */
   turns: number
-  proposing?: boolean
+  latest?: LatestTurn
 }
 
-const ThreadFrame = ({ theme, turns, proposing = false }: ThreadProps) => {
+const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
+  <div data-part="answer" className="flex flex-col gap-[7px]">
+    <span className={pageEyebrowClass}>pond</span>
+    <Markdown variant="answer">{text}</Markdown>
+    <ReadChips read={['budget']} />
+    {actions && (
+      <AnswerActions streaming={false} onMakePage={fn()} onAskAgain={fn()} onStop={fn()} />
+    )}
+  </div>
+)
+
+const LatestTurnBody = ({ latest }: { latest: LatestTurn }) => {
+  if (latest === 'error') return <AnswerError onAskAgain={fn()} />
+  if (latest === 'proposing')
+    return (
+      <ModuleDiffCard
+        changes={[edit, create]}
+        targetName="schedule"
+        onAccept={fn()}
+        onReject={fn()}
+        onRequestChanges={fn()}
+      />
+    )
+  return <Answer text={ANSWER} actions={latest === 'answered'} />
+}
+
+const ThreadFrame = ({ theme, turns, latest = 'thread' }: ThreadProps) => {
   const [open, setOpen] = useState(false)
   const folded = open ? 0 : foldedTurnCount(turns)
   const shown = Array.from({ length: turns - folded }, (_, i) => folded + i + 1)
@@ -95,20 +126,10 @@ const ThreadFrame = ({ theme, turns, proposing = false }: ThreadProps) => {
           {shown.map((n) => (
             <Turn key={n}>
               <YouRow text={n === turns ? QUESTION : `question ${n}`} time="07:20" />
-              {proposing && n === turns ? (
-                <ModuleDiffCard
-                  changes={[edit, create]}
-                  targetName="schedule"
-                  onAccept={fn()}
-                  onReject={fn()}
-                  onRequestChanges={fn()}
-                />
+              {n === turns ? (
+                <LatestTurnBody latest={latest} />
               ) : (
-                <div data-part="answer" className="flex flex-col gap-[7px]">
-                  <span className={pageEyebrowClass}>pond</span>
-                  <Markdown variant="answer">{n === turns ? ANSWER : `answer ${n}`}</Markdown>
-                  <ReadChips read={['budget']} />
-                </div>
+                <Answer text={`answer ${n}`} actions={false} />
               )}
             </Turn>
           ))}
@@ -119,7 +140,7 @@ const ThreadFrame = ({ theme, turns, proposing = false }: ThreadProps) => {
 }
 
 const meta = {
-  title: 'Organisms/PondComposer/Thread',
+  title: 'Organisms/2f · the composer',
   component: ThreadFrame,
   parameters: { layout: 'fullscreen' },
   globals: DESKTOP,
@@ -216,6 +237,7 @@ async function assertAnswerType(root: HTMLElement, theme: Theme, fontSize: strin
 
 /** `thread`: the head, the turn, the answer — paper. */
 export const ThreadPaper: Story = {
+  name: 'thread',
   play: async ({ canvasElement }) => {
     await assertThreadValues(canvasElement, 'paper')
     await assertAnswerType(canvasElement, 'paper', '15px')
@@ -223,6 +245,7 @@ export const ThreadPaper: Story = {
 }
 
 export const ThreadInk: Story = {
+  name: 'thread · ink',
   args: { theme: 'ink' },
   play: async ({ canvasElement }) => {
     await assertThreadValues(canvasElement, 'ink')
@@ -232,6 +255,7 @@ export const ThreadInk: Story = {
 
 /** Below md the answer is 16px and the ✕ is a 32px target. */
 export const ThreadMobile: Story = {
+  name: 'thread · mobile',
   globals: MOBILE,
   play: async ({ canvasElement }) => {
     await assertAnswerType(canvasElement, 'paper', '16px')
@@ -243,6 +267,7 @@ export const ThreadMobile: Story = {
 
 /** `thread`: three turns show only the latest, and the rest sit under `2 earlier turns`. */
 export const FoldPaper: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvasElement.querySelectorAll('[data-part="turn"]')).toHaveLength(1)
@@ -270,6 +295,7 @@ export const FoldPaper: Story = {
 }
 
 export const FoldInk: Story = {
+  tags: ['!dev'],
   args: { theme: 'ink' },
   play: async ({ canvasElement }) => {
     const fold = within(canvasElement).getByRole('button', { name: '2 earlier turns' })
@@ -279,6 +305,7 @@ export const FoldInk: Story = {
 
 /** Two turns fold one; a single turn has nothing to fold. */
 export const TwoTurnsFoldOne: Story = {
+  tags: ['!dev'],
   args: { turns: 2 },
   play: async ({ canvasElement }) => {
     await expect(
@@ -289,6 +316,7 @@ export const TwoTurnsFoldOne: Story = {
 }
 
 export const OneTurnDoesNotFold: Story = {
+  tags: ['!dev'],
   args: { turns: 1 },
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).queryByText(/earlier turn/)).toBeNull()
@@ -296,9 +324,37 @@ export const OneTurnDoesNotFold: Story = {
   },
 }
 
+/** `answered`: one turn, no thread head, and the answer's `make this a page` / `ask again`. */
+async function assertAnswered(root: HTMLElement) {
+  await expect(root.querySelector('[data-part="thread-head"]')).toBeNull()
+  const actions = within(root.querySelector<HTMLElement>('[data-part="answer-actions"]')!)
+  await expect(actions.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+  await expect(actions.getByRole('button', { name: 'ask again' })).toBeInTheDocument()
+}
+
+export const Answered: Story = {
+  name: 'answered',
+  args: { turns: 1, latest: 'answered' },
+  play: ({ canvasElement }) => assertAnswered(canvasElement),
+}
+
+export const AnsweredInk: Story = {
+  name: 'answered · ink',
+  args: { turns: 1, latest: 'answered', theme: 'ink' },
+  play: ({ canvasElement }) => assertAnswered(canvasElement),
+}
+
+export const AnsweredMobile: Story = {
+  name: 'answered · mobile',
+  args: { turns: 1, latest: 'answered' },
+  globals: MOBILE,
+  play: ({ canvasElement }) => assertAnswered(canvasElement),
+}
+
 /** `proposing`: the diff card rides inside the turn, in the composer. */
 export const ProposingPaper: Story = {
-  args: { proposing: true },
+  name: 'proposing',
+  args: { turns: 1, latest: 'proposing' },
   play: async ({ canvasElement }) => {
     const turn = canvasElement.querySelector<HTMLElement>('[data-part="turn"]')!
     await expect(within(turn).getByRole('group', { name: 'proposed edit' })).toBeInTheDocument()
@@ -307,9 +363,40 @@ export const ProposingPaper: Story = {
 }
 
 export const ProposingInk: Story = {
-  args: { proposing: true, theme: 'ink' },
+  name: 'proposing · ink',
+  args: { turns: 1, latest: 'proposing', theme: 'ink' },
   play: async ({ canvasElement }) => {
     const card = canvasElement.querySelector<HTMLElement>('[data-part="diff-card"]')!
     await expect(getComputedStyle(card).backgroundColor).toBe('rgb(48, 49, 42)')
   },
+}
+
+export const ProposingMobile: Story = {
+  name: 'proposing · mobile',
+  args: { turns: 1, latest: 'proposing' },
+  globals: MOBILE,
+}
+
+/** `error` (`errRow`): no answer, the one line at 12px / ink .8 / gap 10, and `ask again`. */
+async function assertErrored(root: HTMLElement, theme: Theme) {
+  await expect(root.querySelector('[data-part="answer"]')).toBeNull()
+  const row = within(root).getByRole('alert')
+  const css = getComputedStyle(row)
+  await expect(row).toHaveTextContent('pond couldn’t finish this answer. nothing was kept.')
+  await expect(css.fontSize).toBe('12px')
+  await expect(css.columnGap).toBe('10px')
+  await expectInk(css.color, theme, 0.8)
+  await expect(within(row).getByRole('button', { name: 'ask again' })).toBeInTheDocument()
+}
+
+export const Errored: Story = {
+  name: 'error',
+  args: { turns: 1, latest: 'error' },
+  play: ({ canvasElement }) => assertErrored(canvasElement, 'paper'),
+}
+
+export const ErroredInk: Story = {
+  name: 'error · ink',
+  args: { turns: 1, latest: 'error', theme: 'ink' },
+  play: ({ canvasElement }) => assertErrored(canvasElement, 'ink'),
 }

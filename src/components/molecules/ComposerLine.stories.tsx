@@ -69,7 +69,7 @@ const Composer = ({
 }
 
 const meta = {
-  title: 'Organisms/PondComposer/Card',
+  title: 'Organisms/2f · the composer',
   component: ComposerLine,
   parameters: { layout: 'fullscreen' },
   // Desktop: the card is 560 wide from md up; below it is the 360 mobile card.
@@ -172,6 +172,7 @@ const BothThemes = (props: Omit<ComposerProps, 'theme'>) => (
  * Nothing else — no mic, no header strip.
  */
 export const Rest: Story = {
+  name: 'rest',
   render: () => <BothThemes />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -268,6 +269,7 @@ const expectPillPaint = (pill: HTMLElement, color: string, background: string) =
  * ink .07 fill and full ink, `aria-pressed=true`; click again and it is off.
  */
 export const Research: Story = {
+  tags: ['!dev'],
   render: () => <BothThemes />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -292,6 +294,7 @@ export const Research: Story = {
 
 /** Research on at rest: the wash and full ink are the whole signal. */
 export const ResearchOn: Story = {
+  tags: ['!dev'],
   render: () => <BothThemes initialResearch />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -308,6 +311,7 @@ export const ResearchOn: Story = {
 
 /** Once the thread has a turn, the hint reads `reply, or ask something else`. */
 export const AfterATurn: Story = {
+  tags: ['!dev'],
   render: () => <BothThemes hasTurn />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -324,6 +328,7 @@ export const AfterATurn: Story = {
  * its bottom edge stays put.
  */
 export const Typing: Story = {
+  name: 'asking',
   render: () => <BothThemes initialValue="what is actually blocking the renovation?" />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -353,6 +358,7 @@ export const Typing: Story = {
 
 /** Streaming: send is on and shows the 10px stop square. */
 export const Streaming: Story = {
+  name: 'streaming',
   render: () => <BothThemes streaming hasTurn />,
   play: async ({ canvasElement }) => {
     for (const theme of THEMES) {
@@ -372,6 +378,7 @@ export const Streaming: Story = {
 
 /** Below md the card is 360 wide, the line 16px, ＋ 36 and send 40. */
 export const Mobile: Story = {
+  name: 'rest · mobile',
   globals: { viewport: { value: 'mobile2', isRotated: false } },
   render: () => <Composer theme="paper" />,
   play: async ({ canvasElement }) => {

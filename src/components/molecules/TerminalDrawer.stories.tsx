@@ -54,7 +54,7 @@ const Thread = ({ turns }: { turns: number }) => (
 )
 
 const meta = {
-  title: 'Organisms/PondComposer/Collapsed',
+  title: 'Organisms/2f · the composer',
   component: TerminalDrawer,
   parameters: { layout: 'fullscreen' },
   globals: { viewport: { value: 'desktop', isRotated: false } },
@@ -86,6 +86,7 @@ const shellOf = (canvasElement: HTMLElement) =>
  * above the shell's bottom.
  */
 export const CentredRightOfTheRail: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const shell = shellOf(canvasElement).getBoundingClientRect()
     const card = within(canvasElement).getByRole('region', { name: 'composer' })
@@ -99,6 +100,7 @@ export const CentredRightOfTheRail: Story = {
 
 /** No header strip, resize handle, clear control or context label. */
 export const DrawsNothingButTheCard: Story = {
+  tags: ['!dev'],
   args: { children: <Thread turns={1} /> },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -194,6 +196,7 @@ async function assertTab(canvasElement: HTMLElement, theme: Theme, landed: boole
 }
 
 export const CollapsedPaper: Story = {
+  name: 'collapsed',
   args: { collapsed: true },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
@@ -205,6 +208,7 @@ export const CollapsedPaper: Story = {
 }
 
 export const CollapsedInk: Story = {
+  name: 'collapsed · ink',
   args: { collapsed: true },
   decorators: [Themed('ink')],
   play: async ({ canvasElement }) => assertTab(canvasElement, 'ink', false),
@@ -212,11 +216,13 @@ export const CollapsedInk: Story = {
 
 /** An answer arrived while it was closed: a 6px dot and `pond answered`, nothing else. */
 export const LandedPaper: Story = {
+  name: 'landed',
   args: { collapsed: true, landed: true },
   play: async ({ canvasElement }) => assertTab(canvasElement, 'paper', true),
 }
 
 export const LandedInk: Story = {
+  name: 'landed · ink',
   args: { collapsed: true, landed: true },
   decorators: [Themed('ink')],
   play: async ({ canvasElement }) => assertTab(canvasElement, 'ink', true),
@@ -224,6 +230,7 @@ export const LandedInk: Story = {
 
 /** Below md the tab is 360 wide, like the card. */
 export const CollapsedMobile: Story = {
+  name: 'collapsed · mobile',
   args: { collapsed: true },
   globals: { viewport: { value: 'mobile2', isRotated: false } },
   decorators: [
@@ -246,6 +253,7 @@ export const CollapsedMobile: Story = {
  * would pad a surface against a composer that is gone.
  */
 export const PublishesItsClearanceToTheShell: Story = {
+  tags: ['!dev'],
   render: (args) => {
     const [turns, setTurns] = useState<number | null>(0)
     return (

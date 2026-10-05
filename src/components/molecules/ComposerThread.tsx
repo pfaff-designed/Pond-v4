@@ -129,3 +129,29 @@ export const YouRow = ({ text, time }: YouRowProps) => (
     {time && <span className="text-[10.5px]">{time}</span>}
   </div>
 )
+
+export interface AnswerErrorProps {
+  /** Sends the question again — absent when there is no question to resend. */
+  onAskAgain?: () => void
+}
+
+/** `error` (`errRow`): the answer failed and the partial text was dropped, so the row
+ *  says nothing was kept. 12px at ink .8, gap 10, `ask again` as the quiet chip. */
+export const AnswerError = ({ onAskAgain }: AnswerErrorProps) => (
+  <div
+    role="alert"
+    data-part="error-row"
+    className="flex flex-wrap items-center gap-2.5 font-mono text-[12px] lowercase tracking-[0.02em] text-mn-text-meta"
+  >
+    <span>pond couldn’t finish this answer. nothing was kept.</span>
+    {onAskAgain && (
+      <button
+        type="button"
+        onClick={onAskAgain}
+        className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-[11px] text-mn-text-meta transition-colors hover:text-foreground"
+      >
+        ask again
+      </button>
+    )}
+  </div>
+)

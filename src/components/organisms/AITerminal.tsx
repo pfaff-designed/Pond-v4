@@ -70,7 +70,13 @@ import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
-import { EarlierTurns, ThreadHead, Turn, YouRow } from '@/components/molecules/ComposerThread'
+import {
+  AnswerError,
+  EarlierTurns,
+  ThreadHead,
+  Turn,
+  YouRow,
+} from '@/components/molecules/ComposerThread'
 import { foldedTurnCount, groupTurns } from '@/lib/conversation/turns'
 import { areaOf } from '@/lib/pages/crumbs'
 import { ComposerLine } from '@/components/molecules/ComposerLine'
@@ -2409,22 +2415,9 @@ export function AITerminal() {
                   )}
                   {/* An error keeps nothing: the partial answer was dropped above. */}
                   {error && !isStreaming && (
-                    <div
-                      role="alert"
-                      data-part="error-row"
-                      className="flex flex-wrap items-center gap-2.5 font-mono text-[12px] lowercase tracking-[0.02em] text-mn-text-meta"
-                    >
-                      <span>pond couldn’t finish this answer. nothing was kept.</span>
-                      {lastQuestion.text && (
-                        <button
-                          type="button"
-                          onClick={() => sendText(lastQuestion.text)}
-                          className="rounded-mn-pill bg-mn-text/[0.07] px-[11px] py-1.5 text-[11px] text-mn-text-meta transition-colors hover:text-foreground"
-                        >
-                          ask again
-                        </button>
-                      )}
-                    </div>
+                    <AnswerError
+                      onAskAgain={lastQuestion.text ? () => sendText(lastQuestion.text) : undefined}
+                    />
                   )}
                 </>
               )}
