@@ -49,7 +49,7 @@ function renderWith(props: Record<string, unknown>) {
 beforeEach(() => jest.clearAllMocks())
 
 describe('DocumentPanel — the inspector sits in the properties card', () => {
-  it('a page with a schema: the 400 card, `properties` eyebrow, field-count note, field-rows inside', async () => {
+  it('a page with a schema: the full-width card, `properties` eyebrow, field-count note, field-rows inside', async () => {
     renderWith({
       _schema: [
         { id: 'kcal', name: 'kcal per serving', type: 'number' },
@@ -61,7 +61,9 @@ describe('DocumentPanel — the inspector sits in the properties card', () => {
     const card = input.closest<HTMLElement>('[data-block-kind]')!
     expect(card.dataset.blockKind).toBe('properties')
     expect(card.dataset.blockState).toBe('rest')
-    expect(card.className.split(' ')).toContain('w-[400px]')
+    // ADR 0008: the card fills its content column, not the board's old 400px.
+    expect(card.className.split(' ')).toContain('w-full')
+    expect(card.className.split(' ')).not.toContain('w-[400px]')
     const eyebrow = screen.getByText('properties')
     expect(eyebrow.className).toBe(pageEyebrowClass)
     expect(card.contains(eyebrow)).toBe(true)

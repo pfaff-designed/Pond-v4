@@ -106,21 +106,15 @@ export {
 } from '@/lib/modules/block-frame'
 
 /**
- * Literal class strings per kind (Tailwind scans source for arbitrary values, so
- * these can't be built from the number). `POND_BLOCK_WIDTHS` is the one source;
- * the stories assert each computed width equals it.
+ * Block width (ADR 0008): every block FILLS the content column — `w-full`, clamped
+ * by the base `max-w-full`. The board's per-kind `W` map (`POND_BLOCK_WIDTHS`) is
+ * retained as the board record but no longer governs layout; do NOT re-wire it into
+ * the card width "to match the board" (ADR 0004: that is the re-litigation this
+ * guards against). The deleted tombstone is the one carve-out — it keeps its board
+ * width, below.
  */
-const WIDTH_CLASS: Record<PondBlockKind, string> = {
-  list: 'w-[400px]',
-  checklist: 'w-[400px]',
-  table: 'w-[500px]',
-  gallery: 'w-[580px]',
-  number: 'w-[400px]',
-  log: 'w-[460px]',
-  properties: 'w-[400px]',
-}
 
-/** `POND_BLOCK_TOMB_WIDTH` (460) as its literal class — the stories assert they agree. */
+/** `POND_BLOCK_TOMB_WIDTH` (460) as its literal class — the tombstone keeps its board width (ADR 0008 carve-out). */
 const TOMB_WIDTH_CLASS = 'w-[460px]'
 
 /** The board's `headMeta`: the mono note on the right of the head row. */
@@ -343,14 +337,17 @@ export function PondBlock({
       // A real boolean attribute (React 19): present when disabled, absent otherwise.
       inert={disabled || undefined}
       className={cn(
-        // The column can be narrower than the kind (mobile, a dragged-in editor
-        // width): clamp to it rather than overflow. Mobile's own 360 is a later slice.
-        'relative flex max-w-full flex-col gap-mn-3 rounded-mn-card px-[18px] py-mn-4 font-sans text-mn-text',
+        // Every block FILLS the content column (ADR 0008): `w-full`, with `max-w-full`
+        // so a narrow column (mobile, a dragged-in editor width) clamps rather than
+        // overflows. Mobile's own 360 is a later slice.
+        'relative flex w-full max-w-full flex-col gap-mn-3 rounded-mn-card px-[18px] py-mn-4 font-sans text-mn-text',
         // deleted: no paper, no shadow — a solid inset hairline on transparent, at
-        // 460 whatever the kind. Everything else is the card at its own width.
+        // 460 whatever the kind (the one width carve-out). `TOMB_WIDTH_CLASS` is appended
+        // after the base `w-full`, so `cn` dedupes width to the tombstone's 460. Everything
+        // else fills the column.
         tombed
           ? ['bg-transparent ring-[1.4px] ring-inset ring-mn-text/20', TOMB_WIDTH_CLASS]
-          : ['bg-mn-card shadow-mn-card', WIDTH_CLASS[kind]],
+          : 'bg-mn-card shadow-mn-card',
         // selected: the ring is PREPENDED to the card shadow (Tailwind composes
         // --tw-ring-shadow before --tw-shadow), so both paint — as the board draws.
         selected && POND_BLOCK_SELECTED_RING,
