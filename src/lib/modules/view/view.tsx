@@ -916,7 +916,10 @@ function CollectionBoard({
                           type="button"
                           aria-label={`Drag card: ${row.title || 'untitled'}`}
                           onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          className="cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
+                          // Share the title's line box (13.5/1.35) so the glyph
+                          // centres on the title's first line under `items-start`,
+                          // and stays by the first line when the title wraps.
+                          className="cursor-grab touch-none text-[13.5px] leading-[1.35] text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
                         >
                           ⠿
                         </button>
@@ -945,7 +948,9 @@ function CollectionBoard({
                           aria-label={`Open card: ${row.title || 'untitled'}`}
                           title="Preview page"
                           onClick={() => onOpenCard(row.id)}
-                          className="shrink-0 leading-none text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
+                          // Same line box as the title so the ↗ sits level with the
+                          // drag handle on the first line, not above it.
+                          className="shrink-0 text-[13.5px] leading-[1.35] text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
                         >
                           ↗
                         </button>
