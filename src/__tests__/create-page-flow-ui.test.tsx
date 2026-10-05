@@ -2,8 +2,8 @@
  * UI tests for the manual page-creation flow (ticket-26) and its neighbours.
  *
  * Tests:
- * 1. The rail's ＋ (via requestCreatePage → ShellCommands, #96) opens the
- *    CreatePageModal (no more instant dead-end create).
+ * 1. The palette's `new page` action (⌘K → ShellCommands) opens the
+ *    CreatePageModal (no instant dead-end create).
  * 2. CreatePageModal creates a `page` (never an `area`) under the chosen parent
  *    and navigates into the editor.
  * 3. The destination defaults to the current context (?nodeId) with an override.
@@ -126,7 +126,6 @@ global.fetch = jest.fn().mockResolvedValue({
 // ── Import components after mocks ─────────────────────────────────────────
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
-import { requestCreatePage } from '@/lib/shell-commands'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { fetchPages } from '@/lib/pages/tree'
 import { AITerminal } from '@/components/organisms/AITerminal'
@@ -148,9 +147,17 @@ function renderWithQuery(ui: React.ReactElement, queryClient = makeQueryClient()
   }
 }
 
-// ── ＋ new page opens the creation modal ──────────────────────────────────
+/** ⌘K, `>` for actions, then the bare `new page` action — the path that opens the creation dialog. */
+async function openNewPageFromPalette() {
+  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+  const input = await screen.findByRole('combobox', { name: 'command palette' })
+  fireEvent.change(input, { target: { value: '>' } })
+  fireEvent.click(await screen.findByRole('option', { name: /new page(?! “)/ }))
+}
 
-describe('ShellCommands — ＋ new page opens the New page modal', () => {
+// ── the palette's `new page` action opens the creation modal ─────────────
+
+describe('ShellCommands — the palette’s `new page` action opens the New page modal', () => {
   beforeEach(() => {
     mockRouterPush.mockClear()
     mockCreatePage.mockClear().mockResolvedValue({ id: 'new-page-id', type: 'page', title: '' })
@@ -164,7 +171,7 @@ describe('ShellCommands — ＋ new page opens the New page modal', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(mockCreatePage).not.toHaveBeenCalled()
 
-    act(() => requestCreatePage())
+    await openNewPageFromPalette()
 
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -178,7 +185,7 @@ describe('ShellCommands — ＋ new page opens the New page modal', () => {
     const user = userEvent.setup()
     renderWithQuery(<ShellCommands />)
 
-    act(() => requestCreatePage())
+    await openNewPageFromPalette()
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     await user.type(screen.getByRole('textbox', { name: /page title/i }), 'Marathon Plan')
@@ -203,7 +210,7 @@ describe('ShellCommands — ＋ new page opens the New page modal', () => {
     const user = userEvent.setup()
     renderWithQuery(<ShellCommands />)
 
-    act(() => requestCreatePage())
+    await openNewPageFromPalette()
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     await user.type(screen.getByRole('textbox', { name: /page title/i }), 'Sleep Log')
@@ -221,7 +228,7 @@ describe('ShellCommands — ＋ new page opens the New page modal', () => {
   it("writes 'Untitled' (never an empty title) when created without a name", async () => {
     renderWithQuery(<ShellCommands />)
 
-    act(() => requestCreatePage())
+    await openNewPageFromPalette()
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
 
     // Submit with the title field untouched.

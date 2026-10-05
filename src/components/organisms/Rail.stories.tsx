@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import type { ComponentProps } from 'react'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { RailView, type RailNode } from './Rail'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
@@ -75,7 +75,6 @@ const meta = {
     onDelete: fn(),
     onLife: fn(),
     onToggleLife: fn(),
-    onNewPage: fn(),
     canDrop: () => true,
     onMove: fn(),
   },
@@ -95,6 +94,8 @@ export const Resting: Story = {
     const tree = canvas.getByRole('tree', { name: 'Workspace' })
     await expect(tree).toBeInTheDocument()
     await expect(within(tree).getByText('life')).toBeInTheDocument()
+    // The root row carries its mark and name only.
+    await expect(canvas.getByRole('treeitem', { name: /life/ })).not.toHaveTextContent(/\ball\b/)
     await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
     await expect(canvas.getByText('Health')).toBeInTheDocument()
     await expect(canvas.getByText('Scratchpad')).toBeInTheDocument()
@@ -143,32 +144,50 @@ export const Expanded: Story = {
 }
 
 /**
- * The board's row geometry, pinned. `PondRail.dc.html` renders its rows at
- * `padding '5px 8px 5px 4px'` / `gap 7` / `line-height: normal`, measuring
- * 26px on an area row (13.5 type) and 25px below it (13 type). #294 closed a
- * fixed 34px against those numbers; this story is what stops them drifting
+ * The board's row geometry, pinned on the treeitem HOST. `PondRail.dc.html`
+ * renders its rows at `padding '5px 8px 5px 4px'` / `gap 7` / `radius 10` /
+ * `line-height: normal`, with the 9px chevron INSIDE the padded row, measuring
+ * 26px on an area row (13.5 type) and 25px below it (13 type). The label body
+ * (the `list-row` molecule) carries none of that: no padding, no wash. #294 closed
+ * a fixed 34px against those numbers; this story is what stops them drifting
  * back — the looseness is invisible in jsdom and in review, and only a real
  * browser catches it.
  */
 export const BoardRowGeometry: Story = {
   args: { expanded: new Set(['health', 'personal']) },
   play: async ({ canvasElement }) => {
-    const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(rows.length).toBeGreaterThan(4)
+    const hosts = [...canvasElement.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+    await expect(hosts.length).toBeGreaterThan(4)
 
-    for (const row of rows) {
-      const css = getComputedStyle(row)
-      await expect(css.padding).toBe('5px 8px 5px 4px')
+    for (const host of hosts) {
+      const css = getComputedStyle(host)
+      const depth = Number(host.getAttribute('aria-level')) - 1
+      await expect(css.paddingTop).toBe('5px')
+      await expect(css.paddingRight).toBe('8px')
+      await expect(css.paddingBottom).toBe('5px')
+      // 4 of board padding, plus one 14px step per level of depth
+      await expect(css.paddingLeft).toBe(`${4 + 14 * depth}px`)
+      if (depth === 0) await expect(css.padding).toBe('5px 8px 5px 4px')
       await expect(css.columnGap).toBe('7px')
       await expect(css.borderTopLeftRadius).toBe('10px')
+
+      // the chevron / leaf spacer is the first in-flow child, 9 wide, inside the row
+      const slot = [...host.children].find((c) => getComputedStyle(c).position !== 'absolute')!
+      await expect(getComputedStyle(slot).width).toBe('9px')
+
+      // the label body is bare: no padding of its own
+      const body = host.querySelector<HTMLElement>('[data-kind="list-row"]')!
+      await expect(getComputedStyle(body).padding).toBe('0px')
       // the board's metric leading, not Tailwind's preflight 1.5 (= 20.25px here)
-      await expect(css.lineHeight).toBe('normal')
+      await expect(getComputedStyle(body).lineHeight).toBe('normal')
     }
 
     const heightAt = (size: string) =>
-      rows
-        .filter((r) => getComputedStyle(r).fontSize === size)
-        .map((r) => Math.round(r.getBoundingClientRect().height))
+      hosts
+        .filter(
+          (h) => getComputedStyle(h.querySelector('[data-kind="list-row"]')!).fontSize === size
+        )
+        .map((h) => Math.round(h.getBoundingClientRect().height))
 
     // the board's own split: areas carry 13.5 type, everything deeper 13
     const areas = heightAt('13.5px')
@@ -348,9 +367,10 @@ export const KeyboardNav: Story = {
 
 /**
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
- * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's NAME as a
- * small-meta label — sans 500 / 11, uppercase, .14em tracking, and NO mark, per
- * all 18 frames of `Pond 05 Shell`. No switcher, no chevron (ADR 0002).
+ * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's glyph and
+ * name (13.5 / 500, full ink) with the reminders bell at
+ * the right. With no pond provider there are no ponds, so no switcher button and
+ * no chevron — and the bell is decorative, never a button.
  */
 export const PaperCardHead: Story = {
   play: async ({ canvasElement }) => {
@@ -362,20 +382,27 @@ export const PaperCardHead: Story = {
     await expect(aside.getBoundingClientRect().width).toBe(206)
     const head = aside.querySelector<HTMLElement>('[data-part="rail-head"]')!
     const name = head.querySelector<HTMLElement>('[data-part="pond-name"]')!
-    await expect(name).toHaveClass('text-mn-11')
-    await expect(name).toHaveClass('uppercase')
-    await expect(head.querySelector('[data-pond-mark]')).toBeNull()
+    await expect(name).toHaveClass('font-medium')
+    await expect(name).not.toHaveClass('uppercase')
+    await expect(head.querySelector('[data-pond-mark]')).not.toBeNull()
     await expect(head.querySelector('button')).toBeNull()
+    await expect(head.querySelector('[data-part="reminders-bell"]')).not.toBeNull()
   },
 }
 
-/** The foot (`PondRail`): a hairline, then "＋ new page" — the one New page affordance. */
-export const FootNewPage: Story = {
-  play: async ({ canvas, args }) => {
-    const plus = canvas.getByRole('button', { name: 'New page' })
-    await expect(plus).toHaveTextContent('＋ new page')
-    await userEvent.click(plus)
-    await expect(args.onNewPage).toHaveBeenCalledTimes(1)
+/**
+ * The foot is the databases root and `settings`, and nothing else — no
+ * "＋ new page". `settings` has no surface yet, so it is plain text with a gear:
+ * not a button, not a tab stop.
+ */
+export const FootSettings: Story = {
+  play: async ({ canvas, canvasElement }) => {
+    await expect(canvas.queryByRole('button', { name: 'New page' })).not.toBeInTheDocument()
+    const settings = canvasElement.querySelector<HTMLElement>('[data-part="settings"]')!
+    await expect(settings).toHaveTextContent('settings')
+    await expect(settings.tagName).toBe('DIV')
+    await expect(settings.querySelector('button, a, [tabindex]')).toBeNull()
+    await expect(canvas.queryByRole('button', { name: 'settings' })).not.toBeInTheDocument()
   },
 }
 
@@ -479,18 +506,14 @@ const probe = (root: HTMLElement, theme: Theme) =>
 
 /**
  * The rail is a floating PAPER card, in pixels, in both themes — and its head is
- * the pond's name as a small-meta label.
+ * the pond's glyph and name.
  *
- * Replaces `shell-reskin`'s `bg-mn-card` / `shadow-mn-card` / `rounded-mn-card`
- * / `text-mn-11` / `tracking-[0.14em]` class assertions and its `globals.css`
- * text scrapes for `--mn-surface` / `--mn-card` / `--mn-radius-card` /
- * `--mn-shadow-card`: the class names could all be right while the roles behind
- * them resolved to the wrong paper. These read the paper off the element.
+ * The paper is read off the element rather than inferred from class names: the
+ * classes could all be right while the roles behind them (`--mn-surface`,
+ * `--mn-card`, `--mn-radius-card`, `--mn-shadow-card`) resolved to the wrong paper.
  *
- * Head treatment from `Pond 05 Shell`, identical in all 18 frames: sans 500 /
- * 11 / uppercase / .14em, and NO mark (`Pond 02`'s PondRail card disagrees at
- * 13.5 with a glyph; the shell board wins — see Rail.tsx's note). 11 × .14em =
- * 1.54px of tracking.
+ * Head: the 13px pond glyph, the name at 13.5 / 500 in full ink,
+ * `padding 0 16px 12px`, centred, `gap 8`.
  */
 export const PaperCardComputed: Story = {
   render: (args) => <BothThemes {...args} />,
@@ -516,14 +539,50 @@ export const PaperCardComputed: Story = {
       const head = aside.querySelector<HTMLElement>('[data-part="rail-head"]')!
       const name = head.querySelector<HTMLElement>('[data-part="pond-name"]')!
       const type = getComputedStyle(name)
-      await expect(type.fontSize).toBe('11px')
+      await expect(type.fontSize).toBe('13.5px')
       await expect(type.fontWeight).toBe('500')
-      await expect(type.textTransform).toBe('uppercase')
-      await expect(type.letterSpacing).toBe('1.54px')
+      await expect(type.textTransform).toBe('none')
+      await expect(type.letterSpacing).toBe('normal')
+      await expect(type.color).toBe(theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)')
       await expect(type.fontFamily).toContain('PP Neue Montreal')
-      // No mark of either register in the head: the pond is not an area.
-      await expect(head.querySelector('[data-pond-mark]')).toBeNull()
+      // The pond's own 13px mark, a plain mask in the name's colour — not an area mark.
+      const mark = head.querySelector<HTMLElement>('[data-pond-mark] [data-icon]')!
+      await expect(mark.getAttribute('data-icon')).toBe(LIFE_GLYPH)
+      await expect(mark.style.width).toBe('13px')
       await expect(head.querySelector('[data-area-mark]')).toBeNull()
+
+      // `head`: padding 0 16px 12px, name left / bell right, centred, gap 8.
+      const headCss = getComputedStyle(head)
+      await expect(headCss.padding).toBe('0px 16px 12px')
+      await expect(headCss.justifyContent).toBe('space-between')
+      await expect(headCss.alignItems).toBe('center')
+      await expect(headCss.columnGap).toBe('8px')
+      // `switcher`: gap 7, padding 4px 6px, margin -4px -6px, radius 8.
+      const switcherCss = getComputedStyle(name.parentElement!)
+      await expect(switcherCss.columnGap).toBe('7px')
+      await expect(switcherCss.padding).toBe('4px 6px')
+      await expect(switcherCss.margin).toBe('-4px -6px')
+      await expect(switcherCss.borderTopLeftRadius).toBe('8px')
+      // With no pond provider there are no ponds: no switcher button, and the bell
+      // is not one.
+      await expect(head.querySelector('button')).toBeNull()
+
+      // The reminders bell: 12×12, stroke 1.4, the .8 ink tier, a decorative mark
+      // outside the ARIA tree that is neither a button nor a tab stop (#198 owns
+      // its behaviour).
+      const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
+      await expect(bell).not.toBeNull()
+      await expect(bell.closest('[role="tree"]')).toBeNull()
+      await expect(bell.getAttribute('aria-hidden')).toBe('true')
+      await expect(bell.hasAttribute('tabindex')).toBe(false)
+      const bellBox = bell.getBoundingClientRect()
+      await expect(bellBox.width).toBe(12)
+      await expect(bellBox.height).toBe(12)
+      await expect(bell.getAttribute('viewBox')).toBe('0 0 14 14')
+      await expect(getComputedStyle(bell).strokeWidth).toBe('1.4px')
+      await expect(getComputedStyle(bell).color).toBe(
+        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
+      )
     }
   },
 }
@@ -532,7 +591,7 @@ export const PaperCardComputed: Story = {
  * #91's glyph wiring, with no chosen marks anywhere: a mapped area row leads
  * with its DEFAULT glyph, tinted with the area role its id derives, and drops
  * its dot; an unmapped top-level area keeps its `KindDot`; a nested page carries
- * neither. The Life root leads with the ring in ink (`var(--mn-text)`), not an
+ * neither. The Life root leads with its waves glyph in ink (`var(--mn-text)`), not an
  * area hue — #229 paints a hue there only once a person picks one.
  *
  * The tint is read as a COLOUR, in both themes, against `--mn-area-*` resolved:
@@ -552,7 +611,7 @@ export const DerivedAreaMarks: Story = {
       const canvas = within(probe(canvasElement, theme))
       const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
 
-      // The Life root: the ring, in ink — and no hand-drawn half-disc left over.
+      // The Life root: its glyph, in ink — and no hand-drawn half-disc left over.
       const life = row(/life/)
       await expect(life.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeInTheDocument()
       await expect(life.querySelector('circle')).toBeNull()
@@ -665,14 +724,15 @@ export const ChosenMarks: Story = {
 
 /**
  * The pond's SECOND root (`Pond 03 Concepts` 3c: "two roots: life for reading,
- * databases for data" — peers, one beside the other). `PondRail` draws it at the
- * FOOT, after the Life tree, above a hairline: its own ARIA tree, so the
+ * databases for data" — peers, one beside the other). `PondRail` draws it in the
+ * FOOT band, under the one hairline: its own ARIA tree, so the
  * structure says what the rail says rather than nesting data inside life.
  *
- * Geometry from `PondRail.dbRow`, measured: `padding '6px 8px'` / `gap 9` /
- * `fontSize 13.5` / `fontWeight 500` / `borderRadius 10`. Its mark is a
- * hand-drawn cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round
- * caps), not an area glyph, because the root is not one of Life's areas.
+ * Geometry: `padding 6px 8px`
+ * (the foot supplies the 10px under the hairline), `gap 9`, `font-size 13.5` /
+ * `font-weight 500`, radius 10, and no chevron. Its mark is a hand-drawn
+ * cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round caps and
+ * joins), not an area glyph, because the root is not one of Life's areas.
  */
 const DATABASES: RailNode = node(
   'root-db',
@@ -691,10 +751,13 @@ export const DatabasesRoot: Story = {
     await expect(within(life).getByText('Health')).toBeInTheDocument()
     await expect(within(life).queryByText('databases')).not.toBeInTheDocument()
 
-    // …and into its own, with its databases nested under it.
+    // …and into its own, with its databases nested under it — in the foot band,
+    // not the scrolling body.
     const foot = canvas.getByRole('tree', { name: 'Databases' })
     await expect(within(foot).getByText('databases')).toBeInTheDocument()
     await expect(within(foot).getByText('ingredients')).toBeInTheDocument()
+    await expect(foot.closest('[data-part="rail-foot"]')).not.toBeNull()
+    await expect(life.parentElement!.contains(foot)).toBe(false)
 
     // A functional mark, not an area one — and so no area hue to disagree with.
     const rootRow = canvas.getByRole('treeitem', { name: /databases/ })
@@ -702,6 +765,7 @@ export const DatabasesRoot: Story = {
     await expect(svg).toBeInTheDocument()
     await expect(svg.getAttribute('stroke-width')).toBe('1.4')
     await expect(svg.getAttribute('stroke-linecap')).toBe('round')
+    await expect(svg.getAttribute('stroke-linejoin')).toBe('round')
     await expect(rootRow.querySelector('[data-area-mark]')).toBeNull()
     await expect(rootRow.querySelector('[data-part="dot"]')).toBeNull()
 
@@ -715,6 +779,42 @@ export const DatabasesRoot: Story = {
     await expect(css.borderTopLeftRadius).toBe('10px')
     const title = body.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(getComputedStyle(title).fontWeight).toBe('500')
+
+    // The row box: padding 6px 8px, the mark and label 9px apart, and no caret
+    // slot — the mark is the first thing in the row.
+    const rowCss = getComputedStyle(rootRow)
+    await expect(rowCss.padding).toBe('6px 8px')
+    await expect(rowCss.columnGap).toBe('9px')
+    await expect(css.columnGap).toBe('9px')
+    await expect(rootRow).toHaveAttribute('aria-expanded', 'true')
+    const inFlow = [...rootRow.children].filter((c) => getComputedStyle(c).position !== 'absolute')
+    await expect(inFlow).toEqual([body])
+    await expect(rootRow.querySelector('button[aria-hidden="true"]')).toBeNull()
+    // 8px foot padding + 8px row padding = the mark at x 16 from the rail's edge.
+    const aside = canvasElement.querySelector('aside')!
+    const markLeft = svg.getBoundingClientRect().left - aside.getBoundingClientRect().left
+    await expect(Math.abs(markLeft - 16)).toBeLessThan(0.01)
+  },
+}
+
+/** One keyboard order across both trees: ↓ from Life's last row lands on databases, ↑ returns. */
+export const KeyboardIntoDatabases: Story = {
+  args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const lastLifeRow = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const databases = canvas.getByRole('treeitem', { name: /databases/ })
+
+    lastLifeRow.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(databases).toHaveFocus()
+    await expect(databases).toHaveAttribute('tabindex', '0')
+    await expect(lastLifeRow).toHaveAttribute('tabindex', '-1')
+
+    await userEvent.keyboard('{ArrowUp}')
+    await expect(lastLifeRow).toHaveFocus()
+    await expect(lastLifeRow).toHaveAttribute('tabindex', '0')
+    await expect(databases).toHaveAttribute('tabindex', '-1')
   },
 }
 
@@ -724,5 +824,254 @@ export const NoDatabasesRoot: Story = {
     await expect(
       within(canvasElement).queryByRole('tree', { name: 'Databases' })
     ).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * The row wash lives on the treeitem HOST, so it covers the caret and the indent
+ * (`PondRail.dc.html` row `background`): selected = ink .07, hover = the rail-only
+ * SAGE wash (.07 light / .14 dark). The `list-row` molecule inside is transparent —
+ * its own `bg-mn-text/5` hover is the molecule's board, not the rail's.
+ */
+export const RowWashes: Story = {
+  args: { expanded: new Set(['health']), selectedId: 'sleep' },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const WASH = {
+      light: { hover: 'rgba(100, 143, 123, 0.07)', selected: 'rgba(27, 29, 20, 0.07)' },
+      dark: { hover: 'rgba(100, 143, 123, 0.14)', selected: 'rgba(250, 249, 239, 0.07)' },
+    } as const
+    const CLEAR = 'rgba(0, 0, 0, 0)'
+    const INK = { light: 'rgb(27, 29, 20)', dark: 'rgb(250, 249, 239)' } as const
+    const INK_68 = { light: 'rgba(27, 29, 20, 0.68)', dark: 'rgba(250, 249, 239, 0.68)' } as const
+
+    for (const theme of THEMES) {
+      const canvas = within(probe(canvasElement, theme))
+      const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+      const bg = (el: Element) => getComputedStyle(el).backgroundColor
+      const body = (host: HTMLElement) => host.querySelector('[data-kind="list-row"]')!
+
+      const sleep = row(/Sleep/)
+      await expect(bg(sleep)).toBe(WASH[theme].selected)
+      await expect(bg(body(sleep))).toBe(CLEAR)
+      // a selected NESTED row's title is 500 (`PondRail` `areaRow || isSel`); an
+      // unselected nested row stays 400
+      const titleOf = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-part="title"]')!
+      await expect(getComputedStyle(titleOf(sleep)).fontWeight).toBe('500')
+      await expect(getComputedStyle(titleOf(row(/Marathon/))).fontWeight).toBe('400')
+
+      const health = row(/Health/)
+      await expect(bg(health)).toBe(CLEAR)
+      await userEvent.hover(health)
+      await expect(bg(health)).toBe(WASH[theme].hover)
+      await expect(bg(body(health))).toBe(CLEAR)
+      await userEvent.unhover(health)
+      await expect(bg(health)).toBe(CLEAR)
+
+      // a hovered nested row's label lifts from ink-68 to full ink
+      const marathon = row(/Marathon/)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK_68[theme])
+      await userEvent.hover(marathon)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK[theme])
+      await userEvent.unhover(marathon)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK_68[theme])
+
+      // a hovered selected row keeps the selected wash
+      await userEvent.hover(sleep)
+      await expect(bg(sleep)).toBe(WASH[theme].selected)
+      await userEvent.unhover(sleep)
+    }
+  },
+}
+
+/**
+ * `PondRail` `dragging`: the source row quiets to .35 and a floating ghost chip —
+ * dot + the row's title at 13, padding 6/10, radius 10, tilted -1.5deg, paper
+ * (neutral-600 on dark) with the lifted shadow — follows the pointer.
+ */
+export const DragGhost: Story = {
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const GHOST = {
+      light: {
+        bg: 'rgb(250, 249, 239)',
+        shadow: 'rgba(27, 29, 20, 0.1) 0px 4px 12px 0px, rgba(27, 29, 20, 0.14) 0px 12px 32px 0px',
+      },
+      dark: { bg: 'rgb(74, 73, 64)', shadow: 'rgba(0, 0, 0, 0.45) 0px 8px 24px 0px' },
+    } as const
+
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const health = within(scope).getByRole('treeitem', { name: /Health/ })
+      await expect(scope.querySelector('[data-part="drag-ghost"]')).toBeNull()
+      // a revealed row settles in over --motion-settle; wait for it to land
+      await waitFor(() => expect(getComputedStyle(health).opacity).toBe('1'))
+
+      await fireEvent.dragStart(health, { dataTransfer: new DataTransfer() })
+      await waitFor(() => expect(scope.querySelector('[data-part="drag-ghost"]')).not.toBeNull())
+      await expect(getComputedStyle(health).opacity).toBe('0.35')
+
+      const ghost = scope.querySelector<HTMLElement>('[data-part="drag-ghost"]')!
+      const css = getComputedStyle(ghost)
+      await expect(ghost).toHaveTextContent('Health')
+      await expect(ghost.getAttribute('aria-hidden')).toBe('true')
+      await expect(css.pointerEvents).toBe('none')
+      await expect(css.position).toBe('absolute')
+      await expect(css.left).toBe('58px')
+      await expect(css.fontSize).toBe('13px')
+      await expect(css.borderTopLeftRadius).toBe('10px')
+      await expect(css.padding).toBe('6px 10px')
+      await expect(css.columnGap).toBe('7px')
+      await expect(css.backgroundColor).toBe(GHOST[theme].bg)
+      await expect(css.boxShadow.endsWith(GHOST[theme].shadow)).toBe(true)
+
+      // tilted -1.5deg: a rotation matrix, not `none`
+      await expect(css.transform).not.toBe('none')
+      const m = new DOMMatrix(css.transform)
+      const angle = (-1.5 * Math.PI) / 180
+      await expect(Math.abs(m.a - Math.cos(angle))).toBeLessThan(1e-4)
+      await expect(Math.abs(m.b - Math.sin(angle))).toBeLessThan(1e-4)
+
+      const dot = ghost.firstElementChild as HTMLElement
+      await expect(getComputedStyle(dot).width).toBe('7px')
+      await expect(getComputedStyle(dot).height).toBe('7px')
+      await expect(getComputedStyle(dot).borderTopLeftRadius).toBe('2px')
+      await expect(getComputedStyle(dot).backgroundColor).toBe(
+        theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)'
+      )
+
+      await fireEvent.dragEnd(health)
+      await waitFor(() => expect(scope.querySelector('[data-part="drag-ghost"]')).toBeNull())
+      await expect(getComputedStyle(health).opacity).toBe('1')
+    }
+  },
+}
+
+/**
+ * A computed colour as [r, g, b, a] in 0–255 / 0–1. `border-mn-text/[0.09]`
+ * resolves through `color-mix`, which Chromium serialises as `oklab(…)` rather
+ * than `rgba(…)`; the value is converted and compared, not the string.
+ */
+const toRgba = (value: string): number[] => {
+  const [x, y, z, a = 1] = value.match(/-?\d*\.?\d+(?:e-?\d+)?/g)!.map(Number)
+  if (value.startsWith('rgb')) return [x, y, z, a]
+  if (value.startsWith('color(srgb')) return [x * 255, y * 255, z * 255, a]
+  if (!value.startsWith('oklab')) throw new Error(`unhandled colour ${value}`)
+  const l = (x + 0.3963377774 * y + 0.2158037573 * z) ** 3
+  const m = (x - 0.1055613458 * y - 0.0638541728 * z) ** 3
+  const s = (x - 0.0894841775 * y - 1.291485548 * z) ** 3
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ]
+  const encode = (c: number) => 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)
+  return [...linear.map(encode), a]
+}
+
+/**
+ * The foot: a flex column, `gap 2`, `padding 10px 8px 0`,
+ * under a `border-top 1px` at ink .09 (paper .09 on dark) that runs the card's
+ * FULL width — no margin above it, none beside it. Then the databases tree and
+ * the `settings` row (`newRow`: padding 6px 8px, 12.5, ink .68; a 12px gear and an
+ * 8px gap). It sits outside the scrolling body, and the databases tree is capped
+ * so it cannot swallow the rail.
+ */
+export const FootBand: Story = {
+  args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const HAIRLINE = { light: [27, 29, 20, 0.09], dark: [250, 249, 239, 0.09] } as const
+    const INK_68 = {
+      light: 'rgba(27, 29, 20, 0.68)',
+      dark: 'rgba(250, 249, 239, 0.68)',
+    } as const
+
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const canvas = within(scope)
+      const aside = scope.querySelector('aside')!
+      const foot = scope.querySelector<HTMLElement>('[data-part="rail-foot"]')!
+      const css = getComputedStyle(foot)
+      await expect(css.borderTopWidth).toBe('1px')
+      const [r, g, b, a] = toRgba(css.borderTopColor)
+      const [er, eg, eb, ea] = HAIRLINE[theme]
+      for (const [got, want] of [
+        [r, er],
+        [g, eg],
+        [b, eb],
+      ])
+        await expect(Math.abs(got - want)).toBeLessThan(1)
+      await expect(Math.abs(a - ea)).toBeLessThan(0.005)
+      // The rule spans the whole card: no inset on either side, none above it.
+      await expect(css.marginLeft).toBe('0px')
+      await expect(css.marginRight).toBe('0px')
+      await expect(css.marginTop).toBe('0px')
+      await expect(foot.getBoundingClientRect().width).toBe(aside.getBoundingClientRect().width)
+      await expect(css.display).toBe('flex')
+      await expect(css.flexDirection).toBe('column')
+      await expect(css.rowGap).toBe('2px')
+      await expect(css.padding).toBe('10px 8px 0px')
+
+      // databases tree first, then settings — in ONE element
+      const tree = canvas.getByRole('tree', { name: 'Databases' })
+      const settings = scope.querySelector<HTMLElement>('[data-part="settings"]')!
+      await expect([...foot.children]).toEqual([tree, settings])
+      await expect(getComputedStyle(tree).maxHeight).not.toBe('none')
+      // the foot's hairline is the only one: the tree draws none of its own
+      await expect(getComputedStyle(tree).borderTopWidth).toBe('0px')
+      await expect(scope.querySelectorAll('aside [class*="border-t"]')).toHaveLength(1)
+      // measured once the nested row's settle-in entrance has finished moving it
+      await Promise.all(tree.getAnimations({ subtree: true }).map((a) => a.finished))
+      const dbRows = within(tree).getAllByRole('treeitem')
+      const lastDbRow = dbRows[dbRows.length - 1].getBoundingClientRect()
+
+      // The scroller clips at its padding box: every row's 2px focus ring must
+      // fit inside it on all four sides, or a keyboard user loses the indicator.
+      const box = tree.getBoundingClientRect()
+      for (const row of dbRows) {
+        const r = row.getBoundingClientRect()
+        await expect(r.left - box.left).toBeGreaterThanOrEqual(2)
+        await expect(box.right - r.right).toBeGreaterThanOrEqual(2)
+      }
+      await expect(dbRows[0].getBoundingClientRect().top - box.top).toBeGreaterThanOrEqual(2)
+      await expect(box.bottom - lastDbRow.bottom).toBeGreaterThanOrEqual(2)
+
+      // The board's dbRow sets no colour: its label inherits full ink.
+      const dbTitle = canvas
+        .getByRole('treeitem', { name: /databases/ })
+        .querySelector<HTMLElement>('[data-part="title"]')!
+      await expect(getComputedStyle(dbTitle).color).toBe(
+        theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)'
+      )
+
+      // `newRow`: 12.5 / ink .68 / padding 6px 8px; the gear 12px, 8px from the label.
+      const type = getComputedStyle(settings)
+      await expect(type.fontSize).toBe('12.5px')
+      await expect(type.color).toBe(INK_68[theme])
+      await expect(type.padding).toBe('6px 8px')
+      await expect(type.borderTopLeftRadius).toBe('0px')
+      const inner = settings.firstElementChild as HTMLElement
+      await expect(getComputedStyle(inner).display).toBe('inline-flex')
+      await expect(getComputedStyle(inner).columnGap).toBe('8px')
+      const gear = inner.querySelector('svg')!
+      await expect(gear.getBoundingClientRect().width).toBe(12)
+      await expect(gear.getBoundingClientRect().height).toBe(12)
+      await expect(gear.getAttribute('viewBox')).toBe('0 0 14 14')
+      await expect(gear.getAttribute('stroke-width')).toBe('1.4')
+      await expect(gear.querySelector('circle')!.getAttribute('r')).toBe('2.2')
+
+      // no board draws a hover on newRow
+      await expect(settings.className).not.toMatch(/hover:/)
+    }
+  },
+}
+
+/** With no databases root the foot is just `settings` under the hairline. */
+export const FootWithoutDatabases: Story = {
+  play: async ({ canvasElement }) => {
+    const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
+    await expect(foot.children).toHaveLength(1)
+    await expect(foot.firstElementChild).toHaveTextContent('settings')
   },
 }

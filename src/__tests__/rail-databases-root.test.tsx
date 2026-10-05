@@ -74,7 +74,6 @@ function renderRail(tree: RailNode[], expanded = new Set<string>()) {
       onDelete={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
-      onNewPage={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
     />

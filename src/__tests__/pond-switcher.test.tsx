@@ -86,6 +86,40 @@ describe('the pond switcher', () => {
     expect(screen.getByText('make noise')).toBeInTheDocument()
   })
 
+  it("draws PondRail's head: the pond's glyph, a .68 chevron turned down, up while open", async () => {
+    mockSearch = 'pond=p-noise'
+    const { container } = renderSwitcher()
+
+    const head = await screen.findByRole('button')
+    await waitFor(() =>
+      expect(head.querySelector('[data-pond-mark] [data-icon]')).toHaveAttribute(
+        'data-icon',
+        'lightning-03'
+      )
+    )
+    const chevron = head.querySelector('svg')!
+    expect(chevron).toHaveAttribute('viewBox', '0 0 9 9')
+    expect(chevron.querySelector('path')).toHaveAttribute('d', 'M3.5 2 L7 5 L3.5 8')
+    expect(chevron).toHaveAttribute('stroke-width', '1.4')
+    expect(chevron.getAttribute('class')).toMatch(/\btext-mn-text-secondary\b/)
+    expect(chevron.getAttribute('class')).toMatch(/(^|\s)rotate-90\b/)
+
+    fireEvent.click(head)
+    expect(chevron.getAttribute('class')).toMatch(/-rotate-90\b/)
+    expect(container.querySelector('[data-part="rail-head"]')).toBeInTheDocument()
+  })
+
+  it('falls back to waves-02 when the pond has no glyph of its own', async () => {
+    ;(listPonds as jest.Mock).mockResolvedValue([{ ...LIFE, glyph: null }])
+    const { container } = renderSwitcher()
+
+    await screen.findByRole('button')
+    expect(container.querySelector('[data-pond-mark] [data-icon]')).toHaveAttribute(
+      'data-icon',
+      'waves-02'
+    )
+  })
+
   it('names the pond from ?pond= rather than always the first', async () => {
     mockSearch = 'pond=p-noise'
     const { container } = renderSwitcher()
