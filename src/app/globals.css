@@ -698,13 +698,13 @@
      restores the ancestor-of-selection emphasis that the TreeRow→PondMolecule
      absorption dropped (#95). ink tiers: full 100 · raised 80 (meta) · muted 68. */
   [data-tree-row][data-voice='muted'] [data-part='title'] {
-    color: var(--color-mn-text-secondary);
+    color: var(--mn-text-secondary);
   }
   [data-tree-row][data-voice='raised'] [data-part='title'] {
-    color: var(--color-mn-text-meta);
+    color: var(--mn-text-meta);
   }
   [data-tree-row][data-voice='full'] [data-part='title'] {
-    color: var(--color-mn-text);
+    color: var(--mn-text);
   }
 }
 

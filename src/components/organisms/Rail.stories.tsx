@@ -720,10 +720,12 @@ export const ChosenMarks: Story = {
  * FOOT band, under the one hairline: its own ARIA tree, so the
  * structure says what the rail says rather than nesting data inside life.
  *
- * Geometry from `PondRail.dbRow`, measured: `padding '6px 8px'` / `gap 9` /
- * `fontSize 13.5` / `fontWeight 500` / `borderRadius 10`. Its mark is a
- * hand-drawn cylinder in `currentColor` — a FUNCTIONAL mark (stroke 1.4, round
- * caps), not an area glyph, because the root is not one of Life's areas.
+ * Geometry from the storyboard's dbRow (`Pond 06.21`, which wins over
+ * `PondRail.dc.html` — ADR 0010): `padding 10px 8px 7px` under the hairline
+ * (the foot supplies the top), `gap 9`, `font-size 13.5` / `font-weight 500`,
+ * radius 10, and no chevron. Its mark is a hand-drawn cylinder in
+ * `currentColor` — a FUNCTIONAL mark (stroke 1.4, round caps), not an area
+ * glyph, because the root is not one of Life's areas.
  */
 const DATABASES: RailNode = node(
   'root-db',
@@ -769,6 +771,42 @@ export const DatabasesRoot: Story = {
     await expect(css.borderTopLeftRadius).toBe('10px')
     const title = body.querySelector<HTMLElement>('[data-part="title"]')!
     await expect(getComputedStyle(title).fontWeight).toBe('500')
+
+    // The row box: padding 7px 8px, the mark and label 9px apart, and no caret
+    // slot — the mark is the first thing in the row.
+    const rowCss = getComputedStyle(rootRow)
+    await expect(rowCss.padding).toBe('7px 8px')
+    await expect(rowCss.columnGap).toBe('9px')
+    await expect(css.columnGap).toBe('9px')
+    await expect(rootRow).toHaveAttribute('aria-expanded', 'true')
+    const inFlow = [...rootRow.children].filter((c) => getComputedStyle(c).position !== 'absolute')
+    await expect(inFlow).toEqual([body])
+    await expect(rootRow.querySelector('button[aria-hidden="true"]')).toBeNull()
+    // 8px foot margin + 8px row padding = the mark at x 16 from the rail's edge.
+    const aside = canvasElement.querySelector('aside')!
+    const markLeft = svg.getBoundingClientRect().left - aside.getBoundingClientRect().left
+    await expect(Math.abs(markLeft - 16)).toBeLessThan(0.01)
+  },
+}
+
+/** One keyboard order across both trees: ↓ from Life's last row lands on databases, ↑ returns. */
+export const KeyboardIntoDatabases: Story = {
+  args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const lastLifeRow = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const databases = canvas.getByRole('treeitem', { name: /databases/ })
+
+    lastLifeRow.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect(databases).toHaveFocus()
+    await expect(databases).toHaveAttribute('tabindex', '0')
+    await expect(lastLifeRow).toHaveAttribute('tabindex', '-1')
+
+    await userEvent.keyboard('{ArrowUp}')
+    await expect(lastLifeRow).toHaveFocus()
+    await expect(lastLifeRow).toHaveAttribute('tabindex', '0')
+    await expect(databases).toHaveAttribute('tabindex', '-1')
   },
 }
 
@@ -796,6 +834,8 @@ export const RowWashes: Story = {
       dark: { hover: 'rgba(100, 143, 123, 0.14)', selected: 'rgba(250, 249, 239, 0.07)' },
     } as const
     const CLEAR = 'rgba(0, 0, 0, 0)'
+    const INK = { light: 'rgb(27, 29, 20)', dark: 'rgb(250, 249, 239)' } as const
+    const INK_68 = { light: 'rgba(27, 29, 20, 0.68)', dark: 'rgba(250, 249, 239, 0.68)' } as const
 
     for (const theme of THEMES) {
       const canvas = within(probe(canvasElement, theme))
@@ -806,6 +846,11 @@ export const RowWashes: Story = {
       const sleep = row(/Sleep/)
       await expect(bg(sleep)).toBe(WASH[theme].selected)
       await expect(bg(body(sleep))).toBe(CLEAR)
+      // a selected NESTED row's title is 500 (`PondRail` `areaRow || isSel`); an
+      // unselected nested row stays 400
+      const titleOf = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-part="title"]')!
+      await expect(getComputedStyle(titleOf(sleep)).fontWeight).toBe('500')
+      await expect(getComputedStyle(titleOf(row(/Marathon/))).fontWeight).toBe('400')
 
       const health = row(/Health/)
       await expect(bg(health)).toBe(CLEAR)
@@ -814,6 +859,14 @@ export const RowWashes: Story = {
       await expect(bg(body(health))).toBe(CLEAR)
       await userEvent.unhover(health)
       await expect(bg(health)).toBe(CLEAR)
+
+      // a hovered nested row's label lifts from ink-68 to full ink
+      const marathon = row(/Marathon/)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK_68[theme])
+      await userEvent.hover(marathon)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK[theme])
+      await userEvent.unhover(marathon)
+      await expect(getComputedStyle(titleOf(marathon)).color).toBe(INK_68[theme])
 
       // a hovered selected row keeps the selected wash
       await userEvent.hover(sleep)
@@ -887,29 +940,67 @@ export const DragGhost: Story = {
 }
 
 /**
- * The foot is ONE band under ONE hairline (`PondRail.foot`: `column / gap 2 /
- * padding 10px 8px 0 / border-top a(.09)`): the databases tree, then "＋ new page"
- * (`Pond 06.21`: 11 / 500 / ink .8 / padding 7px 8px). It sits outside the
- * scrolling body, and the databases tree is capped so it cannot swallow the rail.
+ * A computed colour as [r, g, b, a] in 0–255 / 0–1. `border-mn-text/[0.09]`
+ * resolves through `color-mix`, which Chromium serialises as `oklab(…)` rather
+ * than `rgba(…)`; the value is converted and compared, not the string.
+ */
+const toRgba = (value: string): number[] => {
+  const [x, y, z, a = 1] = value.match(/-?\d*\.?\d+(?:e-?\d+)?/g)!.map(Number)
+  if (value.startsWith('rgb')) return [x, y, z, a]
+  if (value.startsWith('color(srgb')) return [x * 255, y * 255, z * 255, a]
+  if (!value.startsWith('oklab')) throw new Error(`unhandled colour ${value}`)
+  const l = (x + 0.3963377774 * y + 0.2158037573 * z) ** 3
+  const m = (x - 0.1055613458 * y - 0.0638541728 * z) ** 3
+  const s = (x - 0.0894841775 * y - 1.291485548 * z) ** 3
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ]
+  const encode = (c: number) => 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)
+  return [...linear.map(encode), a]
+}
+
+/**
+ * The foot is ONE band under ONE hairline (`Pond 06.21`, which wins over
+ * `PondRail.dc.html` — ADR 0010): `margin 10px 8px 0` / `border-top 1px` at ink
+ * .09 in BOTH themes (paper .09 on dark), the databases tree, then "＋ new page"
+ * (11 / 500 / ink .8 / padding 7px 8px). It sits outside the scrolling body, and
+ * the databases tree is capped so it cannot swallow the rail.
  */
 export const FootBand: Story = {
   args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
   render: (args) => <BothThemes {...args} />,
   play: async ({ canvasElement }) => {
+    const HAIRLINE = { light: [27, 29, 20, 0.09], dark: [250, 249, 239, 0.09] } as const
+    const INK_80 = {
+      light: 'rgba(27, 29, 20, 0.8)',
+      dark: 'rgba(250, 249, 239, 0.8)',
+    } as const
+
     for (const theme of THEMES) {
       const scope = probe(canvasElement, theme)
       const canvas = within(scope)
       const foot = scope.querySelector<HTMLElement>('[data-part="rail-foot"]')!
       const css = getComputedStyle(foot)
       await expect(css.borderTopWidth).toBe('1px')
-      await expect(css.borderTopColor).toBe(
-        theme === 'light' ? 'rgba(27, 29, 20, 0.09)' : 'rgba(250, 249, 239, 0.12)'
-      )
-      await expect(css.display).toBe('flex')
-      await expect(css.flexDirection).toBe('column')
-      await expect(css.rowGap).toBe('2px')
-      await expect(css.paddingLeft).toBe('8px')
-      await expect(css.paddingTop).toBe('10px')
+      const [r, g, b, a] = toRgba(css.borderTopColor)
+      const [er, eg, eb, ea] = HAIRLINE[theme]
+      for (const [got, want] of [
+        [r, er],
+        [g, eg],
+        [b, eb],
+      ])
+        await expect(Math.abs(got - want)).toBeLessThan(1)
+      await expect(Math.abs(a - ea)).toBeLessThan(0.005)
+      await expect(css.marginLeft).toBe('8px')
+      await expect(css.marginRight).toBe('8px')
+      await expect(css.marginTop).toBe('10px')
+      // The inset comes from the margin; the foot pads only its top (3 + the
+      // first row's 7 = the board's 10px under the hairline).
+      await expect(css.paddingLeft).toBe('0px')
+      await expect(css.paddingRight).toBe('0px')
+      await expect(css.paddingTop).toBe('3px')
       await expect(css.paddingBottom).toBe('0px')
 
       // databases tree first, then the new-page button — in ONE element
@@ -920,19 +1011,17 @@ export const FootBand: Story = {
       // the foot's hairline is the only one: the tree draws none of its own
       await expect(getComputedStyle(tree).borderTopWidth).toBe('0px')
       await expect(scope.querySelectorAll('aside [class*="border-t"]')).toHaveLength(1)
+      // directly after the tree: no gap between them
+      await expect(plus.getBoundingClientRect().top).toBe(tree.getBoundingClientRect().bottom)
 
       const type = getComputedStyle(plus)
       await expect(type.fontSize).toBe('11px')
       await expect(type.fontWeight).toBe('500')
-      await expect(type.color).toBe(
-        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
-      )
+      await expect(type.color).toBe(INK_80[theme])
       await expect(type.padding).toBe('7px 8px')
 
-      // the sage hover wash, as on the rows (`:hover` can't be driven by a
-      // synthetic pointer event, so the utility is asserted by name; the role it
-      // resolves to is pinned by RowWashes)
-      await expect(plus).toHaveClass('hover:bg-mn-rail-hover')
+      // no board draws a hover on newRow
+      await expect(plus.className).not.toMatch(/hover:/)
     }
   },
 }

@@ -161,6 +161,8 @@ interface RailRowProps {
   /** An area row — the raised label voice + its accent dot. #108: "area" is no
    *  longer a stored type; the caller decides with `isAreaRow` (a top-level page). */
   isArea?: boolean
+  /** The databases root: the foot band's first row, drawn without a caret. */
+  isDbRoot?: boolean
   posInSet?: number
   setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
@@ -205,6 +207,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isBusy,
     isRoot = false,
     isArea = false,
+    isDbRoot = false,
     posInSet,
     setSize,
     accent,
@@ -244,12 +247,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // list-row molecule renders one tone (mockup default), so the rail docks its
   // own voice onto the title via data-voice → CSS (see globals.css). full =
   // the selected row (ink-100); raised = an area/root row or an ancestor of the
-  // selection (ink-80 meta); muted = a plain child row (ink-68).
-  const labelVoice: 'full' | 'raised' | 'muted' = isSelected
-    ? 'full'
-    : isOnPath || isRoot || isArea
-      ? 'raised'
-      : 'muted'
+  // selection (ink-80 meta); muted = a plain child row (ink-68). Hover lifts any
+  // row to full.
+  const labelVoice: 'full' | 'raised' | 'muted' =
+    isSelected || hovered ? 'full' : isOnPath || isRoot || isArea ? 'raised' : 'muted'
 
   return (
     <div
@@ -293,13 +294,14 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center gap-[7px] rounded-mn-row py-[5px] pr-2 outline-none
+      className={`group relative flex items-center rounded-mn-row outline-none
+        ${isDbRoot ? 'gap-[9px] px-2 py-[7px]' : 'gap-[7px] py-[5px] pr-2'}
         focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
         ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
         ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
-      style={{ paddingLeft: padLeft }}
+      style={isDbRoot ? undefined : { paddingLeft: padLeft }}
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
           top/bottom edge; pointer-events-none so it never eats a drag event.
@@ -328,7 +330,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       {/* caret — toggles the folder without navigating and without taking
           focus (the row keeps the roving tab stop); leaf gets a spacer */}
-      {isFolder ? (
+      {isDbRoot ? null : isFolder ? (
         <button
           type="button"
           tabIndex={-1}
@@ -360,7 +362,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // row with no dot at all. Round three caught the dead branch.
         dot={!isRoot && accent !== undefined && leading === undefined}
         accent={accent}
-        emphasis={isRoot || isArea}
+        emphasis={isRoot || isArea || isSelected}
         leading={leading}
         trailing={
           <>
@@ -421,7 +423,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // font-size as conflicting with leading (a `text-*` step can carry its
         // own), so a size appended after it silently drops it — #252's bug
         // class — and the row springs back to preflight's 1.5.
-        className={`min-h-0 w-full min-w-0 flex-1 gap-[7px] p-0${
+        className={`min-h-0 w-full min-w-0 flex-1 ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           isAreaRow ? '' : ' text-[13px]'
         } leading-[normal]`}
       />
@@ -520,13 +522,24 @@ const REMINDERS_BELL = (
   </span>
 )
 
+const TRANSPARENT_GIF =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+let blankDragImage: HTMLImageElement | null = null
+
+/** One shared transparent image. `setDragImage` ignores an image that has not
+ *  finished loading, so it is created at mount, ahead of the first drag. */
+function getBlankDragImage(): HTMLImageElement {
+  if (blankDragImage === null) {
+    blankDragImage = new Image()
+    blankDragImage.src = TRANSPARENT_GIF
+  }
+  return blankDragImage
+}
+
 /** Replace the browser's drag image with an empty one — the rail draws its own ghost. */
 function hideNativeDragImage(dataTransfer: DataTransfer) {
   if (typeof dataTransfer.setDragImage !== 'function') return
-  const blank = document.createElement('canvas')
-  blank.width = 1
-  blank.height = 1
-  dataTransfer.setDragImage(blank, 0, 0)
+  dataTransfer.setDragImage(getBlankDragImage(), 0, 0)
 }
 
 /** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
@@ -713,6 +726,14 @@ export function RailView({
     const top = bodyRef.current?.getBoundingClientRect().top ?? 0
     setGhostY(clientY - top)
   }
+  useEffect(() => {
+    getBlankDragImage()
+  }, [])
+  // Rows bubble their dragover here, so the ghost also follows the pointer over
+  // the gaps between rows.
+  const handleBodyDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (draggingId) trackGhost(e.clientY)
+  }
   const [dropTarget, setDropTarget] = useState<{
     id: string
     zone: DropZone
@@ -740,7 +761,6 @@ export function RailView({
   }
 
   function handleDragOver(id: string, e: DragEvent<HTMLDivElement>) {
-    if (draggingId) trackGhost(e.clientY)
     if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
     const zone = zoneFor(id, e)
     if (canDrop(draggingId, id, zone)) {
@@ -840,6 +860,7 @@ export function RailView({
         isFocused={rovingId === id}
         isBusy={id === busyId}
         isArea={isAreaRow(node)}
+        isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
         // The databases root carries its own functional mark, no area colour (#101).
@@ -895,7 +916,11 @@ export function RailView({
           plain name, rather than an affordance that opens an empty menu. */}
       <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
 
-      <div ref={bodyRef} className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={bodyRef}
+        onDragOver={handleBodyDragOver}
+        className="relative flex min-h-0 flex-1 flex-col"
+      >
         <div className="min-h-0 flex-1 overflow-y-auto px-2">
           <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
             {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
@@ -943,15 +968,13 @@ export function RailView({
         )}
       </div>
 
-      {/* The foot (PondRail): ONE band under a single hairline — the databases root
-          (3c / #101: the pond's SECOND root, its own ARIA tree so the structure
-          says what the rail says), then "＋ new page". The databases tree is capped
-          at 40vh so an expanded root scrolls inside the foot instead of swallowing
-          the rail. */}
-      <div
-        data-part="rail-foot"
-        className="mt-auto flex flex-col gap-[2px] border-t border-mn-line px-2 pt-2.5"
-      >
+      {/* The foot (`Pond 06.21`): ONE band under a single hairline inset 8px each
+          side — the databases root (3c / #101: the pond's SECOND root, its own ARIA
+          tree so the structure says what the rail says), then "＋ new page". The
+          3px top padding plus the first row's 7px puts its content 10px below the
+          hairline. The databases tree is capped at 40vh so an expanded root scrolls
+          inside the foot instead of swallowing the rail. */}
+      <div data-part="rail-foot" className="mx-2 mt-2.5 border-t border-mn-text/[0.09] pt-[3px]">
         {databasesFlat.length > 0 && (
           <div
             role="tree"
@@ -966,7 +989,7 @@ export function RailView({
           type="button"
           onClick={onNewPage}
           aria-label="New page"
-          className="w-full cursor-pointer rounded-mn-row px-2 py-[7px] text-left text-[11px] leading-[normal] font-medium text-mn-text-meta transition-colors hover:bg-mn-rail-hover"
+          className="block w-full cursor-pointer rounded-mn-row px-2 py-[7px] text-left text-[11px] leading-[normal] font-medium text-mn-text-meta outline-none focus-visible:ring-2 focus-visible:ring-mn-area-b"
         >
           ＋ new page
         </button>
