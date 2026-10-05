@@ -87,6 +87,8 @@ export const Preview: Story = {
     // AC 1: the linked page's content, read-only.
     await expect(body.getByText('Bevel the foot ring before it dries.')).toBeInTheDocument()
     await expect(body.getByText('Center the bowl on the wheel')).toBeInTheDocument()
+    // Read-preview: the modal body holds no editor — every module renders quiet.
+    await expect(body.queryByRole('textbox')).not.toBeInTheDocument()
 
     // AC 2: the expand affordance.
     await userEvent.click(body.getByRole('button', { name: /open page/i }))
@@ -193,5 +195,53 @@ export const OpenPageNavigatesAndCloses: StoryObj = {
     await userEvent.click(body.getByRole('button', { name: /open page/i }))
     await waitFor(() => expect(body.queryByRole('dialog')).not.toBeInTheDocument())
     await expect(canvas.getByTestId('navigated')).toBeInTheDocument()
+  },
+}
+
+// ── The board card's isolation rules ─────────────────────────────────────────
+
+/**
+ * A click on a card's own control is that control's, never the preview's. #223
+ * deleted the per-card × (no board draws one), so the only control a card still
+ * owns is its title input — and typing in it must not open a modal over the
+ * caret. Both of these fail SILENTLY: a modal that steals the first keystroke,
+ * or a delete affordance nobody designed creeping back in.
+ */
+export const EditableBoardCardControls: StoryObj = {
+  render: function Render() {
+    const [opened, setOpened] = useState<string | null>(null)
+    return (
+      <>
+        <CollectionView
+          config={boardConfig}
+          schema={boardSchema}
+          rows={boardRows}
+          editable
+          onRenameRow={() => {}}
+          onOpenCard={setOpened}
+        />
+        <p data-testid="opened">{opened ?? 'none'}</p>
+      </>
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getAllByLabelText('Card title')[0])
+    await expect(canvas.getByTestId('opened')).toHaveTextContent('none')
+    // No board draws a per-card delete, even on an editable board (#223).
+    await expect(canvas.queryByRole('button', { name: /delete card/i })).not.toBeInTheDocument()
+    // The ↗ affordance still opens, from the keyboard as much as the pointer.
+    await userEvent.click(canvas.getByRole('button', { name: 'Open card: Wedge stoneware' }))
+    await expect(canvas.getByTestId('opened')).toHaveTextContent('row-2')
+  },
+}
+
+/** A host that cannot open a card draws no affordance promising it can. */
+export const BoardWithoutOpenCard: StoryObj = {
+  render: () => <CollectionView config={boardConfig} schema={boardSchema} rows={boardRows} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /open card/i })).not.toBeInTheDocument()
   },
 }

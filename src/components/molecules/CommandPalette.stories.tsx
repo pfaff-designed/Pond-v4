@@ -154,6 +154,19 @@ async function assertChrome(root: HTMLElement, p: Palette) {
   await expect(px(i.fontSize)).toBe(14)
   await expect(i.color).toBe(p.ink)
   await expect(input.getAttribute('role')).toBe('combobox')
+  // A floating glass with a combobox, NOT a dialog: nothing traps, nothing is
+  // modal, and the row the keys act on is named on the input rather than focused.
+  // All four are invisible if they break, and a screen reader loses the list.
+  await expect(root.querySelector('[role="dialog"]')).toBeNull()
+  await expect(root.querySelector('[aria-modal]')).toBeNull()
+  const list = glass.querySelector<HTMLElement>('[role="listbox"]')!
+  await expect(input.getAttribute('aria-controls')).toBe(list.id)
+  await expect(input.getAttribute('aria-expanded')).toBe('true')
+  const sel = glass.querySelector<HTMLElement>('[aria-selected="true"]')
+  await expect(input.getAttribute('aria-activedescendant')).toBe(sel ? sel.id : null)
+  // A row is an `option`, never a button — a button here would take focus off the
+  // input and the typing would stop.
+  for (const o of glass.querySelectorAll('[role="option"]')) await expect(o.tagName).toBe('DIV')
   const key = head.querySelector<HTMLElement>('[data-part="head-key"]')!
   await expect(key.textContent).toBe('esc')
   await expect(px(getComputedStyle(key).fontSize)).toBe(10.5)
@@ -476,5 +489,84 @@ export const Keys: Story = {
     await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'journal' }))
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalled()
+  },
+}
+
+// ── dismissal, and the one button in the glass ─────────────────────────────────
+
+/**
+ * Three ways out, and one way that is not: esc, the ⌘K that opened it, and a press
+ * anywhere outside the glass all close; a press INSIDE (on the input) must not, or
+ * the palette shuts the moment someone clicks into the field to type.
+ *
+ * `esc` is the glass's only button, so it is the only thing in it that can take
+ * focus — and it wears the house mist ring, asserted as the painted outline rather
+ * than the class name that asks for it (#252 shipped a right class and a wrong pixel).
+ */
+export const Dismissal: Story = {
+  args: { onClose: fn() },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    const input = glass.querySelector<HTMLInputElement>('input')!
+
+    // Inside the glass: no close.
+    input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await expect(args.onClose).not.toHaveBeenCalled()
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await expect(args.onClose).toHaveBeenCalledTimes(1)
+    await userEvent.keyboard('{Escape}')
+    await expect(args.onClose).toHaveBeenCalledTimes(2)
+    await userEvent.keyboard('{Meta>}k{/Meta}')
+    await expect(args.onClose).toHaveBeenCalledTimes(3)
+
+    // Tab off the input reaches `esc`, the one button — and the mist ring paints.
+    const esc = glass.querySelector<HTMLElement>('[data-part="head-key"]')!
+    await expect(esc.tagName).toBe('BUTTON')
+    await expect(esc.textContent).toBe('esc')
+    await userEvent.tab()
+    await expect(esc).toHaveFocus()
+    const f = getComputedStyle(esc)
+    // `PondControl`'s focus outline: 2px solid mist, offset 2 — one owner, never flips.
+    await expect(f.outlineStyle).toBe('solid')
+    await expect(f.outlineWidth).toBe('2px')
+    await expect(f.outlineOffset).toBe('2px')
+    await expect(f.outlineColor).toBe('rgb(165, 200, 209)')
+
+    await userEvent.click(esc)
+    await expect(args.onClose).toHaveBeenCalledTimes(4)
+  },
+}
+
+// ── the pointer, and typing for real ──────────────────────────────────────────
+
+/**
+ * The mouse path, and a query typed a letter at a time rather than handed in as
+ * `defaultQuery`: the list narrows live, the hit is split on the row that matched,
+ * hovering a row selects it (and the input says so), and a click opens it.
+ */
+export const Pointer: Story = {
+  args: { onSelect: fn() },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    const input = glass.querySelector<HTMLInputElement>('input')!
+    await expect(labels(canvasElement)).toEqual(['kitchen renovation', 'budget', 'journal'])
+
+    await userEvent.type(input, 'cab')
+    await expect(groups(canvasElement)).toEqual(['pages', 'records', 'actions'])
+    await assertHit(canvasElement, 'chase the cabinet quote', 'cab')
+
+    // Hover selects, and the input names the row it selected.
+    const quote = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (r) => r.querySelector('[data-part="label"]')!.textContent === 'cabinet quote'
+    )!
+    await userEvent.hover(quote)
+    await expect(quote.getAttribute('aria-selected')).toBe('true')
+    await expect(input.getAttribute('aria-activedescendant')).toBe(quote.id)
+
+    await userEvent.click(quote)
+    await expect(args.onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'cabinet-quote' })
+    )
   },
 }

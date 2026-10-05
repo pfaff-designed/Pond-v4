@@ -189,7 +189,10 @@ export const EmptyInCard: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const card = canvasElement.querySelector<HTMLElement>('[data-block-kind]')!
+    await expect(card.dataset.blockKind).toBe('properties')
     await expect(card.dataset.blockState).toBe('empty')
+    // The note still counts, at zero — the frame does not drop it when empty.
+    await expect((card.firstElementChild as HTMLElement).children[1].textContent).toBe('0 fields')
     await expect(canvas.getByText('no fields yet')).toBeInTheDocument()
     await expect(canvas.queryByRole('button')).not.toBeInTheDocument()
     await expect(canvas.queryByText(/no properties/i)).not.toBeInTheDocument()

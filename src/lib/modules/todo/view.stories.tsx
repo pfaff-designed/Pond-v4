@@ -242,7 +242,10 @@ async function assertMethod(canvasElement: HTMLElement, ink: Ink) {
   await assertDone(rows[0], ink)
   await assertRest(rows[1], ink)
   await assertRest(rows[2], ink)
-  // The stack is the frame's row gap for the checklist kind.
+  // The stack is the frame's row gap for the checklist kind, and the listener
+  // wrapper between row and stack is `display: contents` — without it the row is
+  // not the stack's own flex item and the 2px gap silently stops applying.
+  await expect(getComputedStyle(rows[0].parentElement!).display).toBe('contents')
   await expect(getComputedStyle(rows[0].parentElement!.parentElement!).rowGap).toBe('2px')
 }
 
@@ -480,6 +483,164 @@ export const Editable: Story = {
     await expect(field.value).toBe('stir through harissa')
     await userEvent.type(field, ' and serve')
     await expect(field).toHaveValue('stir through harissa and serve')
+  },
+}
+
+// ── Read-only ARIA: the strike is CSS, so the box must still announce ────────────
+
+/**
+ * A read-only box is a `role="checkbox"` span with `aria-checked`, `aria-readonly`
+ * and the step as its label. The board cannot draw an accessibility tree, but the
+ * done strike is CSS-only — without the role nothing announces "done" (#238), and
+ * losing it is silent in every pixel assertion above.
+ */
+export const ReadOnlyAria: Story = {
+  args: { data: method },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const boxes = canvas.getAllByRole('checkbox')
+    await expect(boxes).toHaveLength(3)
+    await expect(boxes[0]).toHaveAttribute('aria-checked', 'true')
+    await expect(boxes[1]).toHaveAttribute('aria-checked', 'false')
+    for (const box of boxes) await expect(box).toHaveAttribute('aria-readonly', 'true')
+    await expect(boxes[0]).toHaveAttribute('aria-label', 'soak overnight')
+    // A span, not a control: read-only must offer nothing to click.
+    await expect(boxes[0].tagName).toBe('SPAN')
+    await expect(canvas.queryAllByRole('button')).toHaveLength(0)
+    await expect(canvasElement.querySelector('input')).toBeNull()
+  },
+}
+
+// ── A list never strikes: there is no box to have ticked ─────────────────────────
+
+/**
+ * `checked` persists on every item (one schema, three markers), so switching a
+ * checklist to `dot` / `none` leaves the flags set. A list must ignore them
+ * entirely — full ink, no strike. Getting this wrong only shows on data that has
+ * been through a marker change, which is exactly why it would ship unnoticed.
+ */
+export const CheckedListIgnoresTicks: Story = {
+  args: { data: { ...pages, items: pages.items.map((it) => ({ ...it, checked: true })) } },
+  play: async ({ canvasElement }) => {
+    await assertPages(canvasElement, onPaper())
+  },
+}
+
+export const CheckedDotListIgnoresTicks: Story = {
+  args: { data: { ...groceries, items: groceries.items.map((it) => ({ ...it, checked: true })) } },
+  play: async ({ canvasElement }) => assertGroceries(canvasElement, onPaper()),
+}
+
+// ── Editable: the states and registers the read-only stories cannot reach ────────
+
+/** The focused field puts its row in the board's `editing` state: `inset 0 0 0 1.4px` ink. */
+async function assertEditRing(row: HTMLElement, ink: string) {
+  const shadow = getComputedStyle(row).boxShadow
+  await expect(shadow).toContain('inset')
+  await expect(shadow).toContain('1.4px')
+  await expect(shadow).toContain(ink)
+}
+
+export const EditingRing: Story = {
+  args: { data: method },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const [row] = rowsOf(canvasElement)
+    await expect(getComputedStyle(row).boxShadow).toBe('none')
+    const field = canvas.getAllByRole('textbox', { name: 'Step' })[0]
+    await userEvent.click(field)
+    await expect(row.dataset.state).toBe('editing')
+    await assertEditRing(row, INK)
+    await userEvent.tab()
+    await expect(rowsOf(canvasElement)[0].dataset.state).not.toBe('editing')
+    await expect(getComputedStyle(rowsOf(canvasElement)[0]).boxShadow).toBe('none')
+  },
+}
+
+export const EditingRingDark: Story = {
+  args: { data: method },
+  decorators: [inkTheme],
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getAllByRole('textbox', { name: 'Step' })[0])
+    await assertEditRing(rowsOf(canvasElement)[0], PAPER)
+  },
+}
+
+/** A done row's FIELD is struck at .68 with the line at .4 — as its read-only twin. */
+export const EditableDoneField: Story = {
+  args: { data: method },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const ink = onPaper()
+    const field = titleOf(rowsOf(canvasElement)[0])
+    await expect(field.tagName).toBe('INPUT')
+    const cs = getComputedStyle(field)
+    await expect(cs.color).toBe(ink.a68)
+    await expect(cs.textDecorationLine).toBe('line-through')
+    await expect(cs.textDecorationColor).toBe(ink.a40)
+  },
+}
+
+/** A blank label carries the kind's own empty copy as the field's PLACEHOLDER. */
+export const EditablePlaceholderStep: Story = {
+  args: { data: blank },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = canvas.getByRole('textbox', { name: 'Step' }) as HTMLInputElement
+    await expect(field.value).toBe('')
+    await expect(field.placeholder).toBe('add a step')
+    // Editing outranks empty: an editable blank row shows the field, not the copy.
+    await expect(titleOf(rowsOf(canvasElement)[0]).textContent).toBe('')
+  },
+}
+
+export const EditablePlaceholderItem: Story = {
+  args: { data: { ...groceries, items: [{ id: 'z', label: '', checked: false }] } },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = canvas.getByRole('textbox', { name: 'Item' }) as HTMLInputElement
+    await expect(field.placeholder).toBe('add an item')
+  },
+}
+
+/** A list is editable too — labels are fields, but there is still no box to toggle. */
+export const EditableList: Story = {
+  args: { data: pages },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryAllByRole('checkbox')).toHaveLength(0)
+    const fields = canvas.getAllByRole('textbox', { name: 'Item' }) as HTMLInputElement[]
+    await expect(fields).toHaveLength(3)
+    await expect(getComputedStyle(fields[1]).fontWeight).toBe('500')
+    await userEvent.clear(fields[1])
+    await userEvent.type(fields[1], 'move flat')
+    await expect(fields[1]).toHaveValue('move flat')
+    // The `b` column survives a label edit (see EditableKeepsMeta).
+    await assertMeta(rowsOf(canvasElement)[1], '2 of 4 tasks', onPaper())
+  },
+}
+
+/**
+ * Editing a label must not drop the item's `meta`. The patch is a partial merge, so
+ * a regression to a whole-item replace would silently delete every due date the
+ * moment someone retyped the step — invisible until the date vanished.
+ */
+export const EditableKeepsMeta: Story = {
+  args: { data: actions },
+  render: (args) => <Stateful data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = canvas.getAllByRole('textbox', { name: 'Step' })[0]
+    await assertMeta(rowsOf(canvasElement)[0], '27 oct', onPaper())
+    await userEvent.type(field, ' v2')
+    await expect(field).toHaveValue('Sam — final copy v2')
+    await assertMeta(rowsOf(canvasElement)[0], '27 oct', onPaper())
   },
 }
 

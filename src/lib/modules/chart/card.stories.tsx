@@ -664,3 +664,59 @@ export const DisabledInk: Story = {
   decorators: [inkTheme],
   play: async ({ canvasElement }) => assertDisabled(canvasElement, DARK),
 }
+
+// ── What the card OMITS: no slot is ever filled with an invention ───────────────
+
+/**
+ * Every head and foot slot is optional, and an absent source leaves the slot EMPTY
+ * rather than inventing a string (`CollectionChart` has no true `sub` today, and a
+ * chart off a page host has no `on`). Four probes, one story: the matrix cell that
+ * matters is "absent", not which kind it is absent on.
+ */
+export const OmittedSlots: Story = {
+  render: () => (
+    <div className="flex flex-col items-start gap-mn-4">
+      <span data-probe="tag-only">
+        <ChartCard kind="ring">
+          <Plot />
+        </ChartCard>
+      </span>
+      <span data-probe="reads-only">
+        <ChartCard kind="line" title="weight" reads="weigh-ins">
+          <Plot />
+        </ChartCard>
+      </span>
+      <span data-probe="on-only">
+        <ChartCard kind="line" title="weight" on="life › health › weight">
+          <Plot />
+        </ChartCard>
+      </span>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const probe = (name: string) =>
+      canvasElement.querySelector<HTMLElement>(`[data-probe="${name}"] [data-chart-kind]`)!
+    const slot = (name: string, slotName: string) =>
+      probe(name).querySelector<HTMLElement>(`[data-part="${slotName}"]`)
+
+    // No title and no sub: the head keeps the tag alone, and no foot is drawn.
+    const tagOnly = probe('tag-only')
+    await expect(slot('tag-only', 'title')).toBeNull()
+    await expect(slot('tag-only', 'sub')).toBeNull()
+    await expect(slot('tag-only', 'type')!.textContent).toBe(CHART_TYPE_TAG.ring)
+    await expect(slot('tag-only', 'foot')).toBeNull()
+    // The tag does not slide into the title's place: the head still ends flush right.
+    const head = slot('tag-only', 'head')!
+    await expect(
+      head.getBoundingClientRect().right - slot('tag-only', 'type')!.getBoundingClientRect().right
+    ).toBeCloseTo(0, 0)
+    await expect(tagOnly.querySelector('[data-part="fixture-plot"]')).not.toBeNull()
+
+    // One foot row only: the other is absent, not blank.
+    await expect(slot('reads-only', 'foot')).not.toBeNull()
+    await expect(slot('reads-only', 'on')).toBeNull()
+    await expect(slot('reads-only', 'reads')!.textContent).toBe('readsweigh-ins')
+    await expect(slot('on-only', 'reads')).toBeNull()
+    await expect(slot('on-only', 'on')!.textContent).toBe('onlife › health › weight')
+  },
+}
