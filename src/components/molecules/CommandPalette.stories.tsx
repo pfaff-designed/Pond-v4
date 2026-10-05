@@ -159,7 +159,7 @@ function ShellFrame({ ink }: { ink?: boolean }) {
 }
 
 const meta = {
-  title: 'Organisms/PondPicker/Palette',
+  title: 'Organisms/pickers/2g · the palette',
   component: Frame,
   parameters: { layout: 'fullscreen' },
   args: {},
@@ -405,29 +405,35 @@ async function assertClosedThenOpens(root: HTMLElement) {
 
 /** At rest the palette is the breadcrumb's ⌘K chip; the chip or ⌘K (Ctrl+K off Apple) opens it. */
 export const Closed: Story = {
+  name: 'closed',
   render: () => <ShellFrame />,
   play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
 }
 export const ClosedInk: Story = {
+  name: 'closed · ink',
   render: () => <ShellFrame ink />,
   play: async ({ canvasElement }) => assertClosedThenOpens(canvasElement),
 }
 
 /** Nothing typed, nothing inferred: the last three pages under `recent`, and no `suggested` faked (#285). */
 export const Opened: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, false),
 }
 export const OpenedInk: Story = {
+  tags: ['!dev'],
   args: { ink: true },
   play: async ({ canvasElement }) => assertOpened(canvasElement, INK, false),
 }
 
 /** The board's `opened` frame in full: `recent`, then the two `suggested` actions the host supplied. */
 export const OpenedSuggested: Story = {
+  name: 'opened',
   args: { suggested: PALETTE_SUGGESTED },
   play: async ({ canvasElement }) => assertOpened(canvasElement, PAPER, true),
 }
 export const OpenedSuggestedInk: Story = {
+  name: 'opened · ink',
   args: { suggested: PALETTE_SUGGESTED, ink: true },
   play: async ({ canvasElement }) => assertOpened(canvasElement, INK, true),
 }
@@ -448,10 +454,12 @@ async function assertTyping(root: HTMLElement, p: Palette, m: Metrics = DESKTOP)
 
 /** `cab`: pages, then records, then actions; the hit underlined, never washed. */
 export const Typing: Story = {
+  name: 'typing',
   args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
   play: async ({ canvasElement }) => assertTyping(canvasElement, PAPER),
 }
 export const TypingInk: Story = {
+  name: 'typing · ink',
   args: { defaultQuery: 'cab', items: paletteItemsFor('cab'), ink: true },
   play: async ({ canvasElement }) => assertTyping(canvasElement, INK),
 }
@@ -467,10 +475,12 @@ async function assertActions(root: HTMLElement, p: Palette) {
 
 /** `> log`: the leading `>` drops pages and records. */
 export const Actions: Story = {
+  name: 'actions',
   args: { defaultQuery: '> log' },
   play: async ({ canvasElement }) => assertActions(canvasElement, PAPER),
 }
 export const ActionsInk: Story = {
+  name: 'actions · ink',
   args: { defaultQuery: '> log', ink: true },
   play: async ({ canvasElement }) => assertActions(canvasElement, INK),
 }
@@ -490,10 +500,12 @@ async function assertRecord(root: HTMLElement, p: Palette) {
 
 /** `adobe`: a record is first class, the matched field under its name. */
 export const Record: Story = {
+  name: 'record',
   args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe') },
   play: async ({ canvasElement }) => assertRecord(canvasElement, PAPER),
 }
 export const RecordInk: Story = {
+  name: 'record · ink',
   args: { defaultQuery: 'adobe', items: paletteItemsFor('adobe'), ink: true },
   play: async ({ canvasElement }) => assertRecord(canvasElement, INK),
 }
@@ -523,10 +535,12 @@ async function assertEmpty(root: HTMLElement, p: Palette, m: Metrics = DESKTOP) 
 
 /** `cabnet`: no dead end — the note, ask pond, make the page, a close spelling. */
 export const Empty: Story = {
+  name: 'empty',
   args: { defaultQuery: 'cabnet' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
 }
 export const EmptyInk: Story = {
+  name: 'empty · ink',
   args: { defaultQuery: 'cabnet', ink: true },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
 }
@@ -555,10 +569,12 @@ async function assertScoped(root: HTMLElement, p: Palette) {
 
 /** The rail's selected page and its children, the kind under each name. */
 export const Scoped: Story = {
+  name: 'scoped',
   args: { scope: MONEY },
   play: async ({ canvasElement }) => assertScoped(canvasElement, PAPER),
 }
 export const ScopedInk: Story = {
+  name: 'scoped · ink',
   args: { scope: MONEY, ink: true },
   play: async ({ canvasElement }) => assertScoped(canvasElement, INK),
 }
@@ -587,10 +603,12 @@ async function assertPonds(root: HTMLElement, p: Palette) {
 
 /** `make`: a pond above the pages (6m), and `new pond “make”` among the actions. */
 export const Ponds: Story = {
+  name: 'ponds',
   args: { defaultQuery: 'make' },
   play: async ({ canvasElement }) => assertPonds(canvasElement, PAPER),
 }
 export const PondsInk: Story = {
+  name: 'ponds · ink',
   args: { defaultQuery: 'make', ink: true },
   play: async ({ canvasElement }) => assertPonds(canvasElement, INK),
 }
@@ -611,6 +629,7 @@ async function assertPhone() {
 
 /** 360 wide, head 16, rows `13px 12px` at 15, sub 13; the foot keeps `↵ open` and `> actions only`. */
 export const MobileOpened: Story = {
+  name: 'opened · mobile',
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
   play: async ({ canvasElement }) => {
@@ -621,6 +640,7 @@ export const MobileOpened: Story = {
 
 /** `cab`: the sub-line is 13 on a phone, the hit still underlined. */
 export const MobileTyping: Story = {
+  name: 'typing · mobile',
   args: { defaultQuery: 'cab', items: paletteItemsFor('cab') },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
@@ -632,6 +652,7 @@ export const MobileTyping: Story = {
 
 /** `cabnet`: the note is 13 on a phone. */
 export const MobileEmpty: Story = {
+  name: 'empty · mobile',
   args: { defaultQuery: 'cabnet' },
   parameters: MOBILE_VIEWPORT,
   globals: onPhone,
@@ -645,6 +666,7 @@ export const MobileEmpty: Story = {
 
 /** ↓↓ then ↵ opens the third row; ⌫ on an empty line clears the scope; esc closes. */
 export const Keys: Story = {
+  tags: ['!dev'],
   args: { scope: MONEY, onSelect: fn(), onClose: fn() },
   play: async ({ canvasElement, args }) => {
     await expect(glassOf(canvasElement).querySelector('[data-part="scope"]')).not.toBeNull()
@@ -670,6 +692,7 @@ export const Keys: Story = {
  * than the class name that asks for it (#252 shipped a right class and a wrong pixel).
  */
 export const Dismissal: Story = {
+  tags: ['!dev'],
   args: { onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -712,6 +735,7 @@ export const Dismissal: Story = {
  * hovering a row selects it (and the input says so), and a click opens it.
  */
 export const Pointer: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn(), items: paletteItemsFor('cab') },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
