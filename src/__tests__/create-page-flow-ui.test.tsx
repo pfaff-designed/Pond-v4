@@ -315,7 +315,7 @@ describe('AITerminal — create_page contract', () => {
 
   it('registers no onToolCall handler (create_node is gone from the chat path)', async () => {
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
     expect(capturedOnToolCall).toBeUndefined()
     // No create_node dialog is ever opened from the terminal.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -343,7 +343,7 @@ describe('AITerminal — create_page contract', () => {
       },
     ]
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
     expect(screen.getByText('Lasagna')).toBeInTheDocument()
     expect(screen.getByText(/new page · recipe/i)).toBeInTheDocument()
@@ -363,7 +363,7 @@ describe('AITerminal — the palette’s question lands in an empty composer onl
   it('prefills an empty composer, and leaves a draft in progress alone', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
     const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)
 
     act(() => requestTerminalFocus('ask pond about “cabinets”'))
@@ -390,7 +390,7 @@ describe('AITerminal — /save command opens picker', () => {
     renderWithQuery(<AITerminal />)
 
     await waitFor(() => {
-      expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled()
     })
 
     const textarea = screen.getByPlaceholderText(/ask pond, or \/ for blocks/i)

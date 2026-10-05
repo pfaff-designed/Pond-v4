@@ -36,9 +36,9 @@ const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's. The picker card's own ink delta reads `.09`;
-  // ADR 0004 ruling 11 keeps the one shared recipe for the floating-glass family.
-  glassBorder: 'rgba(250, 249, 239, 0.2)',
+  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating
+  // family (ADR 0011); the picker card's own ink delta reads the same `.09`.
+  glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
 

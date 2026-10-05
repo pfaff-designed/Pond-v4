@@ -185,7 +185,7 @@ function readChipLabels(): string[] {
 }
 
 async function ready() {
-  await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
 beforeEach(() => {

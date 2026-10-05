@@ -99,9 +99,6 @@ jest.mock('@/components/molecules/TerminalDrawer', () => ({
       {footer}
     </div>
   ),
-  TERMINAL_DEFAULT_HEIGHT: 340,
-  TERMINAL_MAX_HEIGHT: 800,
-  clampTerminalHeight: (h: number) => h,
 }))
 
 // Provide a minimal SavePickerModal mock that the real import path resolves

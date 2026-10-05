@@ -66,21 +66,14 @@ import {
   TextSelectionPopover,
   type SelectionContext,
 } from '@/components/molecules/TextSelectionPopover'
-import { VoiceInputButton } from '@/components/molecules/VoiceInputButton'
 import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
-import { GhostSuggestion, useGhostKeyHandler } from '@/components/molecules/GhostSuggestion'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
-import {
-  TerminalDrawer,
-  TERMINAL_DEFAULT_HEIGHT,
-  TERMINAL_MAX_HEIGHT,
-  clampTerminalHeight,
-} from '@/components/molecules/TerminalDrawer'
-import { PROPOSAL_MIN_HEIGHT } from '@/lib/layout/terminal-height'
+import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
+import { ComposerLine } from '@/components/molecules/ComposerLine'
 import { Markdown } from '@/components/molecules/Markdown'
 import { StageText } from '@/components/molecules/StageText'
 import { ProposalGroup, type ProposalGroupCard } from '@/components/molecules/ProposalGroup'
@@ -123,7 +116,6 @@ import {
   detectLifecycleSignal,
   applyLifecycleSignal,
   beginLifecycle,
-  lifecycleContextLabel,
   isLifecycleActive,
   type LifecycleState,
 } from '@/lib/conversation/lifecycle'
@@ -157,17 +149,11 @@ const CHAT_COMMANDS: SlashRow[] = [
   { id: 'save', label: '/save', description: 'save the thread to a page' },
 ]
 
-// Remembered drawer ergonomics (ticket-24).
-const TERMINAL_HEIGHT_KEY = 'pond:terminal-height'
+// Remembered collapse (ticket-24).
 const TERMINAL_COLLAPSED_KEY = 'pond:terminal-collapsed'
-// When a proposal card arrives the drawer auto-grows to at least this so the
-// user can review create-page/diff cards without inner scrolling. Raised from 460
-// for the letterpress skin (ticket-32): the create-page card's display-serif title
-// and roomier chrome added ~30px, and the whole card (header + preview + Save-to +
-// actions) must fit the floor — live-verified against a real create_page proposal.
 
 // Tiny persisted-state helpers: localStorage can throw (privacy modes, quota),
-// and the drawer must degrade to defaults rather than crash.
+// and the composer must degrade to defaults rather than crash.
 function readStored(key: string): string | null {
   try {
     return window.localStorage.getItem(key)
@@ -749,66 +735,15 @@ export function AITerminal() {
 
   const handleAttachClick = useCallback(() => attachInputRef.current?.click(), [])
 
-  // ── Ghost suggestion from t39 followup chips (ticket-40 §5) ──────────────
-  const ghostSuggestion = useMemo<string | null>(() => {
-    if (isStreaming) return null
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const parts = messages[i].parts as Array<{ type: string }>
-      const fp = parts.filter(isSuggestFollowupsPart)
-      for (const p of fp) {
-        const s = (p as SuggestFollowupsPart).input?.suggestions?.[0]
-        if (s) return s
-      }
-    }
-    return null
-  }, [messages, isStreaming])
-
-  const [ghostDismissed, setGhostDismissed] = useState(false)
-  const prevGhost = useRef(ghostSuggestion)
-  useEffect(() => {
-    if (ghostSuggestion !== prevGhost.current) {
-      prevGhost.current = ghostSuggestion
-      setGhostDismissed(false)
-    }
-  }, [ghostSuggestion])
-
-  const activeSuggestion = ghostDismissed ? null : ghostSuggestion
-
-  const handleGhostAccept = useCallback((text: string) => {
-    setInput(text)
-    setGhostDismissed(false)
-  }, [])
-
-  const handleGhostDismiss = useCallback(() => {
-    setGhostDismissed(true)
-  }, [])
-
-  const ghostKeyHandler = useGhostKeyHandler({
-    suggestion: activeSuggestion,
-    inputValue: input,
-    onAccept: handleGhostAccept,
-    onDismiss: handleGhostDismiss,
-  })
-
-  // ── Drawer ergonomics (ticket-24, #96) ────────────────────────────────────
-  // Height + collapse are user-controlled and remembered across sessions. The
-  // drawer is an absolute overlay floating over the bottom of the shell (the
-  // page scrolls behind it); it publishes its real height to the shell and the
-  // surfaces pad against it, so what's being read can always scroll clear.
-  const [drawerHeight, setDrawerHeight] = useState(TERMINAL_DEFAULT_HEIGHT)
+  // ── Collapse (ticket-24) ───────────────────────────────────────────────────
+  // The card is as tall as its content and publishes its real footprint to the
+  // shell (TerminalDrawer), so what's being read can always scroll clear. Only
+  // the collapse is remembered across sessions.
   const [isCollapsed, setIsCollapsed] = useState(false)
-  // The user resized *while* the auto-grow floor was pinning the drawer: their
-  // drag wins over the floor for that proposal set (see effectiveHeight below).
-  const [growOverrideKey, setGrowOverrideKey] = useState<string | null>(null)
-  // Restore persisted height/collapse on mount. Client-only by design: reading
-  // localStorage during SSR/hydration would mismatch the server markup, so we
-  // accept one frame at the default height instead of Next's inline-script
-  // pattern — the drawer sits below the fold of attention and the flash is a
-  // height tween, not a content pop.
+  // Restore the persisted collapse on mount. Client-only by design: reading
+  // localStorage during SSR/hydration would mismatch the server markup.
   useEffect(() => {
-    const h = readStored(TERMINAL_HEIGHT_KEY)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from an external store (localStorage), read client-side to avoid SSR mismatch
-    if (h) setDrawerHeight(clampTerminalHeight(Number(h)))
     setIsCollapsed(readStored(TERMINAL_COLLAPSED_KEY) === '1')
   }, [])
   const toggleCollapsed = useCallback(() => {
@@ -863,11 +798,11 @@ export function AITerminal() {
   // `initialMessageIds` records what was re-seeded from the saved transcript:
   // pending decisions are never persisted (ticket-19), so a prior session's
   // still-pending cards would otherwise read as "unresolved" forever and pin
-  // the drawer's auto-grow open on every mount. Auto-grow is scoped to
-  // proposals that arrive during THIS session.
+  // the composer open on every mount. That hold is scoped to proposals that
+  // arrive during THIS session.
   const [initialMessageIds, setInitialMessageIds] = useState<ReadonlySet<string>>(new Set())
   // #97: likewise, the page proposals re-seeded from the saved envelope — a
-  // pending one is still in the thread (6d closing) but must not pin the drawer
+  // pending one is still in the thread (6d closing) but must not pin the composer
   // open on every mount; only a card opened THIS session does.
   const [seededProposalIds, setSeededProposalIds] = useState<ReadonlySet<string>>(new Set())
   /**
@@ -996,14 +931,10 @@ export function AITerminal() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // ── Auto-grow for proposal review (ticket-24) ─────────────────────────────
-  // A create-page/diff card is the moment of decision — it deserves room. When
-  // an unresolved proposal *from this session* is on screen (mount-seeded
-  // pending cards are excluded — see initialMessageIds), expand the drawer (and
-  // uncollapse it) to PROPOSAL_MIN_HEIGHT if it's currently shorter, so the
-  // preview + picker + buttons are visible without inner scroll. We never
-  // shrink a user who's set a taller height, and once every proposal is
-  // resolved the drawer returns to the remembered height (never persisted).
+  // ── Open proposals hold the composer open (ticket-24) ─────────────────────
+  // A create-page/diff card is the moment of decision. An unresolved proposal
+  // *from this session* (mount-seeded pending cards are excluded — see
+  // initialMessageIds) keeps the composer from collapsing.
   const unresolvedIds = useMemo(
     () => [
       ...unresolvedProposalIds(
@@ -1019,7 +950,7 @@ export function AITerminal() {
       ),
       // #97: an open `new page — proposed` card is a decision too. Scoped to
       // this session's answers like the tool cards — a card re-seeded from a
-      // prior session is still in the thread, it just doesn't pin the drawer.
+      // prior session is still in the thread, it just doesn't pin the composer open.
       ...openPageProposalIds(pageProposals, seededProposalIds),
     ],
     [
@@ -1038,41 +969,12 @@ export function AITerminal() {
   )
   const hasUnresolvedProposal = unresolvedIds.length > 0
 
-  // Drag wins over the floor (ticket-24 review): resizing while the floor pins
-  // the drawer records an override for exactly this proposal set, so the drag is
-  // live from the visible height instead of dead until it crosses the floor. A new
-  // proposal (different key) re-arms the floor; resolution falls back to the
-  // remembered height on its own.
-  const unresolvedKey = unresolvedIds.join(',')
-  const growOverridden = hasUnresolvedProposal && growOverrideKey === unresolvedKey
-
-  const handleHeightChange = useCallback(
-    (h: number) => {
-      setDrawerHeight(h)
-      if (hasUnresolvedProposal) setGrowOverrideKey(unresolvedKey)
-    },
-    [hasUnresolvedProposal, unresolvedKey]
-  )
-  // Persist only at gesture end (pointerup / a keyboard nudge), never per move.
-  // Every committed height was on screen at commit time — drag-wins means the
-  // pinned state can't absorb moves invisibly — so no unseen height is stored.
-  const handleHeightCommit = useCallback((h: number) => {
-    writeStored(TERMINAL_HEIGHT_KEY, String(h))
-  }, [])
-
-  // The effective height feeding the drawer: auto-grown while a proposal is open
-  // (unless the user's drag overrode it), otherwise the remembered height.
-  const effectiveHeight =
-    hasUnresolvedProposal && !growOverridden
-      ? Math.min(TERMINAL_MAX_HEIGHT, Math.max(drawerHeight, PROPOSAL_MIN_HEIGHT))
-      : drawerHeight
-
-  // Force the drawer open while a proposal needs review — a hidden decision is
-  // worse than a big drawer. Derived (not an effect): the user's stored collapse
+  // Force the composer open while a proposal needs review — a hidden decision is
+  // worse than a tall card. Derived (not an effect): the user's stored collapse
   // preference is untouched, so it re-applies once the proposal resolves.
   const effectiveCollapsed = isCollapsed && !hasUnresolvedProposal
 
-  // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the drawer
+  // Fulfil a pending ⌘K focus once the input is actually mounted (i.e. the composer
   // finished uncollapsing). Runs after the commit that mounts the textarea.
   useEffect(() => {
     if (!effectiveCollapsed && pendingFocus.current) {
@@ -1198,7 +1100,6 @@ export function AITerminal() {
         sendMessage({ text: finalText, metadata }, { body })
       }
       setInput('')
-      setGhostDismissed(false)
     },
     [
       nextLifecycle,
@@ -1253,10 +1154,6 @@ export function AITerminal() {
   )
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Ghost suggestion: Tab/→ accepts before any other handling.
-    ghostKeyHandler(e)
-    if (e.defaultPrevented) return
-
     // Esc steps back (2f's rule, AUDIT C8 — not frame 1's "clears"), innermost
     // layer first. While the / menu is open it is that layer: SlashMenu takes esc
     // on the document in the capture phase and stops it, so it closes — keeping
@@ -1872,7 +1769,7 @@ export function AITerminal() {
       )
       if (already) return
       dispatch({ kind: 'proposePage', proposal })
-      // The card opens under the answer — bring it into view with the drawer's grow.
+      // The card opens under the answer — bring it into view.
       requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }))
       void (async () => {
         const supabase = getSupabase()
@@ -2045,10 +1942,9 @@ export function AITerminal() {
     return hasActiveTool(last.parts as StagePart[])
   }, [messages])
 
-  // The transcript lives inside the TerminalDrawer's composer card, which is
-  // itself the column (#96: 534 wide, centred on the shell) — so the body owns
-  // only its scroll + inner gutter and does no centring or offsetting of its
-  // own. One typeset object, not a console bolted under a document.
+  // The thread is the top of the composer card (560 wide, centred right of the
+  // rail), so it owns only its scroll and does no centring or offsetting of its
+  // own. The card grows upward with it; past the viewport allowance it scrolls.
   // #97: the latest assistant message carries the actions row (make this a
   // page / ask again, or stop while streaming) — the mockup's `hasActions`.
   const lastAssistantIndex = (() => {
@@ -2071,15 +1967,12 @@ export function AITerminal() {
   }
   const lastQuestion = questionBefore(messages.length)
 
-  const messagesBody = (
-    <div className="flex-1 overflow-y-auto py-4" onKeyDown={handleBodyKeyDown}>
-      <div className="w-full space-y-5 px-8">
-        {!isReady && <p className="font-serif text-sm italic text-mn-text-secondary">Loading…</p>}
-        {isReady && messages.length === 0 && (
-          <p className="font-serif text-sm italic text-mn-text-secondary">
-            Talk with Pond — think out loud, ask, or compose.
-          </p>
-        )}
+  const messagesBody = messages.length > 0 && (
+    <div
+      className="max-h-[calc(100dvh-14rem)] min-h-0 overflow-y-auto"
+      onKeyDown={handleBodyKeyDown}
+    >
+      <div className="w-full space-y-5 px-1.5">
         {messages.map((message, messageIndex) => {
           const text = message.parts
             .filter((p) => p.type === 'text')
@@ -2682,207 +2575,113 @@ export function AITerminal() {
     </div>
   )
 
-  // Auto-grow the textarea with content (cap 6 lines) so the user can review
-  // multi-line input without scrolling inside the field.
-  const inputRows = Math.min(6, Math.max(2, (input.match(/\n/g)?.length ?? 0) + 1))
+  // Send is off with nothing to send; mid-stream it is the stop square.
+  const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
 
-  // The input stays quietly monospace by design (ticket-32): it is the console
-  // *threshold* — the one seam where the user's typed intent crosses into the serif
-  // correspondence. Mono keeps commands (/clear · /handoff · /save) legible as
-  // commands and marks "you are typing" distinct from "Pond is speaking". Its dress
-  // is pure Press, no stock widgets: a hairline rule above, a bare paper field whose
-  // baseline inks sage on focus, and a small-caps Send in the kicker voice — set in
-  // the same centered column as the correspondence above.
-  //
-  // ticket-42 follow-up: the TerminalDrawer card owns the column; the footer only
-  // owns its inner gutter + the divider above it. No re-centering here.
   const inputFooter = (
     <div
-      className="flex-shrink-0"
+      className="flex flex-col gap-[14px]"
       onDragOver={(e) => {
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
       }}
       onDrop={handleDrop}
     >
-      <div className="w-full px-8">
-        <div className="border-t border-mn-hair">
-          {/* Quote chip — highlight-to-ask (ticket-40 F20) */}
-          {quoteCtx && (
-            <div className="pt-2">
-              <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />
-            </div>
-          )}
-          {/* CSV attachment pill (ticket-40 F16) */}
-          {csvAttachment && (
-            <div className="pt-2">
-              <CsvAttachmentPill
-                filename={csvAttachment.filename}
-                rowCount={csvAttachment.parsed.totalRows}
-                onRemove={() => setCsvAttachment(null)}
-              />
-            </div>
-          )}
-          {/* Uploaded file attachments (#61) — removable before send */}
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 pt-2">
-              {attachments.map((a) => (
-                <FileAttachmentChip
-                  key={a.path}
-                  filename={a.filename}
-                  url={a.url}
-                  mediaType={a.mediaType}
-                  onRemove={() => removeAttachment(a.path)}
-                />
-              ))}
-            </div>
-          )}
-          <div className="flex items-end gap-4 py-3">
-            {/* ticket-41: the threshold. The sage baseline DRAWS in left→right on
-                focus (motion-focus-draw's ::after) rather than the border flipping
-                color — a stroke, not a flash. The static hairline below stays;
-                the draw is the focus signal. Reduced-motion snaps it in.
-                ticket-40: composerRef anchors the highlight-to-ask popover. */}
-            <div ref={composerRef} className="motion-focus-draw relative flex-1">
-              {chatMenuOpen && (
-                <SlashMenu
-                  rows={CHAT_COMMANDS}
-                  query={input.slice(1)}
-                  anchor={composerRef}
-                  side="top"
-                  label="commands"
-                  onSelect={(row) => {
-                    setChatMenuOpen(false)
-                    setInput('')
-                    if (row.id === 'clear') {
-                      handleClear()
-                    } else if (row.id === 'handoff') {
-                      handleHandoff()
-                    } else if (row.id === 'save') {
-                      setIsSavePickerOpen(true)
-                    }
-                  }}
-                  onClose={() => setChatMenuOpen(false)}
-                />
-              )}
-              {/* Ghost suggestion (ticket-40 §5) — behind the textarea, visible only when empty */}
-              <GhostSuggestion
-                suggestion={activeSuggestion}
-                inputValue={input}
-                onAccept={handleGhostAccept}
-                onDismiss={handleGhostDismiss}
-                id="ghost-suggestion"
-                className="py-1.5"
-              />
-              <textarea
-                ref={inputRef}
-                value={input}
-                aria-describedby={activeSuggestion && !input ? 'ghost-suggestion' : undefined}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setInput(val)
-                  if (val === '/' || (val.startsWith('/') && !val.includes(' '))) {
-                    setChatMenuOpen(true)
-                  } else {
-                    setChatMenuOpen(false)
-                  }
-                }}
-                onKeyDown={handleKeyDown}
-                // When a ghost suggestion is showing on the empty input, it IS the
-                // empty-state hint — suppress the static placeholder so the two
-                // don't render on top of each other.
-                // MN: the composer's placeholder shifts once the thread has a turn —
-                // "reply, or ask something else" — matching the mockup's two-state hint.
-                placeholder={
-                  activeSuggestion && !input
-                    ? ''
-                    : messages.length > 0
-                      ? 'reply, or ask something else'
-                      : 'ask pond, or / for blocks'
-                }
-                rows={inputRows}
-                // relative z-10 (ticket-40) keeps the textarea above the ghost
-                // suggestion behind it; the focus signal is ticket-41's draw-in
-                // baseline (motion-focus-draw), so no border-color flip here.
-                // MN: the composer is a machine surface — mono, lowercase, tight
-                // tracking (--voice-mono). Typed intent reads as machine input.
-                className="relative z-10 w-full resize-none border-0 border-b border-mn-line bg-transparent px-0 py-1.5 font-mono lowercase tracking-[0.02em] text-mn-13 text-mn-text-meta outline-none placeholder:text-mn-text-secondary disabled:opacity-60"
-                disabled={isStreaming || !isReady}
-              />
-            </div>
-            {/* Voice input button (ticket-40 F6) */}
-            <VoiceInputButton
-              onTranscript={(t) => setInput(t)}
-              disabled={isStreaming || !isReady}
-              className="self-end mb-2"
+      {/* Quote chip — highlight-to-ask (ticket-40 F20) */}
+      {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
+      {/* CSV attachment pill (ticket-40 F16) */}
+      {csvAttachment && (
+        <CsvAttachmentPill
+          filename={csvAttachment.filename}
+          rowCount={csvAttachment.parsed.totalRows}
+          onRemove={() => setCsvAttachment(null)}
+        />
+      )}
+      {/* Uploaded file attachments (#61) — removable before send */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {attachments.map((a) => (
+            <FileAttachmentChip
+              key={a.path}
+              filename={a.filename}
+              url={a.url}
+              mediaType={a.mediaType}
+              onRemove={() => removeAttachment(a.path)}
             />
-            {/* Attachment paperclip (#61, generalized from the ticket-40 F16
-                CSV-only clip): images/pdf/txt/md upload to storage and ride the
-                message; .csv keeps its inline-context path. The input is a
-                persistent hidden element (not a transient createElement) so the
-                picker is testable and re-picking the same file re-fires. */}
-            <input
-              ref={attachInputRef}
-              type="file"
-              multiple
-              accept={`.csv,text/csv,${ATTACHMENT_ACCEPT}`}
-              className="hidden"
-              onChange={(e) => {
-                handlePickedFiles(e.target.files)
-                e.target.value = ''
-              }}
-            />
-            <button
-              type="button"
-              aria-label="Attach a file"
-              title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
-              onClick={handleAttachClick}
-              disabled={isStreaming || !isReady}
-              className="self-end mb-2 text-mn-text-secondary hover:text-mn-text transition-colors disabled:opacity-40"
-            >
-              <svg aria-hidden viewBox="0 0 16 16" fill="currentColor" width={14} height={14}>
-                <path d="M4.5 3a2.5 2.5 0 0 1 5 0v9a1.5 1.5 0 0 1-3 0V5a.5.5 0 0 1 1 0v7a.5.5 0 0 0 1 0V3a1.5 1.5 0 0 0-3 0v9a2.5 2.5 0 0 0 5 0V5a.5.5 0 0 1 1 0v7a3.5 3.5 0 1 1-7 0V3Z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleSend}
-              disabled={
-                isStreaming ||
-                (!input.trim() && attachments.length === 0) ||
-                isUploading ||
-                !isReady
-              }
-              // MN: the composer is a machine surface — its Send control speaks the
-              // mono machine voice (lowercase, no added tracking), not the serif kicker.
-              className="self-end pb-2 font-mono lowercase text-xs text-mn-text transition-colors hover:text-mn-text disabled:opacity-40 disabled:hover:text-mn-text"
-            >
-              send
-            </button>
-          </div>
+          ))}
         </div>
-      </div>
+      )}
+      <ComposerLine
+        value={input}
+        // The thread's first turn changes the hint (PondComposer `placeholder`).
+        placeholder={
+          messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks'
+        }
+        disabled={!isReady}
+        streaming={isStreaming}
+        canSend={canSend}
+        attachDisabled={isStreaming || !isReady}
+        textareaRef={inputRef}
+        anchorRef={composerRef}
+        onChange={(val) => {
+          setInput(val)
+          setChatMenuOpen(val === '/' || (val.startsWith('/') && !val.includes(' ')))
+        }}
+        onKeyDown={handleKeyDown}
+        onAttach={handleAttachClick}
+        onSend={handleSend}
+        onStop={stop}
+        menu={
+          chatMenuOpen && (
+            <SlashMenu
+              rows={CHAT_COMMANDS}
+              query={input.slice(1)}
+              anchor={composerRef}
+              side="top"
+              label="commands"
+              onSelect={(row) => {
+                setChatMenuOpen(false)
+                setInput('')
+                if (row.id === 'clear') {
+                  handleClear()
+                } else if (row.id === 'handoff') {
+                  handleHandoff()
+                } else if (row.id === 'save') {
+                  setIsSavePickerOpen(true)
+                }
+              }}
+              onClose={() => setChatMenuOpen(false)}
+            />
+          )
+        }
+        // The attach flow (#61): images/pdf/txt/md upload to storage and ride the
+        // message; .csv keeps its inline-context path. The input is a persistent
+        // hidden element (not a transient createElement) so the picker is
+        // testable and re-picking the same file re-fires.
+        attachInput={
+          <input
+            ref={attachInputRef}
+            type="file"
+            multiple
+            accept={`.csv,text/csv,${ATTACHMENT_ACCEPT}`}
+            className="hidden"
+            onChange={(e) => {
+              handlePickedFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
+        }
+      />
     </div>
   )
-
-  // The quiet phase indicator (ticket-39 §2): while a project is in flight the
-  // context bar reads e.g. "Kiln Studio · charting"; otherwise just the base
-  // context label. Derived from the lifecycle state (grilling → charting →
-  // building), kept quiet.
-  const phaseContextLabel = lifecycleContextLabel(lifecycle, contextLabel)
 
   return (
     <>
       {/* Highlight-to-ask popover (ticket-40 F20) — global selection listener */}
       <TextSelectionPopover onAsk={handleAskFromSelection} disabled={isStreaming} />
       <TerminalDrawer
-        contextLabel={phaseContextLabel}
-        height={effectiveHeight}
         collapsed={effectiveCollapsed}
         onToggleCollapsed={toggleCollapsed}
-        onHeightChange={handleHeightChange}
-        onHeightCommit={handleHeightCommit}
-        onClear={handleClear}
-        canClear={messages.length > 0}
         footer={inputFooter}
       >
         {messagesBody}

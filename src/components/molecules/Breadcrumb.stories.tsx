@@ -178,9 +178,9 @@ const GLASS = {
   },
   dark: {
     ground: 'rgb(27, 29, 20)',
-    bg: 'linear-gradient(160deg, rgba(72, 73, 64, 0.86), rgba(48, 49, 42, 0.66))',
+    bg: 'linear-gradient(160deg, rgba(48, 49, 42, 0.92), rgba(48, 49, 42, 0.78))',
     border: 'rgb(250, 249, 239)',
-    borderAlpha: 'rgba(250, 249, 239, 0.2)',
+    borderAlpha: 'rgba(250, 249, 239, 0.09)',
   },
 } as const
 
