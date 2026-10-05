@@ -85,7 +85,7 @@ const ink: Decorator = (Story) => (
 )
 
 const meta = {
-  title: 'Organisms/PondSwitcher',
+  title: 'Organisms/PondRail/Switcher',
   component: PondSwitcher,
   parameters: {
     layout: 'fullscreen',

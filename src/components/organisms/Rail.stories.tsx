@@ -51,7 +51,7 @@ const TREE: RailNode[] = [
 ]
 
 const meta = {
-  title: 'Organisms/Rail',
+  title: 'Organisms/PondRail/Rail',
   component: RailView,
   parameters: { layout: 'fullscreen' },
   decorators: [
