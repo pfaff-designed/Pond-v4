@@ -69,7 +69,7 @@ const Composer = ({
 }
 
 const meta = {
-  title: 'Molecules/ComposerLine',
+  title: 'Organisms/PondComposer/Card',
   component: ComposerLine,
   parameters: { layout: 'fullscreen' },
   // Desktop: the card is 560 wide from md up; below it is the 360 mobile card.

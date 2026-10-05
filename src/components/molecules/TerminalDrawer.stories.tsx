@@ -54,7 +54,7 @@ const Thread = ({ turns }: { turns: number }) => (
 )
 
 const meta = {
-  title: 'Molecules/TerminalDrawer',
+  title: 'Organisms/PondComposer/Collapsed',
   component: TerminalDrawer,
   parameters: { layout: 'fullscreen' },
   globals: { viewport: { value: 'desktop', isRotated: false } },

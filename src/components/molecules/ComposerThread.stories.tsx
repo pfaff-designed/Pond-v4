@@ -119,7 +119,7 @@ const ThreadFrame = ({ theme, turns, proposing = false }: ThreadProps) => {
 }
 
 const meta = {
-  title: 'Molecules/ComposerThread',
+  title: 'Organisms/PondComposer/Thread',
   component: ThreadFrame,
   parameters: { layout: 'fullscreen' },
   globals: DESKTOP,
