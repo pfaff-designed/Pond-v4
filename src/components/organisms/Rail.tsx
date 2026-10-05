@@ -90,7 +90,7 @@ import {
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
-import { PondMolecule, type PondMoleculeState } from '@/components/molecules/PondMolecule'
+import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
@@ -107,11 +107,18 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // hover-CRUD — and docks its affordances through the molecule's `leading` /
 // `trailing` slots. Focus / keydown fire only for the row itself (guarded on
 // event target) so inner controls never double-drive the tree (ticket-27/28).
+//
+// The HOST draws the row box `PondRail.dc.html` specifies — padding
+// `5px 8px 5px 4px`, gap 7, radius 10 and the whole-row wash — so the wash
+// covers the caret and the indent, not just the label. The molecule inside is
+// the label body only: no padding, no wash.
 
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 const INDENT_STEP = 14
-/** Fixed left offset of the whole tree content (past the paper margin). */
-const INDENT_BASE = 6
+/** The board row's own left padding; depth indentation adds to it. */
+const INDENT_BASE = 4
+/** Half the caret slot (9px) — where a guide sits under its ancestor's caret. */
+const GUIDE_OFFSET = 4
 
 /** A calm authored chevron — rotates on expand, no glyph substitution. */
 function Chevron({ open }: { open: boolean }) {
@@ -160,11 +167,9 @@ interface RailRowProps {
   accent?: string
   /** Settle-in entrance for rows revealed on expand (ticket-41). */
   settleOnMount?: boolean
-  /** A leading mark slot (an area's glyph, the Life root's ring — #91) —
+  /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
   leading?: ReactNode
-  /** Trailing meta slot (the root's "all" caption). */
-  trailing?: ReactNode
 
   onSelect: (id: string) => void
   onToggle: (id: string) => void
@@ -175,8 +180,8 @@ interface RailRowProps {
 
   // ── Drag-to-reparent/reorder (F25) ────────────────────────────────────────
   draggable?: boolean
-  /** This row is the one being dragged — dims to ~50% (the drag image carries
-   *  the molecule's lift; the source row just quiets). */
+  /** This row is the one being dragged — the source quiets to .35 while the
+   *  rail's floating ghost chip follows the pointer (`PondRail` `dragging`). */
   isDragging?: boolean
   dropZone?: DropZone | null
   isDropRejected?: boolean
@@ -205,7 +210,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     accent,
     settleOnMount = false,
     leading,
-    trailing,
     onSelect,
     onToggle,
     onAddChild,
@@ -224,16 +228,18 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   },
   ref
 ) {
-  // Hover is host state (the molecule is presentational and takes ONE state);
-  // CRUD reveal additionally rides group-hover/focus-within CSS so it still
-  // opens for a keyboard user tabbing into the row's controls.
+  // Hover is host state: the wash is the host's, and a keyboard user reaches the
+  // CRUD through group-focus-within regardless.
   const [hovered, setHovered] = useState(false)
+  // The entrance animation fills `both`, which pins opacity at 1 for good and
+  // would swallow the dragging dim — so the class is dropped once it has played
+  // (or the row is picked up), and never re-added.
+  const [settled, setSettled] = useState(false)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
   /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): an area
    *  row carries 13.5 type, everything deeper 13. */
   const isAreaRow = depth <= 1
-  const state: PondMoleculeState = isSelected ? 'selected' : hovered ? 'hover' : 'rest'
   // The rail's "you are here" trail: three ink tiers on the row label. The
   // list-row molecule renders one tone (mockup default), so the rail docks its
   // own voice onto the title via data-voice → CSS (see globals.css). full =
@@ -259,7 +265,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       data-on-path={isOnPath || undefined}
       data-voice={labelVoice}
       draggable={draggable}
-      onDragStart={onDragStart ? (e) => onDragStart(id, e) : undefined}
+      onAnimationEnd={() => setSettled(true)}
+      onDragStart={
+        onDragStart
+          ? (e) => {
+              setSettled(true)
+              onDragStart(id, e)
+            }
+          : undefined
+      }
       onDragOver={onDragOver ? (e) => onDragOver(id, e) : undefined}
       onDragLeave={onDragLeave ? (e) => onDragLeave(id, e) : undefined}
       onDrop={onDrop ? (e) => onDrop(id, e) : undefined}
@@ -279,11 +293,12 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // already clicks it; it must not also bubble into an "open" command.
         if (e.target === e.currentTarget) onKeyDown(id, e)
       }}
-      className={`group relative flex items-center rounded-mn-row outline-none
+      className={`group relative flex items-center gap-[7px] rounded-mn-row py-[5px] pr-2 outline-none
         focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
+        ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
-        ${isDragging ? 'opacity-50' : ''}
-        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount ? 'motion-settle-in ' : ''}`}
+        ${isDragging ? 'opacity-[.35]' : ''}
+        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
       style={{ paddingLeft: padLeft }}
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
@@ -307,7 +322,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           className={`absolute top-0 bottom-0 w-px ${
             isSelected || isOnPath ? 'bg-mn-line' : 'bg-mn-hair'
           }`}
-          style={{ left: INDENT_BASE + i * INDENT_STEP + 10 }}
+          style={{ left: INDENT_BASE + i * INDENT_STEP + GUIDE_OFFSET }}
         />
       ))}
 
@@ -318,7 +333,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid w-[20px] flex-shrink-0 place-items-center text-mn-text-secondary transition-colors hover:text-mn-text"
+          className="grid w-[9px] flex-shrink-0 place-items-center text-mn-text-secondary transition-colors hover:text-mn-text"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -328,12 +343,14 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           <Chevron open={isExpanded} />
         </button>
       ) : (
-        <span className="w-[20px] flex-shrink-0" aria-hidden />
+        <span className="w-[9px] flex-shrink-0" aria-hidden />
       )}
 
       <PondMolecule
         kind="list-row"
-        state={state}
+        // Always `rest`: the molecule's `selected` / `hover` states paint a wash on
+        // the label body alone, and the host paints it across the whole row.
+        state="rest"
         title={label}
         meta=""
         handle={false}
@@ -347,7 +364,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         leading={leading}
         trailing={
           <>
-            {trailing}
             {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and
                 REAL tab stops so keyboard/AT users reach them without a pointer
                 (t27). The root (Life) is the workspace, not a row: no add/delete. */}
@@ -405,7 +421,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // font-size as conflicting with leading (a `text-*` step can carry its
         // own), so a size appended after it silently drops it — #252's bug
         // class — and the row springs back to preflight's 1.5.
-        className={`min-h-0 w-full flex-1 gap-[7px] py-[5px] pr-2 pl-1${
+        className={`min-h-0 w-full min-w-0 flex-1 gap-[7px] p-0${
           isAreaRow ? '' : ' text-[13px]'
         } leading-[normal]`}
       />
@@ -420,8 +436,8 @@ const NO_PATH: ReadonlySet<string> = new Set()
 export interface RailViewProps {
   tree: RailNode[]
   /**
-   * The pond's name — the rail header (AUDIT C3, trimmed by ADR 0002 to a name
-   * only: no switcher, no chevron until M3). Resolved by `usePondName`.
+   * The pond's name — the rail header's label (AUDIT C3). The switcher chevron
+   * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
   pondName: string
   /**
@@ -454,7 +470,7 @@ export interface RailViewProps {
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
 
-/** The Life root's mark — the ring glyph in ink. An area colour is painted only
+/** The Life root's mark — the waves glyph in ink. An area colour is painted only
  *  when the person has chosen one (#229); ink is the default. */
 const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 
@@ -479,6 +495,39 @@ const DATABASES_MARK = (
     </svg>
   </span>
 )
+
+/**
+ * The head's reminders bell (`Pond 05 Shell` / `Pond 06.21`): 12×12, stroke 1.4,
+ * round caps, the .8 ink tier. A decorative mark — opening `coming up` is #198,
+ * and a dead button is worse than none, so it is neither focusable nor a button.
+ */
+const REMINDERS_BELL = (
+  <span data-part="reminders-bell" aria-hidden className="flex items-center gap-[10px]">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="flex-none self-center text-mn-text-meta"
+    >
+      <path d="M3.5 10V6.5a3.5 3.5 0 0 1 7 0V10l1 1H2.5z" />
+      <path d="M5.8 12.4h2.4" />
+    </svg>
+  </span>
+)
+
+/** Replace the browser's drag image with an empty one — the rail draws its own ghost. */
+function hideNativeDragImage(dataTransfer: DataTransfer) {
+  if (typeof dataTransfer.setDragImage !== 'function') return
+  const blank = document.createElement('canvas')
+  blank.width = 1
+  blank.height = 1
+  dataTransfer.setDragImage(blank, 0, 0)
+}
 
 /** PondRail's loading skeleton: eight bars, widths in %, indented in a repeating 0 / 14 / 28px staircase. */
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
@@ -657,6 +706,13 @@ export function RailView({
 
   // ── Drag-to-reparent / reorder (F25; view-owned like focus) ─────────────────
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // The ghost chip's pointer-follow Y, relative to the scroll body's wrapper.
+  const [ghostY, setGhostY] = useState(0)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const trackGhost = (clientY: number) => {
+    const top = bodyRef.current?.getBoundingClientRect().top ?? 0
+    setGhostY(clientY - top)
+  }
   const [dropTarget, setDropTarget] = useState<{
     id: string
     zone: DropZone
@@ -676,12 +732,15 @@ export function RailView({
 
   function handleDragStart(id: string, e: DragEvent<HTMLDivElement>) {
     setDraggingId(id)
+    trackGhost(e.clientY)
     e.dataTransfer.effectAllowed = 'move'
     // Firefox requires data to be set for a drag to initiate.
     e.dataTransfer.setData('text/plain', id)
+    hideNativeDragImage(e.dataTransfer)
   }
 
   function handleDragOver(id: string, e: DragEvent<HTMLDivElement>) {
+    if (draggingId) trackGhost(e.clientY)
     if (!draggingId || draggingId === id) return // no indicator over the dragged row itself
     const zone = zoneFor(id, e)
     if (canDrop(draggingId, id, zone)) {
@@ -718,6 +777,10 @@ export function RailView({
     setDropTarget(null)
   }
 
+  const draggedTitle = draggingId
+    ? flat.find((f) => f.id === draggingId)?.node.title || 'Untitled'
+    : ''
+
   const dropZoneFor = (id: string): DropZone | null =>
     dropTarget && dropTarget.id === id && !dropTarget.rejected ? dropTarget.zone : null
   const isDropRejected = (id: string) => dropTarget?.id === id && dropTarget.rejected
@@ -752,11 +815,6 @@ export function RailView({
         posInSet={posInSet}
         setSize={setSize}
         leading={LIFE_MARK}
-        trailing={
-          <span className="font-mono text-mn-11 lowercase text-mn-text-secondary pr-1 select-none">
-            all
-          </span>
-        }
         onSelect={onLife}
         onToggle={onToggleLife}
         onFocus={setFocusedId}
@@ -829,81 +887,86 @@ export function RailView({
       className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      {/* The head is the pond's NAME (AUDIT C3, trimmed by ADR 0002 to a name
-          only — the switcher chevron is M3 and the reminders bell is Phase 8, and
-          a dead affordance is worse than none).
+      {/* The head: the pond's name as a small-meta label — sans 500 / 11, uppercase,
+          .14em, NO mark — with the reminders bell at the right. The storyboards
+          (`Pond 05 Shell`, `Pond 06.21`) win over `PondRail`'s 13.5 glyph head
+          (ADR 0010). The switcher chevron appears only once there is a pond to
+          list: before migration 0018 `listPonds()` returns [] and the head is the
+          plain name, rather than an affordance that opens an empty menu. */}
+      <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
 
-          Treatment comes from `Pond 05 Shell`, which renders the head identically
-          in all 18 of its frames: the name as a small-meta label — sans 500 / 11,
-          uppercase, .14em tracking — with NO mark before it. `Pond 02 Component
-          library`'s PondRail card disagrees (a mask glyph + a larger lowercase
-          name), so the two boards conflict; the shell board wins on three counts.
-          (1) It is the storyboard for THIS surface and is unanimous across frames.
-          (2) PROJECT_RULES scopes the mask-glyph register to area and page marks,
-          and a pond is neither. (3) ADR 0003 puts small meta at 11, and the
-          component board's 13.5 is off-scale besides. The serif display face is
-          reserved for reading prose, never chrome. */}
-      {/* #312/#319: the head is now the SWITCHER. The chevron appears only once
-          there is something to list — before migration 0018 is applied
-          `listPonds()` returns [] and this renders the plain name exactly as it
-          did, rather than an affordance that opens an empty menu. */}
-      <PondSwitcher fallbackName={pondName} />
+      <div ref={bodyRef} className="relative flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2">
+          <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
+            {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+          </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
-        <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-          {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+          {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
+              children (WAI-ARIA); a <p> inside it would be an illegal child.
+              Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
+          {isLoading && (
+            <div className="px-3 py-2" role="status">
+              <span className="sr-only">Loading pages…</span>
+              <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
+                {SKELETON_WIDTHS.map((w, i) => (
+                  <span
+                    key={i}
+                    className="block h-[9px] rounded-[5px] bg-mn-text/[0.08]"
+                    style={{ width: `${w}%`, marginLeft: (i % 3) * 14 }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {!isLoading && isEmpty && (
+            <p
+              className="mt-2 mr-4 ml-[34px] text-[12.5px] leading-[1.5] text-mn-text-secondary"
+              role="status"
+            >
+              no pages yet. ＋ new page, or ask pond to start one.
+            </p>
+          )}
         </div>
 
-        {/* The databases root (3c / PondRail): after the Life tree, above a
-            hairline — measured margin 10 / padding-top 10 off the foot row —
-            shown only once the pond has one to list (#101). Its own tree so
-            the ARIA structure says what the rail says: two roots. */}
+        {/* `PondRail` `dragging`: a chip that follows the pointer's Y at the
+            board's `left: 58` — the native drag image is blanked in dragstart. */}
+        {draggingId && (
+          <div
+            data-part="drag-ghost"
+            aria-hidden
+            className="pointer-events-none absolute left-[58px] z-10 flex max-w-[calc(100%-66px)] items-center gap-[7px] rounded-mn-row bg-mn-drag-ghost px-2.5 py-1.5 text-[13px] leading-[normal] text-mn-text shadow-mn-drag-ghost [transform:translateY(-50%)_rotate(-1.5deg)]"
+            style={{ top: ghostY }}
+          >
+            <span className="size-[7px] flex-none rounded-mn-hair bg-mn-text" />
+            <span className="min-w-0 truncate">{draggedTitle}</span>
+          </div>
+        )}
+      </div>
+
+      {/* The foot (PondRail): ONE band under a single hairline — the databases root
+          (3c / #101: the pond's SECOND root, its own ARIA tree so the structure
+          says what the rail says), then "＋ new page". The databases tree is capped
+          at 40vh so an expanded root scrolls inside the foot instead of swallowing
+          the rail. */}
+      <div
+        data-part="rail-foot"
+        className="mt-auto flex flex-col gap-[2px] border-t border-mn-line px-2 pt-2.5"
+      >
         {databasesFlat.length > 0 && (
           <div
             role="tree"
             aria-label="Databases"
             aria-multiselectable={false}
-            className="mt-2.5 border-t border-mn-line pt-2.5"
+            className="max-h-[40vh] overflow-y-auto"
           >
             {databasesFlat.map(renderRow)}
           </div>
         )}
-
-        {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
-            children (WAI-ARIA); a <p> inside it would be an illegal child.
-            Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
-        {isLoading && (
-          <div className="px-3 py-2" role="status">
-            <span className="sr-only">Loading pages…</span>
-            <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
-              {SKELETON_WIDTHS.map((w, i) => (
-                <span
-                  key={i}
-                  className="block h-[9px] rounded-[5px] bg-mn-text/[0.08]"
-                  style={{ width: `${w}%`, marginLeft: (i % 3) * 14 }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {!isLoading && isEmpty && (
-          <p
-            className="mt-2 mr-4 ml-[34px] text-[12.5px] leading-[1.5] text-mn-text-secondary"
-            role="status"
-          >
-            no pages yet. ＋ new page, or ask pond to start one.
-          </p>
-        )}
-      </div>
-
-      {/* The foot (PondRail): a hairline, then "＋ new page". The databases root
-          (3c) sits above, at the end of the scrolling tree (#101). */}
-      <div className="mt-auto border-t border-mn-line px-2 pt-2.5">
         <button
           type="button"
           onClick={onNewPage}
           aria-label="New page"
-          className="w-full cursor-pointer rounded-mn-row px-2 py-1.5 text-left text-[12.5px] text-mn-text-secondary transition-colors hover:bg-mn-hover-fill hover:text-foreground"
+          className="w-full cursor-pointer rounded-mn-row px-2 py-[7px] text-left text-[11px] leading-[normal] font-medium text-mn-text-meta transition-colors hover:bg-mn-rail-hover"
         >
           ＋ new page
         </button>

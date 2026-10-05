@@ -62,7 +62,7 @@ export const InheritsColor: Story = {
   },
 }
 
-/** The six fixed area defaults + the Life ring, in the three area hues. */
+/** The six fixed area defaults + the Life glyph, in the three area hues. */
 export const AreaDefaults: Story = {
   render: () => {
     const areas = ['Personal', 'Professional', 'Health', 'Finances', 'Creativity']
@@ -81,7 +81,7 @@ export const AreaDefaults: Story = {
     )
   },
   play: async ({ canvasElement }) => {
-    for (const name of ['ring', 'house', 'star-01', 'leaf-01', 'stairs-01', 'flower-05']) {
+    for (const name of [LIFE_GLYPH, 'house', 'star-01', 'leaf-01', 'stairs-01', 'flower-05']) {
       await paintedGlyph(canvasElement, name)
     }
     await expect(canvasElement.querySelectorAll('[data-icon]')).toHaveLength(6)

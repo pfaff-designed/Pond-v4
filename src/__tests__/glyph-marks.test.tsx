@@ -8,7 +8,7 @@
  * `KindDot` is the one page-kind mark (muted 7×7, 2px-radius rounded square in an
  * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
  * rendered through by PondMolecule and the mark button; the
- * `AREA_GLYPH` map resolves the six fixed defaults (Life→ring, Personal→house,
+ * `AREA_GLYPH` map resolves the six fixed defaults (Life→waves-02, Personal→house,
  * Professional→star-01, Health→leaf-01, Finances→stairs-01,
  * Creativity→flower-05); and the wiring holds — the Rail's Life root and every
  * mapped area row lead with their glyph in the area hue (page-kind marks stay
@@ -169,7 +169,7 @@ describe('KindDot — the page-kind mark', () => {
 
 describe('AREA_GLYPH — the fixed defaults', () => {
   it('maps the five default areas and the Life root', () => {
-    expect(LIFE_GLYPH).toBe('ring')
+    expect(LIFE_GLYPH).toBe('waves-02')
     expect(areaGlyph('Personal')).toBe('house')
     expect(areaGlyph('Professional')).toBe('star-01')
     expect(areaGlyph('Health')).toBe('leaf-01')
@@ -232,7 +232,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
 }
 
 describe('Rail — area marks ride the glyph system', () => {
-  it('the Life root leads with the ring glyph in the area colour (LifeMark retired)', () => {
+  it('the Life root leads with the waves-02 glyph (LifeMark retired)', () => {
     const { getByRole } = renderRail()
     const life = getByRole('treeitem', { name: /life/ })
     const glyph = life.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
@@ -367,7 +367,9 @@ describe('DocumentPanel — the trail’s lead crumb carries the area’s mark',
     )
     // #96: the pill leads with the pond's own glyph (2t); beyond it, the crumb
     // mark is the only glyph on the surface.
-    expect(container.querySelectorAll('[data-icon]:not([data-icon="ring"])')).toHaveLength(1)
+    expect(container.querySelectorAll(`[data-icon]:not([data-icon="${LIFE_GLYPH}"])`)).toHaveLength(
+      1
+    )
   })
 
   it('renders an explicit glyph and role over the derived ones', async () => {

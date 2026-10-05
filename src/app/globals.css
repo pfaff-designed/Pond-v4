@@ -132,6 +132,7 @@
   /* ── Make Noise SURFACE shadows (issue #89) — shadow-mn-card etc. ─────────
      Paper-not-frames: surfaces separate by shadow, not borders. */
   --shadow-mn-card: var(--mn-shadow-card);
+  --shadow-mn-drag-ghost: var(--mn-shadow-drag-ghost);
   --shadow-mn-sm: var(--mn-shadow-sm);
   --shadow-mn-md: var(--mn-shadow-md);
   --shadow-mn-lg: var(--mn-shadow-lg);
@@ -157,6 +158,8 @@
   --color-mn-line: var(--mn-line);
   --color-mn-hair: var(--mn-hair);
   --color-mn-hover-fill: var(--mn-hover-fill);
+  --color-mn-rail-hover: var(--mn-rail-hover);
+  --color-mn-drag-ghost: var(--mn-drag-ghost);
   --color-mn-signal-dated: var(--mn-signal-dated);
   --color-mn-signal-highlight: var(--mn-signal-highlight);
   --color-mn-signal-highlight-ink: var(--mn-signal-highlight-ink);
@@ -284,6 +287,7 @@
   --raw-olive-light: #edecd8; /* neutral-100 — subtle tinted surface */
   --raw-olive-mid: #a3a294; /* neutral-400 — placeholder / faint mark */
   --raw-card-dark: #30312a; /* neutral-700 — the dark-mode card surface */
+  --raw-neutral-600: #4a4940; /* the dark-mode lifted chip (PondRail drag ghost) */
 
   /* ── Make Noise SEMANTIC roles (issues #85/#86) — components read THESE ──
      Ink carries everything in exactly 3 tiers: 100 / 80 (small meta) / 68. */
@@ -293,6 +297,7 @@
   --mn-line: rgb(27 29 20 / 0.09);
   --mn-hair: rgb(27 29 20 / 0.055);
   --mn-hover-fill: rgb(27 29 20 / 0.07);
+  --mn-rail-hover: rgb(100 143 123 / 0.07); /* PondRail row hover: sage wash, rail-only */
   --mn-signal-dated: var(--raw-burnt-orange); /* the ONE dated thing per screen */
   --mn-signal-highlight: var(--raw-wheat); /* highlighted passages only */
   --mn-signal-highlight-ink: var(--raw-ink); /* wheat always carries ink text */
@@ -305,6 +310,9 @@
      their exact opacities so the rename is pixel-identical. */
   --mn-surface: var(--raw-paper); /* the ground/paper — flips to ink on dark */
   --mn-card: var(--raw-paper); /* card surface — flips to raw-card-dark on dark */
+  --mn-drag-ghost: var(
+    --raw-paper
+  ); /* PondRail's floating drag chip — lifts to neutral-600 on dark */
   /* a(.3) is NOT an ink tier (#220). The boards spend it on MARKS only — the empty
      glyph, a link's underline colour, the scroll-to-block ring. Never on type:
      placeholders, empty rows, done labels and captions sit on .68. */
@@ -322,6 +330,7 @@
 
   /* ── Make Noise shadows (issue #89) — paper-not-frames: surfaces lift, not box ── */
   --mn-shadow-card: 0 1px 2px rgb(40 34 24 / 0.04), 0 8px 24px rgb(40 34 24 / 0.06);
+  --mn-shadow-drag-ghost: 0 4px 12px rgb(27 29 20 / 0.1), 0 12px 32px rgb(27 29 20 / 0.14);
   --mn-shadow-sm: 0 1px 2px 0 rgb(27 29 20 / 0.06);
   --mn-shadow-md: 0 4px 12px 0 rgb(27 29 20 / 0.1);
   --mn-shadow-lg: 0 12px 32px 0 rgb(27 29 20 / 0.14);
@@ -431,6 +440,7 @@
      whole app. Paper carries text in the same 3 tiers (100 / 80 / 68). */
   --mn-surface: var(--raw-ink); /* ground flips to ink */
   --mn-card: var(--raw-card-dark); /* card surface on the dark ground */
+  --mn-drag-ghost: var(--raw-neutral-600);
   --mn-mark-faint: rgb(250 249 239 / 0.3);
   --mn-selected-fill: rgb(250 249 239 / 0.2);
   --mn-wash: rgb(250 249 239 / 0.1);
@@ -442,6 +452,7 @@
   --mn-line: rgb(250 249 239 / 0.12);
   --mn-hair: rgb(250 249 239 / 0.07);
   --mn-hover-fill: rgb(250 249 239 / 0.07);
+  --mn-rail-hover: rgb(100 143 123 / 0.14);
   --mn-signal-dated: var(--raw-burnt-orange);
   --mn-signal-highlight: var(--raw-wheat);
   --mn-signal-highlight-ink: var(--raw-ink);
@@ -452,6 +463,7 @@
 
   /* Heavier MN shadows on the dark ground */
   --mn-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.34);
+  --mn-shadow-drag-ghost: 0 8px 24px rgb(0 0 0 / 0.45);
   --mn-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
   --mn-shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
   --mn-shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);

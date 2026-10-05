@@ -12,8 +12,8 @@
  * KindDot.
  */
 
-/** The Life root's glyph. */
-export const LIFE_GLYPH = 'ring'
+/** The Life root's glyph — `PondRail.dc.html` draws the root as `data-icon="waves-02"`. */
+export const LIFE_GLYPH = 'waves-02'
 
 const AREA_GLYPH: Record<string, string> = {
   personal: 'house',

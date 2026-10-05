@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import type { ComponentProps } from 'react'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { RailView, type RailNode } from './Rail'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
@@ -95,6 +95,8 @@ export const Resting: Story = {
     const tree = canvas.getByRole('tree', { name: 'Workspace' })
     await expect(tree).toBeInTheDocument()
     await expect(within(tree).getByText('life')).toBeInTheDocument()
+    // The root row carries its mark and name only — the old `all` caption is gone.
+    await expect(canvas.getByRole('treeitem', { name: /life/ })).not.toHaveTextContent(/\ball\b/)
     await expect(canvasElement.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
     await expect(canvas.getByText('Health')).toBeInTheDocument()
     await expect(canvas.getByText('Scratchpad')).toBeInTheDocument()
@@ -143,32 +145,50 @@ export const Expanded: Story = {
 }
 
 /**
- * The board's row geometry, pinned. `PondRail.dc.html` renders its rows at
- * `padding '5px 8px 5px 4px'` / `gap 7` / `line-height: normal`, measuring
- * 26px on an area row (13.5 type) and 25px below it (13 type). #294 closed a
- * fixed 34px against those numbers; this story is what stops them drifting
+ * The board's row geometry, pinned on the treeitem HOST. `PondRail.dc.html`
+ * renders its rows at `padding '5px 8px 5px 4px'` / `gap 7` / `radius 10` /
+ * `line-height: normal`, with the 9px chevron INSIDE the padded row, measuring
+ * 26px on an area row (13.5 type) and 25px below it (13 type). The label body
+ * (the `list-row` molecule) carries none of that: no padding, no wash. #294 closed
+ * a fixed 34px against those numbers; this story is what stops them drifting
  * back — the looseness is invisible in jsdom and in review, and only a real
  * browser catches it.
  */
 export const BoardRowGeometry: Story = {
   args: { expanded: new Set(['health', 'personal']) },
   play: async ({ canvasElement }) => {
-    const rows = [...canvasElement.querySelectorAll<HTMLElement>('[data-kind="list-row"]')]
-    await expect(rows.length).toBeGreaterThan(4)
+    const hosts = [...canvasElement.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+    await expect(hosts.length).toBeGreaterThan(4)
 
-    for (const row of rows) {
-      const css = getComputedStyle(row)
-      await expect(css.padding).toBe('5px 8px 5px 4px')
+    for (const host of hosts) {
+      const css = getComputedStyle(host)
+      const depth = Number(host.getAttribute('aria-level')) - 1
+      await expect(css.paddingTop).toBe('5px')
+      await expect(css.paddingRight).toBe('8px')
+      await expect(css.paddingBottom).toBe('5px')
+      // 4 of board padding, plus one 14px step per level of depth
+      await expect(css.paddingLeft).toBe(`${4 + 14 * depth}px`)
+      if (depth === 0) await expect(css.padding).toBe('5px 8px 5px 4px')
       await expect(css.columnGap).toBe('7px')
       await expect(css.borderTopLeftRadius).toBe('10px')
+
+      // the chevron / leaf spacer is the first in-flow child, 9 wide, inside the row
+      const slot = [...host.children].find((c) => getComputedStyle(c).position !== 'absolute')!
+      await expect(getComputedStyle(slot).width).toBe('9px')
+
+      // the label body is bare: no padding of its own
+      const body = host.querySelector<HTMLElement>('[data-kind="list-row"]')!
+      await expect(getComputedStyle(body).padding).toBe('0px')
       // the board's metric leading, not Tailwind's preflight 1.5 (= 20.25px here)
-      await expect(css.lineHeight).toBe('normal')
+      await expect(getComputedStyle(body).lineHeight).toBe('normal')
     }
 
     const heightAt = (size: string) =>
-      rows
-        .filter((r) => getComputedStyle(r).fontSize === size)
-        .map((r) => Math.round(r.getBoundingClientRect().height))
+      hosts
+        .filter(
+          (h) => getComputedStyle(h.querySelector('[data-kind="list-row"]')!).fontSize === size
+        )
+        .map((h) => Math.round(h.getBoundingClientRect().height))
 
     // the board's own split: areas carry 13.5 type, everything deeper 13
     const areas = heightAt('13.5px')
@@ -350,7 +370,9 @@ export const KeyboardNav: Story = {
  * #96: the rail is a PAPER card (`PondRail`, measured: the card paper, the card
  * shadow, radius 20, 206 wide, no backdrop blur) headed by the pond's NAME as a
  * small-meta label — sans 500 / 11, uppercase, .14em tracking, and NO mark, per
- * all 18 frames of `Pond 05 Shell`. No switcher, no chevron (ADR 0002).
+ * all 18 frames of `Pond 05 Shell`, with the reminders bell at the right. With no
+ * pond provider there are no ponds, so no switcher button and no chevron — and
+ * the bell is decorative, never a button.
  */
 export const PaperCardHead: Story = {
   play: async ({ canvasElement }) => {
@@ -366,10 +388,11 @@ export const PaperCardHead: Story = {
     await expect(name).toHaveClass('uppercase')
     await expect(head.querySelector('[data-pond-mark]')).toBeNull()
     await expect(head.querySelector('button')).toBeNull()
+    await expect(head.querySelector('[data-part="reminders-bell"]')).not.toBeNull()
   },
 }
 
-/** The foot (`PondRail`): a hairline, then "＋ new page" — the one New page affordance. */
+/** The foot's "＋ new page" — the one New page affordance — raises `onNewPage`. */
 export const FootNewPage: Story = {
   play: async ({ canvas, args }) => {
     const plus = canvas.getByRole('button', { name: 'New page' })
@@ -524,6 +547,34 @@ export const PaperCardComputed: Story = {
       // No mark of either register in the head: the pond is not an area.
       await expect(head.querySelector('[data-pond-mark]')).toBeNull()
       await expect(head.querySelector('[data-area-mark]')).toBeNull()
+
+      // The storyboard head: `padding 0 16px 18px`, name left / bell right.
+      const headCss = getComputedStyle(head)
+      await expect(headCss.padding).toBe('0px 16px 18px')
+      await expect(headCss.justifyContent).toBe('space-between')
+      await expect(headCss.alignItems).toBe('baseline')
+      // With no pond provider there are no ponds: no switcher button, and the bell
+      // is not one.
+      await expect(head.querySelector('button')).toBeNull()
+
+      // The reminders bell: 12×12, stroke 1.4, the .8 ink tier, a decorative mark
+      // outside the ARIA tree that is neither a button nor a tab stop (#198 owns
+      // its behaviour).
+      const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
+      await expect(bell).not.toBeNull()
+      await expect(bell.closest('[role="tree"]')).toBeNull()
+      await expect(bell.getAttribute('aria-hidden')).toBe('true')
+      await expect(bell.querySelector('button, a, [tabindex]')).toBeNull()
+      await expect(getComputedStyle(bell).gap).toBe('10px')
+      const bellSvg = bell.querySelector('svg')!
+      const bellBox = bellSvg.getBoundingClientRect()
+      await expect(bellBox.width).toBe(12)
+      await expect(bellBox.height).toBe(12)
+      await expect(bellSvg.getAttribute('viewBox')).toBe('0 0 14 14')
+      await expect(getComputedStyle(bellSvg).strokeWidth).toBe('1.4px')
+      await expect(getComputedStyle(bellSvg).color).toBe(
+        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
+      )
     }
   },
 }
@@ -532,7 +583,7 @@ export const PaperCardComputed: Story = {
  * #91's glyph wiring, with no chosen marks anywhere: a mapped area row leads
  * with its DEFAULT glyph, tinted with the area role its id derives, and drops
  * its dot; an unmapped top-level area keeps its `KindDot`; a nested page carries
- * neither. The Life root leads with the ring in ink (`var(--mn-text)`), not an
+ * neither. The Life root leads with its waves glyph in ink (`var(--mn-text)`), not an
  * area hue — #229 paints a hue there only once a person picks one.
  *
  * The tint is read as a COLOUR, in both themes, against `--mn-area-*` resolved:
@@ -552,7 +603,7 @@ export const DerivedAreaMarks: Story = {
       const canvas = within(probe(canvasElement, theme))
       const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
 
-      // The Life root: the ring, in ink — and no hand-drawn half-disc left over.
+      // The Life root: its glyph, in ink — and no hand-drawn half-disc left over.
       const life = row(/life/)
       await expect(life.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeInTheDocument()
       await expect(life.querySelector('circle')).toBeNull()
@@ -665,8 +716,8 @@ export const ChosenMarks: Story = {
 
 /**
  * The pond's SECOND root (`Pond 03 Concepts` 3c: "two roots: life for reading,
- * databases for data" — peers, one beside the other). `PondRail` draws it at the
- * FOOT, after the Life tree, above a hairline: its own ARIA tree, so the
+ * databases for data" — peers, one beside the other). `PondRail` draws it in the
+ * FOOT band, under the one hairline: its own ARIA tree, so the
  * structure says what the rail says rather than nesting data inside life.
  *
  * Geometry from `PondRail.dbRow`, measured: `padding '6px 8px'` / `gap 9` /
@@ -691,10 +742,13 @@ export const DatabasesRoot: Story = {
     await expect(within(life).getByText('Health')).toBeInTheDocument()
     await expect(within(life).queryByText('databases')).not.toBeInTheDocument()
 
-    // …and into its own, with its databases nested under it.
+    // …and into its own, with its databases nested under it — in the foot band,
+    // not the scrolling body.
     const foot = canvas.getByRole('tree', { name: 'Databases' })
     await expect(within(foot).getByText('databases')).toBeInTheDocument()
     await expect(within(foot).getByText('ingredients')).toBeInTheDocument()
+    await expect(foot.closest('[data-part="rail-foot"]')).not.toBeNull()
+    await expect(life.parentElement!.contains(foot)).toBe(false)
 
     // A functional mark, not an area one — and so no area hue to disagree with.
     const rootRow = canvas.getByRole('treeitem', { name: /databases/ })
@@ -724,5 +778,170 @@ export const NoDatabasesRoot: Story = {
     await expect(
       within(canvasElement).queryByRole('tree', { name: 'Databases' })
     ).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * The row wash lives on the treeitem HOST, so it covers the caret and the indent
+ * (`PondRail.dc.html` row `background`): selected = ink .07, hover = the rail-only
+ * SAGE wash (.07 light / .14 dark). The `list-row` molecule inside is transparent —
+ * its own `bg-mn-text/5` hover is the molecule's board, not the rail's.
+ */
+export const RowWashes: Story = {
+  args: { expanded: new Set(['health']), selectedId: 'sleep' },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const WASH = {
+      light: { hover: 'rgba(100, 143, 123, 0.07)', selected: 'rgba(27, 29, 20, 0.07)' },
+      dark: { hover: 'rgba(100, 143, 123, 0.14)', selected: 'rgba(250, 249, 239, 0.07)' },
+    } as const
+    const CLEAR = 'rgba(0, 0, 0, 0)'
+
+    for (const theme of THEMES) {
+      const canvas = within(probe(canvasElement, theme))
+      const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+      const bg = (el: Element) => getComputedStyle(el).backgroundColor
+      const body = (host: HTMLElement) => host.querySelector('[data-kind="list-row"]')!
+
+      const sleep = row(/Sleep/)
+      await expect(bg(sleep)).toBe(WASH[theme].selected)
+      await expect(bg(body(sleep))).toBe(CLEAR)
+
+      const health = row(/Health/)
+      await expect(bg(health)).toBe(CLEAR)
+      await userEvent.hover(health)
+      await expect(bg(health)).toBe(WASH[theme].hover)
+      await expect(bg(body(health))).toBe(CLEAR)
+      await userEvent.unhover(health)
+      await expect(bg(health)).toBe(CLEAR)
+
+      // a hovered selected row keeps the selected wash
+      await userEvent.hover(sleep)
+      await expect(bg(sleep)).toBe(WASH[theme].selected)
+      await userEvent.unhover(sleep)
+    }
+  },
+}
+
+/**
+ * `PondRail` `dragging`: the source row quiets to .35 and a floating ghost chip —
+ * dot + the row's title at 13, padding 6/10, radius 10, tilted -1.5deg, paper
+ * (neutral-600 on dark) with the lifted shadow — follows the pointer.
+ */
+export const DragGhost: Story = {
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    const GHOST = {
+      light: {
+        bg: 'rgb(250, 249, 239)',
+        shadow: 'rgba(27, 29, 20, 0.1) 0px 4px 12px 0px, rgba(27, 29, 20, 0.14) 0px 12px 32px 0px',
+      },
+      dark: { bg: 'rgb(74, 73, 64)', shadow: 'rgba(0, 0, 0, 0.45) 0px 8px 24px 0px' },
+    } as const
+
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const health = within(scope).getByRole('treeitem', { name: /Health/ })
+      await expect(scope.querySelector('[data-part="drag-ghost"]')).toBeNull()
+      // a revealed row settles in over --motion-settle; wait for it to land
+      await waitFor(() => expect(getComputedStyle(health).opacity).toBe('1'))
+
+      await fireEvent.dragStart(health, { dataTransfer: new DataTransfer() })
+      await waitFor(() => expect(scope.querySelector('[data-part="drag-ghost"]')).not.toBeNull())
+      await expect(getComputedStyle(health).opacity).toBe('0.35')
+
+      const ghost = scope.querySelector<HTMLElement>('[data-part="drag-ghost"]')!
+      const css = getComputedStyle(ghost)
+      await expect(ghost).toHaveTextContent('Health')
+      await expect(ghost.getAttribute('aria-hidden')).toBe('true')
+      await expect(css.pointerEvents).toBe('none')
+      await expect(css.position).toBe('absolute')
+      await expect(css.left).toBe('58px')
+      await expect(css.fontSize).toBe('13px')
+      await expect(css.borderTopLeftRadius).toBe('10px')
+      await expect(css.padding).toBe('6px 10px')
+      await expect(css.columnGap).toBe('7px')
+      await expect(css.backgroundColor).toBe(GHOST[theme].bg)
+      await expect(css.boxShadow.endsWith(GHOST[theme].shadow)).toBe(true)
+
+      // tilted -1.5deg: a rotation matrix, not `none`
+      await expect(css.transform).not.toBe('none')
+      const m = new DOMMatrix(css.transform)
+      const angle = (-1.5 * Math.PI) / 180
+      await expect(Math.abs(m.a - Math.cos(angle))).toBeLessThan(1e-4)
+      await expect(Math.abs(m.b - Math.sin(angle))).toBeLessThan(1e-4)
+
+      const dot = ghost.firstElementChild as HTMLElement
+      await expect(getComputedStyle(dot).width).toBe('7px')
+      await expect(getComputedStyle(dot).height).toBe('7px')
+      await expect(getComputedStyle(dot).borderTopLeftRadius).toBe('2px')
+      await expect(getComputedStyle(dot).backgroundColor).toBe(
+        theme === 'light' ? 'rgb(27, 29, 20)' : 'rgb(250, 249, 239)'
+      )
+
+      await fireEvent.dragEnd(health)
+      await waitFor(() => expect(scope.querySelector('[data-part="drag-ghost"]')).toBeNull())
+      await expect(getComputedStyle(health).opacity).toBe('1')
+    }
+  },
+}
+
+/**
+ * The foot is ONE band under ONE hairline (`PondRail.foot`: `column / gap 2 /
+ * padding 10px 8px 0 / border-top a(.09)`): the databases tree, then "＋ new page"
+ * (`Pond 06.21`: 11 / 500 / ink .8 / padding 7px 8px). It sits outside the
+ * scrolling body, and the databases tree is capped so it cannot swallow the rail.
+ */
+export const FootBand: Story = {
+  args: { tree: [...TREE, DATABASES], expanded: new Set(['root-db']) },
+  render: (args) => <BothThemes {...args} />,
+  play: async ({ canvasElement }) => {
+    for (const theme of THEMES) {
+      const scope = probe(canvasElement, theme)
+      const canvas = within(scope)
+      const foot = scope.querySelector<HTMLElement>('[data-part="rail-foot"]')!
+      const css = getComputedStyle(foot)
+      await expect(css.borderTopWidth).toBe('1px')
+      await expect(css.borderTopColor).toBe(
+        theme === 'light' ? 'rgba(27, 29, 20, 0.09)' : 'rgba(250, 249, 239, 0.12)'
+      )
+      await expect(css.display).toBe('flex')
+      await expect(css.flexDirection).toBe('column')
+      await expect(css.rowGap).toBe('2px')
+      await expect(css.paddingLeft).toBe('8px')
+      await expect(css.paddingTop).toBe('10px')
+      await expect(css.paddingBottom).toBe('0px')
+
+      // databases tree first, then the new-page button — in ONE element
+      const tree = canvas.getByRole('tree', { name: 'Databases' })
+      const plus = canvas.getByRole('button', { name: 'New page' })
+      await expect([...foot.children]).toEqual([tree, plus])
+      await expect(getComputedStyle(tree).maxHeight).not.toBe('none')
+      // the foot's hairline is the only one: the tree draws none of its own
+      await expect(getComputedStyle(tree).borderTopWidth).toBe('0px')
+      await expect(scope.querySelectorAll('aside [class*="border-t"]')).toHaveLength(1)
+
+      const type = getComputedStyle(plus)
+      await expect(type.fontSize).toBe('11px')
+      await expect(type.fontWeight).toBe('500')
+      await expect(type.color).toBe(
+        theme === 'light' ? 'rgba(27, 29, 20, 0.8)' : 'rgba(250, 249, 239, 0.8)'
+      )
+      await expect(type.padding).toBe('7px 8px')
+
+      // the sage hover wash, as on the rows (`:hover` can't be driven by a
+      // synthetic pointer event, so the utility is asserted by name; the role it
+      // resolves to is pinned by RowWashes)
+      await expect(plus).toHaveClass('hover:bg-mn-rail-hover')
+    }
+  },
+}
+
+/** With no databases root the foot is just "＋ new page" under the hairline. */
+export const FootWithoutDatabases: Story = {
+  play: async ({ canvasElement }) => {
+    const foot = canvasElement.querySelector<HTMLElement>('[data-part="rail-foot"]')!
+    await expect(foot.children).toHaveLength(1)
+    await expect(foot.firstElementChild).toHaveAccessibleName('New page')
   },
 }

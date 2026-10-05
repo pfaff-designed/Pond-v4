@@ -280,12 +280,26 @@ describe('RailView — the pond name header (AC3)', () => {
     expect(name.closest('[role="tree"]')).toBeNull()
   })
 
-  it('has no switcher and no chevron — a name only (ADR 0002)', () => {
+  it('has no switcher button and no chevron without ponds; the bell is a decorative mark', () => {
     const { container } = renderRail()
     const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
     expect(head.querySelector('button')).toBeNull()
-    expect(head.querySelector('svg')).toBeNull()
+    // The only svg is the bell's — a chevron would be a second one.
+    const bell = head.querySelector<HTMLElement>('[data-part="reminders-bell"]')!
+    expect(head.querySelectorAll('svg')).toHaveLength(1)
+    expect(bell.querySelector('svg')).not.toBeNull()
+    expect(bell).toHaveAttribute('aria-hidden', 'true')
+    expect(bell.closest('[role="tree"]')).toBeNull()
     expect(head).not.toHaveTextContent('Pond')
+  })
+
+  it('the head is padded 0 16px 18px, name left and bell right (storyboard)', () => {
+    const { container } = renderRail()
+    const head = container.querySelector<HTMLElement>('[data-part="rail-head"]')!
+    expect(head.className).toMatch(/\bpx-4\b/)
+    expect(head.className).toMatch(/\bpb-\[18px\]/)
+    expect(head.className).toMatch(/\bjustify-between\b/)
+    expect(head.className).toMatch(/\bitems-baseline\b/)
   })
 
   it('the rail is a floating PAPER card (the card role, no glass), not a docked column', () => {

@@ -7,13 +7,10 @@
  * pond, with ⌘1, ⌘2 and ⌘3 to jump straight to one." And: "the switcher IS the
  * rail header. Nothing else in the rail changes until you pick."
  *
- * Head treatment follows `Pond 05 Shell`, which renders the head identically in
- * all 18 of its frames — sans 500 / 11, uppercase, .14em, no mark. `PondRail`
- * disagrees (mask glyph + lowercase 13.5); that conflict is recorded on #319 and
- * is NOT settled here, so this keeps what ships and adds only the chevron, which
- * BOTH boards draw. Changing the type treatment would break three assertions in
- * `shell-reskin.test.tsx` that encode ADR 0002's M1 trim, and that is its own
- * slice.
+ * Head treatment follows the storyboards (ADR 0010: a storyboard wins over
+ * `PondRail`'s component card) — `Pond 05 Shell` and `Pond 06.21` draw the head
+ * as sans 500 / 11, uppercase, .14em, no mark, padded `0 16px 18px`, baseline
+ * aligned with the name left and `trailing` (the reminders bell) right.
  *
  * Deliberately not here, each recorded as fog on #312: ⌘1–⌘3 (the shortcut
  * collides with browser tab switching, AUDIT K1), `manage ponds` (settings has no
@@ -21,7 +18,7 @@
  * is worse than none — the same rule that kept `import from notes` out of #177.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
@@ -29,10 +26,9 @@ import { AreaMark } from '@/components/atoms/AreaMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
 
-/** The board's 9×9 chevron: `margin-left:6px`, the .68 ink tier, rotates when open.
- *  `swChev.color` is `rgba(27,29,20,0.68)` — a tier, so `text-mn-text-secondary`,
- *  not `opacity-80` over `currentColor`, which lands on a different value and
- *  fades the stroke rather than tinting it. */
+/** The storyboard's 9×9 chevron: `margin-left:6px`, `currentColor` at opacity .8
+ *  over ink — the .8 ink tier, so `text-mn-text-meta` rather than an opacity fade
+ *  of the stroke. Rotates when open. */
 function SwitcherChevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -45,7 +41,7 @@ function SwitcherChevron({ open }: { open: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      className={`ml-[6px] flex-none text-mn-text-secondary transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
+      className={`ml-[6px] flex-none text-mn-text-meta transition-transform duration-[var(--motion-settle)] ease-[var(--ease-mn)] ${
         open ? 'rotate-180' : ''
       }`}
     >
@@ -73,7 +69,13 @@ function Plus() {
   )
 }
 
-export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
+interface PondSwitcherProps {
+  fallbackName: string
+  /** The head's right-hand end (the rail's reminders bell). */
+  trailing?: ReactNode
+}
+
+export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
   const [pending, setPending] = useState(false)
@@ -111,7 +113,10 @@ export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
   const hasPonds = ponds.length > 0
 
   return (
-    <div data-part="rail-head" className="relative flex items-center px-4 pb-3">
+    <div
+      data-part="rail-head"
+      className="relative flex items-baseline justify-between px-4 pb-[18px]"
+    >
       {hasPonds ? (
         <button
           type="button"
@@ -142,6 +147,8 @@ export function PondSwitcher({ fallbackName }: { fallbackName: string }) {
           {fallbackName}
         </span>
       )}
+
+      {trailing}
 
       {open && hasPonds && (
         <>
