@@ -8,9 +8,9 @@
  * `KindDot` is the one page-kind mark (muted 7×7, 2px-radius rounded square in an
  * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
  * rendered through by PondMolecule and the mark button; the
- * `AREA_GLYPH` map resolves the six fixed defaults (Life→waves-02, Personal→house,
- * Professional→star-01, Health→leaf-01, Finances→stairs-01,
- * Creativity→flower-05); and the wiring holds — the Rail's Life root and every
+ * `AREA_GLYPH` map resolves the fixed defaults (Life→waves-02, Personal→house,
+ * Professional→ramp, Health→heart, Finances→ring, Creativity→star-01); and the
+ * wiring holds — the Rail's Life root and every
  * mapped area row lead with their glyph in the area hue (page-kind marks stay
  * KindDot, unmapped areas keep the dot), and an area crumb in the Breadcrumb
  * shows its mark — resolved from the trail by the page surface (`CrumbMark`).
