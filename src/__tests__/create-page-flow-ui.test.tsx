@@ -149,7 +149,7 @@ function renderWithQuery(ui: React.ReactElement, queryClient = makeQueryClient()
 
 /** ⌘K, `>` for actions, then the bare `new page` action — the path that opens the creation dialog. */
 async function openNewPageFromPalette() {
-  fireEvent.keyDown(document, { key: 'k', metaKey: true })
+  fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
   const input = await screen.findByRole('combobox', { name: 'command palette' })
   fireEvent.change(input, { target: { value: '>' } })
   fireEvent.click(await screen.findByRole('option', { name: /new page(?! “)/ }))
@@ -272,7 +272,7 @@ describe('ShellCommands — the palette’s `new page “q” under <parent>` fi
     const user = userEvent.setup()
     renderWithQuery(<ShellCommands />)
 
-    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
     const input = await screen.findByRole('combobox', { name: 'command palette' })
     // A leaf has no children, so the palette opens unscoped — the #239 shape
     // was "under life" here while the dialog filed under the leaf.

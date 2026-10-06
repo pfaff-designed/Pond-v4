@@ -17,12 +17,10 @@
  */
 
 import { useState, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
-import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
-import { NewPondSheet } from './NewPondSheet'
+import { NewPondFlow } from './NewPondFlow'
 import { pondHref } from '@/lib/pond/active'
 import { usePondGlyph } from '@/lib/pond/glyph'
 
@@ -54,35 +52,8 @@ interface PondSwitcherProps {
 export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
-  const router = useRouter()
-
-  // ONE source of truth. The switcher used to run its own `listPonds`, which is
-  // how a created pond could be in the URL while the shell's list still lacked it
-  // — the shell then resolved back to the first pond and the new pond showed its
-  // pages. Both now read the same provider.
-  const { pond: active, ponds, addPond } = usePond()
+  const { pond: active, ponds } = usePond()
   const pondGlyph = usePondGlyph()
-
-  async function create(name: string) {
-    if (pending) return
-    setPending(true)
-    setFailure(null)
-    try {
-      const pond = await createPond(name)
-      setNaming(false)
-      setOpen(false)
-      // Into the list BEFORE the navigation, so the shell can resolve the pond the
-      // URL is about to name.
-      addPond(pond)
-      router.push(pondHref(pond.id))
-    } catch (err) {
-      setFailure((err as Error).message)
-    } finally {
-      setPending(false)
-    }
-  }
 
   // Before migration 0018 is applied the table does not exist and `listPonds`
   // returns []. The head then renders the glyph and name without the chevron —
@@ -187,14 +158,11 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
       )}
 
       {naming && (
-        <NewPondSheet
-          onCreate={(name) => void create(name)}
-          onCancel={() => {
+        <NewPondFlow
+          onClose={(created) => {
             setNaming(false)
-            setFailure(null)
+            if (created) setOpen(false)
           }}
-          pending={pending}
-          failure={failure}
         />
       )}
     </div>
