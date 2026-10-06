@@ -4,9 +4,10 @@
  * The PondComposer card (`PondComposer.dc.html` `glass`, board 2f): one
  * floating sheet of glass — 560 wide (360 below md), padding 14, gap 14, radius
  * 20 — holding the thread, then the line and toolbar. It is as tall as its
- * content and grows UPWARD from a fixed 24px inset, so nothing is resized by
- * hand: a longer thread simply makes a taller card, and the page scrolls behind
- * it.
+ * content and grows UPWARD from a fixed 24px inset; the page scrolls behind it.
+ * While there is a thread, `ComposerHandle` on its top edge lets the person fix
+ * the card's height instead — the thread then scrolls inside it, and the card
+ * never rises past the ⌘K pill (`COMPOSER_MAX_HEIGHT_CSS`).
  *
  * Placement is the storyboards' `left:246px; right:20px; bottom:24px` (rail
  * 20+206+20): centred on the area right of the rail, i.e. `calc(50% + 113px)` of
@@ -23,11 +24,13 @@
 
 import { useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_CLEARANCE_VAR,
   COMPOSER_TAB_INSET,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
+import { COMPOSER_MAX_HEIGHT_CSS } from '@/lib/layout/composer-height'
 import { cn } from '@/lib/utils'
 
 export interface TerminalDrawerProps {
@@ -39,6 +42,12 @@ export interface TerminalDrawerProps {
   children: ReactNode
   /** Attachments, the line and the toolbar. */
   footer: ReactNode
+  /** The user-set card height (`useComposerHeight`), or null for content height. */
+  height?: number | null
+  /** Live height during a handle drag. Without it the card draws no handle. */
+  onHeightChange?: (height: number) => void
+  /** A finished resize gesture; `null` returns the card to content height. */
+  onHeightCommit?: (height: number | null) => void
 }
 
 const PLACEMENT =
@@ -57,6 +66,9 @@ export const TerminalDrawer = ({
   onExpand,
   children,
   footer,
+  height = null,
+  onHeightChange,
+  onHeightCommit,
 }: TerminalDrawerProps) => {
   const cardRef = useRef<HTMLElement>(null)
 
@@ -146,13 +158,27 @@ export const TerminalDrawer = ({
     )
   }
 
+  // At rest there is nothing to resize, and a stored height would leave an empty slab.
+  const hasThread = Boolean(children)
+  const sized = hasThread && height !== null
+
   return (
     <section
       ref={cardRef}
       aria-label="composer"
       data-part="composer-card"
-      className={`${CARD_PLACEMENT} mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text`}
+      data-sized={sized || undefined}
+      style={sized ? { height, maxHeight: COMPOSER_MAX_HEIGHT_CSS } : undefined}
+      className={`${CARD_PLACEMENT} group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text`}
     >
+      {hasThread && onHeightChange && onHeightCommit && (
+        <ComposerHandle
+          cardRef={cardRef}
+          height={height}
+          onHeightChange={onHeightChange}
+          onHeightCommit={onHeightCommit}
+        />
+      )}
       {children}
       {footer}
     </section>

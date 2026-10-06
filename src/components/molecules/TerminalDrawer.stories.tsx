@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { ComposerLine } from './ComposerLine'
 import { TerminalDrawer } from './TerminalDrawer'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
+import { COMPOSER_MIN_HEIGHT, composerMaxHeight } from '@/lib/layout/composer-height'
 
 /**
  * The shell-side of the PondComposer card: where it sits, that it publishes its
@@ -41,7 +42,7 @@ const Footer = () => {
 }
 
 const Thread = ({ turns }: { turns: number }) => (
-  <div className="max-h-[calc(100dvh-14rem)] min-h-0 overflow-y-auto">
+  <div className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none">
     <div className="space-y-5 px-1.5">
       {Array.from({ length: turns }, (_, i) => (
         <p key={i} className="font-sans text-[15px] leading-[1.6]">
@@ -98,7 +99,7 @@ export const CentredRightOfTheRail: Story = {
   },
 }
 
-/** No header strip, resize handle, clear control or context label. */
+/** No header strip, clear control or context label — and no handle without a height owner. */
 export const DrawsNothingButTheCard: Story = {
   tags: ['!dev'],
   args: { children: <Thread turns={1} /> },
@@ -108,6 +109,54 @@ export const DrawsNothingButTheCard: Story = {
     await expect(canvas.queryByRole('button', { name: /clear conversation/i })).toBeNull()
     await expect(canvas.queryByText(/context:/)).toBeNull()
     await expect(canvas.queryByRole('button', { name: /collapse terminal/i })).toBeNull()
+  },
+}
+
+/**
+ * The handle on the card's top edge: content height until the person drags it,
+ * then a fixed height with the thread scrolling inside, never past the ⌘K pill.
+ * ↑/↓ nudge it, Home/End jump to the bounds, a double-click hands it back.
+ */
+export const WithTheHandle: Story = {
+  name: 'with the handle',
+  render: (args) => {
+    const [height, setHeight] = useState<number | null>(null)
+    return (
+      <TerminalDrawer {...args} height={height} onHeightChange={setHeight} onHeightCommit={setHeight}>
+        <Thread turns={4} />
+      </TerminalDrawer>
+    )
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const shell = shellOf(canvasElement)
+    const card = canvas.getByRole('region', { name: 'composer' })
+    const handle = canvas.getByRole('separator', { name: 'Resize composer' })
+    const cardH = () => Math.round(card.getBoundingClientRect().height)
+    const natural = cardH()
+
+    // The grip: 40 × 4, centred on the card, riding its top edge.
+    const grip = handle.firstElementChild!.getBoundingClientRect()
+    const box = card.getBoundingClientRect()
+    await expect([Math.round(grip.width), Math.round(grip.height)]).toEqual([40, 4])
+    await expect(grip.left + grip.width / 2).toBeCloseTo(box.left + box.width / 2, 0)
+    await expect(grip.bottom).toBeLessThanOrEqual(box.top)
+
+    handle.focus()
+    await userEvent.keyboard('{ArrowUp}')
+    await expect(cardH()).toBe(natural + 24)
+    await userEvent.keyboard('{Home}')
+    await expect(cardH()).toBe(COMPOSER_MIN_HEIGHT)
+    const thread = card.querySelector<HTMLElement>('.overflow-y-auto')!
+    await expect(thread.scrollHeight).toBeGreaterThan(thread.clientHeight)
+
+    // End: as tall as the shell allows — the top stays 72px below the shell's top.
+    await userEvent.keyboard('{End}')
+    await expect(cardH()).toBe(composerMaxHeight(shell.clientHeight))
+    await expect(Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)).toBe(72)
+
+    await userEvent.dblClick(handle)
+    await expect(cardH()).toBe(natural)
+    await expect(card.style.height).toBe('')
   },
 }
 

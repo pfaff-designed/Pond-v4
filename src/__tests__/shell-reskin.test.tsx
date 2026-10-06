@@ -17,7 +17,7 @@
 import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 jest.mock('next/navigation', () => ({
@@ -101,6 +101,13 @@ import {
   composerClearancePadding,
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
+import {
+  COMPOSER_HEIGHT_KEY,
+  COMPOSER_MIN_HEIGHT,
+  COMPOSER_TOP_CLEARANCE,
+  composerMaxHeight,
+  readStoredComposerHeight,
+} from '@/lib/layout/composer-height'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 /** Whitespace- and leading-zero-insensitive, so prettier's `0.86` matches the README's `.86`. */
@@ -490,9 +497,8 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(COMPOSER_BOTTOM_INSET).toBe(24)
   })
 
-  it('draws no header strip, resize handle or clear control', () => {
+  it('draws no header strip or clear control', () => {
     renderDrawer()
-    expect(screen.queryByRole('separator')).toBeNull()
     expect(screen.queryByRole('button', { name: /clear conversation/i })).toBeNull()
     expect(screen.queryByText(/context:/)).toBeNull()
   })
@@ -526,6 +532,128 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
     expect(screen.getByRole('button', { name: /pond answered/ })).toBeInTheDocument()
     const tab = screen.getByRole('region', { name: 'composer' })
     expect(tab.querySelector('[data-part="landed-dot"]')).not.toBeNull()
+  })
+})
+
+// ── The resize handle on the card's top edge ────────────────────────────────
+
+describe('ComposerHandle — the person sizes the card; content height until they do', () => {
+  const pointer = (type: string, clientY: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.assign(event, { pointerId: 1, clientY })
+    return event
+  }
+
+  function renderSized(
+    over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {},
+    body: React.ReactNode = <div>body</div>
+  ) {
+    const onHeightChange = jest.fn()
+    const onHeightCommit = jest.fn()
+    render(
+      <TerminalDrawer
+        collapsed={false}
+        onExpand={jest.fn()}
+        footer={<div>footer</div>}
+        height={null}
+        onHeightChange={onHeightChange}
+        onHeightCommit={onHeightCommit}
+        {...over}
+      >
+        {body}
+      </TerminalDrawer>
+    )
+    return { onHeightChange, onHeightCommit, card: screen.getByRole('region', { name: 'composer' }) }
+  }
+
+  afterEach(() => window.localStorage.clear())
+
+  it('rides the card while there is a thread — not at rest, not without a height owner', () => {
+    renderSized({}, null)
+    expect(screen.queryByRole('separator')).toBeNull()
+    cleanup()
+    renderDrawer()
+    expect(screen.queryByRole('separator')).toBeNull()
+    cleanup()
+    renderSized()
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    expect(handle.getAttribute('aria-orientation')).toBe('horizontal')
+    expect(handle.tabIndex).toBe(0)
+  })
+
+  it('is content-sized until a height is set, then fixed and capped below the ⌘K pill', () => {
+    const { card } = renderSized()
+    expect(card.style.height).toBe('')
+    expect(card.hasAttribute('data-sized')).toBe(false)
+    cleanup()
+    const sized = renderSized({ height: 420 }).card
+    expect(sized.style.height).toBe('420px')
+    expect(sized.style.maxHeight).toBe(`calc(100% - ${COMPOSER_TOP_CLEARANCE + 24}px)`)
+    expect(sized.hasAttribute('data-sized')).toBe(true)
+    expect(COMPOSER_TOP_CLEARANCE).toBe(72)
+  })
+
+  it('a stored height never sizes the card at rest', () => {
+    const { card } = renderSized({ height: 420 }, null)
+    expect(card.style.height).toBe('')
+  })
+
+  it('dragging up grows the card from its measured height, and commits once on release', () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(300)
+    const { onHeightChange, onHeightCommit } = renderSized()
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    act(() => {
+      handle.dispatchEvent(pointer('pointerdown', 500))
+      handle.dispatchEvent(pointer('pointermove', 400))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(400)
+    expect(document.body.style.cursor).toBe('ns-resize')
+    act(() => {
+      handle.dispatchEvent(pointer('pointerup', 400))
+    })
+    expect(onHeightCommit).toHaveBeenCalledTimes(1)
+    expect(onHeightCommit).toHaveBeenCalledWith(400)
+    expect(document.body.style.cursor).toBe('')
+    height.mockRestore()
+  })
+
+  it('clamps a drag between the floor and the room under the pill', () => {
+    const { onHeightChange } = renderSized({ height: 300 })
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    act(() => {
+      handle.dispatchEvent(pointer('pointerdown', 500))
+      handle.dispatchEvent(pointer('pointermove', 900))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(COMPOSER_MIN_HEIGHT)
+    act(() => {
+      handle.dispatchEvent(pointer('pointermove', -5000))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
+  })
+
+  it('↑/↓ nudge by 24, Home/End jump to the bounds, a double-click returns to content height', () => {
+    const { onHeightCommit } = renderSized({ height: 300 })
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(324)
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(276)
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(COMPOSER_MIN_HEIGHT)
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
+    fireEvent.doubleClick(handle)
+    expect(onHeightCommit).toHaveBeenLastCalledWith(null)
+  })
+
+  it('reads the stored height floored, and content height on missing or garbage storage', () => {
+    expect(readStoredComposerHeight()).toBeNull()
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, 'tall')
+    expect(readStoredComposerHeight()).toBeNull()
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, '40')
+    expect(readStoredComposerHeight()).toBe(COMPOSER_MIN_HEIGHT)
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, '480')
+    expect(readStoredComposerHeight()).toBe(480)
   })
 })
 

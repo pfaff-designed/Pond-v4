@@ -70,6 +70,7 @@ import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
+import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
   AnswerError,
   EarlierTurns,
@@ -371,6 +372,7 @@ export function AITerminal() {
   // the accept handlers below construct it only when they actually run.
   const getSupabase = useLazySupabase()
   const pondId = usePondId()
+  const composerHeight = useComposerHeight()
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
   // so we can't drive the card's resolved state off the SDK part — the local maps
@@ -2393,7 +2395,7 @@ export function AITerminal() {
         />
       )}
       <div
-        className="max-h-[calc(100dvh-14rem)] min-h-0 overflow-y-auto"
+        className="max-h-[calc(100dvh-14rem)] min-h-0 flex-1 overflow-y-auto group-data-[sized]/composer:max-h-none"
         onKeyDown={handleBodyKeyDown}
       >
         <div className="flex w-full flex-col gap-[14px]">
@@ -2509,6 +2511,9 @@ export function AITerminal() {
         landed={answerLanded}
         onExpand={handleExpand}
         footer={inputFooter}
+        height={composerHeight.height}
+        onHeightChange={composerHeight.setHeight}
+        onHeightCommit={composerHeight.commitHeight}
       >
         {messagesBody}
       </TerminalDrawer>
