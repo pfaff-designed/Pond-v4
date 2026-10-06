@@ -102,6 +102,7 @@ import {
   composerFootprintPx,
 } from '@/lib/layout/composer-clearance'
 import {
+  COMPOSER_DEFAULT_HEIGHT,
   COMPOSER_HEIGHT_KEY,
   COMPOSER_MIN_HEIGHT,
   COMPOSER_TOP_CLEARANCE,
@@ -537,7 +538,7 @@ describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off 
 
 // ── The resize handle on the card's top edge ────────────────────────────────
 
-describe('ComposerHandle — the person sizes the card; content height until they do', () => {
+describe('ComposerHandle — the card never grows with the thread; only the person resizes it', () => {
   const pointer = (type: string, clientY: number) => {
     const event = new Event(type, { bubbles: true, cancelable: true })
     Object.assign(event, { pointerId: 1, clientY })
@@ -581,10 +582,15 @@ describe('ComposerHandle — the person sizes the card; content height until the
     expect(handle.tabIndex).toBe(0)
   })
 
-  it('is content-sized until a height is set, then fixed and capped below the ⌘K pill', () => {
+  it('with a thread it sits at the default, whatever the thread holds — capped below the ⌘K pill', () => {
     const { card } = renderSized()
-    expect(card.style.height).toBe('')
-    expect(card.hasAttribute('data-sized')).toBe(false)
+    expect(COMPOSER_DEFAULT_HEIGHT).toBe(316)
+    expect(card.style.height).toBe('316px')
+    expect(card.style.maxHeight).toBe(`calc(100% - ${COMPOSER_TOP_CLEARANCE + 24}px)`)
+    expect(card.hasAttribute('data-sized')).toBe(true)
+    cleanup()
+    // No height owner (a bare story) changes nothing: still the default, just no handle.
+    expect(renderDrawer().container.querySelector('section')!.style.height).toBe('316px')
     cleanup()
     const sized = renderSized({ height: 420 }).card
     expect(sized.style.height).toBe('420px')
@@ -593,9 +599,12 @@ describe('ComposerHandle — the person sizes the card; content height until the
     expect(COMPOSER_TOP_CLEARANCE).toBe(72)
   })
 
-  it('a stored height never sizes the card at rest', () => {
+  it('at rest the card is the line and toolbar alone — neither the default nor a stored height applies', () => {
+    expect(renderSized({}, null).card.style.height).toBe('')
+    cleanup()
     const { card } = renderSized({ height: 420 }, null)
     expect(card.style.height).toBe('')
+    expect(card.hasAttribute('data-sized')).toBe(false)
   })
 
   it('dragging up grows the card from its measured height, and commits once on release', () => {
@@ -631,7 +640,7 @@ describe('ComposerHandle — the person sizes the card; content height until the
     expect(onHeightChange).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
   })
 
-  it('↑/↓ nudge by 24, Home/End jump to the bounds, a double-click returns to content height', () => {
+  it('↑/↓ nudge by 24, Home/End jump to the bounds, a double-click returns to the default', () => {
     const { onHeightCommit } = renderSized({ height: 300 })
     const handle = screen.getByRole('separator', { name: 'Resize composer' })
     fireEvent.keyDown(handle, { key: 'ArrowUp' })
@@ -646,7 +655,7 @@ describe('ComposerHandle — the person sizes the card; content height until the
     expect(onHeightCommit).toHaveBeenLastCalledWith(null)
   })
 
-  it('reads the stored height floored, and content height on missing or garbage storage', () => {
+  it('reads the stored height floored, and the default (null) on missing or garbage storage', () => {
     expect(readStoredComposerHeight()).toBeNull()
     window.localStorage.setItem(COMPOSER_HEIGHT_KEY, 'tall')
     expect(readStoredComposerHeight()).toBeNull()

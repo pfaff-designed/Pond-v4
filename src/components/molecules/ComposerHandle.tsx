@@ -3,11 +3,11 @@
 /**
  * The composer card's resize handle: a grip riding the card's top edge. Dragging
  * it up grows the card (pointer capture), ↑/↓ nudge it, Home/End jump to the
- * bounds, and a double-click hands the height back to the content. The parent
+ * bounds, and a double-click returns it to the default height. The parent
  * owns the state and persistence (`useComposerHeight`): clamped live changes
  * through `onHeightChange`, one gesture-end commit through `onHeightCommit`.
  *
- * The card may be content-sized when a gesture starts, so the start height and
+ * The card may be at its default when a gesture starts, so the start height and
  * the ceiling are measured from the card and its shell rather than passed in.
  */
 
@@ -23,11 +23,11 @@ import {
 export interface ComposerHandleProps {
   /** The card being resized — measured at the start of each gesture. */
   cardRef: RefObject<HTMLElement | null>
-  /** The user-set height, or null while the card is content-sized. */
+  /** The user-set height, or null while the card sits at its default. */
   height: number | null
   /** Live height updates during a drag (clamped before delivery). */
   onHeightChange: (height: number) => void
-  /** Fired once when a gesture ends — persist here. `null` returns the card to content height. */
+  /** Fired once when a gesture ends — persist here. `null` returns the card to its default. */
   onHeightCommit: (height: number | null) => void
 }
 

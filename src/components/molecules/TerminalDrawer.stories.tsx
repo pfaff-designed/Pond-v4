@@ -5,7 +5,11 @@ import { useRef, useState } from 'react'
 import { ComposerLine } from './ComposerLine'
 import { TerminalDrawer } from './TerminalDrawer'
 import { COMPOSER_CLEARANCE_VAR } from '@/lib/layout/composer-clearance'
-import { COMPOSER_MIN_HEIGHT, composerMaxHeight } from '@/lib/layout/composer-height'
+import {
+  COMPOSER_DEFAULT_HEIGHT,
+  COMPOSER_MIN_HEIGHT,
+  composerMaxHeight,
+} from '@/lib/layout/composer-height'
 
 /**
  * The shell-side of the PondComposer card: where it sits, that it publishes its
@@ -113,9 +117,9 @@ export const DrawsNothingButTheCard: Story = {
 }
 
 /**
- * The handle on the card's top edge: content height until the person drags it,
- * then a fixed height with the thread scrolling inside, never past the ⌘K pill.
- * ↑/↓ nudge it, Home/End jump to the bounds, a double-click hands it back.
+ * The card never grows with the thread: it sits at 316 and the thread scrolls
+ * inside, until the person drags the handle on its top edge — never past the ⌘K
+ * pill. ↑/↓ nudge it, Home/End jump to the bounds, a double-click returns to 316.
  */
 export const WithTheHandle: Story = {
   name: 'with the handle',
@@ -132,7 +136,7 @@ export const WithTheHandle: Story = {
     const card = canvas.getByRole('region', { name: 'composer' })
     const handle = canvas.getByRole('separator', { name: 'Resize composer' })
     const cardH = () => Math.round(card.getBoundingClientRect().height)
-    const natural = cardH()
+    await expect(cardH()).toBe(COMPOSER_DEFAULT_HEIGHT)
 
     // The grip: 40 × 4, centred on the card, riding its top edge.
     const grip = handle.firstElementChild!.getBoundingClientRect()
@@ -143,7 +147,7 @@ export const WithTheHandle: Story = {
 
     handle.focus()
     await userEvent.keyboard('{ArrowUp}')
-    await expect(cardH()).toBe(natural + 24)
+    await expect(cardH()).toBe(COMPOSER_DEFAULT_HEIGHT + 24)
     await userEvent.keyboard('{Home}')
     await expect(cardH()).toBe(COMPOSER_MIN_HEIGHT)
     const thread = card.querySelector<HTMLElement>('.overflow-y-auto')!
@@ -155,8 +159,7 @@ export const WithTheHandle: Story = {
     await expect(Math.round(card.getBoundingClientRect().top - shell.getBoundingClientRect().top)).toBe(72)
 
     await userEvent.dblClick(handle)
-    await expect(cardH()).toBe(natural)
-    await expect(card.style.height).toBe('')
+    await expect(cardH()).toBe(COMPOSER_DEFAULT_HEIGHT)
   },
 }
 
