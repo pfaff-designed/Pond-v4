@@ -12,7 +12,7 @@ import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import { SlashMenu, type SlashRow } from '@/components/molecules/SlashMenu'
+import { SlashMenu } from '@/components/molecules/SlashMenu'
 import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
@@ -115,12 +115,10 @@ describe('the / menu speaks Pond’s words only', () => {
     }
   })
 
-  it('every descriptor names itself in Pond’s words, with a short lowercase palette line', () => {
+  it('every descriptor names itself in Pond’s words', () => {
     for (const d of Object.values(moduleDescriptors)) {
       expect(ALLOWED.has(d.label)).toBe(true)
       expect(d.label).toBe(d.label.toLowerCase())
-      expect(d.paletteDescription).toBe(d.paletteDescription.toLowerCase())
-      expect(d.paletteDescription.length).toBeLessThan(80)
     }
   })
 })
@@ -173,6 +171,20 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     })
   })
 
+  it('the `pages` group makes pages, not blocks: its rows mint nothing and say where the page goes', () => {
+    expect(mintPreset('page')).toBeNull()
+    expect(mintPreset('nested-page')).toBeNull()
+    expect(slashRows.find((r) => r.id === 'page')?.placement).toBe('sibling')
+    expect(slashRows.find((r) => r.id === 'nested-page')?.placement).toBe('child')
+    expect(slashRows.filter((r) => r.placement).map((r) => r.id)).toEqual(['page', 'nested-page'])
+  })
+
+  it('leaves out the two rows nothing can serve: `page link` and `pond — update`', () => {
+    const labels = slashRows.map((r) => r.label)
+    expect(labels).not.toContain('page link')
+    expect(labels).not.toContain('pond — update')
+  })
+
   it('the board draws no `board` row, so the menu offers none', () => {
     expect(slashRows.some((r) => r.id === 'board' || r.label === 'board')).toBe(false)
   })
@@ -191,6 +203,8 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/big number',
       'blocks/entry log',
       'templates/page from template',
+      'pages/page',
+      'pages/nested page',
     ])
   })
 
@@ -207,7 +221,7 @@ describe('open', () => {
     expect(glass().querySelector('input')).toBeNull()
     expect(glass()).toHaveClass('mn-glass', 'rounded-mn-card')
     const groups = [...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
-    expect(groups).toEqual(['text', 'blocks', 'templates'])
+    expect(groups).toEqual(['text', 'blocks', 'templates', 'pages'])
     expect(labelOf(selected())).toBe('text')
     expect(within(selected()).getByText('↵')).toBeInTheDocument()
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
@@ -255,24 +269,49 @@ describe('filtered', () => {
     expect(table.querySelector('[data-part="post"]')!.textContent).toBe('ble')
     // (The board's fixture also lists `page from template` here with its hit at
     // index 13 — "pl" — which is fixture noise: that label contains no "ta".)
-    const n = options().length
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
-      `/ ta — ${n} ${n === 1 ? 'match' : 'matches'}`
-    )
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual(['table', 'entry log'])
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
     expect(labelOf(selected())).toBe('table')
   })
 
-  it('a row matched through its description shows that description as its hint, with nothing underlined', () => {
-    const rows: SlashRow[] = [
-      { id: 'a', label: 'entry log', description: 'a dated table', icon: { d: 'M0 0' } },
-      { id: 'b', label: 'chart', description: 'figures over time', icon: { d: 'M0 0' } },
-    ]
-    renderMenu({ rows, query: 'table' })
-    expect(options()).toHaveLength(1)
-    const row = options()[0]
-    expect(row.querySelector('[data-part="hit"]')!.textContent).toBe('')
-    fireEvent.mouseLeave(row)
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('/ table — 1 match')
+  it('a row matched through its alias shows that alias as its hint, with nothing underlined', () => {
+    renderMenu({ query: 'ta' })
+    const log = options().find((o) => labelOf(o as HTMLElement) === 'entry log')!
+    expect(log.querySelector('[data-part="hit"]')!.textContent).toBe('')
+    expect(within(log).getByText('dated table')).toBeInTheDocument()
+  })
+
+  it('the aliases are entry log = dated table, checklist = todo, chart = graph', () => {
+    const alias = (id: string) => slashRows.find((r) => r.id === id)?.alias
+    expect(alias('entry-log')).toBe('dated table')
+    expect(alias('checklist')).toBe('todo')
+    expect(alias('chart')).toBe('graph')
+    for (const [query, label] of [
+      ['todo', 'checklist'],
+      ['graph', 'chart'],
+      ['dated', 'entry log'],
+    ]) {
+      const { unmount } = renderMenu({ query })
+      expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([label])
+      unmount()
+    }
+  })
+
+  it('a label match leads an alias match, and the first match stays selected as the query grows', () => {
+    const { rerender, onSelect, onClose, anchor } = renderMenu({ query: 't' })
+    expect(labelOf(selected())).toBe('text')
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query="ta"
+        anchor={anchor}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    )
+    expect(labelOf(selected())).toBe('table')
+    fireEvent.keyDown(anchor, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'table' }))
   })
 
   it('matching is case-insensitive and ignores surrounding space', () => {
@@ -289,6 +328,118 @@ describe('empty', () => {
       'nothing called “zz”. esc to keep it as text, or ask pond in the composer.'
     )
     expect(glass().querySelector('[data-part="foot"]')).toBeNull()
+  })
+})
+
+describe('a space when nothing matches', () => {
+  it('closes the menu and is not swallowed, so the typed text stays text', () => {
+    const { anchor, onClose } = renderMenu({ query: 'zz' })
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    anchor.dispatchEvent(space)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(space.defaultPrevented).toBe(false)
+  })
+
+  it('does nothing while something matches — a space inside `big number` is part of the query', () => {
+    const { anchor, onClose } = renderMenu({ query: 'big' })
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    anchor.dispatchEvent(space)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(space.defaultPrevented).toBe(false)
+  })
+})
+
+describe('mobile', () => {
+  it('is 340 wide with 11px 10px rows at 14, where desktop is 300 and 7px 10px at 12.5', () => {
+    const { unmount } = renderMenu()
+    expect(glass()).toHaveClass('w-[300px]')
+    expect(options()[0]).toHaveClass('py-[7px]', 'text-[12.5px]')
+    unmount()
+    renderMenu({ size: 'mobile' })
+    expect(glass()).toHaveClass('w-[340px]')
+    for (const o of options()) expect(o).toHaveClass('py-[11px]', 'px-[10px]', 'text-[14px]')
+  })
+
+  it('stops the open list at 12 entries, counting the group heads', () => {
+    renderMenu({ size: 'mobile' })
+    const entries = glass().querySelectorAll('[data-part="group"], [role="option"]')
+    expect(entries).toHaveLength(12)
+    expect([...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)).toEqual([
+      'text',
+      'blocks',
+    ])
+    expect(
+      options()
+        .map((o) => labelOf(o as HTMLElement))
+        .at(-1)
+    ).toBe('big number')
+  })
+
+  it('does not cap a query', () => {
+    renderMenu({ size: 'mobile', query: 'e' })
+    const desktop = options().length
+    expect(desktop).toBeGreaterThan(0)
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
+      `/ e — ${desktop} matches`
+    )
+  })
+
+  it('shows 8 premade shapes in the templates pane, then the person’s own', () => {
+    renderMenu({
+      size: 'mobile',
+      defaultPane: 'templates',
+      yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
+    })
+    expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
+      ...TEMPLATE_KINDS.slice(0, 8),
+      'weeknight recipe',
+    ])
+    expect(glass().querySelector('[data-part="head"]')).toHaveClass('text-[13px]')
+  })
+
+  it('sets the empty note at 13', () => {
+    renderMenu({ size: 'mobile', query: 'zz' })
+    expect(glass().querySelector('[data-part="note"]')).toHaveClass('text-[13px]')
+  })
+})
+
+describe('opened on the templates', () => {
+  it('leads with the templates, and the first change of query returns to the blocks', () => {
+    const { rerender, anchor, onSelect, onClose } = renderMenu({ defaultPane: 'templates' })
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    expect(glass().querySelector('[data-part="head"]')!.textContent).toBe('page from template')
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query="t"
+        anchor={anchor}
+        defaultPane="templates"
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    )
+    expect(glass()).toHaveAttribute('data-pane', 'rows')
+    expect(glass().querySelector('[data-part="head"]')).toBeNull()
+  })
+
+  it('a pane walked into stays through a query — only an opening on the templates gives way', () => {
+    const { rerender, anchor, onSelect, onClose } = renderMenu()
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    rerender(
+      <SlashMenu rows={slashRows} query="t" anchor={anchor} onSelect={onSelect} onClose={onClose} />
+    )
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+  })
+
+  it('lists the person’s own templates under `yours`, and picking one hands back its id', () => {
+    const { onPickTemplate } = renderMenu({
+      defaultPane: 'templates',
+      yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
+    })
+    fireEvent.click(options().find((o) => labelOf(o as HTMLElement) === 'weeknight recipe')!)
+    expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
   })
 })
 
@@ -362,7 +513,7 @@ describe('keys arrive from the field the person is typing in', () => {
     fireEvent.keyDown(anchor, { key: 'ArrowUp' })
     expect(labelOf(selected())).toBe('text')
     for (let i = 0; i < 30; i++) fireEvent.keyDown(anchor, { key: 'ArrowDown' })
-    expect(labelOf(selected())).toBe('page from template')
+    expect(labelOf(selected())).toBe('nested page')
   })
 
   it('esc keeps the typed text: it closes the menu and does not touch the field', () => {

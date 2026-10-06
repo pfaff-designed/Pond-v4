@@ -197,7 +197,7 @@ describe('AITerminal — configure_view proposal card', () => {
 
   it('renders a configure_view card for a tool-configure_view message part', async () => {
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
     expect(screen.getByText('New view · Board')).toBeInTheDocument()
     expect(screen.getByText('Grouped by')).toBeInTheDocument()
@@ -209,7 +209,7 @@ describe('AITerminal — configure_view proposal card', () => {
   it('Accept writes via configureViewFromProposal and settles the card', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: 'Apply view' }))
 
@@ -230,7 +230,7 @@ describe('AITerminal — configure_view proposal card', () => {
     mockMessages = linkedViewMessage()
     mockNodeId = 'home-dashboard' // the currently-open host page
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
     // The picker is relabelled for a linked view and pre-selects the named target.
     expect(screen.getByText('Draw rows from')).toBeInTheDocument()
@@ -256,7 +256,7 @@ describe('AITerminal — configure_view proposal card', () => {
   it('Reject settles the card inert without writing', async () => {
     const user = userEvent.setup()
     renderWithQuery(<AITerminal />)
-    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: 'Dismiss' }))
 

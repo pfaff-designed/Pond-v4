@@ -4,9 +4,8 @@
  * Pond becomes a thinking partner with a project arc: an ordinary chat can
  * enter a lifecycle — GRILL → WAYFINDING → BUILD-OUT — when the user brings a
  * NEW-project-shaped ask. This module is the PURE, server-safe core of that
- * arc: intent detection, the phase state machine, the transition signals, the
- * quiet phase word for the context bar, and the persist/parse round-trip for
- * the transcript envelope. No React, no SDK, no I/O — so the whole thing is
+ * arc: intent detection, the phase state machine, the transition signals, and
+ * the persist/parse round-trip for the transcript envelope. No React, no SDK, no I/O — so the whole thing is
  * jest-pinnable with literals.
  *
  * What this module deliberately does NOT do: the adaptive-grill REASONING (how
@@ -39,8 +38,7 @@ export const WORKING_PHASES: readonly LifecyclePhase[] = ['grill', 'wayfinding',
 /**
  * Read of the project's stakes, set when the lifecycle begins (spec §2: "big/
  * vague → keep going; small/clear → 2-3 sharp questions"). The model STATES this
- * read to the user so they can override; we record it so the phase word and the
- * prompt can reflect it. `undefined` until the grill begins.
+ * read to the user so they can override; we record it so the prompt can reflect it. `undefined` until the grill begins.
  */
 export type ProjectStakes = 'small' | 'big'
 
@@ -54,7 +52,7 @@ export type ProjectStakes = 'small' | 'big'
 export interface LifecycleState {
   phase: LifecyclePhase
   /** The project's working name, once the user has named it. Drives the
-   *  context bar ("Context: Kiln Studio · charting") and the Brief page. */
+   *  Brief page. */
   projectName?: string
   /** The stakes read the model stated at grill start, so the UI + prompt echo
    *  the same posture the user was told. */
@@ -168,9 +166,7 @@ const ADVANCE = [
   /\bthat'?s the plan\b/i,
 ]
 
-const ABANDON = [
-  /\b(never ?mind|forget it|drop it|cancel|stop|not now|leave it)\b/i,
-]
+const ABANDON = [/\b(never ?mind|forget it|drop it|cancel|stop|not now|leave it)\b/i]
 
 /**
  * The signal a user message carries within an active lifecycle. `escape` reuses
@@ -228,9 +224,7 @@ export function applyLifecycleSignal(
     case 'abandon':
       return idleLifecycle()
     case 'stay':
-      return state.phase === 'grill'
-        ? { ...state, grillTurns: (state.grillTurns ?? 0) + 1 }
-        : state
+      return state.phase === 'grill' ? { ...state, grillTurns: (state.grillTurns ?? 0) + 1 } : state
   }
 }
 
@@ -251,43 +245,6 @@ export function beginLifecycle(
     ...(opts.stakes ? { stakes: opts.stakes } : {}),
   }
   return { ...base, phase: intent === 'escape-hatch' ? 'build-out' : 'grill' }
-}
-
-// ── Context-bar phase word ───────────────────────────────────────────────────
-
-/**
- * The quiet Press word for the terminal context bar (spec §2 "quiet phase
- * indicator"): grilling → charting → building. Lower-case, calm — a whispered
- * status, never a shouty stage. `idle` has no word (the bar shows just the
- * context label, no phase clause).
- */
-const PHASE_WORD: Record<LifecyclePhase, string | null> = {
-  idle: null,
-  grill: 'grilling',
-  wayfinding: 'charting',
-  'build-out': 'building',
-}
-
-export function lifecyclePhaseWord(state: LifecycleState): string | null {
-  return PHASE_WORD[state.phase]
-}
-
-/**
- * The full context-bar label for a lifecycle turn: e.g. "Kiln Studio ·
- * charting" when a named project is mid-charting, or just the base label when
- * idle. The terminal passes its base context label (the open page name or
- * "Life"); this appends the quiet phase clause, preferring the project name
- * over the base label while a project is in flight.
- *
- *   idle                        → base
- *   grill, no name              → "base · grilling"
- *   charting, name "Kiln Studio"→ "Kiln Studio · charting"
- */
-export function lifecycleContextLabel(state: LifecycleState, baseLabel: string): string {
-  const word = lifecyclePhaseWord(state)
-  if (!word) return baseLabel
-  const subject = state.projectName?.trim() || baseLabel
-  return `${subject} · ${word}`
 }
 
 // ── Persist / parse round-trip (transcript envelope) ─────────────────────────

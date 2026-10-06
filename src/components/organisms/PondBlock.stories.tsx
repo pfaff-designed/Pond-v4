@@ -64,7 +64,7 @@ const inkTheme: Decorator = (Story) => (
 )
 
 const meta = {
-  title: 'Organisms/PondBlock',
+  title: 'Organisms/2i · blocks',
   component: PondBlock,
   parameters: { layout: 'padded' },
   args: { kind: 'list', heading: 'notifications', headNote: '3', children: null },

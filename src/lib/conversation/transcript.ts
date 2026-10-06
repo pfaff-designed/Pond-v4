@@ -19,3 +19,22 @@ import type { ModelMessage, UIMessage } from 'ai'
 export async function toModelMessages(messages: UIMessage[]): Promise<ModelMessage[]> {
   return convertToModelMessages(messages, { ignoreIncompleteToolCalls: true })
 }
+
+const isWebSearchPart = (part: UIMessage['parts'][number]): boolean =>
+  part.type === 'tool-web_search' ||
+  (part.type === 'dynamic-tool' && (part as { toolName?: string }).toolName === 'web_search')
+
+/**
+ * Drop provider-run `web_search` calls and results from a transcript, keeping the
+ * text and citations around them. Replaying them with `web_search` absent from the
+ * request's tools sends the provider server-tool blocks for a tool it was not
+ * given; a message left with nothing is dropped.
+ */
+export function withoutWebSearch(messages: UIMessage[]): UIMessage[] {
+  return messages.flatMap((message) => {
+    if (message.role !== 'assistant' || !message.parts.some(isWebSearchPart)) return [message]
+    const parts = message.parts.filter((part) => !isWebSearchPart(part))
+    const hasContent = parts.some((part) => part.type !== 'step-start')
+    return hasContent ? [{ ...message, parts }] : []
+  })
+}

@@ -35,7 +35,6 @@ import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { propertiesFrame } from '@/lib/modules/block-frame'
 import { BacklinksPanel } from '@/components/organisms/BacklinksPanel'
-import { CrumbMark } from '@/components/organisms/PageMarkButton'
 import { usePageChangesPanel } from '@/components/organisms/PageChangesPanel'
 import {
   readSchema,
@@ -46,14 +45,13 @@ import {
 } from '@/lib/properties/schema'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { ChildrenGrid } from '@/components/molecules/ChildrenGrid'
-import { Breadcrumb } from '@/components/molecules/Breadcrumb'
 import { ContentWidthHandle } from '@/components/molecules/ContentWidthHandle'
 import { useContentWidth } from '@/lib/layout/content-width'
-import { ShellBreadcrumb } from '@/lib/layout/breadcrumb-slot'
 import { useSurfaceColumn } from '@/lib/layout/surface-column'
-import { requestCommandPalette } from '@/lib/shell-commands'
+import { usePublishCommandPath } from '@/lib/layout/command-path'
+import { commandPath } from '@/lib/pages/command-path'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { childCards } from '@/lib/pages/child-cards'
-import { crumbTrail } from '@/lib/pages/crumbs'
 import { titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
@@ -86,9 +84,9 @@ export function DocumentPanel() {
   const { column, handle } = useSurfaceColumn(contentWidth)
 
   // The root page (#234). Life's blocks live on the reserved home row, created on
-  // first access; it is read for every page because the breadcrumb's root crumb
-  // is that page's own title — "Breadcrumb starts at the root page" (AUDIT W9),
-  // not an assumed name.
+  // first access; it is read for every page because the path's root (the
+  // `PondCommand` pill) is that page's own title — "Breadcrumb starts at the root
+  // page" (AUDIT W9), not an assumed name.
   // #312: the root is per POND, so the cache key carries the pond and the query
   // waits for it. Without `enabled` a first render would create (or read) a root
   // in the wrong pond before the pond resolved.
@@ -142,15 +140,8 @@ export function DocumentPanel() {
   // The root's children are the top-level pages (`null` parent); the home row is
   // never among the rows (fetchPages strips it), so it is never its own child.
   const cards = useMemo(() => childCards(rows, nodeId, new Date()), [rows, nodeId])
-  // The ancestor trail for the header — the title input stays the tail, so the
-  // pill shows only the path down to (not including) this node, starting at the
-  // ROOT it descends from (#101 review: `databases` is 3c's second root, not one
-  // of life's). The root itself (or an unknown node) resolves to the empty
-  // life-rooted trail, so the pill reads just the root page's name.
-  const trail = useMemo(() => crumbTrail(rows, nodeId ?? ''), [rows, nodeId])
-  // Card → page and crumb → page are the one navigation (lib/pages/nav): a `null`
-  // crumb is the root, and a card or crumb carries its own id/type/title, so the
-  // URL gets the same params a rail click would.
+  // Card → page is the one navigation (lib/pages/nav): a card carries its own
+  // id/type/title, so the URL gets the same params a rail click would.
   function goTo(ref: WorkspaceNodeRef | null) {
     router.push(workspaceUrl(ref))
   }
@@ -297,6 +288,16 @@ export function DocumentPanel() {
   const propSchema = page ? readSchema(page.props) : null
   const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt)
 
+  // The shell's `PondCommand` reads this page's path at rest: the root, the
+  // ancestors, then this page — its name read off the row until the page lands.
+  usePublishCommandPath(
+    commandPath(rows, nodeId, {
+      rootTitle: home?.title || pondName || 'life',
+      current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
+      pondGlyph: pond?.glyph ?? LIFE_GLYPH,
+    })
+  )
+
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
     return (
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
@@ -327,22 +328,6 @@ export function DocumentPanel() {
           onWidthChange={setContentWidth}
           onWidthCommit={commitWidth}
         />
-        {/* Breadcrumb shows the ancestor path (ticket-25); the title input below
-            is the editable tail, so the crumb never duplicates the current name. */}
-        {/* #134: the trail's lead mark is clickable — it opens the picker for the
-            area the trail starts in. */}
-        {/* #96: the pill is a SHELL-level absolute (2t / `Pond 05 Shell`) — it
-            portals into the shell's slot and the page scrolls under it; ⌘K rides
-            in it (ADR 0002). Rendered alone, it sits here in the flow. */}
-        <ShellBreadcrumb>
-          <Breadcrumb
-            {...trail}
-            rootLabel={home?.title}
-            onNavigate={goTo}
-            leadMark={<CrumbMark rows={rows} crumbs={trail.crumbs} />}
-            onCommandK={requestCommandPalette}
-          />
-        </ShellBreadcrumb>
         {/* The title row (`Pond 06.21` 6u.1): the page's name at left, and at right
             one eyebrow — `{kind} — {save state}`. The save state lives here and
             nowhere else; no kind set, and the eyebrow is the state alone. */}

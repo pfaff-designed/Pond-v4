@@ -17,7 +17,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { listPonds, type Pond } from './client'
 import { resolveActivePond, useActivePondId } from './active'
 
-interface PondContextValue {
+export interface PondContextValue {
   /** The active pond, or null before the list has loaded. */
   pond: Pond | null
   ponds: Pond[]
@@ -32,7 +32,8 @@ interface PondContextValue {
   addPond: (pond: Pond) => void
 }
 
-const PondContext = createContext<PondContextValue>({
+/** Exported so a story can stand a pond list in without a Supabase round trip. */
+export const PondContext = createContext<PondContextValue>({
   pond: null,
   ponds: [],
   loading: false,

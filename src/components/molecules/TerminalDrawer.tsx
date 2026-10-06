@@ -1,286 +1,189 @@
 'use client'
 
 /**
- * The presentational shell for the AI terminal (ticket-24). Owns the drawer
- * ergonomics — collapse, user-resize with a drag handle, and remembered height —
- * so the AITerminal organism can stay focused on chat/proposal data.
+ * The PondComposer card (`PondComposer.dc.html` `glass`, board 2f): one
+ * floating sheet of glass — 560 wide (360 below md), padding 14, gap 14, radius
+ * 20 — holding the thread, then the line and toolbar, 24px off the bottom.
+ * At rest it is as tall as the line and toolbar. Once it holds a thread it does
+ * NOT grow with it: it sits at `COMPOSER_DEFAULT_HEIGHT` and the thread scrolls
+ * inside. Only the person changes that, with `ComposerHandle` on its top edge,
+ * and the card never rises past the ⌘K pill (`COMPOSER_MAX_HEIGHT_CSS`).
  *
- * #96 (`Pond 05 Shell`): the drawer FLOATS over the bottom of the SHELL as an
- * absolute overlay — the composer card is centred on the whole shell at
- * `calc(50% + 13px)`, 534 wide, 24px off the bottom — and the page scrolls
- * behind it. The flanks either side of the card click through to the page
- * beneath. The drawer publishes its real footprint as a CSS custom property on
- * the shell (`COMPOSER_CLEARANCE_VAR`, lib/layout/terminal-height) and the
- * surfaces pad against it, so there is ONE source for "how much room the
- * composer needs" — collapsed, dragged or auto-grown for a proposal alike.
+ * Placement is the storyboards' `left:246px; right:20px; bottom:24px` (rail
+ * 20+206+20): centred on the area right of the rail, i.e. `calc(50% + 113px)` of
+ * the shell. Below md the rail is not beside it, so the card centres on the shell.
  *
- * Height is controlled by the parent (persisted to localStorage there); this
- * molecule reports drag deltas and toggles via callbacks. Purely presentational
- * and prop-driven so its states are exercisable in Storybook.
+ * The card publishes its real footprint on the shell (`COMPOSER_CLEARANCE_VAR`,
+ * lib/layout/composer-clearance) and the page surfaces pad against it.
  *
- * ticket-42: the terminal's visible chrome lives entirely within the card. The
- * outer section is transparent so paper shows through around it — no full-width
- * beige slab. The card itself is floating glass (`mn-glass`, composer radius 20
- * — handoff README § Surfaces).
+ * Collapsed, the card becomes the tab (`PondComposer` `collapsed`/`landed`): 30px of
+ * the same glass on the shell's bottom edge, a pill riding its top edge with the
+ * chevron, and `⌘J` below it. When an answer arrived while it was closed the pill
+ * also says `pond answered`, in a 6px dot and words — never a ping, badge or count.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { ComposerHandle } from '@/components/molecules/ComposerHandle'
 import {
   COMPOSER_CLEARANCE_VAR,
-  clampTerminalHeight,
-  drawerFootprintPx,
-} from '@/lib/layout/terminal-height'
-
-// The height contract lives in lib/layout/terminal-height; re-exported here so
-// the drawer stays the one import its consumers already know.
-export {
-  TERMINAL_MIN_HEIGHT,
-  TERMINAL_MAX_HEIGHT,
-  TERMINAL_DEFAULT_HEIGHT,
-  TERMINAL_COLLAPSED_HEIGHT,
-  clampTerminalHeight,
-} from '@/lib/layout/terminal-height'
+  COMPOSER_TAB_INSET,
+  composerFootprintPx,
+} from '@/lib/layout/composer-clearance'
+import { COMPOSER_DEFAULT_HEIGHT, COMPOSER_MAX_HEIGHT_CSS } from '@/lib/layout/composer-height'
+import { cn } from '@/lib/utils'
 
 export interface TerminalDrawerProps {
-  /** Context label shown in the header strip (e.g. the open page name). */
-  contextLabel: string
-  /** Body height in px when expanded (excludes the header strip). */
-  height: number
   collapsed: boolean
-  onToggleCollapsed: () => void
-  /** Live height updates during a resize gesture (clamped before delivery). */
-  onHeightChange: (height: number) => void
-  /** Fired once when a resize gesture ends — persist here, not per move. */
-  onHeightCommit?: (height: number) => void
-  /** Wired to the existing /clear behavior — a visible affordance, not just placeholder text. */
-  onClear: () => void
-  /** The transcript / proposal region. */
+  /** An answer arrived while the composer was closed — the tab says so. */
+  landed?: boolean
+  onExpand: () => void
+  /** The thread — turns, proposal cards, the running answer. Empty at rest. */
   children: ReactNode
-  /** The input row (textarea + send). */
+  /** Attachments, the line and the toolbar. */
   footer: ReactNode
-  /** True while there is any transcript to clear (disables the Clear control when empty). */
-  canClear?: boolean
+  /** The user-set card height (`useComposerHeight`), or null for the default. */
+  height?: number | null
+  /** Live height during a handle drag. Without it the card draws no handle. */
+  onHeightChange?: (height: number) => void
+  /** A finished resize gesture; `null` returns the card to its default. */
+  onHeightCommit?: (height: number | null) => void
 }
 
-export function TerminalDrawer({
-  contextLabel,
-  height,
+const PLACEMENT =
+  'absolute left-1/2 z-30 w-[360px] max-w-full -translate-x-1/2 md:left-[calc(50%_+_113px)] md:w-[560px]'
+const CARD_PLACEMENT = cn(PLACEMENT, 'bottom-6')
+const TAB_PLACEMENT = cn(PLACEMENT, 'bottom-0')
+
+/** The tab and its pill throw their shadow UP, off the bottom edge — the glass role
+ *  reassigned for them alone, so the paper and ink values both come through `mn-glass`. */
+const TAB_SHADOW =
+  '[--mn-glass-shadow:inset_0_1px_0_rgba(255,255,255,0.7),0_-8px_28px_rgba(40,34,24,0.12)] dark:[--mn-glass-shadow:inset_0_1px_0_rgba(250,249,239,0.06),0_-8px_28px_rgba(0,0,0,0.3)]'
+
+export const TerminalDrawer = ({
   collapsed,
-  onToggleCollapsed,
-  onHeightChange,
-  onHeightCommit,
-  onClear,
+  landed = false,
+  onExpand,
   children,
   footer,
-  canClear = true,
-}: TerminalDrawerProps) {
-  // #96 (one source, not three magic numbers): publish the drawer's footprint
-  // on the shell element so the page surfaces can pad against the REAL height —
-  // 40 collapsed, the dragged height, or the proposal floor — instead of a
-  // fixed stand-in. Layout effect, so the padding lands in the same frame as
-  // the card. Outside a shell (Storybook) there is nothing to publish to.
-  const sectionRef = useRef<HTMLElement>(null)
-  const footprint = drawerFootprintPx(height, collapsed)
+  height = null,
+  onHeightChange,
+  onHeightCommit,
+}: TerminalDrawerProps) => {
+  const cardRef = useRef<HTMLElement>(null)
+
+  // Publish the card's real footprint on the shell so the page surfaces pad
+  // against it as the thread grows. Layout effect: the padding lands in the same
+  // frame as the card. Outside a shell (Storybook) there is nothing to publish to.
   useLayoutEffect(() => {
-    const shell = sectionRef.current?.closest<HTMLElement>('[data-part="shell"]')
-    if (!shell) return
-    shell.style.setProperty(COMPOSER_CLEARANCE_VAR, `${footprint}px`)
+    const card = cardRef.current
+    const shell = card?.closest<HTMLElement>('[data-part="shell"]')
+    if (!card || !shell) return
+    const publish = () =>
+      shell.style.setProperty(
+        COMPOSER_CLEARANCE_VAR,
+        `${composerFootprintPx(card.offsetHeight, collapsed ? COMPOSER_TAB_INSET : undefined)}px`
+      )
+    publish()
+    // jsdom has no ResizeObserver; the first publish is all a unit test needs.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(card)
     return () => {
+      observer?.disconnect()
       shell.style.removeProperty(COMPOSER_CLEARANCE_VAR)
     }
-  }, [footprint])
+  }, [collapsed])
 
-  // Drag-to-resize via pointer capture on the handle: captured move/up/cancel
-  // events are routed to the handle even when the cursor leaves the thin strip,
-  // and pointerId matching keeps a second pointer (multi-touch) from jittering
-  // an in-flight drag. `lastHeight` is what a cancel/up commits — pointercancel
-  // events can carry garbage coordinates, so we never recompute from them.
-  const dragState = useRef<{
-    pointerId: number
-    startY: number
-    startHeight: number
-    lastHeight: number
-  } | null>(null)
-
-  const releaseBodyStyles = () => {
-    document.body.style.removeProperty('user-select')
-    document.body.style.removeProperty('cursor')
-  }
-
-  // If the drawer unmounts mid-drag, don't leave the page stuck in ns-resize/no-select.
-  useEffect(
-    () => () => {
-      if (dragState.current) releaseBodyStyles()
-    },
-    []
-  )
-
-  const startDrag = useCallback(
-    (e: React.PointerEvent) => {
-      if (collapsed || dragState.current) return
-      e.preventDefault()
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId)
-      } catch {
-        /* capture can fail for already-released pointers; the drag still works while over the handle */
-      }
-      dragState.current = {
-        pointerId: e.pointerId,
-        startY: e.clientY,
-        startHeight: height,
-        lastHeight: height,
-      }
-      // Kill text selection + show the resize cursor for the whole drag.
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'ns-resize'
-    },
-    [collapsed, height]
-  )
-
-  const onHandlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const st = dragState.current
-      if (!st || e.pointerId !== st.pointerId) return
-      // Drag up (negative deltaY) grows the drawer.
-      const next = clampTerminalHeight(st.startHeight + (st.startY - e.clientY))
-      st.lastHeight = next
-      onHeightChange(next)
-    },
-    [onHeightChange]
-  )
-
-  // Shared end for pointerup AND pointercancel (touch-scroll takeover, OS
-  // interrupt): clear the drag, release body styles, commit the last height the
-  // user actually saw.
-  const endDrag = useCallback(
-    (e: React.PointerEvent) => {
-      const st = dragState.current
-      if (!st || e.pointerId !== st.pointerId) return
-      dragState.current = null
-      releaseBodyStyles()
-      onHeightCommit?.(st.lastHeight)
-    },
-    [onHeightCommit]
-  )
-
-  // Keyboard resize on the handle for accessibility (↑/↓ nudge by 24px). Each
-  // press is a complete gesture, so it commits immediately.
-  const onHandleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (collapsed) return
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        e.preventDefault()
-        const next = clampTerminalHeight(height + (e.key === 'ArrowUp' ? 24 : -24))
-        onHeightChange(next)
-        onHeightCommit?.(next)
-      }
-    },
-    [collapsed, height, onHeightChange, onHeightCommit]
-  )
-
-  // ticket-42: the outer section is transparent — no full-width bg-card slab.
-  // #96: it is an absolute overlay anchored to the bottom of the SHELL (z-30,
-  // above the page), with pointer-events off so everything beside the card
-  // stays scrollable/clickable; the handle and the card opt back in. The
-  // section manages height so the card grows UPWARD from its anchor.
-  return (
-    <section
-      ref={sectionRef}
-      className="absolute inset-x-0 bottom-0 z-30 pointer-events-none"
-      style={{ height: footprint }}
-      aria-label="Pond terminal"
-    >
-      {/* The composer column (`Pond 05 Shell`, measured): centred on the WHOLE
-          shell at left calc(50% + 13px) / translateX(-50%), 534 wide outside
-          (the mockup's 508 content box + 12px padding + 1px border). The handle
-          and the card share this column, so neither reaches over the rail. */}
-      <div
-        data-part="composer-column"
-        className="absolute inset-y-0 left-[calc(50%_+_13px)] flex w-[534px] max-w-full -translate-x-1/2 flex-col"
-      >
-        {/* Resize handle — a strip along the column's top edge (hidden when
-            collapsed). `relative z-40` lifts it ABOVE the card below, so the
-            grip is never covered and always grabbable; pulled up (-mt-3) so the
-            grip sits clear of the card's top border. */}
-        {!collapsed && (
-          <div
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="Resize terminal"
-            tabIndex={0}
-            onPointerDown={startDrag}
-            onPointerMove={onHandlePointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onKeyDown={onHandleKeyDown}
-            className="group relative z-40 h-4 -mt-3 cursor-ns-resize flex items-center outline-none touch-none pointer-events-auto"
-            data-testid="terminal-resize-handle"
-          >
-            {/* The visible grip, centred over the card. */}
-            <span className="mx-auto w-full px-8 flex justify-center">
-              <span className="h-1 w-10 rounded-full bg-mn-text-secondary/40 group-hover:bg-mn-text group-focus:bg-mn-text transition-colors" />
-            </span>
-          </div>
+  if (collapsed) {
+    return (
+      <section
+        ref={cardRef}
+        aria-label="composer"
+        data-part="composer-card"
+        data-state={landed ? 'landed' : 'collapsed'}
+        className={cn(
+          TAB_PLACEMENT,
+          TAB_SHADOW,
+          'mn-glass box-border flex h-[30px] justify-center rounded-[14px_16px_0_0] border-b-0 font-mono text-mn-text'
         )}
-
-        {/* The whole chat is ONE floating glass card (`Pond 05 Shell`: the
-            composer sits 24px off the bottom) — not a full-width dock. The card
-            carries the glass recipe and the composer radius (20); header / body /
-            footer live inside it as sections. */}
-        <div className="flex-1 min-h-0 flex pb-6">
-          <div
-            data-part="composer-card"
-            className="mn-glass pointer-events-auto w-full min-h-0 flex flex-col overflow-hidden rounded-mn-card"
+      >
+        <button
+          type="button"
+          onClick={onExpand}
+          aria-expanded={false}
+          aria-keyshortcuts="Meta+J Control+J"
+          aria-label={landed ? 'Open composer — pond answered' : 'Open composer'}
+          className="relative flex size-full cursor-pointer justify-center"
+        >
+          <span
+            data-part="tab-pill"
+            className={cn(
+              TAB_SHADOW,
+              'mn-glass absolute left-1/2 top-[-13px] flex h-[26px] -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full px-[14px] text-[11px]'
+            )}
           >
-            {/* Header: context + visible controls (collapse toggle, clear).
-                MN: the composer is a machine surface, so its chrome speaks the mono
-                machine voice (lowercase, no added tracking) — not the correspondence
-                serif. The context VALUE stays as-is (it's a page/area name). */}
-            <div className="flex-shrink-0 flex items-center justify-between px-8 py-2 font-mono lowercase text-mn-11 text-mn-text-secondary">
-              <button
-                type="button"
-                onClick={onToggleCollapsed}
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? 'Expand terminal' : 'Collapse terminal'}
-                title={collapsed ? 'Expand terminal' : 'Collapse terminal'}
-                className="flex items-center gap-2 hover:text-foreground transition-colors cursor-pointer"
-              >
-                <span
-                  aria-hidden
-                  className="inline-block text-mn-11 transition-transform"
-                  style={{ transform: collapsed ? 'rotate(-90deg)' : 'none' }}
-                >
-                  ▾
-                </span>
-                <span>
-                  context:{' '}
-                  <span className="font-medium normal-case text-foreground">{contextLabel}</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={onClear}
-                disabled={!canClear}
-                aria-label="Clear conversation"
-                title="Clear conversation (/clear)"
-                className="text-mn-text-secondary hover:text-mn-text transition-colors disabled:opacity-30 disabled:cursor-default cursor-pointer"
-              >
-                clear
-              </button>
-            </div>
-
-            {/* Body + footer collapse away, but the header stays as the re-open
-                affordance. When collapsed the card shrinks to just the header bar. */}
-            {!collapsed && (
+            {landed && (
               <>
-                <div className="flex-1 min-h-0 flex flex-col">{children}</div>
-                <div className="flex-shrink-0">{footer}</div>
+                <span
+                  data-part="landed-dot"
+                  aria-hidden
+                  className="size-[6px] rounded-full bg-mn-text"
+                />
+                <span>pond answered</span>
               </>
             )}
-          </div>
-        </div>
-      </div>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M2 6.5 5 3.5l3 3" />
+            </svg>
+          </span>
+          <span
+            data-part="tab-key"
+            aria-hidden
+            className="mt-3 text-[10.5px] text-mn-text-secondary"
+          >
+            ⌘J
+          </span>
+        </button>
+      </section>
+    )
+  }
+
+  // At rest there is nothing to size, and a fixed height would leave an empty slab.
+  const hasThread = Boolean(children)
+
+  return (
+    <section
+      ref={cardRef}
+      aria-label="composer"
+      data-part="composer-card"
+      data-sized={hasThread || undefined}
+      style={
+        hasThread
+          ? { height: height ?? COMPOSER_DEFAULT_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT_CSS }
+          : undefined
+      }
+      className={`${CARD_PLACEMENT} group/composer mn-glass box-border flex flex-col gap-[14px] rounded-mn-card p-[14px] font-mono text-mn-text`}
+    >
+      {hasThread && onHeightChange && onHeightCommit && (
+        <ComposerHandle
+          cardRef={cardRef}
+          height={height}
+          onHeightChange={onHeightChange}
+          onHeightCommit={onHeightCommit}
+        />
+      )}
+      {children}
+      {footer}
     </section>
   )
 }

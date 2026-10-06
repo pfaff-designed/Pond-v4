@@ -12,14 +12,14 @@ import { cn } from '@/lib/utils'
 export interface AreaMarkProps {
   /** Glyph name, from `areaGlyph(title)` / `LIFE_GLYPH`. */
   glyph: string
-  /** The area hue — a raw accent hex or a colour token expression. */
-  color: string
+  /** The area hue — a raw accent hex or a colour token expression. Ink until chosen. */
+  color?: string
   /** Glyph size in px. @default 13 */
   size?: number
   className?: string
 }
 
-export function AreaMark({ glyph, color, size = 13, className }: AreaMarkProps) {
+export function AreaMark({ glyph, color = 'var(--mn-text)', size = 13, className }: AreaMarkProps) {
   return (
     <span
       data-area-mark=""

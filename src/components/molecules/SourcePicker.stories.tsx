@@ -32,10 +32,8 @@ const INK = {
   paper: 'rgb(27, 29, 20)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's dark frames. The picker board's own ink delta
-  // reads `.09`; ADR 0004 ruling 11 keeps the one shared recipe for the whole
-  // floating-glass family (the composed context outranks the component card).
-  glassBorder: 'rgba(250, 249, 239, 0.2)',
+  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating family.
+  glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
 
@@ -119,7 +117,7 @@ function Frame({
 }
 
 const meta = {
-  title: 'Molecules/SourcePicker',
+  title: 'Organisms/pickers/2e · choose a source',
   component: Frame,
   parameters: { layout: 'centered' },
   args: { block: 'table' },
@@ -270,11 +268,13 @@ async function assertSource(root: HTMLElement, p: Palette) {
 
 /** `/table`: `new database — recipes` selected under `new`, five databases one row down, the create foot. Light. */
 export const Source: Story = {
+  name: 'source',
   play: async ({ canvasElement }) => assertSource(canvasElement, PAPER),
 }
 
 /** The same frame on the dark ground — ink flips, the glass follows the Shell's dark recipe. */
 export const SourceInk: Story = {
+  name: 'source · ink',
   args: { ink: true },
   play: async ({ canvasElement }) => assertSource(canvasElement, INK),
 }
@@ -317,6 +317,7 @@ async function assertType(root: HTMLElement, p: Palette) {
 
 /** `/chart › calories`: the fits group named from the source's fields, a rule, `all charts · 13`, the note. */
 export const Type: Story = {
+  name: 'type',
   args: {
     block: 'chart',
     defaultStep: 'type',
@@ -327,6 +328,7 @@ export const Type: Story = {
 }
 
 export const TypeInk: Story = {
+  name: 'type · ink',
   args: {
     block: 'chart',
     defaultStep: 'type',
@@ -344,6 +346,7 @@ export const TypeInk: Story = {
  * anything ever rendered the enum instead of `CHART_LABEL`.
  */
 export const AllCharts: Story = {
+  tags: ['!dev'],
   args: {
     block: 'chart',
     defaultStep: 'type',
@@ -431,6 +434,7 @@ async function assertNew(root: HTMLElement, p: Palette) {
 
 /** ↵ on the new row: `new database — recipes`, its fields, the faint add row, and the segmented control. */
 export const New: Story = {
+  name: 'new',
   play: async ({ canvasElement }) => {
     within(canvasElement).getByLabelText('page').focus()
     await assertNew(canvasElement, PAPER)
@@ -438,6 +442,7 @@ export const New: Story = {
 }
 
 export const NewInk: Story = {
+  name: 'new · ink',
   args: { ink: true },
   play: async ({ canvasElement }) => {
     within(canvasElement).getByLabelText('page').focus()
@@ -449,6 +454,7 @@ export const NewInk: Story = {
 
 /** From the field: ↓ then ↵ views `recipes`; esc only closes and keeps the text; `field` adds a field. */
 export const Keys: Story = {
+  tags: ['!dev'],
   args: { onPick: fn(), onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
@@ -492,6 +498,7 @@ const footOf = (root: HTMLElement) => glassOf(root).querySelector('[data-part="f
 
 /** A click on a database row picks it, and the BLOCK's own mode rides along. */
 export const PickExistingCarriesTheMode: Story = {
+  tags: ['!dev'],
   args: { block: 'gallery', onPick: fn() },
   play: async ({ canvasElement, args }) => {
     await expect(glassOf(canvasElement).querySelector('[data-part="head-text"]')!.textContent).toBe(
@@ -508,6 +515,7 @@ export const PickExistingCarriesTheMode: Story = {
 
 /** The foot follows the selection: `↵ create` under `new`, `↵ view` on a database. */
 export const FootFollowsTheSelection: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     within(canvasElement).getByLabelText('page').focus()
     await expect(footOf(canvasElement)).toBe('named after this page↵ create')
@@ -524,6 +532,7 @@ export const FootFollowsTheSelection: Story = {
  * document — if one reached the field, ↵ would commit a half-typed `/table`.
  */
 export const DismissAndTheFieldUnderneath: Story = {
+  tags: ['!dev'],
   args: { onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText('page') as HTMLTextAreaElement
@@ -546,6 +555,7 @@ export const DismissAndTheFieldUnderneath: Story = {
 
 /** The seg's choice rides the pick: `rows only` reaches the host as `recordsAre`. */
 export const RowsOnlyRidesThePick: Story = {
+  tags: ['!dev'],
   args: { onPick: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText('page')
@@ -576,6 +586,7 @@ export const RowsOnlyRidesThePick: Story = {
 /** ↵ on `field` adds a text field each time, named `field` then `field 2` — and
  *  both ride the pick. A second row called `field` would collide in the schema. */
 export const FieldsAddUpAndAreNamed: Story = {
+  tags: ['!dev'],
   args: { onPick: fn() },
   play: async ({ canvasElement, args }) => {
     within(canvasElement).getByLabelText('page').focus()
@@ -601,6 +612,7 @@ export const FieldsAddUpAndAreNamed: Story = {
 
 /** A pond with no database yet: the lone `new` row, and ↵ goes straight through. */
 export const EmptyPond: Story = {
+  tags: ['!dev'],
   args: { databases: [] },
   play: async ({ canvasElement }) => {
     within(canvasElement).getByLabelText('page').focus()
@@ -617,6 +629,7 @@ export const EmptyPond: Story = {
  * the full list one row from the fits group, not in another world.
  */
 export const ChartPickCarriesTheAxes: Story = {
+  tags: ['!dev'],
   args: {
     block: 'chart',
     defaultStep: 'type',
@@ -649,6 +662,7 @@ export const ChartPickCarriesTheAxes: Story = {
 
 /** A source with no date + number pair suggests nothing — just `all charts`. */
 export const NoFitsOffersAllCharts: Story = {
+  tags: ['!dev'],
   args: { block: 'chart', loadFields },
   play: async ({ canvasElement }) => {
     await userEvent.click(rowsOf(canvasElement)[1]) // recipes — no fields
@@ -665,6 +679,7 @@ export const NoFitsOffersAllCharts: Story = {
  * kind alone and the engine infers the axes — never an empty count series.
  */
 export const NewDatabaseThenChartType: Story = {
+  tags: ['!dev'],
   args: { block: 'chart', onPick: fn() },
   play: async ({ canvasElement, args }) => {
     within(canvasElement).getByLabelText('page').focus()

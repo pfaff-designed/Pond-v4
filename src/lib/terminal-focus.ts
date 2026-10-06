@@ -34,3 +34,20 @@ export function requestThreadMessage(messageId: string) {
     new CustomEvent<OpenThreadMessageDetail>(OPEN_THREAD_MESSAGE_EVENT, { detail: { messageId } })
   )
 }
+
+/**
+ * "Open or close the composer" (⌘J, `Pond 02` 2f). The shell's key owner
+ * (`ShellCommands`) asks; the composer answers, so the two never import each other.
+ */
+export const TOGGLE_COMPOSER_EVENT = 'pond:toggle-composer'
+
+export function requestComposerToggle() {
+  window.dispatchEvent(new CustomEvent(TOGGLE_COMPOSER_EVENT))
+}
+
+/** The platform's command key for ⌘J: Cmd on Apple platforms, Ctrl everywhere else. */
+export function isComposerToggleKey(e: KeyboardEvent): boolean {
+  if (e.altKey || e.shiftKey || e.key.toLowerCase() !== 'j') return false
+  const apple = /Mac|iPhone|iPad/.test(navigator.platform)
+  return apple ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
+}

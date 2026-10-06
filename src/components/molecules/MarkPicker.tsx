@@ -4,7 +4,7 @@
  * The mark picker (issue #134) — choose a page's glyph and its area colour.
  *
  * Purely presentational: the current mark and both intents are injected, and the
- * connected `PageMarkButton` organism owns the write. Press aesthetics — kicker
+ * host (`NewPondSheet`) owns the write. Press aesthetics — kicker
  * headings, mono meta, hairline rules — matching `BacklinksSection` and
  * `PageChangesSection`.
  *
@@ -21,13 +21,13 @@ import { useMemo, useState } from 'react'
 import { Icon } from '@/components/atoms/Icon'
 import { kickerClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
-import { AREA_ROLES, areaRoleColor, searchGlyphs, type AreaRole } from '@/lib/rail/glyph-library'
+import { AREA_ROLES, areaRoleColor, markAccent, searchGlyphs, type AreaRole } from '@/lib/rail/glyph-library'
 
 export interface MarkPickerProps {
   /** The glyph showing now, derived or explicit. Null when the page has none. */
   glyph: string | null
-  /** The role tinting the mark now, inherited or explicit. */
-  role: AreaRole
+  /** The role tinting the mark now, inherited or explicit; null when it is ink. */
+  role: AreaRole | null
   /** True when the glyph is the page's own rather than derived from its title. */
   glyphIsOwn: boolean
   /** True when the role is the page's own rather than inherited. */
@@ -100,7 +100,7 @@ export function MarkPicker({
                     onClick={() => onSelectGlyph(name)}
                     // The swatch carries the CURRENT role, so the person sees the
                     // mark they would actually get, not a neutral silhouette.
-                    style={{ color: areaRoleColor(role) }}
+                    style={{ color: markAccent(role) }}
                     className={cn(
                       'inline-flex size-7 flex-none items-center justify-center rounded-mn-inner',
                       selected ? 'bg-mn-selected-fill' : 'hover:bg-mn-hover-fill'
@@ -160,7 +160,7 @@ export function MarkPicker({
           // Says WHY the colour is what it is, so "inherit" is a state the person
           // can see rather than infer from the absence of a reset link.
           <span className="ml-1 font-mono text-[0.65rem] lowercase text-mn-text-secondary">
-            from its area
+            {role === null ? 'no colour' : 'from its area'}
           </span>
         )}
       </div>

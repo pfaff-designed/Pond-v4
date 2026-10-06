@@ -71,6 +71,22 @@ export const Proposed: Story = {
   },
 }
 
+/** ⌘↵ takes the whole diff from anywhere on the card — except inside its own note. */
+export const CommandEnterAccepts: Story = {
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    canvas.getByRole('button', { name: 'reject' }).focus()
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await expect(args.onAccept).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(canvas.getByRole('button', { name: 'request changes' }))
+    await userEvent.type(canvas.getByRole('textbox', { name: 'note to pond' }), 'x')
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
+    await expect(args.onAccept).toHaveBeenCalledTimes(1)
+    await expect(args.onRequestChanges).toHaveBeenCalledWith('x')
+  },
+}
+
 /** Type-morph edit: a text block becomes a todo — old text struck → new todo rows. */
 export const TypeMorph: Story = {
   args: { changes: [morph] },
@@ -175,14 +191,15 @@ export const Withdrawn: Story = { args: { status: 'withdrawn' } }
 export const Undone: Story = { args: { status: 'undone' } }
 export const Reverted: Story = { args: { status: 'reverted' } }
 
-/** "show original": the target as it stands, no diff marks, no red. */
-export const ShowOriginal: Story = {
-  args: { changes: [edit, remove, create] },
+/** Nothing the board does not draw: no `open page`, no `show original`, no `inferred` pill. */
+export const DrawsOnlyWhatTheBoardDraws: Story = {
+  args: { changes: [{ ...create, inferred: true, reason: 'follows the electrician' }] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'show original' }))
-    await expect(canvas.getByText(/new block/)).toBeInTheDocument()
-    await expect(canvas.queryByText('electrician — confirmed, w/c 6 oct')).not.toBeInTheDocument()
+    await expect(canvas.getByText('follows the electrician')).toBeInTheDocument()
+    await expect(canvas.queryByText('inferred')).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'show original' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: /open page/i })).not.toBeInTheDocument()
   },
 }
 
@@ -196,6 +213,8 @@ export const ShowOriginal: Story = {
 
 /** The removal role, as the board writes it: `#C55347`. */
 const REMOVAL_RGB = [197, 83, 71] as const
+const REMOVAL_LINE = '[data-kind="diff-line"][data-variant="remove"]'
+const ADDITION_LINE = '[data-kind="diff-line"][data-variant="add"]'
 
 /** The actual pixel a computed colour paints — rgb(), rgba(), color-mix, oklab, all of it. */
 function pixelOf(color: string): [number, number, number, number] {
@@ -243,11 +262,11 @@ async function assertRemovalRole(root: HTMLElement, ink: readonly number[]) {
   const red = redElements(root)
   await expect(red.length).toBeGreaterThan(0)
   // Not one red pixel outside a removal row.
-  for (const el of red) await expect(el.closest('[data-part="removal"]')).not.toBeNull()
+  for (const el of red) await expect(el.closest(REMOVAL_LINE)).not.toBeNull()
 
   // The `−` sign is the role at full strength — the board's `diffSign: #C55347`.
-  const removal = root.querySelector<HTMLElement>('[data-part="removal"]')!
-  const sign = removal.querySelector<HTMLElement>('span[aria-hidden]')!
+  const removal = root.querySelector<HTMLElement>(REMOVAL_LINE)!
+  const sign = removal.querySelector<HTMLElement>('[data-part="sign"]')!
   await expect(sign.textContent).toBe('−')
   const [r, g, b, a] = pixelOf(getComputedStyle(sign).color)
   await expect([r, g, b]).toEqual([...REMOVAL_RGB])
@@ -255,22 +274,21 @@ async function assertRemovalRole(root: HTMLElement, ink: readonly number[]) {
 
   // The removed words stay INK and are STRUCK in the role — the board does not
   // paint them red (`diffText.textDecorationColor: #C55347`, text at an ink tier).
-  // The tier is asserted as "a meta tier of THIS theme's ink", not as a literal:
-  // `PondMolecule variant=remove` measures .68 and the code paints .8 — a real
-  // divergence, reported with this slice rather than blessed here.
-  const struck = removal.querySelector<HTMLElement>('div.line-through')!
+  // `PondMolecule variant=remove` writes `diffText` at `a(.68)`.
+  const struck = removal.querySelector<HTMLElement>('[data-part="title"]')!
   const t = getComputedStyle(struck)
   await expect(t.textDecorationLine).toBe('line-through')
   await expect(isRemovalRed(t.textDecorationColor)).toBe(true)
   await expect(isRemovalRed(t.color)).toBe(false)
   const [tr, tg, tb, ta] = pixelOf(t.color)
   // The hue flips with the theme — this is what makes the ink frame mean something.
-  await expect([tr, tg, tb]).toEqual([...ink])
-  await expect(ta).toBeGreaterThan(0.6)
-  await expect(ta).toBeLessThan(0.86)
+  for (const [i, channel] of [tr, tg, tb].entries()) {
+    await expect(Math.abs(channel - ink[i])).toBeLessThanOrEqual(2)
+  }
+  await expect(ta).toBeCloseTo(0.68, 1)
 
   // The addition alongside it carries none of it.
-  const addition = root.querySelector<HTMLElement>('[data-part="addition"]')
+  const addition = root.querySelector<HTMLElement>(ADDITION_LINE)
   if (addition) await expect(redElements(addition)).toHaveLength(0)
 }
 
@@ -292,7 +310,7 @@ export const CreateHasNoRed: Story = {
   args: { changes: [create] },
   play: async ({ canvasElement }) => {
     await expect(redElements(canvasElement)).toHaveLength(0)
-    await expect(canvasElement.querySelector('[data-part="removal"]')).toBeNull()
+    await expect(canvasElement.querySelector(REMOVAL_LINE)).toBeNull()
   },
 }
 
@@ -432,23 +450,86 @@ export const RejectedFoldsToOneLine: Story = {
   },
 }
 
-/** "show original": the target as it stands — every `before`, a note where there
- *  is none, no proposed text, and not one red pixel. Then back to the diff. */
-export const ShowOriginalHasNoRed: Story = {
-  args: { changes: [edit, remove, create] },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'show original' }))
-    const original = canvasElement.querySelector<HTMLElement>('[data-part="original"]')!
-    await expect(
-      within(original).getByText('electrician — provisional, w/c 29 sep')
-    ).toBeInTheDocument()
-    await expect(within(original).getByText('Weekly mileage')).toBeInTheDocument()
-    await expect(within(original).getByText(/new block/)).toBeInTheDocument()
-    await expect(redElements(canvasElement)).toHaveLength(0)
-    await expect(canvas.queryByText('electrician — confirmed, w/c 6 oct')).not.toBeInTheDocument()
+// ── `PondComposer` `proposing`: the card's own values, in paper and ink ────────
+//
+// Every assertion is the COMPUTED value against the DC's literal (`diffCard`,
+// `diffHead`, `diffActions`, `keyHint`), at the desktop breakpoint.
 
-    await userEvent.click(canvas.getByRole('button', { name: 'show diff' }))
-    await expect(canvas.getByText('electrician — confirmed, w/c 6 oct')).toBeInTheDocument()
+const DESKTOP = { viewport: { value: 'desktop', isRotated: false } }
+
+async function assertDiffCardValues(root: HTMLElement, theme: 'paper' | 'ink') {
+  const card = root.querySelector<HTMLElement>('[data-part="diff-card"]')!
+  const style = getComputedStyle(card)
+  await expect(style.padding).toBe('12px')
+  await expect(style.rowGap).toBe('10px')
+  await expect(style.borderTopLeftRadius).toBe('14px')
+  await expect(style.backgroundColor).toBe(
+    theme === 'ink' ? 'rgb(48, 49, 42)' : 'rgb(250, 249, 239)'
+  )
+  // Paper `0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)`; ink the black pair.
+  await expect(style.boxShadow).toBe(
+    theme === 'ink'
+      ? 'rgba(0, 0, 0, 0.3) 0px 1px 2px 0px, rgba(0, 0, 0, 0.34) 0px 8px 24px 0px'
+      : 'rgba(40, 34, 24, 0.04) 0px 1px 2px 0px, rgba(40, 34, 24, 0.06) 0px 8px 24px 0px'
+  )
+
+  // head: `proposed edit — schedule` 11px in ink, `2 changes` at .68
+  const head = card.querySelector<HTMLElement>('[data-part="head"]')!
+  await expect(head.textContent).toBe('proposed edit — schedule')
+  await expect(getComputedStyle(head).fontSize).toBe('11px')
+  await expect(getComputedStyle(head.parentElement!).columnGap).toBe('8px')
+  await expect(within(card).getByText('2 changes')).toBeInTheDocument()
+
+  // lines: three PondMolecule diff-lines, 3px apart
+  const lines = card.querySelectorAll<HTMLElement>('[data-kind="diff-line"]')
+  await expect(lines).toHaveLength(3)
+  await expect(getComputedStyle(lines[0].parentElement!).rowGap).toBe('3px')
+  await expect(getComputedStyle(lines[0].parentElement!.parentElement!.parentElement!).rowGap).toBe(
+    '3px'
+  )
+  await expect(getComputedStyle(lines[0]).fontSize).toBe('11.5px')
+  await expect(getComputedStyle(lines[0]).paddingLeft).toBe('10px')
+
+  // actions: accept, ⌘↵, request changes, reject, spacer, the target's name
+  const accept = within(card).getByRole('button', { name: 'accept' })
+  const request = within(card).getByRole('button', { name: 'request changes' })
+  const reject = within(card).getByRole('button', { name: 'reject' })
+  for (const button of [accept, request, reject]) {
+    await expect(getComputedStyle(button).height).toBe('32px')
+    await expect(getComputedStyle(button).fontSize).toBe('12px')
+  }
+  const row = accept.parentElement!
+  await expect(getComputedStyle(row).columnGap).toBe('8px')
+  const items = [...row.children].map((el) => el.textContent)
+  await expect(items).toEqual(['accept', '⌘↵', 'request changes', 'reject', '', 'schedule'])
+  const hint = within(row as HTMLElement).getByText('⌘↵')
+  await expect(getComputedStyle(hint).fontSize).toBe('10.5px')
+  await expect(getComputedStyle(hint).marginLeft).toBe('-2px')
+  await expect(getComputedStyle(hint).marginRight).toBe('4px')
+  await expect(getComputedStyle(hint).fontFamily).toMatch(/Mono|monospace/)
+}
+
+export const ProposingPaper: Story = {
+  args: { changes: [edit, create] },
+  globals: DESKTOP,
+  play: async ({ canvasElement }) => assertDiffCardValues(canvasElement, 'paper'),
+}
+
+export const ProposingInk: Story = {
+  args: { changes: [edit, create] },
+  globals: DESKTOP,
+  decorators: [Ink],
+  play: async ({ canvasElement }) => assertDiffCardValues(canvasElement, 'ink'),
+}
+
+/** Below md the buttons are the 44px mobile control, 14px type. */
+export const ProposingMobile: Story = {
+  globals: { viewport: { value: 'mobile2', isRotated: false } },
+  play: async ({ canvas }) => {
+    for (const name of ['accept', 'request changes', 'reject']) {
+      const style = getComputedStyle(canvas.getByRole('button', { name }))
+      await expect(style.height).toBe('44px')
+      await expect(style.fontSize).toBe('14px')
+    }
   },
 }

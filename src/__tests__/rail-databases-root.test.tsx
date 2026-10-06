@@ -5,20 +5,21 @@
  *  - the rail (PondRail draws it at the foot, after the Life tree): out of the Life
  *    tree, in its own foot tree, databases nested under it, and nothing at all when
  *    the pond has none.
- *  - the breadcrumb pill (ADR 0003): a page under databases starts its trail AT
- *    databases, and the root page itself reads simply "databases" — never inside
- *    life, which would assert the very nesting 3c denies.
+ *  - the path `PondCommand` shows at rest (ADR 0003): a page under databases starts
+ *    its trail AT databases, and the root page itself reads simply "databases" —
+ *    never inside life, which would assert the very nesting 3c denies.
  */
 
 import React from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { PageRow } from '@/lib/pages/tree'
+import { withPathProbe } from './helpers/command-path-probe'
 
-// Which page the URL names, for the DocumentPanel-based breadcrumb tests below.
+// Which page the URL names, for the DocumentPanel-based path tests below.
 let currentNodeId: string | null = null
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -27,7 +28,7 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
 
 // The page surface's reads, stubbed: the open page by id, and the root page's
-// home row (whose title is the breadcrumb's root crumb).
+// home row (whose title is the path's root).
 const PAGES: Record<string, Record<string, unknown>> = {}
 jest.mock('@/lib/pages/client', () => ({
   getPage: (_sb: unknown, id: string) => Promise.resolve(PAGES[id] ?? null),
@@ -57,7 +58,11 @@ const databases = node(
   9
 )
 
-function renderRail(tree: RailNode[], expanded = new Set<string>()) {
+function renderRail(
+  tree: RailNode[],
+  expanded = new Set<string>(),
+  onOpenDatabases: () => void = jest.fn()
+) {
   return render(
     <RailView
       tree={tree}
@@ -72,8 +77,10 @@ function renderRail(tree: RailNode[], expanded = new Set<string>()) {
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onOpenDatabases={onOpenDatabases}
       canDrop={() => true}
       onMove={jest.fn()}
     />
@@ -97,15 +104,18 @@ describe('rail — the databases root', () => {
     expect(within(foot).getByText('ingredients')).toBeInTheDocument()
   })
 
-  it('draws no databases tree until the pond has one to list', () => {
-    renderRail([health])
-    expect(screen.queryByRole('tree', { name: 'Databases' })).not.toBeInTheDocument()
+  it('draws the databases row before the pond has a root, and opening it asks for one', () => {
+    const onOpenDatabases = jest.fn()
+    renderRail([health], new Set<string>(), onOpenDatabases)
+    const foot = screen.getByRole('tree', { name: 'Databases' })
+    fireEvent.click(within(foot).getByRole('treeitem', { name: /databases/ }))
+    expect(onOpenDatabases).toHaveBeenCalledTimes(1)
   })
 })
 
-// ── The breadcrumb pill on a databases page (ADR 0003) ──────────────────────
+// ── The path on a databases page (ADR 0003) ──────────────────────────────────
 
-describe('breadcrumb — the trail starts at the root the page descends from', () => {
+describe('the path — it starts at the root the page descends from', () => {
   const at = '2026-01-01T00:00:00Z'
   const ROWS: PageRow[] = [
     { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
@@ -139,35 +149,30 @@ describe('breadcrumb — the trail starts at the root the page descends from', (
     client.setQueryData(['pages'], ROWS)
     return render(
       <QueryClientProvider client={client}>
-        <DeletionUndoProvider>
-          <DocumentPanel />
-        </DeletionUndoProvider>
+        <DeletionUndoProvider>{withPathProbe(<DocumentPanel />)}</DeletionUndoProvider>
       </QueryClientProvider>
     )
   }
 
   it('the databases root page reads simply "databases" — no life, and no duplicate tail', async () => {
-    const { findByRole } = renderPanel('root-db')
-    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
-    // The root crumb IS this page, so it names the surface once and alone; the
-    // title input below the pill is the page's tail, as on every page (#234).
-    expect(within(nav).getAllByText('databases')).toHaveLength(1)
-    expect(within(nav).queryByText('life')).toBeNull()
+    const { findByTestId } = renderPanel('root-db')
+    // The root IS this page, so it names the surface once and alone.
+    await waitFor(async () => expect(await findByTestId('command-path')).toHaveTextContent(/^databases$/))
     expect(screen.getByLabelText('Page title')).toHaveValue('databases')
   })
 
   it('a database under the root starts at databases and keeps its own tail', async () => {
-    const { findByRole } = renderPanel('db-1')
-    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('databases')).toBeInTheDocument()
-    expect(within(nav).queryByText('life')).toBeNull()
+    const { findByTestId } = renderPanel('db-1')
+    await waitFor(async () =>
+      expect(await findByTestId('command-path')).toHaveTextContent(/^databases › ingredients$/)
+    )
     expect(screen.getByLabelText('Page title')).toHaveValue('ingredients')
   })
 
   it('a page under life still starts at life', async () => {
-    const { findByRole } = renderPanel('health')
-    const nav = await findByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('life')).toBeInTheDocument()
-    expect(within(nav).queryByText('databases')).toBeNull()
+    const { findByTestId } = renderPanel('health')
+    await waitFor(async () =>
+      expect(await findByTestId('command-path')).toHaveTextContent(/^life › Health$/)
+    )
   })
 })

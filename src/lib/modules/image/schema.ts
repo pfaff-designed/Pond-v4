@@ -31,7 +31,6 @@ export const imageDescriptor: ModuleDescriptor<ImageBlock> = {
   // The board's `embed / file` row: an image inline, a document as a link.
   label: 'embed / file',
   schema: imageSchema,
-  paletteDescription: 'an image shown inline, or a file kept as a link',
   description:
     'An uploaded image or file attachment, referenced by URL: images (png/jpg/gif/webp) render inline, documents (pdf/txt/md) render as a download link, with an optional caption. ' +
     'Only reference URLs you have actually seen — a file the user attached in chat or an existing block’s url — NEVER invent or guess a URL. ' +

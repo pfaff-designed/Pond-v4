@@ -19,10 +19,13 @@
  *
  * | label                 | lives on            | family                |
  * | --------------------- | ------------------- | --------------------- |
- * | `pond` (attribution)  | the composer        | PP Neue Montreal Mono |
+ * | `pond` (attribution)  | the composer        | PP Neue Montreal      |
  * | `new page — proposed` | the composer        | PP Neue Montreal Mono |
  * | `made from`           | the page            | PP Neue Montreal      |
  * | `mentioned`           | the page            | PP Neue Montreal      |
+ *
+ * `pond` is the sans because it heads an ANSWER, and answers are the sans at reading
+ * scale (`PondComposer` `eyebrow`); the mono is for the machine's own cards.
  *
  * That is PROJECT_RULES § Design language, **two registers split by medium, not by
  * author**: the machine surface (composer, palette, @-picker, diff cards,

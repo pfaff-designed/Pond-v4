@@ -1,8 +1,8 @@
 /**
  * @jest-environment node
  *
- * FEATURE — the composer's three paths, end to end, at the level the person
- * experiences them (`Pond 06.01 Ask answer page`, `Pond 06.02 Capture and filing`).
+ * FEATURE — the composer's two paths, end to end, at the level the person
+ * experiences them (`Pond 06.01 Ask answer page`).
  *
  * One file per path, asserting the OUTCOME — what got written, where, and what
  * the person is left holding — never a function's return value and never
@@ -16,12 +16,9 @@
  *      as a `proposed` record in the change log with nothing written; make page
  *      writes one page carrying the prose word for word; cancel and walking away
  *      write nothing. There is no keep-as-note (AUDIT W4).
- *   3. Capture lifts entities out of the transcript through `/api/save-extract`
- *      and files each one in the pond it was captured in.
  *
  * The real modules do the work (`page-proposals`, `proposal-store`, `make-page`,
- * `conversation/client`, `conversation/handoff`, `nodes/create`); the only doubles
- * are the shared pages fake and the model call behind `/api/save-extract`.
+ * `conversation/client`); the only double is the shared pages fake.
  *
  * NOT here, deliberately: whether the model grills before building or which tool
  * it picks (scripts/eval-{routing,editing}.impl.mts, against the real system
@@ -46,11 +43,9 @@ import {
 } from '@/lib/conversation/proposal-store'
 import { parseResolutions, emptyResolutions } from '@/lib/conversation/resolutions'
 import { saveTranscript } from '@/lib/conversation/client'
-import { performHandoff, extractEntities } from '@/lib/conversation/handoff'
 import { makePageFromAnswer, recordPageProposal } from '@/lib/pages/make-page'
 import { readMadeFrom } from '@/lib/pages/made-from'
 import { readMentioned } from '@/lib/pages/mentioned'
-import { createNode } from '@/lib/nodes/create'
 import type { TextBlock } from '@/lib/modules/text/schema'
 import { makeFakeSupabase, type Row } from './helpers/fake-supabase'
 
@@ -322,71 +317,5 @@ describe('make this a page', () => {
 
     expect(state.pageProposals['pp-1'].status).toBe(status)
     expect(sb._pages.size).toBe(2 + newPages)
-  })
-})
-
-// ── 3. Capture: the transcript becomes filed pages ───────────────────────────
-
-describe('capture and filing', () => {
-  afterEach(() => {
-    delete (globalThis as { fetch?: unknown }).fetch
-  })
-
-  it('lifts entities out of the transcript through /api/save-extract and files each one in the pond', async () => {
-    const sb = harness([])
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        extractions: [
-          { id: 'e1', type: 'page', name: 'Travel' },
-          { id: 'e2', type: 'action', name: 'Book the worktop template' },
-        ],
-      }),
-    })
-    ;(globalThis as { fetch?: unknown }).fetch = fetchMock
-
-    const messages = [
-      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'I need to plan a trip' }] },
-      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: PROSE }] },
-    ] as UIMessage[]
-
-    const dissolveConversation = jest.fn().mockResolvedValue(undefined)
-    const result = await performHandoff(
-      sb as never,
-      THREAD,
-      'user-1',
-      messages,
-      {
-        extract: extractEntities,
-        createNode,
-        dissolveConversation,
-        getOrCreateConversation: jest.fn().mockResolvedValue({
-          id: 'conv-2',
-          messages: [],
-          resolutions: emptyResolutions(),
-        }),
-      },
-      POND
-    )
-
-    // The whole transcript goes to the extractor, and only the extractor decides
-    // what there is to file.
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/save-extract',
-      expect.objectContaining({ method: 'POST' })
-    )
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ messages })
-
-    // Each extraction is filed in the pond it was captured in, carrying its kind.
-    expect(
-      [...sb._pages.values()].map((r) => ({ title: r.title, type: r.type, pond: r.pond_id }))
-    ).toEqual([
-      { title: 'Travel', type: 'page', pond: POND },
-      { title: 'Book the worktop template', type: 'action', pond: POND },
-    ])
-    expect(result.written).toBe(2)
-    // Writes land BEFORE the thread dissolves, so a failure never loses the
-    // transcript that explains them.
-    expect(dissolveConversation).toHaveBeenCalledWith(sb, THREAD)
   })
 })

@@ -7,10 +7,10 @@
  * This is a body, not a surface. The board does not open a second thing over the
  * ⌘K palette: the palette **becomes** the sheet, keeping its glass, its position
  * and its head, and the head's input becomes the sheet's one field. So the glass,
- * the wash, the name field and the `esc` affordance all belong to
- * `CommandPalette`'s sheet mode; what lives here is everything below the rule:
+ * the name field and the `esc` affordance all belong to `PondCommand`'s
+ * sheet mode; what lives here is everything below the rule:
  *
- *     ⌘K   weeknight recipe|          ← CommandPalette's head, in sheet mode
+ *     ⌘K   weeknight recipe|          ← PondCommand's input, in sheet mode
  *     ─────────────────────────
  *     keep                            ← from here down is this file
  *      ■ structure and labels

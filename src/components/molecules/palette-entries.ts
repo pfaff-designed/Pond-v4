@@ -1,5 +1,5 @@
 /**
- * What the ⌘K palette lists for a query — pure, so `CommandPalette.tsx` only
+ * What the ⌘K palette lists for a query — pure, so `PondCommand.tsx` only
  * draws (#279, child b of #226). The states are `PondPicker.dc.html`'s
  * `kind="palette"` frames and `Pond 02` 2g's captions:
  *
@@ -9,7 +9,8 @@
  *            so the shell passes none and the group draws nothing: offered when
  *            true, never faked (`PROJECT_RULES.md`; the #239 precedent).
  *   typing   `pages`, then `records`, then `actions` (the matched ones, then
- *            `ask pond about “q”`); `ponds` lead when one matches (6m).
+ *            `ask pond about “q”`); `ponds` lead when one matches (6m), and
+ *            `new pond “q”` joins the actions.
  *   actions  a leading `>` drops pages and records.
  *   empty    no dead end: a note, ask pond, make the page, then `did you mean`.
  *   scoped   a page and its children, with the kind under each name.
@@ -32,7 +33,7 @@ export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
  * board `6i` frame 3: "Saving is a page action, so it lives in the command
  * palette, not the / menu."
  */
-export type PaletteAction = 'new-page' | 'ask-pond' | 'save-as-template'
+export type PaletteAction = 'new-page' | 'new-pond' | 'ask-pond' | 'save-as-template'
 
 export interface PaletteItem {
   id: string
@@ -88,9 +89,13 @@ export interface PaletteOptions {
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
 export const ASK_POND_ID = 'palette:ask-pond'
 export const NEW_PAGE_ID = 'palette:new-page'
+export const NEW_POND_ID = 'palette:new-pond'
 
 /** The board's foot legend — one for every state. */
-export const PALETTE_FOOT = ['↑↓ move', '↵ open', '> actions only', 'esc close'] as const
+export const PALETTE_FOOT: readonly string[] = ['↑↓ move', '↵ open', '> actions only', 'esc close']
+
+/** The foot below `md` — the board's `mob` branch drops the two hints a touch screen has no key for. */
+export const PALETTE_FOOT_MOBILE: readonly string[] = ['↵ open', '> actions only']
 
 /** How many close spellings `did you mean` offers. */
 const DID_YOU_MEAN_MAX = 3
@@ -135,7 +140,9 @@ export function paletteEntries(
     from.filter((i) => kinds.includes(i.kind) && i.label.toLowerCase().includes(q))
   const ponds = hits(['pond'])
   const pages = hits(['page', 'database'])
-  const records = hits(['record'])
+  // A record is searched by the host (title or field value), so it is not
+  // filtered on its label again here — a field match would never survive that.
+  const records = pool.filter((i) => i.kind === 'record')
   const actions = hits(['action'], items)
   const ask: PaletteItem = {
     id: ASK_POND_ID,
@@ -171,7 +178,20 @@ export function paletteEntries(
       ...pages.map((i) => row(i, q, subOf(i)))
     )
   if (records.length) out.push(group('records'), ...records.map((i) => row(i, q, subOf(i))))
-  out.push(group('actions'), ...actions.map((i) => row(i, q)), row(ask, ''))
+  // `ponds` state: `new pond “q”` stands where the person is looking at ponds.
+  const newPond: PaletteItem = {
+    id: NEW_POND_ID,
+    label: `new pond “${q}”`,
+    kind: 'action',
+    action: 'new-pond',
+    query: q,
+  }
+  out.push(
+    group('actions'),
+    ...actions.map((i) => row(i, q)),
+    ...(ponds.length ? [row(newPond, '')] : []),
+    row(ask, '')
+  )
   return out
 }
 

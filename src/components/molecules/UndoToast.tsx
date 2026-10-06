@@ -69,7 +69,7 @@ export function UndoToast({
       )}
       {/* Fixed square + grid centering so the ✕ glyph sits optically centered on
           both axes (#60) — a bare inline button leaves the glyph's line box
-          floating off-center. Same house pattern as SavePickerModal / the rail-row
+          floating off-center. Same house pattern as the rail-row
           CRUD / BlockCanvas ×. */}
       <button
         type="button"

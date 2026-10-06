@@ -8,6 +8,7 @@
  * Every literal is `wayfinder/board-values.generated.json` `.components.PondPicker`:
  *
  *   row     flex · gap 10 · 7px 10px · radius 10 · mono 12.5 · .01em · ink; selected ink .07
+ *           mobile: 11px 10px at 14
  *           `faint` (the source picker's `field` add row): the row at ink .8
  *   svg     13 × 13 on a 14 grid · stroke currentColor 1.4 round · at ink .8
  *   sub     INLINE after the label · mono 10.5 · ink .68 · nowrap · ellipsis
@@ -26,12 +27,11 @@
 
 import type { ReactNode } from 'react'
 
+import { SLASH_SIZES, type PickerSize } from './picker-chrome'
 import type { SlashEntry } from './slash-entries'
 
 export type RowEntry = Extract<SlashEntry, { kind: 'row' }>
 
-const ROW =
-  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] py-[7px] font-mono text-[12.5px] tracking-[.01em]'
 /** The board's `sub` on a mono row: inline after the label. */
 const SUB = 'min-w-0 truncate text-[10.5px] text-mn-text-secondary'
 /** The board's `hint`: the key at rest, at the row's end. */
@@ -47,9 +47,12 @@ export function Row({
   selected,
   onHover,
   onPick,
+  size = 'desktop',
 }: {
   entry: RowEntry
   selected: boolean
+  /** @default 'desktop' */
+  size?: PickerSize
   onHover: () => void
   onPick: () => void
 }) {
@@ -59,7 +62,7 @@ export function Row({
       role="option"
       aria-selected={selected}
       data-part="row"
-      className={`${ROW} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
+      className={`${SLASH_SIZES[size].row} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
       onMouseEnter={onHover}
       onClick={onPick}
     >

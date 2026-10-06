@@ -18,8 +18,7 @@
  * Life is the workspace root, NOT a row in `pages`: it can't be renamed or
  * deleted, and its caret is a collapse-all (collapsing closes every folder, so
  * re-opening shows the resting top level). The data source is unchanged — the
- * `['pages']` query + parent_id tree (ticket-25's reveal, ticket-27's delete,
- * ticket-26's create all preserved) — this is a view-layer restructure.
+ * `['pages']` query + parent_id tree — this is a view-layer restructure.
  *
  * Split for Storybook: <RailView> is presentational (all data and mutations
  * raised as props) but OWNS the roving focus + keyboard machine, since focus is
@@ -29,8 +28,8 @@
  * one roving tab stop; ↑/↓ move, → expands / steps into the first child,
  * ← collapses / steps out to the parent, Enter/Space open, Home/End jump,
  * Delete/⌫ deletes the focused row (through the same confirm/undo path as ×),
- * + adds a child. The row's ＋/× are also real tab stops (ticket-27
- * reachability). When the focused row vanishes (deleted, or hidden by an
+ * + adds a child, F2 renames in place. The row's ＋/× are not tab stops — the
+ * tree has the one — and are reached through + and Delete. When the focused row vanishes (deleted, or hidden by an
  * ancestor collapse) focus falls to the nearest surviving neighbor, VS Code
  * style.
  */
@@ -49,11 +48,13 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { createPage, deletePage, movePage } from '@/lib/pages/client'
+import { createPage, deletePage, movePage, updateTitle } from '@/lib/pages/client'
+import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
 import {
   fetchPages,
   insertPageOptimistic,
   applyMoveOptimistic,
+  applyRenameOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
@@ -61,10 +62,15 @@ import { usePondId } from '@/lib/pond/context'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
-import { areaRoleColor } from '@/lib/rail/glyph-library'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { ancestorPath } from '@/lib/pages/crumbs'
+import { usePondGlyph } from '@/lib/pond/glyph'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
-import { isDatabasesRoot } from '@/lib/pages/databases-root'
+import {
+  DATABASES_ROOT_TITLE,
+  getOrCreateDatabasesRoot,
+  isDatabasesRoot,
+} from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
@@ -79,6 +85,7 @@ import {
   type RailNode,
   type FlatRow,
   type DropZone,
+  type TreeKeyCommand,
 } from '@/lib/rail/tree'
 import {
   countDescendants,
@@ -91,7 +98,9 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
+import { PondMark } from '@/components/atoms/PondMark'
 import { Caret } from '@/components/atoms/Caret'
+import { RailRenameField } from './RailRenameField'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -106,14 +115,75 @@ export type { RailNode, FlatRow } from '@/lib/rail/tree'
 // stop), drag-to-reparent, the indentation guides, the caret, and the
 // hover-CRUD — and docks its affordances through the molecule's `leading` /
 // `trailing` slots. Focus / keydown fire only for the row itself (guarded on
-// event target) so inner controls never double-drive the tree (ticket-27/28).
+// event target) so inner controls never double-drive the tree.
 //
 // The HOST draws the row box `PondRail.dc.html` specifies — padding
 // `5px 8px 5px 4px`, gap 7, radius 10 and the whole-row wash — so the wash
 // covers the caret and the indent, not just the label. The molecule inside is
 // the label body only: no padding, no wash.
 
+/** The foot's databases row while the pond has no databases root: the board always draws it. */
+const DATABASES_PLACEHOLDER_ID = '__databases__'
+const DATABASES_PLACEHOLDER_ROW: FlatRow = {
+  id: DATABASES_PLACEHOLDER_ID,
+  node: {
+    id: DATABASES_PLACEHOLDER_ID,
+    parentId: null,
+    type: 'page',
+    title: DATABASES_ROOT_TITLE,
+    order: 0,
+    children: [],
+  },
+  depth: 0,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+}
+
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
+/** What the rail lets a row do, derived once per row so no site re-derives it. */
+interface RowCapabilities {
+  /** Can be picked up and moved. */
+  draggable: boolean
+  /** Can take a drop: a before/after reorder or an into-reparent. */
+  droppable: boolean
+  /** Can take a child: the ＋ tool and the `+` key. */
+  addable: boolean
+  /** Can be deleted: the × tool and the Delete key. */
+  deletable: boolean
+  /** Can be renamed from the rail: F2 and double-click. */
+  renameable: boolean
+}
+
+const NO_CAPABILITIES: RowCapabilities = {
+  draggable: false,
+  droppable: false,
+  addable: false,
+  deletable: false,
+  renameable: false,
+}
+
+/**
+ * The pond root is a drop target and the one row a page is added under when the
+ * pond is empty — but not while it is, since an empty pond's root draws no ＋. The
+ * placeholder is no page at all. The databases root is a foot row: it can be moved
+ * and dropped on, never added to, deleted or renamed.
+ */
+const rowCapabilities = (id: string, node: RailNode, isEmpty: boolean): RowCapabilities => {
+  if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: !isEmpty }
+  if (id === DATABASES_PLACEHOLDER_ID) return NO_CAPABILITIES
+  if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
+  return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
+}
+
+/** Does the row allow the tree command? Navigation commands are always allowed. */
+const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
+  if (kind === 'addChild') return cap.addable
+  if (kind === 'delete') return cap.deletable
+  if (kind === 'rename') return cap.renameable
+  return true
+}
+
 const INDENT_STEP = 14
 /** The board row's own left padding; depth indentation adds to it. */
 const INDENT_BASE = 4
@@ -127,15 +197,13 @@ interface RailRowProps {
   isFolder: boolean
   isExpanded: boolean
   isSelected: boolean
-  /** An ancestor of the selection — the trail reads at a raised tone (t25). */
-  isOnPath: boolean
   /** The single roving tab stop lands here; arrow keys move it (APG tree). */
   isFocused: boolean
   isBusy: boolean
   /** The root (Life) can't be renamed or deleted and shows no ＋/×. */
   isRoot?: boolean
-  /** An area row — the raised label voice + its accent dot. #108: "area" is no
-   *  longer a stored type; the caller decides with `isAreaRow` (a top-level page). */
+  /** An area row — the raised label voice + its accent dot. The caller decides
+   *  with `isAreaRow` (a top-level page). */
   isArea?: boolean
   /** The databases root: the foot band's first row, drawn without a caret. */
   isDbRoot?: boolean
@@ -143,7 +211,7 @@ interface RailRowProps {
   setSize?: number
   /** Muted accent for the area dot; omit to render no dot (leaves). */
   accent?: string
-  /** Settle-in entrance for rows revealed on expand (ticket-41). */
+  /** Settle-in entrance for rows revealed on expand. */
   settleOnMount?: boolean
   /** A leading mark slot (an area's glyph, the Life root's waves — #91) —
    *  replaces the dot. */
@@ -153,6 +221,12 @@ interface RailRowProps {
   onToggle: (id: string) => void
   onAddChild?: (id: string) => void
   onDelete?: (id: string) => void
+  /** Absent for rows that cannot be renamed from the rail (the pond root, databases). */
+  onRenameStart?: (id: string) => void
+  /** This row's label is the rename field (`PondRail` `renaming`). */
+  isRenaming?: boolean
+  onRenameKeep?: (id: string, value: string, refocus: boolean) => void
+  onRenameCancel?: (id: string) => void
   onFocus: (id: string) => void
   onKeyDown: (id: string, e: KeyboardEvent<HTMLDivElement>) => void
 
@@ -178,7 +252,6 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     isFolder,
     isExpanded,
     isSelected,
-    isOnPath,
     isFocused,
     isBusy,
     isRoot = false,
@@ -193,6 +266,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     onToggle,
     onAddChild,
     onDelete,
+    onRenameStart,
+    isRenaming = false,
+    onRenameKeep,
+    onRenameCancel,
     onFocus,
     onKeyDown,
     draggable = false,
@@ -216,18 +293,16 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const [settled, setSettled] = useState(false)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
-  /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): an area
-   *  row carries 13.5 type, everything deeper 13. */
-  const isAreaRow = depth <= 1
-  // The rail's "you are here" trail: three ink tiers on the row label. The
-  // list-row molecule renders one tone (mockup default), so the rail docks its
-  // own voice onto the title via data-voice → CSS (see globals.css). full =
-  // the selected row (ink-100); raised = an area/root row or an ancestor of the
-  // selection (ink-80 meta); muted = a plain child row (ink-68). Hover lifts any
-  // row to full; the databases root is full at rest (the board's dbRow sets no
-  // colour, so it inherits ink-100).
-  const labelVoice: 'full' | 'raised' | 'muted' =
-    isSelected || hovered || isDbRoot ? 'full' : isOnPath || isRoot || isArea ? 'raised' : 'muted'
+  /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): the root and
+   *  an area row carry 13.5 type, everything deeper 13. Read off the node, not the
+   *  depth, because the databases tree is flattened from its own root. */
+  const isAreaRow = isRoot || isArea
+  // Ink tiers on the label: root, area rows, the selected row and the hovered row
+  // are full ink; every other page row is the .68 tier. The databases root has no
+  // colour of its own in the board, so it is full at rest.
+  const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
+  // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
+  const showPlus = isSelected || hovered
 
   return (
     <div
@@ -240,9 +315,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       aria-setsize={setSize}
       tabIndex={isFocused ? 0 : -1}
       data-tree-row={id}
-      data-on-path={isOnPath || undefined}
-      data-voice={labelVoice}
-      draggable={draggable}
+      draggable={draggable && !isRenaming}
       onAnimationEnd={() => setSettled(true)}
       onDragStart={
         onDragStart
@@ -261,6 +334,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       // The whole row opens the page (the caret and ＋/× stop propagation) —
       // strictly navigation; expansion belongs to the caret alone.
       onClick={() => onSelect(id)}
+      onDoubleClick={onRenameStart ? () => onRenameStart(id) : undefined}
       onFocus={(e) => {
         // Only the row itself — focusing an inner control (＋/×) must not yank
         // the roving focus back to the row.
@@ -273,34 +347,36 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
       }}
       className={`group relative flex items-center rounded-mn-row outline-none
         ${isDbRoot ? 'gap-[9px] px-2 py-[6px]' : 'gap-[7px] py-[5px] pr-2'}
-        focus-visible:ring-2 focus-visible:ring-mn-area-b focus-visible:ring-offset-0
+        focus-visible:ring-2 focus-visible:ring-mn-text/50 focus-visible:ring-offset-0
+        ${isArea && !isDbRoot ? 'mt-1' : ''}
         ${isSelected ? 'bg-mn-hover-fill' : hovered ? 'bg-mn-rail-hover' : ''}
         ${isDropRejected ? 'cursor-not-allowed' : 'cursor-pointer'}
         ${isDragging ? 'opacity-[.35]' : ''}
-        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-area-b ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
+        ${dropZone === 'into' ? 'ring-2 ring-inset ring-mn-text/50 ' : ''}${settleOnMount && !settled ? 'motion-settle-in ' : ''}`}
       style={isDbRoot ? undefined : { paddingLeft: padLeft }}
     >
       {/* Drop-line for a before/after reorder — a calm rule at the row's
           top/bottom edge; pointer-events-none so it never eats a drag event.
-          The into-highlight is the ring on the row itself (above). */}
+          The board draws it 58px from the card's left and 16px from its right;
+          the row sits 8px inside the card, so the line is inset 50 and 8 from it. It
+          is out of flow on purpose: an in-flow line would move the row under the pointer and
+          flicker the zone. The into-highlight is the ring on the row itself. */}
       {(dropZone === 'before' || dropZone === 'after') && (
         <span
           aria-hidden
-          className={`pointer-events-none absolute right-4 left-[58px] h-0.5 rounded-mn-hair bg-mn-text ${
+          data-part="drop-line"
+          className={`pointer-events-none absolute right-2 left-[50px] h-0.5 rounded-mn-hair bg-mn-text ${
             dropZone === 'before' ? '-top-px' : '-bottom-px'
           }`}
         />
       )}
 
-      {/* Indentation guides — one hairline per ancestor level, brightened a
-          touch on the selected/on-path trail so the eye follows depth home. */}
+      {/* Indentation guides — one hairline per ancestor level. */}
       {Array.from({ length: depth }).map((_, i) => (
         <span
           key={i}
           aria-hidden
-          className={`absolute top-0 bottom-0 w-px ${
-            isSelected || isOnPath ? 'bg-mn-line' : 'bg-mn-hair'
-          }`}
+          className="absolute top-0 bottom-0 w-px bg-mn-text/[0.09]"
           style={{ left: INDENT_BASE + i * INDENT_STEP + GUIDE_OFFSET }}
         />
       ))}
@@ -312,7 +388,7 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
           type="button"
           tabIndex={-1}
           aria-hidden
-          className="grid w-[9px] flex-shrink-0 place-items-center text-mn-text-secondary transition-colors hover:text-mn-text"
+          className="grid w-[9px] flex-shrink-0 place-items-center text-mn-text-secondary"
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation()
@@ -327,90 +403,110 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
 
       <PondMolecule
         kind="list-row"
-        // Always `rest`: the molecule's `selected` / `hover` states paint a wash on
-        // the label body alone, and the host paints it across the whole row.
-        state="rest"
+        // `selected` is what turns the dot to full ink; the wash it would also paint on
+        // the label body is cleared, because the host paints it across the whole row.
+        state={isSelected ? 'selected' : 'rest'}
         title={label}
         meta=""
         handle={false}
-        // `accent` is already gated (top-level, or a role the person chose), so the
-        // extra `isArea` here made the colour-only case unreachable: setting just a
-        // hue on a nested page painted the breadcrumb and kicker and left the rail
-        // row with no dot at all. Round three caught the dead branch.
-        dot={!isRoot && accent !== undefined && leading === undefined}
+        // Every row without a glyph draws the dot; `accent` only recolours it.
+        dot={leading === undefined}
         accent={accent}
-        emphasis={isRoot || isArea || isSelected}
+        emphasis={isAreaRow || isSelected}
         leading={leading}
+        titleField={
+          isRenaming && onRenameKeep && onRenameCancel ? (
+            <RailRenameField
+              title={label}
+              onKeep={(value, refocus) => onRenameKeep(id, value, refocus)}
+              onCancel={() => onRenameCancel(id)}
+            />
+          ) : undefined
+        }
         trailing={
-          <>
-            {/* hover CRUD — quiet at rest, revealed on hover / focus-within, and
-                REAL tab stops so keyboard/AT users reach them without a pointer
-                (t27). The root (Life) is the workspace, not a row: no add/delete. */}
-            {!isRoot && (onAddChild || onDelete) && (
-              <span className="flex flex-none items-center gap-2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                {onAddChild && (
-                  <button
-                    type="button"
-                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
-                    title="Add sub-page"
-                    aria-label={`Add sub-page to ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAddChild(id)
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M6 2.4v7.2M2.4 6h7.2"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                )}
-                {onDelete && (
-                  <button
-                    type="button"
-                    className="flex flex-none text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-2 focus-visible:ring-mn-area-b disabled:opacity-30"
-                    title="Delete page"
-                    aria-label={`Delete ${label}`}
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(id)
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                      <path
-                        d="M3 3l6 6M9 3l-6 6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </span>
-            )}
-          </>
+          isRenaming ? null : (
+            <>
+              {/* The tree has one roving tab stop, so ＋ and × are out of the Tab order
+                (tabIndex -1) and reached by + and Delete. The selected row shows ＋
+                alone; a hovered or focused row shows ＋ and ×; at rest the tools take
+                no width. The root takes ＋ and never ×. */}
+              {(onAddChild || (!isRoot && onDelete)) && (
+                <span
+                  data-part="row-tools"
+                  className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
+                    showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
+                  }`}
+                >
+                  {onAddChild && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                      title="Add sub-page"
+                      aria-label={`Add sub-page to ${label}`}
+                      disabled={isBusy}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onAddChild(id)
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                        <path
+                          d="M6 2.4v7.2M2.4 6h7.2"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {!isRoot && onDelete && (
+                    <span
+                      className={`flex overflow-hidden transition-opacity group-focus-within:max-w-5 group-focus-within:pl-2 group-focus-within:opacity-100 ${
+                        hovered ? 'max-w-5 pl-2 opacity-100' : 'max-w-0 pl-0 opacity-0'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                        title="Delete page"
+                        aria-label={`Delete ${label}`}
+                        disabled={isBusy}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(id)
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                          <path
+                            d="M3 3l6 6M9 3l-6 6"
+                            stroke="currentColor"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </span>
+                  )}
+                </span>
+              )}
+            </>
+          )
         }
         // `leading-[normal]` comes LAST on purpose. tailwind-merge counts
         // font-size as conflicting with leading (a `text-*` step can carry its
         // own), so a size appended after it silently drops it — #252's bug
         // class — and the row springs back to preflight's 1.5.
-        className={`min-h-0 w-full min-w-0 flex-1 ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
+        className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
           isAreaRow ? '' : ' text-[13px]'
-        } leading-[normal]`}
+        }${isFullInk ? '' : ' text-mn-text-secondary'} leading-[normal]`}
       />
     </div>
   )
 })
 
 // ── Presentational rail ──────────────────────────────────────────────────────
-
-const NO_PATH: ReadonlySet<string> = new Set()
 
 export interface RailViewProps {
   tree: RailNode[]
@@ -419,6 +515,9 @@ export interface RailViewProps {
    * appears once the pond list is non-empty. Resolved by `usePondName`.
    */
   pondName: string
+  /** The pond's own glyph — the root row's mark, the same one the head draws.
+   *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
+  pondGlyph?: string
   /**
    * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
    * and every row falls back to its derived mark, which is what the rail did
@@ -426,8 +525,6 @@ export interface RailViewProps {
    */
   marks?: ReadonlyMap<string, MarkSource>
   selectedId: string | null
-  /** Ancestor ids of the selected node — rendered at a raised tone (ticket-25). */
-  pathIds?: ReadonlySet<string>
   expanded: Set<string>
   /** Whether the Life root is expanded (reveals the whole tree). */
   lifeExpanded: boolean
@@ -438,18 +535,18 @@ export interface RailViewProps {
   onToggle: (id: string) => void
   onAddChild: (id: string) => void
   onDelete: (id: string) => void
+  /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
+  onRename: (id: string, title: string) => void
   onLife: () => void
   onToggleLife: () => void
+  /** Open the databases root, creating it first when the pond has none yet. */
+  onOpenDatabases: () => void
   /** Would a drop offer a landing? (valid, non-cyclic target — F25.) A false
    *  return paints the not-allowed affordance instead of a drop-line. */
   canDrop: (draggedId: string, targetId: string, zone: DropZone) => boolean
   /** Commit a drag→drop move (reparent/reorder). No-ops are absorbed downstream. */
   onMove: (draggedId: string, targetId: string, zone: DropZone) => void
 }
-
-/** The Life root's mark — the waves glyph in ink. An area colour is painted only
- *  when the person has chosen one (#229); ink is the default. */
-const LIFE_MARK = <AreaMark glyph={LIFE_GLYPH} color="var(--mn-text)" />
 
 /**
  * The databases root's mark: a hand-drawn cylinder in `currentColor` — a functional
@@ -525,8 +622,7 @@ const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
  * An area row's leading mark. An unmapped area returns nothing and keeps its
  * KindDot (PondAtom) through the molecule's `dot`.
  *
- * #108: there is no `type = 'area'` to test any more — `isAreaRow` names the
- * replacement rule (a top-level page).
+ * `isAreaRow` names the rule: a top-level page.
  *
  * #134: resolved through `resolveMark`, NOT from the title and a hash. The rail
  * was the one mark surface left deriving its own, which meant picking a tulip in
@@ -549,7 +645,7 @@ function rowMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMa
  * A row's leading glyph, or nothing (the row keeps its `dot`).
  *
  * WHICH ROWS CARRY ONE. A top-level row shows its mark as it always has — the
- * rail uses the mark as the area voice (#108). A NESTED row shows one only when
+ * rail uses the mark as the area voice. A NESTED row shows one only when
  * the person has EXPLICITLY chosen a glyph for it.
  *
  * That split is the point. Round two caught the rail still gated on `isAreaRow`
@@ -562,15 +658,15 @@ function rowMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMa
  */
 function areaMark(node: RailNode, mark: PageMark): ReactNode {
   if (!isAreaRow(node) && !mark.glyphIsOwn) return undefined
-  return mark.glyph ? <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} /> : undefined
+  return mark.glyph ? <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} /> : undefined
 }
 
 export function RailView({
   tree,
   pondName,
+  pondGlyph = LIFE_GLYPH,
   marks,
   selectedId,
-  pathIds = NO_PATH,
   expanded,
   lifeExpanded,
   busyId,
@@ -580,8 +676,10 @@ export function RailView({
   onToggle,
   onAddChild,
   onDelete,
+  onRename,
   onLife,
   onToggleLife,
+  onOpenDatabases,
   canDrop,
   onMove,
 }: RailViewProps) {
@@ -597,10 +695,11 @@ export function RailView({
     []
   )
 
-  // #101 / 3c: the databases root is the pond's SECOND root — "life for reading,
+  // 3c: the databases root is the pond's SECOND root — "life for reading,
   // databases for data". PondRail draws it after the Life tree, at the foot, so
   // it is lifted out of Life's areas here and flattened on its own (its row at
-  // depth 0, its databases at depth 1), present only once the pond has one.
+  // depth 0, its databases at depth 1). The board always draws the row: until
+  // the pond has a root it is a placeholder that creates the root when opened.
   const databasesRoot = useMemo(() => tree.find(isDatabasesRoot) ?? null, [tree])
   const lifeTree = useMemo(
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
@@ -612,7 +711,7 @@ export function RailView({
         ? flattenVisible([databasesRoot], expanded, true)
             .slice(1) // drop the synthetic Life row flattenVisible always leads with
             .map((f) => ({ ...f, depth: f.depth - 1 }))
-        : [],
+        : [DATABASES_PLACEHOLDER_ROW],
     [databasesRoot, expanded]
   )
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
@@ -646,8 +745,13 @@ export function RailView({
 
   // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
   // keep firing on the newly focused row.
+  // A row that already holds focus INSIDE it (its rename field) is left alone:
+  // every pages refetch rebuilds `visibleIds`, and re-focusing the row here would
+  // blur the field and keep the rename half-typed.
   useEffect(() => {
-    if (focusedId && visibleIds.has(focusedId)) rowRefs.current.get(focusedId)?.focus()
+    if (!focusedId || !visibleIds.has(focusedId)) return
+    const row = rowRefs.current.get(focusedId)
+    if (row && !row.contains(document.activeElement)) row.focus()
   }, [focusedId, visibleIds])
 
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
@@ -665,10 +769,45 @@ export function RailView({
     if (document.activeElement === document.body) rowRefs.current.get(fallback)?.focus()
   }, [flat, focusedId, visibleIds])
 
+  const handleSelect = (id: string) => {
+    if (id === DATABASES_PLACEHOLDER_ID) onOpenDatabases()
+    else onSelect(id)
+  }
+
+  // ── Inline rename (F2 / double-click) ───────────────────────────────────────
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+
+  const capabilitiesOf = (id: string): RowCapabilities => {
+    const node = flat.find((f) => f.id === id)?.node
+    return node ? rowCapabilities(id, node, isEmpty) : NO_CAPABILITIES
+  }
+
+  const handleRenameStart = (id: string) => {
+    if (capabilitiesOf(id).renameable) setRenamingId(id)
+  }
+
+  /** Closing the field, and — for ↵ / esc — handing focus back to the row. The
+   *  row is the same element before and after, so it is focused while the field
+   *  still exists; the field has settled by then, so the blur this raises is inert. */
+  const endRename = (id: string, refocus: boolean) => {
+    if (refocus) rowRefs.current.get(id)?.focus()
+    setRenamingId(null)
+  }
+
+  const handleRenameKeep = (id: string, value: string, refocus: boolean) => {
+    // Empty or unchanged keeps the old title: nothing to write.
+    const next = value.trim()
+    const current = flat.find((f) => f.id === id)?.node.title
+    endRename(id, refocus)
+    if (next !== '' && next !== current) onRename(id, next)
+  }
+
+  const handleRenameCancel = (id: string) => endRename(id, true)
+
   // ── Keyboard machine (pure rules; commands dispatched to the callbacks) ────
   function handleKeyDown(id: string, e: KeyboardEvent<HTMLDivElement>) {
     const cmd = treeKeyCommand(e.key, id, flat, { expanded, lifeExpanded })
-    if (!cmd) return
+    if (!cmd || !allowsCommand(capabilitiesOf(id), cmd.kind)) return
     e.preventDefault()
     switch (cmd.kind) {
       case 'focus':
@@ -681,13 +820,16 @@ export function RailView({
         break
       case 'open':
         if (cmd.id === LIFE_ID) onLife()
-        else onSelect(cmd.id)
+        else handleSelect(cmd.id)
         break
       case 'delete':
         onDelete(cmd.id)
         break
       case 'addChild':
         onAddChild(cmd.id)
+        break
+      case 'rename':
+        handleRenameStart(cmd.id)
         break
     }
   }
@@ -785,6 +927,7 @@ export function RailView({
     // two calls would walk the ancestor chain twice for the same answer. Not for
     // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
+    const cap = rowCapabilities(id, node, isEmpty)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
@@ -796,30 +939,30 @@ export function RailView({
         // `LIFE_NODE.title` alone changed nothing.
         //
         // Lowercase, like every other line of the rail's source copy in `Pond 05
-        // Shell` — the capitals in the boards are the eyebrow's own text-transform
-        // (#101 review). `usePondName()` supplies it, also lowercase.
+        // Shell` — the capitals in the boards are the eyebrow's own text-transform.
+        // `usePondName()` supplies it, also lowercase.
         title={pondName}
         depth={0}
-        isFolder
+        isFolder={isFolder}
         isExpanded={lifeExpanded}
-        isSelected={selectedId === null}
-        isOnPath={false}
+        // `PondRail` `empty`: the lone root is not selected and draws no ＋.
+        isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}
         isRoot
         posInSet={posInSet}
         setSize={setSize}
-        leading={LIFE_MARK}
+        leading={<PondMark glyph={pondGlyph} />}
         onSelect={onLife}
         onToggle={onToggleLife}
+        onAddChild={cap.addable ? onAddChild : undefined}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
         isDropRejected={isDropRejected(id)}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
+        onDragOver={cap.droppable ? handleDragOver : undefined}
+        onDragLeave={cap.droppable ? handleDragLeave : undefined}
+        onDrop={cap.droppable ? handleDrop : undefined}
       />
     ) : (
       <RailRow
@@ -831,40 +974,38 @@ export function RailView({
         isFolder={isFolder}
         isExpanded={expanded.has(id)}
         isSelected={id === selectedId}
-        isOnPath={id !== selectedId && pathIds.has(id)}
         isFocused={rovingId === id}
         isBusy={id === busyId}
         isArea={isAreaRow(node)}
         isDbRoot={isDatabasesRoot(node)}
         posInSet={posInSet}
         setSize={setSize}
-        // The databases root carries its own functional mark, no area colour (#101).
-        accent={
-          isDatabasesRoot(node)
-            ? undefined
-            : isAreaRow(node) || mark.roleIsOwn
-              ? areaRoleColor(mark.role)
-              : undefined
-        }
+        // The databases root carries its own functional mark, no area colour.
+        // Everywhere else the dot is ink until the person colours its area.
+        accent={isDatabasesRoot(node) ? undefined : markAccent(mark.role)}
         leading={isDatabasesRoot(node) ? DATABASES_MARK : areaMark(node, mark)}
-        // ticket-41: a row revealed on expand (any non-top-level row) settles in
-        // rather than popping. Keyed by id, so only newly-mounted rows animate.
+        // A row revealed on expand (any non-top-level row) settles in rather than
+        // popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
-        onSelect={onSelect}
+        onSelect={handleSelect}
         onToggle={onToggle}
-        onAddChild={onAddChild}
-        onDelete={onDelete}
+        onAddChild={cap.addable ? onAddChild : undefined}
+        onDelete={cap.deletable ? onDelete : undefined}
+        onRenameStart={cap.renameable ? handleRenameStart : undefined}
+        isRenaming={renamingId === id}
+        onRenameKeep={handleRenameKeep}
+        onRenameCancel={handleRenameCancel}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
-        draggable
+        draggable={cap.draggable}
         isDragging={draggingId === id}
         dropZone={dropZoneFor(id)}
         isDropRejected={isDropRejected(id)}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
+        onDragStart={cap.draggable ? handleDragStart : undefined}
+        onDragOver={cap.droppable ? handleDragOver : undefined}
+        onDragLeave={cap.droppable ? handleDragLeave : undefined}
+        onDrop={cap.droppable ? handleDrop : undefined}
+        onDragEnd={cap.draggable ? handleDragEnd : undefined}
       />
     )
   }
@@ -880,7 +1021,7 @@ export function RailView({
   // scrolling tree, and the foot.
   return (
     <aside
-      className="bg-mn-card shadow-mn-card rounded-mn-card my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans"
+      className="bg-mn-card shadow-mn-card rounded-mn-card relative my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans has-[[data-part=pond-switcher][aria-expanded=true]]:overflow-visible"
       style={{ width: RAIL_WIDTH_PX }}
     >
       {/* The switcher chevron appears only once there is a pond to list: before
@@ -895,7 +1036,7 @@ export function RailView({
       >
         <div className="min-h-0 flex-1 overflow-y-auto px-2">
           <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-            {flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+            {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
           </div>
 
           {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
@@ -917,7 +1058,7 @@ export function RailView({
           )}
           {!isLoading && isEmpty && (
             <p
-              className="mt-2 mr-4 ml-[34px] text-[12.5px] leading-[1.5] text-mn-text-secondary"
+              className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
               role="status"
             >
               no pages yet. ＋ new page, or ask pond to start one.
@@ -940,7 +1081,7 @@ export function RailView({
         )}
       </div>
 
-      {/* The foot: a full-width hairline, then the databases root (3c / #101: the
+      {/* The foot: a full-width hairline, then the databases root (3c: the
           pond's SECOND root, its own ARIA tree so the structure says what the rail
           says) and `settings`. The databases tree is capped at 40vh so an expanded
           root scrolls inside the foot instead of swallowing the rail. The scroller
@@ -950,18 +1091,16 @@ export function RailView({
         data-part="rail-foot"
         className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
       >
-        {databasesFlat.length > 0 && (
-          <div
-            role="tree"
-            aria-label="Databases"
-            aria-multiselectable={false}
-            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
-          >
-            {databasesFlat.map(renderRow)}
-          </div>
-        )}
-        {/* Not interactive until a settings surface exists (KAN-74): like the bell,
-            a dead button is worse than none. */}
+        <div
+          role="tree"
+          aria-label="Databases"
+          aria-multiselectable={false}
+          className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+        >
+          {databasesFlat.map(renderRow)}
+        </div>
+        {/* Not interactive until a settings surface exists: like the bell, a dead
+            button is worse than none. */}
         <div
           data-part="settings"
           className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
@@ -997,6 +1136,7 @@ export function Rail() {
   const queryClient = useQueryClient()
   const pondId = usePondId()
   const pondName = usePondName()
+  const pondGlyph = usePondGlyph()
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -1026,16 +1166,6 @@ export function Rail() {
     return map
   }, [tree])
   const selectedNodeId = searchParams.get('nodeId')
-
-  // The ancestor ids of the selected node — the rail renders these at a raised
-  // tone so the trail to "you are here" reads even in a deep tree (ticket-25).
-  const pathIds = useMemo<ReadonlySet<string>>(
-    () =>
-      selectedNodeId
-        ? new Set(ancestorPath(pages, selectedNodeId).map((c) => c.id))
-        : new Set<string>(),
-    [pages, selectedNodeId]
-  )
 
   // ── Rail follows you (ticket-25) ────────────────────────────────────────────
   // When the selection changes — via a rail click, a children-grid card, the
@@ -1109,14 +1239,35 @@ export function Rail() {
     return result
   }
 
+  const openingDatabases = useRef(false)
+
+  /** The databases row with no root behind it: create the root through the one
+   *  existing path (`getOrCreateDatabasesRoot`, also what creating a database
+   *  uses), then open it. */
+  const handleOpenDatabases = async () => {
+    if (openingDatabases.current) return
+    openingDatabases.current = true
+    try {
+      const root = await withUser((sb, uid) => getOrCreateDatabasesRoot(sb, uid, pondId))
+      if (root) navigateTo({ id: root.id, type: 'page', title: DATABASES_ROOT_TITLE })
+    } catch {
+      notify("Couldn't open databases")
+    } finally {
+      openingDatabases.current = false
+    }
+  }
+
   async function handleAddChild(id: string) {
+    // The root's ＋ adds a top-level page: the synthetic root is nobody's id.
+    const parentId = id === LIFE_ID ? null : id
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId: id, type: 'page', title: 'Untitled', pondId })
+        createPage(sb, uid, { parentId, type: 'page', title: 'Untitled', pondId })
       )
       // ensure the parent folder is open so the new child is visible
-      setExpanded((prev) => new Set(prev).add(id))
+      if (parentId === null) setLifeExpanded(true)
+      else setExpanded((prev) => new Set(prev).add(parentId))
       if (created) {
         // F26: seed the cache with the new row so the reveal nests it immediately,
         // rather than depending on the refetch having landed before we navigate.
@@ -1124,7 +1275,7 @@ export function Rail() {
           queryClient,
           {
             id: created.id,
-            parentId: id,
+            parentId,
             type: 'page',
             title: 'Untitled',
           },
@@ -1202,6 +1353,29 @@ export function Rail() {
     } finally {
       setBusyId(null)
     }
+  }
+
+  /**
+   * A kept rename: the title shows in the rail at once, then `updateTitle` — the
+   * call the page's own title editor persists through — may refuse it (a sibling
+   * already has the title). On failure only THIS row's title goes back, so a move
+   * or add that landed in between is untouched, and the clash is surfaced.
+   */
+  const handleRename = async (id: string, title: string) => {
+    const previous = nodeById.get(id)?.title ?? ''
+    applyRenameOptimistic(queryClient, { id, title }, pondId)
+    try {
+      await withUser((sb) => updateTitle(sb, id, title))
+    } catch (error) {
+      applyRenameOptimistic(queryClient, { id, title: previous }, pondId)
+      notify(
+        error instanceof DuplicateTitleError
+          ? `"${title}" already exists here`
+          : `Couldn't rename "${previous || 'Untitled'}"`
+      )
+      void queryClient.invalidateQueries({ queryKey: pagesKey() })
+    }
+    void queryClient.invalidateQueries({ queryKey: ['page', id] })
   }
 
   function handleToggle(id: string) {
@@ -1283,20 +1457,22 @@ export function Rail() {
       <RailView
         tree={tree}
         pondName={pondName}
+        pondGlyph={pondGlyph}
         marks={marks}
         selectedId={selectedNodeId}
-        pathIds={pathIds}
         expanded={expanded}
         lifeExpanded={lifeExpanded}
         busyId={busyId}
         isLoading={isLoading}
-        isEmpty={!isLoading && pages.length === 0}
+        isEmpty={!isLoading && tree.every(isDatabasesRoot)}
         onSelect={handleSelect}
         onToggle={handleToggle}
         onAddChild={handleAddChild}
         onDelete={handleDelete}
+        onRename={handleRename}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
+        onOpenDatabases={handleOpenDatabases}
         canDrop={canDrop}
         onMove={handleMove}
       />

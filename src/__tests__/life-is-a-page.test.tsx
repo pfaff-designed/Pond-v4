@@ -8,8 +8,8 @@
  * shared children grid. No bespoke surface, no focal numeral, no closing line.
  * An area is the same page with pages inside it (#108).
  *
- * AUDIT W9: the breadcrumb starts at the root PAGE — its own title — rather than
- * assuming the pond is called "life".
+ * AUDIT W9: the path (`PondCommand` at rest) starts at the root PAGE — its own
+ * title — rather than assuming the pond is called "life".
  */
 
 import React from 'react'
@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { withPathProbe } from './helpers/command-path-probe'
 
 // Which page the URL names — null is the root, Life.
 let currentNodeId: string | null = null
@@ -83,9 +84,7 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <DeletionUndoProvider>
-        <DocumentPanel />
-      </DeletionUndoProvider>
+      <DeletionUndoProvider>{withPathProbe(<DocumentPanel />)}</DeletionUndoProvider>
     </QueryClientProvider>
   )
 }
@@ -142,13 +141,11 @@ describe('Life is a page (#234)', () => {
     expect(await screen.findByText('Health')).toBeInTheDocument()
   })
 
-  it('the breadcrumb starts at the root page — its own title, not an assumed name (W9)', async () => {
+  it('the path starts at the root page — its own title, not an assumed name (W9)', async () => {
     HOME_TITLE = 'home'
     renderPanel()
     expect(await screen.findByLabelText('Page title')).toHaveValue('home')
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('home')).toBeInTheDocument()
-    expect(within(nav).queryByText('life')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('command-path')).toHaveTextContent(/^home$/))
   })
 
   it('leaves the databases root out of Life’s nested pages (3c: a peer root)', async () => {
@@ -199,8 +196,10 @@ describe('Life is a page (#234)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
       const editor = await screen.findByPlaceholderText('Write something…')
       fireEvent.change(editor, { target: { value: '/' } })
-      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      // An empty page leads with its templates; typing a block's name returns to the blocks.
+      await screen.findByRole('listbox', { name: 'page from template' })
       fireEvent.change(editor, { target: { value: `/${c.name}` } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(c.name))
       // The pick persists to the HOME row (id 'home-1'), not any area. Matched on
       // the picked block, not "the first save": the panel's debounced save is not
@@ -235,8 +234,10 @@ describe('Life is a page (#234)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
       const editor = await screen.findByPlaceholderText('Write something…')
       fireEvent.change(editor, { target: { value: '/' } })
-      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      // An empty page leads with its templates; typing a block's name returns to the blocks.
+      await screen.findByRole('listbox', { name: 'page from template' })
       fireEvent.change(editor, { target: { value: `/${name}` } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(name))
 
       await waitFor(() => {
@@ -265,10 +266,10 @@ describe('an area is the same page (#108, #234)', () => {
     // Nothing treats it as a distinct kind of thing.
     expect(screen.queryByText(/at a glance/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Add content' })).not.toBeInTheDocument()
-    // The pill starts at the root page and shows only the ancestors — none here.
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('life')).toBeInTheDocument()
-    expect(within(nav).queryByText('Health')).toBeNull()
+    // The path starts at the root page and ends at this one (`PondCommand`'s `current`).
+    await waitFor(() =>
+      expect(screen.getByTestId('command-path')).toHaveTextContent(/^life › Health$/)
+    )
   })
   // AUDIT C9 wires a chart to a nearby database; it does not invent one. The
   // nearby view here points at a collection that is NOT a child of the databases
