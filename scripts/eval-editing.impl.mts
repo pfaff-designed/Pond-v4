@@ -11,7 +11,7 @@
  * Fidelity requirement: production injects the current-page block context by
  * calling `formatNodeContext(data, { includeBlockIds: true })` (see
  * src/lib/context/assemble.ts → buildChatContext) and wrapping it with
- * `buildSystemPrompt(context)`. This eval reproduces BOTH verbatim, so the model
+ * `buildSystemPrompt(context, { research: false })`. This eval reproduces BOTH verbatim, so the model
  * sees the same "Editable blocks … reference a block by its id" listing (with the
  * real ids) it sees in the app. Testing any other context shape would be a fiction.
  *
@@ -31,11 +31,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { generateText, tool, stepCountIs } from 'ai'
 import { AI_MODELS } from '../src/lib/ai/models.ts'
 import { buildSystemPrompt } from '../src/app/api/chat/prompt.ts'
-import {
-  createPageTool,
-  proposeChangesTool,
-  fetchContextTool,
-} from '../src/app/api/chat/tools.ts'
+import { createPageTool, proposeChangesTool, fetchContextTool } from '../src/app/api/chat/tools.ts'
 import { formatNodeContext, type NodeContextData } from '../src/lib/context/assemble.ts'
 import type { Block } from '../src/lib/documents/types.ts'
 import type { ModuleChange } from '../src/lib/modules/ai-composition.ts'
@@ -167,7 +163,9 @@ interface CheckCtx {
 
 /** The block ids the model may touch this case (edit/remove targets). */
 function touchedIds(changes: ModuleChange[]): string[] {
-  return changes.filter((c): c is Extract<ModuleChange, { blockId: string }> => 'blockId' in c).map((c) => c.blockId)
+  return changes
+    .filter((c): c is Extract<ModuleChange, { blockId: string }> => 'blockId' in c)
+    .map((c) => c.blockId)
 }
 
 type Scenario = {
@@ -203,7 +201,10 @@ const SCENARIOS: Scenario[] = [
     check: ({ changes, fail }) => {
       if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
       const ch = changes[0]
-      if (ch.op !== 'edit' || ch.blockId !== 'blk-intro-01') return fail(`expected edit on blk-intro-01, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.op !== 'edit' || ch.blockId !== 'blk-intro-01')
+        return fail(
+          `expected edit on blk-intro-01, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`
+        )
       if (ch.data.type !== 'text') return fail(`type must stay text, got ${ch.data.type}`)
       const before = (orig('blk-intro-01') as Extract<Block, { type: 'text' }>).content
       if (ch.data.content.trim() === before.trim()) return fail('content did not change')
@@ -222,20 +223,27 @@ const SCENARIOS: Scenario[] = [
     check: ({ changes, fail }) => {
       if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
       const ch = changes[0]
-      if (ch.op !== 'edit' || ch.blockId !== 'blk-ingredients-02') return fail(`expected edit on blk-ingredients-02, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.op !== 'edit' || ch.blockId !== 'blk-ingredients-02')
+        return fail(
+          `expected edit on blk-ingredients-02, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`
+        )
       if (ch.data.type !== 'todo') return fail(`type must stay todo, got ${ch.data.type}`)
       const before = orig('blk-ingredients-02') as Extract<Block, { type: 'todo' }>
       const items = ch.data.items
-      if (items.length !== before.items.length) return fail(`item count changed ${before.items.length}→${items.length}`)
+      if (items.length !== before.items.length)
+        return fail(`item count changed ${before.items.length}→${items.length}`)
       const beef = items.find((i) => /beef/i.test(i.label))
       if (!beef) return fail('ground beef item missing after edit')
       if (!beef.checked) return fail('ground beef not checked')
       // every OTHER item stays unchecked (only the beef flips)
       const others = items.filter((i) => !/beef/i.test(i.label))
-      if (others.some((i) => i.checked)) return fail('a non-target item was checked — collateral change')
+      if (others.some((i) => i.checked))
+        return fail('a non-target item was checked — collateral change')
       // labels preserved (same multiset, order kept)
       const labels = items.map((i) => i.label.toLowerCase())
-      for (const b of before.items) if (!labels.includes(b.label.toLowerCase())) return fail(`item "${b.label}" was dropped/renamed`)
+      for (const b of before.items)
+        if (!labels.includes(b.label.toLowerCase()))
+          return fail(`item "${b.label}" was dropped/renamed`)
     },
   },
 
@@ -249,7 +257,10 @@ const SCENARIOS: Scenario[] = [
     check: ({ changes, fail }) => {
       if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
       const ch = changes[0]
-      if (ch.op !== 'edit' || ch.blockId !== 'blk-tips-06') return fail(`expected edit on blk-tips-06, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.op !== 'edit' || ch.blockId !== 'blk-tips-06')
+        return fail(
+          `expected edit on blk-tips-06, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`
+        )
       if (ch.data.type !== 'todo') return fail(`expected type morph to todo, got ${ch.data.type}`)
       if (!('items' in ch.data) || ch.data.items.length < 1) return fail('checklist has no items')
     },
@@ -265,7 +276,10 @@ const SCENARIOS: Scenario[] = [
     check: ({ changes, fail }) => {
       if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
       const ch = changes[0]
-      if (ch.op !== 'remove' || ch.blockId !== 'blk-tips-06') return fail(`expected remove of blk-tips-06, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.op !== 'remove' || ch.blockId !== 'blk-tips-06')
+        return fail(
+          `expected remove of blk-tips-06, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`
+        )
     },
   },
 
@@ -286,12 +300,17 @@ const SCENARIOS: Scenario[] = [
       if (creates.length !== 1) return fail(`expected 1 create, got ${creates.length}`)
       if (changes.some((c) => c.op === 'remove')) return fail('unexpected remove op')
       const edit = edits[0] as Extract<ModuleChange, { op: 'edit' }>
-      if (edit.blockId !== 'blk-intro-01') return fail(`edit must target intro, got ${edit.blockId}`)
+      if (edit.blockId !== 'blk-intro-01')
+        return fail(`edit must target intro, got ${edit.blockId}`)
       if (edit.data.type !== 'text') return fail(`intro edit must stay text, got ${edit.data.type}`)
       const create = creates[0] as Extract<ModuleChange, { op: 'create' }>
-      if (create.data.type !== 'todo') return fail(`the shopping list should be a todo, got ${create.data.type}`)
-      const labels = ('items' in create.data ? create.data.items : []).map((i) => i.label.toLowerCase())
-      if (!labels.some((l) => /butter/.test(l))) return fail('butter missing from the new checklist')
+      if (create.data.type !== 'todo')
+        return fail(`the shopping list should be a todo, got ${create.data.type}`)
+      const labels = ('items' in create.data ? create.data.items : []).map((i) =>
+        i.label.toLowerCase()
+      )
+      if (!labels.some((l) => /butter/.test(l)))
+        return fail('butter missing from the new checklist')
     },
   },
 
@@ -306,12 +325,18 @@ const SCENARIOS: Scenario[] = [
       // Adding an item to a todo is an edit of that todo block (items are nested).
       // The reliability point: the SECOND checklist is blk-steps-03, not the first.
       const touched = touchedIds(changes)
-      if (!touched.includes('blk-steps-03')) return fail(`did not target the second checklist (blk-steps-03); touched ${touched.join(',') || '(none)'}`)
-      const ch = changes.find((c) => c.op === 'edit' && c.blockId === 'blk-steps-03') as Extract<ModuleChange, { op: 'edit' }> | undefined
+      if (!touched.includes('blk-steps-03'))
+        return fail(
+          `did not target the second checklist (blk-steps-03); touched ${touched.join(',') || '(none)'}`
+        )
+      const ch = changes.find((c) => c.op === 'edit' && c.blockId === 'blk-steps-03') as
+        Extract<ModuleChange, { op: 'edit' }> | undefined
       if (!ch) return fail('no edit on the second checklist')
-      if (ch.data.type !== 'todo') return fail(`second checklist edit must stay todo, got ${ch.data.type}`)
+      if (ch.data.type !== 'todo')
+        return fail(`second checklist edit must stay todo, got ${ch.data.type}`)
       const labels = ('items' in ch.data ? ch.data.items : []).map((i) => i.label.toLowerCase())
-      if (!labels.some((l) => /preheat|375/.test(l))) return fail('preheat step not present after edit')
+      if (!labels.some((l) => /preheat|375/.test(l)))
+        return fail('preheat step not present after edit')
     },
   },
 
@@ -348,7 +373,8 @@ const SCENARIOS: Scenario[] = [
       const cp = calls.find((c) => c.toolName === 'create_page')
       if (!cp) return fail('create_page was NOT called in the same turn')
       const input = cp.input as { title?: string; blocks?: unknown[] }
-      if (!input.title || !/carbonara/i.test(input.title)) return fail(`create_page title should mention carbonara, got "${input.title}"`)
+      if (!input.title || !/carbonara/i.test(input.title))
+        return fail(`create_page title should mention carbonara, got "${input.title}"`)
     },
   },
 
@@ -367,10 +393,12 @@ const SCENARIOS: Scenario[] = [
       if (calls.some((c) => c.toolName === 'propose_changes')) {
         const known = new Set(RECIPE_BLOCKS.map((b) => b.id))
         for (const c of changes) {
-          if ('blockId' in c && !known.has(c.blockId)) return fail(`invented a block id: ${c.blockId}`)
+          if ('blockId' in c && !known.has(c.blockId))
+            return fail(`invented a block id: ${c.blockId}`)
         }
         // Editing/removing is wrong here (no such block); only a create would be OK.
-        if (changes.some((c) => c.op !== 'create')) return fail('edited/removed against a non-existent block')
+        if (changes.some((c) => c.op !== 'create'))
+          return fail('edited/removed against a non-existent block')
       }
     },
     note: 'no nutrition-facts block exists. Clarify (preferred) or create — never edit/remove an invented id.',
@@ -385,7 +413,8 @@ const SCENARIOS: Scenario[] = [
     expectTool: 'propose_changes',
     allowedTouch: ['blk-steps-03'],
     check: ({ changes, fail }) => {
-      const ch = changes.find((c) => c.op === 'edit' && c.blockId === 'blk-steps-03') as Extract<ModuleChange, { op: 'edit' }> | undefined
+      const ch = changes.find((c) => c.op === 'edit' && c.blockId === 'blk-steps-03') as
+        Extract<ModuleChange, { op: 'edit' }> | undefined
       if (!ch) return fail('no edit on the steps checklist')
       if (ch.data.type !== 'todo') return fail(`must stay todo, got ${ch.data.type}`)
       const items = 'items' in ch.data ? ch.data.items : []
@@ -406,7 +435,10 @@ const SCENARIOS: Scenario[] = [
     check: ({ changes, fail }) => {
       if (changes.length !== 1) return fail(`expected 1 change, got ${changes.length}`)
       const ch = changes[0]
-      if (ch.op !== 'edit' || ch.blockId !== 'blk-ingredients-02') return fail(`expected edit on ingredients, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
+      if (ch.op !== 'edit' || ch.blockId !== 'blk-ingredients-02')
+        return fail(
+          `expected edit on ingredients, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`
+        )
       if (ch.data.type !== 'todo') return fail(`must stay todo, got ${ch.data.type}`)
       const labels = ('items' in ch.data ? ch.data.items : []).map((i) => i.label.toLowerCase())
       if (labels.some((l) => /marinara|sauce/.test(l))) return fail('marinara still present')
@@ -430,11 +462,13 @@ const SCENARIOS: Scenario[] = [
         return fail(`expected edit on the table, got ${ch.op} ${'blockId' in ch ? ch.blockId : ''}`)
       if (ch.data.type !== 'table') return fail(`must stay table, got ${ch.data.type}`)
       const rows = 'rows' in ch.data ? ch.data.rows : []
-      if (rows.length !== 4) return fail(`expected 4 rows (3 preserved + 1 appended), got ${rows.length}`)
+      if (rows.length !== 4)
+        return fail(`expected 4 rows (3 preserved + 1 appended), got ${rows.length}`)
       const joined = rows.map((r) => r.cells.join(' ').toLowerCase())
       if (!joined.some((c) => c.includes('sander'))) return fail('new sander row missing')
       for (const tool of ['drill', 'saw', 'tape']) {
-        if (!joined.some((c) => c.includes(tool))) return fail(`collateral: existing ${tool} row dropped`)
+        if (!joined.some((c) => c.includes(tool)))
+          return fail(`collateral: existing ${tool} row dropped`)
       }
     },
   },
@@ -445,10 +479,10 @@ const SCENARIOS: Scenario[] = [
 type Result = { scenario: Scenario; actual: string; pass: boolean; detail: string }
 
 async function runOne(s: Scenario): Promise<Result> {
-  // EXACT production wrapping: buildSystemPrompt(context) with the real
+  // EXACT production wrapping: buildSystemPrompt(context, { research: false }) with the real
   // formatNodeContext(includeBlockIds) block (see route.ts + buildChatContext).
   const context = formatNodeContext(s.ctxData, { includeBlockIds: true })
-  const system = buildSystemPrompt(context)
+  const system = buildSystemPrompt(context, { research: false })
 
   const result = await generateText({
     model: anthropic(MODEL),
@@ -482,7 +516,8 @@ async function runOne(s: Scenario): Promise<Result> {
       if (!s.check) fail(`expected NO tool call, got ${actual}`)
     }
   } else {
-    if (!calls.some((c) => c.toolName === s.expectTool)) fail(`expected ${s.expectTool} to be called, got ${actual}`)
+    if (!calls.some((c) => c.toolName === s.expectTool))
+      fail(`expected ${s.expectTool} to be called, got ${actual}`)
   }
 
   // Surgical-batch invariant — touched ids ⊆ allowedTouch (edit/remove only; creates
@@ -491,7 +526,8 @@ async function runOne(s: Scenario): Promise<Result> {
   if (proposeCall && s.allowedTouch) {
     const allowed = new Set(s.allowedTouch)
     for (const id of touchedIds(changes)) {
-      if (!allowed.has(id)) fail(`SURGICAL: batch touched ${id}, not in allow-list [${s.allowedTouch.join(', ')}]`)
+      if (!allowed.has(id))
+        fail(`SURGICAL: batch touched ${id}, not in allow-list [${s.allowedTouch.join(', ')}]`)
     }
   }
 
@@ -501,7 +537,12 @@ async function runOne(s: Scenario): Promise<Result> {
   const pass = failures.length === 0
   const detail = pass
     ? proposeCall
-      ? changes.map((c) => `${c.op}${'blockId' in c ? `:${c.blockId}` : ''}${'data' in c ? `→${c.data.type}` : ''}`).join(' ')
+      ? changes
+          .map(
+            (c) =>
+              `${c.op}${'blockId' in c ? `:${c.blockId}` : ''}${'data' in c ? `→${c.data.type}` : ''}`
+          )
+          .join(' ')
       : actual === '(no tool)'
         ? result.text.replace(/\s+/g, ' ').slice(0, 80)
         : actual
@@ -526,7 +567,12 @@ async function runSuite(runIdx: number, total: number): Promise<Result[]> {
       console.log(r.pass ? 'PASS' : 'FAIL')
       if (!r.pass) console.log(`      ↳ ${r.detail}`)
     } catch (err) {
-      results.push({ scenario: s, actual: 'ERROR', pass: false, detail: (err as Error).message.slice(0, 160) })
+      results.push({
+        scenario: s,
+        actual: 'ERROR',
+        pass: false,
+        detail: (err as Error).message.slice(0, 160),
+      })
       console.log('ERROR')
       console.log(`      ↳ ${(err as Error).message.slice(0, 160)}`)
     }
@@ -543,7 +589,9 @@ async function run() {
   console.log('\n' + '═'.repeat(104))
   console.log(`EDITING EVAL — model: ${MODEL}${runs > 1 ? ` — ${runs} full runs` : ''}`)
   console.log('═'.repeat(104))
-  console.log(`  ${pad('CASE', 54)} ${pad('EXPECT', 20)} ${runs > 1 ? 'PASS RATE  SAW' : `${pad('SAW', 16)} RESULT`}`)
+  console.log(
+    `  ${pad('CASE', 54)} ${pad('EXPECT', 20)} ${runs > 1 ? 'PASS RATE  SAW' : `${pad('SAW', 16)} RESULT`}`
+  )
   console.log('  ' + '─'.repeat(100))
 
   let totalPass = 0
@@ -557,19 +605,26 @@ async function run() {
     if (runs > 1) {
       const saw = [...new Set(perRun.map((r) => r.actual))].join(', ')
       const flaky = passes > 0 && passes < runs ? '  ← FLAKY' : ''
-      console.log(`  ${pad(SCENARIOS[s].name, 54)} ${pad(expect, 20)} ${passes}/${runs}        ${saw}${flaky}`)
+      console.log(
+        `  ${pad(SCENARIOS[s].name, 54)} ${pad(expect, 20)} ${passes}/${runs}        ${saw}${flaky}`
+      )
       // Surface the first failing detail per case so the table is self-explaining.
       const firstFail = perRun.find((r) => !r.pass)
       if (firstFail) console.log(`      ↳ ${firstFail.detail}`)
     } else {
       const r = perRun[0]
-      console.log(`  ${pad(SCENARIOS[s].name, 54)} ${pad(expect, 20)} ${pad(r.actual, 16)} ${r.pass ? 'PASS' : 'FAIL'}`)
+      console.log(
+        `  ${pad(SCENARIOS[s].name, 54)} ${pad(expect, 20)} ${pad(r.actual, 16)} ${r.pass ? 'PASS' : 'FAIL'}`
+      )
       console.log(`      ↳ ${r.detail}`)
     }
   }
 
   console.log('\n' + '═'.repeat(104))
-  console.log(`SUMMARY: ${totalPass}/${totalCells} case-executions passed` + (runs > 1 ? ` across ${runs} full runs` : ''))
+  console.log(
+    `SUMMARY: ${totalPass}/${totalCells} case-executions passed` +
+      (runs > 1 ? ` across ${runs} full runs` : '')
+  )
   console.log('═'.repeat(104) + '\n')
   process.exit(totalPass === totalCells ? 0 : 1)
 }

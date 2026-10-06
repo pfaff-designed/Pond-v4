@@ -17,8 +17,6 @@ import {
   detectLifecycleSignal,
   applyLifecycleSignal,
   beginLifecycle,
-  lifecyclePhaseWord,
-  lifecycleContextLabel,
   parseLifecycle,
   isLifecycleActive,
   grillNudgeDue,
@@ -168,32 +166,6 @@ describe('applyLifecycleSignal — the transition table', () => {
     const before = { ...grill }
     applyLifecycleSignal(grill, 'advance')
     expect(grill).toEqual(before)
-  })
-})
-
-describe('lifecyclePhaseWord / lifecycleContextLabel — the quiet indicator', () => {
-  it('maps each working phase to a calm Press word', () => {
-    expect(lifecyclePhaseWord({ phase: 'grill' })).toBe('grilling')
-    expect(lifecyclePhaseWord({ phase: 'wayfinding' })).toBe('charting')
-    expect(lifecyclePhaseWord({ phase: 'build-out' })).toBe('building')
-  })
-
-  it('idle has no phase word', () => {
-    expect(lifecyclePhaseWord({ phase: 'idle' })).toBeNull()
-  })
-
-  it('context label appends the phase clause, preferring the project name', () => {
-    expect(lifecycleContextLabel({ phase: 'wayfinding', projectName: 'Kiln Studio' }, 'Life')).toBe(
-      'Kiln Studio · charting'
-    )
-  })
-
-  it('context label falls back to the base label when no project is named', () => {
-    expect(lifecycleContextLabel({ phase: 'grill' }, 'Woodworking')).toBe('Woodworking · grilling')
-  })
-
-  it('idle context label is just the base label', () => {
-    expect(lifecycleContextLabel({ phase: 'idle' }, 'Life')).toBe('Life')
   })
 })
 

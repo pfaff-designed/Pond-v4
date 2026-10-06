@@ -13,6 +13,10 @@
  * closes the save-as-template sheet the palette becomes — `PondCommand` itself
  * handles a click on it, esc and a press outside.
  *
+ * Also owns ⌘J, the composer's open/close key (`Pond 02` 2f): it asks, the composer
+ * answers (`requestComposerToggle`). Unlike ⌘K it is Cmd on Apple platforms and Ctrl
+ * elsewhere and never both, so Ctrl+J on a Mac is left to the browser.
+ *
  * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
  * open the New page dialog here: name-first, defaulting the destination to the
  * page in view, then landing in the editor. `ask pond about “q”` lands in the
@@ -27,7 +31,11 @@ import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
 import { PondCommand, type PaletteSheet } from '@/components/organisms/PondCommand'
-import { requestTerminalFocus } from '@/lib/terminal-focus'
+import {
+  isComposerToggleKey,
+  requestComposerToggle,
+  requestTerminalFocus,
+} from '@/lib/terminal-focus'
 import { isPaletteChord } from '@/lib/shell-commands'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { workspaceUrl } from '@/lib/pages/nav'
@@ -161,12 +169,22 @@ export function ShellCommands() {
   const pondSheetOpen = naming !== null
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!isPaletteChord(e)) return
-      e.preventDefault()
-      e.stopPropagation()
-      if (templateSheetOpen) closeTemplateSheet()
-      else if (pondSheetOpen) closeNewPondSheet()
-      else setPaletteOpen((prev) => !prev)
+      if (isPaletteChord(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (templateSheetOpen) closeTemplateSheet()
+        else if (pondSheetOpen) closeNewPondSheet()
+        else setPaletteOpen((prev) => !prev)
+        return
+      }
+      // "From anywhere" (2f), text fields included — the composer's own input is
+      // where ⌘J is most often pressed. Capture phase so an editor cannot swallow it.
+      if (isComposerToggleKey(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        // A held key repeats keydown; it must not flap the card open and shut.
+        if (!e.repeat) requestComposerToggle()
+      }
     }
     document.addEventListener('keydown', onKey, { capture: true })
     return () => document.removeEventListener('keydown', onKey, { capture: true })

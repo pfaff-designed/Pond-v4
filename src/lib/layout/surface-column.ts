@@ -17,7 +17,7 @@
 
 import type { CSSProperties } from 'react'
 import { useCommandFloats } from '@/lib/layout/command-path'
-import { composerClearancePadding } from '@/lib/layout/terminal-height'
+import { composerClearancePadding } from '@/lib/layout/composer-clearance'
 
 export interface SurfaceColumn {
   /** Props for the column wrapper (spread onto the div; add your own data-testid). */

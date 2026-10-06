@@ -25,7 +25,6 @@ export interface ProposalGroupCard {
   status: ProposalStatus
   targetName?: string
   targetMissing?: boolean
-  onOpenTarget?: () => void
   note?: string
   revised?: boolean
   skippedCount?: number
@@ -87,7 +86,6 @@ export function ProposalGroup({
           changes={card.changes}
           targetName={card.targetName}
           targetMissing={card.targetMissing}
-          onOpenTarget={card.onOpenTarget}
           status={card.status}
           note={card.note}
           revised={card.revised}

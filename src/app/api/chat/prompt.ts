@@ -138,28 +138,30 @@ const CORRESPONDENCE = `Keeping the correspondence moving:
 // How Pond maintains the visible Brief and reasons about completeness.
 const BRIEF = `The Brief. Every project has a visible sub-page named "Brief" holding its goal, motivation, key decisions (an append-only dated log), and open questions. Maintain it through the NORMAL propose_changes gate — a Brief update is an ordinary proposal, kept small and batched. Read the Brief (it's in context, or read_page it) whenever you work on that project. When asked about a project — or on return to it — reason about completeness from what the Brief and its pages actually show (phases without dates, budgets without totals, unchecked prerequisites, stale items); ground every observation in real page data and never invent one.`
 
-/**
- * The composed base system prompt. Section order matters only insofar as PERSONA
- * frames the voice and STEWARD precedes ROUTING; the ticket-39 sections
- * (LIFECYCLE, CORRESPONDENCE, BRIEF) follow the incumbent tool contract so the
- * eval sees the same routing rules first.
- */
-export const SYSTEM_PROMPT = [
-  PERSONA,
-  STEWARD,
-  SCOPING,
-  ROUTING,
-  CATALOG,
-  STRUCTURE,
-  RESEARCH,
-  LIFECYCLE,
-  CORRESPONDENCE,
-  BRIEF,
-].join('\n\n')
+/** The sections in order. RESEARCH tells the model it has `web_search`, so it is
+ *  composed in only on a question the person turned research on for. */
+const composeSections = (research: boolean): string =>
+  [
+    PERSONA,
+    STEWARD,
+    SCOPING,
+    ROUTING,
+    CATALOG,
+    STRUCTURE,
+    ...(research ? [RESEARCH] : []),
+    LIFECYCLE,
+    CORRESPONDENCE,
+    BRIEF,
+  ].join('\n\n')
+
+/** The prompt for a research turn: every section. */
+export const SYSTEM_PROMPT = composeSections(true)
+
+/** The prompt for a turn without the web: everything but RESEARCH. */
+export const SYSTEM_PROMPT_WITHOUT_WEB = composeSections(false)
 
 /** The named sections, exported so tests can pin the presence of each rule
- *  block independently of the composed whole (ticket-39: the refactor must keep
- *  every section's rules intact). */
+ *  block independently of the composed whole. */
 export const PROMPT_SECTIONS = {
   PERSONA,
   STEWARD,
@@ -178,7 +180,11 @@ export const PROMPT_SECTIONS = {
  * the assembled workspace context (current node + @mentions). Identical to the
  * inline logic route.ts used before extraction, so the eval can reproduce it.
  */
-export function buildSystemPrompt(context?: string | null): string {
-  if (!context) return SYSTEM_PROMPT
-  return `${SYSTEM_PROMPT}\n\nUse the following context about the user's workspace when relevant. Do not repeat it back verbatim unless asked.\n\n${context}`
+export function buildSystemPrompt(
+  context: string | null | undefined,
+  { research }: { research: boolean }
+): string {
+  const base = research ? SYSTEM_PROMPT : SYSTEM_PROMPT_WITHOUT_WEB
+  if (!context) return base
+  return `${base}\n\nUse the following context about the user's workspace when relevant. Do not repeat it back verbatim unless asked.\n\n${context}`
 }

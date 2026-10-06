@@ -25,7 +25,10 @@ jest.mock('@/lib/supabase/server', () => ({
     auth: { getUser: async () => ({ data: { user: null } }) },
   })),
 }))
-jest.mock('@/lib/conversation/transcript', () => ({ toModelMessages: async (m: unknown) => m }))
+jest.mock('@/lib/conversation/transcript', () => ({
+  ...jest.requireActual('@/lib/conversation/transcript'),
+  toModelMessages: async (m: unknown) => m,
+}))
 jest.mock('@/lib/context/assemble', () => ({
   buildChatContext: async () => null,
   // read_page's execute (ticket-30) calls these; the toolset assertions below only
@@ -41,6 +44,7 @@ jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 
 import { streamText } from 'ai'
 import { POST, parseChatBody } from '@/app/api/chat/route'
+import { SYSTEM_PROMPT, SYSTEM_PROMPT_WITHOUT_WEB } from '@/app/api/chat/prompt'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>
 
@@ -53,6 +57,8 @@ describe('parseChatBody', () => {
       // #312: the pond scope of any change-log record this turn writes. Absent
       // when the body carries none — there is no default pond to fall back to.
       pondId: undefined,
+      // Deep research is off unless the person turned it on for this question.
+      research: false,
       // ticket-39: the envelope now also carries question-card answers.
       // #17 slice 5: and define_schema decisions (`schemas`).
       resolutions: {
@@ -86,6 +92,15 @@ describe('parseChatBody', () => {
     // trusting it into the insert.
     expect(parseChatBody({ messages: [], pondId: 7 })?.pondId).toBeUndefined()
     expect(parseChatBody({ messages: [] })?.pondId).toBeUndefined()
+  })
+
+  it('carries research only when it is exactly true', () => {
+    expect(parseChatBody({ messages: [], research: true })?.research).toBe(true)
+    expect(parseChatBody({ messages: [], research: false })?.research).toBe(false)
+    // Anything that is not a boolean true is off: the web is opt-in, never inferred.
+    for (const research of ['true', 1, {}, [], null]) {
+      expect(parseChatBody({ messages: [], research })?.research).toBe(false)
+    }
   })
 
   it('drops the retired "area" nodeType (#108) rather than carrying it', () => {
@@ -183,5 +198,77 @@ describe('POST /api/chat toolset (ticket-30 cross-page edits)', () => {
     expect(Object.keys(tools)).toEqual(
       expect.arrayContaining(['propose_changes', 'read_page', 'create_page', 'fetch_context'])
     )
+  })
+
+  it('keeps the web out of the request by default', async () => {
+    await post({ messages: [] })
+    expect(Object.keys(lastStreamTextArgs().tools)).not.toContain('web_search')
+  })
+
+  it('offers web_search only when research is on for the question', async () => {
+    await post({ messages: [], research: true })
+    expect(Object.keys(lastStreamTextArgs().tools)).toContain('web_search')
+  })
+
+  it.each(['true', 1, null, {}])('does not read research: %p as on', async (research) => {
+    await post({ messages: [], research })
+    expect(Object.keys(lastStreamTextArgs().tools)).not.toContain('web_search')
+  })
+
+  it('composes the RESEARCH section into the system prompt only when research is on', async () => {
+    await post({ messages: [] })
+    expect(lastStreamTextArgs().system).toBe(SYSTEM_PROMPT_WITHOUT_WEB)
+    expect(lastStreamTextArgs().system).not.toContain('web_search')
+
+    await post({ messages: [], research: true })
+    expect(lastStreamTextArgs().system).toBe(SYSTEM_PROMPT)
+    expect(lastStreamTextArgs().system).toContain('You have a web_search tool')
+  })
+
+  describe('replaying a research turn', () => {
+    const searched = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'what do worktops cost?' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          { type: 'step-start' },
+          {
+            type: 'dynamic-tool',
+            toolName: 'web_search',
+            toolCallId: 'srvtoolu_01',
+            state: 'output-available',
+            input: { query: 'worktop prices' },
+            output: [],
+            providerExecuted: true,
+          },
+          { type: 'text', text: 'About 300 a metre.' },
+        ],
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'and fitting?' }] },
+    ]
+    const partTypes = () =>
+      (
+        lastStreamTextArgs() as unknown as { messages: Array<{ parts: Array<{ type: string }> }> }
+      ).messages.flatMap((m) => m.parts.map((p) => p.type))
+
+    it('keeps the search parts while research is on', async () => {
+      await post({ messages: searched, research: true })
+      expect(partTypes()).toContain('dynamic-tool')
+    })
+
+    it('strips them, and keeps the answer text, when research is off', async () => {
+      await post({ messages: searched })
+      expect(partTypes()).not.toContain('dynamic-tool')
+      expect(partTypes()).toContain('text')
+    })
+  })
+
+  it('leaves every other tool in place either way', async () => {
+    await post({ messages: [] })
+    const off = Object.keys(lastStreamTextArgs().tools).sort()
+    await post({ messages: [], research: true })
+    const on = Object.keys(lastStreamTextArgs().tools).sort()
+    expect(on.filter((name) => name !== 'web_search')).toEqual(off)
   })
 })

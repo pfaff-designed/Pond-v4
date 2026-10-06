@@ -193,7 +193,7 @@
      Duration ladder — pick by intent, not by taste:
        instant  reflex feedback (mn-down, color hover) — barely perceptible
        quick    a change the user just caused (checkbox mark, count tick,
-                menu grow, focus draw) — reads as immediate cause→effect
+                menu grow) — reads as immediate cause→effect
        settle   a thing finding its rest after a move (tree children, caret,
                 reorder shift, card resolve) — the "settle, not snap" tier
        calm     a single authored object arriving (a reply, a toast, a card)
@@ -480,12 +480,12 @@
   --mn-shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.3);
   --mn-shadow-lg: 0 12px 32px 0 rgb(0 0 0 / 0.4);
 
-  /* Floating glass on the dark ground (Pond 05 dark frames, computed verbatim:
-     rgba(72,73,64,.86) → rgba(48,49,42,.66)): the tint steps down to the dark
-     card, bordered and lit by paper at low alpha. */
-  --mn-glass-bg: linear-gradient(160deg, rgba(72, 73, 64, 0.86), rgba(48, 49, 42, 0.66));
-  --mn-glass-border: 1px solid rgba(250, 249, 239, 0.2);
-  --mn-glass-shadow: inset 0 1px 0 rgba(250, 249, 239, 0.12), 0 20px 54px rgba(0, 0, 0, 0.44);
+  /* Floating glass on the dark ground (`PondComposer` renderVals, ink):
+     the tint is the dark card at .92 → .78, hairlined and lit by paper at low
+     alpha. Every floating object reads these roles, so they all take it. */
+  --mn-glass-bg: linear-gradient(160deg, rgba(48, 49, 42, 0.92), rgba(48, 49, 42, 0.78));
+  --mn-glass-border: 1px solid rgba(250, 249, 239, 0.09);
+  --mn-glass-shadow: inset 0 1px 0 rgba(250, 249, 239, 0.06), 0 20px 54px rgba(0, 0, 0, 0.42);
 
   /* The pond switcher menu on the dark ground (`PondRail` `menu`, ink). */
   --mn-menu-bg: linear-gradient(
@@ -652,34 +652,6 @@
     .motion-resolve {
       transition: none;
     }
-    /* The baseline still appears on focus (it's a state indicator, not decor) —
-       it just snaps to full width instead of drawing. */
-    .motion-focus-draw::after {
-      transition: none;
-    }
-  }
-
-  /* Threshold-focus baseline: a sage hairline under the composer that draws in
-     left→right on focus. Rendered as an ::after so it needs no extra element.
-     The draw is guarded above. */
-  .motion-focus-draw {
-    position: relative;
-  }
-  .motion-focus-draw::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 1.5px;
-    background: var(--mn-text);
-    transform: scaleX(0);
-    transform-origin: left center;
-    transition: transform var(--motion-quick) var(--ease-out);
-    pointer-events: none;
-  }
-  .motion-focus-draw:focus-within::after {
-    transform: scaleX(1);
   }
 
   /* Authored card (Make Noise: paper-not-frames): the AI reply and every proposal
