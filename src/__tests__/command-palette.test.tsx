@@ -1,5 +1,6 @@
 /**
- * The ⌘K palette — `PondPicker kind="palette"` (#279, child b of #226).
+ * The ⌘K palette — `PondCommand` (`Pond 02` 2g): the breadcrumb at rest, grown in
+ * place into `PondPicker kind="palette"` (#279, child b of #226).
  *
  * The words the surface speaks — its group labels and its foot legend — are read
  * off `PondPicker.dc.html`'s own palette branch at test time, never hand-copied,
@@ -12,20 +13,28 @@
 import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
-import { CommandPalette } from '@/components/molecules/CommandPalette'
+import { PondCommand, type PondCommandProps } from '@/components/organisms/PondCommand'
 import {
   ASK_POND_ID,
   NEW_PAGE_ID,
+  NEW_POND_ID,
   PALETTE_FOOT,
+  PALETTE_FOOT_MOBILE,
   paletteEntries,
   type PaletteEntry,
+  type PaletteItem,
 } from '@/components/molecules/palette-entries'
 import { newPageParent, paletteItems, paletteScope } from '@/lib/pages/palette-items'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import type { PageRow } from '@/lib/pages/tree'
-import { PALETTE_ITEMS, PALETTE_SUGGESTED, paletteChrome } from './helpers/palette-fixture'
+import {
+  PALETTE_ITEMS,
+  PALETTE_SUGGESTED,
+  paletteChrome,
+  paletteItemsFor,
+} from './helpers/palette-fixture'
 import { readHandoff } from './helpers/handoff'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
@@ -38,10 +47,9 @@ function boardPaletteBranch(): string {
   return html.slice(start, end)
 }
 const boardGroups = () => [...boardPaletteBranch().matchAll(/\bG\('([^']+)'\)/g)].map((m) => m[1])
-const boardFoot = () => {
-  const m = boardPaletteBranch().match(/const keys = \[([^\]]+)\]/)!
-  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])
-}
+const quoted = (list: string) => [...list.matchAll(/'([^']+)'/g)].map((x) => x[1])
+const boardFoot = () => quoted(boardPaletteBranch().match(/const keys = \[([^\]]+)\]/)![1])
+const boardFootMobile = () => quoted(boardPaletteBranch().match(/foot = mob \? \[([^\]]+)\]/)![1])
 
 // The board's own rows, as items, are `helpers/palette-fixture` — shared with the stories.
 
@@ -56,6 +64,7 @@ const shape = (entries: PaletteEntry[]) =>
 const groupsOf = (entries: PaletteEntry[]) =>
   entries.flatMap((e) => (e.kind === 'group' ? [e.label] : []))
 /** One query per state — `sav` reaches the capitalised `Savings`. */
+const MONEY_SCOPE = { id: 'money', label: 'money' }
 const QUERIES = ['', 'cab', '> log', 'adobe', 'cabnet', 'make', 'sav']
 
 // ── The list, state by state ───────────────────────────────────────────────────
@@ -70,6 +79,12 @@ describe('paletteEntries — the board’s states', () => {
 
   it('the foot legend is the board’s `keys`, verbatim', () => {
     expect([...PALETTE_FOOT]).toEqual(boardFoot())
+  })
+
+  it('the mobile foot is the board’s `mob` branch, verbatim, and a subset of the full legend', () => {
+    expect([...PALETTE_FOOT_MOBILE]).toEqual(boardFootMobile())
+    expect(boardFootMobile()).toEqual(['↵ open', '> actions only'])
+    for (const hint of PALETTE_FOOT_MOBILE) expect(PALETTE_FOOT).toContain(hint)
   })
 
   it('opened: the recent pages, then the `suggested` actions the host supplies, in the board’s order', () => {
@@ -105,7 +120,7 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('typing: pages, then records, then actions — matched ones, then `ask pond about “q”`', () => {
-    const entries = paletteEntries(PALETTE_ITEMS, 'cab')
+    const entries = paletteEntries(paletteItemsFor('cab'), 'cab')
     expect(shape(entries)).toEqual([
       'G:pages',
       'page:cabinet plan',
@@ -121,6 +136,47 @@ describe('paletteEntries — the board’s states', () => {
     expect(ask).toMatchObject({ item: { kind: 'action', query: 'cab' } })
   })
 
+  it('a record is listed as the host searched it — a field match with no label hit is not filtered out', () => {
+    const byField: PaletteItem = {
+      id: 'r1',
+      label: 'quote',
+      kind: 'record',
+      sub: 'tasks · vendor acme cabinets',
+    }
+    const entries = paletteEntries([...PALETTE_ITEMS, byField], 'acme')
+    expect(shape(entries)).toEqual([
+      'G:records',
+      'record:quote',
+      'G:actions',
+      'action:ask pond about “acme”',
+    ])
+    expect(entries[1]).toMatchObject({ sub: 'tasks · vendor acme cabinets', hit: '' })
+    // Records never sit under a scope or a `>`.
+    expect(
+      shape(paletteEntries([...PALETTE_ITEMS, byField], 'acme', { scope: MONEY_SCOPE }))
+    ).not.toContain('record:quote')
+    expect(shape(paletteEntries([...PALETTE_ITEMS, byField], '> log'))).not.toContain(
+      'record:quote'
+    )
+  })
+
+  it('ponds: `new pond “q”` stands among the actions only where a pond matched, ahead of `ask pond`', () => {
+    const entries = paletteEntries(PALETTE_ITEMS, 'make', { pondName: 'life' })
+    expect(shape(entries)).toEqual([
+      'G:ponds',
+      'pond:make noise',
+      'G:pages in life',
+      'page:make this a page',
+      'G:actions',
+      'action:new pond “make”',
+      'action:ask pond about “make”',
+    ])
+    expect(entries.find((e) => e.kind === 'row' && e.item.id === NEW_POND_ID)).toMatchObject({
+      item: { action: 'new-pond', query: 'make' },
+    })
+    expect(shape(paletteEntries(PALETTE_ITEMS, 'cab'))).not.toContain('action:new pond “cab”')
+  })
+
   it('actions: a leading `>` drops pages and records, and no group label is drawn', () => {
     expect(shape(paletteEntries(PALETTE_ITEMS, '> log'))).toEqual([
       'action:log a workout',
@@ -133,7 +189,7 @@ describe('paletteEntries — the board’s states', () => {
   })
 
   it('record: a record is first class, with the field that matched under it', () => {
-    const entries = paletteEntries(PALETTE_ITEMS, 'adobe')
+    const entries = paletteEntries(paletteItemsFor('adobe'), 'adobe')
     expect(shape(entries)).toEqual([
       'G:records',
       'record:adobe creative cloud',
@@ -173,7 +229,6 @@ describe('paletteEntries — the board’s states', () => {
       'action:new page “cabnet” under life',
       'G:did you mean',
       'page:cabinet plan',
-      'record:cabinet quote',
     ])
     expect(entries[2]).toMatchObject({
       item: { id: NEW_PAGE_ID, action: 'new-page', query: 'cabnet' },
@@ -315,22 +370,78 @@ describe('paletteItems — every value from the owner that already derives it', 
   })
 })
 
-// ── The surface: ARIA, keys, and the gut ───────────────────────────────────────
+// ── The surface: one element, ARIA, keys, and the gut ─────────────────────────
 
-function renderPalette(props: Partial<React.ComponentProps<typeof CommandPalette>> = {}) {
+const PATH = { glyph: 'ramp', trail: ['life', 'professional'], current: 'standups' }
+
+function renderPalette(props: Partial<PondCommandProps> = {}) {
   const onSelect = jest.fn()
-  const onClose = jest.fn()
+  const onOpenChange = jest.fn()
   const utils = render(
-    <CommandPalette items={PALETTE_ITEMS} onSelect={onSelect} onClose={onClose} {...props} />
+    <PondCommand
+      path={PATH}
+      open
+      items={PALETTE_ITEMS}
+      onSelect={onSelect}
+      onOpenChange={onOpenChange}
+      {...props}
+    />
   )
-  return { ...utils, onSelect, onClose }
+  return { ...utils, onSelect, onOpenChange }
 }
-const glass = () => document.querySelector<HTMLElement>('[data-part="glass"]')!
+const box = () => document.querySelector<HTMLElement>('[data-part="command"]')!
 const input = () => screen.getByRole('combobox', { name: 'command palette' }) as HTMLInputElement
 
-describe('the palette is a floating glass with a combobox, not a dialog', () => {
+describe('at rest the palette is the breadcrumb (`PondCommand` t = 0)', () => {
+  it('the path, the area’s mark and ⌘K — no list, no input; a click on it asks to open', () => {
+    const { onOpenChange } = renderPalette({ open: false })
+    expect(box().getAttribute('data-state')).toBe('rest')
+    expect(box().querySelector('[data-part="path"]')!.textContent).toBe(
+      'life›professional›standups'
+    )
+    expect(box().querySelector('[data-part="glyph"] [data-icon]')!.getAttribute('data-icon')).toBe(
+      'ramp'
+    )
+    expect(box().querySelector('[data-part="chip"]')!.textContent).toBe('⌘K')
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('listbox')).toBeNull()
+    const opener = box().querySelector<HTMLElement>('[data-part="opener"]')!
+    expect(opener.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(opener)
+    expect(onOpenChange).toHaveBeenCalledWith(true)
+  })
+
+  it('the mode toggle switches light/dark on the document, and never opens the palette', async () => {
+    const { onOpenChange } = renderPalette({ open: false })
+    const mode = screen.getByRole('button', { name: 'dark mode' })
+    expect(mode.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(mode)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(window.localStorage.getItem('pond:mode')).toBe('dark')
+    await waitFor(() => expect(mode.getAttribute('aria-pressed')).toBe('true'))
+    fireEvent.click(mode)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    await waitFor(() => expect(mode.getAttribute('aria-pressed')).toBe('false'))
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+
+  it('every opening starts clean — no query, the first row — and lands the caret in the input', async () => {
+    const { rerender, onSelect, onOpenChange } = renderPalette()
+    fireEvent.change(input(), { target: { value: 'cab' } })
+    const props = { path: PATH, items: PALETTE_ITEMS, onSelect, onOpenChange }
+    rerender(<PondCommand {...props} open={false} />)
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull())
+    rerender(<PondCommand {...props} open />)
+    expect(input().value).toBe('')
+    expect(document.activeElement).toBe(input())
+    expect(screen.getByRole('option', { selected: true })).toHaveTextContent('kitchen renovation')
+  })
+})
+
+describe('open, it is a combobox in the same box — not a dialog, not a portal', () => {
   it('combobox → listbox → options; the input keeps focus and names the active row', () => {
-    renderPalette()
+    const { container } = renderPalette()
+    expect(container.contains(box())).toBe(true)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.querySelector('[aria-modal]')).toBeNull()
     expect(document.activeElement).toBe(input())
@@ -341,7 +452,8 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
     const selected = screen.getByRole('option', { selected: true })
     expect(input().getAttribute('aria-activedescendant')).toBe(selected.id)
     expect(selected).toHaveTextContent('kitchen renovation')
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(PALETTE_FOOT.join(''))
+    expect(box().querySelector('[data-part="foot"]')!.textContent).toBe(PALETTE_FOOT.join(''))
+    expect(box().querySelector('[data-part="opener"]')!.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('↓↓↵ opens the third row; hover selects; a click opens', () => {
@@ -367,7 +479,7 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
       )!
     expect(chase.querySelector('[data-part="hit"]')!.textContent).toBe('cab')
     fireEvent.change(input(), { target: { value: 'cabnet' } })
-    expect(glass().querySelector('[data-part="note"]')!.textContent).toBe(
+    expect(box().querySelector('[data-part="note"]')!.textContent).toBe(
       'no page or record called “cabnet”'
     )
     expect(screen.queryByText('no results')).toBeNull()
@@ -376,22 +488,38 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
     )
   })
 
-  it('esc, ⌘K and a press outside close; esc is the one button, and it carries the ring', () => {
-    const { onClose } = renderPalette()
+  it('esc, a press outside and the `esc` chip ask to close; ⌘K does not (the shell owns that key)', () => {
+    const { onOpenChange } = renderPalette()
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(onOpenChange).toHaveBeenCalledTimes(1)
     fireEvent.pointerDown(document.body)
-    expect(onClose).toHaveBeenCalledTimes(3)
+    expect(onOpenChange).toHaveBeenCalledTimes(2)
     fireEvent.pointerDown(input())
-    expect(onClose).toHaveBeenCalledTimes(3)
+    expect(onOpenChange).toHaveBeenCalledTimes(2)
     const esc = screen.getByRole('button', { name: 'esc' })
     expect(esc.className).toMatch(/focus-visible:outline-mn-area-b/)
     expect(esc.className).not.toMatch(/outline-none/)
+    fireEvent.click(esc)
+    expect(onOpenChange).toHaveBeenCalledTimes(3)
+    expect(onOpenChange.mock.calls.every(([open]) => open === false)).toBe(true)
+  })
+
+  it('below md the foot hides the hints a touch screen has no key for; the rest stay', () => {
+    renderPalette()
+    const spans = [...box().querySelectorAll('[data-part="foot"] span')]
+    expect(spans.map((f) => [f.textContent, f.classList.contains('max-md:hidden')])).toEqual([
+      ['↑↓ move', true],
+      ['↵ open', false],
+      ['> actions only', false],
+      ['esc close', true],
+    ])
   })
 
   it('scoped: the chip, no placeholder, and ⌫ on an empty line clears it', () => {
     renderPalette({ scope: { id: 'money', label: 'money' } })
-    expect(glass().querySelector('[data-part="scope"]')!.textContent).toBe('in money:')
+    expect(box().querySelector('[data-part="scope"]')!.textContent).toBe('in money:')
     expect(input().placeholder).toBe('')
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
       'budgetpage↵',
@@ -400,51 +528,78 @@ describe('the palette is a floating glass with a combobox, not a dialog', () => 
       'transactionsdatabase',
     ])
     fireEvent.keyDown(input(), { key: 'Backspace' })
-    expect(glass().querySelector('[data-part="scope"]')).toBeNull()
+    expect(box().querySelector('[data-part="scope"]')).toBeNull()
     expect(input().placeholder).toBe('jump to a page, or > for actions')
   })
 
   it('the chrome is lowercase in every state — Pond’s words; a page’s title is content and keeps its case', () => {
     for (const q of QUERIES) {
       const { unmount } = renderPalette({ defaultQuery: q, suggested: PALETTE_SUGGESTED })
-      expect(paletteChrome(glass())).not.toMatch(/[A-Z]/)
+      expect(paletteChrome(box())).not.toMatch(/[A-Z]/)
       unmount()
     }
     // The guard is narrow, not blind: `Savings` renders as written (ADR 0004 §4).
     renderPalette({ defaultQuery: 'sav' })
     expect(screen.getByRole('option', { selected: true })).toHaveTextContent('Savings')
-    expect(glass().textContent).toMatch(/[A-Z]/)
+    expect(box().textContent).toMatch(/[A-Z]/)
   })
 })
 
-describe('the gut: nothing of the dialog survives in the source', () => {
-  const palette = read('src/components/molecules/CommandPalette.tsx')
+describe('the gut: one morphing element — nothing of the dialog, the wash or the portal', () => {
+  const command = read('src/components/organisms/PondCommand.tsx')
+  const morph = read('src/lib/motion/use-morph.ts')
   const paletteRow = read('src/components/molecules/palette-row.tsx')
 
-  it('no dialog chrome, no named type sizes, no `cn()`', () => {
-    for (const src of [palette, paletteRow]) {
-      expect(src).not.toMatch(/dialogBackdropClass|role="dialog"|aria-modal/)
-      expect(src).not.toMatch(/\btext-(xs|sm|base|lg|xl)\b|text-\[0\.65rem\]/)
-      expect(src).not.toMatch(/import \{ cn \}/)
-    }
+  it('the board’s geometry and timing are written in, read off `PondCommand.dc.html`', () => {
+    const board = readHandoff('PondCommand.dc.html')
+    expect(board).toMatch(/const OPEN_W = 560, ENTER_MS = 280, EXIT_MS = 150/)
+    expect(board).toMatch(/restW = this\.state\.cw \+ 124/)
+    expect(board).toMatch(/easePress = bez\(\.22, \.8, \.2, 1\), easeIn = bez\(\.4, 0, 1, 1\)/)
+    expect(morph).toMatch(/MORPH_OPEN_MS = 280/)
+    expect(morph).toMatch(/MORPH_CLOSE_MS = 150/)
+    expect(morph).toMatch(/bezier\(0\.22, 0\.8, 0\.2, 1\)/)
+    expect(morph).toMatch(/bezier\(0\.4, 0, 1, 1\)/)
+    expect(command).toMatch(/REST_CHROME_PX = 124/)
+    expect(command).toMatch(/md:\[--open-w:560px\]/)
+    expect(command).toMatch(/rounded-\[20px\]/)
+    // One eased value drives everything: the board's ramps, verbatim.
+    for (const ramp of ['ramp(0.25, 0.4)', 'ramp(0.3, 0.3)', 'ramp(0.6, 0.4)', '/ 0.35'])
+      expect(command).toContain(ramp)
+    expect(command).toMatch(/0\.45 \+ 0\.035 \* i/)
   })
 
-  it('the focus ring is imported from its one owner; the only `outline-none` is the input, which carries no ring', () => {
-    expect(palette).toMatch(/from '@\/components\/atoms\/focus-ring'/)
-    expect(palette.match(/outline-none/g)).toHaveLength(1)
-    const input = palette.match(/const INPUT =\s*'([^']+)'/)![1]
-    expect(input).toMatch(/outline-none/)
-    expect(input).not.toMatch(/outline-\d|outline-mn/)
+  it('no portal, no wash, no dialog chrome, no scale — and the old placement is gone', () => {
+    expect(command).not.toMatch(/createPortal|data-part="wash"|bg-mn-surface\/\[0\.62\]/)
+    expect(command).not.toMatch(/role="dialog"|aria-modal|dialogBackdropClass/)
+    expect(command).not.toMatch(/scale\(|top-\[110px\]|-translate-x-\[40%\]/)
+    expect(command).not.toMatch(/\btext-(xs|sm|base|lg|xl)\b/)
+    expect(command).not.toMatch(/import \{ cn \}/)
+    expect(command).toMatch(/font-sans text-\[16px\] font-medium .*md:text-\[13\.5px\]/)
+    expect(paletteRow).toMatch(/py-\[13px\].*text-\[15px\].*md:py-\[9px\] md:text-\[13\.5px\]/)
+  })
+
+  it('⌘K has one owner: the element registers no chord, and the shell reads one platform-aware predicate', () => {
+    expect(command).not.toMatch(/metaKey|ctrlKey|toLowerCase\(\) === 'k'/)
+    const shell = read('src/components/organisms/ShellCommands.tsx')
+    expect(shell).toMatch(/isPaletteChord/)
+    expect(shell).not.toMatch(/metaKey|ctrlKey/)
+  })
+
+  it('the focus ring is imported from its one owner; the only `outline-none` is the input', () => {
+    expect(command).toMatch(/from '@\/components\/atoms\/focus-ring'/)
+    expect(command.match(/outline-none/g)).toHaveLength(1)
+    const field = command.match(/const INPUT =\s*'([^']+)'/)![1]
+    expect(field).toMatch(/outline-none/)
+    expect(field).not.toMatch(/outline-\d|outline-mn/)
     expect(paletteRow).not.toMatch(/outline-none/)
   })
 
   it('the group label is the page eyebrow and the split is #278’s — one owner each, no second copy', () => {
-    expect(palette).toMatch(/pageEyebrowClass/)
+    expect(command).toMatch(/pageEyebrowClass/)
     expect(read('src/components/molecules/palette-entries.ts')).toMatch(
       /import \{ normalizeQuery, splitMatch \} from '\.\/slash-entries'/
     )
     expect(read('src/components/molecules/palette-entries.ts')).not.toMatch(/function splitMatch/)
-    // `hint`, `enter` and `match` are the board's once-emitted recipes: imported, never restated.
     expect(paletteRow).toMatch(/import \{ ENTER, HINT, MATCH, Mark \} from '\.\/slash-row'/)
     expect(paletteRow).not.toMatch(
       /underline-offset|decoration-\[|max-w-\[45%\]|const (HINT|ENTER|MATCH)\b/

@@ -41,10 +41,10 @@ const node = (
 /**
  * health[sleep, marathon] · personal[food[recipes], trips] · scratch
  *
- * #108: no row carries a type='area' any more — health/personal/food are areas
- * only because they hold pages. `scratch` is top-level and childless, which under
- * the new folder rule still makes it a FOLDER (that is where a person starts an
- * area); `trips` and `sleep` are the genuine leaves.
+ * No row carries a type='area' — health/personal/food are areas
+ * only because they hold pages. `scratch` is top-level and childless: an area
+ * row by voice, but a LEAF by structure — no caret, no aria-expanded. `trips`
+ * and `sleep` are the nested leaves.
  */
 const TREE: RailNode[] = [
   node('health', 'page', 'Health', [
@@ -100,10 +100,14 @@ describe('buildTree', () => {
   })
 })
 
-// #108: folder-ness is computed — top-level, or has children. No type is read.
+// Folder-ness is computed — it has children. No type is read.
 describe('isFolderNode', () => {
-  it('a top-level page is a folder even with no children (an area-to-be)', () => {
-    expect(isFolderNode(node('a', 'page', 'A'))).toBe(true)
+  it('a childless top-level page is a leaf: it cannot expand, so it must not claim to', () => {
+    expect(isFolderNode(node('a', 'page', 'A'))).toBe(false)
+    expect(flattenVisible([node('a', 'page', 'A')], new Set(), true)[1]).toMatchObject({
+      id: 'a',
+      isFolder: false,
+    })
   })
   it('a page with children (composite) is a folder', () => {
     expect(isFolderNode(node('p', 'page', 'P', [node('c', 'page', 'C')]))).toBe(true)
@@ -124,7 +128,7 @@ describe('isFolderNode', () => {
   })
 })
 
-// #108: the area VOICE (raised label, accent, default glyph) is a different
+// The area VOICE (full-ink label, accent, default glyph) is a different
 // question from folder-ness, so it is its own named rule.
 describe('isAreaRow', () => {
   it('a top-level page is an area row, childless or not', () => {
@@ -151,6 +155,10 @@ describe('flattenVisible', () => {
       posInSet: 1,
       setSize: 1,
     })
+  })
+
+  it('a root with nothing under it is not a folder', () => {
+    expect(flattenVisible([], new Set(), true)[0]).toMatchObject({ id: LIFE_ID, isFolder: false })
   })
 
   it('life collapsed → only the Life row', () => {
@@ -226,9 +234,8 @@ describe('treeKeyCommand', () => {
   })
 
   it('ArrowRight is a no-op on a leaf and on an open folder with no visible child', () => {
-    // `trips` is the genuine leaf (nested + childless); top-level `scratch` is a
-    // folder under the #108 rule, so it would expand rather than no-op.
     expect(key('ArrowRight', 'trips')).toBeNull()
+    expect(key('ArrowRight', 'scratch')).toBeNull()
     // an open top-level page with no children: expanding an empty area
     const emptyArea = [node('empty', 'page', 'Empty')]
     const f = flattenVisible(emptyArea, new Set(['empty']), true)
@@ -270,9 +277,15 @@ describe('treeKeyCommand', () => {
     expect(key('Delete', LIFE_ID)).toBeNull()
   })
 
-  it('+ adds a child — but never on the Life root', () => {
+  it('+ adds a child — on the Life root too, where it adds a top-level page', () => {
     expect(key('+', 'personal')).toEqual({ kind: 'addChild', id: 'personal' })
-    expect(key('+', LIFE_ID)).toBeNull()
+    expect(key('+', LIFE_ID)).toEqual({ kind: 'addChild', id: LIFE_ID })
+  })
+
+  it('F2 renames the row in place — but never the Life root', () => {
+    expect(key('F2', 'trips')).toEqual({ kind: 'rename', id: 'trips' })
+    expect(key('F2', 'health')).toEqual({ kind: 'rename', id: 'health' })
+    expect(key('F2', LIFE_ID)).toBeNull()
   })
 
   it('unknown keys and stale ids return null (no focus jump)', () => {

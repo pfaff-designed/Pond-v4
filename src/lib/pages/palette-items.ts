@@ -8,9 +8,10 @@
  *   glyph   `resolveMark` — the rail, breadcrumb and card already agree on it
  *   path    the ancestor ids, so the palette's scope keeps what sits under a page
  *
- * Records (`row` pages) never enter the `['pages']` cache, so the palette lists
- * none live yet; the `record` kind renders and is fed when a records source
- * exists. `recentIds` are newest first — `Pond 02` 2g: "the last three pages".
+ * Records (`row` pages) never enter the `['pages']` cache, so they are not here:
+ * `palette-records.ts` searches them per query. Ponds are not pages either —
+ * `pondItems` below. `recentIds` are newest first — `Pond 02` 2g: "the last three
+ * pages".
  *
  * The one `byId` index built here is threaded through `ancestorPath` and
  * `crumbTrail`, so the list is linear in page count (AUDIT G7, volume).
@@ -20,6 +21,8 @@ import type { PaletteItem, PaletteScope } from '@/components/molecules/palette-e
 import { ancestorPath, crumbTrail } from '@/lib/pages/crumbs'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import type { PageRow } from '@/lib/pages/tree'
+import type { Pond } from '@/lib/pond/client'
+import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 
 /** The shell's two standing actions, in Pond's words; `action` is the job the host reads. */
 export const NEW_PAGE_ACTION: PaletteItem = {
@@ -84,6 +87,24 @@ export function paletteItems(
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),
   ]
 }
+
+/**
+ * The other ponds, as `pond` rows — `PondPicker`'s `ponds` state: the pond's own
+ * glyph and `pond · switch` beneath its name. The pond in view is left out (there is
+ * nothing to switch to), and no `⌘n` hint rides on a row: those keys collide with
+ * the browser's tab switching (AUDIT K1). The id is the pond's own, so the host
+ * navigates with `pondHref(item.id)`.
+ */
+export const pondItems = (ponds: readonly Pond[], activeId: string | null): PaletteItem[] =>
+  ponds
+    .filter((p) => p.id !== activeId)
+    .map((p) => ({
+      id: p.id,
+      label: p.name,
+      kind: 'pond',
+      sub: 'pond · switch',
+      glyph: p.glyph ?? LIFE_GLYPH,
+    }))
 
 /**
  * Where `new page` files: the page in view, else the pond's root. ONE value,

@@ -3,7 +3,7 @@
  * one segmented control — shared by the `/` menu (#278) and the source picker
  * (#280). The ⌘K palette (#279) is the SANS variant (padding 10, gap 2, head
  * `10px 12px 14px`, sans group eyebrows) and keeps its own strings in
- * `CommandPalette.tsx`; ADR 0004 §4 keeps the two registers apart.
+ * `PondCommand.tsx`; ADR 0004 §4 keeps the two registers apart.
  *
  * #278 defined these inline in `SlashMenu.tsx`; #280 lifted them here unchanged
  * because the issue's reuse rule says "if #278 did not extract them, extract them

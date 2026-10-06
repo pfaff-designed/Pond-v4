@@ -1,13 +1,13 @@
 /**
  * The ⌘K palette's board rows as items (#279) — ONE fixture for the jest suite
- * (`command-palette.test.tsx`) and the stories (`CommandPalette.stories.tsx`),
+ * (`command-palette.test.tsx`) and the stories (`PondCommand.stories.tsx`),
  * so the two cannot drift, and so the stories file exports nothing Storybook
  * would mistake for a story (it treats every named export as one; this repo
  * sets `excludeStories` nowhere).
  *
  * The rows are `PondPicker.dc.html`'s palette frames: the three recent pages,
  * the pages and records its `typing` / `record` / `empty` / `scoped` states
- * list, the `ponds` stub (⌘2 — multi-pond is M3), and its actions. `Savings` is
+ * list, a `pond` row, and its actions. `Savings` is
  * the one row the board does not draw: a page whose title is capitalised, so a
  * guard that the CHROME is lowercase is exercised against page content that
  * keeps its case (ADR 0004 §4 — "a page's name is page content quoted inside a
@@ -70,25 +70,36 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
     path: ['personal', 'journal'],
   },
   { id: 'transactions', label: 'transactions', kind: 'database', sub: 'money', path: ['money'] },
-  { id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' },
-  {
-    id: 'adobe',
-    label: 'adobe creative cloud',
-    kind: 'record',
-    sub: 'subscriptions · renews 28 sep',
-  },
   {
     id: 'make-noise',
     label: 'make noise',
     kind: 'pond',
     sub: 'pond · switch',
     glyph: 'lightning-03',
-    key: '⌘2',
   },
   { id: 'chase', label: 'chase the cabinet quote', kind: 'action' },
   { id: 'log-workout', label: 'log a workout', kind: 'action' },
   { id: 'log-meal', label: 'log a meal', kind: 'action' },
   { id: 'log-sleep', label: 'log sleep', kind: 'action' },
+]
+
+/** What the host feeds under `records` for a query — listed as handed over, never re-filtered. */
+export const PALETTE_RECORDS: Readonly<Record<string, readonly PaletteItem[]>> = {
+  cab: [{ id: 'cabinet-quote', label: 'cabinet quote', kind: 'record', sub: 'tasks' }],
+  adobe: [
+    {
+      id: 'adobe',
+      label: 'adobe creative cloud',
+      kind: 'record',
+      sub: 'subscriptions · renews 28 sep',
+    },
+  ],
+}
+
+/** The fixture list as the shell would hand it for `query`: pages and actions, plus its records. */
+export const paletteItemsFor = (query: string): readonly PaletteItem[] => [
+  ...PALETTE_ITEMS,
+  ...(PALETTE_RECORDS[query] ?? []),
 ]
 
 /**
@@ -101,16 +112,16 @@ export const PALETTE_SUGGESTED: readonly PaletteItem[] = ['chase', 'log-workout'
 )
 
 /**
- * Every string on the glass that is Pond's own — the chrome — as one string:
- * group labels, the note, the foot, the head's placeholder, `esc` and scope chip,
- * and the action rows (minted or standing, all in Pond's words). Page, record
- * and pond names are content and are left out: they keep their case.
+ * Every string on the open box that is Pond's own — the chrome — as one string:
+ * group labels, the note, the foot, the input's placeholder, the `esc` chip and
+ * scope chip, and the action rows (minted or standing, all in Pond's words).
+ * Page, record and pond names are content and are left out: they keep their case.
  */
-export function paletteChrome(glass: HTMLElement): string {
+export function paletteChrome(box: HTMLElement): string {
   const parts = [
-    ...glass.querySelectorAll(
-      '[data-part="group"], [data-part="note"], [data-part="foot"], [data-part="scope"], [data-part="head-key"], [data-kind="action"]'
+    ...box.querySelectorAll(
+      '[data-part="group"], [data-part="note"], [data-part="foot"], [data-part="scope"], [data-part="chip"], [data-kind="action"]'
     ),
   ].map((el) => el.textContent ?? '')
-  return [...parts, glass.querySelector('input')?.placeholder ?? ''].join('')
+  return [...parts, box.querySelector('input')?.placeholder ?? ''].join('')
 }

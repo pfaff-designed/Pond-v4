@@ -62,29 +62,29 @@ export const InheritsColor: Story = {
   },
 }
 
-/** The six fixed area defaults + the Life glyph, in the three area hues. */
+const DEFAULT_AREAS = ['Personal', 'Professional', 'Health', 'Finances', 'Creativity']
+
+/** The fixed area defaults + the Life glyph, in the three area hues. */
 export const AreaDefaults: Story = {
-  render: () => {
-    const areas = ['Personal', 'Professional', 'Health', 'Finances', 'Creativity']
-    return (
-      <div className="flex items-center gap-4 text-mn-text">
-        <Icon name={LIFE_GLYPH} size={28} className="text-mn-area-a" />
-        {areas.map((title, i) => (
-          <Icon
-            key={title}
-            name={areaGlyph(title)!}
-            size={28}
-            className={['text-mn-area-a', 'text-mn-area-b', 'text-mn-area-c'][i % 3]}
-          />
-        ))}
-      </div>
-    )
-  },
+  render: () => (
+    <div className="flex items-center gap-4 text-mn-text">
+      <Icon name={LIFE_GLYPH} size={28} className="text-mn-area-a" />
+      {DEFAULT_AREAS.map((title, i) => (
+        <Icon
+          key={title}
+          name={areaGlyph(title)!}
+          size={28}
+          className={['text-mn-area-a', 'text-mn-area-b', 'text-mn-area-c'][i % 3]}
+        />
+      ))}
+    </div>
+  ),
   play: async ({ canvasElement }) => {
-    for (const name of [LIFE_GLYPH, 'house', 'star-01', 'leaf-01', 'stairs-01', 'flower-05']) {
+    const names = [LIFE_GLYPH, ...DEFAULT_AREAS.map((title) => areaGlyph(title)!)]
+    for (const name of names) {
       await paintedGlyph(canvasElement, name)
     }
-    await expect(canvasElement.querySelectorAll('[data-icon]')).toHaveLength(6)
+    await expect(canvasElement.querySelectorAll('[data-icon]')).toHaveLength(names.length)
   },
 }
 

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+<script src="_ds/mn/assets/icons/icon-mask.js"></script>
+<style>.pc-input::placeholder{color:rgba(27,29,20,.68)}.pc-input:focus{outline:none}</style>
+</helmet>
+<div style="{{ root }}">
+<div ref="{{ boxRef }}" style="{{ box }}" onClick="{{ onBox }}" onMouseEnter="{{ onEnter }}" onMouseLeave="{{ onLeave }}">
+<span data-icon="{{ glyph }}" style="position:absolute;left:14px;top:14px;display:inline-block;width:12px;height:12px;background:currentColor;color:#1B1D14"></span>
+<div ref="{{ crumbRef }}" style="{{ crumbLayer }}">
+<sc-for list="{{ trail }}" as="c" hint-placeholder-count="2"><span style="color:rgba(27,29,20,.68)">{{ c }}</span><span style="color:rgba(27,29,20,.8)">›</span></sc-for>
+<span style="color:#1B1D14;font-weight:500">{{ current }}</span>
+<span style="width:1px;height:14px;background:rgba(27,29,20,.09);flex:none"></span>
+</div>
+<div style="{{ inputLayer }}"><input ref="{{ inputRef }}" class="pc-input" value="{{ q }}" onChange="{{ onType }}" onKeyDown="{{ onKey }}" placeholder="jump to a page, or &gt; for actions" style="width:100%;border:0;background:transparent;padding:0;font-family:'PP Neue Montreal Mono',monospace;font-size:14px;color:#1B1D14;letter-spacing:0"></div>
+<span onClick="{{ onMode }}" title="mode" style="position:absolute;right:56px;top:9px;width:22px;height:22px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:rgba(27,29,20,.68);cursor:pointer"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="5"></circle><path d="M7 2a5 5 0 0 1 0 10Z" fill="currentColor" stroke="none"></path></svg></span>
+<span onClick="{{ onChip }}" style="position:absolute;right:8px;top:9px;width:38px;height:22px;border-radius:999px;background:rgba(27,29,20,.07);color:rgba(27,29,20,.68);display:flex;align-items:center;justify-content:center;font-family:'PP Neue Montreal',system-ui,sans-serif;font-weight:500;font-size:11px;letter-spacing:.04em">{{ chip }}</span>
+<div ref="{{ bodyRef }}" style="{{ body }}">
+<div style="height:1px;margin:0 10px;background:rgba(27,29,20,.09)"></div>
+<div style="display:flex;flex-direction:column;gap:2px;padding:6px 10px 0">
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+<sc-if value="{{ r.isGroup }}"><div style="{{ r.st }}">{{ r.label }}</div></sc-if>
+<sc-if value="{{ r.isNote }}"><div style="{{ r.st }}">{{ r.label }}</div></sc-if>
+<sc-if value="{{ r.isItem }}"><div style="{{ r.st }}" onMouseEnter="{{ r.hover }}" onClick="{{ r.pick }}"><sc-if value="{{ r.hasGlyph }}"><span data-icon="{{ r.glyph }}" style="display:inline-block;width:13px;height:13px;flex:none;background:currentColor"></span></sc-if><sc-if value="{{ r.isRecord }}"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none;color:rgba(27,29,20,.8)"><path d="M2.4 3.4a4.6 1.6 0 1 0 9.2 0a4.6 1.6 0 1 0-9.2 0M2.4 3.4v7.2c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6V3.4M2.4 7c0 .9 2 1.6 4.6 1.6s4.6-.7 4.6-1.6"></path></svg></sc-if><sc-if value="{{ r.isAction }}"><span style="font-family:'PP Neue Montreal Mono',monospace;font-size:12.5px">&gt;</span></sc-if><span style="{{ r.labelSt }}"><span>{{ r.pre }}</span><span style="text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px">{{ r.hit }}</span><span>{{ r.post }}</span></span><sc-if value="{{ r.hasSub }}"><span style="color:rgba(27,29,20,.68);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ r.sub }}</span></sc-if><div style="flex:1"></div><sc-if value="{{ r.sel }}"><span style="font-family:'PP Neue Montreal Mono',monospace;font-size:10.5px;color:rgba(27,29,20,.8)">↵</span></sc-if></div></sc-if>
+</sc-for>
+</div>
+<div style="{{ foot }}"><span>↑↓ move</span><span>↵ open</span><span>&gt; actions only</span><span>esc close</span></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:520},&quot;interactive&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;t&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:0,&quot;max&quot;:1,&quot;step&quot;:0.05,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;},&quot;query&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;sel&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;},&quot;path&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;life&gt;professional&gt;standups&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const PAGES = [
+  { label: 'kitchen renovation', area: 'creativity', kw: 'cabinets', note: 'mentions cabinets' },
+  { label: 'budget', area: 'money' }, { label: 'journal', area: 'personal' }, { label: 'standups', area: 'professional' },
+  { label: 'workouts', area: 'health' }, { label: 'subscriptions', area: 'money' }, { label: 'recipes', area: 'creativity' }
+];
+const RECORDS = [{ label: 'cabinet quote', db: 'tasks' }, { label: 'adobe creative cloud', db: 'subscriptions' }];
+const ACTIONS = ['chase the cabinet quote', 'log a workout', 'log a meal', 'log sleep'];
+const GLYPH = { life: 'waves-02', personal: 'house', professional: 'ramp', health: 'heart', money: 'ring', creativity: 'star-01' };
+const OPEN_W = 560, ENTER_MS = 280, EXIT_MS = 150;
+function bez(x1, y1, x2, y2) {
+  return x => { let lo = 0, hi = 1, t = x; for (let i = 0; i < 22; i++) { t = (lo + hi) / 2; const cx = 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3; if (cx < x) lo = t; else hi = t; } return 3 * y1 * t * (1 - t) ** 2 + 3 * y2 * t * t * (1 - t) + t ** 3; };
+}
+const easePress = bez(.22, .8, .2, 1), easeIn = bez(.4, 0, 1, 1);
+const clamp = v => Math.max(0, Math.min(1, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+class Component extends DCLogic {
+  state = { t: 0, dir: 'in', q: '', sel: 0, path: null, cw: 0, bh: 0, hov: false };
+  boxRef = React.createRef(); crumbRef = React.createRef(); bodyRef = React.createRef(); inputRef = React.createRef();
+  componentDidMount() {
+    this.ro = new ResizeObserver(() => this.measure());
+    [this.crumbRef, this.bodyRef].forEach(r => r.current && this.ro.observe(r.current));
+    this.measure(); this.up();
+    if (this.props.interactive) {
+      this.kd = e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.isOpen() ? this.close() : this.open(); } };
+      this.md = e => { if (this.isOpen() && this.boxRef.current && !this.boxRef.current.contains(e.target)) this.close(); };
+      window.addEventListener('keydown', this.kd); document.addEventListener('mousedown', this.md);
+    }
+  }
+  componentWillUnmount() { this.ro && this.ro.disconnect(); cancelAnimationFrame(this.raf); window.removeEventListener('keydown', this.kd); document.removeEventListener('mousedown', this.md); }
+  componentDidUpdate() { this.up(); }
+  up() { setTimeout(() => window.MNIcons && window.MNIcons.upgrade(), 0); }
+  measure() {
+    const cw = this.crumbRef.current ? this.crumbRef.current.scrollWidth : 0, bh = this.bodyRef.current ? this.bodyRef.current.scrollHeight : 0;
+    if (cw !== this.state.cw || bh !== this.state.bh) this.setState({ cw, bh });
+  }
+  isOpen() { return this.state.dir === 'in' && this.state.t > 0; }
+  animate(to) {
+    cancelAnimationFrame(this.raf);
+    const from = this.state.t, dir = to > from ? 'in' : 'out', reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches, dur = reduce ? 0 : (dir === 'in' ? ENTER_MS : EXIT_MS) * Math.abs(to - from), t0 = performance.now();
+    this.setState({ dir });
+    const step = now => { const k = dur ? clamp((now - t0) / dur) : 1; this.setState({ t: lerp(from, to, k) }); if (k < 1) this.raf = requestAnimationFrame(step); };
+    this.raf = requestAnimationFrame(step);
+  }
+  open() { this.setState({ q: '', sel: 0 }); this.animate(1); setTimeout(() => this.inputRef.current && this.inputRef.current.focus({ preventScroll: true }), 0); }
+  close() { this.inputRef.current && this.inputRef.current.blur(); this.animate(0); }
+  results(q) {
+    const pg = p => ({ kind: 'page', label: p.label, sub: p.note || p.area, glyph: GLYPH[p.area], area: p.area });
+    const act = l => ({ kind: 'action', label: l });
+    if (!q) return [{ g: 'recent' }, pg(PAGES[0]), pg(PAGES[1]), pg(PAGES[2]), { g: 'suggested' }, act(ACTIONS[0]), act(ACTIONS[1])];
+    if (q[0] === '>') { const s = q.slice(1).trim(); return ACTIONS.filter(a => a.includes(s)).map(a => ({ ...act(a), hit: s })); }
+    const pages = PAGES.filter(p => p.label.includes(q) || (p.kw || '').includes(q)).map(p => ({ ...pg(p), hit: p.label.includes(q) ? q : '' }));
+    const recs = RECORDS.filter(r => r.label.includes(q)).map(r => ({ kind: 'record', label: r.label, sub: r.db, hit: q }));
+    const acts = ACTIONS.filter(a => a.includes(q)).map(a => ({ ...act(a), hit: q }));
+    const out = [];
+    if (!pages.length && !recs.length) out.push({ n: `no page or record called “${q}”` });
+    if (pages.length) out.push({ g: 'pages' }, ...pages);
+    if (recs.length) out.push({ g: 'records' }, ...recs);
+    out.push({ g: 'actions' }, ...acts, act(`ask pond about “${q}”`));
+    return out;
+  }
+  pick(r) {
+    if (!r) return;
+    if (r.kind === 'page') this.setState({ path: `life>${r.area}>${r.label}` });
+    this.close();
+  }
+  renderVals() {
+    const p = this.props, live = !!p.interactive;
+    const t = live ? this.state.t : clamp(p.t ?? 0);
+    const e = live && this.state.dir === 'out' ? 1 - easeIn(1 - t) : easePress(t);
+    const q = live ? this.state.q : (p.query ?? '');
+    const sel = live ? this.state.sel : (p.sel ?? 0);
+    const path = (this.state.path || p.path || 'life>professional>standups').split('>').map(s => s.trim());
+    const glyph = GLYPH[path[1]] || GLYPH[path[0]] || 'waves-02';
+    const restW = this.state.cw + 124, openH = 40 + (this.state.bh || 380);
+    const hov = live && this.state.hov && t === 0;
+    const raw = this.results(q);
+    const items = raw.filter(r => r.kind);
+    let ii = 0, ri = 0;
+    const rows = raw.map(r => {
+      const k = clamp((e - .45 - ri * .035) / .4); ri++;
+      const enter = { opacity: k, transform: `translateY(${(1 - k) * 4}px)` };
+      if (r.g) return { isGroup: true, label: r.g, st: { padding: '8px 12px 4px', fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(27,29,20,.68)', ...enter } };
+      if (r.n) return { isNote: true, label: r.n, st: { padding: '10px 12px', fontFamily: "'PP Neue Montreal Mono',monospace", fontSize: 12, color: 'rgba(27,29,20,.8)', ...enter } };
+      const idx = ii++, on = idx === sel, hit = r.hit || '', at = hit ? r.label.indexOf(hit) : r.label.length;
+      return {
+        isItem: true, sel: on, hasGlyph: r.kind === 'page', glyph: r.glyph || '', isRecord: r.kind === 'record', isAction: r.kind === 'action',
+        pre: r.label.slice(0, at), hit: r.label.slice(at, at + hit.length), post: r.label.slice(at + hit.length), hasSub: !!r.sub, sub: r.sub || '',
+        hover: () => live && this.setState({ sel: idx }), pick: () => live && this.pick(r),
+        labelSt: { fontWeight: r.kind === 'page' ? 500 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+        st: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 14, fontSize: 13.5, cursor: 'pointer', color: r.kind === 'page' ? '#1B1D14' : 'rgba(27,29,20,.8)', background: on ? 'rgba(27,29,20,.07)' : 'transparent', ...enter }
+      };
+    });
+    const fade = k => ({ opacity: k, pointerEvents: k > .5 ? 'auto' : 'none' });
+    const boxH = lerp(40, openH, e);
+    return {
+      boxRef: this.boxRef, crumbRef: this.crumbRef, bodyRef: this.bodyRef, inputRef: this.inputRef,
+      glyph, trail: path.slice(0, -1), current: path[path.length - 1], q, rows, chip: e > .5 ? 'esc' : '⌘K',
+      root: { position: 'relative', width: '100%', height: boxH, display: 'flex', justifyContent: 'center', fontFamily: "'PP Neue Montreal',system-ui,sans-serif", color: '#1B1D14' },
+      box: {
+        position: 'relative', flex: 'none', boxSizing: 'border-box', overflow: 'hidden', borderRadius: 20,
+        width: lerp(restW, OPEN_W, e), height: boxH, cursor: t === 0 ? 'pointer' : 'default',
+        background: 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', backdropFilter: 'blur(24px) saturate(1.3)', WebkitBackdropFilter: 'blur(24px) saturate(1.3)', border: '1px solid rgba(255,255,255,.9)',
+        boxShadow: hov ? 'inset 0 1px 0 rgba(255,255,255,.7),0 24px 60px rgba(40,34,24,.18)' : 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.14)',
+        transform: hov ? 'translateY(-1px)' : 'none', transition: 'transform 150ms cubic-bezier(.22,.8,.2,1),box-shadow 150ms cubic-bezier(.22,.8,.2,1)'
+      },
+      crumbLayer: { position: 'absolute', left: 36, top: 0, height: 38, display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap', fontSize: 11, letterSpacing: '.04em', ...fade(1 - clamp(e / .35)) },
+      inputLayer: { position: 'absolute', left: 36, right: 88, top: 0, height: 38, display: 'flex', alignItems: 'center', ...fade(clamp((e - .25) / .4)) },
+      body: { position: 'absolute', left: -1, top: 39, width: OPEN_W, ...fade(clamp((e - .3) / .3)) },
+      foot: { display: 'flex', flexWrap: 'wrap', gap: 14, padding: '10px 22px 14px', marginTop: 6, borderTop: '1px solid rgba(27,29,20,.09)', fontFamily: "'PP Neue Montreal Mono',monospace", fontSize: 10.5, color: 'rgba(27,29,20,.68)', opacity: clamp((e - .6) / .4) },
+      onBox: () => { if (live && this.state.t === 0) this.open(); },
+      onChip: ev => { if (live && this.isOpen()) { ev.stopPropagation(); this.close(); } },
+      onMode: ev => ev.stopPropagation(),
+      onEnter: () => live && this.setState({ hov: true }), onLeave: () => live && this.setState({ hov: false }),
+      onType: ev => this.setState({ q: ev.target.value, sel: 0 }),
+      onKey: ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); this.close(); }
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); this.setState({ sel: Math.min(items.length - 1, sel + 1) }); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); this.setState({ sel: Math.max(0, sel - 1) }); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); this.pick(items[sel]); }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

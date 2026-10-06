@@ -45,11 +45,11 @@ class Component extends DCLogic {
     const S = x => state === x;
     const pondName = p.pondName ?? (S('new') ? 'make noise' : S('shared') ? 'launch plan' : S('org') ? 'studio collective' : 'life'), pondGlyph = p.pondGlyph ?? (S('new') ? 'lightning-03' : S('shared') ? 'star-01' : S('org') ? 'ring' : 'waves-02');
     const PONDS = [['life', 'waves-02', '⌘1'], ['make noise', 'lightning-03', '⌘2'], ['red door guys', 'house', '⌘3']];
-    const colour = { health: '#648F7B', money: ink ? '#A5C8D1' : '#12354E' };
+    const colour = { professional: ink ? '#A5C8D1' : '#12354E', health: '#648F7B', money: ink ? '#A5C8D1' : '#12354E', creativity: '#A5C8D1' };
     // [depth, label, open(true/false/null), glyph|null, area]
     const REST = [[0, 'life', true, 'waves-02'], [1, 'personal', false, 'house'], [1, 'professional', false, 'ramp'], [1, 'health', true, 'heart'], [2, 'workouts', null, null, 'health'], [2, 'calories', null, null, 'health'], [2, 'sleep', null, null, 'health'], [1, 'money', true, 'ring'], [2, 'budget', false, null, 'money'], [2, 'subscriptions', null, null, 'money'], [1, 'creativity', true, 'star-01'], [2, 'kitchen renovation', false, null], [2, 'books', false, null], [2, 'recipes', true, null], [3, 'sourdough, 78%', null, null], [3, 'chickpeas, harissa', null, null]];
     const DEEP_PIN = [[1, 'creativity', true, 'star-01'], [2, 'kitchen renovation', true, null], [3, 'floorplan', true, null]];
-    const DEEP = [[4, 'ground floor', true, null], [5, 'electrics', null, null], [5, 'plumbing', false, null], [5, 'lighting', null, null], [4, 'first floor', false, null], [4, 'loft', null, null], [3, 'suppliers', false, null], [3, 'budget', null, null], [2, 'books', false, null], [2, 'recipes', false, null]];
+    const DEEP = [[4, 'ground floor', true, null], [5, 'electrics', null, null], [5, 'plumbing', false, null], [5, 'lighting', null, null], [4, 'first floor', false, null], [4, 'loft', null, null], [3, 'suppliers', false, null], [3, 'budget', null, null], [3, 'notes', null, null], [2, 'books', false, null], [2, 'recipes', false, null]];
     let rows = REST, pinned = [], sel = 'recipes';
     if (S('deep')) { rows = DEEP; pinned = DEEP_PIN; sel = 'ground floor'; }
     if (S('wide')) { rows = [...DEEP_PIN, [4, 'ground floor', true, null], [5, 'electrics and new circuits', null, null], [5, 'plumbing and the sink move', false, null], [5, 'lighting', null, null], [3, 'suppliers and quotes', false, null], [2, 'books', false, null], [2, 'recipes', false, null]]; sel = 'ground floor'; }
@@ -65,7 +65,7 @@ class Component extends DCLogic {
         const closed = head.endsWith('-'), area = head.replace(/-$/, '');
         const list = kids ? kids.split(';') : [];
         rows.push([1, area, closed ? false : list.length ? true : null, G[area] || null]);
-        const nt = s => s.split('~'); list.forEach(k => { const [pg, ...sub] = k.split('+'); const [pl, pn] = nt(pg); rows.push([2, pl, sub.length ? true : null, null, area, pn]); sub.forEach(s => { const [sl, sn] = nt(s); rows.push([3, sl, null, null, area, sn]); }); });
+        const nt = s => s.split('~'); list.forEach(k => { const [pg, ...sub] = k.split('+'); const [pl0, pn] = nt(pg); const shut = pl0.endsWith('-'), pl = pl0.replace(/-$/, ''); rows.push([2, pl, shut ? false : sub.length ? true : null, null, area, pn]); sub.forEach(s => { const [sl, sn] = nt(s); rows.push([3, sl, null, null, area, sn]); }); });
       });
       sel = p.selected ?? '';
     }

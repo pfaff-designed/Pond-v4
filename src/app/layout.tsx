@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import { Providers } from '@/components/providers'
+import { MODE_BOOT_SCRIPT } from '@/lib/theme/mode-boot'
 import './globals.css'
 
 // The Make Noise type set: three licensed PP faces, self-hosted via
@@ -57,7 +58,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       className={`${sans.variable} ${serif.variable} ${mono.variable} ${display.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MODE_BOOT_SCRIPT }} />
+      </head>
       <body className="h-full">
         <Providers>{children}</Providers>
       </body>
