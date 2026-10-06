@@ -638,6 +638,10 @@ describe('ComposerHandle — the card never grows with the thread; only the pers
       handle.dispatchEvent(pointer('pointermove', -5000))
     })
     expect(onHeightChange).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
+    act(() => {
+      handle.dispatchEvent(pointer('pointermove', 399.37))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(401)
   })
 
   it('↑/↓ nudge by 24, Home/End jump to the bounds, a double-click returns to the default', () => {

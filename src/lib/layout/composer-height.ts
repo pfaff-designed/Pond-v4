@@ -37,8 +37,9 @@ export function composerMaxHeight(shellHeight: number): number {
   return Math.max(COMPOSER_MIN_HEIGHT, shellHeight - COMPOSER_TOP_CLEARANCE - COMPOSER_BOTTOM_INSET)
 }
 
+/** Whole pixels: pointer coordinates are fractional, and the stored value should not be. */
 export function clampComposerHeight(height: number, max: number): number {
-  return Math.min(max, Math.max(COMPOSER_MIN_HEIGHT, height))
+  return Math.round(Math.min(max, Math.max(COMPOSER_MIN_HEIGHT, height)))
 }
 
 /** The persisted height, floored — or null (the default) on missing/garbage/throwing storage. */
