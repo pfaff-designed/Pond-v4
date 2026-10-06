@@ -28,10 +28,8 @@ const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's dark frames. The picker board's own ink delta
-  // reads `.09`; ADR 0004 ruling 11 keeps the one shared recipe for the whole
-  // floating-glass family (the composed context outranks the component card).
-  glassBorder: 'rgba(250, 249, 239, 0.2)',
+  // `.mn-glass`, dark — `PondComposer`'s ink glass, shared by the whole floating family.
+  glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
 
@@ -141,7 +139,7 @@ async function assertChrome(root: HTMLElement, p: Palette, mobile = false) {
   await expect(g.backgroundImage).toMatch(/linear-gradient\(160deg/)
   await expect(g.backdropFilter).toBe('blur(24px) saturate(1.3)')
   // Below its field (`side="bottom"`, the default) the glass grows from its TOP
-  // edge — `.motion-menu`'s fallback origin. `side="top"` flips it (ComposerCommands).
+  // edge — `.motion-menu`'s fallback origin.
   await expect(g.transformOrigin).toBe('0px 0px')
 
   for (const group of glass.querySelectorAll<HTMLElement>('[data-part="group"]')) {
@@ -605,45 +603,6 @@ export const PagesGroup: Story = {
     const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-2)!
     await expect(page.querySelector('svg path')!.getAttribute('d')).toBe(ICON.page.d)
     await expect(page.querySelector('[data-part="hint"]')).toBeNull()
-  },
-}
-
-// ── the same menu in the composer ──────────────────────────────────────────────
-
-/**
- * `AITerminal` draws this menu for the thread commands: the list takes the host's
- * own name (`commands`), and anchored ABOVE the field it grows from its bottom
- * edge instead of its top — the computed origin, not the class that sets it.
- *
- * The rows mirror `AITerminal`'s `CHAT_COMMANDS`; they are not imported because
- * that organism is not loadable from a story. Which ids those rows run is
- * `AITerminal`'s own wiring and stays a feature test.
- */
-const COMPOSER_COMMANDS = [
-  { id: 'clear', label: '/clear' },
-  { id: 'handoff', label: '/handoff' },
-  { id: 'save', label: '/save' },
-]
-
-export const ComposerCommands: Story = {
-  tags: ['!dev'],
-  args: { rows: COMPOSER_COMMANDS, side: 'top', label: 'commands', onSelect: fn() },
-  play: async ({ canvasElement, args }) => {
-    const glass = glassOf(canvasElement)
-    await expect(glass.querySelector('[role="listbox"]')!.getAttribute('aria-label')).toBe(
-      'commands'
-    )
-    await expect(labels(canvasElement)).toEqual(['/clear', '/handoff', '/save'])
-    // No `key` on these rows, so no hint rides at rest.
-    await expect(glass.querySelectorAll('[data-part="hint"]')).toHaveLength(0)
-
-    // `[--motion-menu-origin:bottom_left]` — read off the box, not the class
-    // string. `offsetHeight`, not the rect: the arrival keyframe scales the glass.
-    await expect(getComputedStyle(glass).transformOrigin).toBe(`0px ${glass.offsetHeight}px`)
-
-    const save = [...glass.querySelectorAll<HTMLElement>('[role="option"]')][2]
-    await userEvent.click(save)
-    await expect(args.onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'save' }))
   },
 }
 

@@ -3,21 +3,23 @@
  *
  * Paper, not frames: the wall and the modules are ONE sheet (#FAF9EF light /
  * #1B1D14 ground + #30312A cards dark), separated by shadow only. The rail is
- * a PAPER card (the card role, no blur) and the breadcrumb and the composer
- * FLOAT over that canvas on the floating-glass recipe (README § Surfaces, read
- * verbatim) — all three inset from the edges, none docked. The breadcrumb and
- * composer are SHELL-level absolutes centred at calc(50% + 13px) (measured in
- * `Pond 05 Shell`), and the composer publishes its real height so the surfaces
- * pad against ONE value. The rail header is the pond's glyph and name.
+ * a PAPER card (the card role, no blur) and `PondCommand` (the breadcrumb that
+ * grows into the palette) and the composer FLOAT over that canvas on the
+ * floating-glass recipe (README § Surfaces, read verbatim) — all three inset from
+ * the edges, none docked. The pill and the composer are SHELL-level absolutes
+ * (the pill at calc(50% + 13px), the composer centred right of the rail at
+ * calc(50% + 113px), per `PondComposer`), and the composer publishes its real
+ * height so the surfaces pad against ONE value. The rail header is the pond's
+ * glyph and name.
  *
  * Source: wayfinder/design_handoff_pond — `Pond 05 Shell` 5af (the shell
- * frame), `PondRail` (head / loading / empty states), `Pond 02` 2t (the
- * breadcrumb pill). PROJECT_RULES.md and the README override the mockups.
+ * frame), `PondRail` (head / loading / empty states), `Pond 02` 2g (`PondCommand`,
+ * the path at rest). PROJECT_RULES.md and the README override the mockups.
  */
 import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 jest.mock('next/navigation', () => ({
@@ -83,24 +85,34 @@ jest.mock('@/lib/pages/client', () => ({
 // The composer's data layer is not what this file is about; its CHROME is
 // covered directly through TerminalDrawer below.
 jest.mock('@/components/organisms/AITerminal', () => ({
-  AITerminal: () => <section aria-label="Pond terminal" />,
+  AITerminal: () => <section aria-label="composer" />,
 }))
 
 import { RailView, type RailNode } from '@/components/organisms/Rail'
-import { Breadcrumb } from '@/components/molecules/Breadcrumb'
-import { TerminalDrawer, TERMINAL_DEFAULT_HEIGHT } from '@/components/molecules/TerminalDrawer'
+import { commandPath } from '@/lib/pages/command-path'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import type { PageRow } from '@/lib/pages/tree'
+import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { WorkspaceShell } from '@/components/organisms/WorkspaceShell'
 import { defaultPondName } from '@/lib/pond/name'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
+  COMPOSER_BOTTOM_INSET,
   COMPOSER_CLEARANCE_GAP,
   COMPOSER_CLEARANCE_VAR,
-  PROPOSAL_MIN_HEIGHT,
-  TERMINAL_COLLAPSED_HEIGHT,
+  COMPOSER_REST_HEIGHT,
   composerClearancePadding,
-  drawerFootprintPx,
-} from '@/lib/layout/terminal-height'
+  composerFootprintPx,
+} from '@/lib/layout/composer-clearance'
+import {
+  COMPOSER_DEFAULT_HEIGHT,
+  COMPOSER_HEIGHT_KEY,
+  COMPOSER_MIN_HEIGHT,
+  COMPOSER_TOP_CLEARANCE,
+  composerMaxHeight,
+  readStoredComposerHeight,
+} from '@/lib/layout/composer-height'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
 /** Whitespace- and leading-zero-insensitive, so prettier's `0.86` matches the README's `.86`. */
@@ -116,12 +128,12 @@ const TOUCHED = [
   'src/components/organisms/Rail.tsx',
   'src/components/organisms/DocumentPanel.tsx',
   'src/components/organisms/ShellCommands.tsx',
-  'src/components/molecules/Breadcrumb.tsx',
+  'src/components/organisms/PondCommand.tsx',
   'src/components/molecules/TerminalDrawer.tsx',
   'src/components/molecules/ContentWidthHandle.tsx',
   'src/components/atoms/PondMark.tsx',
-  'src/lib/layout/breadcrumb-slot.tsx',
-  'src/lib/layout/terminal-height.ts',
+  'src/lib/layout/command-path.tsx',
+  'src/lib/layout/composer-clearance.ts',
   'src/lib/layout/rail-width.ts',
   'src/app/globals.css',
 ]
@@ -201,8 +213,13 @@ describe('globals.css — floating glass (AC2)', () => {
     expect(dark).toMatch(/--mn-glass-bg\s*:/)
     expect(dark).toMatch(/--mn-glass-border\s*:/)
     expect(dark).toMatch(/--mn-glass-shadow\s*:/)
+    // `PondComposer` renderVals, ink: the dark card at .92 → .78, hairlined and lit by paper.
     expect(norm(dark)).toContain(
-      '--mn-glass-bg:linear-gradient(160deg,rgba(72,73,64,.86),rgba(48,49,42,.66));'
+      '--mn-glass-bg:linear-gradient(160deg,rgba(48,49,42,.92),rgba(48,49,42,.78));'
+    )
+    expect(norm(dark)).toContain('--mn-glass-border:1pxsolidrgba(250,249,239,.09);')
+    expect(norm(dark)).toContain(
+      '--mn-glass-shadow:inset01px0rgba(250,249,239,.06),020px54pxrgba(0,0,0,.42);'
     )
   })
 })
@@ -259,8 +276,10 @@ function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onOpenDatabases={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
       {...over}
@@ -360,85 +379,53 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
   })
 })
 
-// ── AC2: the breadcrumb pill ────────────────────────────────────────────────
+// ── AC2: the path `PondCommand` shows at rest ─────────────────────────────────
 
-describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', () => {
-  const crumbs = [{ id: 'health', type: 'page', title: 'Health' }]
+describe('commandPath — the root, the ancestors, then the page; led by its area’s mark (2g)', () => {
+  const at = '2026-01-01T00:00:00Z'
+  const ROWS: PageRow[] = [
+    { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
+    { id: 'sleep', parent_id: 'health', type: 'page', title: 'Sleep', order: 0, updated_at: at },
+    { id: 'root-db', parent_id: null, type: 'page', title: 'databases', order: 9, updated_at: at },
+    { id: 'db-1', parent_id: 'root-db', type: 'page', title: 'ingredients', order: 0, updated_at: at },
+  ]
+  const opts = (current: string) => ({ rootTitle: 'life', current, pondGlyph: LIFE_GLYPH })
 
-  it('is glass, pill-shaped, 40px tall, and leads with the pond mark at 12', () => {
-    const { container } = render(
-      <Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />
-    )
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(nav.className).toMatch(/\bmn-glass\b/)
-    expect(nav.className).toMatch(/\brounded-mn-pill\b/)
-    // `Pond 05 Shell`, measured: height 40, padding 8px 8px 8px 14px, gap 10.
-    expect(nav.className).toMatch(/\bh-10\b/)
-    expect(nav.className).toMatch(/\bpy-2\b/)
-    expect(nav.className).toMatch(/\bpr-2\b/)
-    expect(nav.className).toMatch(/\bpl-3\.5\b/)
-    expect(nav.className).toMatch(/\bgap-2\.5\b/)
-    // The pond's mark is the shared PondMark (plain mask in currentColor), not
-    // an AREA mark — #134's lead mark stays the only one.
-    const glyph = container.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
-    expect(glyph).toBeInTheDocument()
-    expect(glyph.style.width).toBe('12px')
-    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
-    expect(glyph.closest('[data-area-mark]')).toBeNull()
+  it('at the root: the root page alone, under the pond’s own mark', () => {
+    expect(commandPath(ROWS, null, opts('ignored'))).toEqual({
+      glyph: LIFE_GLYPH,
+      trail: [],
+      current: 'life',
+    })
   })
 
-  it("positions nothing itself — where the pill sits is the shell slot's job", () => {
-    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(nav.className).not.toMatch(/\b(absolute|fixed|sticky)\b/)
+  // `PondCommand.dc.html`: `GLYPH[path[1]] || GLYPH[path[0]]` — the area, else the root.
+  it('a page carries its area’s mark — the area itself when it is top-level', () => {
+    const healthMark = resolveMark('health', markIndex(ROWS)).glyph
+    expect(healthMark).not.toBeNull()
+    const area = commandPath(ROWS, 'health', opts('Health'))
+    const child = commandPath(ROWS, 'sleep', opts('Sleep'))
+    expect(area).toEqual({ glyph: healthMark, trail: ['life'], current: 'Health' })
+    expect(child).toEqual({ glyph: healthMark, trail: ['life', 'Health'], current: 'Sleep' })
   })
 
-  it('renders the ⌘K chip only when a handler is given, and raises it', () => {
-    const onCommandK = jest.fn()
-    const { rerender } = render(
-      <Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} onCommandK={onCommandK} />
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Command palette (⌘K)' }))
-    expect(onCommandK).toHaveBeenCalledTimes(1)
-    rerender(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Command palette (⌘K)' })).toBeNull()
-  })
-
-  // #101 review: `Pond 06.10`'s pill reads "life › creativity › recipes › …" —
-  // every segment lowercase, the root included, and no segment title-cased by the
-  // pill itself (a crumb is its page title verbatim).
-  it('the root crumb reads lowercase "life", and no segment is title-cased', () => {
-    render(<Breadcrumb crumbs={crumbs} onNavigate={jest.fn()} current="Sleep" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByText('life')).toBeInTheDocument()
-    expect(within(nav).queryByText('Life')).toBeNull()
-    expect(nav.className).not.toMatch(/\b(capitalize|uppercase|lowercase)\b/)
-    // The crumbs keep their pages' own casing — the pill never restyles them.
-    expect(within(nav).getByText('Health')).toBeInTheDocument()
+  // #101 review: every segment is the page title verbatim — the root reads
+  // lowercase "life", and nothing is title-cased by the pill.
+  it('segments are titles verbatim: the root lowercase, the pages in their own case', () => {
+    expect(commandPath(ROWS, 'sleep', opts('Sleep')).trail).toEqual(['life', 'Health'])
   })
 
   // 3c's two roots are peers, so a page under databases must not read as if it
-  // were inside life; the root crumb is the real page, so a click opens it.
-  it('starts at the databases root when given one, with no life ahead of it', () => {
-    const onNavigate = jest.fn()
-    const root = { id: 'root-db', type: 'page', title: 'databases' }
-    render(<Breadcrumb crumbs={[]} root={root} onNavigate={onNavigate} current="ingredients" />)
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).queryByText('life')).toBeNull()
-    fireEvent.click(within(nav).getByText('databases'))
-    expect(onNavigate).toHaveBeenCalledWith(root)
-  })
-
-  it('the tail slot renders inside the pill in place of `current`', () => {
-    render(
-      <Breadcrumb
-        crumbs={crumbs}
-        onNavigate={jest.fn()}
-        tail={<input aria-label="Rename page" defaultValue="Sleep" />}
-      />
-    )
-    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(nav).getByRole('textbox', { name: 'Rename page' })).toBeInTheDocument()
+  // were inside life.
+  it('starts at the databases root, never inside life; the root page reads simply "databases"', () => {
+    expect(commandPath(ROWS, 'db-1', opts('ingredients'))).toMatchObject({
+      trail: ['databases'],
+      current: 'ingredients',
+    })
+    expect(commandPath(ROWS, 'root-db', opts('databases'))).toMatchObject({
+      trail: [],
+      current: 'databases',
+    })
   })
 })
 
@@ -446,128 +433,256 @@ describe('Breadcrumb — a floating glass pill with the ⌘K affordance (2t)', (
 
 function renderDrawer(over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {}) {
   return render(
-    <TerminalDrawer
-      contextLabel="Life"
-      height={TERMINAL_DEFAULT_HEIGHT}
-      collapsed={false}
-      onToggleCollapsed={jest.fn()}
-      onHeightChange={jest.fn()}
-      onClear={jest.fn()}
-      footer={<div>footer</div>}
-      {...over}
-    >
+    <TerminalDrawer collapsed={false} onExpand={jest.fn()} footer={<div>footer</div>} {...over}>
       <div>body</div>
     </TerminalDrawer>
   )
 }
 
-describe('TerminalDrawer — the composer is floating glass, not a docked band', () => {
-  it('overlays the bottom of the shell and lets the flanks click through', () => {
-    const { container } = renderDrawer()
-    const section = screen.getByRole('region', { name: 'Pond terminal' })
-    expect(section.className).toMatch(/\babsolute\b/)
-    expect(section.className).toMatch(/\bbottom-0\b/)
-    expect(section.className).toMatch(/\bpointer-events-none\b/)
-    const card = container.querySelector<HTMLElement>('[data-part="composer-card"]')!
-    expect(card.className).toMatch(/\bmn-glass\b/)
-    expect(card.className).toMatch(/\brounded-mn-card\b/)
-    expect(card.className).toMatch(/\bpointer-events-auto\b/)
-    expect(screen.getByRole('separator', { name: 'Resize terminal' }).className).toMatch(
-      /\bpointer-events-auto\b/
-    )
+describe('TerminalDrawer — the PondComposer card: floating glass, 560, 24 off the bottom', () => {
+  it('is the glass card itself: 560 wide (360 below md), padding 14, gap 14, radius 20', () => {
+    renderDrawer()
+    const card = screen.getByRole('region', { name: 'composer' })
+    expect(card.getAttribute('data-part')).toBe('composer-card')
+    for (const cls of [
+      'mn-glass',
+      'rounded-mn-card',
+      'flex',
+      'flex-col',
+      'font-mono',
+      'p-[14px]',
+      'gap-[14px]',
+      'w-[360px]',
+      'md:w-[560px]',
+    ]) {
+      expect(card.className.split(' ')).toContain(cls)
+    }
+    expect(card.className).not.toMatch(/\b534\b|max-w-2xl|mx-auto/)
+    expect(card.textContent).toBe('bodyfooter')
   })
 
-  it('is centred on the WHOLE shell at calc(50% + 13px), 534 wide, 24px off the bottom (measured)', () => {
-    const { container } = renderDrawer()
-    const column = container.querySelector<HTMLElement>('[data-part="composer-column"]')!
-    expect(column.className).toMatch(/\babsolute\b/)
-    expect(column.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
-    expect(column.className.split(' ')).toContain('-translate-x-1/2')
-    expect(column.className).toMatch(/\bw-\[534px\]/)
-    // the card fills the column — no second centring, no max-w-2xl
-    const card = container.querySelector<HTMLElement>('[data-part="composer-card"]')!
-    expect(card.className).toMatch(/\bw-full\b/)
-    expect(card.className).not.toMatch(/max-w-2xl|mx-auto/)
-    // 24px off the bottom: the card's wrapper carries pb-6
-    expect(card.parentElement!.className).toMatch(/\bpb-6\b/)
-    // the handle is confined to the column too — it never reaches over the rail
-    expect(
-      screen
-        .getByRole('separator', { name: 'Resize terminal' })
-        .closest('[data-part="composer-column"]')
-    ).toBe(column)
+  it('is centred on the area right of the rail — calc(50% + 113px) — and 24px off the bottom', () => {
+    renderDrawer()
+    const classes = screen.getByRole('region', { name: 'composer' }).className.split(' ')
+    // The storyboards: left 246 / right 20 in a 1180 frame (rail 20+206+20).
+    expect(classes).toContain('md:left-[calc(50%_+_113px)]')
+    expect(classes).toContain('-translate-x-1/2')
+    expect(classes).toContain('absolute')
+    expect(classes).toContain('bottom-6')
+    expect(COMPOSER_BOTTOM_INSET).toBe(24)
+  })
+
+  it('draws no header strip or clear control', () => {
+    renderDrawer()
+    expect(screen.queryByRole('button', { name: /clear conversation/i })).toBeNull()
+    expect(screen.queryByText(/context:/)).toBeNull()
+  })
+
+  it('collapsed is the tab: 30 high on the bottom edge, a pill with ⌘J, and it brings the card back', () => {
+    const onExpand = jest.fn()
+    renderDrawer({ collapsed: true, onExpand })
+    expect(screen.queryByText('body')).toBeNull()
+    expect(screen.queryByText('footer')).toBeNull()
+    const tab = screen.getByRole('region', { name: 'composer' })
+    const classes = tab.className.split(' ')
+    for (const cls of [
+      'mn-glass',
+      'h-[30px]',
+      'bottom-0',
+      'border-b-0',
+      'rounded-[14px_16px_0_0]',
+    ]) {
+      expect(classes).toContain(cls)
+    }
+    expect(classes).not.toContain('bottom-6')
+    expect(screen.getByText('⌘J')).toBeInTheDocument()
+    expect(screen.queryByText('pond answered')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open composer' }))
+    expect(onExpand).toHaveBeenCalledTimes(1)
+  })
+
+  it('landed adds the dot and “pond answered” to the pill — never a count or a badge', () => {
+    renderDrawer({ collapsed: true, landed: true })
+    expect(screen.getByText('pond answered')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /pond answered/ })).toBeInTheDocument()
+    const tab = screen.getByRole('region', { name: 'composer' })
+    expect(tab.querySelector('[data-part="landed-dot"]')).not.toBeNull()
+  })
+})
+
+// ── The resize handle on the card's top edge ────────────────────────────────
+
+describe('ComposerHandle — the card never grows with the thread; only the person resizes it', () => {
+  const pointer = (type: string, clientY: number) => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.assign(event, { pointerId: 1, clientY })
+    return event
+  }
+
+  function renderSized(
+    over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {},
+    body: React.ReactNode = <div>body</div>
+  ) {
+    const onHeightChange = jest.fn()
+    const onHeightCommit = jest.fn()
+    render(
+      <TerminalDrawer
+        collapsed={false}
+        onExpand={jest.fn()}
+        footer={<div>footer</div>}
+        height={null}
+        onHeightChange={onHeightChange}
+        onHeightCommit={onHeightCommit}
+        {...over}
+      >
+        {body}
+      </TerminalDrawer>
+    )
+    return { onHeightChange, onHeightCommit, card: screen.getByRole('region', { name: 'composer' }) }
+  }
+
+  afterEach(() => window.localStorage.clear())
+
+  it('rides the card while there is a thread — not at rest, not without a height owner', () => {
+    renderSized({}, null)
+    expect(screen.queryByRole('separator')).toBeNull()
+    cleanup()
+    renderDrawer()
+    expect(screen.queryByRole('separator')).toBeNull()
+    cleanup()
+    renderSized()
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    expect(handle.getAttribute('aria-orientation')).toBe('horizontal')
+    expect(handle.tabIndex).toBe(0)
+  })
+
+  it('with a thread it sits at the default, whatever the thread holds — capped below the ⌘K pill', () => {
+    const { card } = renderSized()
+    expect(COMPOSER_DEFAULT_HEIGHT).toBe(316)
+    expect(card.style.height).toBe('316px')
+    expect(card.style.maxHeight).toBe(`calc(100% - ${COMPOSER_TOP_CLEARANCE + 24}px)`)
+    expect(card.hasAttribute('data-sized')).toBe(true)
+    cleanup()
+    // No height owner (a bare story) changes nothing: still the default, just no handle.
+    expect(renderDrawer().container.querySelector('section')!.style.height).toBe('316px')
+    cleanup()
+    const sized = renderSized({ height: 420 }).card
+    expect(sized.style.height).toBe('420px')
+    expect(sized.style.maxHeight).toBe(`calc(100% - ${COMPOSER_TOP_CLEARANCE + 24}px)`)
+    expect(sized.hasAttribute('data-sized')).toBe(true)
+    expect(COMPOSER_TOP_CLEARANCE).toBe(72)
+  })
+
+  it('at rest the card is the line and toolbar alone — neither the default nor a stored height applies', () => {
+    expect(renderSized({}, null).card.style.height).toBe('')
+    cleanup()
+    const { card } = renderSized({ height: 420 }, null)
+    expect(card.style.height).toBe('')
+    expect(card.hasAttribute('data-sized')).toBe(false)
+  })
+
+  it('dragging up grows the card from its measured height, and commits once on release', () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(300)
+    const { onHeightChange, onHeightCommit } = renderSized()
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    act(() => {
+      handle.dispatchEvent(pointer('pointerdown', 500))
+      handle.dispatchEvent(pointer('pointermove', 400))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(400)
+    expect(document.body.style.cursor).toBe('ns-resize')
+    act(() => {
+      handle.dispatchEvent(pointer('pointerup', 400))
+    })
+    expect(onHeightCommit).toHaveBeenCalledTimes(1)
+    expect(onHeightCommit).toHaveBeenCalledWith(400)
+    expect(document.body.style.cursor).toBe('')
+    height.mockRestore()
+  })
+
+  it('clamps a drag between the floor and the room under the pill', () => {
+    const { onHeightChange } = renderSized({ height: 300 })
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    act(() => {
+      handle.dispatchEvent(pointer('pointerdown', 500))
+      handle.dispatchEvent(pointer('pointermove', 900))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(COMPOSER_MIN_HEIGHT)
+    act(() => {
+      handle.dispatchEvent(pointer('pointermove', -5000))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
+    act(() => {
+      handle.dispatchEvent(pointer('pointermove', 399.37))
+    })
+    expect(onHeightChange).toHaveBeenLastCalledWith(401)
+  })
+
+  it('↑/↓ nudge by 24, Home/End jump to the bounds, a double-click returns to the default', () => {
+    const { onHeightCommit } = renderSized({ height: 300 })
+    const handle = screen.getByRole('separator', { name: 'Resize composer' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(324)
+    fireEvent.keyDown(handle, { key: 'ArrowDown' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(276)
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(COMPOSER_MIN_HEIGHT)
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(onHeightCommit).toHaveBeenLastCalledWith(composerMaxHeight(window.innerHeight))
+    fireEvent.doubleClick(handle)
+    expect(onHeightCommit).toHaveBeenLastCalledWith(null)
+  })
+
+  it('reads the stored height floored, and the default (null) on missing or garbage storage', () => {
+    expect(readStoredComposerHeight()).toBeNull()
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, 'tall')
+    expect(readStoredComposerHeight()).toBeNull()
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, '40')
+    expect(readStoredComposerHeight()).toBe(COMPOSER_MIN_HEIGHT)
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, '480')
+    expect(readStoredComposerHeight()).toBe(480)
   })
 })
 
 // ── One source for the composer's clearance ─────────────────────────────────
 
-describe('composer clearance — the drawer publishes its real height, the surfaces pad against it', () => {
-  it('the padding reads the published variable, falling back to the default drawer, plus 24px of air', () => {
+describe('composer clearance — the card publishes its real footprint, the surfaces pad against it', () => {
+  it('the padding reads the published variable, falling back to the card at rest, plus 24px of air', () => {
     expect(COMPOSER_CLEARANCE_GAP).toBe(24)
-    expect(composerClearancePadding()).toBe(
-      `calc(var(${COMPOSER_CLEARANCE_VAR}, ${TERMINAL_DEFAULT_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px) + 24px)`
-    )
-    expect(drawerFootprintPx(500, true)).toBe(TERMINAL_COLLAPSED_HEIGHT)
-    expect(drawerFootprintPx(500, false)).toBe(540)
+    expect(COMPOSER_REST_HEIGHT).toBe(101)
+    expect(composerFootprintPx(COMPOSER_REST_HEIGHT)).toBe(125)
+    expect(composerClearancePadding()).toBe(`calc(var(${COMPOSER_CLEARANCE_VAR}, 125px) + 24px)`)
   })
 
-  function renderInShell(over: Partial<React.ComponentProps<typeof TerminalDrawer>> = {}) {
+  function renderInShell(collapsed = false) {
     const shell = document.createElement('div')
     shell.setAttribute('data-part', 'shell')
     document.body.appendChild(shell)
     const utils = render(
-      <TerminalDrawer
-        contextLabel="Life"
-        height={TERMINAL_DEFAULT_HEIGHT}
-        collapsed={false}
-        onToggleCollapsed={jest.fn()}
-        onHeightChange={jest.fn()}
-        onClear={jest.fn()}
-        footer={<div>footer</div>}
-        {...over}
-      >
+      <TerminalDrawer collapsed={collapsed} onExpand={jest.fn()} footer={<div>footer</div>}>
         <div>body</div>
       </TerminalDrawer>,
       { container: shell }
     )
-    const read = () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR)
-    return { ...utils, shell, read }
+    return { ...utils, shell, read: () => shell.style.getPropertyValue(COMPOSER_CLEARANCE_VAR) }
   }
 
-  it('tracks the drawer: collapsed → the strip alone; a proposal open → its floor + the strip', () => {
-    const { read, rerender, unmount } = renderInShell({ collapsed: true })
-    expect(read()).toBe(`${TERMINAL_COLLAPSED_HEIGHT}px`)
+  it("publishes the card's measured height plus the 24px inset, and removes it with the card", () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(231)
+    const { read, unmount } = renderInShell()
+    expect(read()).toBe('255px')
 
-    // AITerminal auto-grows the drawer to PROPOSAL_MIN_HEIGHT while a diff needs
-    // review (the accept/reject gesture) — the clearance must follow, so that
-    // gesture is never pinned behind the glass with no scroll room.
-    rerender(
-      <TerminalDrawer
-        contextLabel="Life"
-        height={PROPOSAL_MIN_HEIGHT}
-        collapsed={false}
-        onToggleCollapsed={jest.fn()}
-        onHeightChange={jest.fn()}
-        onClear={jest.fn()}
-        footer={<div>footer</div>}
-      >
-        <div>body</div>
-      </TerminalDrawer>
-    )
-    expect(read()).toBe(`${PROPOSAL_MIN_HEIGHT + TERMINAL_COLLAPSED_HEIGHT}px`)
-    expect(PROPOSAL_MIN_HEIGHT + TERMINAL_COLLAPSED_HEIGHT).toBe(540)
-
-    // the drawer's own box is sized from the very same value
-    expect(screen.getByRole('region', { name: 'Pond terminal' }).style.height).toBe('540px')
-
-    // gone with the drawer — no stale clearance left on the shell
+    // gone with the card — no stale clearance left on the shell
     unmount()
     expect(read()).toBe('')
+    height.mockRestore()
   })
 
-  it('a user drag publishes the dragged height', () => {
-    const { read } = renderInShell({ height: 160 })
-    expect(read()).toBe(`${160 + TERMINAL_COLLAPSED_HEIGHT}px`)
+  it('the collapsed tab sits on the edge, so it publishes its height with no inset', () => {
+    const height = jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(30)
+    const { read } = renderInShell(true)
+    expect(read()).toBe('30px')
+    height.mockRestore()
   })
 })
 
@@ -592,17 +707,17 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     )
   }
 
-  it('rail = paper card with the pond name; ⌘K lives in the breadcrumb, settings in the rail foot', async () => {
+  it('rail = paper card with the pond name; ⌘K lives in the command pill, settings in the rail foot', async () => {
     const { container } = renderShell()
     const aside = await screen.findByRole('complementary')
     expect(aside.className).toMatch(/\bbg-mn-card\b/)
     expect(aside.className).not.toMatch(/\bmn-glass\b/)
     expect(container.querySelector('[data-part="pond-name"]')).toHaveTextContent('life')
 
-    // One ⌘K affordance, inside the breadcrumb pill — the top-right cluster is gone.
-    const kButtons = await screen.findAllByRole('button', { name: 'Command palette (⌘K)' })
-    expect(kButtons).toHaveLength(1)
-    expect(kButtons[0].closest('nav[aria-label="Breadcrumb"]')).not.toBeNull()
+    // One ⌘K affordance, inside the command pill — the top-right cluster is gone.
+    const chips = [...container.querySelectorAll('[data-part="chip"]')]
+    expect(chips.map((c) => c.textContent)).toEqual(['⌘K'])
+    expect(chips[0].closest('[data-part="command"]')).not.toBeNull()
     expect(container.querySelector('.fixed')).toBeNull()
 
     // The rail foot is databases and settings; no "New page" button anywhere.
@@ -610,29 +725,25 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(aside.contains(screen.getByText('settings'))).toBe(true)
   })
 
-  it('the breadcrumb and the composer are SHELL-level absolutes, not column children (measured)', async () => {
+  it('the command pill and the composer are SHELL-level absolutes, not column children (measured)', async () => {
     const { container } = renderShell()
-    const nav = await screen.findByRole('navigation', { name: 'Breadcrumb' })
     const shell = container.querySelector<HTMLElement>('[data-part="shell"]')!
     const main = container.querySelector<HTMLElement>('main')!
+    const box = container.querySelector<HTMLElement>('[data-part="command"]')!
 
-    // The pill portals into the shell's slot: top 20, left calc(50% + 13px),
-    // translateX(-50%) — relative to the WHOLE shell, not the content column.
-    const slot = nav.closest<HTMLElement>('[data-part="breadcrumb-slot"]')!
-    expect(slot).not.toBeNull()
-    expect(slot.parentElement).toBe(shell)
-    expect(slot.className).toMatch(/\babsolute\b/)
-    expect(slot.className).toMatch(/\btop-5\b/)
-    expect(slot.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
-    expect(slot.className.split(' ')).toContain('-translate-x-1/2')
-    expect(main.contains(nav)).toBe(false)
-    // …and no sticky breadcrumb is left behind in the column. (#234: the root is
-    // an ordinary page, so the column carries the #58 width handle, whose grip is
-    // the one legitimate sticky inside it — the guard is against a pill, not that.)
-    expect(main.querySelector('.sticky nav, nav.sticky')).toBeNull()
+    // Top 20, left calc(50% + 13px), translateX(-50%) — relative to the WHOLE
+    // shell, not the content column; and it reads the open page's path.
+    const placed = box.parentElement!
+    expect(placed.parentElement).toBe(shell)
+    expect(placed.className).toMatch(/\babsolute\b/)
+    expect(placed.className).toMatch(/\btop-5\b/)
+    expect(placed.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
+    expect(placed.className.split(' ')).toContain('-translate-x-1/2')
+    expect(main.contains(box)).toBe(false)
+    expect(await screen.findByText('Life', { selector: '[data-part="current"]' })).toBeInTheDocument()
 
-    // The composer is the shell's child too — its calc(50% + 13px) is against the shell.
-    const terminal = screen.getByRole('region', { name: 'Pond terminal' })
+    // The composer is the shell's child too — its calc(50% + 113px) is against the shell.
+    const terminal = screen.getByRole('region', { name: 'composer' })
     expect(terminal.parentElement).toBe(shell)
     expect(main.contains(terminal)).toBe(false)
 
@@ -646,15 +757,15 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })
 
-  it('the breadcrumb ⌘K opens the palette', async () => {
-    renderShell()
-    const k = (await screen.findAllByRole('button', { name: 'Command palette (⌘K)' }))[0]
+  it('a click on the pill grows it into the palette', async () => {
+    const { container } = renderShell()
+    const opener = container.querySelector<HTMLElement>('[data-part="opener"]')!
     await act(async () => {
-      fireEvent.click(k)
+      fireEvent.click(opener)
     })
-    // #279: a floating glass with a combobox, not a dialog.
+    // #279: a combobox in the same box, not a dialog.
     expect(await screen.findByRole('combobox', { name: 'command palette' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'esc' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'esc' }))
   })
 })

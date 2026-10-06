@@ -137,8 +137,10 @@ const ALL_SCENARIOS: Scenario[] = [
     expect: 'create_page',
     ctx: 'The user is on their Home view. No current page.',
     text: 'make me a recipe page for lasagna',
-    followup: "It's just for me — a classic meat lasagna, about 4 servings. Standard ingredients are fine.",
-    turn1Probe: /serving|people|ingredient|dietar|meat|vegetarian|prefer|how many|classic|style|kind|goal|purpose|cook|meal|dish|occasion|use/i,
+    followup:
+      "It's just for me — a classic meat lasagna, about 4 servings. Standard ingredients are fine.",
+    turn1Probe:
+      /serving|people|ingredient|dietar|meat|vegetarian|prefer|how many|classic|style|kind|goal|purpose|cook|meal|dish|occasion|use/i,
     note: 'grill-before-build: even a named subject grills one intent question (servings/style/how it will be used) before building on turn 2.',
   },
   {
@@ -147,7 +149,8 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'Current page "Chicken Parmesan". Blocks: [text id=b1 intro], [todo id=b2 ingredients].',
     text: 'create a separate page for my lasagna recipe',
     followup: 'Classic meat lasagna, 4 servings — standard ingredients and steps.',
-    turn1Probe: /serving|ingredient|dietar|meat|vegetarian|prefer|how many|style|classic|kind|goal|purpose|cook|meal|dish|occasion|use/i,
+    turn1Probe:
+      /serving|ingredient|dietar|meat|vegetarian|prefer|how many|style|classic|kind|goal|purpose|cook|meal|dish|occasion|use/i,
     note: 'the old #59 BUG case (proto stalled) inverts under grill-first: turn 1 SHOULD ask, turn 2 builds the separate page.',
   },
   {
@@ -168,7 +171,8 @@ const ALL_SCENARIOS: Scenario[] = [
     expectType: 'project',
     ctx: 'The user is on their Home view. No current page.',
     text: 'create a new project called Website Redesign',
-    followup: 'Goal is to modernize our marketing site and lift conversion. Solo, roughly a 6-week timeline.',
+    followup:
+      'Goal is to modernize our marketing site and lift conversion. Solo, roughly a 6-week timeline.',
     turn1Probe: /goal|scope|why|deadline|timeline|audience|redesign|priorit|who|when|what/i,
     note: 'a named project grills goals/scope first (LIFECYCLE), then scaffolds create_page with type=project on turn 2.',
   },
@@ -193,7 +197,7 @@ const ALL_SCENARIOS: Scenario[] = [
     name: 'ADV musing that MENTIONS creating → must NOT tool-call',
     expect: null,
     ctx: 'Current page "Woodworking". Blocks: [text id=b1 "Bench build notes"].',
-    text: "Hmm, maybe I should make a page for all my jigs someday. Not sure yet.",
+    text: 'Hmm, maybe I should make a page for all my jigs someday. Not sure yet.',
     note: 'passing mention, not a request. Steward stays in conversation.',
   },
   {
@@ -206,7 +210,7 @@ const ALL_SCENARIOS: Scenario[] = [
     name: 'ADV pure venting/chat → must stay chat',
     expect: null,
     ctx: 'The user is on their Home view. No current page.',
-    text: "Ugh, today was exhausting. I just need to complain for a second.",
+    text: 'Ugh, today was exhausting. I just need to complain for a second.',
   },
   {
     name: 'ADV GRILL "turn this into a project" → asks, then create_page (type=project)',
@@ -214,7 +218,8 @@ const ALL_SCENARIOS: Scenario[] = [
     expectType: 'project',
     ctx: 'Current page "Kitchen Renovation" (a loose note). Blocks: [text id=b1 "ideas for the reno"].',
     text: 'turn this into a project called Kitchen Renovation',
-    followup: 'Goal is a full reno by spring — budget around 30k, main rooms are the kitchen and dining.',
+    followup:
+      'Goal is a full reno by spring — budget around 30k, main rooms are the kitchen and dining.',
     turn1Probe: /goal|scope|budget|room|timeline|when|why|priorit|phase|what/i,
     note: '§6 decision 4: an in-place structural conversion grills too — turn 1 asks goals/budget, turn 2 scaffolds type=project.',
   },
@@ -311,7 +316,8 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'create a page comparing three standing desks — name, height range, and price for each',
     followup: "The three I'm comparing are the Uplift V2, Fully Jarvis, and Autonomous SmartDesk.",
-    turn1Probe: /desk|which|compare|budget|priorit|need|criteria|start|what|model|goal|purpose|use|column|spec|option|feature/i,
+    turn1Probe:
+      /desk|which|compare|budget|priorit|need|criteria|start|what|model|goal|purpose|use|column|spec|option|feature/i,
     note: 'ticket-21 + grill: turn 1 asks which desks; turn 2 lands the comparison as a table module, never markdown pipes.',
   },
   {
@@ -356,8 +362,9 @@ const ALL_SCENARIOS: Scenario[] = [
     grillOptional: true,
     ctx: 'The user is on their Home view. No current page.',
     text: 'make a page comparing Free, Pro, and Enterprise across these features: price, seats, SSO, and support',
-    followup: "Those four features are all I need — just lay the three tiers out side by side.",
-    turn1Probe: /feature|which|compare|price|priorit|detail|what|across|tier|plan|column|row|dimension|axis|option/i,
+    followup: 'Those four features are all I need — just lay the three tiers out side by side.',
+    turn1Probe:
+      /feature|which|compare|price|priorit|detail|what|across|tier|plan|column|row|dimension|axis|option/i,
     // AMBIGUOUS by design: both axes (3 tiers × 4 features) are fully enumerated, so the
     // don't-re-ask rule makes building on T1 defensible — grillOptional accepts EITHER a
     // T1 build (still shape-checked → table, not collection) OR a T1 grill then T2 table.
@@ -371,7 +378,8 @@ const ALL_SCENARIOS: Scenario[] = [
     ctx: 'The user is on their Home view. No current page.',
     text: 'make me a keyboard shortcuts cheat sheet for VS Code',
     followup: 'The ones I use most — editing, navigation, and search shortcuts.',
-    turn1Probe: /shortcut|which|command|frequent|use|categor|action|what|editor|cover|reference|cheat|sheet|grid|platform|app|os|list/i,
+    turn1Probe:
+      /shortcut|which|command|frequent|use|categor|action|what|editor|cover|reference|cheat|sheet|grid|platform|app|os|list/i,
     note: '#28 + grill: turn 1 asks which shortcuts; turn 2 lands a reference grid → table block, not a collection.',
   },
 
@@ -388,7 +396,8 @@ const ALL_SCENARIOS: Scenario[] = [
     expectNoMdTableInText: true,
     ctx: 'The user is on their Home view. No current page.\n\n[Workspace outline] (existing pages a new page could live under)\n- [a1] Area: Personal\n- [a2] Area: Health\n- [a3] Area: Finances',
     text: 'set up a tracker for my house maintenance tasks — each one has a status, a cost estimate, and a deadline',
-    followup: 'Things like HVAC service, gutter cleaning, and the water heater — status, cost estimate, and deadline per task is right.',
+    followup:
+      'Things like HVAC service, gutter cleaning, and the water heater — status, cost estimate, and deadline per task is right.',
     turn1Probe: /task|maintenance|home|which|track|priorit|schedule|what|kind|how often/i,
     note: '#63 + grill: no tracker page exists, so after the grill the named fields must land as table columns on turn 2, never a shell promising rows later.',
   },
@@ -399,7 +408,8 @@ const ALL_SCENARIOS: Scenario[] = [
     expectNoMdTableInText: true,
     ctx: 'The user is on their Home view. No current page.',
     text: 'start a workout log for me — I want to record date, exercise, sets, and weight',
-    followup: "Strength training, four days a week — date, exercise, sets, and weight is all I need to record.",
+    followup:
+      'Strength training, four days a week — date, exercise, sets, and weight is all I need to record.',
     turn1Probe: /goal|experience|equipment|day|week|exercise|injur|record|track|what|kind/i,
     note: '#63 + grill: after the grill, the brand-new log page is born with its table (date/exercise/sets/weight as columns) on turn 2.',
   },
@@ -458,7 +468,7 @@ async function generateTurn(
   const contextBlock = [ctx, note].filter(Boolean).join('\n\n')
   return generateText({
     model: anthropic(MODEL),
-    system: buildSystemPrompt(contextBlock),
+    system: buildSystemPrompt(contextBlock, { research: false }),
     ...body,
     tools,
     toolChoice: 'auto',
@@ -527,7 +537,12 @@ async function runOne(s: Scenario): Promise<Result> {
         const detail = call
           ? JSON.stringify(call.input).slice(0, 120)
           : last.text.replace(/\s+/g, ' ').slice(0, 90)
-        return { scenario: s, actual: `ask→${actual}`, pass, detail: pass ? detail : `T2: ${detail}` }
+        return {
+          scenario: s,
+          actual: `ask→${actual}`,
+          pass,
+          detail: pass ? detail : `T2: ${detail}`,
+        }
       }
       history.push({ role: 'assistant', content: last.text })
     }
@@ -609,7 +624,7 @@ async function run() {
   console.log(`ROUTING EVAL — model: ${MODEL}${runs > 1 ? ` — ${runs} full runs` : ''}`)
   console.log('═'.repeat(100))
   console.log(
-    `  ${pad('CASE', 52)} ${pad('EXPECT', 26)} ${runs > 1 ? 'PASS RATE  SAW' : `${pad('ACTUAL', 16)} RESULT`}`,
+    `  ${pad('CASE', 52)} ${pad('EXPECT', 26)} ${runs > 1 ? 'PASS RATE  SAW' : `${pad('ACTUAL', 16)} RESULT`}`
   )
   console.log('  ' + '─'.repeat(96))
 
@@ -624,12 +639,12 @@ async function run() {
       const saw = [...new Set(perRun.map((r) => r.actual))].join(', ')
       const flaky = passes > 0 && passes < runs ? '  ← FLAKY' : ''
       console.log(
-        `  ${pad(SCENARIOS[s].name, 52)} ${pad(fmtExpectFor(SCENARIOS[s]), 26)} ${passes}/${runs}        ${saw}${flaky}`,
+        `  ${pad(SCENARIOS[s].name, 52)} ${pad(fmtExpectFor(SCENARIOS[s]), 26)} ${passes}/${runs}        ${saw}${flaky}`
       )
     } else {
       const r = perRun[0]
       console.log(
-        `  ${pad(SCENARIOS[s].name, 52)} ${pad(fmtExpectFor(SCENARIOS[s]), 26)} ${pad(r.actual, 16)} ${r.pass ? 'PASS' : 'FAIL'}`,
+        `  ${pad(SCENARIOS[s].name, 52)} ${pad(fmtExpectFor(SCENARIOS[s]), 26)} ${pad(r.actual, 16)} ${r.pass ? 'PASS' : 'FAIL'}`
       )
       if (!r.pass) console.log(`      ↳ ${r.detail}`)
     }
@@ -638,7 +653,7 @@ async function run() {
   console.log('\n' + '═'.repeat(100))
   console.log(
     `SUMMARY: ${totalPass}/${totalCells} case-executions passed` +
-      (runs > 1 ? ` across ${runs} full runs` : ''),
+      (runs > 1 ? ` across ${runs} full runs` : '')
   )
   console.log('═'.repeat(100) + '\n')
 

@@ -1,11 +1,10 @@
 'use client'
 
 /**
- * The pieces of the diff card (#98), split out of `ModuleDiffCard` so the card
+ * The pieces of the diff card, split out of `ModuleDiffCard` so the card
  * itself reads as header → rows → footer:
  *   - {@link ChangeRows}   — one change as − / + rows, delegating to the module's
  *                            `differ` facet when it declares one;
- *   - {@link OriginalRows} — "show original": the target as it stands, no marks;
  *   - {@link NoteBox}      — the request-changes note to the proposer (6c frame 3).
  * All presentational; the card owns the state.
  */
@@ -16,7 +15,8 @@ import type { Block } from '@/lib/documents/types'
 import type { ModuleRenderer } from '@/lib/modules/types'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { ModuleView, moduleRenderers } from '@/lib/modules/renderers'
-import { DiffRow } from '@/components/atoms/DiffRow'
+import { PondMolecule } from '@/components/molecules/PondMolecule'
+import { DIFF_LINE_CLASS } from '@/components/molecules/diff-line-class'
 import { Button } from '@/components/ui/button'
 import { proposalButtonClass } from '@/components/molecules/ProposalActions'
 
@@ -28,9 +28,9 @@ export function ChangeRows({ change }: { change: ChangePreview }) {
   if (op === 'remove') {
     if (!before) return null
     return (
-      <DiffRow kind="remove">
+      <PondMolecule kind="diff-line" variant="remove" className={DIFF_LINE_CLASS}>
         <ModuleView type={before.type} data={before} />
-      </DiffRow>
+      </PondMolecule>
     )
   }
   // create / edit both end in a proposed `after`.
@@ -48,34 +48,15 @@ export function ChangeRows({ change }: { change: ChangePreview }) {
 
   // Fallback (and the type-morph case): each side through ModuleView.
   return (
-    <div className="space-y-[3px]">
+    <div className="flex flex-col gap-[3px]">
       {op === 'edit' && before && (
-        <DiffRow kind="remove">
+        <PondMolecule kind="diff-line" variant="remove" className={DIFF_LINE_CLASS}>
           <ModuleView type={before.type} data={before} />
-        </DiffRow>
+        </PondMolecule>
       )}
-      <DiffRow kind="add">
+      <PondMolecule kind="diff-line" variant="add" className={DIFF_LINE_CLASS}>
         <ModuleView type={after.type} data={after} />
-      </DiffRow>
-    </div>
-  )
-}
-
-/** The target as it stands — "show original". No diff marks, no red. */
-export function OriginalRows({ changes }: { changes: ChangePreview[] }) {
-  return (
-    <div data-part="original" className="space-y-[3px] font-mono text-[11px] leading-[1.75]">
-      {changes.map((change, i) =>
-        change.before ? (
-          <div key={i} className="rounded-mn-hair bg-mn-text/[0.04] px-2 py-[2px]">
-            <ModuleView type={change.before.type} data={change.before} />
-          </div>
-        ) : (
-          <div key={i} className="px-2 py-[2px] text-mn-text-secondary">
-            new block — nothing to show yet
-          </div>
-        )
-      )}
+      </PondMolecule>
     </div>
   )
 }
@@ -93,7 +74,7 @@ export function NoteBox({
   return (
     <div
       data-part="note-box"
-      className="mx-3 mb-3 flex flex-col gap-2 rounded-[10px] bg-background px-[11px] py-[10px] shadow-[inset_0_0_0_1px_var(--mn-text)]"
+      className="flex flex-col gap-2 rounded-[10px] bg-background px-[11px] py-[10px] shadow-[inset_0_0_0_1px_var(--mn-text)]"
     >
       <span className="font-mono text-[10.5px] lowercase text-mn-text-secondary">to pond</span>
       <textarea

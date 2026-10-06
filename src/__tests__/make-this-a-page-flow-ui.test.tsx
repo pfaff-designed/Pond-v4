@@ -185,7 +185,7 @@ function readChipLabels(): string[] {
 }
 
 async function ready() {
-  await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
 beforeEach(() => {
@@ -214,7 +214,7 @@ beforeEach(() => {
 // ── The thread: mono question, sans answer, read chips ─────────────────────
 
 describe('the answer in the thread (6a frames 2–3)', () => {
-  it('sets the question in mono and the answer in the sans at 13.5px / 1.55 — never the serif', async () => {
+  it('sets the question in mono and the answer in the sans at 15px / 1.6 — never the serif', async () => {
     renderTerminal()
     await ready()
 
@@ -227,12 +227,13 @@ describe('the answer in the thread (6a frames 2–3)', () => {
 
     // jest stubs react-markdown (the real renderer is covered in Storybook), so
     // the voice is pinned two ways: the answer renders through the `answer`
-    // variant, and that variant's prose class IS the sans at 13.5px / 1.55.
+    // variant, and that variant's prose class IS the sans at 15px (16 on mobile) / 1.6.
     const answer = screen.getByText(PROSE)
     expect(answer.getAttribute('data-variant')).toBe('answer')
     expect(ANSWER_PROSE_CLASS).toMatch(/font-sans/)
-    expect(ANSWER_PROSE_CLASS).toMatch(/text-\[13\.5px\]/)
-    expect(ANSWER_PROSE_CLASS).toMatch(/leading-\[1\.55\]/)
+    expect(ANSWER_PROSE_CLASS).toMatch(/md:text-\[15px\]/)
+    expect(ANSWER_PROSE_CLASS).toMatch(/\btext-\[16px\]/)
+    expect(ANSWER_PROSE_CLASS).toMatch(/leading-\[1\.6\]/)
     expect(ANSWER_PROSE_CLASS).not.toMatch(/serif/)
     const answerBlock = answer.closest('[data-part="answer"]')!
     expect(answerBlock.querySelector('.font-serif')).toBeNull()
@@ -562,13 +563,16 @@ describe('make this a page → the `new page — proposed` card', () => {
     fireEvent.keyDown(name, { key: 'Escape' })
     // Esc steps back one rung: out of the field, with the card still standing.
     expect(document.activeElement).not.toBe(name)
-    expect(window.localStorage.getItem('pond:terminal-collapsed')).not.toBe('1')
+    expect(screen.queryByRole('button', { name: 'Open composer' })).toBeNull()
     expect(within(card).getByRole('button', { name: 'make page' })).toBeInTheDocument()
     expect(name.value).not.toBe('')
 
-    // The next Esc, with focus back on the body, takes the next rung.
+    // The next Esc, with focus back on the body, takes the next rung: the close is
+    // asked for, but an open proposal holds the composer open until it is decided.
     fireEvent.keyDown(card, { key: 'Escape' })
-    expect(window.localStorage.getItem('pond:terminal-collapsed')).toBe('1')
+    expect(screen.queryByRole('button', { name: 'Open composer' })).toBeNull()
+    fireEvent.click(within(card).getByRole('button', { name: 'cancel' }))
+    expect(await screen.findByRole('button', { name: 'Open composer' })).toBeInTheDocument()
   })
 
   it('a very long typed name is written clamped, never raw', async () => {
@@ -671,11 +675,11 @@ describe('the eyebrow splits by medium, not by author', () => {
       expect(machineEyebrowClass).toContain(value)
   })
 
-  it('sets the composer’s own eyebrows in the mono: the pond attribution and the card head', async () => {
+  it('sets the card head in the mono and the pond attribution in the sans, over the answer', async () => {
     renderTerminal()
     await ready()
     const answer = screen.getByText(PROSE).closest('[data-part="answer"]')!
-    expect(within(answer as HTMLElement).getByText('pond').className).toBe(machineEyebrowClass)
+    expect(within(answer as HTMLElement).getByText('pond').className).toBe(pageEyebrowClass)
 
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
     const card = await screen.findByRole('group', { name: /new page — proposed/i })

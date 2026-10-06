@@ -24,7 +24,10 @@ const mockGetUser = jest.fn(async () => ({ data: { user: { id: 'user-1' } } }))
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(async () => ({ auth: { getUser: mockGetUser } })),
 }))
-jest.mock('@/lib/conversation/transcript', () => ({ toModelMessages: async (m: unknown) => m }))
+jest.mock('@/lib/conversation/transcript', () => ({
+  ...jest.requireActual('@/lib/conversation/transcript'),
+  toModelMessages: async (m: unknown) => m,
+}))
 jest.mock('@/lib/context/assemble', () => ({
   buildChatContext: async () => null,
   fetchNodeContext: async () => null,

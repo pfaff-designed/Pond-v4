@@ -6,8 +6,8 @@
  * padding) so it sits under the floating breadcrumb pill with air, and the
  * bottom padding is the composer's PUBLISHED footprint + 24, so the last lines
  * (and an open proposal's accept/reject) always have scroll room whatever the
- * drawer's height. Rendered outside a shell (Storybook, a surface alone), the
- * pill is in the flow, so the column starts at the plain 20px inset instead.
+ * drawer's height. Rendered outside a shell (Storybook, a surface alone), there
+ * is no pill, so the column starts at the plain 20px inset instead.
  *
  * Owned by the page surface (DocumentPanel) — one column for every page, so
  * pages cannot drift; it also bounds the width handle to
@@ -16,8 +16,8 @@
  */
 
 import type { CSSProperties } from 'react'
-import { useBreadcrumbFloats } from '@/lib/layout/breadcrumb-slot'
-import { composerClearancePadding } from '@/lib/layout/terminal-height'
+import { useCommandFloats } from '@/lib/layout/command-path'
+import { composerClearancePadding } from '@/lib/layout/composer-clearance'
 
 export interface SurfaceColumn {
   /** Props for the column wrapper (spread onto the div; add your own data-testid). */
@@ -27,7 +27,7 @@ export interface SurfaceColumn {
 }
 
 export function useSurfaceColumn(maxWidth: number | string): SurfaceColumn {
-  const floats = useBreadcrumbFloats()
+  const floats = useCommandFloats()
   const bottom = composerClearancePadding()
   return {
     column: {

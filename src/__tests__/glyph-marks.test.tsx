@@ -8,12 +8,12 @@
  * `KindDot` is the one page-kind mark (muted 7×7, 2px-radius rounded square in an
  * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
  * rendered through by PondMolecule and the mark button; the
- * `AREA_GLYPH` map resolves the six fixed defaults (Life→waves-02, Personal→house,
- * Professional→star-01, Health→leaf-01, Finances→stairs-01,
- * Creativity→flower-05); and the wiring holds — the Rail's Life root and every
+ * `AREA_GLYPH` map resolves the fixed defaults (Life→waves-02, Personal→house,
+ * Professional→ramp, Health→heart, Finances→ring, Creativity→star-01); and the
+ * wiring holds — the Rail's Life root and every
  * mapped area row lead with their glyph in the area hue (page-kind marks stay
- * KindDot, unmapped areas keep the dot), and an area crumb in the Breadcrumb
- * shows its mark — resolved from the trail by the page surface (`CrumbMark`).
+ * KindDot, unmapped areas keep the dot), and the path the page surface publishes
+ * for `PondCommand` leads with its area's mark.
  */
 import React from 'react'
 import { render, waitFor, act } from '@testing-library/react'
@@ -22,17 +22,15 @@ import { KindDot } from '@/components/atoms/PondAtom'
 import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
-import { Breadcrumb } from '@/components/molecules/Breadcrumb'
-import { AreaMark } from '@/components/atoms/AreaMark'
 import type { MarkSource } from '@/lib/pages/mark'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PageRow } from '@/lib/pages/tree'
+import { withPathProbe } from './helpers/command-path-probe'
 
-// The page-surface tests (DocumentPanel) reach useRouter through crumb
-// navigation and read the open page from the URL; the presentational RailView /
-// Breadcrumb never touch either.
+// The page-surface tests (DocumentPanel) reach useRouter and read the open page
+// from the URL; the presentational RailView never touches either.
 let currentNodeId: string | null = null
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -171,25 +169,26 @@ describe('AREA_GLYPH — the fixed defaults', () => {
   it('maps the five default areas and the Life root', () => {
     expect(LIFE_GLYPH).toBe('waves-02')
     expect(areaGlyph('Personal')).toBe('house')
-    expect(areaGlyph('Professional')).toBe('star-01')
-    expect(areaGlyph('Health')).toBe('leaf-01')
-    expect(areaGlyph('Finances')).toBe('stairs-01')
-    expect(areaGlyph('Creativity')).toBe('flower-05')
+    expect(areaGlyph('Professional')).toBe('ramp')
+    expect(areaGlyph('Health')).toBe('heart')
+    expect(areaGlyph('Money')).toBe('ring')
+    expect(areaGlyph('Finances')).toBe('ring')
+    expect(areaGlyph('Creativity')).toBe('star-01')
   })
 
   it("also maps the legacy 'Financial' title (pre-#108 seeds wrote it)", () => {
-    expect(areaGlyph('Financial')).toBe('stairs-01')
+    expect(areaGlyph('Financial')).toBe('ring')
   })
 
   it('is case- and whitespace-insensitive; unmapped areas resolve to nothing', () => {
-    expect(areaGlyph('  health ')).toBe('leaf-01')
+    expect(areaGlyph('  health ')).toBe('heart')
     expect(areaGlyph('PERSONAL')).toBe('house')
     expect(areaGlyph('Food')).toBeUndefined()
     expect(areaGlyph('')).toBeUndefined()
   })
 })
 
-// ── AC4: wiring — Rail, area overview, Breadcrumb ───────────────────────────
+// ── AC4: wiring — Rail, area overview, the command path ─────────────────────
 
 const node = (
   id: string,
@@ -206,11 +205,12 @@ const TREE: RailNode[] = [
   node('scratch', 'page', 'Scratchpad', [], 2),
 ]
 
-function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
+function renderRail(marks?: ReadonlyMap<string, MarkSource>, pondGlyph?: string) {
   return render(
     <RailView
       tree={TREE}
       pondName="life"
+      pondGlyph={pondGlyph}
       marks={marks}
       selectedId={null}
       expanded={new Set(['health', 'personal'])}
@@ -222,8 +222,10 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onOpenDatabases={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
     />
@@ -231,7 +233,18 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>) {
 }
 
 describe('Rail — area marks ride the glyph system', () => {
-  it('the Life root leads with the waves-02 glyph', () => {
+  it('the Life root leads with the pond’s own glyph, in ink', () => {
+    const { getByRole } = renderRail(undefined, 'lightning-03')
+    const life = getByRole('treeitem', { name: /life/ })
+    const glyph = life.querySelector<HTMLElement>('[data-icon="lightning-03"]')!
+    expect(glyph).toBeInTheDocument()
+    expect(life.querySelector(`[data-icon="${LIFE_GLYPH}"]`)).toBeNull()
+    // The pond is not an area: its mark is the plain pond mark, in the row's ink.
+    expect(glyph.closest('[data-pond-mark]')).not.toBeNull()
+    expect(life.querySelector('[data-area-mark]')).toBeNull()
+  })
+
+  it('the Life root falls back to waves-02 when the pond names no glyph', () => {
     const { getByRole } = renderRail()
     const life = getByRole('treeitem', { name: /life/ })
     const glyph = life.querySelector<HTMLElement>(`[data-icon="${LIFE_GLYPH}"]`)!
@@ -240,80 +253,47 @@ describe('Rail — area marks ride the glyph system', () => {
     expect(life.querySelector('circle')).toBeNull()
   })
 
-  it('a mapped area row leads with its glyph in the area hue; its dot retires', () => {
+  it('a mapped area row leads with its glyph in ink; its dot retires', () => {
     const { getByRole } = renderRail()
     const health = getByRole('treeitem', { name: /Health/ })
-    const glyph = health.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
+    const glyph = health.querySelector<HTMLElement>('[data-icon="heart"]')!
     expect(glyph).toBeInTheDocument()
-    // The glyph inherits the hue via currentColor on the slot — and since #134
-    // that hue is a theme ROLE, so the rail agrees with the breadcrumb and the
-    // kicker about the same page instead of hashing its own Press accent.
+    // Ink is the default: nobody chose a colour, so none is assigned.
     const slot = glyph.closest<HTMLElement>('[data-area-mark]')!
-    expect(slot.style.color).toMatch(/^var\(--mn-area-[abc]\)$/)
+    expect(slot.style.color).toBe('var(--mn-text)')
     expect(health.querySelector('[data-part="dot"]')).toBeNull()
+  })
+
+  it('a coloured area paints its glyph with the chosen role, and the rail agrees with the trail', () => {
+    const { getByRole } = renderRail(
+      new Map([['health', { id: 'health', parentId: null, title: 'Health', areaRole: 'area-a' }]])
+    )
+    const slot = getByRole('treeitem', { name: /Health/ }).querySelector<HTMLElement>(
+      '[data-area-mark]'
+    )!
+    expect(slot.style.color).toBe('var(--mn-area-a)')
   })
 
   // #108: the area voice (accent dot / glyph) rides TOP-LEVEL rows, since there is
   // no `type = 'area'` left to test and the fixed glyph defaults are written for
   // the seeded top-level areas. Per-page glyph/colour is #91's own work.
-  it('an unmapped top-level area keeps the KindDot mark; nested pages carry neither', () => {
+  it('an unmapped top-level area keeps the KindDot mark; nested pages carry the dot, no glyph', () => {
     const { getByRole } = renderRail()
     const scratch = getByRole('treeitem', { name: /Scratchpad/ })
     expect(scratch.querySelector('[data-icon]')).toBeNull()
     expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
     const food = getByRole('treeitem', { name: /Food/ })
     expect(food.querySelector('[data-icon]')).toBeNull()
-    expect(food.querySelector('[data-part="dot"]')).toBeNull()
+    expect(food.querySelector('[data-part="dot"]')).toBeInTheDocument()
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
-    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
-  })
-})
-
-describe('Breadcrumb — the lead crumb carries the injected mark', () => {
-  // #134 made the mark a clickable control that writes to the database, so the
-  // molecule no longer derives it — a presentational component has no business
-  // owning that. What it still owns is WHERE the mark goes: the first crumb only.
-  it('renders the injected mark in the first crumb and nowhere else', () => {
-    const { getByRole } = render(
-      <Breadcrumb
-        crumbs={[
-          { id: 'health', type: 'page', title: 'Health' },
-          { id: 'sleep', type: 'page', title: 'Sleep' },
-        ]}
-        onNavigate={jest.fn()}
-        current="Dreams"
-        leadMark={<AreaMark glyph="leaf-01" color="var(--mn-area-a)" size={11} />}
-      />
-    )
-    // Beside the crumb, never inside it: a crumb is a <button> and so is the
-    // mark, and nesting them is invalid HTML React reports as a hydration error.
-    const health = getByRole('button', { name: /Health/ })
-    const glyph = health.parentElement!.querySelector<HTMLElement>('[data-icon="leaf-01"]')!
-    expect(glyph).toBeInTheDocument()
-    expect(health.querySelector('[data-icon]')).toBeNull()
-    // A ROLE, not a colour — the mark follows the theme (#134).
-    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-a)')
-    const sleep = getByRole('button', { name: /Sleep/ })
-    expect(sleep.parentElement!.querySelector('[data-icon]')).toBeNull()
-  })
-
-  it('carries no AREA mark at all when none is injected', () => {
-    const { container } = render(
-      <Breadcrumb
-        crumbs={[{ id: 'health', type: 'page', title: 'Health' }]}
-        onNavigate={jest.fn()}
-      />
-    )
-    // #96: the pill leads with the pond's glyph (2t), which is not an area mark.
-    expect(container.querySelector('[data-area-mark]')).toBeNull()
-    expect(container.querySelectorAll('[data-icon]')).toHaveLength(1)
+    expect(sleep.querySelector('[data-part="dot"]')).toBeInTheDocument()
   })
 })
 
 // ── AC4 (integration): the page surface passes the glyph through ────────────
 
-describe('DocumentPanel — the trail’s lead crumb carries the area’s mark', () => {
+describe('DocumentPanel — the path it publishes leads with the area’s mark', () => {
   const at = '2026-01-01T00:00:00Z'
   const ROWS: PageRow[] = [
     { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
@@ -346,48 +326,37 @@ describe('DocumentPanel — the trail’s lead crumb carries the area’s mark',
     )
     return render(
       <QueryClientProvider client={client}>
-        <DeletionUndoProvider>
-          <DocumentPanel />
-        </DeletionUndoProvider>
+        <DeletionUndoProvider>{withPathProbe(<DocumentPanel />)}</DeletionUndoProvider>
       </QueryClientProvider>
     )
   }
 
-  it('a page inside a mapped area leads its trail with that area’s glyph, in the area ROLE', async () => {
-    const { container, findByRole } = renderPanel('food')
-    // The trail's Personal crumb carries the house glyph. Its mark is a control
-    // editing the AREA rather than the open page — which is why the label names it.
-    const crumbMark = await findByRole('button', { name: 'Change the mark for Personal' })
-    const glyph = crumbMark.querySelector<HTMLElement>('[data-icon="house"]')!
-    expect(glyph).toBeInTheDocument()
-    // #134: a role, never a colour — switching theme re-colours this with no write.
-    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toMatch(
-      /^var\(--mn-area-[abc]\)$/
-    )
-    // #96: the pill leads with the pond's own glyph (2t); beyond it, the crumb
-    // mark is the only glyph on the surface.
-    expect(container.querySelectorAll(`[data-icon]:not([data-icon="${LIFE_GLYPH}"])`)).toHaveLength(
-      1
-    )
+  const publishedGlyph = async (findByTestId: (id: string) => Promise<HTMLElement>) => {
+    const probe = await findByTestId('command-path')
+    return probe.getAttribute('data-glyph')
+  }
+
+  // `PondCommand.dc.html`: `GLYPH[path[1]] || GLYPH[path[0]]`, drawn in ink — the
+  // mark names the area, and the pill is chrome, so it carries no area role.
+  it('a page inside a mapped area leads its path with that area’s glyph', async () => {
+    const { findByTestId } = renderPanel('food')
+    await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe('house'))
   })
 
-  it('renders an explicit glyph and role over the derived ones', async () => {
-    // The whole point of #134: a choice the person made beats the title hash.
-    const { findByRole } = renderPanel('food', {
+  it('a glyph the person chose beats the title-derived one (#134)', async () => {
+    const { findByTestId } = renderPanel('food', {
       id: 'personal',
       glyph: 'tulip-01',
       area_role: 'area-c',
     })
-    const crumbMark = await findByRole('button', { name: 'Change the mark for Personal' })
-    const glyph = crumbMark.querySelector<HTMLElement>('[data-icon="tulip-01"]')!
-    expect(glyph).toBeInTheDocument()
-    expect(glyph.closest<HTMLElement>('[data-area-mark]')!.style.color).toBe('var(--mn-area-c)')
+    await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe('tulip-01'))
   })
 
-  it('a top-level page has no ancestors, so its trail carries no area mark', async () => {
-    const { container, findByRole } = renderPanel('health')
-    await findByRole('navigation', { name: 'Breadcrumb' })
-    expect(container.querySelector('[data-area-mark]')).toBeNull()
+  it('a top-level page is its own area, so the path leads with its own mark', async () => {
+    const { findByTestId } = renderPanel('health')
+    await waitFor(async () =>
+      expect(await publishedGlyph(findByTestId)).toBe(areaGlyph('Health'))
+    )
   })
 })
 
@@ -442,18 +411,28 @@ describe('Rail — an explicit mark reaches the rail (#134)', () => {
     expect(dot.style.background).toBe('var(--mn-area-b)')
   })
 
-  it('leaves an untouched nested row with no mark at all', () => {
+  it('gives a nested row in a coloured area the area’s dot, and no glyph', () => {
     const { getByRole } = renderRail(railMarks([{ ...HEALTH, areaRole: 'area-c' }, SLEEP]))
     const sleep = getByRole('treeitem', { name: /Sleep/ })
     expect(sleep.querySelector('[data-icon]')).toBeNull()
-    // Asserted as ABSENCE of the element — the earlier version read a style off a
-    // node that was never there, so it could not have failed.
-    expect(sleep.querySelector('[data-part="dot"]')).toBeNull()
+    expect(sleep.querySelector<HTMLElement>('[data-part="dot"]')!.style.background).toBe(
+      'var(--mn-area-c)'
+    )
+  })
+
+  it('leaves every mark ink when no area has a colour', () => {
+    const { getByRole } = renderRail(railMarks([HEALTH, SLEEP]))
+    const sleep = getByRole('treeitem', { name: /Sleep/ })
+    expect(sleep.querySelector<HTMLElement>('[data-part="dot"]')!.style.background).toBe('')
+    const health = getByRole('treeitem', { name: /Health/ })
+    expect(health.querySelector<HTMLElement>('[data-area-mark]')!.style.color).toBe(
+      'var(--mn-text)'
+    )
   })
 })
 
 describe('Rail — the seed title resolves too', () => {
-  it("an area titled 'Financial' (what pre-#108 seeds wrote) leads with stairs-01", () => {
+  it("an area titled 'Financial' (what older seeds wrote) leads with ring", () => {
     const { getByRole } = render(
       <RailView
         tree={[node('fin', 'page', 'Financial')]}
@@ -468,14 +447,16 @@ describe('Rail — the seed title resolves too', () => {
         onToggle={jest.fn()}
         onAddChild={jest.fn()}
         onDelete={jest.fn()}
+        onRename={jest.fn()}
         onLife={jest.fn()}
         onToggleLife={jest.fn()}
+        onOpenDatabases={jest.fn()}
         canDrop={() => true}
         onMove={jest.fn()}
       />
     )
     const fin = getByRole('treeitem', { name: /Financial/ })
-    expect(fin.querySelector('[data-icon="stairs-01"]')).toBeInTheDocument()
+    expect(fin.querySelector('[data-icon="ring"]')).toBeInTheDocument()
     expect(fin.querySelector('[data-part="dot"]')).toBeNull()
   })
 })

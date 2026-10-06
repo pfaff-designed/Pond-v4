@@ -115,7 +115,7 @@ describe('composer attachments (#61)', () => {
     expect(mockUpload).toHaveBeenCalled()
 
     await user.type(screen.getByRole('textbox'), 'look at this')
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalled())
     const [payload] = mockSendMessage.mock.calls[0]
@@ -147,7 +147,7 @@ describe('composer attachments (#61)', () => {
     expect(screen.queryByRole('button', { name: 'Remove shot.png' })).not.toBeInTheDocument()
 
     await user.type(screen.getByRole('textbox'), 'no attachment after all')
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalled())
     const [payload] = mockSendMessage.mock.calls[0]

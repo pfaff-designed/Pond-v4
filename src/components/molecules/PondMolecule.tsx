@@ -141,6 +141,11 @@ export interface PondMoleculeProps {
    */
   onTitleChange?: (next: string) => void
   /**
+   * list-row — a LIVE field in place of the title span (the rail's inline rename).
+   * The host owns the field and its keys; the row keeps its own geometry.
+   */
+  titleField?: ReactNode
+  /**
    * check-row — make the checkbox a real control (issue 219): the box becomes a
    * `role="checkbox"` button with no geometry of its own. Absent, the atom is
    * drawn inert, as the board's component card draws it — inside a read-only
@@ -153,6 +158,9 @@ export interface PondMoleculeProps {
    * input sits in the value cell, so `PropertyInspector` renders the molecule
    * rather than restating its grid to edit a value — the same move as
    * `onTitleChange` on a list-row. Absent, the value atom draws as before.
+   *
+   * diff-line — a block's rendered content in place of the title string, so a
+   * proposed change shows the module itself, struck or not (the diff card).
    */
   children?: ReactNode
   className?: string
@@ -219,6 +227,7 @@ export function PondMolecule({
   leading,
   trailing,
   onTitleChange,
+  titleField,
   onToggle,
   children,
   className,
@@ -361,13 +370,14 @@ export function PondMolecule({
         {dragHandle}
         {leading}
         {dot && kindDot(selected ? 'bg-mn-text' : 'bg-mn-text/50')}
-        {rowTitle(
-          cn(
-            'min-w-0 flex-1 truncate',
-            emphasis && 'font-medium',
-            empty && 'text-mn-text-secondary'
-          )
-        )}
+        {titleField ??
+          rowTitle(
+            cn(
+              'min-w-0 flex-1 truncate',
+              emphasis && 'font-medium',
+              empty && 'text-mn-text-secondary'
+            )
+          )}
         {metaAtom}
         {trailing}
       </div>
@@ -714,6 +724,7 @@ export function PondMolecule({
       <div
         data-kind={kind}
         data-state={state}
+        data-variant={variant}
         className={cn(
           'flex items-baseline gap-2.5 rounded-lg px-2.5 py-1 font-mono lowercase leading-[1.6]',
           mobile ? 'w-[330px] text-[12.5px]' : 'w-[380px] text-[11.5px]',
@@ -728,17 +739,17 @@ export function PondMolecule({
         >
           {removal ? '−' : '+'}
         </span>
-        <span
+        <div
           data-part="title"
           className={cn(
-            'min-w-0',
+            'min-w-0 flex-1',
             removal
               ? 'text-mn-text-secondary line-through decoration-mn-signal-removal'
               : 'text-mn-text'
           )}
         >
-          {displayTitle}
-        </span>
+          {children ?? displayTitle}
+        </div>
         {displayMeta !== '' && (
           <span data-part="meta" className={cellMeta}>
             {displayMeta}

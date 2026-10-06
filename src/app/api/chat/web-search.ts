@@ -12,6 +12,9 @@
  * enables `sendSources` so they reach the terminal, which renders them as a citation
  * row (SourceList).
  *
+ * Research is the only thing that reads the web: the route offers the tool only on
+ * a question the person asked to research (off by default, spent per question).
+ *
  * Kept in its own module (not in tools.ts) so the widely-imported routing-schema
  * module stays free of the `@ai-sdk/anthropic` top-level import — only the Route
  * Handler (a Node/server module) pulls this in.

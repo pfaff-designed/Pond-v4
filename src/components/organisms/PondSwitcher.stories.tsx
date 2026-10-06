@@ -3,7 +3,10 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { NewPondSheet } from './NewPondSheet'
 import { PondSwitcher } from './PondSwitcher'
-import { PondProvider } from '@/lib/pond/context'
+import { PondContext, PondProvider } from '@/lib/pond/context'
+import type { Pond } from '@/lib/pond/client'
+import { RailView } from './Rail'
+import { srgbAsRgba } from './story-colour'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 
 /**
@@ -82,7 +85,7 @@ const ink: Decorator = (Story) => (
 )
 
 const meta = {
-  title: 'Organisms/PondSwitcher',
+  title: 'Organisms/2r · the rail',
   component: PondSwitcher,
   parameters: {
     layout: 'fullscreen',
@@ -110,6 +113,7 @@ type Story = StoryObj<typeof meta>
  * session the client resolves to [], which is the before-0018 list.
  */
 export const BeforeTheTableExists: Story = {
+  tags: ['!dev'],
   decorators: [inRailHead, paper],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -133,6 +137,185 @@ export const BeforeTheTableExists: Story = {
   },
 }
 
+// ── the open menu ───────────────────────────────────────────────────────────
+
+const PONDS: Pond[] = [
+  { id: 'p-life', name: 'life', glyph: 'waves-02', theme: 'paper', order: 0 },
+  { id: 'p-noise', name: 'make noise', glyph: 'lightning-03', theme: 'paper', order: 1 },
+  { id: 'p-door', name: 'red door guys', glyph: 'house', theme: 'paper', order: 2 },
+]
+
+/**
+ * The whole rail around a switcher whose pond list is stood in through the
+ * context, so the menu is measured from the CARD it is anchored to rather than
+ * from a stand-in wrapper.
+ */
+function RailWithPonds({ dark }: { dark: boolean }) {
+  return (
+    <div className={`flex h-[560px] bg-mn-surface ${dark ? 'dark' : ''}`}>
+      <PondContext.Provider
+        value={{
+          pond: PONDS[0],
+          ponds: PONDS,
+          loading: false,
+          reload: () => {},
+          addPond: () => {},
+        }}
+      >
+        <RailView
+          tree={[]}
+          pondName="life"
+          selectedId={null}
+          expanded={new Set<string>()}
+          lifeExpanded
+          busyId={null}
+          isLoading={false}
+          isEmpty={false}
+          onSelect={fn()}
+          onToggle={fn()}
+          onAddChild={fn()}
+          onDelete={fn()}
+          onRename={fn()}
+          onLife={fn()}
+          onToggleLife={fn()}
+          onOpenDatabases={fn()}
+          canDrop={() => true}
+          onMove={fn()}
+        />
+      </PondContext.Provider>
+    </div>
+  )
+}
+
+const MENU = {
+  light: {
+    background: 'linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.76))',
+    border: 'rgba(255, 255, 255, 0.9)',
+    shadow:
+      'rgba(255, 255, 255, 0.7) 0px 1px 0px 0px inset, rgba(40, 34, 24, 0.16) 0px 20px 54px 0px',
+    ink: '#1B1D14',
+    secondary: 'rgba(27, 29, 20, 0.68)',
+    meta: 'rgba(27, 29, 20, 0.8)',
+  },
+  dark: {
+    background: 'linear-gradient(160deg, rgba(74, 73, 64, 0.96), rgba(74, 73, 64, 0.86))',
+    border: 'rgba(250, 249, 239, 0.09)',
+    shadow: 'rgba(0, 0, 0, 0.45) 0px 20px 54px 0px',
+    ink: '#FAF9EF',
+    secondary: 'rgba(250, 249, 239, 0.68)',
+    meta: 'rgba(250, 249, 239, 0.8)',
+  },
+} as const
+
+/** `PondRail` `menu` / `menuHead` / `menuRow` / `menuRule` / pond rows, computed. */
+async function assertOpenMenu(canvasElement: HTMLElement, theme: 'light' | 'dark') {
+  const want = MENU[theme]
+  const canvas = within(canvasElement)
+  const card = canvasElement.querySelector('aside')!
+  const switcher = canvasElement.querySelector<HTMLElement>('[data-part="pond-switcher"]')!
+  await expect(getComputedStyle(card).overflow).toBe('hidden')
+
+  await userEvent.click(switcher)
+  const menu = await canvas.findByRole('menu', { name: 'Ponds' })
+
+  // Anchored to the CARD: top 44, left 10, right 10, over the rail (z 5), and the
+  // card stops clipping while it is open.
+  await expect(getComputedStyle(card).overflow).toBe('visible')
+  const cardBox = card.getBoundingClientRect()
+  const box = menu.getBoundingClientRect()
+  await expect(Math.round(box.top - cardBox.top)).toBe(44)
+  await expect(Math.round(box.left - cardBox.left)).toBe(10)
+  await expect(Math.round(cardBox.right - box.right)).toBe(10)
+  const css = getComputedStyle(menu)
+  await expect(css.position).toBe('absolute')
+  await expect(css.zIndex).toBe('5')
+
+  await expect(srgbAsRgba(css.backgroundImage)).toBe(want.background)
+  await expect(css.borderTopWidth).toBe('1px')
+  await expect(css.borderTopStyle).toBe('solid')
+  await expect(srgbAsRgba(css.borderTopColor)).toBe(want.border)
+  await expect(css.boxShadow).toBe(want.shadow)
+  await expect(css.backdropFilter).toBe('blur(24px) saturate(1.3)')
+  await expect(css.display).toBe('flex')
+  await expect(css.flexDirection).toBe('column')
+  await expect(css.rowGap).toBe('1px')
+  await expect(css.padding).toBe('6px')
+  await expect(css.borderTopLeftRadius).toBe('16px')
+
+  // section head: sans, not mono
+  const head = within(menu).getByText('ponds')
+  const headCss = getComputedStyle(head)
+  await expect(headCss.padding).toBe('6px 10px 4px')
+  await expect(headCss.fontSize).toBe('10.5px')
+  await expect(headCss.fontWeight).toBe('500')
+  await expect(headCss.letterSpacing).toBe('1.05px')
+  await expect(headCss.textTransform).toBe('uppercase')
+  await expect(headCss.color).toBe(want.secondary)
+  await expect(headCss.fontFamily).toMatch(/PP Neue Montreal/)
+  await expect(headCss.fontFamily).not.toMatch(/Mono/)
+
+  // pond rows: 13 glyph, gap 9, padding 7/10, radius 10; the active one is 500 on
+  // an ink .07 wash, with the ✓ in 10.5 mono
+  const rows = within(menu).getAllByRole('menuitem').slice(0, 3)
+  await expect(rows).toHaveLength(3)
+  for (const [i, row] of rows.entries()) {
+    const rowCss = getComputedStyle(row)
+    await expect(rowCss.display).toBe('flex')
+    await expect(rowCss.columnGap).toBe('9px')
+    await expect(rowCss.padding).toBe('7px 10px')
+    await expect(rowCss.borderTopLeftRadius).toBe('10px')
+    await expect(rowCss.fontSize).toBe('13px')
+    await expect(rowCss.fontWeight).toBe(i === 0 ? '500' : '400')
+    await expect(rowCss.backgroundColor).toBe(i === 0 ? mixed(want.ink, 0.07) : 'rgba(0, 0, 0, 0)')
+    const glyph = row.querySelector<HTMLElement>('[data-icon]')!
+    await expect(glyph.getBoundingClientRect().width).toBe(13)
+    await expect(glyph.getBoundingClientRect().height).toBe(13)
+  }
+  const tick = within(rows[0]).getByText('✓')
+  await expect(getComputedStyle(tick).fontSize).toBe('10.5px')
+  await expect(getComputedStyle(tick).fontFamily).toMatch(/Mono/)
+  await expect(within(rows[1]).queryByText('✓')).not.toBeInTheDocument()
+
+  // the rule: 1 high, margin 4px 8px, ink .09
+  const rule = menu.querySelector<HTMLElement>('[role="menuitem"] ~ div')!
+  const ruleCss = getComputedStyle(rule)
+  await expect(rule.getBoundingClientRect().height).toBe(1)
+  await expect(ruleCss.margin).toBe('4px 8px')
+  await expect(ruleCss.backgroundColor).toBe(mixed(want.ink, 0.09))
+
+  // `new pond`: a menuRow at ink .8 with a 12×12 plus
+  const add = within(menu).getByRole('menuitem', { name: 'new pond' })
+  const addCss = getComputedStyle(add)
+  await expect(addCss.columnGap).toBe('9px')
+  await expect(addCss.padding).toBe('7px 10px')
+  await expect(addCss.borderTopLeftRadius).toBe('10px')
+  await expect(addCss.fontSize).toBe('13px')
+  await expect(addCss.fontWeight).toBe('400')
+  await expect(addCss.color).toBe(want.meta)
+  const plus = add.querySelector('svg')!
+  await expect(plus.getBoundingClientRect().width).toBe(12)
+  await expect(plus.getBoundingClientRect().height).toBe(12)
+  await expect(plus.querySelector('path')!.getAttribute('d')).toBe('M6 2.4v7.2M2.4 6h7.2')
+
+  // closing gives the card its clip back
+  await userEvent.click(switcher)
+  await waitFor(() => expect(getComputedStyle(card).overflow).toBe('hidden'))
+}
+
+/** `PondRail` `switcher`, paper: the menu's values, measured from the rail card. */
+export const MenuOpen: Story = {
+  name: 'switcher',
+  render: () => <RailWithPonds dark={false} />,
+  play: ({ canvasElement }) => assertOpenMenu(canvasElement, 'light'),
+}
+
+/** `PondRail` `switcher`, ink: the same menu on the dark roles. */
+export const MenuOpenDark: Story = {
+  name: 'switcher · ink',
+  render: () => <RailWithPonds dark />,
+  play: ({ canvasElement }) => assertOpenMenu(canvasElement, 'dark'),
+}
+
 // ── the sheet the menu's `new pond` row opens ───────────────────────────────
 
 interface SheetHarnessProps {
@@ -154,6 +337,7 @@ function SheetHarness({ pending, failure = null }: SheetHarnessProps) {
  * nothing pretends to be live.
  */
 export const TheSheet: Story = {
+  name: 'new',
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -184,6 +368,7 @@ export const TheSheet: Story = {
 
 /** Dark is two papers, and the sheet's scrim inverts with them: ink at .62. */
 export const TheSheetDark: Story = {
+  name: 'new · ink',
   decorators: [ink],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -200,6 +385,7 @@ export const TheSheetDark: Story = {
  * what it does".
  */
 export const WalkingTheThreeSteps: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -228,6 +414,7 @@ export const WalkingTheThreeSteps: Story = {
  * empty name is legal: the column default supplies the name.
  */
 export const SkipMakesItStraightAway: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness />,
   play: async ({ canvasElement }) => {
@@ -243,6 +430,7 @@ export const SkipMakesItStraightAway: Story = {
  * never made.
  */
 export const MakingItFailed: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness failure='relation "ponds" does not exist' />,
   play: async ({ canvasElement }) => {
@@ -259,6 +447,7 @@ export const MakingItFailed: Story = {
  * there is no second `make pond` to click.
  */
 export const Pending: Story = {
+  tags: ['!dev'],
   decorators: [paper],
   render: () => <SheetHarness pending />,
   play: async ({ canvasElement }) => {

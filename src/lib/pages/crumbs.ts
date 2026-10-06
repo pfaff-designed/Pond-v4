@@ -49,6 +49,32 @@ export function ancestorPath(
   return chain
 }
 
+/** The slice of a page row `areaOf` reads — satisfied by both the rail's rows and `listPages`. */
+export interface AreaRow {
+  id: string
+  parentId: string | null
+  title: string
+}
+
+/**
+ * The area a page sits in: the top-level page of its ancestry (the rail's closed
+ * and open areas), or the page itself when it is top-level. The composer's thread
+ * head names it — `thread · life` — so a thread reads as belonging to somewhere.
+ * Null for a node that is not in the rows. Cycle-guarded like {@link ancestorPath}.
+ */
+export function areaOf(rows: AreaRow[], nodeId: string): string | null {
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  let current = byId.get(nodeId)
+  const seen = new Set<string>()
+  while (current?.parentId && !seen.has(current.id)) {
+    seen.add(current.id)
+    const parent = byId.get(current.parentId)
+    if (!parent) break
+    current = parent
+  }
+  return current ? current.title || 'Untitled' : null
+}
+
 /**
  * The trail for a node, split into the ROOT it descends from and the ancestors
  * below that root (#101 review; ADR 0003 ruling).

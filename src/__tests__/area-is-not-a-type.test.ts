@@ -15,7 +15,6 @@
 
 import { createPageTool } from '@/app/api/chat/tools'
 import { SYSTEM_PROMPT } from '@/app/api/chat/prompt'
-import { parseActionCard } from '@/lib/nodes/create'
 
 const parse = (input: unknown) => createPageTool.inputSchema.safeParse(input)
 
@@ -63,15 +62,5 @@ describe('the model is re-coached that area-ness is emergent', () => {
 
   it('the system prompt forbids reaching for an area type', () => {
     expect(SYSTEM_PROMPT).toContain("There is NO 'area' type")
-  })
-})
-
-describe('the save-extract action card drops its area shape', () => {
-  it('parses a page card and refuses an area card', () => {
-    expect(parseActionCard(JSON.stringify({ type: 'page', name: 'Travel' }))).toEqual({
-      type: 'page',
-      name: 'Travel',
-    })
-    expect(parseActionCard(JSON.stringify({ type: 'area', name: 'Travel' }))).toBeNull()
   })
 })

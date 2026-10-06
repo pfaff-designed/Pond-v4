@@ -10,7 +10,12 @@
  *   2. The ticket-39 sections (persona layer, lifecycle arc, correspondence,
  *      Brief) are actually present.
  */
-import { SYSTEM_PROMPT, PROMPT_SECTIONS, buildSystemPrompt } from '@/app/api/chat/prompt'
+import {
+  SYSTEM_PROMPT,
+  SYSTEM_PROMPT_WITHOUT_WEB,
+  PROMPT_SECTIONS,
+  buildSystemPrompt,
+} from '@/app/api/chat/prompt'
 
 describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive the refactor)', () => {
   it.each([
@@ -37,7 +42,7 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     // freeform matrix / explicit "a table" stays the table block.
     'the DEFAULT for record-like tabular data',
     'RECORD-LIKE TABULAR DATA DEFAULTS HERE',
-    // RESEARCH (ticket-29).
+    // RESEARCH — in the research prompt only.
     'You have a web_search tool',
     'from memory, not today',
     // #19 slice 5: configure_view routing.
@@ -165,13 +170,39 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
   })
 })
 
-describe('buildSystemPrompt', () => {
-  it('returns the base prompt when no context is given', () => {
-    expect(buildSystemPrompt()).toBe(SYSTEM_PROMPT)
+describe('RESEARCH is composed in only when research is on', () => {
+  const { RESEARCH, ...others } = PROMPT_SECTIONS
+
+  it('the research prompt carries RESEARCH and tells the model it has web_search', () => {
+    expect(SYSTEM_PROMPT).toContain(RESEARCH)
+    expect(SYSTEM_PROMPT).toContain('You have a web_search tool')
   })
-  it('appends the workspace context block when present', () => {
-    const out = buildSystemPrompt('[Workspace outline]\n- Area: Personal')
-    expect(out.startsWith(SYSTEM_PROMPT)).toBe(true)
-    expect(out).toContain('[Workspace outline]')
+
+  it('the prompt without the web has no RESEARCH section and never names web_search', () => {
+    expect(SYSTEM_PROMPT_WITHOUT_WEB).not.toContain(RESEARCH)
+    expect(SYSTEM_PROMPT_WITHOUT_WEB).not.toContain('web_search')
+    expect(SYSTEM_PROMPT_WITHOUT_WEB).not.toContain('You have a web_search tool')
+  })
+
+  it('every other section is in both, in the same order', () => {
+    for (const section of Object.values(others)) {
+      expect(SYSTEM_PROMPT).toContain(section)
+      expect(SYSTEM_PROMPT_WITHOUT_WEB).toContain(section)
+    }
+    expect(SYSTEM_PROMPT.replace(`${RESEARCH}\n\n`, '')).toBe(SYSTEM_PROMPT_WITHOUT_WEB)
+  })
+})
+
+describe('buildSystemPrompt', () => {
+  it('returns the base prompt for the turn when no context is given', () => {
+    expect(buildSystemPrompt(null, { research: true })).toBe(SYSTEM_PROMPT)
+    expect(buildSystemPrompt(undefined, { research: false })).toBe(SYSTEM_PROMPT_WITHOUT_WEB)
+  })
+  it('appends the workspace context block to either variant', () => {
+    for (const research of [true, false]) {
+      const out = buildSystemPrompt('[Workspace outline]\n- Area: Personal', { research })
+      expect(out.startsWith(research ? SYSTEM_PROMPT : SYSTEM_PROMPT_WITHOUT_WEB)).toBe(true)
+      expect(out).toContain('[Workspace outline]')
+    }
   })
 })
