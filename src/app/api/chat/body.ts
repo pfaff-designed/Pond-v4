@@ -1,8 +1,4 @@
-/**
- * The chat request body, parsed. Lives beside the route because a route file
- * may export only HTTP handlers and route config — `next build` rejects any
- * other export from `route.ts`.
- */
+/** The chat request body, parsed. */
 import type { UIMessage } from 'ai'
 import type { NodeType } from '@/lib/supabase/types'
 import { parseResolutions, type ConversationResolutions } from '@/lib/conversation/resolutions'
@@ -10,7 +6,7 @@ import { parseRequestChanges, type RequestChangesBody } from './request-changes'
 
 const NODE_TYPES: readonly NodeType[] = ['routine', 'project', 'action', 'page']
 
-export interface ChatBody {
+interface ChatBody {
   messages: UIMessage[]
   nodeId?: string
   pondId?: string
@@ -23,9 +19,8 @@ export interface ChatBody {
   requestChanges?: RequestChangesBody
 }
 
-/** Minimal body-shape guard: the chat route requires a `messages` array. A
- *  malformed body (bad JSON, missing/non-array `messages`) returns 400 instead of
- *  letting `streamText` throw a 500 deeper in the request. */
+/** Minimal body-shape guard: null unless `body` is an object carrying a
+ *  `messages` array. Unknown or mistyped optional fields are dropped. */
 export function parseChatBody(body: unknown): ChatBody | null {
   if (typeof body !== 'object' || body === null) return null
   const b = body as Record<string, unknown>
