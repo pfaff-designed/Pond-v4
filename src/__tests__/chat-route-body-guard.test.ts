@@ -43,7 +43,8 @@ jest.mock('@/lib/embeddings/retrieve', () => ({
 jest.mock('@/lib/ai/repair', () => ({ makeRepairToolCall: () => undefined }))
 
 import { streamText } from 'ai'
-import { POST, parseChatBody } from '@/app/api/chat/route'
+import { POST } from '@/app/api/chat/route'
+import { parseChatBody } from '@/app/api/chat/body'
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_WITHOUT_WEB } from '@/app/api/chat/prompt'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>

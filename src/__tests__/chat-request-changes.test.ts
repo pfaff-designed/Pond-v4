@@ -45,7 +45,8 @@ jest.mock('@/lib/change-log/resolve', () => ({ resolveChangeLogRecord: jest.fn()
 import { streamText } from 'ai'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import { POST, parseChatBody } from '@/app/api/chat/route'
+import { POST } from '@/app/api/chat/route'
+import { parseChatBody } from '@/app/api/chat/body'
 import { parseRequestChanges, requestChangesContextNote } from '@/app/api/chat/request-changes'
 
 const mockedStreamText = streamText as jest.MockedFunction<typeof streamText>

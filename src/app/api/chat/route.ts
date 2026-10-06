@@ -4,11 +4,7 @@ import type { UIMessage } from 'ai'
 import { AI_MODELS } from '@/lib/ai/models'
 import { createClient } from '@/lib/supabase/server'
 import { toModelMessages, withoutWebSearch } from '@/lib/conversation/transcript'
-import {
-  applyResolutions,
-  parseResolutions,
-  type ConversationResolutions,
-} from '@/lib/conversation/resolutions'
+import { applyResolutions } from '@/lib/conversation/resolutions'
 import { buildChatContext } from '@/lib/context/assemble'
 import { retrievePages, formatRetrievedPages } from '@/lib/embeddings/retrieve'
 import { buildSystemPrompt } from './prompt'
@@ -32,14 +28,10 @@ import { webSearchTool } from './web-search'
 import { makeRepairToolCall } from '@/lib/ai/repair'
 import { fetchLinkContext } from '@/lib/context/paste-link'
 import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
-import type { NodeType } from '@/lib/supabase/types'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import {
-  parseRequestChanges,
-  requestChangesContextNote,
-  type RequestChangesBody,
-} from './request-changes'
+import { requestChangesContextNote } from './request-changes'
+import { parseChatBody } from './body'
 
 /** Plain text of the most recent user message, for @mention parsing. */
 function latestUserText(messages: UIMessage[]): string {
@@ -52,42 +44,6 @@ function latestUserText(messages: UIMessage[]): string {
       .join(' ')
   }
   return ''
-}
-
-/** Minimal body-shape guard: the chat route requires a `messages` array. A
- *  malformed body (bad JSON, missing/non-array `messages`) returns 400 instead of
- *  letting `streamText` throw a 500 deeper in the request. */
-const NODE_TYPES: readonly NodeType[] = ['routine', 'project', 'action', 'page']
-
-export function parseChatBody(body: unknown): {
-  messages: UIMessage[]
-  nodeId?: string
-  pondId?: string
-  nodeType?: NodeType
-  resolutions: ConversationResolutions
-  /** Deep research is on for this question — the only turn that may read the web. */
-  research: boolean
-  /** #98 — this turn is a request-changes note (or an outdated revise) on a
-   *  propose_changes card; the reply must be a revised diff. */
-  requestChanges?: RequestChangesBody
-} | null {
-  if (typeof body !== 'object' || body === null) return null
-  const b = body as Record<string, unknown>
-  if (!Array.isArray(b.messages)) return null
-  const nodeType =
-    typeof b.nodeType === 'string' && (NODE_TYPES as string[]).includes(b.nodeType)
-      ? (b.nodeType as NodeType)
-      : undefined
-  const requestChanges = parseRequestChanges(b.requestChanges)
-  return {
-    messages: b.messages as UIMessage[],
-    nodeId: typeof b.nodeId === 'string' ? b.nodeId : undefined,
-    pondId: typeof b.pondId === 'string' ? b.pondId : undefined,
-    nodeType,
-    resolutions: parseResolutions(b.resolutions),
-    research: b.research === true,
-    ...(requestChanges ? { requestChanges } : {}),
-  }
 }
 
 export async function POST(req: Request) {
