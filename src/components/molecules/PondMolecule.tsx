@@ -141,6 +141,11 @@ export interface PondMoleculeProps {
    */
   onTitleChange?: (next: string) => void
   /**
+   * list-row — a LIVE field in place of the title span (the rail's inline rename).
+   * The host owns the field and its keys; the row keeps its own geometry.
+   */
+  titleField?: ReactNode
+  /**
    * check-row — make the checkbox a real control (issue 219): the box becomes a
    * `role="checkbox"` button with no geometry of its own. Absent, the atom is
    * drawn inert, as the board's component card draws it — inside a read-only
@@ -219,6 +224,7 @@ export function PondMolecule({
   leading,
   trailing,
   onTitleChange,
+  titleField,
   onToggle,
   children,
   className,
@@ -361,13 +367,14 @@ export function PondMolecule({
         {dragHandle}
         {leading}
         {dot && kindDot(selected ? 'bg-mn-text' : 'bg-mn-text/50')}
-        {rowTitle(
-          cn(
-            'min-w-0 flex-1 truncate',
-            emphasis && 'font-medium',
-            empty && 'text-mn-text-secondary'
-          )
-        )}
+        {titleField ??
+          rowTitle(
+            cn(
+              'min-w-0 flex-1 truncate',
+              emphasis && 'font-medium',
+              empty && 'text-mn-text-secondary'
+            )
+          )}
         {metaAtom}
         {trailing}
       </div>

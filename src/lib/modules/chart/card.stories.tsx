@@ -37,7 +37,7 @@ const inkTheme: Decorator = (Story) => (
 )
 
 const meta = {
-  title: 'Organisms/PondChart',
+  title: 'Organisms/2d · charts',
   component: ChartCard,
   parameters: { layout: 'padded' },
   args: { kind: 'line', children: null },

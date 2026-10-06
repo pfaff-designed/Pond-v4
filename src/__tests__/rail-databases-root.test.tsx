@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
@@ -58,7 +58,11 @@ const databases = node(
   9
 )
 
-function renderRail(tree: RailNode[], expanded = new Set<string>()) {
+function renderRail(
+  tree: RailNode[],
+  expanded = new Set<string>(),
+  onOpenDatabases: () => void = jest.fn()
+) {
   return render(
     <RailView
       tree={tree}
@@ -73,8 +77,10 @@ function renderRail(tree: RailNode[], expanded = new Set<string>()) {
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onOpenDatabases={onOpenDatabases}
       canDrop={() => true}
       onMove={jest.fn()}
     />
@@ -98,9 +104,12 @@ describe('rail — the databases root', () => {
     expect(within(foot).getByText('ingredients')).toBeInTheDocument()
   })
 
-  it('draws no databases tree until the pond has one to list', () => {
-    renderRail([health])
-    expect(screen.queryByRole('tree', { name: 'Databases' })).not.toBeInTheDocument()
+  it('draws the databases row before the pond has a root, and opening it asks for one', () => {
+    const onOpenDatabases = jest.fn()
+    renderRail([health], new Set<string>(), onOpenDatabases)
+    const foot = screen.getByRole('tree', { name: 'Databases' })
+    fireEvent.click(within(foot).getByRole('treeitem', { name: /databases/ }))
+    expect(onOpenDatabases).toHaveBeenCalledTimes(1)
   })
 })
 

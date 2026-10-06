@@ -159,6 +159,7 @@
   --color-mn-hair: var(--mn-hair);
   --color-mn-hover-fill: var(--mn-hover-fill);
   --color-mn-rail-hover: var(--mn-rail-hover);
+  --color-mn-rail-field: var(--mn-rail-field);
   --color-mn-drag-ghost: var(--mn-drag-ghost);
   --color-mn-signal-dated: var(--mn-signal-dated);
   --color-mn-signal-highlight: var(--mn-signal-highlight);
@@ -298,6 +299,8 @@
   --mn-hair: rgb(27 29 20 / 0.055);
   --mn-hover-fill: rgb(27 29 20 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.07); /* PondRail row hover: sage wash, rail-only */
+  --mn-rail-field: #ffffff; /* PondRail `renaming` field: white has no raw var */
+  --mn-rail-field-ring: rgb(from var(--raw-ink) r g b / 0.2); /* its 1px inset ring, a(.2) */
   --mn-signal-dated: var(--raw-burnt-orange); /* the ONE dated thing per screen */
   --mn-signal-highlight: var(--raw-wheat); /* highlighted passages only */
   --mn-signal-highlight-ink: var(--raw-ink); /* wheat always carries ink text */
@@ -342,6 +345,13 @@
   --mn-glass-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.64));
   --mn-glass-border: 1px solid rgba(255, 255, 255, 0.9);
   --mn-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 20px 54px rgba(40, 34, 24, 0.14);
+
+  /* ── The pond switcher MENU (`PondRail` state `switcher`, `menu`): its own roles,
+     not the glass ones — the board's menu is a denser white than the floating
+     glass (.92 → .76 against .86 → .64) and the two must be free to drift. */
+  --mn-menu-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.76));
+  --mn-menu-border: 1px solid rgba(255, 255, 255, 0.9);
+  --mn-menu-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 20px 54px rgba(40, 34, 24, 0.16);
 
   /* ── The proposal card INSIDE the composer (#97, `Pond 06.01` 6a frame 4,
      read inline): a whiter pane on the glass, bordered by white at .9. Dark
@@ -453,6 +463,8 @@
   --mn-hair: rgb(250 249 239 / 0.07);
   --mn-hover-fill: rgb(250 249 239 / 0.07);
   --mn-rail-hover: rgb(100 143 123 / 0.14);
+  --mn-rail-field: var(--raw-ink);
+  --mn-rail-field-ring: rgb(from var(--raw-paper) r g b / 0.2);
   --mn-signal-dated: var(--raw-burnt-orange);
   --mn-signal-highlight: var(--raw-wheat);
   --mn-signal-highlight-ink: var(--raw-ink);
@@ -474,6 +486,15 @@
   --mn-glass-bg: linear-gradient(160deg, rgba(72, 73, 64, 0.86), rgba(48, 49, 42, 0.66));
   --mn-glass-border: 1px solid rgba(250, 249, 239, 0.2);
   --mn-glass-shadow: inset 0 1px 0 rgba(250, 249, 239, 0.12), 0 20px 54px rgba(0, 0, 0, 0.44);
+
+  /* The pond switcher menu on the dark ground (`PondRail` `menu`, ink). */
+  --mn-menu-bg: linear-gradient(
+    160deg,
+    rgb(from var(--raw-neutral-600) r g b / 0.96),
+    rgb(from var(--raw-neutral-600) r g b / 0.86)
+  );
+  --mn-menu-border: 1px solid rgb(from var(--raw-paper) r g b / 0.09);
+  --mn-menu-shadow: 0 20px 54px rgba(0, 0, 0, 0.45);
 
   /* The in-composer proposal card on the dark glass (PondComposer `diffCard`, ink). */
   --mn-proposal-bg: var(--raw-card-dark);
@@ -690,21 +711,6 @@
     background: var(--mn-proposal-bg);
     border: var(--mn-proposal-border);
     box-shadow: var(--mn-proposal-shadow);
-  }
-
-  /* Rail "you are here" trail. The list-row molecule renders one title tone (its
-     mockup default); the rail docks a three-tier voice onto its OWN rows via
-     data-voice, styling the molecule's documented [data-part='title'] hook. This
-     restores the ancestor-of-selection emphasis that the TreeRow→PondMolecule
-     absorption dropped (#95). ink tiers: full 100 · raised 80 (meta) · muted 68. */
-  [data-tree-row][data-voice='muted'] [data-part='title'] {
-    color: var(--mn-text-secondary);
-  }
-  [data-tree-row][data-voice='raised'] [data-part='title'] {
-    color: var(--mn-text-meta);
-  }
-  [data-tree-row][data-voice='full'] [data-part='title'] {
-    color: var(--mn-text);
   }
 }
 
