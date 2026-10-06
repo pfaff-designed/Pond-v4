@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 
 import { SlashMenu, type SlashMenuProps } from './SlashMenu'
+import type { PickerAnchorBox } from './use-anchored-box'
 import { slashRows } from '@/lib/modules/palette'
+import { ICON } from './slash-entries'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
 
 /**
@@ -46,12 +48,36 @@ function alphaOf(color: string): number {
 // ── Frame ──────────────────────────────────────────────────────────────────────
 
 type FrameProps = Omit<SlashMenuProps, 'anchor' | 'container' | 'rows' | 'onSelect' | 'onClose'> &
-  Partial<Pick<SlashMenuProps, 'rows' | 'onSelect' | 'onClose'>> & { ink?: boolean }
+  Partial<Pick<SlashMenuProps, 'rows' | 'onSelect' | 'onClose'>> & {
+    ink?: boolean
+    /** Anchor the glass this far from the viewport's right edge instead of at the field. */
+    anchorFromRight?: number
+  }
 
 /** A field to type into, and a themed box the glass portals into. */
-function Frame({ ink, rows = slashRows, onSelect = fn(), onClose = fn(), ...props }: FrameProps) {
+function Frame({
+  ink,
+  anchorFromRight,
+  rows = slashRows,
+  onSelect = fn(),
+  onClose = fn(),
+  ...props
+}: FrameProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const anchor = useRef<HTMLTextAreaElement>(null)
+  const edgeAnchor = useMemo<PickerAnchorBox | null>(
+    () =>
+      anchorFromRight === undefined
+        ? null
+        : {
+            getBoundingClientRect: () => ({
+              top: 40,
+              bottom: 60,
+              left: window.innerWidth - anchorFromRight,
+            }),
+          },
+    [anchorFromRight]
+  )
   return (
     <div
       ref={setContainer}
@@ -68,7 +94,7 @@ function Frame({ ink, rows = slashRows, onSelect = fn(), onClose = fn(), ...prop
       {container && (
         <SlashMenu
           rows={rows}
-          anchor={anchor}
+          anchor={edgeAnchor ?? anchor}
           container={container}
           onSelect={onSelect}
           onClose={onClose}
@@ -80,7 +106,8 @@ function Frame({ ink, rows = slashRows, onSelect = fn(), onClose = fn(), ...prop
 }
 
 const meta = {
-  title: 'Molecules/SlashMenu',
+  // `∕` (U+2215), not `/`: a slash in a title is Storybook's path separator.
+  title: 'Organisms/pickers/2c · ∕ menu',
   component: Frame,
   parameters: { layout: 'centered' },
   args: { query: '' },
@@ -94,10 +121,10 @@ type Story = StoryObj<typeof meta>
 const glassOf = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-part="glass"]')!
 
 /** `glass` · `footStyle` · `groupStyle` · row · `iconWrap` · `hint` · `enter` — every state shares these. */
-async function assertChrome(root: HTMLElement, p: Palette) {
+async function assertChrome(root: HTMLElement, p: Palette, mobile = false) {
   const glass = glassOf(root)
   const g = getComputedStyle(glass)
-  await expect(px(g.width)).toBe(300)
+  await expect(px(g.width)).toBe(mobile ? 340 : 300)
   await expect(g.boxSizing).toBe('border-box')
   await expect(g.paddingTop).toBe('8px')
   await expect(g.paddingLeft).toBe('8px')
@@ -131,11 +158,11 @@ async function assertChrome(root: HTMLElement, p: Palette) {
     await expect(s.display).toBe('flex')
     await expect(s.alignItems).toBe('center')
     await expect(s.columnGap).toBe('10px')
-    await expect(s.padding).toBe('7px 10px')
+    await expect(s.padding).toBe(mobile ? '11px 10px' : '7px 10px')
     await expect(s.borderTopLeftRadius).toBe('10px')
     await expect(s.fontFamily).toMatch(MONO)
-    await expect(px(s.fontSize)).toBe(12.5)
-    await expect(px(s.letterSpacing)).toBeCloseTo(0.125, 3)
+    await expect(px(s.fontSize)).toBe(mobile ? 14 : 12.5)
+    await expect(px(s.letterSpacing)).toBeCloseTo(mobile ? 0.14 : 0.125, 3)
     await expect(s.color).toBe(p.ink)
     const selected = row.getAttribute('aria-selected') === 'true'
     await expect(alphaOf(s.backgroundColor)).toBeCloseTo(selected ? 0.07 : 0, 2)
@@ -190,15 +217,21 @@ const labels = (root: HTMLElement) =>
 
 // ── open ───────────────────────────────────────────────────────────────────────
 
-async function assertOpen(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertOpen(root: HTMLElement, p: Palette, mobile = false) {
+  await assertChrome(root, p, mobile)
   const glass = glassOf(root)
   await expect(glass.querySelector('input')).toBeNull()
   await expect(glass.querySelector('[data-part="head"]')).toBeNull()
   await expect(
     [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
-  ).toEqual(['text', 'blocks', 'templates'])
-  await expect(labels(root)).toEqual(slashRows.map((r) => r.label))
+  ).toEqual(mobile ? ['text', 'blocks'] : ['text', 'blocks', 'templates', 'pages'])
+  // Mobile: the first 12 entries, the group heads counted — so 10 rows, to `big number`.
+  await expect(glass.querySelectorAll('[data-part="group"], [role="option"]')).toHaveLength(
+    mobile ? 12 : slashRows.length + 4
+  )
+  await expect(labels(root)).toEqual(
+    (mobile ? slashRows.slice(0, 10) : slashRows).map((r) => r.label)
+  )
   await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
     '↑↓ move↵ insertesc keep as text'
   )
@@ -208,19 +241,41 @@ async function assertOpen(root: HTMLElement, p: Palette) {
 
 /** The board's base: three groups, `text` selected, the foot legend. Light. */
 export const Open: Story = {
+  name: 'open',
   play: async ({ canvasElement }) => assertOpen(canvasElement, PAPER),
 }
 
 /** The same frame on the dark ground — ink flips, the glass follows the Shell's dark recipe. */
 export const OpenInk: Story = {
+  name: 'open · ink',
   args: { ink: true },
   play: async ({ canvasElement }) => assertOpen(canvasElement, INK),
 }
 
+export const OpenMobile: Story = {
+  name: 'open · mobile',
+  args: { size: 'mobile' },
+  play: async ({ canvasElement }) => assertOpen(canvasElement, PAPER, true),
+}
+
+/**
+ * A caret near the right edge of a narrow viewport (587px-wide: caret at 267, glass
+ * 340 → right edge 607): the glass slides left and stays 12px inside the viewport.
+ */
+export const OpenMobileNearRightEdge: Story = {
+  tags: ['!dev'],
+  args: { size: 'mobile', anchorFromRight: 80 },
+  play: async ({ canvasElement }) => {
+    // The glass animates in, so its rect is mid-scale; its `left` is the placement.
+    const left = px(getComputedStyle(glassOf(canvasElement)).left)
+    await expect(left).toBe(window.innerWidth - 12 - 340)
+  },
+}
+
 // ── filtered ───────────────────────────────────────────────────────────────────
 
-async function assertFiltered(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertFiltered(root: HTMLElement, p: Palette, mobile = false) {
+  await assertChrome(root, p, mobile)
   const glass = glassOf(root)
   await expect(glass.querySelectorAll('[data-part="group"]')).toHaveLength(0)
   const table = glass.querySelector<HTMLElement>('[aria-selected="true"]')!
@@ -233,27 +288,37 @@ async function assertFiltered(root: HTMLElement, p: Palette) {
   await expect(hit.textDecorationLine).toBe('underline')
   await expect(hit.textUnderlineOffset).toBe('3px')
   await expect(hit.textDecorationThickness).toBe('1px')
-  const n = glass.querySelectorAll('[role="option"]').length
-  await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
-    `/ ta — ${n} ${n === 1 ? 'match' : 'matches'}`
-  )
+  // `/ta` is the table and, through its alias, the entry log — and nothing else.
+  await expect(labels(root)).toEqual(['table', 'entry log'])
+  const log = glass.querySelectorAll<HTMLElement>('[role="option"]')[1]
+  await expect(log.querySelector('[data-part="hit"]')!.textContent).toBe('')
+  await expect(log.querySelector('[data-part="hint"]')!.textContent).toBe('dated table')
+  await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('/ ta — 2 matches')
 }
 
 /** `/ta` typed on the page: the hit underlined, the groups gone, the count in the foot. */
 export const Filtered: Story = {
+  name: 'filtered',
   args: { query: 'ta' },
   play: async ({ canvasElement }) => assertFiltered(canvasElement, PAPER),
 }
 
+export const FilteredMobile: Story = {
+  name: 'filtered · mobile',
+  args: { query: 'ta', size: 'mobile' },
+  play: async ({ canvasElement }) => assertFiltered(canvasElement, PAPER, true),
+}
+
 export const FilteredInk: Story = {
+  name: 'filtered · ink',
   args: { query: 'ta', ink: true },
   play: async ({ canvasElement }) => assertFiltered(canvasElement, INK),
 }
 
 // ── empty ──────────────────────────────────────────────────────────────────────
 
-async function assertEmpty(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertEmpty(root: HTMLElement, p: Palette, mobile = false) {
+  await assertChrome(root, p, mobile)
   const glass = glassOf(root)
   await expect(glass.querySelectorAll('[role="option"]')).toHaveLength(0)
   await expect(glass.querySelector('[data-part="foot"]')).toBeNull()
@@ -264,18 +329,26 @@ async function assertEmpty(root: HTMLElement, p: Palette) {
   const s = getComputedStyle(note)
   await expect(s.padding).toBe('10px')
   await expect(s.fontFamily).toMatch(MONO)
-  await expect(px(s.fontSize)).toBe(12)
-  await expect(px(s.lineHeight)).toBeCloseTo(18.6, 1)
+  await expect(px(s.fontSize)).toBe(mobile ? 13 : 12)
+  await expect(px(s.lineHeight)).toBeCloseTo(mobile ? 20.15 : 18.6, 1)
   await expect(s.color).toBe(p.tier80)
 }
 
 /** `/zz`: the note, in the board's words, and no foot. */
 export const Empty: Story = {
+  name: 'empty',
   args: { query: 'zz' },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER),
 }
 
+export const EmptyMobile: Story = {
+  name: 'empty · mobile',
+  args: { query: 'zz', size: 'mobile' },
+  play: async ({ canvasElement }) => assertEmpty(canvasElement, PAPER, true),
+}
+
 export const EmptyInk: Story = {
+  name: 'empty · ink',
   args: { query: 'zz', ink: true },
   play: async ({ canvasElement }) => assertEmpty(canvasElement, INK),
 }
@@ -284,8 +357,8 @@ export const EmptyInk: Story = {
 
 const YOURS = [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }]
 
-async function assertTemplates(root: HTMLElement, p: Palette) {
-  await assertChrome(root, p)
+async function assertTemplates(root: HTMLElement, p: Palette, mobile = false) {
+  await assertChrome(root, p, mobile)
   const glass = glassOf(root)
   const head = glass.querySelector<HTMLElement>('[data-part="head"]')!
   await expect(head.textContent).toBe('page from template')
@@ -298,12 +371,16 @@ async function assertTemplates(root: HTMLElement, p: Palette) {
   await expect(h.borderBottomWidth).toBe('1px')
   await expect(alphaOf(h.borderBottomColor)).toBeCloseTo(0.09, 2)
   await expect(h.fontFamily).toMatch(MONO)
-  await expect(px(h.fontSize)).toBe(12)
+  await expect(px(h.fontSize)).toBe(mobile ? 13 : 12)
   await expect(getComputedStyle(head.querySelector('[data-part="head-text"]')!).color).toBe(p.ink)
   await expect(
     [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
   ).toEqual(['premade', 'yours'])
-  await expect(labels(root)).toEqual([...TEMPLATE_KINDS, 'weeknight recipe'])
+  // Mobile: 8 premade shapes, then `yours`.
+  await expect(labels(root)).toEqual([
+    ...TEMPLATE_KINDS.slice(0, mobile ? 8 : TEMPLATE_KINDS.length),
+    'weeknight recipe',
+  ])
   await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
     '↵ new nested page→ preview'
   )
@@ -311,11 +388,19 @@ async function assertTemplates(root: HTMLElement, p: Palette) {
 
 /** The submenu: head, the twelve premade shapes (#261), `yours`, and its own foot. */
 export const Templates: Story = {
+  name: 'templates',
   args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn() },
   play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER),
 }
 
+export const TemplatesMobile: Story = {
+  name: 'templates · mobile',
+  args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), size: 'mobile' },
+  play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER, true),
+}
+
 export const TemplatesInk: Story = {
+  name: 'templates · ink',
   args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), ink: true },
   play: async ({ canvasElement }) => assertTemplates(canvasElement, INK),
 }
@@ -324,6 +409,7 @@ export const TemplatesInk: Story = {
 
 /** From the field: ↓↓ then ↵ inserts the third row; esc only closes and keeps the text. */
 export const Keys: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn(), onClose: fn() },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
@@ -348,6 +434,7 @@ export const Keys: Story = {
  * one selection, one wash — and a click on the hovered row inserts it.
  */
 export const Hovered: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -388,6 +475,7 @@ const selectedLabel = (root: HTMLElement) =>
  * screen would show.
  */
 export const KeyEdges: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn() },
   play: async ({ canvasElement }) => {
     const field = within(canvasElement).getByLabelText('page')
@@ -405,7 +493,7 @@ export const KeyEdges: Story = {
     }
 
     await userEvent.keyboard('{ArrowDown>30/}')
-    await expect(selectedLabel(canvasElement)).toBe('page from template')
+    await expect(selectedLabel(canvasElement)).toBe('nested page')
   },
 }
 
@@ -414,6 +502,7 @@ export const KeyEdges: Story = {
  * so `/zz` followed by ↵ reaches the page and keeps the typed text as text.
  */
 export const EmptyKeepsEnter: Story = {
+  tags: ['!dev'],
   args: { query: 'zz', onSelect: fn() },
   play: async ({ canvasElement, args }) => {
     const field = within(canvasElement).getByLabelText('page')
@@ -433,6 +522,7 @@ export const EmptyKeepsEnter: Story = {
  * a premade shape picks that kind.
  */
 export const TemplatesNav: Story = {
+  tags: ['!dev'],
   args: { onSelect: fn(), onPickTemplate: fn() },
   play: async ({ canvasElement, args }) => {
     const glass = glassOf(canvasElement)
@@ -474,37 +564,61 @@ export const TemplatesNav: Story = {
   },
 }
 
-// ── rows matched through their description ────────────────────────────────────
-
-const DESCRIBED_ROWS = [
-  { id: 'summarise', label: '/summarise', description: 'put this thread in a few lines' },
-  { id: 'rename', label: '/rename', description: 'give this thread a name' },
-  { id: 'export', label: '/export', description: 'turn this thread into a page' },
-]
+// ── an empty page, and the person's own templates ──────────────────────────────
 
 /**
- * A row matched through its DESCRIPTION rather than its label: the description
- * rides as the hint and nothing is underlined, because the hit is empty. `thread`
- * is in all three descriptions and none of the three labels.
+ * On an empty page the menu opens on its templates (6f), `yours` after the
+ * premade, with the person's own picked by id. Typing a block's name returns to
+ * the blocks, so `/table` still finds the table.
  */
-export const MatchedOnDescription: Story = {
-  args: { rows: DESCRIBED_ROWS, query: 'thread' },
+export const EmptyPage: Story = {
+  tags: ['!dev'],
+  args: {
+    defaultPane: 'templates',
+    yourTemplates: YOURS,
+    onPickTemplate: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const glass = glassOf(canvasElement)
+    await expect(glass.getAttribute('data-pane')).toBe('templates')
+    await expect(
+      [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
+    ).toEqual(['premade', 'yours'])
+    const mine = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (r) => r.querySelector('[data-part="label"]')!.textContent === 'weeknight recipe'
+    )!
+    await userEvent.click(mine)
+    await expect(args.onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
+  },
+}
+
+/** The `pages` group closes the open list: `page`, then `nested page`, each with the page mark. */
+export const PagesGroup: Story = {
+  tags: ['!dev'],
   play: async ({ canvasElement }) => {
     const glass = glassOf(canvasElement)
-    const rows = [...glass.querySelectorAll<HTMLElement>('[role="option"]')]
-    await expect(rows).toHaveLength(3)
-    for (const row of rows) {
-      await expect(row.querySelector('[data-part="hit"]')!.textContent).toBe('')
-      const hint = row.querySelector<HTMLElement>('[data-part="hint"]')
-      // The selected row shows ↵ where the hint would be; the rest show the description.
-      if (row.getAttribute('aria-selected') === 'true') {
-        await expect(hint).toBeNull()
-      } else {
-        await expect(DESCRIBED_ROWS.map((c) => c.description)).toContain(hint!.textContent)
-      }
-    }
-    await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
-      '/ thread — 3 matches'
-    )
+    const groups = [...glass.querySelectorAll('[data-part="group"]')]
+    await expect(groups.at(-1)!.textContent).toBe('pages')
+    await expect(labels(canvasElement).slice(-2)).toEqual(['page', 'nested page'])
+    const page = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].at(-2)!
+    await expect(page.querySelector('svg path')!.getAttribute('d')).toBe(ICON.page.d)
+    await expect(page.querySelector('[data-part="hint"]')).toBeNull()
+  },
+}
+
+/**
+ * A space typed when nothing matches closes the menu and is not swallowed — the
+ * field keeps the space and everything before it as plain text, like esc.
+ */
+export const SpaceKeepsText: Story = {
+  tags: ['!dev'],
+  args: { query: 'zz', onClose: fn() },
+  play: async ({ canvasElement, args }) => {
+    const field = within(canvasElement).getByLabelText<HTMLTextAreaElement>('page')
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+    await userEvent.keyboard(' ')
+    await expect(args.onClose).toHaveBeenCalledTimes(1)
+    await expect((field as HTMLTextAreaElement).value).toBe('/zz ')
   },
 }

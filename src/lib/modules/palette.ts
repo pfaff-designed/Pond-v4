@@ -5,7 +5,7 @@
  * registered types and they do not line up: `list` and `checklist` are both `todo`
  * at different markers (#219), `gallery` / `chart` / `big number` are all `view` at
  * different modes (ADR 0007), and seven rows name no type at all. So a row is
- * `{ id, group, label, description, key, icon, type }` plus a factory in
+ * `{ id, group, label, alias, key, icon, type }` plus a factory in
  * {@link mintPreset}, and one type may contribute several rows.
  *
  * The derivation survives, sharpened: **every registered content type reaches the
@@ -17,9 +17,8 @@
  * `highlight` (#249) and `entries` (#250) appear for free, and
  * `slash-menu.test.tsx` asserts it over `moduleDescriptors`.
  *
- * Board rows with no factory yet — `page link`, `pond — update`, `page`,
- * `nested page` — are NOT invented here (ADR 0005). They are #281. `heading` left
- * that list: it needed no new block type, only the `text` block's own markdown.
+ * `page link` and `pond — update` have no row: no block or inline page link exists
+ * to insert, and there is no `pond — update` block type.
  */
 
 import { moduleDescriptors, type DescriptorType } from '@/lib/modules/registry'
@@ -30,14 +29,14 @@ import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
 const ROW_CHROME: Partial<
-  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string }>
+  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string; alias?: string }>
 > = {
   text: { group: 'text', icon: ICON.text },
   highlight: { group: 'text', icon: ICON.quote, key: '"' },
   image: { group: 'text', icon: ICON.file },
-  todo: { group: 'blocks', icon: ICON.check, key: '[]' },
+  todo: { group: 'blocks', icon: ICON.check, key: '[]', alias: 'todo' },
   table: { group: 'blocks', icon: ICON.table },
-  entries: { group: 'blocks', icon: ICON.log },
+  entries: { group: 'blocks', icon: ICON.log, alias: 'dated table' },
 }
 
 /**
@@ -51,7 +50,6 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'gallery',
-    description: 'a database’s records as cards with an image',
     icon: ICON.gallery,
   },
   {
@@ -59,7 +57,7 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'chart',
-    description: 'figures from a database, drawn over time',
+    alias: 'graph',
     icon: ICON.chart,
   },
   {
@@ -67,7 +65,6 @@ const VIEW_ROWS = [
     type: 'view',
     group: 'blocks',
     label: 'big number',
-    description: 'one figure from a database, oversized',
     icon: ICON.number,
   },
 ] satisfies readonly (SlashRow & { id: ViewMode })[]
@@ -95,7 +92,6 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       type: 'text',
       group: 'text',
       label: 'heading',
-      description: 'a line that names what follows',
       key: '#',
       icon: ICON.heading,
     },
@@ -106,7 +102,6 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
       type: 'todo',
       group: 'blocks',
       label: 'list',
-      description: 'things with nothing to tick off — groceries, names',
       key: '-',
       icon: ICON.list,
     },
@@ -144,8 +139,10 @@ export const BOARD_ORDER: readonly string[] = [
   'big-number',
   'entry-log',
   'page-from-template',
+  'page',
+  'nested-page',
 ]
-const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates']
+const GROUP_ORDER: readonly SlashGroup[] = ['text', 'blocks', 'templates', 'pages']
 
 /** A row's id is its board label as a slug: `embed / file` → `embed-file`, `entry log` → `entry-log`. */
 const slug = (label: string) =>
@@ -163,7 +160,7 @@ const ownRows: SlashRow[] = Object.values(moduleDescriptors)
       type: d.type,
       group: chrome.group,
       label: d.label,
-      description: d.paletteDescription,
+      alias: chrome.alias,
       key: chrome.key,
       icon: chrome.icon,
     }
@@ -173,10 +170,15 @@ const templateRow: SlashRow = {
   id: 'page-from-template',
   group: 'templates',
   label: 'page from template',
-  description: 'one of the twelve shapes, or one of yours, as a nested page',
   icon: TPL_ICON,
   submenu: 'templates',
 }
+
+/** The `pages` group makes pages, not blocks: no row mints one, and the host acts on `placement`. */
+const PAGE_ROWS: readonly SlashRow[] = [
+  { id: 'page', group: 'pages', label: 'page', icon: ICON.page, placement: 'sibling' },
+  { id: 'nested-page', group: 'pages', label: 'nested page', icon: ICON.page, placement: 'child' },
+]
 
 const rank = (row: SlashRow) => {
   const i = BOARD_ORDER.indexOf(row.id)
@@ -190,6 +192,7 @@ export const slashRows: readonly SlashRow[] = [
   ...ownRows,
   ...Object.values(VARIANT_ROWS).flat(),
   templateRow,
+  ...PAGE_ROWS,
 ].sort((a, b) => groupRank(a) - groupRank(b) || rank(a) - rank(b))
 
 /**

@@ -130,6 +130,7 @@ export interface SourcePickerProps {
 
 /** The source kind's width — the one chrome value that is this kind's own. */
 const WIDTH = 'w-[340px]'
+const WIDTH_PX = 340
 /** Every record has a title; the `new` step shows it first, outside the schema. */
 const TITLE_FIELD: SourceField = { name: 'title', type: 'text' }
 
@@ -279,7 +280,7 @@ export function SourcePicker({
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   }, [onClose])
 
-  const style = useAnchoredBox(anchor, side)
+  const style = useAnchoredBox(anchor, side, WIDTH_PX)
   const head = headFor(step, {
     block,
     pageTitle,

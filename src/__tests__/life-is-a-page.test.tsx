@@ -196,8 +196,10 @@ describe('Life is a page (#234)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
       const editor = await screen.findByPlaceholderText('Write something…')
       fireEvent.change(editor, { target: { value: '/' } })
-      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      // An empty page leads with its templates; typing a block's name returns to the blocks.
+      await screen.findByRole('listbox', { name: 'page from template' })
       fireEvent.change(editor, { target: { value: `/${c.name}` } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(c.name))
       // The pick persists to the HOME row (id 'home-1'), not any area. Matched on
       // the picked block, not "the first save": the panel's debounced save is not
@@ -232,8 +234,10 @@ describe('Life is a page (#234)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
       const editor = await screen.findByPlaceholderText('Write something…')
       fireEvent.change(editor, { target: { value: '/' } })
-      const menu = await screen.findByRole('listbox', { name: 'blocks' })
+      // An empty page leads with its templates; typing a block's name returns to the blocks.
+      await screen.findByRole('listbox', { name: 'page from template' })
       fireEvent.change(editor, { target: { value: `/${name}` } })
+      const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(name))
 
       await waitFor(() => {

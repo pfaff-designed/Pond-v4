@@ -43,7 +43,6 @@ export const highlightDescriptor: ModuleDescriptor<HighlightBlock> = {
   type: 'highlight',
   label: 'highlight',
   schema: highlightSchema,
-  paletteDescription: 'a passage worth keeping, set apart on wheat',
   description:
     'A highlight: ONE short passage the person wants to keep — a line from a book, a quote, a sentence worth returning to — set apart on a wheat ground. ' +
     'Use a plain text block for notes, explanations and ordinary writing; use a highlight only for a passage worth keeping verbatim. ' +
