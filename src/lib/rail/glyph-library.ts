@@ -100,3 +100,8 @@ export function isAreaRole(value: unknown): value is AreaRole {
 export function areaRoleColor(role: AreaRole): string {
   return `var(--mn-${role})`
 }
+
+/** The colour a mark paints, or undefined for ink — the default until one is chosen. */
+export function markAccent(role: AreaRole | null): string | undefined {
+  return role === null ? undefined : areaRoleColor(role)
+}

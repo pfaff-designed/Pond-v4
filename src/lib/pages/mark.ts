@@ -12,28 +12,21 @@
  *          and the surface falls back to its `KindDot`.
  *
  *   colour explicit role on the page  →  else the nearest ANCESTOR with an
- *          explicit role  →  else a role derived from the top-level ancestor's
- *          id, so a whole area still reads as one colour.
+ *          explicit role  →  else none: the mark is ink. "Ink is the default
+ *          (no colour)" (PROJECT_RULES) — a colour is only ever one the person
+ *          chose, never one assigned to them.
  *
- * The inheritance walk is what keeps "a whole area reads as one hue"
- * (`accent.ts`) true everywhere nobody has intervened: a child with no role of
- * its own takes its area's, and an explicit role is a deliberate exception the
- * person made. It also means the migration needs no backfill — null is the
- * answer for every page that has never been touched.
- *
- * WHAT THIS REPLACED. `pageAccent(rootAncestorId(...))` hashed a page id onto the
- * Press six (sage · slate · gold · clay · mauve · olive). Those are what #135
- * exists to retire, and AGENTS.md names a different set — sage / mist / navy —
- * as the area colours. The derived fallback now lands on the theme's area ROLES,
- * so every mark in the pond speaks one vocabulary and a customised mark is
- * indistinguishable in kind from a default one.
+ * The inheritance walk is what keeps "a whole area reads as one hue" true once
+ * someone has coloured it: a child with no role of its own takes its area's, and
+ * an explicit role on the child is a deliberate exception. Null is the answer for
+ * every page that has never been touched.
  *
  * Pure — no React, no Supabase, no colour values. A role becomes a colour in
- * exactly one place, `areaRoleColor`.
+ * exactly one place, `markAccent`.
  */
 
 import { areaGlyph } from '@/lib/rail/area-glyph'
-import { AREA_ROLES, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
+import { isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 
 /** The slice of a page this module needs — satisfied by `PageRow` and `PondPage`. */
 export interface MarkSource {
@@ -49,25 +42,12 @@ export interface MarkSource {
 export interface PageMark {
   /** The glyph to render, or null when the surface should show its KindDot. */
   glyph: string | null
-  /** The area role to tint with. Always resolves — every page has a colour. */
-  role: AreaRole
+  /** The area role to tint with, or null for ink (nobody chose a colour). */
+  role: AreaRole | null
   /** True when this page carries its own role rather than inheriting one. */
   roleIsOwn: boolean
   /** True when this page carries its own glyph rather than deriving from its title. */
   glyphIsOwn: boolean
-}
-
-/**
- * A role derived from an id, stable across renders and sessions.
- *
- * The same shape as the hash `pageAccent` used, pointed at the theme's roles
- * instead of a raw palette. Applied to the TOP-LEVEL ancestor by the caller, so
- * siblings in an area agree.
- */
-export function derivedRole(id: string): AreaRole {
-  let h = 0
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return AREA_ROLES[h % AREA_ROLES.length]
 }
 
 /**
@@ -77,8 +57,8 @@ export function derivedRole(id: string): AreaRole {
  * workspace]` cache the rail, breadcrumb and page surface already share, so no
  * surface fetches anything new to draw a mark.
  *
- * An unknown `pageId` with no `fallback` still returns a mark — a derived role
- * and no glyph — because a missing page must not blank a row. A caller that
+ * An unknown `pageId` with no `fallback` still returns a mark — ink and no
+ * glyph — because a missing page must not blank a row. A caller that
  * HOLDS the page should pass it as `fallback`; see the note on the parameter.
  */
 export function resolveMark(
@@ -94,18 +74,16 @@ export function resolveMark(
   // title-derived glyph entirely, which is not "derive" — it is "disappear".
   const page = byId.get(pageId) ?? fallback
   if (!page) {
-    return { glyph: null, role: derivedRole(pageId), roleIsOwn: false, glyphIsOwn: false }
+    return { glyph: null, role: null, roleIsOwn: false, glyphIsOwn: false }
   }
 
   const ownGlyph = typeof page.glyph === 'string' && page.glyph.length > 0 ? page.glyph : null
   const glyph = ownGlyph ?? areaGlyph(page.title) ?? null
 
   // Walk up for a role: this page first, then its ancestors. `seen` guards a
-  // malformed parent cycle the same way `rootAncestorId` does — colour by where
-  // we stopped rather than loop for ever.
+  // malformed parent cycle the same way `rootAncestorId` does.
   const seen = new Set<string>()
   let cursor: MarkSource | undefined = page
-  let last: MarkSource = page
   while (cursor && !seen.has(cursor.id)) {
     seen.add(cursor.id)
     if (isAreaRole(cursor.areaRole)) {
@@ -116,13 +94,10 @@ export function resolveMark(
         glyphIsOwn: ownGlyph !== null,
       }
     }
-    last = cursor
     cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId)
   }
 
-  // Nobody up the chain chose one, so the whole area derives from its root —
-  // which is `last`, the highest page we could actually reach.
-  return { glyph, role: derivedRole(last.id), roleIsOwn: false, glyphIsOwn: ownGlyph !== null }
+  return { glyph, role: null, roleIsOwn: false, glyphIsOwn: ownGlyph !== null }
 }
 
 /** Build the lookup `resolveMark` takes from raw `pages` rows. */

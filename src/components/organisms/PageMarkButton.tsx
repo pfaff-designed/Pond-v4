@@ -44,7 +44,7 @@ import { MarkPicker } from '@/components/molecules/MarkPicker'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { setPageMark } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
-import { areaRoleColor, type AreaRole } from '@/lib/rail/glyph-library'
+import { markAccent, type AreaRole } from '@/lib/rail/glyph-library'
 import { markIndex, resolveMark, type PageMark } from '@/lib/pages/mark'
 
 /** The row shape `markIndex` consumes — named so callers stop re-declaring it. */
@@ -172,9 +172,9 @@ export function PageMarkButton({
         className="inline-flex items-center rounded-mn-hair hover:bg-mn-hover-fill"
       >
         {mark.glyph === null ? (
-          <KindDot accent={areaRoleColor(mark.role)} />
+          <KindDot accent={markAccent(mark.role)} />
         ) : (
-          <AreaMark glyph={mark.glyph} color={areaRoleColor(mark.role)} size={size} />
+          <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} size={size} />
         )}
       </button>
 

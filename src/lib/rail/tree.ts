@@ -28,7 +28,7 @@ export interface RailNode {
 /**
  * The Life root as a RailNode — synthetic, no children of its own here. Its title
  * is lowercase, like every other line of the rail's source copy in `Pond 05 Shell`
- * (#101 review); where the boards show capitals it is a CSS transform.
+ * where the boards show capitals it is a CSS transform.
  */
 export const LIFE_NODE: RailNode = {
   id: LIFE_ID,
@@ -67,27 +67,27 @@ export function buildTree(rows: PageRow[]): RailNode[] {
 }
 
 /**
- * A node is a folder if it's top-level or has children (#108).
+ * A node is a folder when it has children.
  *
  * There is no `type = 'area'` any more: "an area is a page with pages inside it;
- * it has no technical meaning" (design law), so folder-ness is computed. Every
- * top-level page counts even while empty — that keeps the five seeded pages
- * (Personal · Professional · Health · Finances · Creativity) as rail folders at
- * first run, and it is where a person naturally starts a new area. Any page
+ * it has no technical meaning" (design law), so folder-ness is computed, and a
+ * childless page — top-level or not — is a leaf: it draws no caret and sets no
+ * `aria-expanded` (APG: the attribute states that a node CAN expand). Any page
  * becomes a folder the moment it gains a child (composite pages included).
  */
 export function isFolderNode(node: RailNode): boolean {
-  return node.parentId === null || node.children.length > 0
+  return node.children.length > 0
 }
 
 /**
- * Does this row carry the AREA voice — the raised label, the accent, the default
- * glyph (#91)? A TOP-LEVEL page does (#108): that is where a person's areas live
- * and the only rows the fixed title→glyph defaults are written for. Per-page
- * glyph/colour is #91's own work; this only replaces the old `type === 'area'`.
+ * Does this row carry the AREA voice — the full-ink label, the accent, the default
+ * glyph? A TOP-LEVEL page does: that is where a person's areas live and the only
+ * rows the fixed title→glyph defaults are written for. A page's own chosen
+ * glyph/colour is resolved elsewhere (`resolveMark`).
  *
- * Deliberately NOT the same predicate as `isFolderNode` — a top-level page is a
- * folder AND an area row, but a nested page with children is a folder only. The
+ * Deliberately NOT the same predicate as `isFolderNode` — a childless top-level
+ * page is an area row but a leaf, and a nested page with children is a folder
+ * only. The
  * two rules answer different questions, so they stay two named functions.
  */
 export function isAreaRow(node: RailNode): boolean {
@@ -237,7 +237,7 @@ export function flattenVisible(
 ): FlatRow[] {
   const root = rootTitle ? { ...LIFE_NODE, title: rootTitle } : LIFE_NODE
   const out: FlatRow[] = [
-    { id: LIFE_ID, node: root, depth: 0, isFolder: true, posInSet: 1, setSize: 1 },
+    { id: LIFE_ID, node: root, depth: 0, isFolder: roots.length > 0, posInSet: 1, setSize: 1 },
   ]
   const walk = (nodes: RailNode[], depth: number) => {
     nodes.forEach((node, i) => {
@@ -266,6 +266,7 @@ export type TreeKeyCommand =
   | { kind: 'open'; id: string }
   | { kind: 'delete'; id: string }
   | { kind: 'addChild'; id: string }
+  | { kind: 'rename'; id: string }
 
 /**
  * The pure keyboard rules: given a key pressed on row `id` within the visible
@@ -277,7 +278,8 @@ export type TreeKeyCommand =
  *   ←          collapse an open folder; step out to the parent otherwise
  *   Enter/␣    open the row's page
  *   Delete/⌫   delete the row (never the Life root)
- *   +          add a child page (never the Life root)
+ *   +          add a child page
+ *   F2         rename the row in place (never the Life root)
  *
  * A stale `id` (row no longer visible — e.g. a deferred update) returns null
  * rather than jumping focus anywhere.
@@ -329,7 +331,9 @@ export function treeKeyCommand(
     case 'Backspace':
       return isRoot ? null : { kind: 'delete', id }
     case '+':
-      return isRoot ? null : { kind: 'addChild', id }
+      return { kind: 'addChild', id }
+    case 'F2':
+      return isRoot ? null : { kind: 'rename', id }
     default:
       return null
   }

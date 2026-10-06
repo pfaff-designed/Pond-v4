@@ -7,12 +7,12 @@
  *
  *   - an explicit choice wins, and survives a rename (the original complaint);
  *   - a page with no role of its own takes its AREA's, so "a whole area reads as
- *     one hue" stays true everywhere nobody has intervened;
+ *     one hue" once someone has coloured it;
+ *   - nobody chose, nothing is assigned: the role is null and the mark is ink;
  *   - nothing anywhere resolves to a colour — only to a role.
  */
 
-import { derivedRole, markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
-import { AREA_ROLES } from '@/lib/rail/glyph-library'
+import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
 import { setPageMark } from '@/lib/pages/client'
 
 function index(rows: MarkSource[]): Map<string, MarkSource> {
@@ -25,20 +25,6 @@ const TREE: MarkSource[] = [
   { id: 'recipes', parentId: 'personal', title: 'Recipes' },
   { id: 'pasta', parentId: 'recipes', title: 'Pasta' },
 ]
-
-describe('derivedRole', () => {
-  it('is stable and always one of the theme’s roles', () => {
-    expect(derivedRole('abc')).toBe(derivedRole('abc'))
-    for (const id of ['a', 'b', 'c', 'personal', 'x'.repeat(40)]) {
-      expect(AREA_ROLES).toContain(derivedRole(id))
-    }
-  })
-
-  it('is not the Press palette — no mark resolves to a hex', () => {
-    // #135 retires those six; AGENTS.md names sage/mist/navy as the area colours.
-    expect(derivedRole('personal')).toMatch(/^area-[abc]$/)
-  })
-})
 
 describe('resolveMark — glyph', () => {
   it('derives from the title when nothing is set (today’s behaviour)', () => {
@@ -112,19 +98,20 @@ describe('resolveMark — role', () => {
     expect(resolveMark('recipes', rows).roleIsOwn).toBe(false)
   })
 
-  it('derives the whole area from its ROOT when nobody chose', () => {
+  it('is ink — a null role — wherever nobody chose a colour', () => {
     const rows = index(TREE)
-    const root = derivedRole('personal')
-    expect(resolveMark('personal', rows).role).toBe(root)
-    expect(resolveMark('recipes', rows).role).toBe(root)
-    expect(resolveMark('pasta', rows).role).toBe(root)
+    for (const id of ['personal', 'recipes', 'pasta']) {
+      const mark = resolveMark(id, rows)
+      expect(mark.role).toBeNull()
+      expect(mark.roleIsOwn).toBe(false)
+    }
   })
 
   it('ignores a role that is not one the theme defines', () => {
     // The DB CHECK makes this unreachable, but a row from a future migration
     // must not blank the mark.
     const rows = index([{ ...TREE[0], areaRole: 'chartreuse' }, ...TREE.slice(1)])
-    expect(AREA_ROLES).toContain(resolveMark('personal', rows).role)
+    expect(resolveMark('personal', rows).role).toBeNull()
   })
 
   it('survives a malformed parent cycle instead of looping', () => {
@@ -132,13 +119,13 @@ describe('resolveMark — role', () => {
       { id: 'a', parentId: 'b', title: 'A' },
       { id: 'b', parentId: 'a', title: 'B' },
     ])
-    expect(AREA_ROLES).toContain(resolveMark('a', rows).role)
+    expect(resolveMark('a', rows).role).toBeNull()
   })
 
   it('still returns a mark for a page it has never heard of', () => {
     const mark = resolveMark('ghost', index(TREE))
     expect(mark.glyph).toBeNull()
-    expect(mark.role).toBe(derivedRole('ghost'))
+    expect(mark.role).toBeNull()
   })
 })
 

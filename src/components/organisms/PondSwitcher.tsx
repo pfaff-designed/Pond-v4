@@ -20,12 +20,11 @@ import { useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPond } from '@/lib/pond/client'
 import { usePond } from '@/lib/pond/context'
-import { AreaMark } from '@/components/atoms/AreaMark'
 import { Caret } from '@/components/atoms/Caret'
 import { PondMark } from '@/components/atoms/PondMark'
 import { NewPondSheet } from './NewPondSheet'
 import { pondHref } from '@/lib/pond/active'
-import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { usePondGlyph } from '@/lib/pond/glyph'
 
 /** The board's `menuRow` plus a 12×12 stroked plus. */
 function Plus() {
@@ -64,6 +63,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   // — the shell then resolved back to the first pond and the new pond showed its
   // pages. Both now read the same provider.
   const { pond: active, ponds, addPond } = usePond()
+  const pondGlyph = usePondGlyph()
 
   async function create(name: string) {
     if (pending) return
@@ -93,7 +93,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
     'flex min-w-0 items-center gap-[7px] rounded-[8px] px-[6px] py-[4px] -mx-[6px] -my-[4px] select-none'
   const label = (
     <>
-      <PondMark glyph={active?.glyph ?? LIFE_GLYPH} />
+      <PondMark glyph={pondGlyph} />
       <span
         data-part="pond-name"
         className="min-w-0 truncate font-sans text-[13.5px] leading-[normal] font-medium text-mn-text"
@@ -107,10 +107,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
   )
 
   return (
-    <div
-      data-part="rail-head"
-      className="relative flex items-center justify-between gap-2 px-4 pb-3"
-    >
+    <div data-part="rail-head" className="flex items-center justify-between gap-2 px-4 pb-3">
       {hasPonds ? (
         <button
           type="button"
@@ -142,13 +139,15 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
               setNaming(false)
             }}
           />
-          {/* The board's `top: 44` is from the rail's top edge; the head starts 18px down. */}
+          {/* The board's `top: 44` is from the rail CARD's top edge, so the menu
+              positions against the card (the nearest positioned ancestor — the head
+              is deliberately not one) and the card lets it overflow while open. */}
           <div
             role="menu"
             aria-label="Ponds"
-            className="mn-glass absolute top-[26px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] text-mn-text"
+            className="absolute top-[44px] right-[10px] left-[10px] z-[5] flex flex-col gap-[1px] rounded-[16px] p-[6px] font-sans text-mn-text [background:var(--mn-menu-bg)] [backdrop-filter:blur(24px)_saturate(1.3)] [border:var(--mn-menu-border)] [box-shadow:var(--mn-menu-shadow)]"
           >
-            <div className="px-[10px] pt-[6px] pb-[4px] font-mono text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
+            <div className="px-[10px] pt-[6px] pb-[4px] font-sans text-[10.5px] leading-[normal] font-medium tracking-[0.1em] text-mn-text-secondary uppercase">
               ponds
             </div>
 
@@ -162,7 +161,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
                   p.id === active?.id ? 'bg-mn-text/[0.07] font-medium' : 'font-normal'
                 }`}
               >
-                {p.glyph && <AreaMark glyph={p.glyph} color="var(--mn-text)" />}
+                {p.glyph && <PondMark glyph={p.glyph} />}
                 <span className="min-w-0 flex-1 truncate">{p.name}</span>
                 {p.id === active?.id && (
                   <span className="font-mono text-[10.5px] text-mn-text">✓</span>
@@ -178,7 +177,7 @@ export function PondSwitcher({ fallbackName, trailing }: PondSwitcherProps) {
               type="button"
               role="menuitem"
               onClick={() => setNaming(true)}
-              className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] text-mn-text-meta"
+              className="flex items-center gap-[9px] rounded-[10px] px-[10px] py-[7px] text-[13px] leading-[normal] font-normal text-mn-text-meta"
             >
               <Plus />
               <span className="min-w-0 flex-1 truncate text-left">new pond</span>

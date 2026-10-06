@@ -259,8 +259,10 @@ function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
       onToggle={jest.fn()}
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
+      onRename={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
+      onOpenDatabases={jest.fn()}
       canDrop={() => true}
       onMove={jest.fn()}
       {...over}

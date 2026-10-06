@@ -43,6 +43,7 @@
 import { Fragment, type ReactNode } from 'react'
 import { PondMark } from '@/components/atoms/PondMark'
 import type { Crumb } from '@/lib/pages/crumbs'
+import { usePondGlyph } from '@/lib/pond/glyph'
 
 export interface BreadcrumbProps {
   /** Ancestor pages from root→parent; the current node is NOT included here. */
@@ -85,6 +86,7 @@ export function Breadcrumb({
   leadMark,
   onCommandK,
 }: BreadcrumbProps) {
+  const pondGlyph = usePondGlyph()
   const hasTail = tail !== undefined || current !== undefined
   return (
     <nav
@@ -94,7 +96,7 @@ export function Breadcrumb({
       {/* The pond's mark leads the trail (2t) at 12 — the same mark the rail
           head draws at 13. Not an AreaMark: the pond is not an area, and #134's
           lead mark stays the only one. */}
-      <PondMark size={12} />
+      <PondMark glyph={pondGlyph} size={12} />
       <button
         onClick={() => onNavigate(root ?? null)}
         className="text-mn-text-secondary hover:text-foreground transition-colors whitespace-nowrap"
