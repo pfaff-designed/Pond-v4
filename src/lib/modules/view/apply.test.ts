@@ -18,6 +18,8 @@ import {
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
+  pickGroupDef,
+  pickRepeatDef,
   pixelsToDays,
   shiftBar,
   sortRows,
@@ -518,5 +520,52 @@ describe('displayValue', () => {
   it('renders a number and empty for missing', () => {
     expect(displayValue(schema[1], 3)).toBe('3')
     expect(displayValue(schema[1], null)).toBe('')
+  })
+})
+
+// ── pickGroupDef / pickRepeatDef ─────────────────────────────────────────────
+
+describe('pickGroupDef', () => {
+  const status = { id: 'st', name: 'status', type: 'status' as const, options: [] }
+  const stage = { id: 'sg', name: 'stage', type: 'select' as const, options: [] }
+  const due = { id: 'd', name: 'due', type: 'date' as const }
+
+  it('returns the select/status property the view names', () => {
+    expect(pickGroupDef([status, stage], 'sg')).toBe(stage)
+  })
+
+  it('with no group-by named, prefers the first status, then the first select', () => {
+    expect(pickGroupDef([stage, status, due], undefined)).toBe(status)
+    expect(pickGroupDef([due, stage], undefined)).toBe(stage)
+  })
+
+  it('returns undefined when nothing can group', () => {
+    expect(pickGroupDef([due], undefined)).toBeUndefined()
+  })
+
+  it('falls back to the default grouping when the named property is gone or the wrong type', () => {
+    // `groupBy` is shared by board, calendar and list: a calendar's date property
+    // must not leave the board with no lanes after a mode switch.
+    expect(pickGroupDef([status, stage, due], 'gone')).toBe(status)
+    expect(pickGroupDef([stage, status, due], 'd')).toBe(status)
+    expect(pickGroupDef([due, stage], 'd')).toBe(stage)
+  })
+
+  it('returns undefined for a bad name when nothing can group', () => {
+    expect(pickGroupDef([due], 'd')).toBeUndefined()
+  })
+})
+
+describe('pickRepeatDef', () => {
+  it('finds a text or select property named repeat / repeats, any case', () => {
+    const repeats = { id: 'r', name: 'Repeats', type: 'text' as const }
+    expect(pickRepeatDef([{ id: 'x', name: 'note', type: 'text' as const }, repeats])).toBe(repeats)
+    const repeat = { id: 'r2', name: 'repeat', type: 'select' as const, options: [] }
+    expect(pickRepeatDef([repeat])).toBe(repeat)
+  })
+
+  it('ignores other types and other names', () => {
+    expect(pickRepeatDef([{ id: 'n', name: 'repeats', type: 'number' as const }])).toBeUndefined()
+    expect(pickRepeatDef([{ id: 'n', name: 'repeating', type: 'text' as const }])).toBeUndefined()
   })
 })

@@ -19,9 +19,9 @@
  * reschedule) and gallery (read-only card grid) are slice 4.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import { VIEW_MODES, type ViewBlock, type ViewMode } from './schema'
+import type { ViewBlock, ViewMode } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
@@ -35,10 +35,12 @@ import {
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
+  pickGroupDef,
+  pickRepeatDef,
   type BarDates,
   type CollectionRow,
 } from './apply'
-import { CollectionBigNumber, ChartControls, BigNumberControls, ControlSelect } from './figures'
+import { CollectionBigNumber, ChartControls, BigNumberControls } from './figures'
 import { CollectionChart } from './collection-chart-card'
 import { CompactChart } from './collection-chart-compact'
 import { isChartCard } from './chart-compact'
@@ -62,26 +64,24 @@ import {
   GANTT_TRACK,
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
-import { PondControl } from '@/components/atoms/PondControl'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
 import {
   coerceValue,
   optionForValue,
-  PROPERTY_TYPES,
-  type PropertyDef,
-  type PropertyOption,
+  ROW_TYPE,
   type PropertySchema,
-  type PropertyType,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import { RelationValueField } from '@/components/organisms/RelationValueField'
-import { RollupValueField } from '@/components/organisms/RollupValueField'
-// Deliberate cycle with renderers.tsx (via the modal's read-only ModuleView
-// dispatch) — same shape as page/view.tsx's, and safe for the same reason: the
-// component is only *invoked* at React render time, never at module eval.
-import { CardPreviewModal } from '@/components/organisms/CardPreviewModal'
-import { shouldOpenCardFromClick } from './card-click'
+import { usePageLinks } from '../page-link/context'
+import { dueOfRow, firstOrangeToday } from './due'
+import { DueMark } from './due-mark'
+import { useDoneToggle } from './use-done-toggle'
+import { useOrangeToday } from '../page-canvas'
+import { Cell, OptionChip, RepeatMark } from './cells'
+import { RecordPeek } from './record-peek'
+import { CollectionList } from './list'
+import { useRecordSelection } from './use-record-selection'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
 
@@ -93,17 +93,8 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const {
-    schema,
-    rows,
-    collectionName,
-    isLoading,
-    isError,
-    setValue,
-    addRow,
-    renameRow,
-    updateSchema,
-  } = useCollectionRows(collectionId)
+  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow } =
+    useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
@@ -113,45 +104,35 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
     ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
     : undefined
 
-  // Card → page preview (#64). A row IS a page, so the clicked card's row id is
-  // the page to preview; the modal fetches its blocks and offers "Open page".
-  // `preview` survives close so the exit transition keeps its content.
-  const [preview, setPreview] = useState<{ id: string; title: string } | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const openCard = useCallback(
-    (rowId: string) => {
-      setPreview({ id: rowId, title: rows.find((r) => r.id === rowId)?.title ?? '' })
-      setPreviewOpen(true)
-    },
-    [rows]
-  )
+  // A row IS a page: `open ›` on the record peek navigates to it through the page-link
+  // seam. Absent off a page host (Storybook, the AI terminal), where the peek omits it.
+  const links = usePageLinks()
+  const handleOpenRow = links
+    ? (rowId: string) =>
+        links.navigateToPage({
+          id: rowId,
+          title: rows.find((r) => r.id === rowId)?.title || 'Untitled',
+          type: ROW_TYPE,
+        })
+    : undefined
 
   return (
-    <>
-      <CollectionView
-        config={data}
-        schema={schema}
-        rows={rows}
-        collectionName={collectionName}
-        isLoading={isLoading}
-        isError={isError}
-        editable={editable}
-        linked={!!data.collectionId}
-        onEdit={setValue}
-        onAddRow={addRow}
-        onRenameRow={renameRow}
-        onConfigChange={onConfigChange}
-        onUpdateSchema={editable ? updateSchema : undefined}
-        onOpenCard={openCard}
-        chartProvenance={chartProvenance}
-      />
-      <CardPreviewModal
-        rowId={preview?.id ?? null}
-        fallbackTitle={preview?.title}
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-      />
-    </>
+    <CollectionView
+      config={data}
+      schema={schema}
+      rows={rows}
+      collectionName={collectionName}
+      isLoading={isLoading}
+      isError={isError}
+      editable={editable}
+      linked={!!data.collectionId}
+      onEdit={setValue}
+      onAddRow={addRow}
+      onRenameRow={renameRow}
+      onConfigChange={onConfigChange}
+      onOpenRow={handleOpenRow}
+      chartProvenance={chartProvenance}
+    />
   )
 }
 
@@ -176,16 +157,12 @@ export interface CollectionViewProps {
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  /** Rewrite the view block's own config — the mode switcher + group-by picker
+  /** Rewrite the view block's own config — the mode switcher
    *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
   onConfigChange?: (patch: Partial<ViewBlock>) => void
-  /** Replace the collection's property schema — manual column + property editing
-   *  (board-authoring Slice 4). Absent on read-only / Storybook hosts. */
-  onUpdateSchema?: (next: PropertySchema) => void
-  /** Open a card's page preview (#64) — a row IS a page, so this receives the
-   *  row id. Present on the live host (ViewView mounts the modal); absent on
-   *  Storybook/static renders, where cards stay plain (no dead affordance). */
-  onOpenCard?: (rowId: string) => void
+  /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
+   *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
+  onOpenRow?: (rowId: string) => void
   /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
   chartProvenance?: ChartProvenance
 }
@@ -203,10 +180,12 @@ export function CollectionView({
   onAddRow,
   onRenameRow,
   onConfigChange,
-  onUpdateSchema,
-  onOpenCard,
+  onOpenRow,
   chartProvenance,
 }: CollectionViewProps) {
+  // What the page canvas keys this view's peek and orange pill by.
+  const instanceKey = useId()
+  const viewKey = config.id ?? instanceKey
   const processed = useMemo(
     () => (schema ? applyView(rows, schema, config) : []),
     [rows, schema, config]
@@ -264,24 +243,31 @@ export function CollectionView({
           config={config}
           schema={schema}
           collectionName={collectionName}
-          // `processed`, not `rows`: the count names what this VIEW shows, so a
-          // filtered board must not report the collection's whole size.
-          recordCount={processed.length}
           onConfigChange={onConfigChange}
-          onUpdateSchema={onUpdateSchema}
         />
       )}
       {config.mode === 'board' ? (
         <CollectionBoard
           schema={schema}
           rows={processed}
+          viewKey={viewKey}
           groupBy={config.groupBy}
           editable={editable}
           onEdit={onEdit}
           onAddRow={onAddRow}
           onRenameRow={onRenameRow}
-          onUpdateSchema={onUpdateSchema}
-          onOpenCard={onOpenCard}
+          onOpenRow={onOpenRow}
+        />
+      ) : config.mode === 'list' ? (
+        <CollectionList
+          viewKey={viewKey}
+          schema={schema}
+          rows={processed}
+          groupBy={config.groupBy}
+          editable={editable}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar
@@ -315,8 +301,8 @@ export function CollectionView({
             totalRows={rows.length}
             provenance={chartProvenance}
             /* `editable` gates it, as every other mode's insert is gated: a diff
-               card, a create-page proposal and `CardPreviewModal` all render this
-               view with no `editable`, and an `add a row` there would write to the
+               card and a create-page proposal both render this view with no
+               `editable`, and an `add a row` there would write to the
                collection from a surface whose whole job is to be reviewed —
                "pages change only through the person's own edits or an accepted
                diff" (`PROJECT_RULES.md`). */
@@ -339,76 +325,56 @@ export function CollectionView({
   )
 }
 
-// ── View controls (mode switcher + group-by) ──────────────────────────────────
-
-const MODE_LABELS: Record<ViewMode, string> = {
-  board: 'Board',
-  table: 'Table',
-  gantt: 'Gantt',
-  calendar: 'Calendar',
-  gallery: 'Gallery',
-  // #111: a chart and a big number are MODES of the same database, so they sit in
-  // the same switcher as the table — switching never moves or copies the records.
-  chart: 'Chart',
-  'big-number': 'Big number',
-}
+// ── View controls (head row + mode switcher) ─────────────────────────────────
 
 /**
- * The editable control row (board-authoring Slice 3): flip the SAME collection
- * between render modes, and — in board mode — pick which select/status property
- * buckets the columns. Every change rewrites the view block's config through
- * `onConfigChange` (the whole-block save path). A mode whose data prerequisite is
- * missing (gantt/calendar with no date property) still switches — the renderer
- * shows its own calm "needs a date property" notice.
+ * The switcher's segments, in `Pond 06.21` 6u.1's order and words. `timeline` is the
+ * `gantt` mode, and `list` is the fifth segment (6v).
+ * Gallery, chart and big number are not here: each is its own block (ADR 0009), so
+ * a block in one of those modes draws no switcher at all.
+ */
+const VIEW_SEGMENTS: readonly { mode: ViewMode; label: string }[] = [
+  { mode: 'board', label: 'board' },
+  { mode: 'gantt', label: 'timeline' },
+  { mode: 'table', label: 'table' },
+  { mode: 'calendar', label: 'calendar' },
+  { mode: 'list', label: 'list' },
+]
+
+/**
+ * The editable head row (6u.1): the database's name, how the board reads it
+ * (`grouped by status`, read-only text), and the switcher that flips the SAME
+ * collection between render modes. Every change rewrites the view block's config
+ * through `onConfigChange` (the whole-block save path). A mode whose data
+ * prerequisite is missing (gantt/calendar with no date property) still switches —
+ * the renderer shows its own calm "needs a date property" notice.
  */
 function ViewControls({
   config,
   schema,
   collectionName,
-  recordCount,
   onConfigChange,
-  onUpdateSchema,
 }: {
   config: ViewBlock
   schema: PropertySchema
   collectionName?: string
-  recordCount?: number
   onConfigChange: (patch: Partial<ViewBlock>) => void
-  onUpdateSchema?: (next: PropertySchema) => void
 }) {
-  const groupOptions = schema.filter((d) => d.type === 'select' || d.type === 'status')
-  // `9w`'s config line: `13 records · grouped by status`. The group-by clause only
-  // where the mode has one, so a table never claims a grouping it does not use.
-  const groupName =
-    config.mode === 'board' ? schema.find((d) => d.id === config.groupBy)?.name : undefined
-  const facts = [
-    recordCount === undefined ? null : `${recordCount} ${recordCount === 1 ? 'record' : 'records'}`,
-    groupName ? `grouped by ${groupName.toLowerCase()}` : null,
-  ].filter(Boolean)
+  // The head's fact: a board reads its lanes' property, a list the date it groups by.
+  const groupDef =
+    config.mode === 'board'
+      ? pickGroupDef(schema, config.groupBy)
+      : config.mode === 'list'
+        ? pickDateDef(schema, config.groupBy)
+        : undefined
+  const groupName = groupDef?.name.toLowerCase()
+  const switchable = VIEW_SEGMENTS.some((s) => s.mode === config.mode)
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      {/*
-        `Pond 09 Examples` 9w's head row — the database, what is in it, and the
-        views over it:
-
-            tasks   13 records · grouped by status
-                            board │ timeline │ table │ calendar │ list │ ＋ view
-
-        The segmented control is a PILL TRACK, not a row of buttons: an `ink .055`
-        ground at radius 999 with the active segment inverted to full ink on paper.
-
-        NOT YET (KAN-32, slices 2–3): what this lists. 9w lists the views that
-        EXIST — five named ones you created — and ends with `＋ view`. This still
-        lists all seven modes and flips the one block between them, which is
-        today's behaviour kept deliberately. `＋ view` is omitted rather than drawn
-        dead, since it needs the model.
-      */}
-      {/* `flex-wrap`: 9w draws the name and the bar on ONE line, but it has the
-          full canvas. In a 500px block (KAN-29) seven segments leave the name no
-          room at all — it truncated to a single letter. Wrapping the bar onto its
-          own line is the honest degradation; at full width the row reads as 9w
-          draws it. */}
+      {/* `flex-wrap`: 6u.1 draws the name and the bar on ONE line, but it has the
+          full canvas. In a narrow column the bar wraps onto its own line rather
+          than crushing the name to a single letter. */}
       <div
         data-part="view-head"
         className="flex w-full flex-wrap items-center justify-between gap-x-[10px] gap-y-[6px] px-[4px] pt-[4px]"
@@ -419,58 +385,45 @@ function ViewControls({
               {collectionName}
             </span>
           )}
-          {facts.length > 0 && (
+          {groupName && (
             <span data-part="db-facts" className="text-[10.5px] font-medium text-mn-text-meta">
-              {facts.join(' · ')}
+              grouped by {groupName}
             </span>
           )}
         </div>
 
-        <div
-          data-part="view-bar"
-          className="flex flex-none items-center gap-[4px] rounded-full bg-mn-text/[0.055] p-[3px] text-[10.5px] font-medium"
-        >
-          {VIEW_MODES.map((m) => {
-            const active = config.mode === m
-            return (
-              <button
-                key={m}
-                type="button"
-                data-part="view-segment"
-                data-active={active || undefined}
-                aria-pressed={active}
-                onClick={() => onConfigChange({ mode: m })}
-                className={[
-                  'rounded-full px-[10px] py-[4px] transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                  // The board's active segment is `#1B1D14` ground with `#FAF9EF`
-                  // text — the same inversion `ui/button`'s `primary` makes, so it
-                  // reassigns correctly in dark rather than staying ink-on-ink.
-                  active
-                    ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-                    : 'text-mn-text-secondary hover:text-mn-text',
-                ].join(' ')}
-              >
-                {MODE_LABELS[m]}
-              </button>
-            )
-          })}
-        </div>
+        {switchable && (
+          <div
+            data-part="view-bar"
+            className="flex flex-none items-center gap-[4px] rounded-full bg-mn-text/[0.055] p-[3px] text-[10.5px] font-medium"
+          >
+            {VIEW_SEGMENTS.map(({ mode, label }) => {
+              const active = config.mode === mode
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  data-part="view-segment"
+                  data-active={active || undefined}
+                  aria-pressed={active}
+                  onClick={() => onConfigChange({ mode })}
+                  className={[
+                    'rounded-full px-[10px] py-[4px] transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                    // The board's active segment is `#1B1D14` ground with `#FAF9EF`
+                    // text — the same inversion `ui/button`'s `primary` makes, so it
+                    // reassigns correctly in dark rather than staying ink-on-ink.
+                    active
+                      ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
+                      : 'text-mn-text-secondary hover:text-mn-text',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
-
-      {config.mode === 'board' && groupOptions.length > 0 && (
-        <ControlSelect
-          label="Group by"
-          aria="Group by property"
-          value={config.groupBy ?? ''}
-          onChange={(v) => onConfigChange({ groupBy: v || undefined })}
-        >
-          {groupOptions.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </ControlSelect>
-      )}
 
       {config.mode === 'chart' && (
         <ChartControls config={config} schema={schema} onConfigChange={onConfigChange} />
@@ -479,98 +432,7 @@ function ViewControls({
       {config.mode === 'big-number' && (
         <BigNumberControls config={config} schema={schema} onConfigChange={onConfigChange} />
       )}
-
-      {onUpdateSchema && <AddPropertyControl onAdd={(def) => onUpdateSchema([...schema, def])} />}
     </div>
-  )
-}
-
-/**
- * Manual "+ Add property" affordance (board-authoring Slice 4). Reveals a terse
- * inline form — a name and a type — and appends a new PropertyDef to the schema,
- * bypassing the AI (decision 3). Adding a `date` property is the honest way to
- * unlock Gantt/Timeline/Calendar (add Start + End, fill dates, switch to Gantt).
- * Relation/rollup are omitted — they need a target/aggregate the AI resolves, so
- * they stay conversational this pass.
- */
-const ADDABLE_TYPES = PROPERTY_TYPES.filter(
-  (t) => t !== 'relation' && t !== 'rollup'
-) as PropertyType[]
-
-function AddPropertyControl({ onAdd }: { onAdd: (def: PropertyDef) => void }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [type, setType] = useState<PropertyType>('date')
-
-  const commit = () => {
-    const def: PropertyDef = {
-      id: crypto.randomUUID(),
-      name: name.trim() || 'Untitled',
-      type,
-    }
-    // select/status carry a (initially empty) option list — columns are then added
-    // on the board itself (or cells become a picker in the table).
-    if (type === 'select' || type === 'status') def.options = []
-    onAdd(def)
-    setName('')
-    setType('date')
-    setOpen(false)
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-mn-chrome px-2 py-0.5 text-xs text-mn-text-secondary transition-colors hover:bg-mn-wash hover:text-mn-text"
-      >
-        + Add property
-      </button>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        aria-label="New property name"
-        autoFocus
-        value={name}
-        placeholder="Property name"
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') setOpen(false)
-        }}
-        className="w-32 rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none placeholder:text-mn-text-secondary"
-      />
-      <select
-        aria-label="New property type"
-        value={type}
-        onChange={(e) => setType(e.target.value as PropertyType)}
-        className="rounded-mn-chrome shadow-mn-sm bg-transparent px-1 py-0.5 text-xs text-mn-text outline-none"
-      >
-        {ADDABLE_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={commit}
-        className="rounded-mn-chrome bg-mn-wash px-2 py-0.5 text-xs text-mn-text transition-colors hover:bg-mn-text hover:text-mn-surface"
-      >
-        Add
-      </button>
-      <button
-        type="button"
-        aria-label="Cancel adding property"
-        onClick={() => setOpen(false)}
-        className="rounded-mn-chrome px-1 py-0.5 text-xs text-mn-text-secondary transition-colors hover:text-mn-text"
-      >
-        ×
-      </button>
-    </span>
   )
 }
 
@@ -664,6 +526,7 @@ function CollectionTable({
 const NULL_BUCKET = '__none__'
 
 function CollectionBoard({
+  viewKey,
   schema,
   rows,
   groupBy,
@@ -671,9 +534,10 @@ function CollectionBoard({
   onEdit,
   onAddRow,
   onRenameRow,
-  onUpdateSchema,
-  onOpenCard,
+  onOpenRow,
 }: {
+  /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
+  viewKey: string
   schema: PropertySchema
   rows: CollectionRow[]
   groupBy?: string
@@ -681,23 +545,21 @@ function CollectionBoard({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  onUpdateSchema?: (next: PropertySchema) => void
-  onOpenCard?: (rowId: string) => void
+  onOpenRow?: (rowId: string) => void
 }) {
-  const grouped = useMemo(() => groupRows(rows, schema, groupBy), [rows, schema, groupBy])
+  const groupDef = pickGroupDef(schema, groupBy)
+  const grouped = useMemo(() => groupRows(rows, schema, groupDef?.id), [rows, schema, groupDef])
   const groupKey = (id: string | null) => id ?? NULL_BUCKET
   // The row whose title input should take focus — set when a card is just added, so
-  // "+ Add card" drops you straight into typing the new card's name.
+  // "＋ task" drops you straight into typing the new card's name.
   const [focusRowId, setFocusRowId] = useState<string | null>(null)
-  // The column (option id) whose header input should take focus — set when a column
-  // is just added, so "+ Add column" drops you straight into naming it.
-  const [focusColId, setFocusColId] = useState<string | null>(null)
+  // `today` is read once per mount: a board left open across midnight keeps the
+  // day it was drawn on until it next renders fresh.
+  const [now] = useState(() => new Date())
 
-  // Card drag between columns (finding F4), now shared with the calendar via the
-  // hook. Dropping into a bucket writes that option id onto the group-by property;
-  // the "No <name>" bucket clears the value (null). A no-op drop into the same
-  // column is idempotent — the optimistic cache dedupes it.
-  const { drag, overKey, registerBucket, onCardPointerDown, containerHandlers } =
+  // Dropping into a lane writes that option id onto the group-by property; the
+  // "No <name>" lane clears it (null). A drop into the same lane is idempotent.
+  const { drag, overKey, registerBucket, onCardPointerDown, isClickSuppressed, containerHandlers } =
     usePointerBucketDrag({
       editable: !!editable,
       onDrop: (rowId, key) => {
@@ -707,96 +569,75 @@ function CollectionBoard({
       },
     })
 
+  const {
+    rootRef: boardRef,
+    selection,
+    selectedRow,
+    select,
+    selectWithPointer,
+    rowProps,
+    keyboardProps,
+  } = useRecordSelection(rows, viewKey, { isClickSuppressed })
+  const done = useDoneToggle({ schema, groupBy, editable, onEdit })
+
+  // Hide the trailing "No <name>" lane while it's empty — a fresh board then reads as
+  // just its status lanes. It reappears the moment a card lands there unset.
+  const visibleGroups = (grouped?.groups ?? []).filter((g) => g.id !== null || g.rows.length > 0)
+  const dueOf = dueOfRow(pickDateDef(schema, undefined), now)
+  const orangeTodayId = useOrangeToday(
+    viewKey,
+    boardRef,
+    firstOrangeToday(
+      visibleGroups.flatMap((g) => g.rows),
+      dueOf,
+      done.isDone
+    )
+  )
+
   if (!grouped) {
     return <ViewNotice>This board needs a group-by (select or status) property.</ViewNotice>
   }
-  const { def: groupDef, groups } = grouped
+  const { def: boardDef } = grouped
 
-  // "+ Add card": mint a row seeded with this column's status (null → the "No <name>"
-  // bucket), then focus its title so you can name it immediately.
-  const addCard = async (optionId: string | null) => {
+  // "＋ task": mint a row seeded with this lane's status (null → the "No <name>"
+  // lane), then focus its title so you can name it immediately.
+  const handleAddCard = async (optionId: string | null) => {
     if (!onAddRow) return
-    const id = await onAddRow(optionId ? { [groupDef.id]: optionId } : {})
-    if (id) setFocusRowId(id)
+    const id = await onAddRow(optionId ? { [boardDef.id]: optionId } : {})
+    if (!id) return
+    setFocusRowId(id)
+    select({ id, via: 'pointer' })
   }
-
-  // Manual column editing (board-authoring Slice 4): a board column IS an option on
-  // the group-by property, so add/rename/reorder are edits to `groupDef.options`
-  // persisted through `onUpdateSchema`. The trailing "No <name>" bucket is not an
-  // option (id === null) and carries no edit affordances. crypto.randomUUID mints the
-  // stable option id manual edits rely on — the same contract the AI accept path uses.
-  const canEditColumns = !!editable && !!onUpdateSchema
-  const writeOptions = (options: PropertyOption[]) => {
-    if (!onUpdateSchema) return
-    onUpdateSchema(schema.map((d) => (d.id === groupDef.id ? { ...d, options } : d)))
-  }
-  const addColumn = () => {
-    const opt: PropertyOption = { id: crypto.randomUUID(), label: 'New column' }
-    writeOptions([...(groupDef.options ?? []), opt])
-    setFocusColId(opt.id)
-  }
-  const renameColumn = (optId: string, label: string) => {
-    writeOptions((groupDef.options ?? []).map((o) => (o.id === optId ? { ...o, label } : o)))
-  }
-  const moveColumn = (optId: string, dir: 'left' | 'right') => {
-    const opts = [...(groupDef.options ?? [])]
-    const i = opts.findIndex((o) => o.id === optId)
-    const j = dir === 'left' ? i - 1 : i + 1
-    if (i < 0 || j < 0 || j >= opts.length) return
-    ;[opts[i], opts[j]] = [opts[j], opts[i]]
-    writeOptions(opts)
-  }
-
-  // Hide the trailing "No <name>" bucket while it's empty — a fresh board then reads
-  // as a clean set of just its status columns. It reappears the moment a card lands
-  // there unset (a drag-out or a statusless add).
-  const visibleGroups = groups.filter((g) => g.id !== null || g.rows.length > 0)
 
   const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
-  // The other select/status properties shown as context chips on each card.
-  const chipDefs = schema.filter(
-    (d) => (d.type === 'select' || d.type === 'status') && d.id !== groupDef.id
-  )
+  const repeatDef = pickRepeatDef(schema)
 
   return (
-    <div {...containerHandlers}>
+    <div ref={boardRef} {...containerHandlers}>
       {/*
-        `Pond 06.21 Tasks` draws the board as a GRID of equal lanes, not a
-        horizontally scrolling row: `repeat(N, minmax(0,1fr))` at gap 10, where N
-        is the lane count (its own Tasks example renders `repeat(4,…)`).
-        The trailing `+ lane` affordance takes a column of its own when shown.
-
-        (`board-values.generated.json` also has a `kanban`/`lane` set under
-        PondTemplate — that is the MINIATURE inside a template preview card, lane
-        min-height 90 against 06.21's 380. Same design at two scales; this is the
-        full-size one.)
+        The board is a GRID of equal lanes, not a horizontally scrolling row:
+        `repeat(N, minmax(0,1fr))` at gap 10, N the lane count. A lane is an option of
+        the group-by property, so adding, renaming and reordering lanes is editing
+        that property, which the board does not do.
       */}
       <div
         data-part="lanes"
         className="grid gap-[10px]"
-        style={{
-          gridTemplateColumns: `repeat(${visibleGroups.length + (canEditColumns ? 1 : 0)}, minmax(0,1fr))`,
-        }}
+        style={{ gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(0,1fr))` }}
       >
         {visibleGroups.map((group) => {
           const key = groupKey(group.id)
           const isOver = editable && drag?.active && overKey === key
-          // Column editing applies only to real option columns, never the null bucket.
-          const columnEditable = canEditColumns && group.id !== null
-          const optIndex = groupDef.options?.findIndex((o) => o.id === group.id) ?? -1
-          const optCount = groupDef.options?.length ?? 0
           return (
             <section
               key={key}
               ref={registerBucket(key)}
               data-part="lane"
               data-lane={group.label}
-              // The board's lane is a faint RECESSED wash — ink .04, radius 16,
-              // no shadow. The drop target brightens it rather than lifting it,
-              // because a lane that gains a shadow reads as a card, which is the
-              // thing it is deliberately not.
+              // A faint recessed wash — ink .04, radius 16, no shadow. The drop target
+              // brightens it rather than lifting it: a lane with a shadow reads as a card.
               className={[
-                'group/col flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
+                'flex min-h-[380px] flex-col gap-[7px] rounded-[16px] p-[7px]',
                 'transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
                 isOver ? 'bg-mn-text/[0.08]' : 'bg-mn-text/[0.04]',
               ].join(' ')}
@@ -805,212 +646,125 @@ function CollectionBoard({
                 data-part="lane-head"
                 className="flex items-center justify-between gap-2 px-[4px] pt-[3px] pb-[2px] text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
               >
-                {/* 06.21's lane head is exactly two spans — `<span>to do</span>
-                    <span>3</span>` — so there is no option dot here. The one the
-                    board does not draw is not drawn (AGENTS.md). */}
-                <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                  {columnEditable ? (
-                    <input
-                      aria-label={`Lane name: ${group.label}`}
-                      value={group.label}
-                      placeholder="Untitled"
-                      autoFocus={group.id === focusColId}
-                      onChange={(e) => renameColumn(group.id as string, e.target.value)}
-                      // The typed name sits at full ink and the "Untitled" prompt a
-                      // tier below it (.68), so an unnamed lane is legible AS unnamed.
-                      // Both tiers are legal; the two must never be the same one (#220).
-                      className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[10.5px] font-medium tracking-[.1em] text-mn-text uppercase outline-none placeholder:text-mn-text-secondary"
-                    />
-                  ) : (
-                    <span className="truncate">{group.label}</span>
-                  )}
-                  {columnEditable && (
-                    <span className="flex items-center opacity-0 transition-opacity group-hover/col:opacity-100 focus-within:opacity-100">
-                      <button
-                        type="button"
-                        aria-label={`Move ${group.label} left`}
-                        disabled={optIndex <= 0}
-                        onClick={() => group.id && moveColumn(group.id, 'left')}
-                        className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
-                      >
-                        {/* A chevron is a FUNCTIONAL mark, so it is hand-drawn at
-                            stroke-width 1.4 with round caps — `PROJECT_RULES` §
-                            Icons. A `‹` character is the expressive register and
-                            does not belong here. */}
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                          <path
-                            d="M7.5 3L4.5 6l3 3"
-                            stroke="currentColor"
-                            strokeWidth="1.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Move ${group.label} right`}
-                        disabled={optIndex < 0 || optIndex >= optCount - 1}
-                        onClick={() => group.id && moveColumn(group.id, 'right')}
-                        className="grid place-items-center rounded-mn-chrome px-0.5 text-mn-text-secondary hover:text-mn-text disabled:opacity-30 disabled:hover:text-mn-text-secondary"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                          <path
-                            d="M4.5 3l3 3-3 3"
-                            stroke="currentColor"
-                            strokeWidth="1.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                    </span>
-                  )}
-                </span>
-                {/* The count INHERITS the head — 06.21's is a bare `<span>3</span>`
-                    with no font of its own. (`PondTemplate`'s `laneN` makes it mono
-                    at letterSpacing 0, but that is the miniature in a template
-                    preview card, not this.) */}
+                {/* Two bare spans, no option dot; the count inherits the head's type. */}
+                <span className="truncate">{group.label}</span>
                 <span data-part="lane-n">{group.rows.length}</span>
               </header>
 
               {group.rows.map((row) => {
                 const isDragging = drag?.active && drag.rowId === row.id
+                const isSelected = row.id === selectedRow?.id
+                const rowDone = done.isDone(row)
+                const repeat = repeatDef ? displayValue(repeatDef, row.values[repeatDef.id]) : ''
+                const due = dueOf(row)
+                const titleTone = rowDone ? 'text-mn-text-secondary' : 'text-mn-text'
                 return (
                   <article
                     key={row.id}
                     data-part="card"
-                    // Click-to-preview (#64): a click on the card's passive body
-                    // opens its page preview; clicks on the card's own controls
-                    // (drag handle, title input, ↗) stay theirs — the pure filter
-                    // decides. Keyboard access rides the ↗ button below.
-                    onClick={
-                      onOpenCard
+                    aria-label={row.title || 'Untitled'}
+                    {...rowProps(row.id)}
+                    {...keyboardProps(row.id)}
+                    // The card is the drag target: a press anywhere on it starts a
+                    // candidate drag, and below the hook's threshold it stays a click.
+                    onPointerDown={
+                      editable
                         ? (e) => {
-                            if (shouldOpenCardFromClick(e.target)) onOpenCard(row.id)
+                            if (!(e.target instanceof Element) || !e.target.closest('button, a')) {
+                              onCardPointerDown(e, row.id)
+                            }
                           }
                         : undefined
                     }
-                    // The board's card: card paper at radius 12, 10/11, gap 7, and
-                    // a TWO-LAYER shadow that matches no token — written out per
-                    // AGENTS.md rather than snapped to `--mn-shadow-card`, whose
-                    // second layer is `0 8px 24px` against this one's `0 2px 8px`.
+                    // The shadow matches no token (`--mn-shadow-card`'s second layer is
+                    // 0 8px 24px), so it is written out.
                     className={[
-                      // `group/card`: the ↗ reveals on THIS card's hover. Keyed to
-                      // the lane instead, hovering anywhere revealed it on every
-                      // card in the lane at once.
-                      'group/card flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
-                      // Both themes: the board's warm light shadow is invisible on
-                      // the dark ground, so the ink recipe is supplied the way every
-                      // other raw shadow in the repo does (`chart/card.tsx`).
+                      'flex flex-col gap-[7px] rounded-[12px] bg-mn-card px-[11px] py-[10px]',
                       'shadow-[0_1px_2px_rgba(40,34,24,.06),0_2px_8px_rgba(40,34,24,.05)]',
                       'dark:shadow-[0_1px_2px_rgba(0,0,0,.34),0_2px_8px_rgba(0,0,0,.4)]',
                       'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
+                      // `mn-text` flips to paper in dark, so the outline does too.
+                      'outline-[1.5px] outline-offset-1 outline-mn-text/50',
+                      isSelected ? 'outline-solid' : 'outline-none focus-visible:outline-solid',
                       isDragging ? 'opacity-30' : '',
-                      onOpenCard ? 'cursor-pointer' : '',
+                      editable ? 'cursor-grab' : 'cursor-pointer',
                     ].join(' ')}
                   >
-                    <div className="flex items-start gap-1.5">
-                      {editable && (
-                        <button
-                          type="button"
-                          aria-label={`Drag card: ${row.title || 'untitled'}`}
-                          onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          // Share the title's line box (13.5/1.35) so the glyph
-                          // centres on the title's first line under `items-start`,
-                          // and stays by the first line when the title wraps.
-                          className="cursor-grab touch-none text-[13.5px] leading-[1.35] text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
-                        >
-                          ⠿
-                        </button>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        {editable && onRenameRow ? (
-                          <input
-                            aria-label="Card title"
-                            value={row.title}
-                            placeholder="Untitled"
-                            autoFocus={row.id === focusRowId}
-                            onChange={(e) => onRenameRow(row.id, e.target.value)}
-                            className="w-full border-0 bg-transparent p-0 pr-4 text-[13.5px] leading-[1.35] text-mn-text outline-none placeholder:text-mn-text-secondary"
-                          />
-                        ) : (
-                          <div className="text-[13.5px] leading-[1.35] text-mn-text">
-                            {row.title || 'Untitled'}
-                          </div>
-                        )}
+                    {editable && onRenameRow ? (
+                      <input
+                        aria-label="Card title"
+                        value={row.title}
+                        placeholder="Untitled"
+                        autoFocus={row.id === focusRowId}
+                        onClick={() => selectWithPointer(row.id)}
+                        onChange={(e) => onRenameRow(row.id, e.target.value)}
+                        className={[
+                          'w-full border-0 bg-transparent p-0 text-[13.5px] leading-[1.35] outline-none placeholder:text-mn-text-secondary',
+                          titleTone,
+                        ].join(' ')}
+                      />
+                    ) : (
+                      <div className={['text-[13.5px] leading-[1.35]', titleTone].join(' ')}>
+                        {row.title || 'Untitled'}
                       </div>
-                      {onOpenCard && (
-                        // The keyboard-reachable twin of the card-body click — the
-                        // quiet ↗ the F27 linked cards taught. Hover/focus reveals it.
-                        <button
-                          type="button"
-                          aria-label={`Open card: ${row.title || 'untitled'}`}
-                          title="Preview page"
-                          onClick={() => onOpenCard(row.id)}
-                          // Same line box as the title so the ↗ sits level with the
-                          // drag handle on the first line, not above it.
-                          className="shrink-0 text-[13.5px] leading-[1.35] text-mn-text/70 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-mn-text focus-visible:opacity-100"
-                        >
-                          ↗
-                        </button>
-                      )}
-                    </div>
-                    {chipDefs.length > 0 && (
-                      // The board's meta row: wrapping, gap 4/10, 500 at 11px on
-                      // the .8 ink tier — a row of facts, not a stack of chips.
+                    )}
+                    {(due || repeat) && (
                       <div
                         data-part="card-meta"
                         className="flex flex-wrap gap-x-[10px] gap-y-[4px] text-[11px] font-medium text-mn-text-meta"
                       >
-                        {chipDefs.map((def) => {
-                          const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
-                          if (!opt) return null
-                          return <OptionChip key={def.id} label={opt.label} color={opt.color} />
-                        })}
+                        <DueMark due={due} orange={row.id === orangeTodayId} part="card-due" />
+                        {repeat && (
+                          <span
+                            data-part="card-repeat"
+                            className="inline-flex items-center gap-[4px]"
+                          >
+                            <RepeatMark />
+                            {repeat}
+                          </span>
+                        )}
                       </div>
                     )}
                   </article>
                 )
               })}
 
-              {/* `6i`… no: 06.21 — "The last line of every lane is ＋ task." It is a
-                  line INSIDE the lane, after the cards, not a button beside it.
-                  Pond's word for a row in a database is `record`; the board says
-                  `task` because its records are tasks. */}
+              {/* The last line of every lane is ＋ task, inside the lane. */}
               {editable && onAddRow && (
                 <button
                   type="button"
                   data-part="lane-add"
-                  onClick={() => addCard(group.id)}
+                  onClick={() => handleAddCard(group.id)}
                   className="rounded-[8px] p-[4px] text-left text-[11px] font-medium text-mn-text-secondary transition-colors hover:bg-mn-text/[0.04] hover:text-mn-text motion-reduce:transition-none"
                 >
-                  ＋ record
+                  ＋ task
                 </button>
               )}
             </section>
           )
         })}
-
-        {/* Trailing `+ lane` — appends a new option to the group-by property and
-            focuses its header for naming (board-authoring Slice 4). It takes a
-            lane's column so the grid stays even. */}
-        {canEditColumns && (
-          <button
-            type="button"
-            onClick={addColumn}
-            data-part="add-lane"
-            className="flex min-h-[380px] items-start rounded-[16px] border border-dashed border-mn-hair p-[7px] text-left text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase transition-colors hover:border-mn-text hover:text-mn-text"
-          >
-            ＋ lane
-          </button>
-        )}
       </div>
 
-      {/* Floating clone that tracks the pointer — the lift. */}
+      {selectedRow && (
+        <RecordPeek
+          key={selectedRow.id}
+          row={selectedRow}
+          schema={schema}
+          done={done.isDone(selectedRow)}
+          onToggleDone={done.toggle && (() => done.toggle?.(selectedRow))}
+          now={now}
+          editable={editable}
+          focusOnOpen={selection?.via === 'keyboard'}
+          onEdit={onEdit}
+          onRenameRow={onRenameRow}
+          onOpenRow={onOpenRow}
+        />
+      )}
+
+      {/* The card lifted under the pointer: rotated -1.2deg, its own two-layer shadow. */}
       {draggingRow && drag && (
         <div
-          className="pointer-events-none fixed z-50 w-52 -rotate-[0.6deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-mn-lg motion-reduce:rotate-none"
+          className="pointer-events-none fixed z-50 w-52 -rotate-[1.2deg] rounded-[12px] bg-mn-card px-[11px] py-[10px] shadow-[0_2px_4px_rgba(40,34,24,.08),0_10px_24px_rgba(40,34,24,.12)] motion-reduce:rotate-none dark:shadow-[0_2px_4px_rgba(0,0,0,.3),0_10px_24px_rgba(0,0,0,.4)]"
           style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
           aria-hidden
         >
@@ -1432,216 +1186,5 @@ function CollectionGantt({
         </ul>
       </div>
     </div>
-  )
-}
-
-// ── Cells & chips ───────────────────────────────────────────────────────────────
-
-/** One table cell — an inline editor when editable, a resolved read display otherwise. */
-function Cell({
-  def,
-  value,
-  editable,
-  onChange,
-  schema,
-  rowValues,
-}: {
-  def: PropertyDef
-  value: PropertyValue
-  editable: boolean
-  onChange: (value: PropertyValue) => void
-  /** The row's collection schema — a rollup reads its sibling relation def from here. */
-  schema?: PropertySchema
-  /** The row's values — a rollup reads its sibling relation's linked ids from here. */
-  rowValues?: Record<string, unknown>
-}) {
-  const label = `${def.name} value`
-
-  // A rollup is derived + never stored (#20): resolve its sibling relation (by
-  // relationId) from the row's schema + values and let the connected field fetch +
-  // compute. Always read-only, regardless of `editable`.
-  if (def.type === 'rollup') {
-    const relationDef = schema?.find((d) => d.id === def.relationId)
-    const relationValue = relationDef ? coerceValue(relationDef, rowValues?.[relationDef.id]) : []
-    return <RollupValueField def={def} relationDef={relationDef} relationValue={relationValue} />
-  }
-
-  if (!editable) {
-    if (def.type === 'select' || def.type === 'status') {
-      const opt = optionForValue(def, value)
-      return opt ? <OptionChip label={opt.label} color={opt.color} /> : <Dash />
-    }
-    if (def.type === 'checkbox') {
-      return value === true ? (
-        <span aria-label="checked" className="inline-grid place-items-center">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-            <path
-              d="M2.5 6.5l2.5 2.5 4.5-6"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      ) : (
-        <Dash />
-      )
-    }
-    if (def.type === 'relation') {
-      // Read-only host: chips (clickable), no picker (#20 decision 6).
-      return <RelationValueField def={def} value={value} editable={false} onChange={onChange} />
-    }
-    const text = displayValue(def, value)
-    return text ? <span>{text}</span> : <Dash />
-  }
-
-  const cellInput =
-    'w-full border-0 bg-transparent px-0 py-0.5 text-sm text-mn-text-meta outline-none placeholder:text-mn-text-secondary'
-
-  switch (def.type) {
-    case 'number':
-      return (
-        <input
-          type="number"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'number' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        />
-      )
-    case 'date':
-      return (
-        <input
-          type="date"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        />
-      )
-    case 'checkbox':
-      // `PondControl kind="checkbox"` (#221) — the standalone control of
-      // `PondControl.dc.html` (14 / 4 / .68), alone in a table cell; not the
-      // check-row's `PondAtom` box, not `PondTemplate`'s row box.
-      return (
-        <PondControl
-          kind="checkbox"
-          label={null}
-          aria-label={label}
-          on={value === true}
-          onCheckedChange={(next) => onChange(next)}
-        />
-      )
-    case 'select':
-    case 'status': {
-      // Bind the option *id*, resolving through optionForValue so a legacy
-      // label-stored value (a pre-slice-1 row, #18) still selects its option
-      // instead of falling back to "—". An edit then writes the canonical id.
-      const selected = optionForValue(def, value)?.id ?? (typeof value === 'string' ? value : '')
-      return (
-        <select
-          className={cellInput}
-          aria-label={label}
-          value={selected}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        >
-          <option value="">—</option>
-          {(def.options ?? []).map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      )
-    }
-    case 'relation':
-      // Editable host: chips + a scoped picker (#20 slice 6).
-      return <RelationValueField def={def} value={value} editable onChange={onChange} />
-    case 'text':
-    default:
-      return (
-        <input
-          type="text"
-          className={cellInput}
-          aria-label={label}
-          value={typeof value === 'string' ? value : ''}
-          placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-        />
-      )
-  }
-}
-
-function Dash() {
-  return <span className="text-mn-text-secondary">—</span>
-}
-
-/** A select/status value chip: a colored dot + the option label. */
-function OptionChip({ label, color }: { label: string; color?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-mn-chrome border border-mn-line bg-mn-surface px-1.5 py-0.5 text-xs text-mn-text-meta">
-      <OptionDot color={color} />
-      {label}
-    </span>
-  )
-}
-
-// Legacy option colours arrive as raw Tailwind palette names (a rainbow outside
-// the Make Noise system). Each maps to the nearest MN house hue, all --raw-* tokens
-// (issue: MN reskin #1). Since #220 freed the three signals, the warm half of that
-// rainbow collapses: red / rose / rust / pink / orange / amber all land on rose, and
-// yellow / lime join the greens on sage. So these twenty-two names resolve to FIVE
-// swatches — olive-mid, rose, sage, mist, navy — plus ink for `accent`. Two option
-// colours can therefore draw the same dot; the label beside it is what distinguishes
-// them. A hex/rgb/hsl value still renders verbatim; unknown names fall back to a hairline.
-const TOKEN_DOT: Record<string, string> = {
-  // neutrals → the house neutral-400
-  zinc: 'var(--raw-olive-mid)',
-  gray: 'var(--raw-olive-mid)',
-  slate: 'var(--raw-olive-mid)',
-  stone: 'var(--raw-olive-mid)',
-  // reds + warms → the dusty-rose swatch, the one warm the palette sanctions for
-  // option dots. Red is diff removals, burnt orange the ONE dated thing per screen
-  // and wheat highlighted passages only (PROJECT_RULES § Colors), so none of the
-  // three signals may tint a dot (#220). Six names share this one swatch.
-  red: 'var(--raw-rose)',
-  rose: 'var(--raw-rose)',
-  rust: 'var(--raw-rose)',
-  pink: 'var(--raw-rose)',
-  orange: 'var(--raw-rose)',
-  amber: 'var(--raw-rose)',
-  // yellows → sage (the nearest area mark to lime / yellow-green)
-  yellow: 'var(--raw-sage)',
-  lime: 'var(--raw-sage)',
-  // greens → sage
-  green: 'var(--raw-sage)',
-  emerald: 'var(--raw-sage)',
-  teal: 'var(--raw-sage)',
-  // pale cools → mist
-  cyan: 'var(--raw-mist)',
-  sky: 'var(--raw-mist)',
-  blue: 'var(--raw-mist)',
-  // deep cools → navy
-  indigo: 'var(--raw-navy)',
-  violet: 'var(--raw-navy)',
-  purple: 'var(--raw-navy)',
-  // the sanctioned accent role
-  accent: 'var(--mn-text)',
-}
-
-function OptionDot({ color }: { color?: string }) {
-  let background = 'var(--mn-line)'
-  if (color) {
-    if (/^(#|rgb|hsl)/i.test(color)) background = color
-    else background = TOKEN_DOT[color.toLowerCase()] ?? 'var(--mn-line)'
-  }
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-2 w-2 shrink-0 rounded-full"
-      style={{ backgroundColor: background }}
-    />
   )
 }

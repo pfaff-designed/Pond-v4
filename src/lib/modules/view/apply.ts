@@ -219,6 +219,33 @@ export function groupRows(
   return { def, groups }
 }
 
+/**
+ * Which select/status property a board buckets by: the one the view names, when it is
+ * a select or status. `groupBy` is shared by every mode (a calendar or list names a
+ * date there), so anything else — unset, gone, or the wrong type — falls back to the
+ * first status property, else the first select. Switching a view back to a board then
+ * always finds its lanes.
+ */
+export function pickGroupDef(
+  schema: PropertySchema,
+  groupBy: string | undefined
+): PropertyDef | undefined {
+  const named = groupBy ? defById(schema, groupBy) : undefined
+  if (named?.type === 'select' || named?.type === 'status') return named
+  return schema.find((d) => d.type === 'status') ?? schema.find((d) => d.type === 'select')
+}
+
+/**
+ * The property a board card draws its repeat tag from: a `text` or `select`
+ * property named `repeat` / `repeats` (6u.1's record calls the field `repeats`).
+ * There is no repeat property type yet, so the name is the only signal.
+ */
+export function pickRepeatDef(schema: PropertySchema): PropertyDef | undefined {
+  return schema.find(
+    (d) => (d.type === 'text' || d.type === 'select') && /^repeats?$/i.test(d.name.trim())
+  )
+}
+
 /** One calendar lane: the rows sharing a date (`iso`), or the trailing unset bucket. */
 export interface DateBucket {
   /** The `YYYY-MM-DD` day this lane collects, or null for the undated bucket. */

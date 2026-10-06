@@ -1,15 +1,12 @@
 /**
- * Unit tests for the board-card click filter (#64).
+ * Unit tests for the board-card click filter.
  *
- * A card `<li>` opens its page preview on click, but the card also hosts
- * interactive children — the drag handle, the title input, the ↗ open button.
- * A click that lands on (or inside) any of those must NOT also open the preview;
- * only a click on the card's passive body should.
- *
- * The fixture mirrors what a card actually draws: #223 deleted the per-card ×, so
- * the ↗ open button is the trailing control the filter has to exclude.
+ * A card is selected on click, but it can also host interactive
+ * children — the title input, a calendar card's drag handle. A click that lands
+ * on (or inside) any of those must NOT also select it; only a click on the
+ * card's passive body should.
  */
-import { shouldOpenCardFromClick } from './card-click'
+import { shouldSelectCardFromClick } from './card-click'
 
 function buildCard(): HTMLElement {
   const li = document.createElement('li')
@@ -19,7 +16,6 @@ function buildCard(): HTMLElement {
       <input aria-label="Card title" />
       <div class="chips"><span class="chip">Doing</span></div>
     </div>
-    <button type="button" aria-label="Open card">↗</button>
   `
   document.body.appendChild(li)
   return li
@@ -29,35 +25,34 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('shouldOpenCardFromClick', () => {
+describe('shouldSelectCardFromClick', () => {
   it('opens from a click on the card body (passive element)', () => {
     const li = buildCard()
-    expect(shouldOpenCardFromClick(li)).toBe(true)
-    expect(shouldOpenCardFromClick(li.querySelector('.chips'))).toBe(true)
-    expect(shouldOpenCardFromClick(li.querySelector('.chip'))).toBe(true)
+    expect(shouldSelectCardFromClick(li)).toBe(true)
+    expect(shouldSelectCardFromClick(li.querySelector('.chips'))).toBe(true)
+    expect(shouldSelectCardFromClick(li.querySelector('.chip'))).toBe(true)
   })
 
-  it('does NOT open from a click on a button (drag handle, ↗ open)', () => {
+  it('does NOT open from a click on a button (a calendar card’s drag handle)', () => {
     const li = buildCard()
-    expect(shouldOpenCardFromClick(li.querySelector('[aria-label="Drag card"]'))).toBe(false)
-    expect(shouldOpenCardFromClick(li.querySelector('[aria-label="Open card"]'))).toBe(false)
+    expect(shouldSelectCardFromClick(li.querySelector('[aria-label="Drag card"]'))).toBe(false)
   })
 
   it('does NOT open from a click on the title input', () => {
     const li = buildCard()
-    expect(shouldOpenCardFromClick(li.querySelector('input'))).toBe(false)
+    expect(shouldSelectCardFromClick(li.querySelector('input'))).toBe(false)
   })
 
   it('does NOT open from a click inside a nested interactive element', () => {
     const li = buildCard()
-    const btn = li.querySelector('[aria-label="Open card"]') as HTMLElement
+    const btn = li.querySelector('[aria-label="Drag card"]') as HTMLElement
     const inner = document.createElement('span')
     btn.appendChild(inner)
-    expect(shouldOpenCardFromClick(inner)).toBe(false)
+    expect(shouldSelectCardFromClick(inner)).toBe(false)
   })
 
   it('does NOT open from a non-element target', () => {
-    expect(shouldOpenCardFromClick(null)).toBe(false)
-    expect(shouldOpenCardFromClick(document)).toBe(false)
+    expect(shouldSelectCardFromClick(null)).toBe(false)
+    expect(shouldSelectCardFromClick(document)).toBe(false)
   })
 })

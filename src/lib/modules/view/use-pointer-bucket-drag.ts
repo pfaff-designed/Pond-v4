@@ -44,10 +44,17 @@ export interface PointerBucketDrag {
   registerBucket: (key: string) => (el: HTMLElement | null) => void
   /** Attach to each card's drag handle `onPointerDown`. */
   onCardPointerDown: (e: ReactPointerEvent, rowId: string) => void
+  /**
+   * True from the end of a drag until the click the browser fires after it has been
+   * delivered. A drag that ends over its own card still clicks it; that click is the
+   * drag's, not a selection.
+   */
+  isClickSuppressed: () => boolean
   /** Spread onto the scroll container that wraps all buckets. */
   containerHandlers: {
     onPointerMove?: (e: ReactPointerEvent) => void
     onPointerUp?: () => void
+    onPointerCancel?: () => void
     onPointerLeave?: () => void
   }
 }
@@ -66,6 +73,7 @@ export function usePointerBucketDrag({
   const dragRef = useRef<BucketDragState | null>(null)
   const startRef = useRef<{ x: number; y: number } | null>(null)
   const overKeyRef = useRef<string | null>(null)
+  const clickSuppressedRef = useRef(false)
 
   function bucketAt(x: number, y: number): string | null {
     for (const [key, el] of bucketRefs.current) {
@@ -77,6 +85,7 @@ export function usePointerBucketDrag({
 
   function onCardPointerDown(e: ReactPointerEvent, rowId: string) {
     if (!editable) return
+    clickSuppressedRef.current = false
     const li = (e.currentTarget as HTMLElement).closest('li') as HTMLElement | null
     const rect = (li ?? (e.currentTarget as HTMLElement)).getBoundingClientRect()
     startRef.current = { x: e.clientX, y: e.clientY }
@@ -108,16 +117,26 @@ export function usePointerBucketDrag({
     }
   }
 
-  function onPointerUp() {
+  function endDrag(drop: boolean) {
     const d = dragRef.current
     const key = overKeyRef.current
-    if (d?.active && key) onDrop(d.rowId, key)
+    if (drop && d?.active && key) onDrop(d.rowId, key)
+    if (d?.active) {
+      // The click follows the pointerup in the same turn; the next turn is a fresh gesture.
+      clickSuppressedRef.current = true
+      setTimeout(() => {
+        clickSuppressedRef.current = false
+      }, 0)
+    }
     dragRef.current = null
     startRef.current = null
     overKeyRef.current = null
     setDrag(null)
     setOverKey(null)
   }
+
+  const handlePointerUp = () => endDrag(true)
+  const handlePointerCancel = () => endDrag(false)
 
   const registerBucket = (key: string) => (el: HTMLElement | null) => {
     if (el) bucketRefs.current.set(key, el)
@@ -129,8 +148,14 @@ export function usePointerBucketDrag({
     overKey,
     registerBucket,
     onCardPointerDown,
+    isClickSuppressed: () => clickSuppressedRef.current,
     containerHandlers: editable
-      ? { onPointerMove, onPointerUp, onPointerLeave: drag ? onPointerUp : undefined }
+      ? {
+          onPointerMove,
+          onPointerUp: handlePointerUp,
+          onPointerCancel: handlePointerCancel,
+          onPointerLeave: drag ? handlePointerUp : undefined,
+        }
       : {},
   }
 }

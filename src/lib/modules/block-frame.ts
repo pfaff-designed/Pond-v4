@@ -172,6 +172,7 @@ export const VIEW_EMPTY: Record<ViewMode, { box: BlockEmptyBox | 'per-mark'; lin
   table: { box: 'box' },
   board: { box: 'box' },
   calendar: { box: 'box' },
+  list: { box: 'box' },
   gallery: { box: 'box' },
   'big-number': { box: 'box' },
   gantt: { box: 'void', line: GANTT_EMPTY_LINE },
@@ -432,11 +433,24 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
  * #260 confirmed all three mapped modes against `PondBlock.dc.html`'s `W`: `gallery`
  * is its own 580 card and `big-number` the 400 `number` card, while `gantt` stays
  * in the 500 `table` card — the block board has no gantt kind and `PondTemplate`
- * gives it no width of its own, exactly as `board`, `calendar` and `chart`.
+ * gives it no width of its own, exactly as `calendar` and `chart`.
+ *
+ * `board` is absent: its lanes lie straight on the page. `list` is absent: it is a
+ * card of its own, and a frame around it would be a card inside a card.
  */
-const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
+type FramedViewMode = Exclude<ViewMode, 'board' | 'list'>
+
+/**
+ * A view that sets itself on the page without the block card: the board's lanes, the
+ * list (its own card) and the chart card (`PondChart` draws its own paper). The one
+ * predicate the frame and the summary line both read.
+ */
+export function isFramelessView(block: ViewBlock): boolean {
+  return block.mode === 'board' || block.mode === 'list' || isChartCard(block)
+}
+
+const VIEW_KIND: Record<FramedViewMode, PondBlockKind> = {
   table: 'table',
-  board: 'table',
   calendar: 'table',
   gantt: 'table',
   chart: 'table',
@@ -444,9 +458,8 @@ const VIEW_KIND: Record<ViewMode, PondBlockKind> = {
   'big-number': 'number',
 }
 
-const VIEW_HEADING: Record<ViewMode, string> = {
+const VIEW_HEADING: Record<FramedViewMode, string> = {
   table: 'table',
-  board: 'board',
   calendar: 'calendar',
   gantt: 'gantt',
   chart: 'chart',
@@ -529,12 +542,13 @@ export function blockFrame(block: Block): BlockFrame | null {
       // own paper, shadow, head and footer. A card inside a card is drawn by no
       // board, so the frame steps aside. The compact marks (#259) are the
       // template's, and keep its card.
-      if (isChartCard(block)) return null
+      if (isFramelessView(block)) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
       return {
-        kind: VIEW_KIND[block.mode],
-        heading: blockLabel(block) ?? VIEW_HEADING[block.mode],
+        // Every mode `isFramelessView` passes is a `FramedViewMode`.
+        kind: VIEW_KIND[block.mode as FramedViewMode],
+        heading: blockLabel(block) ?? VIEW_HEADING[block.mode as FramedViewMode],
         headNote: '',
       }
     case 'image': {

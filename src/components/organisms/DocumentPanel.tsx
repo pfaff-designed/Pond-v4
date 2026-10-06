@@ -52,10 +52,12 @@ import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { childCards } from '@/lib/pages/child-cards'
+import { titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePond } from '@/lib/pond/context'
+import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import type { Block } from '@/lib/documents/types'
@@ -147,6 +149,8 @@ export function DocumentPanel() {
   const [title, setTitle] = useState('')
   const [blocks, setBlocks] = useState<Block[]>([])
   const [saved, setSaved] = useState(true)
+  // When the last autosave of this session landed; null until one has.
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
   // Which page the local title/blocks state was seeded from. State (not the ref)
   // so render can branch on it; the ref below serves the event-handler save path.
   // Never reset on navigate-away: it can only ever match a page whose local state
@@ -232,6 +236,7 @@ export function DocumentPanel() {
         prev && prev.id === id ? { ...prev, title: nextTitle } : prev
       )
       setSaved(true)
+      setSavedAt(new Date())
     }, 600)
   }
 
@@ -275,11 +280,13 @@ export function DocumentPanel() {
   }
 
   // "Changes to this page" (#103, storyboard frame 8): the log filtered to this
-  // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel.
-  const { toggle: toggleChanges, overlay: changesOverlay } = usePageChangesPanel(pageId)
+  // page, floating, ⌥⌘H. State, shortcut and surface all live with the panel; the
+  // title row draws no button for it.
+  const { overlay: changesOverlay } = usePageChangesPanel(pageId)
   // Typed properties (#17): present only when the page carries a schema (it is
   // a collection). Read here, above the early returns, so the JSX below stays flat.
   const propSchema = page ? readSchema(page.props) : null
+  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt)
 
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
@@ -304,7 +311,7 @@ export function DocumentPanel() {
   // nothing here reads a type tag — a page with pages inside it is simply a page
   // with a children grid under its content (#108, #234).
   return (
-    <div className="h-full overflow-y-auto">
+    <PageCanvas className="h-full overflow-y-auto">
       {/* #58: the column's max-width is user-set (was a fixed max-w-2xl) — the
           handle on the right edge drags/arrow-keys it, useContentWidth clamps
           and persists it. Everything inside (the #57 timeline's %-positioned
@@ -321,31 +328,24 @@ export function DocumentPanel() {
           onWidthChange={setContentWidth}
           onWidthCommit={commitWidth}
         />
-        <div className="flex items-center justify-between gap-3 mt-2 mb-4">
+        {/* The title row (`Pond 06.21` 6u.1): the page's name at left, and at right
+            one eyebrow — `{kind} — {save state}`. The save state lives here and
+            nowhere else; no kind set, and the eyebrow is the state alone. */}
+        <div className="mt-2 mb-4 flex items-end justify-between gap-3 px-[4px]">
           <input
-            className="flex-1 font-sans text-mn-28 font-semibold text-foreground outline-none bg-transparent placeholder:text-mn-text-secondary"
+            className="min-w-0 flex-1 bg-transparent font-sans text-[38px] leading-[1.15] font-bold tracking-[-0.01em] text-foreground uppercase outline-none placeholder:text-mn-text-secondary"
             value={viewTitle}
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
           />
           <span
-            className="font-mono lowercase text-mn-11 text-mn-text-secondary flex-shrink-0"
+            data-part="title-eyebrow"
+            className="flex-none text-[10.5px] font-medium tracking-[.1em] text-mn-text-secondary uppercase"
             aria-live="polite"
           >
-            {saved ? 'saved' : 'saving…'}
+            {eyebrow}
           </span>
-          {/* The panel's only pointer-reachable entry. The design also names "the
-              page menu › changes", but this build has no page menu to hang it on,
-              so a quiet toggle beside the save state keeps the log from being a
-              keyboard-only feature. */}
-          <button
-            type="button"
-            onClick={toggleChanges}
-            className="shrink-0 font-mono text-mn-11 lowercase text-mn-text-secondary hover:text-mn-text"
-          >
-            changes
-          </button>
         </div>
 
         {/* Provenance (#97, 6a frame 5): the thread moment this page was made
@@ -402,6 +402,6 @@ export function DocumentPanel() {
       </div>
 
       {changesOverlay}
-    </div>
+    </PageCanvas>
   )
 }

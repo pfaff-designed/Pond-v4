@@ -187,7 +187,7 @@ describe('a block edit autosaves', () => {
     )
     // The shared ['pages'] tree — what the rail draws from — is refetched.
     expect(mockFetchPages.mock.calls.length).toBeGreaterThan(refetchesBefore)
-    expect(await screen.findByText('saved')).toBeInTheDocument()
+    expect(await screen.findByText(/^saved \d{2}:\d{2}$/)).toBeInTheDocument()
   })
 })
 

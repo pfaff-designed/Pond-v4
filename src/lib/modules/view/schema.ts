@@ -33,12 +33,14 @@ import { chartDataFromRows } from './chart-data'
 /**
  * The render modes (decision 13). table/board landed in slice 3; calendar (agenda) +
  * gallery in slice 4; gantt (read-only timeline) in #27; chart + big-number in #111
- * (each an aggregation over the same rows, never a second copy of them).
+ * (each an aggregation over the same rows, never a second copy of them); list
+ * (the dated checklist of 6v) is one more read of the same rows, grouped by due.
  */
 export const VIEW_MODES = [
   'table',
   'board',
   'calendar',
+  'list',
   'gallery',
   'gantt',
   'chart',

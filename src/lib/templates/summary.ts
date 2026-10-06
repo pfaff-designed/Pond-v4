@@ -15,10 +15,10 @@
  *     `PondBlockKind`, which is the board's enum. Two of the seven read differently
  *     in prose than as a slug, and the board writes the prose: `number` → "big
  *     number", `log` → "entry log". The other five are already their own words.
- *   - A block the frame returns `null` for is BARE prose — an unlabelled `text`
- *     block (`PondTemplate.dc.html`: `bare = k === 'text' && !label`). Those name
- *     themselves: "heading" when the prose opens on a markdown heading, else
- *     "text".
+ *   - A block the frame returns `null` for is BARE: an unlabelled `text` block
+ *     (`PondTemplate.dc.html`: `bare = k === 'text' && !label`) names itself
+ *     "heading" when the prose opens on a markdown heading, else "text"; a board, list or
+ *     chart-card view names itself by its mode.
  *
  * That last split is not invented here. `modules/palette.ts` already rules it:
  * "`heading` is the `text` block opened on a markdown heading, not a block kind" —
@@ -31,7 +31,7 @@
  */
 
 import type { Block } from '@/lib/modules/content'
-import { blockFrame } from '@/lib/modules/block-frame'
+import { blockFrame, isFramelessView } from '@/lib/modules/block-frame'
 import type { PondBlockKind } from '@/lib/modules/block-frame'
 
 /**
@@ -54,7 +54,9 @@ export function blockWord(block: Block): string {
   // not one of `VIEW_MODES` comes back shaped but kindless, and a summary line
   // must never render `undefined` at the person.
   if (frame?.kind) return KIND_WORD[frame.kind] ?? frame.kind
-  // No frame: bare prose. A `text` block is the only thing that can be bare.
+  // No frame: bare prose, or a view that sets itself on the page without the block
+  // card — named by its mode.
+  if (block.type === 'view' && isFramelessView(block)) return block.mode
   if (block.type === 'text') {
     return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
   }

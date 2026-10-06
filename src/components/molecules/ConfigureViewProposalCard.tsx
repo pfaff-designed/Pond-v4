@@ -103,6 +103,7 @@ const MODE_LABEL: Record<ViewMode, string> = {
   table: 'Table',
   board: 'Board',
   calendar: 'Calendar',
+  list: 'List',
   gallery: 'Gallery',
   gantt: 'Gantt',
   // #111: a chart and a big number are modes of the database, not blocks of their own.
