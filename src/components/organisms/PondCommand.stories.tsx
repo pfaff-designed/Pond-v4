@@ -37,8 +37,9 @@ const INK = {
   ink: 'rgb(250, 249, 239)',
   tier80: 'rgba(250, 249, 239, 0.8)',
   tier68: 'rgba(250, 249, 239, 0.68)',
-  // `.mn-glass`, dark — the Shell's (ADR 0004 ruling 11: one floating-glass recipe).
-  glassBorder: 'rgba(250, 249, 239, 0.2)',
+  // `.mn-glass`, dark — one floating-glass recipe (ADR 0004 ruling 11). `PondCommand`
+  // draws no dark border; `PondComposer`'s ink glass is the board that writes it.
+  glassBorder: 'rgba(250, 249, 239, 0.09)',
 }
 type Palette = typeof PAPER
 
