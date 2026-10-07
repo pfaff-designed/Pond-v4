@@ -9,22 +9,28 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 **One session, one landable slice, ending in a merge.** Not a handoff document.
 
-- **Only `size-S` and `size-M` issues get built.** A `size-L` is not a unit of work, it is an
-  unsplit one. Split it into S/M children _before_ starting. On 2026-10-03 there were 23 open
-  `size-L` issues and 47 recorded `/handoff` calls; those two numbers are the same fact.
-- **The queue is the `now` label.** `gh issue list --label now` is the whole answer to "what next" —
-  at most 8 issues, all S or M. Never re-derive priority by reading the backlog; if `now` is empty,
-  refill it deliberately as its own task.
-- **The issue body is the spec.** No build-briefs, no planning docs, no `wayfinder/` additions.
-  If an issue is not specced, spec it _into the issue_, then build. Grill (`/grill-me`) only when the
-  issue is genuinely ambiguous — not as a gate on every build.
+- **Work is tracked in Jira, not GitHub issues.** Project `KAN` on `pfaff-team.atlassian.net`
+  (cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`), read and written through the Atlassian MCP.
+  GitHub issues were closed as not planned on 2026-10-06 when the backlog restarted; do not open
+  new ones. Put the ticket key in the branch name and PR title (`KAN-123`).
+- **Only `size-S` and `size-M` tickets get built.** Size is a Jira label. A `size-L` is not a unit
+  of work, it is an unsplit one. Split it into S/M children _before_ starting. On 2026-10-03 there
+  were 23 open `size-L` issues and 47 recorded `/handoff` calls; those two numbers are the same fact.
+- **The queue is the `now` label.** The JQL
+  `project = KAN AND labels = now AND statusCategory != Done ORDER BY rank` is the whole answer to
+  "what next" — at most 8 tickets, all S or M. Never re-derive priority by reading the backlog; if
+  `now` is empty, refill it deliberately as its own task.
+- **The ticket description is the spec.** No build-briefs, no planning docs, no `wayfinder/`
+  additions. If a ticket is not specced, spec it _into the ticket_, then build. Grill (`/grill-me`)
+  only when the ticket is genuinely ambiguous — not as a gate on every build.
 - **One review gate before merge:** `/code-review`. That is the gate that has earned its cost.
-- **Sweep in the same session as the merge:** delete the branch, remove the worktree, close the
-  issue. Run `./scripts/sweep.sh`. Debris is a tax on every future search — on 2026-10-03 a sweep
-  found 45 dead branches, 3 abandoned worktrees (one a 55MB duplicate checkout inside the repo) and
-  112 archived planning docs, all of which had been polluting every grep for weeks.
+- **Sweep in the same session as the merge:** delete the branch, remove the worktree, move the
+  ticket to Done (transition `41`; `31` is In Review, for an open PR). Run `./scripts/sweep.sh`.
+  Debris is a tax on every future search — on 2026-10-03 a sweep found 45 dead branches, 3
+  abandoned worktrees (one a 55MB duplicate checkout inside the repo) and 112 archived planning
+  docs, all of which had been polluting every grep for weeks.
 - **Do not write a handoff document.** If you are low on context with work unlanded, the slice was
-  mis-scoped: land the smallest honest commit or discard the work, then re-split the issue and say
+  mis-scoped: land the smallest honest commit or discard the work, then re-split the ticket and say
   so. A handoff doc moves the cost to the next session instead of removing it.
 
 # If you stall, leave the loop. Do not retry the same approach.
@@ -102,11 +108,11 @@ component's spec and a storyboard only places it (ADR 0011).
 
 `wayfinder/design_handoff_pond/` is a complete, high-fidelity specification of the whole product, and `docs/adr/` holds the decisions made since. Together they are the plan. **Read them and build.**
 
-**Never ask the user to re-decide something already settled.** Before raising any question, check all four: `PROJECT_RULES.md`, `AUDIT.md`'s "Decided, 26 sep" log, the inline values in the `.dc.html` mockups, and `docs/adr/`. A value written in the markup is not an open question. A behaviour in the Decided log is not an open question. If the spec is silent on something small, **pick the option most consistent with `PROJECT_RULES.md`, state the choice in the PR or issue body, and keep going.**
+**Never ask the user to re-decide something already settled.** Before raising any question, check all four: `PROJECT_RULES.md`, `AUDIT.md`'s "Decided, 26 sep" log, the inline values in the `.dc.html` mockups, and `docs/adr/`. A value written in the markup is not an open question. A behaviour in the Decided log is not an open question. If the spec is silent on something small, **pick the option most consistent with `PROJECT_RULES.md`, state the choice in the PR or ticket description, and keep going.**
 
 **Grill only when all three are true:** the handoff and the ADRs are genuinely silent; the choice would produce a materially different product; and getting it wrong would waste real work. That is rare. When it happens, ask once, in one batch, alongside delivered work — never as a gate that stops the build.
 
-**Spec when scope outlives the session** — multiple surfaces, or a decision reached by reasoning that the next agent would otherwise have to redo. Write it into the GitHub issue body, not a new `wayfinder/` doc.
+**Spec when scope outlives the session** — multiple surfaces, or a decision reached by reasoning that the next agent would otherwise have to redo. Write it into the Jira ticket description, not a new `wayfinder/` doc.
 
 A clear, small, fully-specified request needs neither — act on it directly.
 
@@ -132,11 +138,11 @@ If it doesn't match, fix it and look again. Do not open a PR, and do not report 
 2. `wayfinder/design_handoff_pond/AUDIT.md` — flow-by-flow spec; its **"Decided, 26 sep"** section is the authoritative decision log. **Where a mockup frame and a decision disagree, the decision wins.**
 3. The `.dc.html` mockups — high-fidelity (final colours/type/spacing/copy, read inline). Exceptions: `Pond 09 Examples` is illustration only; on-screen numbers are fixtures (7h).
 4. `wayfinder/GAP-ANALYSIS.md` — the spec-to-code map. **Use it for orientation, not as truth about what exists.** A 2026-09-29 adversarial pass found it inaccurate on 9 surfaces, and every error was _pessimistic about existing code_ (the palette, ink tiers, signals, area colours, type and the dark theme were labelled net-new or partial but are done). Those 9 were corrected on 2026-09-30 and everything shipped since is marked, but it will go stale again: verify against the code before believing any row.
-5. `wayfinder/OPEN-QUESTIONS.md` — the questions that need the user and are tracked nowhere else (Phase 6/7 scope, the type/spacing rulings, the control layer, area hue, three unverified behaviour claims). **Intent only, never status.** An entry leaves this file by becoming a GitHub issue or an answered decision.
+5. `wayfinder/OPEN-QUESTIONS.md` — the questions that need the user and are tracked nowhere else (Phase 6/7 scope, the type/spacing rulings, the control layer, area hue, three unverified behaviour claims). **Intent only, never status.** An entry leaves this file by becoming a Jira ticket or an answered decision.
 
 **Rebuild is settled: do not re-litigate it.** `docs/adr/0001-continue-the-codebase-do-not-rebuild.md` is the decision; `wayfinder/BUILD-VS-REBUILD-EVAL.md` (2026-09-29, 15-agent run with an adversarial pass) is its evidence. It returned **CONTINUE, high confidence** — ~50 surfaces scored, zero full-rebuild verdicts, continue ~104 eng-days vs rebuild ~136. Keep: the unified pages tree, the 8-type field engine (relations/rollups/coerce), the streaming composer + tool-calling route, the module registry + serialization facets, the change-log store, the ARIA rail tree, the `.dark` role architecture, the OTP auth spine. Where a surface genuinely needs replacing, replace that layer and keep the engine under it.
 
-**Shipped state lives in `git log` and closed GitHub issues — never in a `wayfinder/` doc.** Those docs went stale twice in four days. Before planning against "what exists", read the code. Everything under `wayfinder/_archive/` is superseded history: do not treat it as current.
+**Shipped state lives in `git log` and Done Jira tickets — never in a `wayfinder/` doc.** Those docs went stale twice in four days. Before planning against "what exists", read the code. GitHub issues are history only: the ones closed as not planned on 2026-10-06 were cleared, not shipped. Everything under `wayfinder/_archive/` is superseded history: do not treat it as current.
 
 **Supersession (decided 2026-09-26).** The **Make Noise** design language is the single source of visual truth and **supersedes the "R6 Press / v85 Clearing" aesthetic** and the in-flight shell-harvest. When old wayfinder decisions conflict with this handoff, **the new decisions win.** The `press-*` → `color-*` migration is complete (#92): the only surviving references are test guards that assert their absence. Do not reintroduce Press/Clearing tokens, fonts or naming.
 
