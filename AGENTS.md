@@ -11,8 +11,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - **Work is tracked in Jira, not GitHub issues.** Project `KAN` on `pfaff-team.atlassian.net`
   (cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`), read and written through the Atlassian MCP.
-  GitHub issues were closed as not planned on 2026-10-06 when the backlog restarted; do not open
-  new ones. Put the ticket key in the branch name and PR title (`KAN-123`).
+  The open GitHub backlog was closed as not planned on 2026-10-06 when it restarted; do not open
+  new GitHub issues. Put the ticket key in the branch name and PR title (`KAN-123`).
 - **Only `size-S` and `size-M` tickets get built.** Size is a Jira label. A `size-L` is not a unit
   of work, it is an unsplit one. Split it into S/M children _before_ starting. On 2026-10-03 there
   were 23 open `size-L` issues and 47 recorded `/handoff` calls; those two numbers are the same fact.

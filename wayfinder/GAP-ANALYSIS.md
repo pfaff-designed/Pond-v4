@@ -10,7 +10,7 @@ _Generated 2026-09-26. Maps every section of `wayfinder/design_handoff_pond/` ag
 > Those 9 are corrected below and marked **✅ shipped**, as is everything merged since, with the
 > issue number that landed it.
 >
-> It will go stale again. **Shipped state lives in `git log` and closed issues** — if a row matters
+> It will go stale again. **Shipped state lives in `git log` and Done Jira tickets** — if a row matters
 > to a decision, verify it against the code before believing it.
 
 **Decisions this doc assumes** (from the user, 2026-09-26):

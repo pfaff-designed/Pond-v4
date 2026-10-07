@@ -15,7 +15,7 @@
 
 _Created 2026-09-30, when `wayfinder/` was flattened into `_archive/`. This file holds
 **intent and unanswered questions only.** It is not a status board: shipped state lives in
-`git log` and closed issues (`AGENTS.md`). Delete an entry when it becomes a GitHub issue
+`git log` and Done Jira tickets (`AGENTS.md`). Delete an entry when it becomes a Jira ticket
 or an answered decision — do not let it accumulate._
 
 ## 1. ~~Scope: is Phase 7 in the product?~~ ANSWERED 2026-09-30
