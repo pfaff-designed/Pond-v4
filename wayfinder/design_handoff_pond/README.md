@@ -18,8 +18,8 @@ Each `.dc.html` opens directly in a browser. Serve the folder over a local stati
 
 Two exceptions:
 
-- **`Pond 09 Examples`** is an illustration of use, not a spec.
-- Numbers on screens are fixtures (see 7h). They are not real data rules.
+- **`Pond 10 Examples`** is an illustration of use, not a spec.
+- Numbers on screens are fixtures (see 8h). They are not real data rules.
 
 ## Read these first
 
@@ -62,7 +62,7 @@ Two exceptions:
   - The cover, and a new pond's empty states.
   - The twelve templates.
   - The machine surface, settings, mobile and dark.
-- **`Pond 06.01`–`06.20`:** one storyboard per file (6a–6t). Frames read left to right. Under each frame is what happens and the rule it commits to.
+- **`Pond 06.01`–`06.22`:** one storyboard per file (6a–6w). Frames read left to right. Under each frame is what happens and the rule it commits to.
 
   | File  | Storyboard               |
   | ----- | ------------------------ |
@@ -86,16 +86,19 @@ Two exceptions:
   | 06.18 | deep research            |
   | 06.19 | freeform page            |
   | 06.20 | agents and skills        |
+  | 06.21 | tasks                    |
+  | 06.22 | visibility and presence  |
 
-- **`Pond 07 Edges`:**
-  - 7a–7b: deletion tombstones and frozen links.
-  - 7d reminders
-  - 7e undo
-  - 7f the rail
-  - 7g mobile insert
-  - 7h the fixtures ledger
-- **`Pond 08 Sources`:** connecting a Google Sheet, and what happens when the connection breaks.
-- **`Pond 09 Examples`:** one person's pond a few months in (illustration only).
+- **`Pond 07.01`–`07.10` Features:** the storyboards regrouped as ten features (7a–7j), one spec per file: what it does, its states and rules from the storyboard captions, and key frames linked back. Ask and answer, diffs and change log, capture uploads and filing, pages and nesting, blocks, templates, writing and freeform, ponds and sharing, agents skills and tools, tasks.
+- **`Pond 08 Edges`:**
+  - 8a–8b: deletion tombstones and frozen links.
+  - 8d reminders
+  - 8e undo
+  - 8f the rail
+  - 8g mobile insert
+  - 8h the fixtures ledger
+- **`Pond 09 Sources`:** connecting a Google Sheet, and what happens when the connection breaks.
+- **`Pond 10 Examples`:** one person's pond a few months in (illustration only).
 
 Board ids are unique across files, and links between files use `File.dc.html#id`.
 
@@ -118,10 +121,10 @@ Board ids are unique across files, and links between files use `File.dc.html#id`
 - **Shared ponds.**
   - Default roles are admin, moderator, member and guest; a pond can rename them.
   - Authors review diffs on their own pages. Moderators and admins review on any page shared with them at edit.
-  - Admins can open every page. Threads stay private, admins included.
+  - Admins can open every page except private ones: private means private, admins included. Threads stay private, admins included.
   - A new page or template is only its author's until it's shared.
   - Only the author, moderators and admins can reshare a page.
-  - When someone leaves, their pages go to the admin who removed them, or to the longest-standing admin if they left on their own. Any admin can hand the pages on.
+  - When someone leaves, their pages go to the admin who removed them, or to the longest-standing admin if they left on their own, and their private pages are deleted. Any admin can hand the pages on.
   - Anyone can make an agent. Only an admin or a database's creator can delete that database.
   - Hovering a block shows who last edited it, and a source shows who connected it.
 - **Notifications.** There are only two: the invite email and reminders the person sets. @-mentions and everything else land in the proposed view.

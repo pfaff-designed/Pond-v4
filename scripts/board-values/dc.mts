@@ -72,7 +72,12 @@ class DCLogicStub {
  * builder needs. Everything else PondChart returns (title, type, sub, reads) is
  * plain text and comes through intact.
  */
-const REACT_STUB = { createElement: () => null, Fragment: 'fragment', createContext: () => ({}) }
+const REACT_STUB = {
+  createElement: () => null,
+  Fragment: 'fragment',
+  createContext: () => ({}),
+  createRef: () => ({ current: null }),
+}
 
 export type ValsFn = (props: Record<string, unknown>) => Vals
 

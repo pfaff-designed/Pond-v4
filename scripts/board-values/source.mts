@@ -38,7 +38,7 @@ export function readHandoffFile(repoRoot: string, file: string): string {
   if (existsSync(onDisk)) return readFileSync(onDisk, 'utf8')
 
   try {
-    // 64 MB: `Pond 09 Examples.dc.html` is 542 KB, the largest by far, but the
+    // 64 MB: `Pond 10 Examples.dc.html` is 522 KB, the largest by far, but the
     // default 1 MB buffer would still truncate the big boards silently.
     return execFileSync('git', ['show', `HEAD:${HANDOFF}/${file}`], {
       cwd: repoRoot,

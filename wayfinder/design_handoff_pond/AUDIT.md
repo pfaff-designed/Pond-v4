@@ -1,6 +1,6 @@
 # Pond — audit
 
-Audited 26 sep 2026 against `CLAUDE.md` and `AUDIT BRIEF.md`. Nothing in the mockups was changed. Board ids are the post-split ids (4a…8a). "p1" means a rule is contradicted or a builder would have to guess, "p2" means something is inconsistent or a state is missing, "p3" is craft.
+Audited 26 sep 2026 against `CLAUDE.md` and `AUDIT BRIEF.md`. Nothing in the mockups was changed. Board ids are the post-split ids (4a…8a). On 6 oct 2026 the features took 07 and Edges, Sources and Examples moved to 08–10, so the audit's 7a–7h are now 8a–8h, its 8a is 9a and its 9a… are 10a… (the export's `_idmap-features-oct.json`). "p1" means a rule is contradicted or a builder would have to guess, "p2" means something is inconsistent or a state is missing, "p3" is craft.
 
 Mechanical checks that came back clean: every hex value in the Pond files and child DCs is in the palette (plus white, black and error `#A63228`). The serif is only ever set at 200 or 800. No atomic-design words reach product copy; they appear only in 02 and in the "built from" column of 3a, which is where they belong.
 
@@ -52,7 +52,7 @@ Mechanical checks that came back clean: every hex value in the Pond files and ch
   - G1: offline, edits and captures queue on the device and sync on reconnect; asking needs a connection and the composer says so; a failed answer keeps what you typed.
   - G5: the only notifications are the invite email and reminders you set. Everything else lands in the proposed view.
   - Breadcrumb added to 02.
-- **G4/V8:** admins can open every page in a shared pond. Anything private belongs in the person's own pond. Updated in 6n, 3a, 0a and CLAUDE.md.
+- **G4/V8:** admins can open every page in a shared pond except private ones: private means private, admins included, and when someone leaves their private pages are deleted. Amended 7 oct 2026 by 6w frame 6 and the design notes; it first read "admins can open every page… anything private belongs in the person's own pond".
 
 ---
 
@@ -438,7 +438,7 @@ Each flow is written as a builder needs it, with its gaps underneath. "Result" m
   - The assistant's skills list includes the financial advisor's skill (p3).
   - "Keep dates" and "draft a reply" (to what, where?) are vague (p2).
 
-### 7a–7d Edges (`Pond 07 Edges`)
+### 7a–7d Edges (now 8a–8d, `Pond 08 Edges`)
 
 - **7a Delete a database:** starts on the database. A confirm lists every view. Views become tombstones (restore database / remove view) and are restorable for 30 days from "databases › recently deleted".
   - Gap: who may delete a database in a shared pond (~~p1~~ closed 26 sep, see round two;).
@@ -453,7 +453,7 @@ Each flow is written as a builder needs it, with its gaps underneath. "Result" m
   - Gap: whose reminders appear in a shared pond? (p2)
   - Gap: per-record reminders are impossible by design; confirm that is intended (open question).
 
-### 8a Connect a source (`Pond 08 Sources`)
+### 8a Connect a source (now 9a, `Pond 09 Sources`)
 
 - **Entry:** databases root › connect a source, or ⌘K.
 - **Steps:**
