@@ -6,17 +6,27 @@
 # The source is the export's ROOT folder. Its own design_handoff_pond/ subfolder
 # is an older bundle and must never be the source: on 2026-10-05 the mirror had
 # been synced from it and every rail build read boards a revision out of date.
+# Without an argument the source is the newest ~/Downloads/UI mockups for Pond*
+# folder: each export downloads beside the last, as "… Pond 2" and so on.
 #
 # Copies the boards (*.dc.html), the mockup runtime (*.js) and the design system
-# (_ds/mn). Leaves the repo-owned docs alone: AUDIT.md (carries the Decided log),
-# PROJECT_RULES.md and README.md. Skips the archive and the pre-split backup,
-# which are history, not spec. Regenerates board-values so its guard stays green.
+# (_ds/mn), and removes boards the export no longer has (a renumbered section
+# leaves its old file behind). Leaves the repo-owned docs alone: AUDIT.md
+# (carries the Decided log), PROJECT_RULES.md and README.md. Skips the archive
+# and the pre-split backup, which are history, not spec. Regenerates
+# board-values so its guard stays green.
 #
 # _ds/mn is replaced wholesale (rsync --delete): never patch it in the mirror.
 set -euo pipefail
 
-SRC="${1:-$HOME/Downloads/UI mockups for Pond}"
+if [ $# -gt 0 ]; then
+  SRC="$1"
+else
+  SRC="$(ls -dt "$HOME/Downloads/UI mockups for Pond"* 2>/dev/null | head -1 || true)"
+  [ -n "$SRC" ] || { echo "no ~/Downloads/UI mockups for Pond* folder; pass the export root" >&2; exit 1; }
+fi
 [ -d "$SRC" ] || { echo "no such folder: $SRC" >&2; exit 1; }
+echo "syncing from: $SRC"
 SRC="$(cd "$SRC" && pwd)"
 cd "$(git rev-parse --show-toplevel)"
 DEST="wayfinder/design_handoff_pond"
@@ -41,7 +51,10 @@ done
 rsync -a --delete "$SRC/_ds/mn/" "$DEST/_ds/mn/"
 
 for f in "$DEST"/*.dc.html; do
-  [ -f "$SRC/$(basename "$f")" ] || echo "  WARNING: $(basename "$f") is in the mirror but not the export"
+  if [ ! -f "$SRC/$(basename "$f")" ]; then
+    rm "$f"
+    echo "  removed $(basename "$f") (no longer in the export)"
+  fi
 done
 
 npx prettier --write --log-level warn "$DEST/_ds/mn/**/*.{css,json,md}"

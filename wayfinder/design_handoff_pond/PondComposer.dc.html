@@ -9,10 +9,39 @@
 <x-dc>
 <helmet>
 <link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+<script src="_ds/mn/assets/icons/icon-mask.js"></script>
 </helmet>
 <sc-if value="{{ isTab }}"><div style="{{ tabWrap }}"><span style="{{ tabPill }}"><sc-if value="{{ landed }}"><span style="{{ landedDot }}"></span><span>pond answered</span></sc-if><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 5 3.5l3 3"></path></svg></span><span style="{{ tabKey }}">⌘J</span></div></sc-if>
-<sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}"><div style="{{ glass }}">
-<sc-if value="{{ isThread }}"><div style="{{ threadHead }}"><span style="{{ fgc }}">thread · life</span><span style="{{ muted }}">3 turns</span><div style="flex:1"></div><span>new thread</span><span style="{{ iconBtnSm }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l6 6M9 3l-6 6"></path></svg></span></div><div style="{{ folded }}"><span style="display:flex;transform:rotate(-90deg)"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2 7 5 3.5 8"></path></svg></span>2 earlier turns</div></sc-if>
+<sc-if value="{{ isSpec }}"><div style="{{ sWrap }}">
+<sc-if value="{{ hasPop }}"><div style="{{ sPop }}"><div style="{{ sPopHead }}">{{ popHead }}</div><sc-for list="{{ popRows }}" as="r" hint-placeholder-count="2"><div style="{{ r.st }}"><span data-icon="{{ r.glyph }}" style="display:inline-block;width:13px;height:13px;flex:none;background:currentColor"></span><span style="font-weight:500">{{ r.label }}</span><span style="{{ sPopSub }}">{{ r.sub }}</span><div style="flex:1"></div><sc-if value="{{ r.sel }}"><span style="{{ sKey }}">↵</span></sc-if></div></sc-for></div></sc-if>
+<div style="{{ sGlass }}">
+<sc-for list="{{ secs }}" as="x" hint-placeholder-count="3">
+<sc-if value="{{ x.isChips }}"><div style="{{ sChips }}"><sc-for list="{{ x.items }}" as="c" hint-placeholder-count="2"><span style="{{ chip }}">{{ c }}</span></sc-for><sc-if value="{{ x.close }}"><div style="flex:1"></div><span style="{{ iconBtnSm }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"></path></svg></span></sc-if></div></sc-if>
+<sc-if value="{{ x.isRefs }}"><div style="{{ sRefs }}"><sc-for list="{{ x.items }}" as="c" hint-placeholder-count="1"><span style="{{ sRef }}"><span data-icon="{{ c.glyph }}" style="display:inline-block;width:11px;height:11px;flex:none;background:currentColor"></span><span>{{ c.label }}</span><span style="{{ muted }}">×</span></span></sc-for></div></sc-if>
+<sc-if value="{{ x.isTurns }}"><div style="{{ sTurns }}"><sc-for list="{{ x.turns }}" as="u" hint-placeholder-count="1"><div style="{{ sTurn }}">
+<sc-if value="{{ u.hasQ }}"><div style="{{ sYou }}"><span style="font-weight:500">you</span><span style="{{ youText }}">{{ u.q }}</span><span style="{{ time }}">{{ u.at }}</span></div></sc-if>
+<sc-if value="{{ u.hasA }}"><div style="{{ answerCol }}"><sc-if value="{{ u.hasWho }}"><span style="{{ eyebrow }}">{{ u.who }}</span></sc-if><p style="{{ sAnswer }}">{{ u.a }}<sc-if value="{{ u.streaming }}"><span style="{{ streamCaret }}"></span></sc-if></p></div></sc-if>
+<sc-if value="{{ u.hasRead }}"><div style="{{ readRow }}"><span>read</span><sc-for list="{{ u.read }}" as="r" hint-placeholder-count="2"><span style="{{ readChip }}">{{ r }}</span></sc-for></div></sc-if>
+<sc-if value="{{ u.hasNote }}"><div style="{{ sNote }}">{{ u.note }}</div></sc-if>
+</div></sc-for></div></sc-if>
+<sc-if value="{{ x.isCard }}"><div style="{{ sCard }}">
+<div style="{{ sCardHead }}"><span style="{{ x.headSt }}">{{ x.head }}</span><span style="{{ sMeta }}">{{ x.meta }}</span></div>
+<sc-if value="{{ x.hasDiff }}"><div style="display:flex;flex-direction:column;gap:3px"><sc-for list="{{ x.diff }}" as="d" hint-placeholder-count="2"><dc-import name="PondMolecule" kind="diff-line" variant="{{ d.v }}" title="{{ d.t }}" theme="{{ theme }}" size="{{ size }}" hint-size="100%,28px"></dc-import></sc-for></div></sc-if>
+<sc-if value="{{ x.hasFields }}"><div style="{{ sFields }}"><sc-for list="{{ x.fields }}" as="fl" hint-placeholder-count="3"><div style="display:flex;gap:12px;padding:2px 8px"><span style="{{ sFieldK }}">{{ fl.k }}</span><span>{{ fl.v }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ x.hasLines }}"><div style="{{ sFields }}"><sc-for list="{{ x.lines }}" as="ln" hint-placeholder-count="2"><div style="display:flex;gap:8px;padding:0 8px"><span style="{{ muted }}">+</span><span style="{{ ln.st }}">{{ ln.t }}</span></div></sc-for></div></sc-if>
+<sc-if value="{{ x.hasButtons }}"><div style="{{ sButtons }}"><sc-for list="{{ x.buttons }}" as="b" hint-placeholder-count="3"><dc-import name="PondControl" kind="button" variant="{{ b.v }}" label="{{ b.l }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,30px"></dc-import></sc-for></div></sc-if>
+<sc-if value="{{ x.hasReply }}"><div style="{{ sReply }}"><span style="{{ sMeta }}">{{ x.replyTo }}</span><span style="{{ sReplyText }}">{{ x.replyText }}<span style="{{ caret }}"></span></span><div style="{{ sReplyBtns }}"><sc-for list="{{ x.replyButtons }}" as="b" hint-placeholder-count="2"><dc-import name="PondControl" kind="button" variant="{{ b.v }}" label="{{ b.l }}" theme="{{ theme }}" size="{{ size }}" hint-size="auto,28px"></dc-import></sc-for></div></div></sc-if>
+</div></sc-if>
+<sc-if value="{{ x.isLine }}"><div style="{{ x.st }}"><span>{{ x.text }}</span><sc-if value="{{ x.typed }}"><span style="{{ caret }}"></span></sc-if></div></sc-if>
+<sc-if value="{{ x.isTools }}"><div style="{{ toolbar }}"><span style="{{ plusBtn }}">＋</span><sc-if value="{{ x.research }}"><span style="{{ researchBtn }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.2" cy="6.2" r="4"></circle><path d="M9.2 9.2 12.2 12.2"></path></svg>research</span></sc-if><div style="flex:1"></div><span style="{{ x.sendSt }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V3"></path><path d="M3.6 6.4 7 3l3.4 3.4"></path></svg></span></div></sc-if>
+</sc-for>
+</div></div></sc-if>
+<sc-if value="{{ isOpen }}" hint-placeholder-val="{{ true }}"><div data-composer-wrap="" style="{{ wrap }}">
+<sc-if value="{{ hasHandle }}"><div role="separator" aria-label="Resize composer" aria-orientation="horizontal" aria-valuenow="{{ hNow }}" aria-valuemin="160" tabindex="0" style="{{ handleStrip }}" onPointerDown="{{ onGripDown }}" onKeyDown="{{ onGripKey }}" onDoubleClick="{{ onGripReset }}" onMouseEnter="{{ onGripEnter }}" onMouseLeave="{{ onGripLeave }}" onFocus="{{ onGripFocus }}" onBlur="{{ onGripBlur }}"><span style="{{ grip }}"></span></div></sc-if>
+<div style="{{ glass }}">
+<sc-if value="{{ isThread }}"><div style="{{ threadHead }}"><span style="{{ fgc }}">thread · life</span><span style="{{ muted }}">3 turns</span><div style="flex:1"></div><span>new thread</span><span style="{{ iconBtnSm }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l6 6M9 3l-6 6"></path></svg></span></div></sc-if>
+<sc-if value="{{ hasTurn }}"><div ref="{{ scrollRef }}" style="{{ scroll }}"><div style="{{ scrollInner }}">
+<sc-if value="{{ isThread }}"><div style="{{ folded }}"><span style="display:flex;transform:rotate(-90deg)"><svg width="9" height="9" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2 7 5 3.5 8"></path></svg></span>2 earlier turns</div></sc-if>
 <sc-if value="{{ hasTurn }}"><div style="{{ turn }}">
 <div style="{{ youRow }}"><span style="font-weight:500">you</span><span style="{{ youText }}">{{ question }}</span><span style="{{ time }}">{{ askedAt }}</span></div>
 <sc-if value="{{ hasAnswer }}"><div style="{{ answerCol }}"><span style="{{ eyebrow }}">pond</span><p style="{{ answer }}">{{ answerText }}<sc-if value="{{ streaming }}"><span style="{{ streamCaret }}"></span></sc-if></p></div></sc-if>
@@ -21,12 +50,70 @@
 <sc-if value="{{ hasRead }}"><div style="{{ readRow }}"><span>read</span><sc-for list="{{ read }}" as="r" hint-placeholder-count="2"><span style="{{ readChip }}">{{ r }}</span></sc-for></div></sc-if>
 </div></sc-if>
 <sc-if value="{{ hasActions }}"><div style="{{ actionsRow }}"><span style="{{ chip }}">make this a page</span><span style="{{ chip }}">ask again</span></div></sc-if>
+</div></div></sc-if>
 <div style="{{ line }}"><sc-if value="{{ isAsking }}"><span>what is actually blocking </span><span style="{{ mention }}">@kitchen renovation</span><span>?</span><span style="{{ caret }}"></span></sc-if><sc-if value="{{ showPlaceholder }}"><span>{{ placeholder }}</span></sc-if></div>
 <div style="{{ toolbar }}"><span style="{{ plusBtn }}">＋</span><span style="{{ researchBtn }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.2" cy="6.2" r="4"></circle><path d="M9.2 9.2 12.2 12.2"></path></svg>research</span><div style="flex:1"></div><span style="{{ send }}"><sc-if value="{{ streaming }}"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor"></rect></svg></sc-if><sc-if value="{{ notStreaming }}"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V3"></path><path d="M3.6 6.4 7 3l3.4 3.4"></path></svg></sc-if></span></div>
-</div></sc-if>
+</div></div></sc-if>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:620,&quot;height&quot;:420},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;asking&quot;,&quot;streaming&quot;,&quot;answered&quot;,&quot;proposing&quot;,&quot;thread&quot;,&quot;error&quot;,&quot;collapsed&quot;,&quot;landed&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:620,&quot;height&quot;:420},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;asking&quot;,&quot;streaming&quot;,&quot;answered&quot;,&quot;proposing&quot;,&quot;thread&quot;,&quot;error&quot;,&quot;collapsed&quot;,&quot;landed&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;height&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;min&quot;:160,&quot;default&quot;:316,&quot;tsType&quot;:&quot;number&quot;},&quot;handle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;hover&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;'rest'|'hover'&quot;},&quot;interactive&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;spec&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;}}">
+const H_DEFAULT = 392, H_FLOOR = 160, H_STEP = 24, H_KEY = 'pond.composer.height';
 class Component extends DCLogic {
+  state = { h: null, gripHov: false, gripFocus: false };
+  scrollRef = React.createRef();
+  componentDidMount() {
+    setTimeout(() => window.MNIcons && window.MNIcons.upgrade(), 0);
+    if (this.props.interactive) { const v = parseFloat(localStorage.getItem(H_KEY)); if (v) this.setState({ h: v }); }
+    this.toBottom();
+  }
+  componentDidUpdate(pp, ps) {
+    setTimeout(() => window.MNIcons && window.MNIcons.upgrade(), 0); if (pp.state !== this.props.state || pp.height !== this.props.height || ps.h !== this.state.h) this.toBottom(); }
+  componentWillUnmount() { this.endDrag && this.endDrag(); }
+  toBottom() { const el = this.scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }
+  ceiling() { const w = this.scrollRef.current && this.scrollRef.current.closest('[data-composer-wrap]'); const par = w && w.parentElement; return par && par.clientHeight > 0 ? Math.max(H_FLOOR, par.clientHeight - 96) : Infinity; }
+  curH() { return this.state.h ?? this.props.height ?? H_DEFAULT; }
+  setH(v) { const h = Math.round(Math.max(H_FLOOR, Math.min(this.ceiling(), v))); this.setState({ h }); if (this.props.interactive) localStorage.setItem(H_KEY, String(h)); }
+  specVals(spec, k) {
+    if (!spec) return { isSpec: false, secs: [], hasPop: false, popRows: [] };
+    const { ink, mob, fg, a, sans, mono, glassBg } = k;
+    const btns = (list, firstPrimary = true) => (list || []).map((l, i) => ({ l, v: i === 0 && firstPrimary ? 'primary' : 'ghost' }));
+    const secs = (spec.secs || []).map(x => {
+      const o = { isChips: x.t === 'chips', isRefs: x.t === 'refs', isTurns: x.t === 'turns', isCard: x.t === 'card', isLine: x.t === 'line', isTools: x.t === 'tools' };
+      if (o.isChips) Object.assign(o, { items: x.items || [], close: !!x.close });
+      if (o.isRefs) o.items = (x.items || []).map(c => typeof c === 'string' ? { label: c, glyph: 'star-01' } : c);
+      if (o.isTurns) o.turns = (x.turns || []).map(u => ({ ...u, hasQ: !!u.q, hasA: !!u.a, hasWho: !!u.who, hasRead: !!(u.read && u.read.length), read: u.read || [], hasNote: !!u.note, streaming: !!u.streaming }));
+      if (o.isCard) Object.assign(o, { headSt: x.label === 'mono' || /^pond — /.test(x.head || '') ? { fontSize: 10.5, letterSpacing: '.02em', color: a(.8) } : { fontFamily: sans, fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) }, head: x.head || '', meta: x.meta || '', hasDiff: !!(x.diff && x.diff.length), diff: (x.diff || []).map(([v, t]) => ({ v, t })), hasFields: !!(x.fields && x.fields.length), fields: (x.fields || []).map(([k2, v]) => ({ k: k2, v })), hasLines: !!(x.lines && x.lines.length), lines: (x.lines || []).map((t, i) => ({ t, st: { fontWeight: i === 0 ? 500 : 400 } })), hasButtons: !!(x.buttons && x.buttons.length), buttons: btns(x.buttons), hasReply: !!x.reply, replyTo: x.reply ? x.reply.to : '', replyText: x.reply ? x.reply.text : '', replyButtons: x.reply ? (x.reply.buttons || []).map((l, i, arr) => ({ l, v: i === arr.length - 1 ? 'primary' : 'quiet' })) : [] });
+      if (o.isLine) Object.assign(o, { text: x.text || '', typed: !!x.typed, st: { display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', padding: '2px 6px', fontSize: mob ? 16 : 13, lineHeight: 1.5, letterSpacing: '.02em', color: x.typed && !x.muted ? fg : a(.68) } });
+      if (o.isTools) Object.assign(o, { research: !!x.research, sendSt: { width: mob ? 40 : 32, height: mob ? 40 : 32, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', background: x.send ? fg : a(.12), color: x.send ? (ink ? '#1B1D14' : '#FAF9EF') : a(.8), boxShadow: x.send && !ink ? '0 4px 12px rgba(27,29,20,.22)' : 'none' } });
+      return o;
+    });
+    const pop = spec.popover;
+    return {
+      isSpec: true, secs, hasPop: !!pop, popHead: pop ? pop.head || 'pages' : '',
+      popRows: pop ? (pop.rows || []).map((r, i) => ({ glyph: r.glyph || 'star-01', label: r.label, sub: r.sub || '', sel: i === 0, st: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 14, fontSize: 13, background: i === 0 ? a(.07) : 'transparent' } })) : [],
+      sWrap: { position: 'relative', width: '100%' },
+      sGlass: { width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 12, padding: 12, ...glassBg, backdropFilter: 'blur(24px) saturate(1.3)', WebkitBackdropFilter: 'blur(24px) saturate(1.3)', borderRadius: 20, fontFamily: mono, color: fg },
+      sPop: { position: 'absolute', left: 12, right: 12, bottom: 'calc(100% + 10px)', padding: 8, borderRadius: 18, ...glassBg, backdropFilter: 'blur(24px) saturate(1.3)', fontFamily: sans, color: fg },
+      sPopHead: { padding: '4px 10px 8px', fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      sPopSub: { color: a(.68), fontSize: 12.5 }, sKey: { fontFamily: mono, fontSize: 10.5, color: a(.8) },
+      sChips: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', fontSize: 11, letterSpacing: '.02em' },
+      sRefs: { display: 'flex', gap: 7, flexWrap: 'wrap' },
+      sRef: { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: a(.07), fontSize: 11, color: fg, maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      sTurns: { display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 6px 12px', borderBottom: `1px solid ${a(.09)}` },
+      sTurn: { display: 'flex', flexDirection: 'column', gap: 8 },
+      sYou: { display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 12.5, letterSpacing: '.02em', color: a(.8) },
+      sAnswer: { margin: 0, fontFamily: sans, fontWeight: 400, fontSize: mob ? 15 : 13.5, lineHeight: 1.55, color: fg, textWrap: 'pretty' },
+      sNote: { fontSize: 11, color: a(.68) },
+      sCard: { display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 13px', borderRadius: 14, background: ink ? '#30312A' : 'rgba(255,255,255,.72)', border: ink ? '1px solid rgba(250,249,239,.09)' : '1px solid rgba(255,255,255,.9)' },
+      sCardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+      sMeta: { fontSize: 10.5, color: a(.8) },
+      sFields: { display: 'flex', flexDirection: 'column', fontSize: 11, lineHeight: 1.75 },
+      sFieldK: { width: 52, flex: 'none', color: a(.8) },
+      sButtons: { display: 'flex', gap: 7, flexWrap: 'wrap', paddingTop: 2 },
+      sReply: { display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 11px', borderRadius: 12, boxShadow: `inset 0 0 0 1px ${a(.14)}` },
+      sReplyText: { fontSize: 12, lineHeight: 1.55, color: fg },
+      sReplyBtns: { display: 'flex', justifyContent: 'flex-end', gap: 7 }
+    };
+  }
   renderVals() {
     const p = this.props;
     const state = p.state ?? 'rest', theme = p.theme ?? 'paper', size = p.size ?? 'desktop';
@@ -37,8 +124,9 @@ class Component extends DCLogic {
     const glassBg = ink
       ? { background: 'linear-gradient(160deg,rgba(48,49,42,.92),rgba(48,49,42,.78))', border: '1px solid rgba(250,249,239,.09)', boxShadow: 'inset 0 1px 0 rgba(250,249,239,.06),0 20px 54px rgba(0,0,0,.42)' }
       : { background: 'linear-gradient(160deg,rgba(255,255,255,.86),rgba(255,255,255,.64))', border: '1px solid rgba(255,255,255,.9)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7),0 20px 54px rgba(40,34,24,.14)' };
-    const S = x => state === x;
-    const isTab = S('collapsed') || S('landed');
+    const S = x => state === x, live = !!p.interactive;
+    let spec = null; if (p.spec) { try { spec = typeof p.spec === 'string' ? JSON.parse(p.spec) : p.spec; } catch (e) { spec = null; } }
+    const isTab = !spec && (S('collapsed') || S('landed'));
     const streaming = S('streaming'), proposing = S('proposing'), thread = S('thread'), err = S('error');
     const hasTurn = streaming || S('answered') || proposing || thread || err;
     const T = {
@@ -48,11 +136,37 @@ class Component extends DCLogic {
       proposing: ['move the electrician to the week of the 6th.', '07:14', 'Both dates assume the cabinets are measured in the last week of September.'],
       thread: ['and if the quote comes in at 4k?', '07:20', 'At £4,000 the cabinets take the whole of the Q4 discretionary budget. Nothing else has to be cut, but nothing else can be added either.']
     }[state] || ['', '', ''];
-    const W = mob ? 360 : 560, lineFs = mob ? 16 : 14, btn = mob ? 40 : 32, small = mob ? 36 : 28;
+    const W = '100%', lineFs = mob ? 16 : 14, btn = mob ? 40 : 32, small = mob ? 36 : 28;
     const sendOn = S('asking') || streaming;
+    const hNow = this.curH(), gripOn = p.handle === 'hover' || this.state.gripHov || this.state.gripFocus;
     const pill = { display: 'flex', alignItems: 'center', gap: 8, height: 26, padding: '0 14px', borderRadius: 999, ...glassBg, boxShadow: ink ? 'inset 0 1px 0 rgba(250,249,239,.06),0 -8px 28px rgba(0,0,0,.3)' : 'inset 0 1px 0 rgba(255,255,255,.7),0 -8px 28px rgba(40,34,24,.12)', color: fg, fontFamily: mono, fontSize: 11 };
     return {
-      theme, size, isTab, landed: S('landed'), isOpen: !isTab, isThread: thread, hasTurn,
+      hasHandle: hasTurn, hNow, scrollRef: this.scrollRef,
+      wrap: hasTurn ? { position: 'relative', width: W, height: hNow, maxHeight: 'calc(100% - 96px)', display: 'flex', flexDirection: 'column' } : { position: 'relative', width: W },
+      handleStrip: { position: 'absolute', left: 0, right: 0, top: -13, height: 16, cursor: 'ns-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', zIndex: 1, touchAction: 'none' },
+      grip: { width: 40, height: 4, borderRadius: 999, background: gripOn ? fg : a(.68), opacity: gripOn ? 1 : .4, transition: 'background-color 150ms cubic-bezier(.22,.8,.2,1),opacity 150ms cubic-bezier(.22,.8,.2,1)' },
+      scroll: { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', margin: '0 -6px', padding: '0 6px', scrollbarWidth: 'thin' },
+      scrollInner: { marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 14 },
+      onGripEnter: () => live && this.setState({ gripHov: true }), onGripLeave: () => live && this.setState({ gripHov: false }),
+      onGripFocus: () => live && this.setState({ gripFocus: true }), onGripBlur: () => live && this.setState({ gripFocus: false }),
+      onGripReset: () => live && this.setH(H_DEFAULT),
+      onGripKey: ev => {
+        if (!live) return;
+        const k = ev.key, h = this.curH();
+        if (k === 'ArrowUp') this.setH(h + H_STEP); else if (k === 'ArrowDown') this.setH(h - H_STEP);
+        else if (k === 'Home') this.setH(H_FLOOR); else if (k === 'End') this.setH(this.ceiling() === Infinity ? 2000 : this.ceiling()); else return;
+        ev.preventDefault();
+      },
+      onGripDown: ev => {
+        if (!live) return;
+        ev.preventDefault();
+        const y0 = ev.clientY, h0 = this.curH();
+        const mv = e => this.setH(h0 + (y0 - e.clientY));
+        const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); this.endDrag = null; };
+        window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); this.endDrag = up;
+      },
+      ...this.specVals(spec, { ink, mob, fg, a, sans, mono, glassBg }),
+      theme, size, isTab, landed: S('landed'), isOpen: !isTab && !spec, isThread: thread, hasTurn,
       question: T[0], askedAt: T[1], answerText: T[2], hasAnswer: hasTurn && !err, streaming, notStreaming: !streaming, isError: err, isProposing: proposing,
       hasRead: S('answered') || thread, read: thread ? ['budget'] : ['kitchen renovation', 'budget'],
       hasActions: S('answered'), isAsking: S('asking'), showPlaceholder: !S('asking'),
@@ -62,7 +176,7 @@ class Component extends DCLogic {
       tabPill: { ...pill, position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' },
       landedDot: { width: 6, height: 6, borderRadius: 999, background: fg },
       tabKey: { marginTop: 12, fontFamily: mono, fontSize: 10.5, color: a(.68) },
-      glass: { width: W, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14, padding: 14, ...glassBg, borderRadius: 20, fontFamily: mono, color: fg },
+      glass: { ...(hasTurn ? { flex: 1, minHeight: 0 } : {}), width: W, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14, padding: 14, ...glassBg, borderRadius: 20, fontFamily: mono, color: fg },
       fgc: { color: fg }, muted: { color: a(.68) },
       threadHead: { display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 10px', borderBottom: `1px solid ${a(.09)}`, fontSize: 11, color: a(.8) },
       iconBtnSm: { display: 'flex', width: mob ? 32 : 18, height: mob ? 32 : 18, alignItems: 'center', justifyContent: 'center' },

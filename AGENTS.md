@@ -128,7 +128,7 @@ How to check, every time, before opening a PR:
 4. Check both themes. Light is **one** paper (`#FAF9EF` ground _and_ cards); dark is two (`#1B1D14` ground, `#30312A` cards).
 5. Walk the storyboard's frames in the real app and confirm each caption's rule holds.
 
-If it doesn't match, fix it and look again. Do not open a PR, and do not report the slice as shipped, on a surface that doesn't match its board. Exceptions, and only these: `Pond 09 Examples` is illustration, not spec, and on-screen numbers are fixtures (7h).
+If it doesn't match, fix it and look again. Do not open a PR, and do not report the slice as shipped, on a surface that doesn't match its board. Exceptions, and only these: `Pond 10 Examples` is illustration, not spec, and on-screen numbers are fixtures (8h).
 
 # Pond product rules (Make Noise)
 
@@ -136,7 +136,7 @@ If it doesn't match, fix it and look again. Do not open a PR, and do not report 
 
 1. `wayfinder/design_handoff_pond/PROJECT_RULES.md` — the product law (vocabulary, diff model, roles, colour/type/icon rules, stance).
 2. `wayfinder/design_handoff_pond/AUDIT.md` — flow-by-flow spec; its **"Decided, 26 sep"** section is the authoritative decision log. **Where a mockup frame and a decision disagree, the decision wins.**
-3. The `.dc.html` mockups — high-fidelity (final colours/type/spacing/copy, read inline). Exceptions: `Pond 09 Examples` is illustration only; on-screen numbers are fixtures (7h).
+3. The `.dc.html` mockups — high-fidelity (final colours/type/spacing/copy, read inline). `Pond 07.01`–`07.10` are the ten features (boards 7a–7j): each gathers its storyboards' rules and states into one spec and links back to their frames. Exceptions: `Pond 10 Examples` is illustration only; on-screen numbers are fixtures (8h).
 4. `wayfinder/GAP-ANALYSIS.md` — the spec-to-code map. **Use it for orientation, not as truth about what exists.** A 2026-09-29 adversarial pass found it inaccurate on 9 surfaces, and every error was _pessimistic about existing code_ (the palette, ink tiers, signals, area colours, type and the dark theme were labelled net-new or partial but are done). Those 9 were corrected on 2026-09-30 and everything shipped since is marked, but it will go stale again: verify against the code before believing any row.
 5. `wayfinder/OPEN-QUESTIONS.md` — the questions that need the user and are tracked nowhere else (Phase 6/7 scope, the type/spacing rulings, the control layer, area hue, three unverified behaviour claims). **Intent only, never status.** An entry leaves this file by becoming a Jira ticket or an answered decision.
 
@@ -168,7 +168,7 @@ Pond enhances thinking, it does not replace it. Pages change **only** through th
 
 ## Roles (shared ponds)
 
-Authors review diffs on their own pages; moderators and admins review any page shared with them at edit. Admins can open every page (so anything private lives in the person's own pond). Threads stay private, admins included, and never feed memory. A new page/template is its author's until shared. Anyone can make agents; only an admin or a database's creator can delete that database. **Only two notifications exist: the invite email and reminders you set** — everything else lands in the proposed view.
+Authors review diffs on their own pages; moderators and admins review any page shared with them at edit. Admins can open every page except private ones: private means private, admins included (6w frame 6). When someone leaves, an admin becomes author of their pages and their private pages are deleted. Threads stay private, admins included, and never feed memory. A new page/template is its author's until shared. Anyone can make agents; only an admin or a database's creator can delete that database. **Only two notifications exist: the invite email and reminders you set** — everything else lands in the proposed view.
 
 ## Design language (Make Noise)
 

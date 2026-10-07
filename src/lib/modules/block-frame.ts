@@ -277,8 +277,8 @@ export function blockIsEmpty(block: TodoBlock | TableBlock | EntriesBlock): bool
  * The tombstone (#240, PondBlock 4/4): `W = tombed ? 460 : W[kind]`. The ONE state
  * that overrides the kind's width, and it is a single number, not a per-kind map —
  * a deleted database leaves the same stone wherever a view of it stood, so a gallery
- * tombstone narrows 580 -> 460 like every other kind. (Do NOT cite `Pond 07 Edges`
- * 7a's "keeps its place and size class" for this: that caption argues the opposite,
+ * tombstone narrows 580 -> 460 like every other kind. (Do NOT cite `Pond 08 Edges`
+ * 8a's "keeps its place and size class" for this: that caption argues the opposite,
  * and `PondBlock.dc.html`'s literal is what rules here.) The head keeps the kind's
  * heading and swaps only its note (`H = [H0[0], 'database deleted']`).
  */
