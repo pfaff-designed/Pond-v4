@@ -33,5 +33,7 @@ else
   echo "  clean"
 fi
 
-echo "— queue —"
-gh issue list --label now --limit 10 2>/dev/null || echo "  (no 'now' label yet)"
+echo "— queue (Jira) —"
+echo "  move the merged ticket to Done, then read what's next with:"
+echo "  project = KAN AND labels = now AND statusCategory != Done ORDER BY rank"
+echo "  https://pfaff-team.atlassian.net/issues/?jql=project%20%3D%20KAN%20AND%20labels%20%3D%20now%20AND%20statusCategory%20!%3D%20Done%20ORDER%20BY%20rank"

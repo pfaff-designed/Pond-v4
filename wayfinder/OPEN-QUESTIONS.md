@@ -15,7 +15,7 @@
 
 _Created 2026-09-30, when `wayfinder/` was flattened into `_archive/`. This file holds
 **intent and unanswered questions only.** It is not a status board: shipped state lives in
-`git log` and closed issues (`AGENTS.md`). Delete an entry when it becomes a GitHub issue
+`git log` and Done Jira tickets (`AGENTS.md`). Delete an entry when it becomes a Jira ticket
 or an answered decision — do not let it accumulate._
 
 ## 1. ~~Scope: is Phase 7 in the product?~~ ANSWERED 2026-09-30
@@ -86,7 +86,7 @@ deferred and is filed nowhere.
 - **Task store:** file all the decomposed issues up front, or stay one wave ahead? _Proposed
   default, not yet confirmed: file one phase at a time — enough to see a phase's shape without
   writing acceptance criteria against code that will have changed by the time it is built.
-  (`.claude/workflows/ship-issue.mjs` takes an issue number, so issues must exist either way.)_
+  (`.claude/workflows/ship-issue.mjs` takes a Jira ticket key, so tickets must exist either way.)_
 - **Board sync:** the Pond page `Creativity › Pond` holds 34 cards (collection page
   `e023a498-a711-4133-8b7f-afca1c00ddbd`; rows are child pages of `type='row'`, status value
   is the option **id**). Shipped work has not been moved to Done.
