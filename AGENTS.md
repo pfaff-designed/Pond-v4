@@ -156,7 +156,7 @@ If it doesn't match, fix it and look again. Do not open a PR, and do not report 
 
 ## Stance — convivial design (Ivan Illich)
 
-Pond enhances thinking, it does not replace it. Pages change **only** through the person's own edits or an accepted diff. Answers are drafts until kept. Sources are always shown. Choices that belong to the user are offered, never made. Nothing is locked in. **No nudges, streaks-as-engagement, badges, or pings.** Memory is auto-recorded but every note is visible, sourced, logged, and deletable.
+Pond enhances thinking, it does not replace it. Pages change **only** through the person's own edits or an accepted diff. Answers are drafts until kept. Sources are always shown. Choices that belong to the user are offered, never made. Nothing is locked in. **No nudges, streaks-as-engagement, badges, or pings.** Memory notes are written only when the person asks Pond to remember something; every note is visible, sourced, logged, and deletable.
 
 ## The diff model & where answers live
 

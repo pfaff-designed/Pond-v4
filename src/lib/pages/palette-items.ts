@@ -91,8 +91,9 @@ export function paletteItems(
 /**
  * The other ponds, as `pond` rows — `PondPicker`'s `ponds` state: the pond's own
  * glyph and `pond · switch` beneath its name. The pond in view is left out (there is
- * nothing to switch to), and no `⌘n` hint rides on a row: those keys collide with
- * the browser's tab switching (AUDIT K1). The id is the pond's own, so the host
+ * nothing to switch to), and no `⌘n` hint rides on a row: those keys bind only in a
+ * desktop app, because the browser keeps them for tab switching (AUDIT K1, decided
+ * 8 oct). The id is the pond's own, so the host
  * navigates with `pondHref(item.id)`.
  */
 export const pondItems = (ponds: readonly Pond[], activeId: string | null): PaletteItem[] =>

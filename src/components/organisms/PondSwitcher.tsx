@@ -10,10 +10,11 @@
  * The head is the pond's 13px glyph, its name at 13.5 / 500 in full ink and a 9px
  * chevron, padded `0 16px 12px`, with `trailing` (the reminders bell) at the far end.
  *
- * Deliberately not here, each recorded as fog on #312: ⌘1–⌘3 (the shortcut
- * collides with browser tab switching, AUDIT K1), `manage ponds` (settings has no
- * route yet), archive, and the two shared-pond sections (M2). A dead affordance
- * is worse than none — the same rule that kept `import from notes` out of #177.
+ * ⌘1–⌘3 and their hints bind only in a desktop app: the browser keeps them for tab
+ * switching (AUDIT K1, decided 8 oct). Deliberately not here yet, each recorded as
+ * fog on #312: `manage ponds` (settings has no route yet), archive, and the two
+ * shared-pond sections (M2). A dead affordance is worse than none — the same rule
+ * that kept `import from notes` out of #177.
  */
 
 import { useState, type ReactNode } from 'react'
