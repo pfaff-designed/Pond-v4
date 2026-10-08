@@ -20,7 +20,7 @@ The component library speaks atomic design: atoms, molecules, organisms, layouts
 
 ## Stance
 
-Pond is a thinking partner: it enhances your thinking, it does not replace it. It is meant as an example of convivial design in AI, after Ivan Illich — a tool used on the person’s own terms. In practice: pages change only through accepted diffs answers are drafts until kept, sources are shown, choices that belong to the user are offered rather than made, nothing is locked in, and there are no nudges or engagement prompts. Memory is recorded automatically, but every note is visible, sourced, logged and deletable.
+Pond is a thinking partner: it enhances your thinking, it does not replace it. It is meant as an example of convivial design in AI, after Ivan Illich — a tool used on the person’s own terms. In practice: pages change only through accepted diffs answers are drafts until kept, sources are shown, choices that belong to the user are offered rather than made, nothing is locked in, and there are no nudges or engagement prompts. Memory notes are written only when you ask Pond to remember something, and every note is visible, sourced, logged and deletable.
 
 ## Design language
 

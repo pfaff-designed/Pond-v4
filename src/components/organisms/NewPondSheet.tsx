@@ -34,9 +34,10 @@
  * because ADR 0004 ruling 11 governs the floating-glass family that appears
  * *together* on one screen, and this sheet sits alone over a scrim.
  *
- * Not built, each recorded as fog on #312: the ⌘1–⌘3 shortcuts (AUDIT K1), and
- * the areas step actually creating pages (it is disabled per #316, so picking
- * nothing is the only path and a new pond is born with one root, per #320).
+ * The ⌘1–⌘3 shortcuts bind only in a desktop app (AUDIT K1, decided 8 oct). Not
+ * built, recorded as fog on #312: the areas step actually creating pages (it is
+ * disabled per #316, so picking nothing is the only path and a new pond is born
+ * with one root, per #320).
  */
 
 import { useState } from 'react'

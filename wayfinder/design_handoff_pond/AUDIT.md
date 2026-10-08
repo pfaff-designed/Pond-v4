@@ -54,6 +54,16 @@ Mechanical checks that came back clean: every hex value in the Pond files and ch
   - Breadcrumb added to 02.
 - **G4/V8:** admins can open every page in a shared pond except private ones: private means private, admins included, and when someone leaves their private pages are deleted. Amended 7 oct 2026 by 6w frame 6 and the design notes; it first read "admins can open every page… anything private belongs in the person's own pond".
 
+## Decided, 8 oct
+
+Answered by the product owner while planning the features (07.01–07.10).
+
+- **Q11, handwriting:** handwriting is read by a stroke-based recognition API that receives only the pen strokes you select, never images (MyScript iink is the reference). The model provider and the transcription and search services in Q11 stay open.
+- **Memory:** Pond writes a memory note only when you ask it to remember something. It never records a note on its own, and never from a thread. This supersedes 3a's "short notes Pond records on its own" and §1's "records automatically"; S10's automatically recorded note no longer arises.
+- **7j tasks:** a project's tasks are a child database of the project page, with their own fields (status, start, due, repeats, waits on, reminder). The project page's own details (status, due) stay separate.
+- **6w new pages:** a new page made at the pond root or under a private page starts private. One made under a shared or pond-wide page inherits its parent's level, so "wider only" holds. This reconciles 6w frames 1 and 2.
+- **K1, ⌘1–⌘3:** bound only in a desktop app. In the browser they are not bound and no `⌘n` hint is drawn, because the browser keeps them for tab switching. The hints on `PondRail`'s switcher are desktop-app-only.
+
 ---
 
 ## 1. The ideas
@@ -64,7 +74,7 @@ Mechanical checks that came back clean: every hex value in the Pond files and ch
 
 **Sources are shown.** Every answer names what it read (read chips under the answer). Every value that came from somewhere else carries a provenance chip. A page made from an answer keeps a made-from chip back to the thread; it can be hidden but not removed. Deep research is the only thing that reads the web, it is off by default, and it applies to one question at a time. Outside data arrives as read-only databases, and a broken source keeps its last copy.
 
-**Everything is per pond.** A pond is a fully separate workspace with its own root page, databases, sources, memory, threads, change log, trash, theme, templates, agents, skills and tools. Nothing crosses between ponds except sharing, and even then nothing is copied. Memory is a database of short notes Pond records automatically; each one cites its source, is logged, and can be edited or deleted.
+**Everything is per pond.** A pond is a fully separate workspace with its own root page, databases, sources, memory, threads, change log, trash, theme, templates, agents, skills and tools. Nothing crosses between ponds except sharing, and even then nothing is copied. Memory is a database of short notes Pond writes when you ask it to remember something (decided 8 oct); each one cites its source, is logged, and can be edited or deleted.
 
 **Roles decide who accepts.** In a shared pond the pond owns the pages and each page has an _author_. A new page belongs only to its author ("only you") until it is shared. Access is per page, at view, comment or edit, and it includes nested pages. The author's own edits apply directly. Everyone else's edits become proposed diffs for the author, editors and admins. Each person sees only what is shared with them, and that includes admins. Threads are private and never feed the shared memory.
 
@@ -279,7 +289,7 @@ Each flow is written as a builder needs it, with its gaps underneath. "Result" m
   - Delete has no typed confirmation, although 1f requires one (p2).
   - Leaving or deleting a _shared_ pond, and who may do it (~~p1~~ closed 26 sep: 6m;).
   - Export formats differ: "as files" here, markdown/json in 5p (p3).
-  - ⌘1–⌘3 collide with browser tab switching (p2, K1).
+  - ⌘1–⌘3 collide with browser tab switching (~~p2~~ closed 8 oct: desktop app only, K1).
   - Where the suggested areas (clients, projects…) come from (p2).
 
 ### 6n Share and invite (`06.14`)
@@ -571,12 +581,12 @@ All are p2 unless marked. Each needs a 02 entry with states, or a note on which 
 
 ### Shortcuts (K)
 
-| id    | what's wrong                                                                                                                                                            | fix                                     |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| K1 p2 | 7e says "nothing takes a key the browser keeps", but ⌘D (bookmark), ⌘1–⌘3 (6m, tab switch) and ⌘J (Chrome downloads on Windows) are browser keys.                       | Choose alternatives, or drop the claim. |
-| K2 p2 | Shown in storyboards but missing from 7e: ⌘1–⌘3 (6m), F2 rename (2r), → / ← and ⌥-click in the rail (7f), ⇥ next suggestion (6q), ⇧↵ newline (2f), → preview in / (6f). | Add them to 7e.                         |
-| K3 p2 | There is no Windows or Linux mapping, although "web and desktop" is the platform.                                                                                       | State Ctrl substitution and exceptions. |
-| K4 p2 | 7e history (click a line to go back) vs 6o f8 changes panel (⌥⌘H). Two panels for similar histories.                                                                    | Say how they relate, or merge them.     |
+| id    | what's wrong                                                                                                                                                            | fix                                                                           |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| K1 p2 | 7e says "nothing takes a key the browser keeps", but ⌘D (bookmark), ⌘1–⌘3 (6m, tab switch) and ⌘J (Chrome downloads on Windows) are browser keys.                       | Choose alternatives, or drop the claim. ⌘1–⌘3 closed 8 oct: desktop app only. |
+| K2 p2 | Shown in storyboards but missing from 7e: ⌘1–⌘3 (6m), F2 rename (2r), → / ← and ⌥-click in the rail (7f), ⇥ next suggestion (6q), ⇧↵ newline (2f), → preview in / (6f). | Add them to 7e.                                                               |
+| K3 p2 | There is no Windows or Linux mapping, although "web and desktop" is the platform.                                                                                       | State Ctrl substitution and exceptions.                                       |
+| K4 p2 | 7e history (click a line to go back) vs 6o f8 changes panel (⌥⌘H). Two panels for similar histories.                                                                    | Say how they relate, or merge them.                                           |
 
 ### Gaps — cross-cutting states (G)
 
@@ -647,7 +657,7 @@ All are p2 unless marked. Each needs a 02 entry with states, or a note on which 
 8. Does a table made from a list, or a page made under a collection, create or join a database? (6f, 6j, 7c)
 9. Is "kind" a real property of a page? If so, what sets it, given templates leave no tie? (W5)
 10. Handwriting, email and web: sources or tools? (W7)
-11. Which model provider and which handwriting, transcription and search services? What is sent to each? (V1–V4)
+11. Which model provider and which handwriting, transcription and search services? What is sent to each? (V1–V4) Handwriting answered 8 oct: a stroke-based API, sent only the selected strokes.
 12. Is a phone-only person a supported user? If so, filing and review must run on mobile without a desktop. (C5)
 13. Can agents use the web? And in a shared pond, whose access does an agent read with? (S9, G4)
 14. What does archiving a pond mean, and where does a deleted pond's 30-day copy live? (6m)
