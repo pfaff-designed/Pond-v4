@@ -50,7 +50,7 @@ type Story = StoryObj<typeof meta>
 export const AcceptedChange: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('edited this page')).toBeInTheDocument()
+    await expect(canvas.getByText('wrote 1 paragraph')).toBeInTheDocument()
     await expect(canvas.getByText('accepted')).toBeInTheDocument()
 
     const revert = canvas.getByRole('button', { name: 'Revert' })
