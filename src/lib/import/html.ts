@@ -17,7 +17,7 @@ import { unified } from 'unified'
 import { blockSchema } from '@/lib/modules/content'
 import { checkHtml } from './limits'
 import { readDocument } from './reader'
-import type { ReadHtmlOptions, ReadHtmlResult } from './types'
+import type { HtmlReading, ReadHtmlOptions, ReadHtmlResult } from './types'
 
 export { MAX_HTML_BYTES } from './limits'
 export type {
@@ -37,16 +37,29 @@ const countingIds = (): (() => string) => {
   return () => `import-${++n}`
 }
 
+const isStackOverflow = (error: unknown): boolean =>
+  error instanceof RangeError && /call stack/i.test(error.message)
+
+/**
+ * Parse and read. The parser builds its tree recursively; a file whose implied
+ * elements still nest past what the stack holds is unreadable, not a crash.
+ */
+const parseAndRead = (html: string, opts: ReadHtmlOptions): HtmlReading | null => {
+  try {
+    const tree = unified().use(rehypeParse).parse(html)
+    return readDocument(tree, { mintId: opts.mintId ?? countingIds(), baseUrl: opts.baseUrl })
+  } catch (error) {
+    if (isStackOverflow(error)) return null
+    throw error
+  }
+}
+
 export const readHtml = (html: string, opts: ReadHtmlOptions = {}): ReadHtmlResult => {
   const refused = checkHtml(html)
   if (refused) return { ok: false, error: refused }
 
-  const tree = unified().use(rehypeParse).parse(html)
-  const reading = readDocument(tree, {
-    mintId: opts.mintId ?? countingIds(),
-    baseUrl: opts.baseUrl,
-  })
-  if (reading.blocks.length === 0 && reading.leftOut.length === 0) {
+  const reading = parseAndRead(html, opts)
+  if (!reading || (reading.blocks.length === 0 && reading.leftOut.length === 0)) {
     return { ok: false, error: { kind: 'unreadable' } }
   }
 

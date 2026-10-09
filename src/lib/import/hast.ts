@@ -3,7 +3,8 @@
  * under their DOM names (`data-table` → `dataTable`, `aria-describedby` →
  * `ariaDescribedBy`, `datetime` → `dateTime`), so these take the property name.
  */
-import type { Element, ElementContent, Nodes, Parents, Root } from 'hast'
+import type { Element, ElementContent, Nodes, Parents } from 'hast'
+import { hasNoText } from './tags'
 
 export const childElements = (parent: Parents): Element[] => {
   const elements: Element[] = []
@@ -20,9 +21,19 @@ export const prop = (el: Element, name: string): string | undefined => {
   return String(value)
 }
 
-/** Every element under `parent`, depth first, in document order. */
-export const descendants = (parent: Parents): Element[] =>
-  childElements(parent).flatMap((el) => [el, ...descendants(el)])
+/** Every element under `parent`, in document order, however deep the file nests. */
+export const descendants = (parent: Parents): Element[] => {
+  const elements: Element[] = []
+  const stack = childElements(parent).reverse()
+  for (let el = stack.pop(); el; el = stack.pop()) {
+    elements.push(el)
+    for (let i = el.children.length - 1; i >= 0; i--) {
+      const child = el.children[i]
+      if (child.type === 'element') stack.push(child)
+    }
+  }
+  return elements
+}
 
 export const findFirst = (parent: Parents, test: (el: Element) => boolean): Element | undefined => {
   for (const el of childElements(parent)) {
@@ -33,14 +44,22 @@ export const findFirst = (parent: Parents, test: (el: Element) => boolean): Elem
   return undefined
 }
 
-/** The closest element `el` sits inside that passes `test`. */
-export const ancestor = (
-  el: Element,
+/**
+ * For every element, the closest element it sits inside that passes `test`. One
+ * pass in document order, where a parent always comes before its children.
+ */
+export const closestAncestors = (
+  elements: readonly Element[],
   parents: Map<Element, Element>,
   test: (candidate: Element) => boolean
-): Element | undefined => {
-  for (let up = parents.get(el); up; up = parents.get(up)) if (test(up)) return up
-  return undefined
+): Map<Element, Element> => {
+  const closest = new Map<Element, Element>()
+  for (const el of elements) {
+    const parent = parents.get(el)
+    const found = parent && (test(parent) ? parent : closest.get(parent))
+    if (found) closest.set(el, found)
+  }
+  return closest
 }
 
 /** Text exactly as written, whitespace kept — for preformatted text. */
@@ -51,9 +70,9 @@ export const rawText = (node: ElementContent): string => {
 }
 
 /** Elements by id, for the attributes that point at another part of the file. */
-export const indexIds = (root: Root): Map<string, Element> => {
+export const indexIds = (elements: readonly Element[]): Map<string, Element> => {
   const byId = new Map<string, Element>()
-  for (const el of descendants(root)) {
+  for (const el of elements) {
     const id = prop(el, 'id')
     if (id && !byId.has(id)) byId.set(id, el)
   }
@@ -61,47 +80,24 @@ export const indexIds = (root: Root): Map<string, Element> => {
 }
 
 /** Child → parent, so a part can ask what it sits inside. */
-export const indexParents = (root: Root): Map<Element, Element> => {
+export const indexParents = (elements: readonly Element[]): Map<Element, Element> => {
   const parents = new Map<Element, Element>()
-  for (const el of descendants(root)) {
+  for (const el of elements) {
     for (const child of childElements(el)) parents.set(child, el)
   }
   return parents
 }
-
-const NO_TEXT = new Set(['script', 'style', 'template', 'noscript'])
 
 /** The text a reader sees, whitespace collapsed. */
 export const plainText = (node: Nodes): string => {
   const collect = (n: Nodes): string => {
     if (n.type === 'text') return n.value
     if (n.type === 'element' && n.tagName === 'br') return ' '
-    if (n.type === 'element' && NO_TEXT.has(n.tagName)) return ''
+    if (n.type === 'element' && hasNoText(n.tagName)) return ''
     if (n.type !== 'element' && n.type !== 'root') return ''
     let text = ''
     for (const child of n.children) text += collect(child)
     return text
   }
   return collect(node).replace(/\s+/g, ' ').trim()
-}
-
-/** The last path segment of a link, decoded — the file's name. */
-export const fileNameOf = (url: string): string | undefined => {
-  const path = url.split(/[?#]/)[0]
-  const last = path.split('/').pop()
-  if (!last) return undefined
-  try {
-    return decodeURIComponent(last)
-  } catch {
-    return last
-  }
-}
-
-/** A link resolved against the file's own address; `undefined` when it can't be. */
-export const resolveUrl = (href: string, baseUrl: string | undefined): string | undefined => {
-  try {
-    return new URL(href, baseUrl).href
-  } catch {
-    return undefined
-  }
 }

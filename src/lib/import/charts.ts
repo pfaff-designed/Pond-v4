@@ -8,13 +8,12 @@
  * table the picture points at or shares a figure with, or values written on the
  * picture's own marks (`data-value`).
  */
-import type { Element, Root } from 'hast'
+import type { Element } from 'hast'
 import type { ViewChartConfig, ViewChartKind } from '@/lib/modules/view/schema'
 import type { PropertySchema } from '@/lib/properties/schema'
-import { ancestor, descendants, findFirst, plainText, prop } from './hast'
-import type { TableReading } from './tables'
-
-const CHART_TAGS = new Set(['svg', 'canvas'])
+import { closestAncestors, descendants, findFirst, plainText, prop } from './hast'
+import { treatmentOf } from './tags'
+import { wordsCell, type TableReading } from './tables'
 
 /** Attributes that name the part of the file a picture describes. */
 const POINTER_PROPS = ['ariaDescribedBy', 'ariaDetails', 'dataTable', 'dataSource']
@@ -25,12 +24,8 @@ const CHART_WORDS = /(^|[^a-z])(chart|graph|plot)s?([^a-z]|$)/i
 const tableIn = (el: Element): Element | undefined =>
   el.tagName === 'table' ? el : findFirst(el, (candidate) => candidate.tagName === 'table')
 
-/** The table a picture was drawn from: the one it points at, else the one in its figure. */
-const sourceTable = (
-  picture: Element,
-  byId: Map<string, Element>,
-  parents: Map<Element, Element>
-): Element | undefined => {
+/** The table a picture points at by id. */
+const pointedTable = (picture: Element, byId: Map<string, Element>): Element | undefined => {
   for (const name of POINTER_PROPS) {
     for (const id of (prop(picture, name) ?? '').split(/\s+/)) {
       const target = id ? byId.get(id) : undefined
@@ -38,20 +33,29 @@ const sourceTable = (
       if (table) return table
     }
   }
-  const figure = ancestor(picture, parents, (up) => up.tagName === 'figure')
-  return figure ? tableIn(figure) : undefined
+  return undefined
 }
 
-/** Every chart picture in the file that reads a table, and that table. */
+/**
+ * Every chart picture in the file that reads a table, and that table: the one it
+ * points at, else the one in its figure.
+ */
 export const findChartSources = (
-  root: Root,
+  elements: readonly Element[],
   byId: Map<string, Element>,
   parents: Map<Element, Element>
 ): Map<Element, Element> => {
+  const figures = closestAncestors(elements, parents, (up) => up.tagName === 'figure')
+  const figureTables = new Map<Element, Element | undefined>()
+  const figureTable = (figure: Element) => {
+    if (!figureTables.has(figure)) figureTables.set(figure, tableIn(figure))
+    return figureTables.get(figure)
+  }
   const sources = new Map<Element, Element>()
-  for (const el of descendants(root)) {
-    if (!CHART_TAGS.has(el.tagName)) continue
-    const table = sourceTable(el, byId, parents)
+  for (const el of elements) {
+    if (treatmentOf(el.tagName) !== 'drawing') continue
+    const figure = figures.get(el)
+    const table = pointedTable(el, byId) ?? (figure && figureTable(figure))
     if (table) sources.set(el, table)
   }
   return sources
@@ -70,11 +74,7 @@ export const markValues = (picture: Element): TableReading | undefined => {
       const title = findFirst(mark, (el) => el.tagName === 'title')
       const label =
         prop(mark, 'dataLabel') ?? prop(mark, 'dataX') ?? (title ? plainText(title) : `${i + 1}`)
-      const value = (prop(mark, 'dataValue') ?? '').trim()
-      return [
-        { text: label, value: label },
-        { text: value, value },
-      ]
+      return [wordsCell(label), wordsCell((prop(mark, 'dataValue') ?? '').trim())]
     }),
   }
 }

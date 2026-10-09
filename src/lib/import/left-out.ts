@@ -69,10 +69,20 @@ const LEFT_OUT_KINDS = {
     many: counted('images that couldn’t be fetched'),
     why: 'the site it links to didn’t send it.',
   },
+  imagePrivate: {
+    one: 'an image at a private address',
+    many: counted('images at private addresses'),
+    why: 'the address is inside a private network. pond only fetches from the open web.',
+  },
   notAnImage: {
     one: 'a link that isn’t an image',
     many: counted('links that aren’t images'),
     why: 'the file shows it as an image, but the site sent something else.',
+  },
+  linkAddress: {
+    one: 'a link’s address',
+    many: counted('links’ addresses'),
+    why: 'the words are kept, but where they sit holds no link.',
   },
   form: {
     one: 'a form',

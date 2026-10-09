@@ -1,3 +1,4 @@
+import { nestsTooDeep } from './nesting'
 import type { ReadHtmlError } from './types'
 
 /** 6z frame 6: "over 20 MB. Pond says the size and the limit." */
@@ -18,16 +19,18 @@ const utf8ByteLength = (text: string): number => {
   return bytes
 }
 
-const MARKUP = /<(?:!doctype\s+html|[a-z][a-z0-9-]*)(?:\s[^>]*)?\/?>/i
+/** A tag or doctype opening anywhere. Linear: the parser judges the rest. */
+const MARKUP = /<[a-z!]/i
 
 /**
- * The checks that refuse a file before it is parsed: too large, empty, binary, or
- * with no markup at all. A file that parses to nothing is refused after reading.
+ * The checks that refuse a file before it is parsed: too large, empty, binary, with
+ * no markup at all, or nested past what can be read. A file that parses to nothing
+ * is refused after reading.
  */
 export const checkHtml = (html: string): ReadHtmlError | null => {
   const size = utf8ByteLength(html)
   if (size > MAX_HTML_BYTES) return { kind: 'too-large', size, limit: MAX_HTML_BYTES }
-  if (html.trim() === '' || html.includes('\u0000') || !MARKUP.test(html)) {
+  if (html.trim() === '' || html.includes('\u0000') || !MARKUP.test(html) || nestsTooDeep(html)) {
     return { kind: 'unreadable' }
   }
   return null

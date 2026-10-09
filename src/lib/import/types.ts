@@ -9,7 +9,7 @@ import type { Block } from '@/lib/modules/content'
 import type { RowPageInput } from '@/lib/pages/promote-table'
 import type { PropertySchema } from '@/lib/properties/schema'
 
-/** A part of the file with no matching block, named by what it is, and why (6z frame 4). */
+/** A part of the file with no matching block, named by what it is, and why. */
 export interface LeftOut {
   /** What it is, in the card's words: `the map`, `the site’s links`, `styling`, `a form`. */
   name: string
@@ -18,7 +18,7 @@ export interface LeftOut {
   from: string[]
 }
 
-/** What reading found, as 6z frame 2 counts it: headings, text, tables, charts, images. */
+/** What reading found: headings, text, tables, charts, images. */
 export interface Counts {
   headings: number
   text: number
@@ -42,7 +42,7 @@ export interface ImportedDatabase {
   from: string
 }
 
-/** Why a table became what it did, for the question step (6z frame 2 › unsure). */
+/** Why a table became what it did, for the question step. */
 export type TableReason = 'chart' | 'dates' | 'rows' | 'short'
 
 /** One table's reading: a database with a table view, or a table block. */
@@ -60,7 +60,7 @@ export interface TableChoice {
 export interface HtmlReading {
   title: string
   blocks: Block[]
-  records: ImportedDatabase[]
+  databases: ImportedDatabase[]
   tables: TableChoice[]
   leftOut: LeftOut[]
   found: Counts
@@ -78,6 +78,6 @@ export type ReadHtmlResult = ({ ok: true } & HtmlReading) | { ok: false; error: 
 export interface ReadHtmlOptions {
   /** Mints block, item and field ids. Defaults to a counter, so one file always reads the same. */
   mintId?: () => string
-  /** Where the file came from, to resolve its relative links and images. */
+  /** Where the file came from: relative links resolve against it, or its `<base href>`. */
   baseUrl?: string
 }

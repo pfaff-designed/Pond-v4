@@ -202,7 +202,11 @@ describe('tables', () => {
     const reading = table(3, (i) => [`2026-02-0${i + 1}`, `${i}`])
     expect(reading.tables[0]).toMatchObject({ became: 'database', because: 'dates', unsure: false })
     expect(reading.blocks).toEqual([
-      expect.objectContaining({ type: 'view', mode: 'table', collectionId: reading.records[0].id }),
+      expect.objectContaining({
+        type: 'view',
+        mode: 'table',
+        collectionId: reading.databases[0].id,
+      }),
     ])
   })
 
@@ -210,7 +214,7 @@ describe('tables', () => {
     const reading = read(
       `<table><tr><th>day</th></tr><tr><td><time datetime="2026-03-01">1 mar</time></td></tr><tr><td><time datetime="2026-03-02">2 mar</time></td></tr><tr><td><time datetime="2026-03-03">3 mar</time></td></tr></table>`
     )
-    expect(reading.records[0].schema[0].type).toBe('date')
+    expect(reading.databases[0].schema[0].type).toBe('date')
   })
 
   it.each([
@@ -243,7 +247,7 @@ describe('charts', () => {
     const reading = read(
       `<figure><canvas aria-label="km by shoe"></canvas><table><tr><th>shoe</th><th>km</th></tr>${rowsHtml(3, (i) => [`s${i}`, `${i * 10}`])}</table></figure>`
     )
-    const db = reading.records[0]
+    const db = reading.databases[0]
     expect(reading.tables[0]).toMatchObject({ became: 'database', because: 'chart' })
     expect(reading.blocks.map((b) => b.type)).toEqual(['view', 'view'])
     expect(reading.blocks[0]).toMatchObject({
@@ -257,7 +261,7 @@ describe('charts', () => {
     const reading = read(
       '<svg aria-label="weekly km"><rect data-label="w1" data-value="20"></rect><rect data-label="w2" data-value="24.5"></rect></svg>'
     )
-    const db = reading.records[0]
+    const db = reading.databases[0]
     expect(db.title).toBe('weekly km')
     expect(db.records.map((r) => Object.values(r.props))).toEqual([
       ['w1', 20],

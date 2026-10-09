@@ -32,8 +32,8 @@ describe('readHtml — running-log.html', () => {
       'text',
     ])
 
-    expect(reading.records).toHaveLength(1)
-    const runs = reading.records[0]
+    expect(reading.databases).toHaveLength(1)
+    const runs = reading.databases[0]
     expect(runs.title).toBe('Runs')
     expect(runs.records).toHaveLength(48)
     expect(runs.schema.map((p) => [p.name, p.type])).toEqual([
@@ -90,7 +90,7 @@ describe('readHtml — running-log.html', () => {
     expect(reading.provenance[chart.id]).toBe('section 2 › chart')
     expect(reading.provenance[reading.blocks[0].id]).toBe('section 1 › heading')
     expect(reading.provenance[reading.blocks[1].id]).toBe('section 1 › paragraph 1')
-    expect(reading.records[0].from).toBe('section 2 › table')
+    expect(reading.databases[0].from).toBe('section 2 › table')
   })
 
   it('counts what it found', () => {
@@ -106,7 +106,7 @@ describe('readHtml — running-log.html', () => {
         because: 'chart',
         unsure: false,
         rows: 48,
-        databaseId: reading.records[0].id,
+        databaseId: reading.databases[0].id,
       },
     ])
   })
@@ -120,7 +120,7 @@ describe('readHtml — a short table of facts', () => {
   const reading = read(fixture('shoes.html'))
 
   it('stays a table block', () => {
-    expect(reading.records).toEqual([])
+    expect(reading.databases).toEqual([])
     const table = reading.blocks.find((b): b is TableBlock => b.type === 'table')
     expect(table).toMatchObject({ title: 'shoes', columns: ['shoe', 'brand', 'km', 'use'] })
     expect(table?.rows).toHaveLength(6)

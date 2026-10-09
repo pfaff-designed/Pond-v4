@@ -4,12 +4,55 @@
 import type { Element, Parents, Root } from 'hast'
 import type { Block } from '@/lib/modules/content'
 import { findChartSources } from './charts'
-import { childElements, findFirst, indexIds, indexParents, plainText } from './hast'
+import {
+  childElements,
+  closestAncestors,
+  descendants,
+  findFirst,
+  indexIds,
+  indexParents,
+  plainText,
+  prop,
+} from './hast'
 import { collectLeftOut, type LeftOutCollector, type LeftOutKind } from './left-out'
 import { joinPath, trackPaths, type PathTracker } from './provenance'
 import type { Counts, ImportedDatabase, TableChoice } from './types'
+import { resolveUrl } from './urls'
 
 const SECTION_TAGS = new Set(['section', 'article'])
+/** Where a page's own content lives; a header or footer inside one belongs to the page. */
+const CONTENT_TAGS = new Set(['main', 'article', 'section', 'aside', 'figure', 'blockquote'])
+
+/** What a placed block is, as its provenance names it: `section 2 › table`. */
+export type PartKind =
+  | 'heading'
+  | 'paragraph'
+  | 'quote'
+  | 'definitions'
+  | 'code'
+  | 'list'
+  | 'file'
+  | 'image'
+  | 'table'
+  | 'chart'
+
+/** What a left-out part is, as its place names it: `section 3 › map`. */
+export type PartWord =
+  | PartKind
+  | 'styling'
+  | 'script'
+  | 'form'
+  | 'buttons'
+  | 'video'
+  | 'audio'
+  | 'map'
+  | 'embedded app'
+  | 'picture'
+  | 'drawing'
+  | 'link'
+  | 'nav'
+  | 'header'
+  | 'footer'
 
 export interface Figure {
   caption: string
@@ -28,24 +71,36 @@ export interface ChartDraft {
 
 export type Draft = { block: Block; ticket: number } | { chart: ChartDraft; ticket: number }
 
+/** A database before its place is worded, which needs the whole file read. */
+export type DatabaseDraft = Omit<ImportedDatabase, 'from'>
+
 export interface Reader {
+  /** The file's `<base href>`, else its own address: what relative links resolve against. */
   baseUrl: string | undefined
+  /** Every element in the file, in document order. */
+  elements: Element[]
   mintId: () => string
   paths: PathTracker
   leftOut: LeftOutCollector
   within: Map<Element, string[]>
   inside: Map<Element, string[]>
   parents: Map<Element, Element>
+  /** Element → the page content (`main`, `article`, …) it sits in. */
+  contentOf: Map<Element, Element>
   /** Chart picture → the table it was drawn from. */
   chartSources: Map<Element, Element>
   drawnTables: Set<Element>
   /** Table → the database it became, for the charts that read it. */
-  databases: Map<Element, ImportedDatabase>
-  databaseTickets: Map<ImportedDatabase, number>
+  databases: Map<Element, DatabaseDraft>
+  databaseDrafts: { database: DatabaseDraft; ticket: number }[]
   drafts: Draft[]
   tables: TableChoice[]
   found: Counts
   linkedImages: string[]
+  /** Links whose address a placed block carries, as a markdown link or a file block. */
+  carried: Set<Element>
+  /** Parts already listed or never shown, so nothing inside them is listed again. */
+  accounted: Set<Element>
   title: string
   /** The title's own heading is still to come, and is not repeated as a block. */
   titlePending: boolean
@@ -89,28 +144,40 @@ const documentTitle = (root: Root): string => {
   return h1 ? plainText(h1) : ''
 }
 
+/** The first `<base href>`, resolved against the file's own address; else that address. */
+const documentBase = (root: Root, fileUrl: string | undefined): string | undefined => {
+  const base = findFirst(root, (el) => el.tagName === 'base' && prop(el, 'href') !== undefined)
+  const href = base && prop(base, 'href')?.trim()
+  return (href && resolveUrl(href, fileUrl)) || fileUrl
+}
+
 export const createReader = (root: Root, opts: ReadDocumentOptions): Reader => {
   const paths = trackPaths()
+  const elements = descendants(root)
   const { within, inside } = mapSections(root, paths)
-  const parents = indexParents(root)
-  const chartSources = findChartSources(root, indexIds(root), parents)
+  const parents = indexParents(elements)
+  const chartSources = findChartSources(elements, indexIds(elements), parents)
   const title = documentTitle(root)
   return {
-    baseUrl: opts.baseUrl,
+    baseUrl: documentBase(root, opts.baseUrl),
+    elements,
     mintId: opts.mintId,
     paths,
     leftOut: collectLeftOut(),
     within,
     inside,
     parents,
+    contentOf: closestAncestors(elements, parents, (up) => CONTENT_TAGS.has(up.tagName)),
     chartSources,
     drawnTables: new Set(chartSources.values()),
     databases: new Map(),
-    databaseTickets: new Map(),
+    databaseDrafts: [],
     drafts: [],
     tables: [],
     found: { headings: 0, text: 0, tables: 0, charts: 0, images: 0 },
     linkedImages: [],
+    carried: new Set(),
+    accounted: new Set(),
     title,
     titlePending: title !== '',
     lastHeading: undefined,
@@ -124,15 +191,17 @@ export const withinOf = (el: Element, r: Reader): string[] => r.within.get(el) ?
 export const insideOf = (el: Element, r: Reader): string[] => r.inside.get(el) ?? withinOf(el, r)
 
 /** A left-out part's place: its sections and what it is, or just `head`. */
-export const placeOf = (el: Element, word: string, r: Reader): string => {
+export const placeOf = (el: Element, word: PartWord, r: Reader): string => {
   const within = withinOf(el, r)
   return within[0] === 'head' ? 'head' : joinPath([...within, word])
 }
 
-export const leaveOut = (kind: LeftOutKind, el: Element, word: string, r: Reader) =>
+export const leaveOut = (kind: LeftOutKind, el: Element, word: PartWord, r: Reader) => {
+  r.accounted.add(el)
   r.leftOut.add(kind, placeOf(el, word, r))
+}
 
-export const place = (block: Block, within: string[], kind: string, r: Reader) =>
+export const place = (block: Block, within: string[], kind: PartKind, r: Reader) =>
   r.drafts.push({ block, ticket: r.paths.note(within, kind) })
 
 /** The figure's caption, for the part it captions; it is not then a paragraph of its own. */
