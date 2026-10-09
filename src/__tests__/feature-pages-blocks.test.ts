@@ -21,9 +21,9 @@
  *   • `saveBlocks` / `updateTitle` — the shared `fake-supabase` builder has no
  *     `.update()`, so a two-line adapter applies their patch to its `_pages` map.
  *     The assertions still read the row, not the call.
- *   • `sweepOutdatedAfterOwnEdit` — spied rather than run, so the own-edit sweep's
- *     `ownEdit` contract (#98) is asserted without turning it loose on a fake whose
- *     `from()` serves one table.
+ *   • `recordOwnEdit` — spied rather than run, so the own-edit contract (the
+ *     outdated sweep and the accepted record) is asserted without turning it loose
+ *     on a fake whose `from()` serves one table.
  *   • `fetchPages` / `getOrCreateHomePage` — `fetchPages` is DERIVED from the fake's
  *     rows, so "the tree the rail reads" is the real written state, not a fixture.
  */
@@ -76,9 +76,9 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: (...args: unknown[]) => mockUpdateTitle(...(args as [unknown, string, string])),
 }))
 
-const mockSweep = jest.fn().mockResolvedValue(undefined)
+const mockRecordOwnEdit = jest.fn().mockResolvedValue({ logged: Promise.resolve() })
 jest.mock('@/lib/change-log/own-edit', () => ({
-  sweepOutdatedAfterOwnEdit: (...args: unknown[]) => mockSweep(...args),
+  recordOwnEdit: (...args: unknown[]) => mockRecordOwnEdit(...args),
 }))
 
 // ── fixtures ────────────────────────────────────────────────────────────────
@@ -180,10 +180,11 @@ describe('a block edit autosaves', () => {
     expect(table.type === 'table' && table.rows[0].cells).toEqual(['Mitre saw', 'Wall'])
 
     // G2 (#98): the page moved under the person's own hand, so its pending block
-    // diffs go outdated — scoped to the blocks that landed, not to the save.
-    expect(mockSweep).toHaveBeenCalledWith(
+    // diffs go outdated — scoped to the blocks that landed, not to the save — and
+    // the save is logged from what the page held before it.
+    expect(mockRecordOwnEdit).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ pageId: 'page-1', blocks: persisted() })
+      expect.objectContaining({ pageId: 'page-1', before: [note, tools], blocks: persisted() })
     )
     // The shared ['pages'] tree — what the rail draws from — is refetched.
     expect(mockFetchPages.mock.calls.length).toBeGreaterThan(refetchesBefore)

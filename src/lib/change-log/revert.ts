@@ -16,7 +16,8 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
 import { isOpen } from './status'
-import { jsonEqual, planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
+import { jsonEqual } from '@/lib/json-equal'
+import { planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
 
 // ── Store calls ──────────────────────────────────────────────────────────────

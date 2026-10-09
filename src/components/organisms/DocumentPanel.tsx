@@ -31,6 +31,7 @@ import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { getPage, setProperty, updateTitle } from '@/lib/pages/client'
 import { getOrCreateHomePage } from '@/lib/pages/home'
 import { commitBlocks } from '@/lib/pages/commit'
+import { EDIT_PAUSE_MS } from '@/lib/change-log/pause'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { propertiesFrame } from '@/lib/modules/block-frame'
@@ -159,6 +160,12 @@ export function DocumentPanel() {
   const loadedId = useRef<string | null>(null)
   const serverSig = useRef<string>('') // signature of the server blocks we've reconciled
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // What the open page held before its next pause: the blocks last saved, seeded
+  // or adopted. Only the open page's — a save still pending from the page just
+  // left carries its own, captured when it was scheduled.
+  const lastSaved = useRef<{ pageId: string; blocks: Block[] } | null>(null)
+  const lastSavedOf = (id: string): Block[] | null =>
+    lastSaved.current?.pageId === id ? lastSaved.current.blocks : null
 
   // ticket-41: ids of blocks just inserted this session, so a freshly-inserted
   // block SETTLES in (motion-settle-in) while blocks present on page load do
@@ -184,6 +191,7 @@ export function DocumentPanel() {
     if (page && page.id !== loadedId.current) {
       loadedId.current = page.id
       serverSig.current = JSON.stringify(page.blocks)
+      lastSaved.current = { pageId: page.id, blocks: page.blocks }
       setSeededId(page.id)
       setTitle(page.title)
       setBlocks(page.blocks)
@@ -194,6 +202,8 @@ export function DocumentPanel() {
       const sig = JSON.stringify(page.blocks)
       if (sig !== serverSig.current) {
         serverSig.current = sig
+        // The write already has its own record; the next own edit starts after it.
+        lastSaved.current = { pageId: page.id, blocks: page.blocks }
         setBlocks(page.blocks)
       }
     }
@@ -214,20 +224,46 @@ export function DocumentPanel() {
     const id = loadedId.current
     if (!id) return
     setSaved(false)
+    const beforeAtSchedule = lastSavedOf(id) ?? []
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
+      // This save is one pause: the change log records it as one edit, from what
+      // the page last saved to what it saves now. Advanced before the first await
+      // so a save that fires while this one is in flight starts from here, and
+      // set back if this one fails, so the next starts from what is stored.
+      const before = lastSavedOf(id) ?? beforeAtSchedule
+      const advanced = lastSavedOf(id) !== null
+      if (advanced) lastSaved.current = { pageId: id, blocks: nextBlocks }
       // Title first, then blocks + sidebar-refresh + re-embed via the shared
       // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
       // the ['pages'] invalidation inside commitBlocks lands after the rename,
       // keeping the sidebar rename immediate.
       const supabase = getSupabase()
-      await updateTitle(supabase, id, nextTitle)
-      // `ownEdit` (G2, #98): the page moved on under the person's own hand, so
-      // every pending block diff aimed at it goes outdated — its card greys out,
-      // drops accept and offers revise.
-      await commitBlocks(supabase, queryClient, id, nextBlocks, { ownEdit: true, pondId })
-      // keep the ['page'] cache in step with what we just saved, so the
-      // same-page adopt above only fires for genuinely external writes.
+      try {
+        await updateTitle(supabase, id, nextTitle)
+        // `ownEdit`: the page moved on under the person's own hand, so every
+        // pending block diff aimed at it goes outdated — its card greys out,
+        // drops accept and offers revise — and the save is logged as accepted.
+        await commitBlocks(supabase, queryClient, id, nextBlocks, {
+          ownEdit: true,
+          before,
+          pondId,
+        })
+      } catch (err) {
+        if (
+          advanced &&
+          lastSaved.current?.pageId === id &&
+          lastSaved.current.blocks === nextBlocks
+        ) {
+          lastSaved.current = { pageId: id, blocks: before }
+        }
+        console.error('[document] save failed', id, err)
+        return
+      }
+      // keep the ['page'] cache — and the signature the adopt compares against —
+      // in step with what we just saved, so the same-page adopt above only fires
+      // for genuinely external writes.
+      if (loadedId.current === id) serverSig.current = JSON.stringify(nextBlocks)
       queryClient.setQueryData(['page', id], (prev: typeof page) =>
         prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
       )
@@ -237,7 +273,7 @@ export function DocumentPanel() {
       )
       setSaved(true)
       setSavedAt(new Date())
-    }, 600)
+    }, EDIT_PAUSE_MS)
   }
 
   function onTitle(value: string) {

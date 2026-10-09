@@ -19,9 +19,14 @@
  * which reflects the change in the `['rows']` cache at once (and the row's own
  * `['page', rowId]` cache if it's been opened) then persists via the merge-safe
  * `setProperty`. Never the propose→accept path.
+ *
+ * They are the person's own edits, so each pause of them is one `accepted`
+ * record in the change log (`add_row` / `edit_row`, filed against the
+ * collection). Writes land per keystroke; the log groups them per record once
+ * they settle (`groupByPause`) and closes any open group when the view unmounts.
  */
-import { useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef } from 'react'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import {
   createPage,
@@ -43,7 +48,11 @@ import {
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import type { CollectionRow } from './apply'
+import { recordOwnRowEdit } from '@/lib/change-log/own-edit'
+import { groupByPause, type PauseGroups } from '@/lib/change-log/pause'
+import { changeLogKey } from '@/lib/change-log/keys'
+import type { RowSnapshot } from '@/lib/change-log/types'
+import { displayValue, type CollectionRow } from './apply'
 
 export interface CollectionData {
   /** The collection's property schema, or null when the page isn't a collection. */
@@ -92,6 +101,41 @@ export interface CollectionData {
 }
 
 const ROWS_KEY = (collectionId: string) => ['rows', collectionId] as const
+
+/** One change to a record, as the change log folds it into a {@link RowSnapshot}. */
+type RowChange =
+  | { kind: 'create'; record: RowSnapshot }
+  | { kind: 'value'; fieldId: string; value: PropertyValue; shown: string | null }
+  | { kind: 'title'; title: string }
+
+const cachedRow = (
+  queryClient: QueryClient,
+  collectionId: string,
+  rowId: string
+): PondPage | undefined =>
+  queryClient.getQueryData<PondPage[]>(ROWS_KEY(collectionId))?.find((p) => p.id === rowId)
+
+const cachedFields = (queryClient: QueryClient, collectionId: string): PropertySchema =>
+  readSchema(queryClient.getQueryData<PondPage | null>(['page', collectionId])?.props) ?? []
+
+/** A record as the change log keeps it, each field also as the field shows it. */
+const snapshotOf = (row: PondPage, fields: PropertySchema): RowSnapshot => {
+  const values = readValues(row.props)
+  const shown = Object.fromEntries(fields.map((def) => [def.id, displayValue(def, values[def.id])]))
+  return { id: row.id, title: row.title, values, shown }
+}
+
+const applyRowChange = (record: RowSnapshot | null, change: RowChange): RowSnapshot | null => {
+  if (change.kind === 'create') return change.record
+  if (record === null) return null
+  if (change.kind === 'title') return { ...record, title: change.title }
+  return {
+    ...record,
+    values: readValues(withValue(record.values, change.fieldId, change.value)),
+    shown:
+      change.shown === null ? record.shown : { ...record.shown, [change.fieldId]: change.shown },
+  }
+}
 
 /**
  * Resolve an inline view's schema + rows for the collection page hosting it.
@@ -147,9 +191,41 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
     [rowPages]
   )
 
+  // The pond is read when a group closes, not when the grouper is made: a pond
+  // that resolves mid-pause must not close the open groups under the old one.
+  const pondRef = useRef(pondId)
+  useEffect(() => {
+    pondRef.current = pondId
+  }, [pondId])
+
+  // One record per record per pause, of what the database kept (`groupByPause`).
+  // Made in an effect so leaving — or switching collection — closes the open
+  // groups: leaving mid-pause still logs what was done.
+  const rowEdits = useRef<PauseGroups<RowSnapshot, RowChange, string> | null>(null)
+  useEffect(() => {
+    if (!collectionId) return
+    const groups = groupByPause<RowSnapshot, RowChange, string>({
+      apply: applyRowChange,
+      onPause: (before, after, origin) => {
+        void recordOwnRowEdit(getSupabase(), {
+          pondId: origin ?? pondRef.current,
+          collectionId,
+          before,
+          after,
+        }).then(() => queryClient.invalidateQueries({ queryKey: changeLogKey() }))
+      },
+    })
+    rowEdits.current = groups
+    return () => {
+      groups.flush()
+      if (rowEdits.current === groups) rowEdits.current = null
+    }
+  }, [collectionId, getSupabase, queryClient])
+
   const setValue = useMemo(
     () => (rowId: string, key: string, value: PropertyValue) => {
       if (!collectionId) return
+      const row = cachedRow(queryClient, collectionId, rowId)
       // Optimistic: patch the row's props in the ['rows'] cache so the cell/card
       // reflects the edit before the write lands.
       queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
@@ -164,12 +240,28 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
       // Persist. On failure, reconcile from server truth (invalidate rather than
       // hand-roll a rollback) so a rejected write can't leave the optimistic cache
       // permanently diverged from the DB.
-      setProperty(getSupabase(), rowId, key, value).catch(() => {
+      const write = setProperty(getSupabase(), rowId, key, value)
+      write.catch(() => {
         void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
         void queryClient.invalidateQueries({ queryKey: ['page', rowId] })
       })
+      if (!row) return
+      const fields = cachedFields(queryClient, collectionId)
+      const field = fields.find((def) => def.id === key)
+      rowEdits.current?.change({
+        key: rowId,
+        current: snapshotOf(row, fields),
+        patch: {
+          kind: 'value',
+          fieldId: key,
+          value,
+          shown: field ? displayValue(field, value) : null,
+        },
+        write,
+        origin: pondId,
+      })
     },
-    [collectionId, queryClient, getSupabase]
+    [collectionId, queryClient, getSupabase, pondId]
   )
 
   // Create a row child, seeded with any initial values (e.g. the board column's
@@ -194,6 +286,18 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
         queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
           prev ? [...prev, created] : [created]
         )
+        // Opens the record's group with no `before`: naming it in the same pause
+        // folds into one "added …" record.
+        rowEdits.current?.change({
+          key: created.id,
+          current: null,
+          patch: {
+            kind: 'create',
+            record: snapshotOf(created, cachedFields(queryClient, collectionId)),
+          },
+          write: Promise.resolve(),
+          origin: pondId,
+        })
         return created.id
       },
     [collectionId, queryClient, getSupabase, pondId]
@@ -204,6 +308,8 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
   const removeRow = useMemo(
     () => (rowId: string) => {
       if (!collectionId) return
+      // An edit to a record that is gone has nothing left to name.
+      rowEdits.current?.drop(rowId)
       queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
         prev ? prev.filter((p) => p.id !== rowId) : prev
       )
@@ -219,17 +325,27 @@ export function useCollectionRows(collectionId: string | undefined): CollectionD
   const renameRow = useMemo(
     () => (rowId: string, title: string) => {
       if (!collectionId) return
+      const row = cachedRow(queryClient, collectionId, rowId)
       queryClient.setQueryData<PondPage[]>(ROWS_KEY(collectionId), (prev) =>
         prev ? prev.map((p) => (p.id === rowId ? { ...p, title } : p)) : prev
       )
       queryClient.setQueryData<PondPage | null>(['page', rowId], (prev) =>
         prev ? { ...prev, title } : prev
       )
-      updateTitle(getSupabase(), rowId, title).catch(() => {
+      const write = updateTitle(getSupabase(), rowId, title)
+      write.catch(() => {
         void queryClient.invalidateQueries({ queryKey: ROWS_KEY(collectionId) })
       })
+      if (!row) return
+      rowEdits.current?.change({
+        key: rowId,
+        current: snapshotOf(row, cachedFields(queryClient, collectionId)),
+        patch: { kind: 'title', title },
+        write,
+        origin: pondId,
+      })
     },
-    [collectionId, queryClient, getSupabase]
+    [collectionId, queryClient, getSupabase, pondId]
   )
 
   // Optimistically write the new schema into the collection page's ['page'] cache

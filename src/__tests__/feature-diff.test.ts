@@ -509,6 +509,7 @@ describe('a pending diff and the person’s own edit', () => {
 
     await commitBlocks(world.supabase, world.queryClient, PAGE, saved, {
       ownEdit: true,
+      before: ORIGINAL,
       pondId: POND,
     })
 
@@ -547,7 +548,7 @@ describe('the change log', () => {
 
     // The log lists it, and offers to set it back.
     expect(buildPageChanges(await pageLog(world))).toMatchObject([
-      { record: { id: edit.id }, label: 'edited this page', revertable: true },
+      { record: { id: edit.id }, label: 'wrote 1 paragraph', revertable: true },
     ])
 
     // Revert raises a NEW record — the log only grows, the original is untouched.
@@ -572,7 +573,7 @@ describe('the change log', () => {
       revertBlockedBy: 'waiting',
     })
     expect(rows.find((r) => r.record.id === revert.id)).toMatchObject({
-      label: 'revert of edit',
+      label: expect.stringMatching(/^revert of \d{2}:\d{2}$/),
       reverts: { id: edit.id },
     })
 
@@ -589,5 +590,87 @@ describe('the change log', () => {
     expect(world.at(edit.id).status).toBe('reverted')
     // Still two records: nothing was rewritten and nothing was removed.
     expect(world.log()).toHaveLength(2)
+  })
+})
+
+// ── 5 · your own edits ───────────────────────────────────────────────────────
+
+describe('your own edits', () => {
+  const WROTE: Block[] = [
+    {
+      id: 'b1',
+      type: 'text',
+      content: 'wiring quote\n\nrang the sparky\n\nhe can come on the 6th\n\nbook the skip',
+    } as unknown as Block,
+  ]
+
+  /** The editor's debounced save — one pause — and the record it writes behind it. */
+  const typeAndPause = async (before: Block[], after: Block[]) => {
+    await commitBlocks(world.supabase, world.queryClient, PAGE, after, {
+      ownEdit: true,
+      before,
+      pondId: POND,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  it('are accepted as you make them, and the page’s changes read "wrote 3 paragraphs · you"', async () => {
+    await typeAndPause(ORIGINAL, WROTE)
+
+    expect(world.pageBlocks()).toEqual(WROTE)
+    expect(world.log()).toMatchObject([
+      {
+        status: 'accepted',
+        action: 'edit',
+        actor: 'you',
+        pondId: POND,
+        targetPageId: PAGE,
+        before: ORIGINAL,
+        after: WROTE,
+      },
+    ])
+    // Born accepted: it never sat as a proposal.
+    expect(world.log()[0].transitions.map((t) => t.status)).toEqual(['accepted'])
+    expect(await countProposed(world.supabase, USER, POND)).toBe(0)
+
+    const [row] = buildPageChanges(await pageLog(world))
+    expect(`${row.label} · ${row.record.actor}`).toBe('wrote 3 paragraphs · you')
+  })
+
+  it('an unchanged re-save logs nothing', async () => {
+    await typeAndPause(ORIGINAL, ORIGINAL)
+    expect(world.log()).toEqual([])
+  })
+
+  it('accepting a diff is one record — Pond’s, accepted — and no own edit beside it', async () => {
+    await pondProposes(world, PROPOSED)
+    await clickAccept(world, PROPOSED)
+
+    expect(world.log()).toHaveLength(1)
+    expect(world.log()[0]).toMatchObject({ actor: 'pond', status: 'accepted' })
+  })
+
+  it('reverting your own edit adds the revert and nothing else', async () => {
+    await typeAndPause(ORIGINAL, WROTE)
+    const [edit] = buildPageChanges(await pageLog(world))
+    expect(edit.revertable).toBe(true)
+
+    const revert = await proposeRevert(world.supabase, {
+      userId: USER,
+      pondId: POND,
+      record: edit.record,
+      current: world.pageBlocks(),
+    })
+    const outcome = await acceptRevert(world.supabase, {
+      userId: USER,
+      pondId: POND,
+      revert,
+      current: world.pageBlocks(),
+    })
+
+    expect(outcome.kind).toBe('accepted')
+    expect(world.pageBlocks()).toEqual(ORIGINAL)
+    expect(world.log()).toHaveLength(2)
+    expect(world.at(edit.record.id).status).toBe('reverted')
   })
 })

@@ -60,6 +60,8 @@ export type ChangeLogAction =
   | 'memory_note'
   | 'define_schema'
   | 'add_row'
+  /** A person's own edit to a record's title or values; before/after are {@link RowSnapshot}s. */
+  | 'edit_row'
   | 'promote_table'
   | 'configure_view'
   | 'link_records'
@@ -79,6 +81,22 @@ export type ChangeLogAction =
  * schema and rows, so a block write says nothing about them.
  */
 export const BLOCK_ACTIONS: readonly ChangeLogAction[] = ['edit', 'revert']
+
+/**
+ * A record (a collection's row) as an own `add_row` / `edit_row` stores it in
+ * `before`/`after`: the row's title and its property values, `_schema` excluded.
+ */
+export interface RowSnapshot {
+  id: string
+  title: string
+  values: Record<string, unknown>
+  /**
+   * Each field's value as the field showed it when the record was written — a
+   * choice as its label, a checkbox as `✓` — keyed by field id. Kept with the
+   * record because a later rename of an option must not rewrite what was logged.
+   */
+  shown: Record<string, string>
+}
 
 /**
  * Who acted. Single-user ponds today, so in practice `you` or `pond`; the column
