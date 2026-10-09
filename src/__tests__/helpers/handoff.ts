@@ -15,8 +15,8 @@
  * from a jest process. Where the committed copy could trail the design project,
  * that is stated rather than hidden: as of 2026-10-04 the only drift is in the
  * `Pond 06.xx` storyboards, which gained a nav entry for the new `Pond 06.21 Tasks`
- * board. `Pond 03 Concepts.dc.html`, `PondPicker.dc.html` and `pond-charts.js` —
- * every file these suites read — are byte-identical in both, verified by diff.
+ * board. `Pond 03 Concepts.dc.html`, `PondPicker.dc.html` and `pond-charts.js` were
+ * byte-identical in both, verified by diff. Re-sync with `scripts/sync-handoff.sh`.
  *
  * This mirrors `scripts/board-values/source.mts`, which does the same job for the
  * extractor. Two copies rather than one shared module because that one is an `.mts`
@@ -55,4 +55,32 @@ export function readHandoff(file: string): string {
         `these board-adherence suites need a committed snapshot. Cause: ${(err as Error).message}`
     )
   }
+}
+
+/**
+ * The chart kinds, in board order: `PondChart.dc.html`'s `kind` enum. Not the
+ * keys of `pond-charts.js`, which also holds storyboard plots that reuse a kind.
+ */
+export function boardChartKinds(): string[] {
+  const html = readHandoff('PondChart.dc.html').replaceAll('&quot;', '"')
+  const match = html.match(/"kind":\{"editor":"enum","options":\[([^\]]*)\]/)
+  if (!match) throw new Error('PondChart.dc.html has no `kind` enum')
+  return JSON.parse(`[${match[1]}]`) as string[]
+}
+
+/** Each chart kind's `type` tag from `pond-charts.js`, keyed by kind. */
+export function boardChartTypeTags(): Record<string, string> {
+  const js = readHandoff('pond-charts.js')
+  const body = js.slice(js.indexOf('window.PondCharts=') + 'window.PondCharts='.length)
+  const plots = JSON.parse(body.slice(0, body.lastIndexOf('}') + 1)) as Record<
+    string,
+    { type: string }
+  >
+  return Object.fromEntries(
+    boardChartKinds().map((kind) => {
+      const plot = plots[kind]
+      if (!plot) throw new Error(`pond-charts.js has no plot for PondChart kind \`${kind}\``)
+      return [kind, plot.type]
+    })
+  )
 }

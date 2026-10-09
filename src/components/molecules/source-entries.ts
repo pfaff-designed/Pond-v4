@@ -12,7 +12,7 @@
  *
  * Every count and word here comes from the owner that already derives it, never a
  * typed literal: `all charts · 13` is `CHART_KINDS.length` (`aggregate.ts`, which
- * `source-entries.test.ts` holds equal to `pond-charts.js`'s thirteen keys); a
+ * `source-entries.test.ts` holds equal to `PondChart.dc.html`'s `kind` enum); a
  * field's word is `FIELD_WORD` over `PROPERTY_TYPES`; `18 records` / `412 rows`
  * is `plural` over the database's own `recordsAre`. The marks are `ICON`, the
  * board's `I` table (`slash-entries.ts`).

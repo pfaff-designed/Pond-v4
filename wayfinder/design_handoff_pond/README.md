@@ -62,7 +62,7 @@ Two exceptions:
   - The cover, and a new pond's empty states.
   - The twelve templates.
   - The machine surface, settings, mobile and dark.
-- **`Pond 06.01`–`06.22`:** one storyboard per file (6a–6w). Frames read left to right. Under each frame is what happens and the rule it commits to.
+- **`Pond 06.01`–`06.25`:** one storyboard per file (6a–6z). Frames read left to right. Under each frame is what happens and the rule it commits to.
 
   | File  | Storyboard               |
   | ----- | ------------------------ |
@@ -88,8 +88,11 @@ Two exceptions:
   | 06.20 | agents and skills        |
   | 06.21 | tasks                    |
   | 06.22 | visibility and presence  |
+  | 06.23 | blocks side by side      |
+  | 06.24 | page icon and colour     |
+  | 06.25 | import a page            |
 
-- **`Pond 07.01`–`07.10` Features:** the storyboards regrouped as ten features (7a–7j), one spec per file: what it does, its states and rules from the storyboard captions, and key frames linked back. Ask and answer, diffs and change log, capture uploads and filing, pages and nesting, blocks, templates, writing and freeform, ponds and sharing, agents skills and tools, tasks.
+- **`Pond 07.01`–`07.11` Features:** the storyboards regrouped as eleven features (7a–7k), one spec per file: what it does, its states and rules from the storyboard captions, and key frames linked back. Ask and answer, diffs and change log, capture uploads and filing, pages and nesting, blocks, templates, writing and freeform, ponds and sharing, agents skills and tools, tasks, html into a page.
 - **`Pond 08 Edges`:**
   - 8a–8b: deletion tombstones and frozen links.
   - 8d reminders
