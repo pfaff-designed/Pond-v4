@@ -15,8 +15,8 @@
  * from a jest process. Where the committed copy could trail the design project,
  * that is stated rather than hidden: as of 2026-10-04 the only drift is in the
  * `Pond 06.xx` storyboards, which gained a nav entry for the new `Pond 06.21 Tasks`
- * board. `Pond 03 Concepts.dc.html`, `PondPicker.dc.html` and `pond-charts.js` —
- * every file these suites read — are byte-identical in both, verified by diff.
+ * board. `Pond 03 Concepts.dc.html`, `PondPicker.dc.html` and `pond-charts.js` were
+ * byte-identical in both, verified by diff. Re-sync with `scripts/sync-handoff.sh`.
  *
  * This mirrors `scripts/board-values/source.mts`, which does the same job for the
  * extractor. Two copies rather than one shared module because that one is an `.mts`
@@ -58,9 +58,8 @@ export function readHandoff(file: string): string {
 }
 
 /**
- * The chart kinds, in board order: `PondChart.dc.html`'s `kind` enum (ADR 0011).
- * Not the keys of `pond-charts.js`, which also holds storyboard plots — `runs`
- * (6z's weekly distance) is a second `bar`, not a fourteenth kind.
+ * The chart kinds, in board order: `PondChart.dc.html`'s `kind` enum. Not the
+ * keys of `pond-charts.js`, which also holds storyboard plots that reuse a kind.
  */
 export function boardChartKinds(): string[] {
   const html = readHandoff('PondChart.dc.html').replaceAll('&quot;', '"')
@@ -77,5 +76,11 @@ export function boardChartTypeTags(): Record<string, string> {
     string,
     { type: string }
   >
-  return Object.fromEntries(boardChartKinds().map((kind) => [kind, plots[kind].type]))
+  return Object.fromEntries(
+    boardChartKinds().map((kind) => {
+      const plot = plots[kind]
+      if (!plot) throw new Error(`pond-charts.js has no plot for PondChart kind \`${kind}\``)
+      return [kind, plot.type]
+    })
+  )
 }

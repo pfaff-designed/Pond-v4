@@ -4,7 +4,7 @@
  * The three states are read off `PondPicker.dc.html`'s own `source` branch at test
  * time (never hand-copied), and every count or word the picker renders is checked
  * against the owner that already derives it: `CHART_KINDS` for `all charts · 13`
- * (cross-checked against `pond-charts.js`'s thirteen keys), `PROPERTY_TYPES` for the
+ * (cross-checked against `PondChart.dc.html`'s `kind` enum), `PROPERTY_TYPES` for the
  * field words, `Pond 03` 3a for the vocabulary.
  */
 
@@ -156,7 +156,7 @@ describe('type — pick a chart type', () => {
     ])
   })
 
-  it('`all charts · 13` is derived from CHART_KINDS, which is exactly what pond-charts.js exports — never a typed number', () => {
+  it('`all charts · 13` is derived from CHART_KINDS, which is exactly PondChart’s `kind` enum — never a typed number', () => {
     const kinds = boardChartKinds()
     expect(kinds).toHaveLength(13)
     expect([...CHART_KINDS]).toEqual(kinds)

@@ -84,7 +84,7 @@ beforeEach(() => {
 // ── The pure half ────────────────────────────────────────────────────────────────
 
 describe('chart/chrome — the board’s words, with one owner', () => {
-  it('CHART_TYPE_TAG is pond-charts.js’s `type` for every one of the thirteen kinds', () => {
+  it('CHART_TYPE_TAG is pond-charts.js’s `type` for every one of PondChart’s thirteen kinds', () => {
     expect(CHART_TYPE_TAG).toEqual(boardChartTypeTags())
     expect(Object.keys(CHART_TYPE_TAG)).toEqual([...CHART_KINDS])
   })
