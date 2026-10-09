@@ -50,7 +50,7 @@ const inkTheme: Decorator = (Story) => (
 
 /** `PondAtom.dc.html` prose: serif 200, 17.5px (17 under 48rem), line-height 1.6, full ink. */
 async function assertProseType(canvasElement: HTMLElement, ink: string) {
-  const paragraph = await within(canvasElement).findByText(/light cardio/, { selector: 'p' })
+  const paragraph = await within(canvasElement).findByText(/^Start with/, { selector: 'p' })
   const ps = getComputedStyle(paragraph)
   const size = window.matchMedia('(width < 48rem)').matches ? 17 : 17.5
   await expect(ps.fontFamily).toContain('PP Editorial New')

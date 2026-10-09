@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import type { EditorView } from '@tiptap/pm/view'
@@ -39,6 +39,17 @@ const handleClick = (view: EditorView, _pos: number, event: MouseEvent): boolean
   return true
 }
 
+const editorProps = {
+  attributes: {
+    class: TEXT_PROSE_CLASS,
+    role: 'textbox',
+    'aria-multiline': 'true',
+    'aria-label': 'text block',
+  },
+  handleKeyDown,
+  handleClick,
+}
+
 /**
  * The text block, edited in place: its markdown `content` as a typeset document.
  * Until the editor exists it draws the static render of the same document, so the
@@ -50,7 +61,17 @@ const handleClick = (view: EditorView, _pos: number, event: MouseEvent): boolean
  * the document without writing back and without entering that history.
  */
 const TextEditor = ({ data, onChange }: Pick<ModuleViewProps<TextBlock>, 'data' | 'onChange'>) => {
+  // Options must be the same values on every render: any change makes `useEditor`
+  // re-apply them, which redraws the document over keystrokes not yet read.
+  const [opening] = useState(() => ({
+    content: parseMarkdown(data.content).toJSON(),
+    autofocus: isUnwritten(data.content) ? ('end' as const) : false,
+  }))
   const written = useRef(data.content)
+  // What this editor wrote that the page hasn't rendered back yet. The page can
+  // render an earlier write after a later one is typed; that value is an echo,
+  // not a change from outside, and must not rewind the document.
+  const unechoed = useRef<string[]>([])
   const latest = useRef({ data, onChange })
   useEffect(() => {
     latest.current = { data, onChange }
@@ -58,29 +79,24 @@ const TextEditor = ({ data, onChange }: Pick<ModuleViewProps<TextBlock>, 'data' 
 
   const editor = useEditor({
     extensions,
-    content: parseMarkdown(data.content).toJSON(),
+    content: opening.content,
     immediatelyRender: false,
-    autofocus: isUnwritten(data.content) ? 'end' : false,
-    editorProps: {
-      attributes: {
-        class: TEXT_PROSE_CLASS,
-        role: 'textbox',
-        'aria-multiline': 'true',
-        'aria-label': 'text block',
-      },
-      handleKeyDown,
-      handleClick,
-    },
+    autofocus: opening.autofocus,
+    editorProps,
     onUpdate: ({ editor: updated }) => {
       const content = serializeMarkdown(updated.state.doc)
       if (content === written.current) return
       written.current = content
+      unechoed.current.push(content)
       latest.current.onChange?.({ ...latest.current.data, content })
     },
   })
 
   useEffect(() => {
-    if (!editor || data.content === written.current) return
+    const echo = unechoed.current.indexOf(data.content)
+    if (echo >= 0) unechoed.current.splice(0, echo + 1)
+    if (!editor || echo >= 0 || data.content === written.current) return
+    unechoed.current = []
     written.current = data.content
     editor
       .chain()

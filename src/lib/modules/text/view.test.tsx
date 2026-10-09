@@ -161,6 +161,47 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).toHaveBeenLastCalledWith({ ...sample, content: `${sample.content} Go.` })
   })
 
+  it('a save re-rendering the page never resets the editor, so typing in flight is kept', async () => {
+    const handleChange = jest.fn()
+    render(
+      <StatefulText
+        data={{ id: 't', type: 'text', content: HEADING_PREFIX }}
+        onChange={handleChange}
+      />
+    )
+    const editor = editorOf(await findField())
+    const setOptions = jest.spyOn(editor, 'setOptions')
+    for (const letter of 'warm-up') {
+      act(() => {
+        editor.commands.insertContent(letter)
+      })
+    }
+    expect(handleChange).toHaveBeenLastCalledWith({ id: 't', type: 'text', content: '## warm-up' })
+    expect(setOptions).not.toHaveBeenCalled()
+  })
+
+  it('the page catching up a keystroke late never rewinds the editor', async () => {
+    const handleChange = jest.fn()
+    const at = (content: string): TextBlock => ({ id: 't', type: 'text', content })
+    const { rerender } = render(
+      <TextView data={at(HEADING_PREFIX)} editable onChange={handleChange} />
+    )
+    const editor = editorOf(await findField())
+    act(() => {
+      editor.commands.insertContent('w')
+    })
+    act(() => {
+      editor.commands.insertContent('a')
+    })
+    rerender(<TextView data={at('## w')} editable onChange={handleChange} />)
+    expect(editor.getText()).toBe('wa')
+    rerender(<TextView data={at('## wa')} editable onChange={handleChange} />)
+    expect(editor.getText()).toBe('wa')
+    rerender(<TextView data={at('Rest **day**.')} editable onChange={handleChange} />)
+    expect(editor.getText()).toBe('Rest day.')
+    expect(handleChange).toHaveBeenCalledTimes(2)
+  })
+
   it('opening a block never writes it — even content not in the serializer’s normal form', async () => {
     const handleChange = jest.fn()
     render(

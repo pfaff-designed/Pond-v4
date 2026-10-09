@@ -235,13 +235,17 @@ describe('⌘/ opens the same menu on a focused block', () => {
   const setPlatform = (value: string) =>
     Object.defineProperty(window.navigator, 'platform', { value, configurable: true })
 
+  /** A text block is focused by putting the caret in its text. */
+  const textBlockIn = (blockId: string) =>
+    within(document.getElementById(`block-${blockId}`)!).findByRole('textbox', {
+      name: 'text block',
+    })
+
   it('Ctrl+/ off Apple; Escape then hands focus back to where the person was in the block', async () => {
     setPlatform('Linux x86_64')
     const user = userEvent.setup()
     renderCanvas([heading, list])
-    const inside = within(document.getElementById('block-b-list')!).getByRole('button', {
-      name: 'Edit text block',
-    })
+    const inside = await textBlockIn('b-list')
     inside.focus()
     await user.keyboard('{Control>}/{/Control}')
 
@@ -258,9 +262,7 @@ describe('⌘/ opens the same menu on a focused block', () => {
     setPlatform('Linux x86_64')
     const user = userEvent.setup()
     renderCanvas([heading, list])
-    const inside = within(document.getElementById('block-b-list')!).getByRole('button', {
-      name: 'Edit text block',
-    })
+    const inside = await textBlockIn('b-list')
     inside.focus()
     await user.keyboard('{Control>}/{/Control}')
     await screen.findByRole('menu', { name: /block menu/i })
@@ -274,9 +276,8 @@ describe('⌘/ opens the same menu on a focused block', () => {
     setPlatform('MacIntel')
     const user = userEvent.setup()
     renderCanvas([list])
-    within(document.getElementById('block-b-list')!)
-      .getByRole('button', { name: 'Edit text block' })
-      .focus()
+    const inside = await textBlockIn('b-list')
+    inside.focus()
     await user.keyboard('{Control>}/{/Control}')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     await user.keyboard('{Meta>}/{/Meta}')
