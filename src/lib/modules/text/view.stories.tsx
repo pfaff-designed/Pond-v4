@@ -100,13 +100,20 @@ function StatefulText({ data }: { data: TextBlock }) {
 const savedOf = (canvasElement: HTMLElement) =>
   canvasElement.querySelector<HTMLElement>('[data-saved]')?.dataset.saved
 
+/**
+ * The editor is a lazy chunk with the static prose standing in until it loads; under
+ * a full parallel run that load alone can outlast `findByRole`'s default 1s.
+ */
+const findEditor = (canvas: ReturnType<typeof within>): Promise<HTMLElement> =>
+  canvas.findByRole('textbox', { name: 'text block' }, { timeout: 5000 })
+
 /** Editable: the prose IS the field — typeset while writing, written back as markdown. */
 export const EditInPlace: Story = {
   args: { data: sample },
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    const field = await findEditor(canvas)
     await expect(field).toHaveAttribute('contenteditable', 'true')
     await expect(canvas.queryByRole('button', { name: 'Edit text block' })).toBeNull()
     await expect(within(field).getByRole('heading', { level: 2, name: 'Warm-up' })).toBeVisible()
@@ -131,7 +138,7 @@ export const LinkInEditableBlock: Story = {
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    const field = await findEditor(canvas)
     const link = within(field).getByRole('link', { name: 'the plans' })
     await expect(link).toHaveAttribute('href', 'https://example.com/plans')
     await expect(link).toHaveAttribute('target', '_blank')
@@ -166,7 +173,7 @@ export const EmptyStartsEditing: Story = {
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    const field = await findEditor(canvas)
     await waitFor(() => expect(field).toHaveFocus())
     const line = field.querySelector<HTMLElement>('p')!
     await expect(line).toHaveAttribute('data-placeholder', 'write something')
@@ -190,7 +197,7 @@ export const HeadingStartsEditing: Story = {
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    const field = await findEditor(canvas)
     await waitFor(() => expect(field).toHaveFocus())
     await expect(field.firstElementChild?.tagName).toBe('H2')
     await expect(field.textContent).toBe('')
