@@ -36,7 +36,7 @@ import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { Block } from '@/lib/documents/types'
 import type { PropertySchema } from '@/lib/properties/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
-import { readHandoff } from './helpers/handoff'
+import { boardChartTypeTags } from './helpers/handoff'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -81,22 +81,11 @@ beforeEach(() => {
   collection.addRow.mockClear()
 })
 
-/** `pond-charts.js`'s thirteen `type` strings — what `PondChart.dc.html` renders as the tag. */
-function boardTypeTags(): Record<string, string> {
-  const js = readHandoff('pond-charts.js')
-  const body = js.slice(js.indexOf('window.PondCharts=') + 'window.PondCharts='.length)
-  const charts = JSON.parse(body.slice(0, body.lastIndexOf('}') + 1)) as Record<
-    string,
-    { type: string }
-  >
-  return Object.fromEntries(Object.entries(charts).map(([k, v]) => [k, v.type]))
-}
-
 // ── The pure half ────────────────────────────────────────────────────────────────
 
 describe('chart/chrome — the board’s words, with one owner', () => {
   it('CHART_TYPE_TAG is pond-charts.js’s `type` for every one of the thirteen kinds', () => {
-    expect(CHART_TYPE_TAG).toEqual(boardTypeTags())
+    expect(CHART_TYPE_TAG).toEqual(boardChartTypeTags())
     expect(Object.keys(CHART_TYPE_TAG)).toEqual([...CHART_KINDS])
   })
 

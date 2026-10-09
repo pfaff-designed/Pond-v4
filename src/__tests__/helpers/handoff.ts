@@ -56,3 +56,26 @@ export function readHandoff(file: string): string {
     )
   }
 }
+
+/**
+ * The chart kinds, in board order: `PondChart.dc.html`'s `kind` enum (ADR 0011).
+ * Not the keys of `pond-charts.js`, which also holds storyboard plots — `runs`
+ * (6z's weekly distance) is a second `bar`, not a fourteenth kind.
+ */
+export function boardChartKinds(): string[] {
+  const html = readHandoff('PondChart.dc.html').replaceAll('&quot;', '"')
+  const match = html.match(/"kind":\{"editor":"enum","options":\[([^\]]*)\]/)
+  if (!match) throw new Error('PondChart.dc.html has no `kind` enum')
+  return JSON.parse(`[${match[1]}]`) as string[]
+}
+
+/** Each chart kind's `type` tag from `pond-charts.js`, keyed by kind. */
+export function boardChartTypeTags(): Record<string, string> {
+  const js = readHandoff('pond-charts.js')
+  const body = js.slice(js.indexOf('window.PondCharts=') + 'window.PondCharts='.length)
+  const plots = JSON.parse(body.slice(0, body.lastIndexOf('}') + 1)) as Record<
+    string,
+    { type: string }
+  >
+  return Object.fromEntries(boardChartKinds().map((kind) => [kind, plots[kind].type]))
+}

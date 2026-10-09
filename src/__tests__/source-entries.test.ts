@@ -26,7 +26,7 @@ import {
 import { ICON } from '@/components/molecules/slash-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
 import { PROPERTY_TYPES } from '@/lib/properties/schema'
-import { readHandoff } from './helpers/handoff'
+import { boardChartKinds, readHandoff } from './helpers/handoff'
 
 /** `Pond 03` 3a — the 18px/500 term column, straight off the board. */
 function glossaryTerms(): string[] {
@@ -57,14 +57,6 @@ const boardFeet = (seg: string) =>
   )
 const boardSeg = (seg: string) =>
   [...seg.match(/opts: \[(.+?)\] \}\]/)![1].matchAll(/\['([^']+)'/g)].map((m) => m[1])
-
-/** The thirteen kinds `pond-charts.js` exports, off the handoff. */
-function boardChartKinds(): string[] {
-  const js = readHandoff('pond-charts.js')
-  const body = js.slice(js.indexOf('window.PondCharts=') + 'window.PondCharts='.length)
-  return Object.keys(JSON.parse(body.slice(0, body.lastIndexOf('}') + 1)))
-}
-
 const CALORIES: SourceField[] = [
   { name: 'day', type: 'date' },
   { name: 'kcal', type: 'number' },
