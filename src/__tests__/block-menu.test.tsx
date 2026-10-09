@@ -1,8 +1,9 @@
 /**
- * The block menu on the page (boards 6j frame 2 and 6x frame 2): the handle — or
- * ⌘/ (Ctrl+/ off Apple) on a focused block — opens `PondMenu` kind `block`,
- * which offers the conversions that keep the content, `copy link to block` and
- * `delete`. While it is open the block wears the open ring. Every conversion is
+ * The block menu on the page: the handle — or ⌘/ (Ctrl+/ off Apple) on a
+ * focused block — opens `PondMenu` kind `block`, which offers the conversions
+ * that keep the content, `copy link to block` and `delete`. While it is open the
+ * block wears the open ring; closing it puts focus back where the person was —
+ * on the handle, or inside the block for ⌘/. Every conversion is
  * the person's own edit: it applies in place at once, with an undo. Turning a
  * list into a table writes a real database (mocked here; the pure list helpers
  * stay real so the preview count is genuine). Arriving at a block's link
@@ -66,9 +67,16 @@ const table: Block = {
   rows: [{ id: 'r1', cells: ['Saw', 'Wall'] }],
 }
 
-const OPEN_RING = 'shadow-[0_0_0_2px_rgba(27,29,20,.18)]'
+/** Ink at .18 in light, paper at .18 in dark — one value that flips with the theme. */
+const OPEN_RING = '[box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
 
-function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock }) {
+interface HarnessProps {
+  initial: Block[]
+  onChange: jest.Mock
+  onMoveIntoNewPage?: (block: Block) => void
+}
+
+function Harness({ initial, onChange, onMoveIntoNewPage }: HarnessProps) {
   const [blocks, setBlocks] = React.useState(initial)
   return (
     <BlockCanvas
@@ -80,17 +88,18 @@ function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock 
         setBlocks(next)
       }}
       onUndoRemove={() => {}}
+      onMoveIntoNewPage={onMoveIntoNewPage}
     />
   )
 }
 
-function renderCanvas(initial: Block[]) {
+function renderCanvas(initial: Block[], onMoveIntoNewPage?: (block: Block) => void) {
   const onChange = jest.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <Harness initial={initial} onChange={onChange} />
+        <Harness initial={initial} onChange={onChange} onMoveIntoNewPage={onMoveIntoNewPage} />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
@@ -148,13 +157,63 @@ describe('the block menu opens from the handle', () => {
     expect(root.className).not.toContain(OPEN_RING)
 
     await user.click(handleOf('b-list'))
+    await screen.findByRole('menu', { name: /block menu/i })
     expect(root.className).toContain(OPEN_RING)
     expect(root.className).toContain('rounded-[20px]')
+    expect(root.className).not.toMatch(/dark:/)
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
     expect(root.className).not.toContain(OPEN_RING)
-    expect(handleOf('b-list')).toHaveFocus()
+  })
+
+  it('opened from the handle, closing hands focus back to the handle', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    handleOf('b-list').focus()
+    await user.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    await waitFor(() => expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus())
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(handleOf('b-list')).toHaveFocus())
+  })
+
+  it('a drag from the handle closes the menu its press opened', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    await user.click(handleOf('b-list'))
+    await screen.findByRole('menu', { name: /block menu/i })
+    fireEvent.dragStart(document.getElementById('block-b-list')!)
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
+
+  it('offers `move into a new page` only where the canvas can do it, and hands it the block', async () => {
+    const user = userEvent.setup()
+    const onMoveIntoNewPage = jest.fn()
+    renderCanvas([heading, list], onMoveIntoNewPage)
+    await user.click(handleOf('b-list'))
+    const block = within(await screen.findByRole('menu', { name: /block menu/i })).getByRole(
+      'group',
+      { name: 'block' }
+    )
+    expect(
+      within(block)
+        .getAllByRole('menuitem')
+        .map((i) => i.textContent)
+    ).toEqual(['move into a new page', 'copy link to block', 'delete'])
+    await user.click(within(block).getByRole('menuitem', { name: 'move into a new page' }))
+    expect(onMoveIntoNewPage).toHaveBeenCalledWith(list)
+  })
+
+  it('⌥↓ on the focused handle moves the block, and opens no menu', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+    handleOf('b-heading').focus()
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-list', 'b-heading'])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('deletes the block from the last row of `block`', async () => {
@@ -176,7 +235,7 @@ describe('⌘/ opens the same menu on a focused block', () => {
   const setPlatform = (value: string) =>
     Object.defineProperty(window.navigator, 'platform', { value, configurable: true })
 
-  it('Ctrl+/ off Apple; Escape then hands focus to the handle', async () => {
+  it('Ctrl+/ off Apple; Escape then hands focus back to where the person was in the block', async () => {
     setPlatform('Linux x86_64')
     const user = userEvent.setup()
     renderCanvas([heading, list])
@@ -187,10 +246,28 @@ describe('⌘/ opens the same menu on a focused block', () => {
     await user.keyboard('{Control>}/{/Control}')
 
     const menu = await screen.findByRole('menu', { name: /block menu/i })
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true))
+    await user.keyboard('{ArrowDown}')
     expect(within(menu).getAllByRole('menuitem')[0]).toHaveFocus()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
-    expect(handleOf('b-list')).toHaveFocus()
+    await waitFor(() => expect(inside).toHaveFocus())
+  })
+
+  it('opened with the chord, a letter and Enter pick an item without leaving the keyboard', async () => {
+    setPlatform('Linux x86_64')
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+    const inside = within(document.getElementById('block-b-list')!).getByRole('button', {
+      name: 'Edit text block',
+    })
+    inside.focus()
+    await user.keyboard('{Control>}/{/Control}')
+    await screen.findByRole('menu', { name: /block menu/i })
+    await user.keyboard('t')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(mockCreateDatabaseFromList).toHaveBeenCalledTimes(1))
   })
 
   it('⌘/ on a Mac — and Ctrl+/ there does nothing', async () => {

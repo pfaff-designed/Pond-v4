@@ -341,7 +341,7 @@ describe('rendered machine surfaces carry no wide tracking', () => {
   })
 
   it('the block menu — its mono values run tight; its head is the sans UPPERCASE eyebrow', () => {
-    const { container } = render(
+    render(
       <PondMenu
         kind="block"
         label="block menu"
@@ -350,15 +350,23 @@ describe('rendered machine surfaces carry no wide tracking', () => {
             id: 'turn-into',
             label: 'turn into',
             heading: true,
-            items: [{ id: 'table', label: 'table', value: '3 rows · 2 columns' }],
+            items: [{ id: 'table', label: 'table', value: '3 rows · 2 columns', action: 'table' }],
           },
-          { id: 'block', label: 'block', items: [{ id: 'delete', label: 'delete' }] },
+          {
+            id: 'block',
+            label: 'block',
+            items: [{ id: 'delete', label: 'delete', action: 'delete' }],
+          },
         ]}
+        open
+        onOpenChange={jest.fn()}
         onSelect={jest.fn()}
-        onClose={jest.fn()}
+        trigger={<button type="button">handle</button>}
+        placement={{ anchor: { current: null }, align: 'start', top: 40, alignOffset: -8 }}
       />
     )
-    expect(wideTrackingOnMono(container)).toEqual([])
+    // The popup is portaled to the body.
+    expect(wideTrackingOnMono(document.body)).toEqual([])
     const head = screen.getByText('turn into')
     expect(head.className).toMatch(/tracking-\[\.1em\]/)
     expect(head.className).toMatch(/\buppercase\b/)

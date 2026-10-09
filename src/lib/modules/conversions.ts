@@ -1,6 +1,6 @@
 /**
- * The block menu's `turn into` group (board 6j frame 2: "the conversions that
- * keep the content") — pure, no React, no writes until a table is asked for.
+ * The block menu's `turn into` targets — pure, no React, no writes until a
+ * table is asked for.
  *
  * Three of the targets are the one line shape drawn three ways:
  *
@@ -11,12 +11,13 @@
  * so moving between them maps lines to items and back. The block keeps its id
  * (a copied link to it still lands) and its label. Checked state is the one
  * thing a list or text has nowhere to put, so it is dropped going there and only
- * there; list ⇄ checklist otherwise keeps every item byte-for-byte.
+ * there; list ⇄ checklist otherwise keeps every item byte-for-byte. A text line
+ * becomes an item as the words it shows: its list marker, task mark, heading
+ * `#`s and emphasis marks go.
  *
- * The fourth, `table`, is a view of a new database (PROJECT_RULES: "a table is
- * always a view of a database"), so its `apply` delegates to the list → database
- * writer in `list-to-table.ts`, which reads a text block of list lines. A `todo`
- * list is handed over as exactly those lines.
+ * The fourth, `table`, is a view of a new database, so its `apply` delegates to
+ * the list → database writer in `list-to-table.ts`, which reads a text block of
+ * list lines. A `todo` list is handed over as exactly those lines.
  *
  * Only targets that keep the content are offered: a checklist has no table (its
  * checked state has no column to go to), prose has no table (its lines are not a
@@ -29,6 +30,7 @@ import {
   LIST_LINE,
   createDatabaseFromList,
   listItems,
+  plainLine,
   previewListTable,
   type DatabaseFromList,
 } from '@/lib/pages/list-to-table'
@@ -36,7 +38,7 @@ import type { Block } from './content'
 import type { TextBlock } from './text/schema'
 import { todoMarker, type TodoBlock, type TodoItem } from './todo/schema'
 
-/** The menu's order (`PondMenu.dc.html` kind `block`). */
+/** In the menu's order. */
 export const CONVERSION_TARGETS = ['table', 'list', 'checklist', 'text'] as const
 export type ConversionTarget = (typeof CONVERSION_TARGETS)[number]
 
@@ -67,8 +69,8 @@ export interface TableConversion {
 
 export type Conversion = LineConversion | TableConversion
 
-/** A `[ ]` / `[x]` task line in markdown. */
-const CHECK_LINE = /^\s*(?:[-*+•]|\d+[.)])\s+\[([ xX])\]\s+(.*\S)\s*$/
+/** The `[ ]` / `[x]` a list line's item may open with. */
+const TASK_MARK = /^\[([ xX])\]\s+(.*\S)$/
 
 interface Line {
   label: string
@@ -81,16 +83,20 @@ const kindOf = (block: Block): LineTarget | null => {
   return null
 }
 
+const lineOf = (line: string): Line => {
+  const item = LIST_LINE.exec(line)?.[1]
+  const task = item === undefined ? null : TASK_MARK.exec(item)
+  return {
+    label: plainLine(task ? task[2] : (item ?? line)),
+    checked: task !== null && task[1] !== ' ',
+  }
+}
+
 const linesOf = (content: string): Line[] =>
   content
     .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => {
-      const task = CHECK_LINE.exec(line)
-      if (task) return { label: task[2], checked: task[1] !== ' ' }
-      const item = LIST_LINE.exec(line)
-      return { label: item ? item[1] : line.trim(), checked: false }
-    })
+    .map(lineOf)
+    .filter((line) => line.label !== '')
 
 /** One list line per item; the item's meta rides along as the todo serializer writes it. */
 const listText = (items: readonly TodoItem[]) =>
@@ -127,7 +133,7 @@ const toMarker = (block: TodoBlock, marker: 'dot' | 'check'): TodoBlock =>
 /** The list as the database writer reads it: a text block of list lines, or null when it is not one. */
 const tableSource = (block: Block): TextBlock | null => {
   if (block.type === 'text') return listItems(block) ? block : null
-  if (block.type !== 'todo' || kindOf(block) !== 'list' || block.items.length === 0) return null
+  if (block.type !== 'todo' || kindOf(block) !== 'list') return null
   return { id: block.id, type: 'text', content: listText(block.items) }
 }
 
@@ -168,6 +174,7 @@ export const conversionsFor = (
   const kind = kindOf(block)
   if (kind === null || (block.type !== 'text' && block.type !== 'todo')) return []
   if (block.type === 'text' && linesOf(block.content).length === 0) return []
+  if (block.type === 'todo' && block.items.length === 0) return []
 
   return CONVERSION_TARGETS.flatMap((target): Conversion[] => {
     if (target === kind) return []

@@ -102,7 +102,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
     // the keydown goes to the wrapping block div.
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     // The first handle is associated with b1
-    const blockDiv = handles[0].closest('[id]')
+    const blockDiv = handles[0].closest('[id^="block-"]')
     expect(blockDiv).toBeTruthy()
     fireEvent.keyDown(blockDiv!, { key: 'ArrowDown', altKey: true })
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
@@ -120,7 +120,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     // The second handle is for b2
-    const blockDiv = handles[1].closest('[id]')
+    const blockDiv = handles[1].closest('[id^="block-"]')
     expect(blockDiv).toBeTruthy()
     fireEvent.keyDown(blockDiv!, { key: 'ArrowUp', altKey: true })
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
@@ -137,7 +137,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
-    const blockDiv = handles[0].closest('[id]')
+    const blockDiv = handles[0].closest('[id^="block-"]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowUp', altKey: true })
     // No commit should be made — order didn't change
     await new Promise((r) => setTimeout(r, 100))
@@ -151,7 +151,7 @@ describe('Keyboard reorder (⌥↑ / ⌥↓)', () => {
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
-    const blockDiv = handles[1].closest('[id]')
+    const blockDiv = handles[1].closest('[id^="block-"]')
     fireEvent.keyDown(blockDiv!, { key: 'ArrowDown', altKey: true })
     await new Promise((r) => setTimeout(r, 100))
     expect(mockCommitBlocks).not.toHaveBeenCalled()

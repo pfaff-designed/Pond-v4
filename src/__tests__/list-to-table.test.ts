@@ -17,6 +17,7 @@ import {
   previewListTable,
   inferListDatabaseTitle,
   createDatabaseFromList,
+  plainLine,
 } from '@/lib/pages/list-to-table'
 import {
   inferColumnType,
@@ -175,6 +176,44 @@ describe('inferListDatabaseTitle', () => {
 
   it('never returns an empty title', () => {
     expect(inferListDatabaseTitle([ingredients], 0, '')).toBe('Untitled')
+  })
+
+  it('a list’s own label names its database, over the heading above it', () => {
+    const blocks = [
+      { id: 'h', type: 'text', content: '## ingredients' },
+      { ...ingredients, label: 'dough' },
+    ]
+    expect(inferListDatabaseTitle(blocks as never, 1, 'sourdough, 78%')).toBe('dough')
+    const todo = { id: 't', type: 'todo', label: ' shopping ', items: [] }
+    expect(inferListDatabaseTitle([todo] as never, 0, 'week')).toBe('shopping')
+  })
+
+  it('reads the heading as plain text: emphasis goes, an underscore inside a word stays', () => {
+    const above = (content: string) => [{ id: 'h', type: 'text', content }, ingredients]
+    expect(inferListDatabaseTitle(above('## **sourdough** _starter_') as never, 1, 'p')).toBe(
+      'sourdough starter'
+    )
+    expect(inferListDatabaseTitle(above('# snake_case_list') as never, 1, 'p')).toBe(
+      'snake_case_list'
+    )
+  })
+})
+
+// ── plainLine — one markdown line as the words it shows ─────────────────────
+
+describe('plainLine', () => {
+  it('drops a heading’s #s', () => {
+    expect(plainLine('### Kitchen')).toBe('Kitchen')
+  })
+
+  it('drops paired emphasis and code marks', () => {
+    expect(plainLine('**order** the *tiles* and `grout`')).toBe('order the tiles and grout')
+    expect(plainLine('check the _grout_ __colour__')).toBe('check the grout colour')
+  })
+
+  it('keeps marks that are not emphasis: an underscore inside a word, a lone star', () => {
+    expect(plainLine('rename snake_case_name')).toBe('rename snake_case_name')
+    expect(plainLine('2 * 3 = 6')).toBe('2 * 3 = 6')
   })
 })
 

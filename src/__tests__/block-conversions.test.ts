@@ -1,6 +1,5 @@
 /**
- * The block menu's `turn into` group (board 6j frame 2: "the conversions that
- * keep the content"). `conversionsFor` is pure: it lists the targets a block can
+ * The block menu's `turn into` group. `conversionsFor` is pure: it lists the targets a block can
  * become without losing what it says, in the menu's order, and each target's
  * `apply` makes the new block. Table delegates to the list → database writer,
  * which is stood in for here so the delegation itself is what is asserted.
@@ -90,8 +89,9 @@ describe('which targets keep the content', () => {
     expect(targets(prose)).toEqual(['list', 'checklist'])
   })
 
-  it('a list with no items offers no table — there would be no rows to keep', () => {
-    expect(targets({ ...list, items: [] })).toEqual(['checklist', 'text'])
+  it('an empty list or checklist has nothing to keep, so it offers nothing', () => {
+    expect(targets({ ...list, items: [] })).toEqual([])
+    expect(targets({ ...checklist, items: [] })).toEqual([])
   })
 
   it('an empty text block has nothing to keep, so it offers nothing', () => {
@@ -191,6 +191,22 @@ describe('from text', () => {
     const tasks: TextBlock = { id: 'b-t', type: 'text', content: '- [x] sand' }
     const next = pick(tasks, 'list').apply() as TodoBlock
     expect(next.items).toEqual([{ id: 'id-1', label: 'sand', checked: false }])
+  })
+
+  it('an item takes its line’s plain text: a heading’s #s and emphasis marks go', () => {
+    const marked: TextBlock = {
+      id: 'b-m',
+      type: 'text',
+      content:
+        '## Kitchen\n- **order** tiles\n- [ ] pick the _grout_ colour\n- rename snake_case_file',
+    }
+    const next = pick(marked, 'checklist').apply() as TodoBlock
+    expect(next.items.map((item) => item.label)).toEqual([
+      'Kitchen',
+      'order tiles',
+      'pick the grout colour',
+      'rename snake_case_file',
+    ])
   })
 
   it('a markdown list survives text → list → text byte-for-byte', () => {

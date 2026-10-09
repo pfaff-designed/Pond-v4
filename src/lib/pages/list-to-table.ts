@@ -181,21 +181,30 @@ export function previewListTable(block: Block): { rows: number; columns: number 
   return { rows: table.rows.length, columns: table.columns.length }
 }
 
+const HEADING_MARK = /^\s*#{1,6}\s+/
+/** `**x**`, `*x*`, `` `x` `` — paired, hugging their text. */
+const STAR_OR_CODE = /(\*\*|\*|`)(\S|\S.*?\S)\1/g
+/** `__x__`, `_x_` — only at word edges, so `snake_case` keeps its underscores. */
+const UNDERSCORE = /(^|\W)(__|_)(\S|\S.*?\S)\2(?=\W|$)/g
+
+/** One markdown line as the words it shows: no heading `#`s, no emphasis or code marks. */
+export const plainLine = (line: string): string =>
+  line.replace(HEADING_MARK, '').replace(STAR_OR_CODE, '$2').replace(UNDERSCORE, '$1$3').trim()
+
 /**
- * Name the database after the one-line heading sitting directly above the list
- * (frame 3's "ingredients"), else after the host page. A heading is a single
- * short text line (markdown `#`s and emphasis stripped) that is not itself a
- * list line. Never empty.
+ * Name the database after the list's own label, else the one-line heading
+ * sitting directly above it, else the host page. A heading is a single short
+ * text line that is not itself a list line, read as plain text. Never empty.
  */
 export function inferListDatabaseTitle(blocks: Block[], index: number, pageTitle: string): string {
+  const list = blocks[index]
+  const label = list?.type === 'text' || list?.type === 'todo' ? list.label?.trim() : ''
+  if (label) return label
   const above = index > 0 ? blocks[index - 1] : undefined
   if (above && above.type === 'text') {
     const lines = above.content.split('\n').filter((l) => l.trim() !== '')
     if (lines.length === 1 && !LIST_LINE.test(lines[0])) {
-      const heading = lines[0]
-        .replace(/^\s*#{1,6}\s+/, '')
-        .replace(/[*_`]/g, '')
-        .trim()
+      const heading = plainLine(lines[0])
       if (heading !== '' && heading.length <= 60) return heading
     }
   }

@@ -18,6 +18,18 @@ if (typeof window !== 'undefined' && typeof window.ResizeObserver === 'undefined
   } as unknown as typeof ResizeObserver
 }
 
+// jsdom's selector engine (nwsapi) resolves the top-layer pseudo-classes by
+// calling `matches` on itself until the stack overflows — seconds per call.
+// floating-ui asks every ancestor of a positioned popup (base-ui's menus) for
+// `:popover-open` and `:modal`. jsdom has no top layer, so the answer is false.
+if (typeof window !== 'undefined') {
+  const TOP_LAYER = /^:(?:modal|fullscreen|popover-open)$/
+  const nativeMatches = window.Element.prototype.matches
+  window.Element.prototype.matches = function (this: Element, selector: string) {
+    return TOP_LAYER.test(selector) ? false : nativeMatches.call(this, selector)
+  }
+}
+
 // jsdom does not implement PointerEvent — base-ui's Switch and Checkbox roots
 // (under `PondControl`, #221) forward a click to their hidden <input> as a
 // PointerEvent, so without this a `fireEvent.click` on a role="switch" /
