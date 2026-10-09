@@ -185,10 +185,10 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
 
     // Delete b1 (the first block) — #223 removed the gutter ×, so deletion now
     // goes the way the boards draw it: the handle opens the block menu, and
-    // `delete block` is the item that removes it.
+    // `delete` is the item that removes it.
     const handles = await screen.findAllByRole('button', { name: 'Block menu' })
     fireEvent.click(handles[0])
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'delete block' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
 
     // Now edit the surviving block (b2): drop into its textarea and change it.
     const editTrigger = await screen.findByRole('button', { name: 'Edit text block' })

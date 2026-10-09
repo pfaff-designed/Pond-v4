@@ -304,9 +304,8 @@ describe('turn into › table makes a database, never a freeform table (06.10)',
 // ── Pond 06.11 Nest a page from a block — NOT BUILT ─────────────────────────
 //
 // Read for, not found. 6k needs four things and the build has none of them:
-//   • a `move into a new page` item on the block handle menu — `menuItemsFor` in
-//     `BlockCanvas.tsx` offers exactly `turn into › table` (lists only) and
-//     `delete block`;
+//   • a `move into a new page` item on the block menu — `blockMenuGroups` in
+//     `BlockCanvas.tsx` offers `turn into`, `copy link to block` and `delete`;
 //   • section selection ("the handle selects the heading and every block under
 //     it") — no `section` concept exists; a handle carries one block;
 //   • a page-link block to leave behind in the same place — the `page` module is

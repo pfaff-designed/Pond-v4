@@ -20,6 +20,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
+import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
   blockEmptyBox,
@@ -47,8 +48,15 @@ import { slashMenuHeight, type SlashPane } from '@/components/molecules/slash-en
 import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
-import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
+import { PondMenu, type PondMenuGroup, type PondMenuSize } from '@/components/molecules/PondMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
+import {
+  conversionsFor,
+  type ConversionTarget,
+  type LineConversion,
+  type TableConversion,
+} from '@/lib/modules/conversions'
+import { isBlockMenuChord } from '@/lib/shell-commands'
 import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
@@ -58,11 +66,7 @@ import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/
 import { getTemplate, listTemplates } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
 import { stampProvenance } from '@/lib/templates/provenance'
-import {
-  createDatabaseFromList,
-  inferListDatabaseTitle,
-  previewListTable,
-} from '@/lib/pages/list-to-table'
+import { inferListDatabaseTitle } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
 import { createPage, defineSchema, deletePage, getPage } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
@@ -85,30 +89,48 @@ function blockLabel(block: Block): string {
   return `Deleted ${block.type} block`
 }
 
+const turnIntoId = (target: ConversionTarget) => `turn-into:${target}`
+
 /**
- * The handle menu's items for one block (#101, board 6j frame 2). `turn into ›
- * table` is offered only on a LIST block, with the preview of what will come out
- * ("4 rows · 3 columns"); the `block` group carries the block's own actions.
+ * The block menu's groups for one block (`PondMenu` kind `block`): `turn into`
+ * — the conversions that keep the content, with a table's preview of what will
+ * come out — then the block's own actions, `delete` last.
  *
- * Called only for the block whose menu is OPEN — the preview scans the block's
- * whole content, which is not work to redo for every block on every keystroke.
+ * Called only for the block whose menu is OPEN — the table preview scans the
+ * block's whole content, which is not work to redo on every keystroke.
  */
-function menuItemsFor(block: Block): BlockMenuItem[] {
-  const items: BlockMenuItem[] = []
-  const preview = previewListTable(block)
-  if (preview) {
-    const rows = `${preview.rows} ${preview.rows === 1 ? 'row' : 'rows'}`
-    const cols = `${preview.columns} ${preview.columns === 1 ? 'column' : 'columns'}`
-    items.push({
-      id: 'turn-into-table',
-      group: 'turn into',
-      label: 'table',
-      preview: `${rows} · ${cols}`,
-      icon: 'table',
-    })
-  }
-  items.push({ id: 'delete', group: 'block', label: 'delete block', icon: 'delete' })
-  return items
+const blockMenuGroups = (block: Block): PondMenuGroup[] => [
+  {
+    id: 'turn-into',
+    label: 'turn into',
+    heading: true,
+    items: conversionsFor(block).map((conversion) => ({
+      id: turnIntoId(conversion.target),
+      label: conversion.target,
+      ...(conversion.preview ? { value: conversion.preview } : {}),
+    })),
+  },
+  {
+    id: 'block',
+    label: 'block',
+    items: [
+      { id: 'copy-link', label: 'copy link to block' },
+      { id: 'delete', label: 'delete' },
+    ],
+  },
+]
+
+const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
+  list: 'Turned into a list',
+  checklist: 'Turned into a checklist',
+  text: 'Turned into text',
+}
+
+/** A list's own label names the database it becomes; otherwise the heading above it, or the page. */
+const tableTitle = (blocks: Block[], index: number, pageTitle: string) => {
+  const block = blocks[index]
+  const label = block?.type === 'text' || block?.type === 'todo' ? block.label?.trim() : ''
+  return label || inferListDatabaseTitle(blocks, index, pageTitle)
 }
 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
@@ -244,8 +266,9 @@ export function BlockCanvas({
   const isBlankBesides = (index: number) =>
     blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
 
-  // Which block index has the handle menu open (null = closed) — #101.
+  // Which block index has the block menu open (null = closed).
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
+  useBlockLinkArrival(blocks)
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
@@ -254,20 +277,20 @@ export function BlockCanvas({
   }
 
   /**
-   * The handle menu's "turn into › table" on a LIST block (#101, board 6j). A
-   * table is always a view of a database, so this CREATES a real database from
-   * the list's rows (filed under the databases root) and swaps the list for a
-   * table-mode view of it in place. It is the person's own gesture, so it applies
-   * at once through the caller's ordinary save — no proposal card; only Pond's
-   * changes arrive as diffs — with an undo that puts the list back and removes
-   * the database it made. The page is left untouched when the write fails.
+   * The block menu's "turn into › table" on a list (board 6j). A table is always
+   * a view of a database, so this CREATES a real database from the list's rows
+   * (filed under the databases root) and swaps the list for a table-mode view of
+   * it in place. It is the person's own gesture, so it applies at once through
+   * the caller's ordinary save — no proposal card; only Pond's changes arrive as
+   * diffs — with an undo that puts the list back and removes the database it
+   * made. The page is left untouched when the write fails.
    */
-  async function turnIntoTable(index: number) {
+  async function turnIntoTable(index: number, conversion: TableConversion) {
     const block = blocks[index]
     if (!block) return
-    const title = inferListDatabaseTitle(blocks, index, pageTitle)
+    const title = tableTitle(blocks, index, pageTitle)
     try {
-      const made = await createDatabaseFromList(getSupabase(), { block, title, pondId }, () =>
+      const made = await conversion.apply(getSupabase(), { title, pondId }, () =>
         crypto.randomUUID()
       )
       markInserted(made.view.id)
@@ -294,6 +317,54 @@ export function BlockCanvas({
       console.error('Failed to turn the list into a table', err)
       notify("Couldn't turn the list into a table")
     }
+  }
+
+  /**
+   * list ⇄ checklist ⇄ text: the same block, drawn another way. It keeps its id,
+   * so it swaps in place by id, and the undo swaps the original back against the
+   * LATEST blocks, so an edit made in between elsewhere on the page survives.
+   */
+  function convertBlock(before: Block, conversion: LineConversion) {
+    const after = conversion.apply()
+    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+    stageDeletion({
+      message: TURNED_INTO[conversion.target],
+      scope: 'block',
+      commit: () => {},
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
+  }
+
+  /** The page's own URL, anchored at the block — arriving there lands on it. */
+  async function copyBlockLink(blockId: string) {
+    try {
+      await navigator.clipboard.writeText(blockLinkUrl(window.location.href, blockId))
+      notify('Copied the link to this block')
+    } catch (err) {
+      console.error('Failed to copy the link to the block', err)
+      notify("Couldn't copy the link")
+    }
+  }
+
+  const handleMenuSelect = (index: number, id: string) => {
+    setMenuOpenAt(null)
+    const block = blocks[index]
+    if (!block) return
+    if (id === 'copy-link') {
+      void copyBlockLink(block.id)
+      return
+    }
+    if (id === 'delete') {
+      removeBlockAt(index)
+      return
+    }
+    const conversion = conversionsFor(block).find((c) => turnIntoId(c.target) === id)
+    if (!conversion) return
+    if (conversion.target === 'table') {
+      void turnIntoTable(index, conversion)
+      return
+    }
+    convertBlock(block, conversion)
   }
 
   function setBlockAt(index: number, next: Block) {
@@ -624,17 +695,15 @@ export function BlockCanvas({
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
                 menuOpen={menuOpenAt === i}
-                // Only the OPEN block's items are derived: menuItemsFor splits and
-                // regex-scans a text block's whole content, and this render runs on
-                // every keystroke anywhere on the page (#101 review).
-                menuItems={menuOpenAt === i ? menuItemsFor(block) : undefined}
+                // Only the OPEN block's groups are derived: the table preview splits
+                // and regex-scans a text block's whole content, and this render runs
+                // on every keystroke anywhere on the page.
+                menuGroups={menuOpenAt === i ? blockMenuGroups(block) : undefined}
+                menuSize={slashSize}
+                onMenuOpen={() => setMenuOpenAt(i)}
                 onMenuToggle={() => setMenuOpenAt((open) => (open === i ? null : i))}
                 onMenuClose={() => setMenuOpenAt(null)}
-                onMenuSelect={(id) => {
-                  setMenuOpenAt(null)
-                  if (id === 'turn-into-table') void turnIntoTable(i)
-                  else if (id === 'delete') removeBlockAt(i)
-                }}
+                onMenuSelect={(id) => handleMenuSelect(i, id)}
                 isDragging={draggingIndex === i}
                 onDragStart={() => setDraggingIndex(i)}
                 onDragEnd={() => setDraggingIndex(null)}
@@ -785,9 +854,9 @@ function useBlockEmptyState(
  * the handle drags to reorder. `draggable` is armed only while the pointer is
  * down on the handle — an always-draggable block would hijack text-selection drags.
  *
- * #101 (board 6j): a CLICK on the handle (a press with no drag) opens the block
- * menu — `turn into › table` on a list, the block's own actions — anchored under
- * the handle at the block's left edge, where frame 2 draws it.
+ * A CLICK on the handle (a press with no drag), or ⌘/ (Ctrl+/ off Apple) anywhere
+ * in the block, opens the block menu (`PondMenu` kind `block`); while it is open
+ * the block wears the open ring 6j frame 2 draws around it.
  */
 function BlockEditor({
   block,
@@ -806,7 +875,9 @@ function BlockEditor({
   onSlashSelect,
   onSlashClose,
   menuOpen,
-  menuItems = [],
+  menuGroups = [],
+  menuSize = 'desktop',
+  onMenuOpen,
   onMenuToggle,
   onMenuSelect,
   onMenuClose,
@@ -832,7 +903,9 @@ function BlockEditor({
   onSlashPickTemplate?: (pick: TemplatePick) => void
   onSlashClose?: () => void
   menuOpen?: boolean
-  menuItems?: BlockMenuItem[]
+  menuGroups?: PondMenuGroup[]
+  menuSize?: PondMenuSize
+  onMenuOpen?: () => void
   onMenuToggle?: () => void
   onMenuSelect?: (id: string) => void
   onMenuClose?: () => void
@@ -893,6 +966,11 @@ function BlockEditor({
   )
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (isBlockMenuChord(e.nativeEvent)) {
+      e.preventDefault()
+      onMenuOpen?.()
+      return
+    }
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       onMoveUp?.()
@@ -919,11 +997,15 @@ function BlockEditor({
     <div
       ref={rootRef}
       className={cn(
-        'group relative',
+        'group relative outline-none',
         settleOnMount && 'motion-settle-in',
-        isDragging && 'opacity-50'
+        isDragging && 'opacity-50',
+        menuOpen &&
+          'rounded-[20px] shadow-[0_0_0_2px_rgba(27,29,20,.18)] dark:shadow-[0_0_0_2px_rgba(250,249,239,.18)]'
       )}
       id={blockDomId(block.id)}
+      // Focusable so a copied link to the block can land on it.
+      tabIndex={-1}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {
@@ -936,11 +1018,16 @@ function BlockEditor({
     >
       {/* The gutter handle (#223) — the boards' ONLY row affordance, revealed on
           hover/focus. It is the six-dot mark 6j draws (10×14, dots r 1.1) in a
-          20×16 box; press-and-drag reorders, a click opens the block menu (#101),
-          which is where `delete block` lives. It sits on the 68% ink tier:
+          20×16 box; press-and-drag reorders, a click opens the block menu, which
+          is where `delete` lives. It sits on the 68% ink tier:
           PROJECT_RULES allows three tiers only (100 / 80 small meta / 68), so the
           mark may not drop to a fainter ink. */}
-      <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
+      <div
+        className={cn(
+          'absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+          menuOpen && 'opacity-100'
+        )}
+      >
         <button
           ref={handleRef}
           type="button"
@@ -964,15 +1051,22 @@ function BlockEditor({
         </button>
       </div>
 
-      {/* The block menu (#101, 6j frame 2): under the handle, at the block's left
-          edge — measured left −10 / top 36 off the frame. */}
+      {/* The block menu, placed where 6x frame 2 places it: under the handle at
+          the block's left edge on a desktop, at its right edge on a phone. */}
       {menuOpen && (
-        <BlockHandleMenu
-          items={menuItems}
+        <PondMenu
+          kind="block"
+          label="block menu"
+          size={menuSize}
+          groups={menuGroups}
           onSelect={onMenuSelect ?? (() => {})}
           onClose={onMenuClose ?? (() => {})}
           anchorRef={handleRef}
-          className="absolute -left-2.5 top-9 z-10"
+          className={
+            menuSize === 'mobile'
+              ? 'absolute top-[48px] right-0 z-10 [--motion-menu-origin:top_right]'
+              : 'absolute top-[40px] -left-[8px] z-10'
+          }
         />
       )}
 

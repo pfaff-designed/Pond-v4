@@ -37,7 +37,7 @@ import { ROW_TYPE, type PropertySchema } from '@/lib/properties/schema'
 // ── 1. What is a list ────────────────────────────────────────────────────────
 
 /** A markdown list line: `- `, `* `, `+ `, `• ` or `1.` / `1)` then the item. */
-const LIST_LINE = /^\s*(?:[-*+•]|\d+[.)])\s+(.*\S)\s*$/
+export const LIST_LINE = /^\s*(?:[-*+•]|\d+[.)])\s+(.*\S)\s*$/
 
 /**
  * The items of a list block, or null when the block is not a list. A text block
