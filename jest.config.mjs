@@ -44,4 +44,26 @@ const config = {
   },
 }
 
-export default createJestConfig(config)
+// The HTML reader's parser (rehype-parse → unified, hast, unist, vfile, parse5)
+// ships pure ESM. next/jest only exempts `transpilePackages` from its
+// node_modules ignore, and appended patterns can only ignore more, so the
+// generated pattern is wrapped: a path inside the unified family is never ignored.
+const UNIFIED_FAMILY =
+  '(?:unified|rehype-[\\w-]+|hast[\\w-]*|unist-[\\w-]+|vfile[\\w-]*|bail|trough|devlop|is-plain-obj|property-information|[\\w]+-separated-tokens|web-namespaces|parse5|entities)'
+
+const exemptUnifiedFamily = (pattern) =>
+  pattern.startsWith('/node_modules/')
+    ? `^(?!.*/node_modules/${UNIFIED_FAMILY}/).*${pattern}`
+    : pattern
+
+const nextJestConfig = createJestConfig(config)
+
+const jestConfig = async () => {
+  const resolved = await nextJestConfig()
+  return {
+    ...resolved,
+    transformIgnorePatterns: resolved.transformIgnorePatterns.map(exemptUnifiedFamily),
+  }
+}
+
+export default jestConfig
