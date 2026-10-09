@@ -987,16 +987,13 @@ export const ColouredMarks: Story = {
 }
 
 /**
- * #134, all four cases in one pond: a chosen mark beats the derived one, and the
- * ROLE is inherited from the nearest ancestor that carries one.
+ * `Pond 06.24` frame 4, all four cases in one pond: a chosen glyph beats the
+ * automatic one, and every page takes its AREA's colour — a role stored on a page
+ * is ignored.
  *
- * The ancestor walk is the load-bearing part and it is silent when broken — the
- * first version of these tests all passed with `resolveMark`'s walk destroyed,
- * because each set the role on the very row it asserted. Here `Sleep` carries a
- * glyph and NO role while `Health` carries the role, so breaking the walk fails
- * this story. The dot-only case was unreachable for a different silent reason:
- * the dot was gated on `isArea` as well as on the accent, so a hue chosen on a
- * nested page showed in the breadcrumb and the kicker and nowhere in the rail.
+ * The walk up to the area is the load-bearing part and it is silent when broken:
+ * `Sleep` carries a glyph and NO role while `Health` carries the role, and
+ * `Marathon` carries a role of its own that must lose to Health's.
  */
 export const ChosenMarks: Story = {
   tags: ['!dev'],
@@ -1010,7 +1007,7 @@ export const ChosenMarks: Story = {
       ],
       // nested: its own glyph, no role — the hue must come from Health
       ['sleep', { id: 'sleep', parentId: 'health', title: 'Sleep', glyph: 'moon' }],
-      // nested: a COLOUR only — no glyph, so the dot carries it
+      // nested: a stored role of its own, which its area's overrides
       [
         'marathon',
         { id: 'marathon', parentId: 'health', title: 'Marathon Training', areaRole: 'area-b' },
@@ -1039,10 +1036,10 @@ export const ChosenMarks: Story = {
       await expect(sleep.querySelector('[data-icon="moon"]')).toBeInTheDocument()
       await expect(slotColor(/Sleep/)).toBe(AREA[theme]['area-c'])
 
-      // 3. colour only → the KindDot carries it (7×7, 2px radius — `PondAtom`)
+      // 3. a page has no colour of its own: the KindDot takes its area's
       const dot = row(/Marathon/).querySelector<HTMLElement>('[data-part="dot"]')!
       await expect(dot).toBeInTheDocument()
-      await expect(getComputedStyle(dot).backgroundColor).toBe(AREA[theme]['area-b'])
+      await expect(getComputedStyle(dot).backgroundColor).toBe(AREA[theme]['area-c'])
       await expect(row(/Marathon/).querySelector('[data-icon]')).toBeNull()
 
       // 4. untouched nested row: no glyph, just the ink dot. Asserted as the
@@ -1500,14 +1497,16 @@ export const RowRecipe: Story = {
       await expectInk(titleColor(/Marathon/), theme, 0.68)
       await expectInk(titleColor(/Sleep/), theme, 1)
 
-      // the dot exists on a leaf page (ink .5 at rest) and on a childless area
+      // the dot exists on a leaf page (ink .5 at rest); a childless area leads
+      // with its title-derived glyph instead
       const marathonDot = dotOf(/Marathon/)
       await expect(marathonDot).toBeInTheDocument()
       const box = marathonDot.getBoundingClientRect()
       await expect([box.width, box.height]).toEqual([7, 7])
       await expect(getComputedStyle(marathonDot).borderTopLeftRadius).toBe('2px')
       await expectInk(getComputedStyle(marathonDot).backgroundColor, theme, 0.5)
-      await expect(dotOf(/Scratchpad/)).toBeInTheDocument()
+      await expect(row(/Scratchpad/).querySelector('[data-area-mark]')).toBeInTheDocument()
+      await expect(row(/Scratchpad/).querySelector('[data-part="dot"]')).toBeNull()
       // the selected row's dot is full ink
       await expectInk(getComputedStyle(dotOf(/Sleep/)).backgroundColor, theme, 1)
 

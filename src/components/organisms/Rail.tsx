@@ -619,47 +619,23 @@ function hideNativeDragImage(dataTransfer: DataTransfer) {
 const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
 
 /**
- * An area row's leading mark. An unmapped area returns nothing and keeps its
- * KindDot (PondAtom) through the molecule's `dot`.
- *
- * `isAreaRow` names the rule: a top-level page.
- *
- * #134: resolved through `resolveMark`, NOT from the title and a hash. The rail
- * was the one mark surface left deriving its own, which meant picking a tulip in
- * navy on a page left the rail showing the old leaf in a Press hue — three
- * surfaces disagreeing about the same page, the exact thing `mark.ts` exists to
- * prevent. `marks` comes from the shared `['pages']` cache, so the rail needs no
- * read of its own.
+ * A row's mark, resolved through `resolveMark` so the rail agrees with the
+ * breadcrumb, the palette and the cards about every page. `marks` comes from the
+ * shared `['pages']` cache, so the rail needs no read of its own. The node itself
+ * is the fallback: a rail rendered without a pond (Storybook, a unit test) still
+ * shows every area's automatic glyph.
  */
-function rowMark(node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark {
-  // The node itself is the fallback: a rail rendered without a pond (Storybook,
-  // a unit test) still shows every row's title-derived glyph.
-  return resolveMark(node.id, marks, {
-    id: node.id,
-    parentId: node.parentId,
-    title: node.title,
-  })
-}
+const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark =>
+  resolveMark(node.id, marks, { id: node.id, parentId: node.parentId, title: node.title })
 
 /**
- * A row's leading glyph, or nothing (the row keeps its `dot`).
- *
- * WHICH ROWS CARRY ONE. A top-level row shows its mark as it always has — the
- * rail uses the mark as the area voice. A NESTED row shows one only when
- * the person has EXPLICITLY chosen a glyph for it.
- *
- * That split is the point. Round two caught the rail still gated on `isAreaRow`
- * alone: set a tulip on Health › Sleep and the breadcrumb and kicker showed it
- * while the rail showed nothing — three surfaces disagreeing about one page,
- * which is exactly what `resolveMark` exists to prevent, and a direct
- * contradiction of the spec's "Any page". Gating on `glyphIsOwn` honours an
- * explicit choice everywhere without turning every nested row into a marked one,
- * so an untouched pond still reads as areas-with-pages-inside.
+ * A row's leading glyph in its area's colour, or nothing — the row then keeps its
+ * KindDot, which carries the same colour through `accent`. An area always has a
+ * glyph (its automatic one is derived from its title); a page has one only when
+ * the person picked it.
  */
-function areaMark(node: RailNode, mark: PageMark): ReactNode {
-  if (!isAreaRow(node) && !mark.glyphIsOwn) return undefined
-  return mark.glyph ? <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} /> : undefined
-}
+const leadingMark = (mark: PageMark): ReactNode =>
+  mark.glyph ? <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} /> : undefined
 
 export function RailView({
   tree,
@@ -983,7 +959,7 @@ export function RailView({
         // The databases root carries its own functional mark, no area colour.
         // Everywhere else the dot is ink until the person colours its area.
         accent={isDatabasesRoot(node) ? undefined : markAccent(mark.role)}
-        leading={isDatabasesRoot(node) ? DATABASES_MARK : areaMark(node, mark)}
+        leading={isDatabasesRoot(node) ? DATABASES_MARK : leadingMark(mark)}
         // A row revealed on expand (any non-top-level row) settles in rather than
         // popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}

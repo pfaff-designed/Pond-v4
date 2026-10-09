@@ -30,6 +30,7 @@ import {
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
+import type { AreaRole } from '@/lib/rail/glyph-library'
 import { nextAvailableTitle, normalizeTitle, DuplicateTitleError } from './dedupe-title'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -356,37 +357,53 @@ export async function updateTitle(
   }
 }
 
-/**
- * Set (or clear) a page's own mark — issue #134.
- *
- * Both fields are tri-state on purpose: `undefined` leaves the column alone,
- * `null` CLEARS it back to "derive / inherit", and a value sets it. That is what
- * lets the picker offer "reset to default" without a second verb, and what keeps
- * choosing a glyph from silently stamping a colour the person never picked.
- *
- * `area_role` is written as a ROLE, never a colour. See `glyph-library.ts`.
- */
-export async function setPageMark(
+// A mark write deliberately does NOT stamp `updated_at`: the other writers here
+// change content (`blocks`) or the name (`title`), and a mark is neither. Its one
+// reader, `subtreeLatest`, feeds the children-grid cards' "updated …" caption, so
+// stamping it made picking a glyph read as an edit to the page and every ancestor.
+// Unlike the log's side-records, a mark write IS what the person just asked for,
+// so a failure throws rather than leaving the picker showing a choice that never
+// landed.
+
+/** Set a page's glyph, or null to put its automatic mark back. Any page takes one. */
+export const setPageGlyph = async (
   supabase: SupabaseClient<Database>,
   id: string,
-  mark: { glyph?: string | null; areaRole?: string | null }
-): Promise<void> {
-  const patch: { glyph?: string | null; area_role?: string | null } = {}
-  if ('glyph' in mark) patch.glyph = mark.glyph ?? null
-  if ('areaRole' in mark) patch.area_role = mark.areaRole ?? null
-  if (Object.keys(patch).length === 0) return
-  // `updated_at` is deliberately NOT stamped. The other writers here stamp it
-  // because they change CONTENT (`blocks`) or the page's name (`title`); a mark is
-  // neither. Nothing in the app sorts by it — the rail orders by `order` then
-  // title — and the one reader is `subtreeLatest`, which feeds the children-grid cards'
-  // "updated …" caption. Stamping it made picking a colour read as an edit to the
-  // page AND to every ancestor above it, with no change-log record behind the
-  // claim. (Round one asked for the stamp; round two probed the consequence.)
+  glyph: string | null
+): Promise<void> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from('pages').update(patch).eq('id', id)
-  // Unlike the log's side-records, this IS what the person just asked for — a
-  // silent failure would leave the picker showing a choice that never landed.
+  const { error } = await (supabase as any).from('pages').update({ glyph }).eq('id', id)
   if (error) throw error
+}
+
+/** Thrown when a colour is written to a page that is not an area. */
+export class NotAnAreaError extends Error {
+  constructor(id: string) {
+    super(`Only an area takes a colour; page ${id} is not one.`)
+    this.name = 'NotAnAreaError'
+  }
+}
+
+/**
+ * Set an area's colour role, or null for ink. Written as a ROLE, never a colour
+ * (`glyph-library.ts`). Only a top-level page takes one — `pages_area_role_area_only`
+ * enforces the same rule in the database; the filter here turns a miss into a
+ * named error instead of a constraint violation.
+ */
+export const setAreaRole = async (
+  supabase: SupabaseClient<Database>,
+  areaId: string,
+  role: AreaRole | null
+): Promise<void> => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('pages')
+    .update({ area_role: role })
+    .eq('id', areaId)
+    .is('parent_id', null)
+    .select('id')
+  if (error) throw error
+  if (!data || data.length === 0) throw new NotAnAreaError(areaId)
 }
 
 /**

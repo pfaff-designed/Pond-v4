@@ -1,117 +1,87 @@
 /**
- * A page's mark — src/lib/pages/mark.ts (issue #134).
+ * A page's mark — src/lib/pages/mark.ts.
  *
- * The contract this pins is the inheritance rule, because three surfaces render
- * the same mark and a disagreement between them is the bug this module exists to
- * make impossible:
+ * `Pond 06.24` (6y) is the spec:
  *
- *   - an explicit choice wins, and survives a rename (the original complaint);
- *   - a page with no role of its own takes its AREA's, so "a whole area reads as
- *     one hue" once someone has coloured it;
- *   - nobody chose, nothing is assigned: the role is null and the mark is ink;
- *   - nothing anywhere resolves to a colour — only to a role.
+ *   - "A page takes its area's colour, always. It has no colour of its own."
+ *   - "Ink is the default and means no colour." Pond never assigns one.
+ *   - "A page: its kind dot. An area: the glyph derived from its title, which
+ *     follows a rename." An explicit glyph does not.
+ *   - "An area set to navy shows mist in ink. The setting is still navy."
+ *
+ * Nothing here resolves to a colour — only to a role the theme paints.
  */
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
-import { setPageMark } from '@/lib/pages/client'
+import { NotAnAreaError, setAreaRole, setPageGlyph } from '@/lib/pages/client'
+import { areaGlyph } from '@/lib/rail/area-glyph'
 
-function index(rows: MarkSource[]): Map<string, MarkSource> {
-  return new Map(rows.map((r) => [r.id, r]))
-}
+const index = (rows: MarkSource[]): Map<string, MarkSource> => new Map(rows.map((r) => [r.id, r]))
 
-/** Personal (an area) → Recipes → Pasta. */
-const TREE: MarkSource[] = [
-  { id: 'personal', parentId: null, title: 'Personal' },
-  { id: 'recipes', parentId: 'personal', title: 'Recipes' },
-  { id: 'pasta', parentId: 'recipes', title: 'Pasta' },
-]
+/** Health (an area) → Training → Workouts; Money (an area) → Budget. */
+const HEALTH: MarkSource = { id: 'health', parentId: null, title: 'Health', areaRole: 'area-a' }
+const TRAINING: MarkSource = { id: 'training', parentId: 'health', title: 'Training' }
+const WORKOUTS: MarkSource = { id: 'workouts', parentId: 'training', title: 'Workouts' }
+const MONEY: MarkSource = { id: 'money', parentId: null, title: 'Money', areaRole: 'area-c' }
+const BUDGET: MarkSource = { id: 'budget', parentId: 'money', title: 'Budget' }
+const TREE = [HEALTH, TRAINING, WORKOUTS, MONEY, BUDGET]
 
-describe('resolveMark — glyph', () => {
-  it('derives from the title when nothing is set (today’s behaviour)', () => {
-    const mark = resolveMark('personal', index(TREE))
-    expect(mark.glyph).toBe('house') // areaGlyph('Personal')
-    expect(mark.glyphIsOwn).toBe(false)
+describe('resolveMark — colour belongs to areas', () => {
+  it('a page under a sage area is sage even if its stored role says navy', () => {
+    const rows = index([HEALTH, TRAINING, { ...WORKOUTS, areaRole: 'area-c' }, MONEY, BUDGET])
+    expect(resolveMark('workouts', rows).role).toBe('area-a')
+    expect(resolveMark('training', rows).role).toBe('area-a')
   })
 
-  it('prefers an explicit glyph over the title', () => {
-    const mark = resolveMark(
-      'personal',
-      index([{ ...TREE[0], glyph: 'tulip-01' }, ...TREE.slice(1)])
-    )
-    expect(mark.glyph).toBe('tulip-01')
-    expect(mark.glyphIsOwn).toBe(true)
+  it('an area with no role is ink, and so is every page inside it', () => {
+    const rows = index([{ ...HEALTH, areaRole: null }, TRAINING, WORKOUTS])
+    expect(resolveMark('health', rows).role).toBeNull()
+    expect(resolveMark('workouts', rows).role).toBeNull()
   })
 
-  it('keeps an explicit glyph through a rename — the complaint #134 opens with', () => {
-    // "renaming an area silently changes its mark". With a choice recorded, the
-    // title is never consulted, so the mark holds.
-    const renamed = index([{ id: 'personal', parentId: null, title: 'Home Life', glyph: 'house' }])
-    expect(resolveMark('personal', renamed).glyph).toBe('house')
-
-    // Without one, it still moves — inherent to deriving from the title, and
-    // stated in the spec rather than implied to be solved.
-    const derived = index([{ id: 'personal', parentId: null, title: 'Home Life' }])
-    expect(resolveMark('personal', derived).glyph).toBeNull()
-  })
-
-  it('gives an ordinary page no glyph, so the surface keeps its KindDot', () => {
-    expect(resolveMark('pasta', index(TREE)).glyph).toBeNull()
-  })
-
-  it('lets a page carry a glyph the picker does not offer', () => {
-    // The 140 `asset-N` files are not offered, but a stored one must still render
-    // — the library is a picker concern, not a validity rule.
-    const mark = resolveMark(
-      'pasta',
-      index([...TREE.slice(0, 2), { ...TREE[2], glyph: 'asset-113' }])
-    )
-    expect(mark.glyph).toBe('asset-113')
-  })
-})
-
-describe('resolveMark — role', () => {
-  it('inherits the area’s role, so a whole area reads as one colour', () => {
-    const rows = index([{ ...TREE[0], areaRole: 'area-b' }, ...TREE.slice(1)])
-    expect(resolveMark('personal', rows).role).toBe('area-b')
-    expect(resolveMark('recipes', rows).role).toBe('area-b')
-    expect(resolveMark('pasta', rows).role).toBe('area-b')
-  })
-
-  it('lets a child override without touching its siblings or its area', () => {
+  it('a page with a stored role under an ink area is still ink', () => {
     const rows = index([
-      { ...TREE[0], areaRole: 'area-b' },
-      { ...TREE[1], areaRole: 'area-c' },
-      TREE[2],
-      { id: 'trips', parentId: 'personal', title: 'Trips' },
+      { ...HEALTH, areaRole: null },
+      { ...TRAINING, areaRole: 'area-b' },
     ])
-    expect(resolveMark('recipes', rows).role).toBe('area-c')
-    // The override reaches its own children…
-    expect(resolveMark('pasta', rows).role).toBe('area-c')
-    // …and nothing else.
-    expect(resolveMark('trips', rows).role).toBe('area-b')
-    expect(resolveMark('personal', rows).role).toBe('area-b')
+    expect(resolveMark('training', rows).role).toBeNull()
   })
 
-  it('reports whether the role is the page’s own or inherited', () => {
-    const rows = index([{ ...TREE[0], areaRole: 'area-b' }, ...TREE.slice(1)])
-    expect(resolveMark('personal', rows).roleIsOwn).toBe(true)
-    expect(resolveMark('recipes', rows).roleIsOwn).toBe(false)
+  it('moving a page between areas changes its colour, with nothing written to it', () => {
+    expect(resolveMark('workouts', index(TREE)).role).toBe('area-a')
+    const moved = index([HEALTH, TRAINING, { ...WORKOUTS, parentId: 'money' }, MONEY, BUDGET])
+    expect(resolveMark('workouts', moved).role).toBe('area-c')
   })
 
-  it('is ink — a null role — wherever nobody chose a colour', () => {
+  it('an area’s colour is its own role', () => {
+    expect(resolveMark('health', index(TREE)).role).toBe('area-a')
+    expect(resolveMark('money', index(TREE)).role).toBe('area-c')
+  })
+
+  it('says which marks are areas — the only ones that take a colour', () => {
     const rows = index(TREE)
-    for (const id of ['personal', 'recipes', 'pasta']) {
-      const mark = resolveMark(id, rows)
-      expect(mark.role).toBeNull()
-      expect(mark.roleIsOwn).toBe(false)
-    }
+    expect(resolveMark('health', rows).isArea).toBe(true)
+    expect(resolveMark('training', rows).isArea).toBe(false)
+    expect(resolveMark('workouts', rows).isArea).toBe(false)
+  })
+
+  it('the databases root is not an area: it and its pages stay ink', () => {
+    const rows = index([
+      { id: 'db-root', parentId: null, title: 'databases', areaRole: 'area-a' },
+      { id: 'ingredients', parentId: 'db-root', title: 'ingredients' },
+    ])
+    expect(resolveMark('db-root', rows)).toMatchObject({ isArea: false, role: null, glyph: null })
+    expect(resolveMark('ingredients', rows).role).toBeNull()
+  })
+
+  it('a page whose area is not in the index is ink, not a guess', () => {
+    expect(resolveMark('workouts', index([WORKOUTS])).role).toBeNull()
   })
 
   it('ignores a role that is not one the theme defines', () => {
-    // The DB CHECK makes this unreachable, but a row from a future migration
-    // must not blank the mark.
-    const rows = index([{ ...TREE[0], areaRole: 'chartreuse' }, ...TREE.slice(1)])
-    expect(resolveMark('personal', rows).role).toBeNull()
+    expect(resolveMark('health', index([{ ...HEALTH, areaRole: 'chartreuse' }])).role).toBeNull()
   })
 
   it('survives a malformed parent cycle instead of looping', () => {
@@ -121,16 +91,70 @@ describe('resolveMark — role', () => {
     ])
     expect(resolveMark('a', rows).role).toBeNull()
   })
+})
+
+describe('resolveMark — glyph', () => {
+  it('a page’s automatic mark is its kind dot (no glyph)', () => {
+    const mark = resolveMark('workouts', index(TREE))
+    expect(mark.glyph).toBeNull()
+    expect(mark.glyphIsOwn).toBe(false)
+  })
+
+  it('a nested page titled like a seeded area still gets its kind dot', () => {
+    const rows = index([HEALTH, { id: 'h2', parentId: 'health', title: 'Personal' }])
+    expect(resolveMark('h2', rows).glyph).toBeNull()
+  })
+
+  it('a chosen glyph takes the dot’s place, and any of the 182 will do', () => {
+    const mark = resolveMark(
+      'workouts',
+      index([HEALTH, TRAINING, { ...WORKOUTS, glyph: 'asset-113' }])
+    )
+    expect(mark.glyph).toBe('asset-113')
+    expect(mark.glyphIsOwn).toBe(true)
+  })
+
+  it('an area’s automatic glyph is derived from its title', () => {
+    expect(resolveMark('health', index(TREE)).glyph).toBe('heart')
+    const food = resolveMark('food', index([{ id: 'food', parentId: null, title: 'Food' }]))
+    expect(food.glyph).toBe(areaGlyph('Food'))
+    expect(food.glyphIsOwn).toBe(false)
+  })
+
+  it('renaming an area changes its automatic glyph', () => {
+    const before = resolveMark('health', index([HEALTH])).glyph
+    const after = resolveMark('health', index([{ ...HEALTH, title: 'Personal' }])).glyph
+    expect(before).toBe('heart')
+    expect(after).toBe('house')
+  })
+
+  it('renaming an area with an explicit glyph does not', () => {
+    const chosen = { ...HEALTH, glyph: 'tulip-01' }
+    expect(resolveMark('health', index([chosen])).glyph).toBe('tulip-01')
+    expect(resolveMark('health', index([{ ...chosen, title: 'Personal' }])).glyph).toBe('tulip-01')
+  })
+
+  it('uses the fallback for a page the index does not hold', () => {
+    const mark = resolveMark('scratch', index([]), {
+      id: 'scratch',
+      parentId: null,
+      title: 'Health',
+    })
+    expect(mark).toMatchObject({ glyph: 'heart', isArea: true, role: null })
+  })
 
   it('still returns a mark for a page it has never heard of', () => {
-    const mark = resolveMark('ghost', index(TREE))
-    expect(mark.glyph).toBeNull()
-    expect(mark.role).toBeNull()
+    expect(resolveMark('ghost', index(TREE))).toEqual({
+      glyph: null,
+      role: null,
+      isArea: false,
+      glyphIsOwn: false,
+    })
   })
 })
 
 describe('markIndex', () => {
-  it('maps raw rows, treating absent columns as "derive"', () => {
+  it('maps raw rows, treating absent columns as automatic', () => {
     const map = markIndex([
       { id: 'a', parent_id: null, title: 'A', glyph: 'house', area_role: 'area-c' },
       { id: 'b', parent_id: 'a', title: 'B' },
@@ -147,54 +171,101 @@ describe('markIndex', () => {
   })
 })
 
+// ── Navy on ink ─────────────────────────────────────────────────────────────
+
+describe('area roles across themes', () => {
+  const css = readFileSync(resolve(__dirname, '../app/globals.css'), 'utf8')
+  const block = (selector: string): string => {
+    const match = css.match(
+      new RegExp(`^${selector.replace('.', '\\.')}\\s*\\{([\\s\\S]*?)\\n\\}`, 'm')
+    )
+    if (!match) throw new Error(`no ${selector} block`)
+    return match[1]
+  }
+  const role = (body: string, name: string): string | undefined =>
+    body.match(new RegExp(`--mn-${name}:\\s*([^;]+);`))?.[1].trim()
+
+  it('navy draws as mist on the dark ground; the stored role stays navy', () => {
+    expect(role(block(':root'), 'area-c')).toBe('var(--raw-navy)')
+    expect(role(block('.dark'), 'area-c')).toBe('var(--raw-mist)')
+  })
+
+  it('sage and mist are the same on both grounds', () => {
+    for (const body of [block(':root'), block('.dark')]) {
+      expect(role(body, 'area-a')).toBe('var(--raw-sage)')
+      expect(role(body, 'area-b')).toBe('var(--raw-mist)')
+    }
+  })
+})
+
 // ── The write path ───────────────────────────────────────────────────────────
 
-describe('setPageMark', () => {
-  function fakeSupabase() {
-    const captured: { patch?: Record<string, unknown>; id?: string } = {}
-    const chain = {
-      update(patch: Record<string, unknown>) {
-        captured.patch = patch
-        return chain
-      },
-      eq(_col: string, id: string) {
-        captured.id = id
-        return Promise.resolve({ error: null })
-      },
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { supabase: { from: () => chain } as any, captured }
+interface Captured {
+  patch?: Record<string, unknown>
+  filters: [string, string, unknown][]
+}
+
+/** A pages update chain that records its patch and filters, and returns `rows`. */
+const fakeSupabase = (rows: { id: string }[] = []) => {
+  const captured: Captured = { filters: [] }
+  const result = { data: rows, error: null }
+  const chain = {
+    update(patch: Record<string, unknown>) {
+      captured.patch = patch
+      return chain
+    },
+    eq(col: string, value: unknown) {
+      captured.filters.push(['eq', col, value])
+      return Object.assign(Promise.resolve(result), chain)
+    },
+    is(col: string, value: unknown) {
+      captured.filters.push(['is', col, value])
+      return chain
+    },
+    select() {
+      return Promise.resolve(result)
+    },
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { supabase: { from: () => chain } as any, captured }
+}
 
-  it('does NOT stamp updated_at — a mark is not a content edit', async () => {
-    // Pinned because a reviewer already asked for the stamp once, on the grounds
-    // that every other `pages` write has it. Those writes change content
-    // (`blocks`) or the name (`title`); a mark is neither. Nothing sorts by
-    // `updated_at`, and its one reader feeds the overview cards' "updated …"
-    // caption — so stamping it made picking a COLOUR read as an edit to the page
-    // and to every ancestor, with no change-log record behind the claim.
+describe('setPageGlyph', () => {
+  it('writes the glyph and nothing else — no colour, no updated_at', async () => {
+    // A mark is not a content edit: nothing sorts by `updated_at`, and stamping it
+    // made picking a glyph read as an edit to the page and every ancestor.
     const { supabase, captured } = fakeSupabase()
-    await setPageMark(supabase, 'p1', { glyph: 'tulip-01' })
+    await setPageGlyph(supabase, 'p1', 'tulip-01')
     expect(captured.patch).toEqual({ glyph: 'tulip-01' })
-    expect(captured.patch).not.toHaveProperty('updated_at')
+    expect(captured.filters).toEqual([['eq', 'id', 'p1']])
   })
 
-  it('writes only the half it was given, and clears with null', async () => {
-    // Tri-state on purpose: absent leaves the column alone, null resets it to
-    // derive/inherit. That is what lets the picker offer "reset" per half without
-    // a second verb, and stops choosing a glyph stamping a colour nobody picked.
-    const a = fakeSupabase()
-    await setPageMark(a.supabase, 'p1', { areaRole: null })
-    expect(a.captured.patch).toEqual({ area_role: null })
-
-    const b = fakeSupabase()
-    await setPageMark(b.supabase, 'p1', { glyph: 'moon', areaRole: 'area-c' })
-    expect(b.captured.patch).toEqual({ glyph: 'moon', area_role: 'area-c' })
-  })
-
-  it('writes nothing at all when handed an empty patch', async () => {
+  it('null puts the automatic mark back', async () => {
     const { supabase, captured } = fakeSupabase()
-    await setPageMark(supabase, 'p1', {})
-    expect(captured.patch).toBeUndefined()
+    await setPageGlyph(supabase, 'p1', null)
+    expect(captured.patch).toEqual({ glyph: null })
+  })
+})
+
+describe('setAreaRole', () => {
+  it('writes the role to an area, and only to a top-level page', async () => {
+    const { supabase, captured } = fakeSupabase([{ id: 'health' }])
+    await setAreaRole(supabase, 'health', 'area-c')
+    expect(captured.patch).toEqual({ area_role: 'area-c' })
+    expect(captured.filters).toEqual([
+      ['eq', 'id', 'health'],
+      ['is', 'parent_id', null],
+    ])
+  })
+
+  it('null puts an area back to ink', async () => {
+    const { supabase, captured } = fakeSupabase([{ id: 'health' }])
+    await setAreaRole(supabase, 'health', null)
+    expect(captured.patch).toEqual({ area_role: null })
+  })
+
+  it('rejects any page that is not an area', async () => {
+    const { supabase } = fakeSupabase([])
+    await expect(setAreaRole(supabase, 'workouts', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
   })
 })

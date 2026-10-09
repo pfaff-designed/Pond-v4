@@ -146,8 +146,7 @@ export function NewPondSheet({
               />
             </div>
 
-            {/* Disabled per #316 — `MarkPicker` exists and this is cheap to enable,
-                but it ships inert so the board's row is present and honest. */}
+            {/* Disabled per #316: the board's row is present and honest, and inert. */}
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>glyph</span>
               <div className="pointer-events-none flex flex-wrap gap-[6px] opacity-40">

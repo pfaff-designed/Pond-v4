@@ -53,6 +53,8 @@ export interface Database {
           theme: PondTheme
           order: number
           last_page_id: string | null
+          /** 0022: the last 8 distinct glyphs picked in this pond, newest first. */
+          recent_glyphs: string[]
           created_at: string
           updated_at: string
         }
@@ -64,6 +66,7 @@ export interface Database {
           theme?: PondTheme
           order?: number
           last_page_id?: string | null
+          recent_glyphs?: string[]
         }
         Update: {
           name?: string
@@ -71,6 +74,7 @@ export interface Database {
           theme?: PondTheme
           order?: number
           last_page_id?: string | null
+          recent_glyphs?: string[]
           updated_at?: string
         }
       }
@@ -90,9 +94,9 @@ export interface Database {
           props: Json
           order: number
           workspace: Workspace
-          /** #134: explicit glyph name; null = derive from the title. */
+          /** Explicit glyph name; null = automatic (an area's from its title, a page's kind dot). */
           glyph: string | null
-          /** #134: explicit area colour ROLE (area-a|b|c); null = inherit. */
+          /** An area's colour ROLE (area-a|b|c); null = ink. Areas only (0022). */
           area_role: string | null
           updated_at: string
           created_at: string
