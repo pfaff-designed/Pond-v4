@@ -16,6 +16,7 @@
  */
 
 import { canRevertRecord } from './revert-plan'
+import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit } from './summary'
 import type { ChangeLogRecord } from './types'
 
 export interface PageChangeRow {
@@ -33,16 +34,14 @@ export interface PageChangeRow {
 /**
  * A short label for a record.
  *
- * Deliberately coarse. The design's row reads "electrician → w/c 6 oct", which is
- * the DIFF rendered through the registry's `preview` facet — that belongs to the
- * record page in #147, along with the before/after it sits above. Inventing a
- * thinner version of it here would be a second implementation to reconcile later,
- * so this says what happened and leaves what changed to the surface that shows it.
+ * An edit reads as what its diff did ("wrote 3 paragraphs", `summary.ts`); a
+ * record edit names the record. The full before/after, rendered block by block,
+ * stays the record page's (#147) — this is one line for a row.
  */
 export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord | null): string {
   switch (record.action) {
     case 'edit':
-      return 'edited this page'
+      return summarizeBlockEdit(record.before, record.after) ?? 'edited this page'
     case 'revert':
       return reverts === null ? 'revert of an earlier change' : `revert of ${reverts.action}`
     case 'create_page':
@@ -50,7 +49,9 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
     case 'define_schema':
       return 'set up the fields'
     case 'add_row':
-      return 'added a row'
+      return summarizeAddedRow(record.after)
+    case 'edit_row':
+      return summarizeRowEdit(record.before, record.after)
     case 'promote_table':
       return 'turned a table into a database'
     case 'configure_view':

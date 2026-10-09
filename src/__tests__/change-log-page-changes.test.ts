@@ -111,7 +111,12 @@ describe('buildPageChanges', () => {
 
 describe('describeChange', () => {
   it('names every action the log can hold', () => {
-    expect(describeChange(record({ action: 'edit' }), null)).toBe('edited this page')
+    // An edit reads as its diff (change-log-summary.test.ts); without snapshots it
+    // falls back to the plain line.
+    expect(describeChange(record({ action: 'edit' }), null)).toBe('wrote 1 paragraph')
+    expect(describeChange(record({ action: 'edit', before: null, after: null }), null)).toBe(
+      'edited this page'
+    )
     expect(describeChange(record({ action: 'create_page' }), null)).toBe('created this page')
     expect(describeChange(record({ action: 'memory_note' }), null)).toBe('recorded a memory note')
   })

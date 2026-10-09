@@ -40,6 +40,7 @@ import { pagesKey } from '@/lib/pages/keys'
 import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
+import { changeLogKey } from '@/lib/change-log/keys'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -51,7 +52,7 @@ export interface PageChangesPanelProps {
 
 /** The query key for one page's log. Exported so a write path can invalidate it. */
 export function pageChangesKey(pondId: string | null, pageId: string | undefined) {
-  return ['change-log', pondId, 'page', pageId] as const
+  return [...changeLogKey(), pondId, 'page', pageId] as const
 }
 
 export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
