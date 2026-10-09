@@ -63,7 +63,7 @@ describe('recordOwnEdit — the sweep', () => {
     // Whole page — the editor saves the whole block array, so every block diff on
     // the page was written against a state that is gone.
     expect(opts.blockIds).toBeUndefined()
-    // …but scoped to the blocks that actually landed (#98 review). The save
+    // …but scoped to the blocks that actually landed. The save
     // commits the title too, so without this a rename would sweep the page.
     expect(opts.pageBlocks).toBe(BLOCKS)
   })
@@ -81,14 +81,13 @@ describe('recordOwnEdit — the sweep', () => {
   it('never throws — the save already landed — and still logs the edit', async () => {
     mockedMarkOutdated.mockRejectedValueOnce(new Error('rls'))
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    await expect(
-      recordOwnEdit(supabaseWithUser('user-1'), {
-        pondId: 'pond-1',
-        pageId: 'p',
-        before: [],
-        blocks: BLOCKS,
-      })
-    ).resolves.toBeUndefined()
+    const { logged } = await recordOwnEdit(supabaseWithUser('user-1'), {
+      pondId: 'pond-1',
+      pageId: 'p',
+      before: [],
+      blocks: BLOCKS,
+    })
+    await logged
     expect(spy).toHaveBeenCalled()
     expect(mockedAppend).toHaveBeenCalledTimes(1)
     spy.mockRestore()

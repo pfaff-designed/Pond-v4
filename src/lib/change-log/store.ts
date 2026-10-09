@@ -25,7 +25,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { assertTransition, canRevise } from './status'
-import { jsonEqual } from './revert-plan'
+import { jsonEqual } from '@/lib/json-equal'
 import {
   ACTOR_YOU,
   isChangeLogStatus,

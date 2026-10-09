@@ -32,7 +32,7 @@ export async function commitBlocks(
   opts:
     | {
         /** The person's OWN typed edit: sweep the page's pending block diffs to
-         *  `outdated` once the blocks land (G2, #98), and log the save as one
+         *  `outdated` once the blocks land, and log the save as one
          *  accepted record by you. The accept path leaves this off — it runs its
          *  own sweep with the accepted record excepted and writes its record
          *  inside `accept_change_log_record`, and an all-skipped accept re-saves
@@ -41,15 +41,14 @@ export async function commitBlocks(
         /** What the page held before this pause — the blocks last saved, or last
          *  adopted from another write. The record's `before`. */
         before: Block[]
-        /** #312: the pond the sweep and the record are scoped to. */
+        /** The pond the sweep and the record are scoped to. */
         pondId?: string | null
       }
     | { ownEdit?: false; pondId?: string | null } = {}
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
-  // The sweep and the record are side-records of the save (they never throw) —
-  // but they are AWAITED, and they run BEFORE anything downstream is told the
-  // page moved.
+  // The sweep is a side-record of the save (it never throws) — but it is
+  // AWAITED, and it runs BEFORE anything downstream is told the page moved.
   //
   // ORDER HERE IS THE BEHAVIOUR. A diff card learns it has gone outdated by
   // re-reading the log, and that re-read is triggered by the page's blocks
@@ -57,12 +56,19 @@ export async function commitBlocks(
   // the moment this promise resolves. Firing the sweep with `void`, or after the
   // propagation, races that re-read: the card reads the log before the sweep has
   // written to it, finds the record still `proposed`, and keeps its accept
-  // button. That is exactly the state `outdated` exists to prevent, and it is
-  // what the person sees on nearly every own edit. Awaiting it first makes the
-  // outcome deterministic rather than a coin toss on two round-trips.
+  // button. That is exactly the state `outdated` exists to prevent.
+  //
+  // The record itself is not awaited: nothing reads it to decide what the page
+  // is, so the save reports saved without it, and the log views re-read once it
+  // is in.
   if (opts.ownEdit) {
-    await recordOwnEdit(supabase, { pondId: opts.pondId, pageId, before: opts.before, blocks })
-    void queryClient.invalidateQueries({ queryKey: changeLogKey() })
+    const { logged } = await recordOwnEdit(supabase, {
+      pondId: opts.pondId,
+      pageId,
+      before: opts.before,
+      blocks,
+    })
+    void logged.then(() => queryClient.invalidateQueries({ queryKey: changeLogKey() }))
   }
   await propagateBlockWrite(queryClient, pageId)
 }

@@ -21,9 +21,9 @@
  *   • `saveBlocks` / `updateTitle` — the shared `fake-supabase` builder has no
  *     `.update()`, so a two-line adapter applies their patch to its `_pages` map.
  *     The assertions still read the row, not the call.
- *   • `recordOwnEdit` — spied rather than run, so the own-edit contract (the #98
- *     sweep and the accepted record) is asserted without turning it loose on a fake
- *     whose `from()` serves one table.
+ *   • `recordOwnEdit` — spied rather than run, so the own-edit contract (the
+ *     outdated sweep and the accepted record) is asserted without turning it loose
+ *     on a fake whose `from()` serves one table.
  *   • `fetchPages` / `getOrCreateHomePage` — `fetchPages` is DERIVED from the fake's
  *     rows, so "the tree the rail reads" is the real written state, not a fixture.
  */
@@ -76,7 +76,7 @@ jest.mock('@/lib/pages/client', () => ({
   updateTitle: (...args: unknown[]) => mockUpdateTitle(...(args as [unknown, string, string])),
 }))
 
-const mockRecordOwnEdit = jest.fn().mockResolvedValue(undefined)
+const mockRecordOwnEdit = jest.fn().mockResolvedValue({ logged: Promise.resolve() })
 jest.mock('@/lib/change-log/own-edit', () => ({
   recordOwnEdit: (...args: unknown[]) => mockRecordOwnEdit(...args),
 }))

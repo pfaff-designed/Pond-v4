@@ -28,9 +28,9 @@ import type { Block } from '@/lib/documents/types'
 import { appendRecord, advanceStatus, markOutdated } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { listRevertsOf } from '@/lib/change-log/store'
+import { jsonEqual } from '@/lib/json-equal'
 import {
   canRevertRecord,
-  jsonEqual,
   planRevert,
   readBlockSnapshot,
   revertRefusal,

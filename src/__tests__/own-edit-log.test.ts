@@ -1,9 +1,8 @@
 /**
  * @jest-environment node
  *
- * "Your edits are accepted as you make them" (`Pond 06.15` 6o frame 1) and
- * "your own edits apply as you type, grouped by pause in the change log"
- * (`Pond 06.17` 6q frame 11). The editor's debounced save is the pause: each
+ * Your edits are accepted as you make them, and grouped by pause in the
+ * change log. The editor's debounced save is the pause: each
  * save that changed the blocks leaves exactly one `accepted` record by you,
  * carrying the blocks before and after. The log is a side-record of the save
  * and never fails it.
@@ -23,6 +22,7 @@ import { appendOwnEdit, markOutdated } from '@/lib/change-log/store'
 import { saveBlocks } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { pagesKey } from '@/lib/pages/keys'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
 const mockedAppend = appendOwnEdit as jest.MockedFunction<typeof appendOwnEdit>
@@ -53,6 +53,10 @@ beforeEach(() => {
   queryClient = { invalidateQueries: jest.fn(async () => {}) } as unknown as QueryClient
   global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response)
 })
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
 
 const ownSave = (before: Block[], blocks: Block[]) =>
   commitBlocks(supabase, queryClient, 'page-1', blocks, { ownEdit: true, before, pondId: 'pond-1' })
@@ -100,6 +104,7 @@ describe('commitBlocks — a person’s own save is logged', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(ownSave(BEFORE, AFTER)).resolves.toBeUndefined()
+    await settle()
 
     expect(mockedSaveBlocks).toHaveBeenCalledWith(supabase, 'page-1', AFTER)
     // Everything downstream of the save still runs.
@@ -133,9 +138,25 @@ describe('commitBlocks — a person’s own save is logged', () => {
     expect(mockedAppend).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes every change-log view once the record is in', async () => {
+  it('does not wait for the record: the save resolves while the append is still in flight', async () => {
+    let landRecord: (record: ChangeLogRecord) => void = () => {}
+    mockedAppend.mockReturnValueOnce(
+      new Promise<ChangeLogRecord>((resolve) => {
+        landRecord = resolve
+      })
+    )
+
     await ownSave(BEFORE, AFTER)
 
+    // Saved: the blocks are in, the sweep ran, and the rail was told.
+    expect(mockedSaveBlocks).toHaveBeenCalledTimes(1)
+    expect(mockedMarkOutdated).toHaveBeenCalledTimes(1)
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: pagesKey() })
+    // The log views are refreshed only once the record is actually there.
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({ queryKey: changeLogKey() })
+
+    landRecord({ id: 'rec-1' } as ChangeLogRecord)
+    await settle()
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
   })
 })

@@ -90,6 +90,12 @@ export interface RowSnapshot {
   id: string
   title: string
   values: Record<string, unknown>
+  /**
+   * Each field's value as the field showed it when the record was written — a
+   * choice as its label, a checkbox as `✓` — keyed by field id. Kept with the
+   * record because a later rename of an option must not rewrite what was logged.
+   */
+  shown: Record<string, string>
 }
 
 /**

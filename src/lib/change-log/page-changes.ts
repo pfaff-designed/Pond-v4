@@ -31,19 +31,27 @@ export interface PageChangeRow {
   reverts: ChangeLogRecord | null
 }
 
+/** `09:31` — how a revert names the change it sets back. */
+const clockTime = (record: ChangeLogRecord): string =>
+  new Date(record.createdAt).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+
 /**
  * A short label for a record.
  *
  * An edit reads as what its diff did ("wrote 3 paragraphs", `summary.ts`); a
  * record edit names the record. The full before/after, rendered block by block,
- * stays the record page's (#147) — this is one line for a row.
+ * stays the record page's — this is one line for a row.
  */
 export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord | null): string {
   switch (record.action) {
     case 'edit':
       return summarizeBlockEdit(record.before, record.after) ?? 'edited this page'
     case 'revert':
-      return reverts === null ? 'revert of an earlier change' : `revert of ${reverts.action}`
+      return reverts === null ? 'revert of an earlier change' : `revert of ${clockTime(reverts)}`
     case 'create_page':
       return 'created this page'
     case 'define_schema':

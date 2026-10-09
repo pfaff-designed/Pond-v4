@@ -573,7 +573,7 @@ describe('the change log', () => {
       revertBlockedBy: 'waiting',
     })
     expect(rows.find((r) => r.record.id === revert.id)).toMatchObject({
-      label: 'revert of edit',
+      label: expect.stringMatching(/^revert of \d{2}:\d{2}$/),
       reverts: { id: edit.id },
     })
 
@@ -604,13 +604,15 @@ describe('your own edits', () => {
     } as unknown as Block,
   ]
 
-  /** The editor's debounced save — one pause. */
-  const typeAndPause = (before: Block[], after: Block[]) =>
-    commitBlocks(world.supabase, world.queryClient, PAGE, after, {
+  /** The editor's debounced save — one pause — and the record it writes behind it. */
+  const typeAndPause = async (before: Block[], after: Block[]) => {
+    await commitBlocks(world.supabase, world.queryClient, PAGE, after, {
       ownEdit: true,
       before,
       pondId: POND,
     })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
 
   it('are accepted as you make them, and the page’s changes read "wrote 3 paragraphs · you"', async () => {
     await typeAndPause(ORIGINAL, WROTE)

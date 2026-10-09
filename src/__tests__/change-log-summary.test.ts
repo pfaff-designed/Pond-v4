@@ -1,7 +1,7 @@
 /**
  * The short line a change-log record reads as — `describeChange` over the
- * record's own before/after (`Pond 06.17` 6q frame 11: "wrote 3 paragraphs ·
- * you"; `Pond 06.15` 6o frame 1: "added chickpeas, harissa · recipes · you").
+ * record's own before/after: "wrote 3 paragraphs", "added chickpeas, harissa",
+ * "electrician → w/c 6 oct", "revert of 09:31".
  */
 
 import { describeChange } from '@/lib/change-log/page-changes'
@@ -119,38 +119,129 @@ describe('an edit to a page reads as what was written', () => {
 })
 
 describe('a record edit reads as the record', () => {
-  const row = (title: string, values: Record<string, unknown> = {}) => ({
-    id: 'row-1',
-    title,
-    values,
-  })
+  const row = (
+    title: string,
+    values: Record<string, unknown> = {},
+    shown: Record<string, string> = {}
+  ) => ({ id: 'row-1', title, values, shown })
 
-  it('names the row that was added', () => {
+  it('names the record that was added', () => {
     expect(describeChange(record('add_row', null, row('chickpeas, harissa')), null)).toBe(
       'added chickpeas, harissa'
     )
   })
 
-  it('says "a row" when the added row has no title yet', () => {
-    expect(describeChange(record('add_row', null, row('')), null)).toBe('added a row')
+  it('says "a record" when the added record has no title yet', () => {
+    expect(describeChange(record('add_row', null, row('')), null)).toBe('added a record')
   })
 
-  it('names the row whose value changed', () => {
+  it('says "a record" for an add it cannot read as a record', () => {
+    const call = { collectionId: 'col-1', title: 'dune', props: { status: 'reading' } }
+    expect(describeChange(record('add_row', null, call), null)).toBe('added a record')
+  })
+
+  it('reads a value change as record → value, as the field shows it', () => {
+    // A select stores its option id; the record carries the label the field showed.
+    const before = row('electrician', { when: 'o-29' }, { when: 'w/c 29 sep' })
+    const after = row('electrician', { when: 'o-6' }, { when: 'w/c 6 oct' })
+    expect(describeChange(record('edit_row', before, after), null)).toBe('electrician → w/c 6 oct')
+  })
+
+  it('lists every field that changed in the pause', () => {
+    const before = row('worktop', { when: 'a', who: 'x' }, { when: 'w/c 20 oct', who: 'sam' })
+    const after = row('worktop', { when: 'b', who: 'y' }, { when: 'w/c 27 oct', who: 'j. hart' })
+    expect(describeChange(record('edit_row', before, after), null)).toBe(
+      'worktop → w/c 27 oct, j. hart'
+    )
+  })
+
+  it('shows a cleared value as the empty mark', () => {
+    const before = row('worktop', { when: 'a' }, { when: 'w/c 20 oct' })
+    const after = row('worktop', { when: null }, { when: '' })
+    expect(describeChange(record('edit_row', before, after), null)).toBe('worktop → —')
+  })
+
+  it('reads a rename as old to new', () => {
+    expect(describeChange(record('edit_row', row('dal'), row('dal, weeknight')), null)).toBe(
+      'renamed dal to dal, weeknight'
+    )
+  })
+
+  it('names an untitled record "a record"', () => {
+    expect(describeChange(record('edit_row', row(''), row('dal')), null)).toBe(
+      'renamed a record to dal'
+    )
     expect(
       describeChange(
         record(
           'edit_row',
-          row('dal, weeknight', { status: 'a' }),
-          row('dal, weeknight', { status: 'b' })
+          row('', { when: 'a' }, { when: 'mon' }),
+          row('', { when: 'b' }, { when: 'tue' })
         ),
         null
       )
-    ).toBe('edited dal, weeknight')
+    ).toBe('a record → tue')
   })
 
-  it('reads a rename as old → new', () => {
-    expect(describeChange(record('edit_row', row('dal'), row('dal, weeknight')), null)).toBe(
-      'renamed dal to dal, weeknight'
-    )
+  it('says "edited a record" when it cannot read the snapshots', () => {
+    expect(describeChange(record('edit_row', null, { values: [] }), null)).toBe('edited a record')
+  })
+})
+
+describe('Pond’s edit to a table reads as the record it changed', () => {
+  const schedule = (rows: Array<[string, string, string]>): Block =>
+    ({
+      id: 't1',
+      type: 'table',
+      label: 'schedule',
+      columns: ['task', 'when'],
+      rows: rows.map(([id, task, when]) => ({ id, cells: [task, when] })),
+    }) as Block
+
+  const BEFORE = schedule([
+    ['r1', 'electrician, second fix', 'provisional, w/c 29 sep'],
+    ['r2', 'worktop template', 'not booked'],
+  ])
+
+  it('one cell changed reads as record → value', () => {
+    const after = schedule([
+      ['r1', 'electrician, second fix', 'w/c 6 oct'],
+      ['r2', 'worktop template', 'not booked'],
+    ])
+    expect(describeEdit([BEFORE], [after])).toBe('electrician, second fix → w/c 6 oct')
+  })
+
+  it('one row added reads as the record added', () => {
+    const after = schedule([
+      ['r1', 'electrician, second fix', 'provisional, w/c 29 sep'],
+      ['r2', 'worktop template', 'not booked'],
+      ['r3', 'skip hire', 'mon'],
+    ])
+    expect(describeEdit([BEFORE], [after])).toBe('added skip hire')
+  })
+
+  it('more than one record changed reads as the table', () => {
+    const after = schedule([
+      ['r1', 'electrician, second fix', 'w/c 6 oct'],
+      ['r2', 'worktop template', 'w/c 27 oct'],
+    ])
+    expect(describeEdit([BEFORE], [after])).toBe('edited schedule table')
+  })
+})
+
+describe('a revert reads as the change it sets back', () => {
+  it('names the original by its time', () => {
+    const original = record('edit', null, null)
+    const revert = { ...record('revert', null, null), links: { revertOf: original.id } }
+    const clock = new Date(original.createdAt).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    expect(describeChange(revert, original)).toBe(`revert of ${clock}`)
+  })
+
+  it('says "an earlier change" when the original is not at hand', () => {
+    expect(describeChange(record('revert', null, null), null)).toBe('revert of an earlier change')
   })
 })
