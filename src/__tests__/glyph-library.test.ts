@@ -2,9 +2,9 @@
  * The glyph library — src/lib/rail/glyph-library.ts — and the automatic area
  * glyph — src/lib/rail/area-glyph.ts.
  *
- * `Pond 06.24` (6y): "All 182 are there. 42 glyphs have names. The other 140
- * have numbers." Search is "name contains the text", numbered shapes match by
- * number, and the picker opens on "the 8 glyphs last picked in this pond".
+ * All 182 files in `public/icons/` are in the library: 42 by name, 140 by
+ * number. Search is "name contains the text", numbered shapes match by number,
+ * and a pond keeps the 8 glyphs last picked in it.
  */
 
 import { readdirSync } from 'node:fs'
@@ -17,7 +17,7 @@ import {
   pushRecentGlyph,
   searchGlyphs,
 } from '@/lib/rail/glyph-library'
-import { areaGlyph } from '@/lib/rail/area-glyph'
+import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
 
 const ICONS = readdirSync(resolve(__dirname, '../../public/icons'))
   .filter((f) => f.endsWith('.png'))
@@ -126,6 +126,13 @@ describe('areaGlyph — an area’s automatic glyph, from its title', () => {
       const glyph = areaGlyph(title)
       expect(NAMED_GLYPHS).toContain(glyph)
       expect(areaGlyph(title)).toBe(glyph)
+    }
+  })
+
+  it('never gives a title the pond’s glyph or a seeded area’s glyph', () => {
+    const reserved = [LIFE_GLYPH, 'house', 'ramp', 'heart', 'ring', 'star-01']
+    for (let i = 0; i < 500; i++) {
+      expect(reserved).not.toContain(areaGlyph(`area ${i}`))
     }
   })
 

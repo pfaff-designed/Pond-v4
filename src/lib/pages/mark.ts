@@ -5,25 +5,27 @@
  * rail row, the breadcrumb crumb, the children-grid card, the palette) and they
  * must never disagree about the same page.
  *
- * THE RULE (`Pond 06.24`):
+ * THE RULE:
  *
- *   area   a top-level page, except the databases root (a peer of life, not
- *          one of its areas).
+ *   area   a top-level page that is neither the home row nor the databases
+ *          root (a peer of life, not one of its areas). The database holds
+ *          the same rule in `public.page_is_area`.
  *
  *   glyph  explicit on the page  →  else automatic: an area's is derived from
  *          its title (`areaGlyph`, so it follows a rename); a page's is none,
  *          and the surface draws its `KindDot`.
  *
- *   colour the area's own role, else ink. "A page takes its area's colour,
- *          always. It has no colour of its own" — a role stored on a page is
- *          ignored, and moving a page to another area recolours it with no
- *          write. Ink means no colour; Pond never assigns one.
+ *   colour the area's own role, else ink. A page has no colour of its own: a
+ *          role stored on one is ignored, and moving a page to another area
+ *          recolours it with no write. Ink means no colour; Pond never
+ *          assigns one.
  *
  * Pure — no React, no Supabase, no colour values. A role becomes a colour in
  * exactly one place, `markAccent`.
  */
 
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
+import { HOME_TYPE } from '@/lib/pages/home'
 import { areaGlyph } from '@/lib/rail/area-glyph'
 import { isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 
@@ -31,6 +33,8 @@ import { isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 export interface MarkSource {
   id: string
   parentId: string | null
+  /** The page's type, when the caller has it. Only the home row's matters. */
+  type?: string
   title: string
   /** Explicit glyph, or null for the automatic one. */
   glyph?: string | null
@@ -51,13 +55,14 @@ export interface PageMark {
 
 const NO_MARK: PageMark = { glyph: null, role: null, isArea: false, glyphIsOwn: false }
 
-export const isArea = (page: Pick<MarkSource, 'parentId' | 'title'>): boolean =>
-  page.parentId === null && !isDatabasesRoot(page)
+/** Is this page an area — the only kind that takes a colour? */
+export const isArea = (page: Pick<MarkSource, 'parentId' | 'type' | 'title'>): boolean =>
+  page.parentId === null && page.type !== HOME_TYPE && !isDatabasesRoot(page)
 
 /**
  * The area `page` sits in — itself when it is one — or undefined when its chain
- * ends anywhere but an area (the databases subtree, or a parent the index does
- * not hold). `seen` guards a malformed parent cycle.
+ * ends anywhere but an area (the databases subtree, the home row, or a parent
+ * the index does not hold). `seen` guards a malformed parent cycle.
  */
 const areaOf = (
   page: MarkSource,
@@ -92,14 +97,14 @@ export const resolveMark = (
   const page = byId.get(pageId) ?? fallback
   if (!page) return NO_MARK
 
-  const area = isArea(page)
+  const pageIsArea = isArea(page)
   const ownGlyph = typeof page.glyph === 'string' && page.glyph.length > 0 ? page.glyph : null
   const areaRole = areaOf(page, byId)?.areaRole
 
   return {
-    glyph: ownGlyph ?? (area ? areaGlyph(page.title) : null),
+    glyph: ownGlyph ?? (pageIsArea ? areaGlyph(page.title) : null),
     role: isAreaRole(areaRole) ? areaRole : null,
-    isArea: area,
+    isArea: pageIsArea,
     glyphIsOwn: ownGlyph !== null,
   }
 }
@@ -109,6 +114,7 @@ export const markIndex = (
   rows: readonly {
     id: string
     parent_id: string | null
+    type?: string
     title: string
     glyph?: string | null
     area_role?: string | null
@@ -120,6 +126,7 @@ export const markIndex = (
       {
         id: r.id,
         parentId: r.parent_id,
+        type: r.type,
         title: r.title,
         glyph: r.glyph ?? null,
         areaRole: r.area_role ?? null,

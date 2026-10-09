@@ -146,7 +146,6 @@ export function NewPondSheet({
               />
             </div>
 
-            {/* Disabled per #316: the board's row is present and honest, and inert. */}
             <div className="flex flex-col gap-[8px]">
               <span className={LABEL}>glyph</span>
               <div className="pointer-events-none flex flex-wrap gap-[6px] opacity-40">

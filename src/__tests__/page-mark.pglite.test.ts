@@ -3,10 +3,10 @@
 // The columns are the floor under the picker: NULL has to mean "automatic", and
 // the role column has to refuse anything that is not a role the theme defines — a
 // stored `sage` or `#648F7B` would pin a mark to one palette and defeat the whole
-// reason the column holds a role. 0022 narrows the role to areas: "a page takes
-// its area's colour, always. It has no colour of its own" (`Pond 06.24`). Proved
-// against real Postgres (PGLite, the real migrations from disk) rather than a
-// mocked builder.
+// reason the column holds a role. 0022 narrows the role to areas — top-level
+// pages that are neither the home row nor the databases root; every other page
+// takes its area's colour. Proved against real Postgres (PGLite, the real
+// migrations from disk) rather than a mocked builder.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { applyMigration, makeDb, seedUser } from './helpers/pglite-harness'
@@ -106,6 +106,21 @@ async function addChild(
   return res.rows[0].id
 }
 
+/** A top-level row with an explicit type and title — the home row, the databases root. */
+async function addTopLevel(
+  db: PGlite,
+  type: string,
+  title: string,
+  areaRole: string | null = null
+): Promise<string> {
+  const res = await db.query<{ id: string }>(
+    `insert into public.pages (user_id, parent_id, type, title, area_role)
+     values ($1, null, $2, $3, $4) returning id`,
+    [USER, type, title, areaRole]
+  )
+  return res.rows[0].id
+}
+
 async function roleOf(db: PGlite, id: string): Promise<string | null> {
   const res = await db.query<{ area_role: string | null }>(
     'select area_role from public.pages where id = $1',
@@ -127,6 +142,80 @@ describe('0022_area_only_colour — pages', () => {
     expect(await roleOf(db, area)).toBe('area-a')
     expect(await roleOf(db, page)).toBeNull()
     expect(await roleOf(db, deep)).toBeNull()
+    await db.close()
+  })
+
+  it('clears a role already on the home row and the databases root', async () => {
+    const db = await makeDb({ through: '0020_retire_workspace.sql' })
+    await seedUser(db, USER)
+    const home = await addTopLevel(db, 'home', 'life', 'area-a')
+    const dbRoot = await addTopLevel(db, 'page', ' Databases ', 'area-b')
+    const area = await addChild(db, null, 'area-c')
+
+    await applyMigration(db, MIGRATION)
+
+    expect(await roleOf(db, home)).toBeNull()
+    expect(await roleOf(db, dbRoot)).toBeNull()
+    expect(await roleOf(db, area)).toBe('area-c')
+    await db.close()
+  })
+
+  it('refuses a role on the home row and on the databases root', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    await expect(addTopLevel(db, 'home', 'life', 'area-a')).rejects.toThrow()
+    await expect(addTopLevel(db, 'page', 'databases', 'area-a')).rejects.toThrow()
+    await expect(addTopLevel(db, 'page', ' DataBases ', 'area-a')).rejects.toThrow()
+
+    const home = await addTopLevel(db, 'home', 'life')
+    await expect(
+      db.query(`update public.pages set area_role = 'area-a' where id = $1`, [home])
+    ).rejects.toThrow()
+    await db.close()
+  })
+
+  it('an area renamed to databases becomes the databases root and drops its role', async () => {
+    // Sibling titles are unique per pond and parent, so this rename is only
+    // possible in a pond that has no databases root yet — and then it succeeds.
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const area = await addChild(db, null, 'area-a')
+    await db.query(`update public.pages set title = 'Databases' where id = $1`, [area])
+    expect(await roleOf(db, area)).toBeNull()
+
+    await db.query(`update public.pages set title = 'Garden' where id = $1`, [area])
+    expect(await roleOf(db, area)).toBeNull()
+    await db.close()
+  })
+
+  it('a pond that has a databases root refuses a second one by name', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pond = await db.query<{ id: string }>('select id from public.ponds where user_id = $1', [
+      USER,
+    ])
+    const pondId = pond.rows[0].id
+    const insert = (title: string, areaRole: string | null) =>
+      db.query<{ id: string }>(
+        `insert into public.pages (user_id, pond_id, parent_id, type, title, area_role)
+         values ($1, $2, null, 'page', $3, $4) returning id`,
+        [USER, pondId, title, areaRole]
+      )
+    await insert('databases', null)
+    const area = (await insert('Garden', 'area-a')).rows[0].id
+    await expect(
+      db.query(`update public.pages set title = 'Databases' where id = $1`, [area])
+    ).rejects.toThrow(/pages_sibling_title_pond_uniq/)
+    expect(await roleOf(db, area)).toBe('area-a')
+    await db.close()
+  })
+
+  it('renaming an area to anything else keeps its role', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const area = await addChild(db, null, 'area-a')
+    await db.query(`update public.pages set title = 'Garden' where id = $1`, [area])
+    expect(await roleOf(db, area)).toBe('area-a')
     await db.close()
   })
 

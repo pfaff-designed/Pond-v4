@@ -53,7 +53,7 @@ export interface Database {
           theme: PondTheme
           order: number
           last_page_id: string | null
-          /** 0022: the last 8 distinct glyphs picked in this pond, newest first. */
+          /** The last 8 distinct glyphs picked in this pond, newest first. */
           recent_glyphs: string[]
           created_at: string
           updated_at: string
@@ -96,7 +96,7 @@ export interface Database {
           workspace: Workspace
           /** Explicit glyph name; null = automatic (an area's from its title, a page's kind dot). */
           glyph: string | null
-          /** An area's colour ROLE (area-a|b|c); null = ink. Areas only (0022). */
+          /** An area's colour ROLE (area-a|b|c); null = ink. Areas only. */
           area_role: string | null
           updated_at: string
           created_at: string

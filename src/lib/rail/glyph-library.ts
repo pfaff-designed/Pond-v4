@@ -2,9 +2,9 @@
  * The glyph library, the area roles a mark is tinted with, and the recent-glyph
  * list a pond keeps.
  *
- * `Pond 06.24` (6y): "All 182 are there. 42 glyphs have names. The other 140 have
- * numbers." Every file in `public/icons/` is in the library: the named ones by
- * name, each in its family, and the `asset-N` ones by number, found by number.
+ * Every file in `public/icons/` is in the library — all 182: the 42 named ones
+ * by name, each in its family, and the 140 `asset-N` ones by number, found by
+ * number.
  *
  * Pure data — no React, no Supabase. Server- and client-safe.
  */
@@ -46,7 +46,7 @@ export const GLYPH_FAMILIES: readonly GlyphFamily[] = [
   { name: 'thing', glyphs: ['heart', 'eye', 'cake', 'arrow-02', 'pacman'] },
 ]
 
-/** The 42 named glyphs in library order — by name, as `PondPicker`'s `NAMED` lists them. */
+/** The 42 named glyphs in library order: by name. */
 export const NAMED_GLYPHS: readonly string[] = GLYPH_FAMILIES.flatMap((f) => f.glyphs).sort()
 
 /** The numbers of the 140 `public/icons/asset-<n>.png` files. The gaps are real. */

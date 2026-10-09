@@ -1,13 +1,12 @@
 /**
  * A page's mark — src/lib/pages/mark.ts.
  *
- * `Pond 06.24` (6y) is the spec:
- *
- *   - "A page takes its area's colour, always. It has no colour of its own."
- *   - "Ink is the default and means no colour." Pond never assigns one.
- *   - "A page: its kind dot. An area: the glyph derived from its title, which
- *     follows a rename." An explicit glyph does not.
- *   - "An area set to navy shows mist in ink. The setting is still navy."
+ *   - An area is a top-level page that is neither the home row nor the databases
+ *     root. Only an area takes a colour; every page takes its area's.
+ *   - Ink is the default and means no colour. Pond never assigns one.
+ *   - A page's automatic mark is its kind dot; an area's is a glyph derived from
+ *     its title, which follows a rename. An explicit glyph does not.
+ *   - Navy draws as mist on the dark ground; the stored role stays navy.
  *
  * Nothing here resolves to a colour — only to a role the theme paints.
  */
@@ -15,7 +14,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { markIndex, resolveMark, type MarkSource } from '@/lib/pages/mark'
-import { NotAnAreaError, setAreaRole, setPageGlyph } from '@/lib/pages/client'
+import { NotAnAreaError, setAreaRole, setPageGlyph } from '@/lib/pages/mark-client'
 import { areaGlyph } from '@/lib/rail/area-glyph'
 
 const index = (rows: MarkSource[]): Map<string, MarkSource> => new Map(rows.map((r) => [r.id, r]))
@@ -74,6 +73,27 @@ describe('resolveMark — colour belongs to areas', () => {
     ])
     expect(resolveMark('db-root', rows)).toMatchObject({ isArea: false, role: null, glyph: null })
     expect(resolveMark('ingredients', rows).role).toBeNull()
+  })
+
+  it('the home row is not an area: no colour, no automatic glyph', () => {
+    const home: MarkSource = {
+      id: 'home',
+      parentId: null,
+      type: 'home',
+      title: 'life',
+      areaRole: 'area-a',
+    }
+    expect(resolveMark('home', index([]), home)).toEqual({
+      glyph: null,
+      role: null,
+      isArea: false,
+      glyphIsOwn: false,
+    })
+  })
+
+  it('a top-level page with no type recorded is still an area', () => {
+    expect(resolveMark('health', index([HEALTH])).isArea).toBe(true)
+    expect(resolveMark('health', index([{ ...HEALTH, type: 'page' }])).isArea).toBe(true)
   })
 
   it('a page whose area is not in the index is ink, not a guess', () => {
@@ -156,16 +176,18 @@ describe('resolveMark — glyph', () => {
 describe('markIndex', () => {
   it('maps raw rows, treating absent columns as automatic', () => {
     const map = markIndex([
-      { id: 'a', parent_id: null, title: 'A', glyph: 'house', area_role: 'area-c' },
+      { id: 'a', parent_id: null, type: 'page', title: 'A', glyph: 'house', area_role: 'area-c' },
       { id: 'b', parent_id: 'a', title: 'B' },
     ])
     expect(map.get('a')).toEqual({
       id: 'a',
       parentId: null,
+      type: 'page',
       title: 'A',
       glyph: 'house',
       areaRole: 'area-c',
     })
+    expect(map.get('b')?.type).toBeUndefined()
     expect(map.get('b')?.glyph).toBeNull()
     expect(map.get('b')?.areaRole).toBeNull()
   })
@@ -200,72 +222,121 @@ describe('area roles across themes', () => {
 
 // ── The write path ───────────────────────────────────────────────────────────
 
-interface Captured {
-  patch?: Record<string, unknown>
-  filters: [string, string, unknown][]
+interface Row {
+  id: string
+  parent_id: string | null
+  type: string
+  title: string
 }
 
-/** A pages update chain that records its patch and filters, and returns `rows`. */
-const fakeSupabase = (rows: { id: string }[] = []) => {
+interface Captured {
+  patch?: Record<string, unknown>
+  filters: string[]
+}
+
+/**
+ * A pages update chain over `rows` that applies the filters it is given the way
+ * PostgREST would, so a write that names a page it may not touch matches nothing.
+ * `error` stands in for a database error, e.g. a CHECK violation.
+ */
+const fakeSupabase = (rows: Row[] = [], error: { code: string; message: string } | null = null) => {
   const captured: Captured = { filters: [] }
-  const result = { data: rows, error: null }
+  let matched = rows
+  const filter = (label: string, keep: (r: Row) => boolean) => {
+    captured.filters.push(label)
+    matched = matched.filter(keep)
+  }
+  const result = () => ({ data: error ? null : matched.map((r) => ({ id: r.id })), error })
   const chain = {
     update(patch: Record<string, unknown>) {
       captured.patch = patch
       return chain
     },
-    eq(col: string, value: unknown) {
-      captured.filters.push(['eq', col, value])
-      return Object.assign(Promise.resolve(result), chain)
+    eq(col: keyof Row, value: string) {
+      filter(`eq ${col} ${value}`, (r) => r[col] === value)
+      return Object.assign(Promise.resolve(result()), chain)
     },
-    is(col: string, value: unknown) {
-      captured.filters.push(['is', col, value])
+    is(col: keyof Row, value: null) {
+      filter(`is ${col} ${value}`, (r) => r[col] === value)
+      return chain
+    },
+    neq(col: keyof Row, value: string) {
+      filter(`neq ${col} ${value}`, (r) => r[col] !== value)
+      return chain
+    },
+    not(col: keyof Row, op: 'ilike', value: string) {
+      filter(`not ${col} ${op} ${value}`, (r) => String(r[col]).toLowerCase() !== value)
       return chain
     },
     select() {
-      return Promise.resolve(result)
+      return Promise.resolve(result())
     },
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { supabase: { from: () => chain } as any, captured }
 }
 
+const AREA_ROW: Row = { id: 'health', parent_id: null, type: 'page', title: 'Health' }
+
 describe('setPageGlyph', () => {
   it('writes the glyph and nothing else — no colour, no updated_at', async () => {
-    // A mark is not a content edit: nothing sorts by `updated_at`, and stamping it
-    // made picking a glyph read as an edit to the page and every ancestor.
-    const { supabase, captured } = fakeSupabase()
-    await setPageGlyph(supabase, 'p1', 'tulip-01')
+    const { supabase, captured } = fakeSupabase([AREA_ROW])
+    await setPageGlyph(supabase, 'health', 'tulip-01')
     expect(captured.patch).toEqual({ glyph: 'tulip-01' })
-    expect(captured.filters).toEqual([['eq', 'id', 'p1']])
+    expect(captured.filters).toEqual(['eq id health'])
   })
 
   it('null puts the automatic mark back', async () => {
-    const { supabase, captured } = fakeSupabase()
-    await setPageGlyph(supabase, 'p1', null)
+    const { supabase, captured } = fakeSupabase([AREA_ROW])
+    await setPageGlyph(supabase, 'health', null)
     expect(captured.patch).toEqual({ glyph: null })
   })
 })
 
 describe('setAreaRole', () => {
-  it('writes the role to an area, and only to a top-level page', async () => {
-    const { supabase, captured } = fakeSupabase([{ id: 'health' }])
+  it('writes the role to an area', async () => {
+    const { supabase, captured } = fakeSupabase([AREA_ROW])
     await setAreaRole(supabase, 'health', 'area-c')
     expect(captured.patch).toEqual({ area_role: 'area-c' })
-    expect(captured.filters).toEqual([
-      ['eq', 'id', 'health'],
-      ['is', 'parent_id', null],
-    ])
   })
 
   it('null puts an area back to ink', async () => {
-    const { supabase, captured } = fakeSupabase([{ id: 'health' }])
+    const { supabase, captured } = fakeSupabase([AREA_ROW])
     await setAreaRole(supabase, 'health', null)
     expect(captured.patch).toEqual({ area_role: null })
   })
 
-  it('rejects any page that is not an area', async () => {
-    const { supabase } = fakeSupabase([])
-    await expect(setAreaRole(supabase, 'workouts', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
+  it('refuses a nested page', async () => {
+    const { supabase } = fakeSupabase([{ ...AREA_ROW, id: 'sleep', parent_id: 'health' }])
+    await expect(setAreaRole(supabase, 'sleep', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
+  })
+
+  it('refuses the home row', async () => {
+    const { supabase } = fakeSupabase([
+      { id: 'home', parent_id: null, type: 'home', title: 'life' },
+    ])
+    await expect(setAreaRole(supabase, 'home', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
+  })
+
+  it('refuses the databases root, whatever its casing', async () => {
+    const { supabase } = fakeSupabase([
+      { id: 'db', parent_id: null, type: 'page', title: 'Databases' },
+    ])
+    await expect(setAreaRole(supabase, 'db', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
+  })
+
+  it('reports the database’s area CHECK as the same refusal', async () => {
+    const { supabase } = fakeSupabase([AREA_ROW], {
+      code: '23514',
+      message: 'violates check constraint "pages_area_role_area_only"',
+    })
+    await expect(setAreaRole(supabase, 'health', 'area-a')).rejects.toBeInstanceOf(NotAnAreaError)
+  })
+
+  it('passes any other database error through', async () => {
+    const { supabase } = fakeSupabase([AREA_ROW], { code: '42501', message: 'denied' })
+    await expect(setAreaRole(supabase, 'health', 'area-a')).rejects.toMatchObject({
+      code: '42501',
+    })
   })
 })

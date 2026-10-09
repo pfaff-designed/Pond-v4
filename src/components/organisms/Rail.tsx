@@ -626,7 +626,12 @@ const SKELETON_WIDTHS = [40, 62, 54, 70, 48, 66, 58, 44]
  * shows every area's automatic glyph.
  */
 const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMark =>
-  resolveMark(node.id, marks, { id: node.id, parentId: node.parentId, title: node.title })
+  resolveMark(node.id, marks, {
+    id: node.id,
+    parentId: node.parentId,
+    type: node.type,
+    title: node.title,
+  })
 
 /**
  * A row's leading glyph in its area's colour, or nothing — the row then keeps its

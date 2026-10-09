@@ -30,7 +30,6 @@ import {
   type PropertySchema,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import type { AreaRole } from '@/lib/rail/glyph-library'
 import { nextAvailableTitle, normalizeTitle, DuplicateTitleError } from './dedupe-title'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -355,55 +354,6 @@ export async function updateTitle(
     if ((error as any).code === '23505') throw new DuplicateTitleError(title.trim() || 'Untitled')
     throw new Error(error.message)
   }
-}
-
-// A mark write deliberately does NOT stamp `updated_at`: the other writers here
-// change content (`blocks`) or the name (`title`), and a mark is neither. Its one
-// reader, `subtreeLatest`, feeds the children-grid cards' "updated …" caption, so
-// stamping it made picking a glyph read as an edit to the page and every ancestor.
-// Unlike the log's side-records, a mark write IS what the person just asked for,
-// so a failure throws rather than leaving the picker showing a choice that never
-// landed.
-
-/** Set a page's glyph, or null to put its automatic mark back. Any page takes one. */
-export const setPageGlyph = async (
-  supabase: SupabaseClient<Database>,
-  id: string,
-  glyph: string | null
-): Promise<void> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from('pages').update({ glyph }).eq('id', id)
-  if (error) throw error
-}
-
-/** Thrown when a colour is written to a page that is not an area. */
-export class NotAnAreaError extends Error {
-  constructor(id: string) {
-    super(`Only an area takes a colour; page ${id} is not one.`)
-    this.name = 'NotAnAreaError'
-  }
-}
-
-/**
- * Set an area's colour role, or null for ink. Written as a ROLE, never a colour
- * (`glyph-library.ts`). Only a top-level page takes one — `pages_area_role_area_only`
- * enforces the same rule in the database; the filter here turns a miss into a
- * named error instead of a constraint violation.
- */
-export const setAreaRole = async (
-  supabase: SupabaseClient<Database>,
-  areaId: string,
-  role: AreaRole | null
-): Promise<void> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('pages')
-    .update({ area_role: role })
-    .eq('id', areaId)
-    .is('parent_id', null)
-    .select('id')
-  if (error) throw error
-  if (!data || data.length === 0) throw new NotAnAreaError(areaId)
 }
 
 /**
