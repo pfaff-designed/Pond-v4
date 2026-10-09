@@ -196,6 +196,7 @@ Before finishing, run FROM ${setup.worktree} and make all green:
 - \`npx tsc --noEmit\` → 0 errors
 - \`npx jest --testPathIgnorePatterns "/node_modules/" "/\\.claude/" "\\.pglite\\.test\\.ts$" "/__tests__/helpers/"\` → all green (the repo config ignores /.claude-worktrees/, so pass the rest of its patterns explicitly)
 - if you touched a migration or the schema: \`npm run test:pglite\` → all green
+- if you changed a component, a story, or any copy a story asserts: \`npm run test-storybook\` → all green (a one-shot vitest run that exits in ~30s — the one Playwright use allowed below)
 - \`npx eslint\` on the changed files → clean
 
 NEVER START A DEV SERVER OR ANY LONG-RUNNING PROCESS. No \`npm run dev\`, no \`next dev\`, no watch mode, no Playwright, no \`serve\`. They do not exit and the run stalls until killed (~1.6M tokens lost on 2026-10-02). The "matches the board" check is the ORCHESTRATOR's: put the steps in manual_verify_notes, naming the board file, frame numbers and both themes.

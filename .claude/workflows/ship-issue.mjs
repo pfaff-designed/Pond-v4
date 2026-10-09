@@ -94,6 +94,7 @@ Read the sibling/reference code the spec points to BEFORE writing — match hous
 Before finishing, run FROM ${setup.worktree} and make all green:
 - typecheck (check package.json, e.g. \`npx tsc --noEmit\`) → 0 errors
 - the jest suite (note: if the repo's jest config ignores /.claude-worktrees/, run \`npx jest --testPathIgnorePatterns "/node_modules/" "/\\.claude/" "\\.pglite\\.test\\.ts$" "/__tests__/helpers/"\` so the worktree's own tests run and the pglite suite and helpers stay out) → all green
+- if you changed a component, a story, or any copy a story asserts: \`npm run test-storybook\` → all green (a one-shot vitest run that exits in ~30s — the one Playwright use allowed below)
 - lint if present → clean (explain any residual warnings)
 
 NEVER START A DEV SERVER OR ANY LONG-RUNNING PROCESS. No \`npm run dev\`, no \`next dev\`, no watch mode, no Playwright, no \`serve\`. They do not exit, and the run stalls until it is killed — this cost ~1.6M tokens across two abandoned builds on 2026-10-02. Many ticket descriptions carry a "browser-verified against the board" criterion: that one is the ORCHESTRATOR's, not yours. Leave it unticked and put the steps in manual_verify_notes.
