@@ -9,17 +9,18 @@
  * area colour), housed in `PondAtom` beside the `dot` kind that wears it, and
  * rendered through by PondMolecule and the mark button; the
  * `AREA_GLYPH` map resolves the fixed defaults (Life→waves-02, Personal→house,
- * Professional→ramp, Health→heart, Finances→ring, Creativity→star-01); and the
- * wiring holds — the Rail's Life root and every
- * mapped area row lead with their glyph in the area hue (page-kind marks stay
- * KindDot, unmapped areas keep the dot), and the path the page surface publishes
- * for `PondCommand` leads with its area's mark.
+ * Professional→ramp, Health→heart, Finances→ring, Creativity→star-01), and every
+ * other area title derives a stable named glyph; and the wiring holds — the
+ * Rail's Life root and every area row lead with their glyph in the area hue
+ * (pages keep their KindDot), and the path the page surface publishes for
+ * `PondCommand` leads with its area's mark.
  */
 import React from 'react'
 import { render, waitFor, act } from '@testing-library/react'
 import { Icon, loadIcon } from '@/components/atoms/Icon'
 import { KindDot } from '@/components/atoms/PondAtom'
 import { LIFE_GLYPH, areaGlyph } from '@/lib/rail/area-glyph'
+import { NAMED_GLYPHS } from '@/lib/rail/glyph-library'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { RailView, type RailNode } from '@/components/organisms/Rail'
 import type { MarkSource } from '@/lib/pages/mark'
@@ -180,11 +181,11 @@ describe('AREA_GLYPH — the fixed defaults', () => {
     expect(areaGlyph('Financial')).toBe('ring')
   })
 
-  it('is case- and whitespace-insensitive; unmapped areas resolve to nothing', () => {
+  it('is case- and whitespace-insensitive; any other title derives a named glyph', () => {
     expect(areaGlyph('  health ')).toBe('heart')
     expect(areaGlyph('PERSONAL')).toBe('house')
-    expect(areaGlyph('Food')).toBeUndefined()
-    expect(areaGlyph('')).toBeUndefined()
+    expect(NAMED_GLYPHS).toContain(areaGlyph('Food'))
+    expect(areaGlyph('Food')).toBe(areaGlyph('food'))
   })
 })
 
@@ -274,14 +275,13 @@ describe('Rail — area marks ride the glyph system', () => {
     expect(slot.style.color).toBe('var(--mn-area-a)')
   })
 
-  // #108: the area voice (accent dot / glyph) rides TOP-LEVEL rows, since there is
-  // no `type = 'area'` left to test and the fixed glyph defaults are written for
-  // the seeded top-level areas. Per-page glyph/colour is #91's own work.
-  it('an unmapped top-level area keeps the KindDot mark; nested pages carry the dot, no glyph', () => {
+  // An area is a top-level row; its automatic mark is a glyph derived from its
+  // title. A page's automatic mark is its kind dot.
+  it('an unmapped area leads with its title-derived glyph; nested pages carry the dot', () => {
     const { getByRole } = renderRail()
     const scratch = getByRole('treeitem', { name: /Scratchpad/ })
-    expect(scratch.querySelector('[data-icon]')).toBeNull()
-    expect(scratch.querySelector('[data-part="dot"]')).toBeInTheDocument()
+    expect(scratch.querySelector(`[data-icon="${areaGlyph('Scratchpad')}"]`)).toBeInTheDocument()
+    expect(scratch.querySelector('[data-part="dot"]')).toBeNull()
     const food = getByRole('treeitem', { name: /Food/ })
     expect(food.querySelector('[data-icon]')).toBeNull()
     expect(food.querySelector('[data-part="dot"]')).toBeInTheDocument()
@@ -354,9 +354,7 @@ describe('DocumentPanel — the path it publishes leads with the area’s mark',
 
   it('a top-level page is its own area, so the path leads with its own mark', async () => {
     const { findByTestId } = renderPanel('health')
-    await waitFor(async () =>
-      expect(await publishedGlyph(findByTestId)).toBe(areaGlyph('Health'))
-    )
+    await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe(areaGlyph('Health')))
   })
 })
 
@@ -400,15 +398,25 @@ describe('Rail — an explicit mark reaches the rail (#134)', () => {
     )
   })
 
-  it('paints a nested row’s dot when only a COLOUR was chosen', () => {
-    // Round three: this was unreachable. The dot was gated on `isArea` as well as
-    // on `accent`, so a hue set on a nested page showed in the breadcrumb and the
-    // kicker and nowhere in the rail.
-    const { getByRole } = renderRail(railMarks([HEALTH, { ...SLEEP, areaRole: 'area-b' }]))
-    const sleep = getByRole('treeitem', { name: /Sleep/ })
-    const dot = sleep.querySelector<HTMLElement>('[data-part="dot"]')!
-    expect(dot).toBeInTheDocument()
-    expect(dot.style.background).toBe('var(--mn-area-b)')
+  it('ignores a role stored on a nested row: its dot takes its area’s colour', () => {
+    // "A page takes its area's colour, always. It has no colour of its own."
+    const coloured = renderRail(
+      railMarks([
+        { ...HEALTH, areaRole: 'area-a' },
+        { ...SLEEP, areaRole: 'area-b' },
+      ])
+    )
+    const dot = coloured
+      .getByRole('treeitem', { name: /Sleep/ })
+      .querySelector<HTMLElement>('[data-part="dot"]')!
+    expect(dot.style.background).toBe('var(--mn-area-a)')
+    coloured.unmount()
+
+    const ink = renderRail(railMarks([HEALTH, { ...SLEEP, areaRole: 'area-b' }]))
+    expect(
+      ink.getByRole('treeitem', { name: /Sleep/ }).querySelector<HTMLElement>('[data-part="dot"]')!
+        .style.background
+    ).toBe('')
   })
 
   it('gives a nested row in a coloured area the area’s dot, and no glyph', () => {

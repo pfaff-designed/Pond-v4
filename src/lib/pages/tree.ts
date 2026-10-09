@@ -158,7 +158,11 @@ export function applyMoveOptimistic(
     return rows.map((r) => {
       const parent_id = r.id === move.movedId ? move.newParentId : r.parent_id
       const order = orderById.has(r.id) ? orderById.get(r.id)! : r.order
-      return parent_id === r.parent_id && order === r.order ? r : { ...r, parent_id, order }
+      if (parent_id === r.parent_id && order === r.order) return r
+      // A top-level page nested under another stops being an area, and the
+      // database clears its role in the same write.
+      const nested = r.parent_id === null && parent_id !== null
+      return nested ? { ...r, parent_id, order, area_role: null } : { ...r, parent_id, order }
     })
   })
   return snapshot

@@ -72,7 +72,7 @@ export const AreaDefaults: Story = {
       {DEFAULT_AREAS.map((title, i) => (
         <Icon
           key={title}
-          name={areaGlyph(title)!}
+          name={areaGlyph(title)}
           size={28}
           className={['text-mn-area-a', 'text-mn-area-b', 'text-mn-area-c'][i % 3]}
         />
@@ -80,7 +80,7 @@ export const AreaDefaults: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    const names = [LIFE_GLYPH, ...DEFAULT_AREAS.map((title) => areaGlyph(title)!)]
+    const names = [LIFE_GLYPH, ...DEFAULT_AREAS.map((title) => areaGlyph(title))]
     for (const name of names) {
       await paintedGlyph(canvasElement, name)
     }

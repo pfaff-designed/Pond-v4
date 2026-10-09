@@ -84,4 +84,38 @@ describe('applyMoveOptimistic', () => {
     expect(byId(get(qc), 'scratch').parent_id).toBeNull()
     expect(byId(get(qc), 'scratch').order).toBe(0)
   })
+
+  it('nesting a coloured area clears its role, as the database does on the move', () => {
+    const { qc } = seed()
+    qc.setQueryData<PageRow[]>(['pages'], (rows) =>
+      rows!.map((r) => (r.id === 'scratch' ? { ...r, area_role: 'area-b' } : r))
+    )
+    applyMoveOptimistic(
+      qc,
+      { movedId: 'scratch', newParentId: 'health', siblingOrder: ['sleep', 'marathon', 'scratch'] },
+      null
+    )
+    expect(byId(get(qc), 'scratch').area_role).toBeNull()
+
+    // …so moving it straight back out, before any refetch, draws it in ink.
+    applyMoveOptimistic(
+      qc,
+      { movedId: 'scratch', newParentId: null, siblingOrder: ['health', 'scratch'] },
+      null
+    )
+    expect(byId(get(qc), 'scratch').area_role).toBeNull()
+  })
+
+  it('reordering an area among the top level keeps its role', () => {
+    const { qc } = seed()
+    qc.setQueryData<PageRow[]>(['pages'], (rows) =>
+      rows!.map((r) => (r.id === 'scratch' ? { ...r, area_role: 'area-b' } : r))
+    )
+    applyMoveOptimistic(
+      qc,
+      { movedId: 'scratch', newParentId: null, siblingOrder: ['scratch', 'health'] },
+      null
+    )
+    expect(byId(get(qc), 'scratch').area_role).toBe('area-b')
+  })
 })
