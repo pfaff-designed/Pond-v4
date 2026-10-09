@@ -182,7 +182,7 @@ export const EmptyStartsEditing: Story = {
 }
 
 /**
- * `/heading` (#281) mints `'## '` — scaffolding, not writing. It opens as an empty
+ * `/heading` mints `'## '` — scaffolding, not writing. It opens as an empty
  * heading with the caret in it, so the first keystroke is the heading's words.
  */
 export const HeadingStartsEditing: Story = {

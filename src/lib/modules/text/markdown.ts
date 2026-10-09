@@ -1,15 +1,15 @@
-import MarkdownIt from 'markdown-it'
-import type Token from 'markdown-it/lib/token.mjs'
+import MarkdownIt, { type Token } from 'markdown-it'
 import {
   MarkdownParser,
   MarkdownSerializer,
   type MarkdownSerializerState,
 } from 'prosemirror-markdown'
 import type { Mark, Node as ProseNode } from '@tiptap/pm/model'
-import { proseSchema } from './extensions'
+import { proseSchema } from './document'
 
 /**
- * The text block's markdown `content` ⇄ the editor's document.
+ * The text block's markdown `content` ⇄ its document. This parse is the only
+ * reading of a text block: the page, the editor and the diff card all draw it.
  *
  * Parsing follows the rules stored blocks were written under: GFM inline syntax,
  * a single newline is a line break, no raw HTML. Tables and images
@@ -78,6 +78,92 @@ const isBareLink = (mark: Mark, parent: ProseNode, index: number): boolean => {
 
 const escapeHref = (href: string): string => href.replace(/[()"]/g, '\\$&')
 
+const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/
+/** Unknown neighbours (the edge of this text) count as not-space: escape to be safe. */
+const isSpace = (char: string | undefined): boolean => char !== undefined && /\s/.test(char)
+const isWordChar = (char: string | undefined): boolean =>
+  char !== undefined && /[\p{L}\p{N}]/u.test(char)
+
+/** The characters either side of the run of `text[index]` that `index` sits in. */
+const runAround = (text: string, index: number): [string | undefined, string | undefined] => {
+  let start = index
+  let end = index
+  while (text[start - 1] === text[index]) start -= 1
+  while (text[end + 1] === text[index]) end += 1
+  return [text[start - 1], text[end + 1]]
+}
+
+/** Would the parser read `text[index]` as markup, wherever on the line it is? */
+const isInlineMarkup = (text: string, index: number): boolean => {
+  const rest = text.slice(index)
+  switch (text[index]) {
+    case '\\':
+      return index === text.length - 1 || ASCII_PUNCTUATION.test(text[index + 1])
+    case '`':
+      return true
+    case '~':
+      return text[index - 1] === '~' || text[index + 1] === '~'
+    case '*': {
+      const [before, after] = runAround(text, index)
+      return !(isSpace(before) && isSpace(after))
+    }
+    case '_': {
+      const [before, after] = runAround(text, index)
+      return !(isSpace(before) && isSpace(after)) && !(isWordChar(before) && isWordChar(after))
+    }
+    case ']':
+      return text[index + 1] === '('
+    case '&':
+      return /^&(#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/i.test(rest)
+    case '<':
+      return /^<([a-z][a-z\d+.-]{1,31}:[^\s<>]*|[^\s@<>]+@[^\s@<>]+)>/i.test(rest)
+    default:
+      return false
+  }
+}
+
+/**
+ * Where a line's own markup would start, if the text opening it were read as
+ * markdown: a quote, heading, list item, rule or link definition at the start of
+ * a block; after a line break also a setext underline (a list or reference can't
+ * interrupt a paragraph, except a list numbered 1).
+ */
+const lineMarkupAt = (text: string, after: 'block' | 'break'): number => {
+  const lead = /^ {0,3}/.exec(text)?.[0].length ?? 0
+  const line = text.slice(lead)
+  const ordered = /^(\d{1,9})[.)](\s|$)/.exec(line)
+  if (/^(>|#{1,6}(\s|$)|[-+*](\s|$))/.test(line)) return lead
+  if (/^([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(line)) return lead
+  if (after === 'break' && /^(=+|-+)[ \t]*$/.test(line)) return lead
+  if (ordered && (after === 'block' || ordered[1] === '1')) return lead + ordered[1].length
+  if (after === 'block') {
+    const definition = /^\[[^\]]+\]:/.exec(line)
+    if (definition) return lead + definition[0].length - 2
+  }
+  return -1
+}
+
+/**
+ * Escapes only what the parser would otherwise read as markup, so text is written
+ * as typed: a task marker, a pipe, a lone `~` or `*` keeps its spelling for any
+ * reader that draws it.
+ */
+const escapeText = (text: string, lineStart: 'block' | 'break' | null): string => {
+  const lineMarkup = lineStart ? lineMarkupAt(text, lineStart) : -1
+  let escaped = ''
+  for (let index = 0; index < text.length; index += 1) {
+    const markup = index === lineMarkup || isInlineMarkup(text, index)
+    escaped += markup ? `\\${text[index]}` : text[index]
+  }
+  return escaped
+}
+
+const lineStartOf = (parent: ProseNode, index: number): 'block' | 'break' | null => {
+  if (parent.type.name === 'heading') return null
+  if (index === 0) return 'block'
+  return parent.child(index - 1).type.name === 'hardBreak' ? 'break' : null
+}
+
 /** Fence longer than any backtick run inside, so the code can never close it early. */
 const fenceFor = (code: string): string => {
   const longest = Math.max(2, ...(code.match(/`{3,}/g) ?? []).map((run) => run.length))
@@ -132,9 +218,9 @@ const serializer = new MarkdownSerializer(
       state.renderInline(node)
       state.closeBlock(node)
     },
-    // A plain newline, not CommonMark's `\` break: every reader of this content
-    // treats a single newline as a line, and existing blocks are written that way.
-    // A heading is one line in markdown, so a break inside one becomes a space.
+    // A plain newline, not CommonMark's `\` break: the parser reads a single
+    // newline as a line, and existing blocks are written that way. A heading is one
+    // line in markdown, so a break inside one becomes a space.
     hardBreak: (state, node, parent, index) => {
       const hasTextAfter = Array.from({ length: parent.childCount - index - 1 }).some(
         (_, offset) => parent.child(index + 1 + offset).type !== node.type
@@ -142,16 +228,21 @@ const serializer = new MarkdownSerializer(
       if (!hasTextAfter) return
       state.write(parent.type.name === 'heading' ? ' ' : '\n')
     },
-    text: (state, node) => state.text(node.text ?? '', !inBareLink.has(state)),
+    text: (state, node, parent, index) => {
+      const text = node.text ?? ''
+      state.text(inBareLink.has(state) ? text : escapeText(text, lineStartOf(parent, index)), false)
+    },
   },
   {
     italic: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: true },
     bold: { open: '**', close: '**', mixable: true, expelEnclosingWhitespace: true },
     strike: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
     link: {
+      // Written directly rather than returned: a returned `[` makes the serializer
+      // escape a `!` before it, turning `![alt](src)` into different text.
       open: (state: MarkdownSerializerState, mark: Mark, parent: ProseNode, index: number) => {
-        if (!isBareLink(mark, parent, index)) return '['
-        inBareLink.add(state)
+        if (isBareLink(mark, parent, index)) inBareLink.add(state)
+        else state.write('[')
         return ''
       },
       close: (state: MarkdownSerializerState, mark: Mark) => {

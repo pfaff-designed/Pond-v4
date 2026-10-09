@@ -1,4 +1,4 @@
-import { Extension, getSchema, type Extensions } from '@tiptap/core'
+import { Extension, type Extensions } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 
 /** What the autolinker may turn into a link — the same shapes the markdown parser links. */
@@ -24,16 +24,16 @@ const MarkdownListAttributes = Extension.create({
 })
 
 /**
- * The text block's document: exactly the structure its markdown `content` can
- * carry. Underline has no markdown, and a trailing empty paragraph would be
- * written back as content the person never typed, so both are left out. Link
- * clicks are the view's: the link extension's own opener keeps `window.opener`.
+ * The text block's editor: exactly the structure its markdown `content` can
+ * carry (`document.ts` declares the same schema without the editor). Underline
+ * has no markdown, and a trailing empty paragraph would be written back as
+ * content the person never typed, so both are left out. Link clicks are the
+ * view's: the link extension's own opener keeps `window.opener`.
  */
 export const proseExtensions: Extensions = [
   StarterKit.configure({
     underline: false,
     trailingNode: false,
-    heading: { levels: [1, 2, 3, 4, 5, 6] },
     link: {
       openOnClick: false,
       autolink: true,
@@ -44,5 +44,3 @@ export const proseExtensions: Extensions = [
   }),
   MarkdownListAttributes,
 ]
-
-export const proseSchema = getSchema(proseExtensions)

@@ -4,7 +4,7 @@
  * 15px (16 on mobile) / 1.6, weight 400, full ink. The serif is for the page only; an answer
  * in the thread is never set in it. Read inline from the mockup's answer `<p>`.
  *
- * Everything structural (tables, code, links) is inherited from the terminal
+ * Everything structural (tables, code, links) is inherited from the structure
  * map the caller passes in — only the flow text changes voice, so an answer
  * reads as Pond talking, not as a page.
  */

@@ -29,7 +29,6 @@ import { cn } from '@/lib/utils'
 import { FOCUS_RING } from '@/components/atoms/focus-ring'
 import { POND_CONTROL_VARIANTS } from '@/components/atoms/PondControl'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { TEXT_PROSE_CLASS } from '@/lib/modules/text/prose'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { ChartCard } from '@/lib/modules/chart/card'
@@ -466,13 +465,11 @@ describe('PropertyInspector — sans values, board field-row label', () => {
 // ── Page prose at the meta tier ─────────────────────────────────────────────
 
 describe('Page prose is full ink', () => {
-  it('text block and terminal prose carry text-mn-text, never the small-meta tier', () => {
-    for (const cls of [TEXT_PROSE_CLASS, TERMINAL_PROSE_CLASS]) {
-      const tokens = cls.split(' ')
-      expect(tokens).toContain('text-mn-text')
-      expect(tokens).not.toContain('text-mn-text-meta')
-      expect(tokens).toContain('font-serif')
-    }
+  it('text block prose carries text-mn-text, never the small-meta tier', () => {
+    const tokens = TEXT_PROSE_CLASS.split(' ')
+    expect(tokens).toContain('text-mn-text')
+    expect(tokens).not.toContain('text-mn-text-meta')
+    expect(tokens).toContain('font-serif')
   })
 
   it('the text block’s empty placeholder sits on the 68 tier', async () => {

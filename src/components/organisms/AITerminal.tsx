@@ -2009,7 +2009,7 @@ export function AITerminal() {
             <div data-part="answer" className="mn-arrive flex flex-col gap-[7px]">
               <span className={pageEyebrowClass}>pond</span>
               <div className="relative">
-                <Markdown variant="answer">{text}</Markdown>
+                <Markdown>{text}</Markdown>
                 {answerStreaming && (
                   <span
                     aria-hidden

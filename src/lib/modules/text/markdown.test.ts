@@ -57,6 +57,20 @@ const CANONICAL = [
   '```ts\nconst kcal = 1040\n```',
   'see https://example.com/plans for the drawings',
   '### Sunday\n\nSlept badly.\n\n#### notes\n\n##### small\n\n###### eyebrow',
+  // Syntax a text block has no structure for: its characters are kept as written,
+  // so a reader that does draw it (a task list, a table, an image) still can.
+  '- [ ] milk\n- [x] eggs\n- [X] bread',
+  '| room | budget |\n| --- | --- |\n| kitchen | 9000 |',
+  '![plan](https://example.com/p.png)',
+  '~soft~ strike',
+  'see www.example.com',
+  // Characters that are only markup in some positions are left alone in the others.
+  '2 * 3 = 6',
+  'snake_case_name',
+  'C:\\Users\\ana',
+  'Tom & Jerry, a -> b, x > y',
+  '-5 degrees, #hashtag, 1990s.',
+  'a/b, /check',
 ]
 
 describe('text block markdown — the editor round-trip', () => {
@@ -98,8 +112,6 @@ describe('text block markdown — the editor round-trip', () => {
     ['line one  \nline two', 'line one\nline two'],
     ['a\n\n\n\nb', 'a\n\nb'],
     ['<https://example.com>', 'https://example.com'],
-    // A text block has no image node: the `!` is escaped so it stays a `!` beside a link.
-    ['![plan](https://example.com/p.png)', '\\![plan](https://example.com/p.png)'],
   ])('normalises %j once, then holds', (markdown, settled) => {
     expect(roundTrip(markdown)).toBe(settled)
     expect(roundTrip(settled)).toBe(settled)
@@ -135,11 +147,74 @@ describe('text block markdown — the editor round-trip', () => {
     expect(roundTrip('<b>bold</b>')).toBe('<b>bold</b>')
   })
 
-  it('literal markdown characters typed as text are escaped, so they stay text', () => {
+  it('literal markdown characters typed as text are escaped only where they would be markup', () => {
     const state = EditorState.create({ doc: parseMarkdown('') })
     const doc = state.tr.insertText('2 * 3 = 6, not **bold**').doc
     const markdown = serializeMarkdown(doc)
-    expect(markdown).toBe('2 \\* 3 = 6, not \\*\\*bold\\*\\*')
+    expect(markdown).toBe('2 * 3 = 6, not \\*\\*bold\\*\\*')
     expect(parseMarkdown(markdown).textContent).toBe('2 * 3 = 6, not **bold**')
+  })
+
+  /**
+   * Text that would be markup at the start of a line: typed at the start of the
+   * block, or after a line break (which is written as a plain newline).
+   */
+  const LINE_START_LITERALS = [
+    '- not a list',
+    '+ not a list',
+    '* not a list',
+    '> not a quote',
+    '# not a heading',
+    '###### not a heading',
+    '1. not a list',
+    '1) not a list',
+    '7. not a list',
+    '---',
+    '***',
+    '___',
+    '- - -',
+    '===',
+    '--',
+    '```',
+    '~~~',
+    '[ref]: /plans',
+    '[not](/plans)',
+    '<pond:plans>',
+    '<ana@example>',
+    '&copy; &#169;',
+    '`not code`',
+    '**not bold** _nor this_ ~~nor this~~',
+    'ends in a backslash\\',
+    'a \\* stays',
+  ]
+
+  const paragraphOf = (...lines: string[]): ProseNode => {
+    const { schema } = parseMarkdown('').type
+    const inline = lines.flatMap((line, i) => [
+      ...(i > 0 ? [schema.nodes.hardBreak.create()] : []),
+      schema.text(line),
+    ])
+    return schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, inline))
+  }
+
+  it.each(LINE_START_LITERALS)(
+    'typed %j stays that text, at the start or after a break',
+    (line) => {
+      for (const doc of [
+        paragraphOf(line),
+        paragraphOf('before', line),
+        paragraphOf('before', line, 'after'),
+      ]) {
+        const markdown = serializeMarkdown(doc)
+        expect(parseMarkdown(markdown).toJSON()).toEqual(doc.toJSON())
+        expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown)
+      }
+    }
+  )
+
+  it('a slash is never escaped, wherever it is typed', () => {
+    for (const doc of [paragraphOf('/'), paragraphOf('before', '/'), paragraphOf('a / b //')]) {
+      expect(serializeMarkdown(doc)).not.toContain('\\/')
+    }
   })
 })

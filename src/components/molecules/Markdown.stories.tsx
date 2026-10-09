@@ -4,9 +4,9 @@ import { expect, within } from 'storybook/test'
 import { Markdown, MarkdownInline } from './Markdown'
 
 /**
- * The rendered-reading primitive (ticket-20). Verifies that markdown source is
- * typeset — no literal `##`, `**`, `---`, or pipe-table syntax survives. Page prose
- * is the text block's own document (`lib/modules/text`), not this molecule.
+ * A composer answer, typeset. Verifies that markdown source is typeset — no literal
+ * `##`, `**`, `---`, or pipe-table syntax survives. A text block is its own
+ * document (`lib/modules/text`), not this molecule.
  */
 const meta = {
   title: 'Molecules/Markdown',
@@ -34,7 +34,7 @@ You'll need **dumbbells** and a *bench*. Reach for a mat when the floor is hard.
 
 /** Headings/bold/lists/rule/table all typeset. */
 export const Typeset: Story = {
-  args: { children: SAMPLE, variant: 'terminal' },
+  args: { children: SAMPLE },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     // Heading rendered as an <h2>, not literal "## Equipment".
@@ -52,17 +52,6 @@ export const Typeset: Story = {
     await expect(canvasElement.textContent).not.toContain('| Exercise |')
     // List items.
     await expect(canvas.getByText('Warm up first')).toBeInTheDocument()
-  },
-}
-
-/** Terminal variant: same source, compact chat-bubble treatment. */
-export const Terminal: Story = {
-  args: { children: '**Biceps** and **triceps**:\n\n- curls\n- extensions', variant: 'terminal' },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    await expect(canvas.getByText('Biceps').tagName).toBe('STRONG')
-    await expect(canvasElement.textContent).not.toContain('**Biceps**')
-    await expect(canvas.getByText('curls')).toBeInTheDocument()
   },
 }
 

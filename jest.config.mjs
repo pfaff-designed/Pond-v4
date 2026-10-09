@@ -33,11 +33,11 @@ const config = {
     // (the pure week helpers the binning transform reuses) still resolve for real.
     'components/charts/heatmap$': '<rootDir>/src/__mocks__/heatmap.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
-    // react-markdown (+ its remark plugins) is pure ESM; next/jest doesn't
+    // react-markdown (+ remark-gfm) is pure ESM; next/jest doesn't
     // transpile node_modules, so stub them in jsdom. Typeset rendering is covered
     // by the Storybook story tests, not jest — see src/__mocks__/react-markdown.tsx.
     '^react-markdown$': '<rootDir>/src/__mocks__/react-markdown.tsx',
-    '^remark-(gfm|breaks)$': '<rootDir>/src/__mocks__/remark-plugin.ts',
+    '^remark-gfm$': '<rootDir>/src/__mocks__/remark-plugin.ts',
     // @number-flow/react is a pure-ESM custom-element wrapper; stub it in jsdom.
     // The count-up animation is covered by the view big-number story test, not jest.
     '^@number-flow/react$': '<rootDir>/src/__mocks__/number-flow.tsx',

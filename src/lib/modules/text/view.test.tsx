@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { TiptapEditorHTMLElement } from '@tiptap/core'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
+import {
+  findTextBlock as findField,
+  textEditorOf as editorOf,
+} from '@/__tests__/helpers/text-block'
 import type { TextBlock } from './schema'
 import { TextView } from './view'
 import { TEXT_PROSE_CLASS } from './prose'
@@ -12,13 +15,27 @@ const sample: TextBlock = {
   content: '## Warm-up\n\nStart with **light cardio**, then reach for the `foam roller`.',
 }
 
-const editorOf = (element: HTMLElement) => {
-  const { editor } = element as TiptapEditorHTMLElement
-  if (!editor) throw new Error('not a text block editor')
-  return editor
-}
+/** Editor-only attributes; everything else must match between editor and render. */
+const EDITOR_ATTRIBUTES = new Set([
+  'class',
+  'contenteditable',
+  'translate',
+  'role',
+  'aria-label',
+  'aria-multiline',
+  'tabindex',
+])
 
-const findField = () => screen.findByRole('textbox', { name: 'text block' })
+/** An element's children as tags, sorted attributes and text — order-insensitive markup. */
+const canonical = (element: Element): string =>
+  Array.from(element.childNodes, (child) => {
+    if (!(child instanceof Element)) return child.textContent ?? ''
+    const attributes = Array.from(child.attributes)
+      .filter(({ name }) => !EDITOR_ATTRIBUTES.has(name))
+      .map(({ name, value }) => `${name}="${value}"`)
+      .sort()
+    return `<${[child.tagName.toLowerCase(), ...attributes].join(' ')}>${canonical(child)}</>`
+  }).join('')
 
 /** A host that keeps the block's state, as the page does. */
 const StatefulText = ({
@@ -65,6 +82,15 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(field.textContent).not.toMatch(/[*[\]()]/)
   })
 
+  it('an editable block shows its prose at once, then becomes the editor in place', async () => {
+    const { container } = render(<TextView data={sample} editable onChange={() => {}} />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()
+    const before = container.textContent
+    const field = await findField()
+    expect(container.textContent).toBe(before)
+    expect(within(field).getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()
+  })
+
   it('clicking a link in an editable block opens it in a new tab, with the opener severed', async () => {
     const open = jest.spyOn(window, 'open').mockReturnValue(null)
     render(
@@ -87,6 +113,41 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handled).toBe(true)
     expect(open).toHaveBeenCalledTimes(1)
     expect(open).toHaveBeenCalledWith('https://example.com/plans', '_blank', 'noopener,noreferrer')
+    open.mockRestore()
+  })
+
+  it('a link the editor refused (its href blanked) opens nothing — not this page', async () => {
+    const open = jest.spyOn(window, 'open').mockReturnValue(null)
+    render(<TextView data={{ id: 't', type: 'text', content: '' }} editable onChange={() => {}} />)
+    const field = await findField()
+    const editor = editorOf(field)
+    act(() => {
+      editor.commands.setContent({
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'run me',
+                marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }],
+              },
+            ],
+          },
+        ],
+      })
+    })
+    const link = field.querySelector('a')!
+    expect(link.getAttribute('href')).toBe('')
+    const { view } = editor
+    const click = new MouseEvent('click', { button: 0 })
+    Object.defineProperty(click, 'target', { value: link })
+    const handled = view.someProp('handleClick', (handleClick) =>
+      handleClick(view, view.posAtDOM(link, 0), click)
+    )
+    expect(handled).toBeFalsy()
+    expect(open).not.toHaveBeenCalled()
     open.mockRestore()
   })
 
@@ -179,14 +240,24 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(field).not.toHaveFocus()
   })
 
-  it('read-only is the same typeset document, not editable, in the same type', async () => {
+  it('read-only is the same typeset document, drawn at once with no editor, in the same type', () => {
     const { container } = render(<TextView data={sample} />)
-    await waitFor(() => expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument())
+    expect(screen.getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()
+    expect(screen.getByText('light cardio').tagName).toBe('STRONG')
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    const prose = container.querySelector('[contenteditable]')!
-    expect(prose).toHaveAttribute('contenteditable', 'false')
-    expect(prose.className).toContain(TEXT_PROSE_CLASS)
+    expect(container.querySelector('[contenteditable]')).toBeNull()
+    expect(container.querySelector('[data-text-prose]')?.className).toBe(TEXT_PROSE_CLASS)
     expect(container.textContent).not.toMatch(/##|\*\*/)
+  })
+
+  it('the editor and the read-only render draw the same document', async () => {
+    const content =
+      '## Warm-up\n\n- **light** cardio\n- see [plans](https://example.com)\n\nmilk\neggs'
+    const read = render(<TextView data={{ id: 'r', type: 'text', content }} />)
+    const readDocument = canonical(read.container.querySelector('[data-text-prose]')!)
+    read.unmount()
+    render(<TextView data={{ id: 'e', type: 'text', content }} editable onChange={() => {}} />)
+    expect(canonical(await findField())).toBe(readDocument)
   })
 
   it('the editor carries the board’s prose register: serif 200, 17.5 / 1.6, full ink', async () => {
@@ -202,5 +273,19 @@ describe('TextView — the text block edits in place as rendered prose', () => {
       expect(tokens).toContain(token)
     }
     expect(tokens).not.toContain('font-normal')
+  })
+
+  it('a divider is the atom’s rule: ink .09 in both themes, 12px above and below; a code block has its own padding', () => {
+    const tokens = TEXT_PROSE_CLASS.split(' ')
+    for (const token of [
+      '[&_hr]:border-mn-text/9',
+      '[&_hr]:my-3',
+      '[&_hr+*]:mt-0',
+      '[&_pre]:px-3.5',
+      '[&_pre]:py-3',
+    ]) {
+      expect(tokens).toContain(token)
+    }
+    expect(TEXT_PROSE_CLASS).not.toMatch(/border-mn-line/)
   })
 })
