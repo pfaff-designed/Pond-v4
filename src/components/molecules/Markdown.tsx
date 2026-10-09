@@ -19,14 +19,46 @@
 import { memo } from 'react'
 import ReactMarkdown, { type Components, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { answerComponents } from './markdown-answer'
 
-/** The composer answer voice — the sans at 15px / 1.6, never the serif.
- *  Defined in markdown-answer.tsx; re-exported so the molecule stays the one import. */
-export { ANSWER_PROSE_CLASS } from './markdown-answer'
+/**
+ * The answer voice (`Pond 06.01` 6a): PP Neue Montreal sans at reading scale —
+ * 15px (16 on mobile) / 1.6, weight 400, full ink, read from the mockup's answer
+ * `<p>`. The serif is the page's; an answer in the thread is never set in it.
+ */
+export const ANSWER_PROSE_CLASS =
+  'font-sans font-normal text-[16px] leading-[1.6] text-mn-text [text-wrap:pretty] md:text-[15px]'
 
-/** The structure the answer voice is laid over: emphasis, links, code, rules, tables. */
-const STRUCTURE_COMPONENTS: Components = {
+const ANSWER_COMPONENTS: Components = {
+  h1: ({ children }) => (
+    <h1 className="font-sans font-medium text-[18px] leading-[1.3] text-mn-text mt-3 mb-1.5 first:mt-0 md:text-[17px]">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="font-sans font-medium text-[17px] leading-[1.3] text-mn-text mt-3 mb-1.5 first:mt-0 md:text-[16px]">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="font-sans font-medium text-[16px] leading-[1.4] text-mn-text mt-2.5 mb-1 first:mt-0 md:text-[15px]">
+      {children}
+    </h3>
+  ),
+  p: ({ children }) => (
+    <p className={`${ANSWER_PROSE_CLASS} my-2 first:mt-0 last:mb-0`}>{children}</p>
+  ),
+  ul: ({ children }) => (
+    <ul className={`${ANSWER_PROSE_CLASS} my-2 list-disc pl-5 space-y-1`}>{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className={`${ANSWER_PROSE_CLASS} my-2 list-decimal pl-5 space-y-1`}>{children}</ol>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="font-sans text-[16px] leading-[1.6] md:text-[15px] text-mn-text-secondary border-l-2 border-mn-line pl-3 my-2">
+      {children}
+    </blockquote>
+  ),
+  strong: ({ children }) => <strong className="font-medium text-mn-text">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   li: ({ children }) => <li className="pl-1">{children}</li>,
   a: ({ children, href }) => (
@@ -67,8 +99,6 @@ const STRUCTURE_COMPONENTS: Components = {
   ),
 }
 
-const COMPONENTS = answerComponents(STRUCTURE_COMPONENTS)
-
 const REMARK_PLUGINS: Options['remarkPlugins'] = [remarkGfm]
 
 export const Markdown = memo(function Markdown({
@@ -79,8 +109,8 @@ export const Markdown = memo(function Markdown({
   className?: string
 }) {
   return (
-    <div className={className} data-variant="answer">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+    <div className={className}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={ANSWER_COMPONENTS}>
         {children}
       </ReactMarkdown>
     </div>
@@ -136,18 +166,16 @@ const INLINE_COMPONENTS: Components = {
   ),
 }
 
-export function MarkdownInline({
+export const MarkdownInline = ({
   children,
   className = '',
 }: {
   children: string
   className?: string
-}) {
-  return (
-    <span className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={INLINE_COMPONENTS}>
-        {children}
-      </ReactMarkdown>
-    </span>
-  )
-}
+}) => (
+  <span className={className}>
+    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={INLINE_COMPONENTS}>
+      {children}
+    </ReactMarkdown>
+  </span>
+)

@@ -55,6 +55,7 @@ jest.mock('@ai-sdk/react', () => ({
 
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { ANSWER_PROSE_CLASS } from '@/components/molecules/Markdown'
 import { dissolveConversation } from '@/lib/conversation/client'
 import { requestComposerToggle } from '@/lib/terminal-focus'
 
@@ -381,6 +382,6 @@ describe('the composer card — the thread: head, fold, turns', () => {
     const answer = turnEl.querySelector('[data-part="answer"]')!
     expect(within(answer as HTMLElement).getByText('pond').className).toBe(pageEyebrowClass)
     // The answer voice itself (15px sans) is pinned in ComposerThread.stories.
-    expect(screen.getByText('answer 1')).toHaveAttribute('data-variant', 'answer')
+    expect(screen.getByText('answer 1').className).toContain(ANSWER_PROSE_CLASS)
   })
 })
