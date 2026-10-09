@@ -121,14 +121,17 @@ const DEFAULTS: Record<PondAtomKind, string> = {
   divider: '',
 }
 
-const EMPTY_PLACEHOLDER: Partial<Record<PondAtomKind, string>> = {
+/** What an empty atom reads, by kind (`PondAtom.dc.html` EMPTY). */
+export const POND_ATOM_EMPTY = {
   relation: 'link a record',
   person: 'assign someone',
   heading: 'untitled',
   prose: 'write something',
   link: 'add a link',
   file: 'attach a file',
-}
+} as const satisfies Partial<Record<PondAtomKind, string>>
+
+const EMPTY_PLACEHOLDER: Partial<Record<PondAtomKind, string>> = POND_ATOM_EMPTY
 
 const ERROR_NOTE: Partial<Record<PondAtomKind, string>> = {
   relation: 'deleted · kept 710',

@@ -1,5 +1,5 @@
 /**
- * Jest mock for the remark plugins (`remark-gfm`, `remark-breaks`) — a no-op
+ * Jest mock for the remark plugin (`remark-gfm`) — a no-op
  * plugin. Paired with the `react-markdown` mock so the ESM remark chain never
  * enters jest's transformer. See ./react-markdown.tsx for the rationale.
  */

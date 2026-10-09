@@ -226,10 +226,11 @@ describe('the answer in the thread (6a frames 2–3)', () => {
     expect(within(youRow as HTMLElement).getByText('07:12')).toBeInTheDocument()
 
     // jest stubs react-markdown (the real renderer is covered in Storybook), so
-    // the voice is pinned two ways: the answer renders through the `answer`
-    // variant, and that variant's prose class IS the sans at 15px (16 on mobile) / 1.6.
+    // the voice is pinned two ways: the answer's paragraph is set in the answer
+    // voice, and that voice IS the sans at 15px (16 on mobile) / 1.6.
     const answer = screen.getByText(PROSE)
-    expect(answer.getAttribute('data-variant')).toBe('answer')
+    expect(answer.tagName).toBe('P')
+    expect(answer.className).toContain(ANSWER_PROSE_CLASS)
     expect(ANSWER_PROSE_CLASS).toMatch(/font-sans/)
     expect(ANSWER_PROSE_CLASS).toMatch(/md:text-\[15px\]/)
     expect(ANSWER_PROSE_CLASS).toMatch(/\btext-\[16px\]/)

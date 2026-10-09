@@ -1,107 +1,36 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Markdown, READING_PROSE_CLASS } from '@/components/molecules/Markdown'
+import { lazy, Suspense, useRef, type MouseEvent } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { TextBlock } from './schema'
+import { StaticProse } from './static-prose'
+import type { Press } from './editor'
+
+const loadEditor = () => import('./editor')
+// Fetched as soon as text blocks can appear in this browser, not when the first
+// editable one renders: until it lands, what a person types has nowhere to go.
+if (typeof window !== 'undefined') void loadEditor()
+const TextEditor = lazy(loadEditor)
 
 /**
- * Text view. Read-only always renders typeset markdown (ticket-20) — no surface
- * shows literal `##`, `**bold**`, or pipe tables anymore.
- *
- * When `editable` (the document panel), it's a **click-to-edit** block: the
- * rendered reading view by default, one click drops into the source textarea with
- * the caret placed and content intact (extends the ticket-10 edit loop). Blur or
- * Escape returns to the rendered view. A block with nothing written in it starts in
- * edit mode so a freshly-added "+ Add text" block is immediately typeable, and the
- * accepted-AI-edit path can focus straight into the source (see
- * `data-text-edit-trigger`).
- *
- * "Nothing written" is {@link isUnwritten}, not `content === ''`: `/heading` (#281)
- * mints the block already opened on `'## '`, which has no words in it but is not an
- * empty string. Keyed on emptiness alone, that block mounted in READ mode and drew
- * an empty `<h2>` — a blank strip with no caret and no placeholder, worse than
- * `/text`, which opens typeable. The marker is scaffolding the person is about to
- * type into, so it counts as unwritten.
+ * The text block: its markdown `content` as a typeset document. Read-only is a
+ * static render of the parsed document — no editor, so it renders on the server
+ * and paints at once. Editable loads the editor on demand, with that same render
+ * standing in until it is ready; a press on the stand-in is where the caret lands.
  */
+export const TextView = ({ data, editable = false, onChange }: ModuleViewProps<TextBlock>) => {
+  const pressRef = useRef<Press | null>(null)
+  if (!editable) return <StaticProse content={data.content} />
 
-/**
- * Has nothing been written here yet? Blank, or only markdown scaffolding the row
- * that minted the block typed for you — today a heading's `#` run. The rendered
- * view draws nothing for either, so both need the caret and the placeholder.
- */
-export function isUnwritten(content: string): boolean {
-  return content.replace(/^#{1,6}\s*/, '').trim() === ''
-}
-export function TextView({ data, editable, onChange }: ModuleViewProps<TextBlock>) {
-  const [editing, setEditing] = useState(() => editable === true && isUnwritten(data.content))
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // On entering edit mode, focus the textarea and drop the caret at the end so
-  // content is preserved and immediately extendable.
-  useEffect(() => {
-    if (editing && textareaRef.current) {
-      const el = textareaRef.current
-      el.focus()
-      el.setSelectionRange(el.value.length, el.value.length)
-    }
-  }, [editing])
-
-  if (!editable) {
-    return <Markdown variant="reading">{data.content}</Markdown>
+  const handleStandInMouseDown = (event: MouseEvent) => {
+    pressRef.current = { left: event.clientX, top: event.clientY }
   }
-
-  if (editing) {
-    return (
-      <textarea
-        ref={textareaRef}
-        className={`w-full resize-none bg-transparent outline-none ${READING_PROSE_CLASS}`}
-        value={data.content}
-        rows={Math.max(1, data.content.split('\n').length)}
-        placeholder="Write something…"
-        onChange={(e) => onChange?.({ ...data, content: e.target.value })}
-        onBlur={() => setEditing(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            e.currentTarget.blur()
-          }
-        }}
-      />
-    )
-  }
-
-  // Rendered reading view, click-to-edit. A div with role="button" (not a real
-  // <button>: rendered markdown contains <a> links, and interactive content inside
-  // a button is invalid HTML) — keyboard- and programmatically-focusable, so the
-  // accepted-AI-edit path can .click() it (see AITerminal.editChange). Clicks that
-  // land on a link navigate (new tab, per the atom's anchor mapping) instead of
-  // entering edit. An empty block keeps a visible placeholder + min-height so mouse
-  // users can re-enter after blurring out of a blank textarea.
-  const isEmpty = isUnwritten(data.content)
-  const isLink = (target: EventTarget) => target instanceof Element && target.closest('a') !== null
+  const standIn = (
+    <StaticProse content={data.content} placeholder onMouseDown={handleStandInMouseDown} />
+  )
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-text-edit-trigger
-      className="block w-full min-h-7 cursor-text text-left"
-      aria-label="Edit text block"
-      onClick={(e) => {
-        if (!isLink(e.target)) setEditing(true)
-      }}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !isLink(e.target)) {
-          e.preventDefault()
-          setEditing(true)
-        }
-      }}
-    >
-      {isEmpty ? (
-        <span className={`${READING_PROSE_CLASS} text-mn-text-secondary`}>Write something…</span>
-      ) : (
-        <Markdown variant="reading">{data.content}</Markdown>
-      )}
-    </div>
+    <Suspense fallback={standIn}>
+      <TextEditor data={data} onChange={onChange} standIn={standIn} pressRef={pressRef} />
+    </Suspense>
   )
 }

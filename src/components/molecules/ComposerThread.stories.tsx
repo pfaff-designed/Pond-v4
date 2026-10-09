@@ -87,7 +87,7 @@ interface ThreadProps {
 const Answer = ({ text, actions }: { text: string; actions: boolean }) => (
   <div data-part="answer" className="flex flex-col gap-[7px]">
     <span className={pageEyebrowClass}>pond</span>
-    <Markdown variant="answer">{text}</Markdown>
+    <Markdown>{text}</Markdown>
     <ReadChips read={['budget']} />
     {actions && (
       <AnswerActions streaming={false} onMakePage={fn()} onAskAgain={fn()} onStop={fn()} />

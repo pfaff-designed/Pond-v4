@@ -1,0 +1,261 @@
+import { EditorState, TextSelection } from '@tiptap/pm/state'
+import type { Node as ProseNode } from '@tiptap/pm/model'
+import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { parseMarkdown, serializeMarkdown } from './markdown'
+
+const roundTrip = (markdown: string): string => serializeMarkdown(parseMarkdown(markdown))
+
+/** Adds unformatted `typed` at the very end of the last textblock. */
+const typeAtEnd = (markdown: string, typed: string): string => {
+  const state = EditorState.create({ doc: parseMarkdown(markdown) })
+  const end = TextSelection.atEnd(state.doc).from
+  return serializeMarkdown(state.tr.insert(end, state.schema.text(typed)).doc)
+}
+
+const childTypes = (node: ProseNode): string[] => {
+  const types: string[] = []
+  node.forEach((child) => types.push(child.type.name))
+  return types
+}
+
+const marksOf = (doc: ProseNode, text: string): string[] => {
+  let found: string[] = []
+  doc.descendants((node) => {
+    if (node.isText && node.text === text) found = node.marks.map((m) => m.type.name)
+  })
+  return found
+}
+
+/**
+ * Every text-block body the repo already writes or renders: the block stories, the
+ * panel/canvas tests, the premade templates and the page sample. Each is already in
+ * the serializer's normal form, so it must come back byte-for-byte.
+ */
+const CANONICAL = [
+  'Notes on the workbench build',
+  'Consistency beats intensity',
+  'Welcome to my life',
+  '## Warm-up\n\nStart with **light cardio**, then reach for the `foam roller`.',
+  'See [the plans](https://example.com/plans) before cutting.',
+  'Out of the flat by the 14th, with every box labelled by room.',
+  'A shelf above the desk for the radio. Ask about the allotment waiting list.',
+  'electrician — provisional, w/c 29 sep',
+  'type, or / for blocks and templates',
+  'anything, in any order',
+  'Base build week — hold easy pace on the long run.',
+  'chickpeas, harissa',
+  '# Website Redesign',
+  // A single newline is a line, not a soft wrap.
+  'milk\neggs\nbread',
+  '- chickpeas\n- harissa\n- lemon',
+  '1. soak\n2. simmer\n3. season',
+  '- rooms\n  - kitchen\n  - back room',
+  '> Needs more salt than you think.',
+  '*slowly* and **then all at once**',
+  '~~provisional~~ confirmed',
+  'before\n\n---\n\nafter',
+  '```ts\nconst kcal = 1040\n```',
+  'see https://example.com/plans for the drawings',
+  '### Sunday\n\nSlept badly.\n\n#### notes\n\n##### small\n\n###### eyebrow',
+  // Syntax a text block has no structure for: its characters are kept as written,
+  // so a reader that does draw it (a task list, a table, an image) still can.
+  '- [ ] milk\n- [x] eggs\n- [X] bread',
+  '| room | budget |\n| --- | --- |\n| kitchen | 9000 |',
+  '![plan](https://example.com/p.png)',
+  '~soft~ strike',
+  'see www.example.com',
+  // Characters that are only markup in some positions are left alone in the others.
+  '2 * 3 = 6',
+  'snake_case_name',
+  'C:\\Users\\ana',
+  'Tom & Jerry, a -> b, x > y',
+  '-5 degrees, #hashtag, 1990s.',
+  'a/b, /check',
+]
+
+describe('text block markdown — the editor round-trip', () => {
+  it.each(CANONICAL)('markdown in → markdown out is byte-stable: %j', (markdown) => {
+    expect(roundTrip(markdown)).toBe(markdown)
+  })
+
+  it.each(CANONICAL.filter((md) => !md.startsWith('```') && !md.endsWith('---')))(
+    'markdown in → edit → markdown out changes only the edit: %j',
+    (markdown) => {
+      expect(typeAtEnd(markdown, ' Go.')).toBe(`${markdown} Go.`)
+    }
+  )
+
+  it('the slash a person types is the query, never escaped', () => {
+    expect(roundTrip('/')).toBe('/')
+    expect(roundTrip('/check')).toBe('/check')
+    expect(typeAtEnd('', '/')).toBe('/')
+  })
+
+  it('an empty block is the empty string, and a minted heading keeps its marker', () => {
+    expect(roundTrip('')).toBe('')
+    expect(roundTrip(HEADING_PREFIX)).toBe(HEADING_PREFIX)
+    const doc = parseMarkdown(HEADING_PREFIX)
+    expect(childTypes(doc)).toEqual(['heading'])
+    expect(doc.firstChild?.attrs.level).toBe(2)
+    expect(typeAtEnd(HEADING_PREFIX, 'warm-up')).toBe('## warm-up')
+  })
+
+  /**
+   * Source that is not in normal form settles on the first pass and never moves
+   * again, so a block's content only changes when the person edits it.
+   */
+  it.each([
+    ['# Lasagna\nA hearty weeknight classic.', '# Lasagna\n\nA hearty weeknight classic.'],
+    ['_soaked_ overnight', '*soaked* overnight'],
+    ['* one\n* two', '* one\n* two'],
+    ['- one\n\n- two', '- one\n\n- two'],
+    ['line one  \nline two', 'line one\nline two'],
+    ['a\n\n\n\nb', 'a\n\nb'],
+    ['<https://example.com>', 'https://example.com'],
+  ])('normalises %j once, then holds', (markdown, settled) => {
+    expect(roundTrip(markdown)).toBe(settled)
+    expect(roundTrip(settled)).toBe(settled)
+  })
+
+  it('headings, lists, bold, italic and links become structure, not syntax', () => {
+    const doc = parseMarkdown(
+      '## Warm-up\n\n- **light** cardio\n- *slow* stretch\n\n1. [plans](https://example.com)'
+    )
+    expect(childTypes(doc)).toEqual(['heading', 'bulletList', 'orderedList'])
+    expect(doc.textContent).not.toMatch(/[#*[\]]/)
+    expect(marksOf(doc, 'light')).toEqual(['bold'])
+    expect(marksOf(doc, 'slow')).toEqual(['italic'])
+    expect(marksOf(doc, 'plans')).toEqual(['link'])
+  })
+
+  it('a bare web address or email reads as a link and writes back bare', () => {
+    const doc = parseMarkdown('https://example.com/a_b or ana@example.com')
+    expect(marksOf(doc, 'https://example.com/a_b')).toEqual(['link'])
+    expect(marksOf(doc, 'ana@example.com')).toEqual(['link'])
+    expect(serializeMarkdown(doc)).toBe('https://example.com/a_b or ana@example.com')
+  })
+
+  it('an address without its scheme is not guessed at — a file name stays text', () => {
+    expect(marksOf(parseMarkdown('see notes.md'), 'see notes.md')).toEqual([])
+    expect(roundTrip('see notes.md')).toBe('see notes.md')
+  })
+
+  it('syntax a text block has no structure for survives as its own text', () => {
+    // Pipe tables are refused at the authoring gate; raw HTML is never markup.
+    // Both keep their characters rather than silently dropping content.
+    expect(roundTrip('| a | b |\n| --- | --- |')).toBe('| a | b |\n| --- | --- |')
+    expect(roundTrip('<b>bold</b>')).toBe('<b>bold</b>')
+  })
+
+  it('literal markdown characters typed as text are escaped only where they would be markup', () => {
+    const state = EditorState.create({ doc: parseMarkdown('') })
+    const doc = state.tr.insertText('2 * 3 = 6, not **bold**').doc
+    const markdown = serializeMarkdown(doc)
+    expect(markdown).toBe('2 * 3 = 6, not \\*\\*bold\\*\\*')
+    expect(parseMarkdown(markdown).textContent).toBe('2 * 3 = 6, not **bold**')
+  })
+
+  /**
+   * Text that would be markup at the start of a line: typed at the start of the
+   * block, or after a line break (which is written as a plain newline).
+   */
+  const LINE_START_LITERALS = [
+    '- not a list',
+    '+ not a list',
+    '* not a list',
+    '> not a quote',
+    '# not a heading',
+    '###### not a heading',
+    '1. not a list',
+    '1) not a list',
+    '7. not a list',
+    '---',
+    '***',
+    '___',
+    '- - -',
+    '===',
+    '--',
+    '```',
+    '~~~',
+    '[ref]: /plans',
+    '[not](/plans)',
+    '<pond:plans>',
+    '<ana@example>',
+    '&copy; &#169;',
+    '`not code`',
+    '**not bold** _nor this_ ~~nor this~~',
+    'ends in a backslash\\',
+    'a \\* stays',
+  ]
+
+  const paragraphOf = (...lines: string[]): ProseNode => {
+    const { schema } = parseMarkdown('').type
+    const inline = lines.flatMap((line, i) => [
+      ...(i > 0 ? [schema.nodes.hardBreak.create()] : []),
+      schema.text(line),
+    ])
+    return schema.nodes.doc.create(null, schema.nodes.paragraph.create(null, inline))
+  }
+
+  it.each(LINE_START_LITERALS)(
+    'typed %j stays that text, at the start or after a break',
+    (line) => {
+      for (const doc of [
+        paragraphOf(line),
+        paragraphOf('before', line),
+        paragraphOf('before', line, 'after'),
+      ]) {
+        const markdown = serializeMarkdown(doc)
+        expect(parseMarkdown(markdown).toJSON()).toEqual(doc.toJSON())
+        expect(serializeMarkdown(parseMarkdown(markdown))).toBe(markdown)
+      }
+    }
+  )
+
+  const linked = (href: string, title: string | null = null): ProseNode => {
+    const { schema } = parseMarkdown('').type
+    const link = schema.marks.link.create({ href, title })
+    return schema.nodes.doc.create(
+      null,
+      schema.nodes.paragraph.create(null, schema.text('the plans', [link]))
+    )
+  }
+
+  const linkIn = (doc: ProseNode): { text: string; href: unknown; title: unknown } | null => {
+    let found: { text: string; href: unknown; title: unknown } | null = null
+    doc.descendants((node) => {
+      const link = node.marks.find((mark) => mark.type.name === 'link')
+      if (link) found = { text: node.text ?? '', href: link.attrs.href, title: link.attrs.title }
+    })
+    return found
+  }
+
+  it.each([
+    ['a b', 'a%20b'],
+    ['plans (draft).md', 'plans%20(draft).md'],
+    ['a <b> c', 'a%20%3Cb%3E%20c'],
+    ['line\nbreak', 'line%0Abreak'],
+    ['C:\\plans\\(a)', 'C:%5Cplans%5C(a)'],
+  ])('a link to %j is still a link to that address when read back', (href, read) => {
+    const markdown = serializeMarkdown(linked(href))
+    const doc = parseMarkdown(markdown)
+    expect(linkIn(doc)).toEqual({ text: 'the plans', href: read, title: null })
+    expect(roundTrip(serializeMarkdown(doc))).toBe(serializeMarkdown(doc))
+  })
+
+  it.each(['C:\\', 'say "hi"', 'a \\" b'])('a link titled %j keeps its title', (title) => {
+    const markdown = serializeMarkdown(linked('https://example.com', title))
+    expect(linkIn(parseMarkdown(markdown))).toEqual({
+      text: 'the plans',
+      href: 'https://example.com',
+      title,
+    })
+    expect(roundTrip(markdown)).toBe(markdown)
+  })
+
+  it('a slash is never escaped, wherever it is typed', () => {
+    for (const doc of [paragraphOf('/'), paragraphOf('before', '/'), paragraphOf('a / b //')]) {
+      expect(serializeMarkdown(doc)).not.toContain('\\/')
+    }
+  })
+})

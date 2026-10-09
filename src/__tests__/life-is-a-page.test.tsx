@@ -19,6 +19,7 @@ import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { withPathProbe } from './helpers/command-path-probe'
+import { findTextBlock, writeInTextBlock } from './helpers/text-block'
 
 // Which page the URL names — null is the root, Life.
 let currentNodeId: string | null = null
@@ -137,7 +138,7 @@ describe('Life is a page (#234)', () => {
   it('renders Life’s own blocks above its nested pages', async () => {
     HOME_BLOCKS = [{ id: 'b1', type: 'text', content: 'Welcome to my life' }]
     renderPanel()
-    expect(await screen.findByRole('button', { name: 'Edit text block' })).toBeInTheDocument()
+    expect(await findTextBlock()).toHaveTextContent('Welcome to my life')
     expect(await screen.findByText('Health')).toBeInTheDocument()
   })
 
@@ -177,7 +178,9 @@ describe('Life is a page (#234)', () => {
   it('the add drops an empty text block ready to type — no palette (UI-audit Slice 2a)', async () => {
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-    expect(await screen.findByPlaceholderText('Write something…')).toBeInTheDocument()
+    const field = await findTextBlock()
+    expect(field).toHaveTextContent('')
+    await waitFor(() => expect(field).toHaveFocus())
     expect(screen.queryByRole('listbox', { name: 'blocks' })).not.toBeInTheDocument()
   })
 
@@ -194,11 +197,11 @@ describe('Life is a page (#234)', () => {
       mockCommitBlocks.mockClear()
       const { unmount } = renderPanel()
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-      const editor = await screen.findByPlaceholderText('Write something…')
-      fireEvent.change(editor, { target: { value: '/' } })
+      const editor = await findTextBlock()
+      writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
       await screen.findByRole('listbox', { name: 'page from template' })
-      fireEvent.change(editor, { target: { value: `/${c.name}` } })
+      writeInTextBlock(editor, `/${c.name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(c.name))
       // The pick persists to the HOME row (id 'home-1'), not any area. Matched on
@@ -232,11 +235,11 @@ describe('Life is a page (#234)', () => {
       mockCommitBlocks.mockClear()
       renderPanel()
       fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-      const editor = await screen.findByPlaceholderText('Write something…')
-      fireEvent.change(editor, { target: { value: '/' } })
+      const editor = await findTextBlock()
+      writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
       await screen.findByRole('listbox', { name: 'page from template' })
-      fireEvent.change(editor, { target: { value: `/${name}` } })
+      writeInTextBlock(editor, `/${name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(name))
 
@@ -282,10 +285,10 @@ describe('an area is the same page (#108, #234)', () => {
     renderPanel()
     await screen.findByRole('button', { name: 'Add a block' })
     fireEvent.click(screen.getByRole('button', { name: 'Add a block' }))
-    const editor = await screen.findByPlaceholderText('Write something…')
-    fireEvent.change(editor, { target: { value: '/' } })
+    const editor = await findTextBlock()
+    writeInTextBlock(editor, '/')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
-    fireEvent.change(editor, { target: { value: '/chart' } })
+    writeInTextBlock(editor, '/chart')
     fireEvent.click(within(menu).getByText('chart'))
 
     await waitFor(() => {
