@@ -188,6 +188,60 @@ describe('DeletionUndoProvider wiring', () => {
   })
 })
 
+// ── 3b. stageUndo — a change already applied, with nothing deferred ──────────
+
+function UndoHarness({ undo, scope }: { undo: () => void; scope?: string }) {
+  const { stageUndo, flushScope } = useDeletionUndo()
+  return (
+    <>
+      <button onClick={() => stageUndo({ message: 'Turned into a list', undo, scope })}>
+        stage
+      </button>
+      <button onClick={() => flushScope('block')}>flush-block</button>
+    </>
+  )
+}
+
+describe('stageUndo', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
+  const renderUndo = (props: React.ComponentProps<typeof UndoHarness>) =>
+    render(
+      <DeletionUndoProvider>
+        <UndoHarness {...props} />
+      </DeletionUndoProvider>
+    )
+
+  it('offers Undo for the window, and Undo runs it', () => {
+    const undo = jest.fn()
+    renderUndo({ undo })
+    fireEvent.click(screen.getByText('stage'))
+    expect(screen.getByText('Turned into a list')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(undo).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Turned into a list')).not.toBeInTheDocument()
+  })
+
+  it('closes when the window elapses, leaving the change as it is', () => {
+    const undo = jest.fn()
+    renderUndo({ undo })
+    fireEvent.click(screen.getByText('stage'))
+    act(() => jest.advanceTimersByTime(GRACE_WINDOW_MS))
+    expect(screen.queryByText('Turned into a list')).not.toBeInTheDocument()
+    expect(undo).not.toHaveBeenCalled()
+  })
+
+  it('is cleared with its scope, without undoing', () => {
+    const undo = jest.fn()
+    renderUndo({ undo, scope: 'block' })
+    fireEvent.click(screen.getByText('stage'))
+    fireEvent.click(screen.getByText('flush-block'))
+    expect(screen.queryByText('Turned into a list')).not.toBeInTheDocument()
+    expect(undo).not.toHaveBeenCalled()
+  })
+})
+
 // ── 4. Notify bridge — accept receipts from outside the provider (Fix-1) ────
 
 describe('NotifyBridge (accept receipts, Fix-1/F12)', () => {

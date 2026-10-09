@@ -20,6 +20,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
+import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
   blockEmptyBox,
@@ -47,8 +48,20 @@ import { slashMenuHeight, type SlashPane } from '@/components/molecules/slash-en
 import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
-import { BlockHandleMenu, type BlockMenuItem } from '@/components/molecules/BlockHandleMenu'
+import {
+  PondMenu,
+  type PondMenuGroup,
+  type PondMenuPlacement,
+  type PondMenuSize,
+} from '@/components/molecules/PondMenu'
 import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
+import {
+  blockMenuGroups,
+  runBlockMenuAction,
+  type BlockMenuAction,
+} from '@/components/organisms/block-menu'
+import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
+import { isBlockMenuChord } from '@/lib/shell-commands'
 import { slashRows, mintPreset, emptyBlockForType } from '@/lib/modules/palette'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
@@ -58,11 +71,7 @@ import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/
 import { getTemplate, listTemplates } from '@/lib/templates/client'
 import { templateBlocksFrom } from '@/lib/templates/from-page'
 import { stampProvenance } from '@/lib/templates/provenance'
-import {
-  createDatabaseFromList,
-  inferListDatabaseTitle,
-  previewListTable,
-} from '@/lib/pages/list-to-table'
+import { inferListDatabaseTitle } from '@/lib/pages/list-to-table'
 import { replaceBlockWithView } from '@/lib/pages/promote-table'
 import { createPage, defineSchema, deletePage, getPage } from '@/lib/pages/client'
 import { createDatabase } from '@/lib/pages/create-database'
@@ -74,6 +83,7 @@ import type { ViewBlock } from '@/lib/modules/view/schema'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { BaseUIEvent } from '@base-ui/react/types'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
@@ -85,30 +95,15 @@ function blockLabel(block: Block): string {
   return `Deleted ${block.type} block`
 }
 
-/**
- * The handle menu's items for one block (#101, board 6j frame 2). `turn into ›
- * table` is offered only on a LIST block, with the preview of what will come out
- * ("4 rows · 3 columns"); the `block` group carries the block's own actions.
- *
- * Called only for the block whose menu is OPEN — the preview scans the block's
- * whole content, which is not work to redo for every block on every keystroke.
- */
-function menuItemsFor(block: Block): BlockMenuItem[] {
-  const items: BlockMenuItem[] = []
-  const preview = previewListTable(block)
-  if (preview) {
-    const rows = `${preview.rows} ${preview.rows === 1 ? 'row' : 'rows'}`
-    const cols = `${preview.columns} ${preview.columns === 1 ? 'column' : 'columns'}`
-    items.push({
-      id: 'turn-into-table',
-      group: 'turn into',
-      label: 'table',
-      preview: `${rows} · ${cols}`,
-      icon: 'table',
-    })
-  }
-  items.push({ id: 'delete', group: 'block', label: 'delete block', icon: 'delete' })
-  return items
+const TURNED_INTO: Record<Exclude<ConversionTarget, 'table'>, string> = {
+  list: 'Turned into a list',
+  checklist: 'Turned into a checklist',
+  text: 'Turned into text',
+}
+
+const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = {
+  desktop: { align: 'start', top: 40, alignOffset: -8 },
+  mobile: { align: 'end', top: 48, alignOffset: 0 },
 }
 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
@@ -144,6 +139,8 @@ export interface BlockCanvasProps {
    * Optional — a surface that doesn't track it passes nothing and no block animates.
    */
   insertedIds?: Set<string>
+  /** Move a block into a page of its own. Without it the block menu does not offer the move. */
+  onMoveIntoNewPage?: (block: Block) => void
 }
 
 /**
@@ -158,8 +155,9 @@ export function BlockCanvas({
   onChange,
   onUndoRemove,
   insertedIds,
+  onMoveIntoNewPage,
 }: BlockCanvasProps) {
-  const { stageDeletion, notify } = useDeletionUndo()
+  const { stageDeletion, stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
   const queryClient = useQueryClient()
   const pondId = usePondId()
@@ -244,8 +242,9 @@ export function BlockCanvas({
   const isBlankBesides = (index: number) =>
     blocks.every((b, bi) => bi === index || (b.type === 'text' && b.content.trim() === ''))
 
-  // Which block index has the handle menu open (null = closed) — #101.
+  // Which block index has the block menu open (null = closed).
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
+  useBlockLinkArrival(blocks)
 
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
@@ -254,31 +253,29 @@ export function BlockCanvas({
   }
 
   /**
-   * The handle menu's "turn into › table" on a LIST block (#101, board 6j). A
-   * table is always a view of a database, so this CREATES a real database from
-   * the list's rows (filed under the databases root) and swaps the list for a
-   * table-mode view of it in place. It is the person's own gesture, so it applies
-   * at once through the caller's ordinary save — no proposal card; only Pond's
-   * changes arrive as diffs — with an undo that puts the list back and removes
-   * the database it made. The page is left untouched when the write fails.
+   * The block menu's "turn into › table" on a list. A table is always a view of
+   * a database, so this CREATES a real database from the list's rows (filed
+   * under the databases root) and swaps the list for a table-mode view of it in
+   * place. It is the person's own gesture, so it applies at once through the
+   * caller's ordinary save — no proposal card; only Pond's changes arrive as
+   * diffs — with an undo that puts the list back and removes the database it
+   * made. The page is left untouched when the write fails.
    */
-  async function turnIntoTable(index: number) {
+  const turnIntoTable = async (index: number, conversion: TableConversion) => {
     const block = blocks[index]
     if (!block) return
     const title = inferListDatabaseTitle(blocks, index, pageTitle)
     try {
-      const made = await createDatabaseFromList(getSupabase(), { block, title, pondId }, () =>
+      const made = await conversion.apply(getSupabase(), { title, pondId }, () =>
         crypto.randomUUID()
       )
       markInserted(made.view.id)
       onChange(replaceBlockWithView(blocksRef.current, block.id, made.view))
       // The rail lists the new database (and, on first use, the databases root).
       queryClient.invalidateQueries({ queryKey: pagesKey() })
-      stageDeletion({
+      stageUndo({
         message: 'Turned into a table',
         scope: 'block',
-        // Everything already applied; nothing is deferred behind the grace window.
-        commit: () => {},
         undo: async () => {
           onChange(blocksRef.current.map((b) => (b.id === made.view.id ? block : b)))
           try {
@@ -294,6 +291,56 @@ export function BlockCanvas({
       console.error('Failed to turn the list into a table', err)
       notify("Couldn't turn the list into a table")
     }
+  }
+
+  /**
+   * list ⇄ checklist ⇄ text: the same block, drawn another way. It keeps its id,
+   * so it swaps in place by id, and the undo swaps the original back against the
+   * LATEST blocks, so an edit made in between elsewhere on the page survives.
+   */
+  const convertBlock = (before: Block, conversion: LineConversion) => {
+    const after = conversion.apply()
+    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+    stageUndo({
+      message: TURNED_INTO[conversion.target],
+      scope: 'block',
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
+  }
+
+  /** The page's own URL, anchored at the block — arriving there lands on it. */
+  const copyBlockLink = async (blockId: string) => {
+    try {
+      await navigator.clipboard.writeText(blockLinkUrl(window.location.href, blockId))
+      notify('Copied the link to this block')
+    } catch (err) {
+      console.error('Failed to copy the link to the block', err)
+      notify("Couldn't copy the link")
+    }
+  }
+
+  const handleMenuOpenChange = (index: number, open: boolean) =>
+    setMenuOpenAt((current) => {
+      if (open) return index
+      return current === index ? null : current
+    })
+
+  const handleMenuSelect = (index: number, action: BlockMenuAction) => {
+    setMenuOpenAt(null)
+    const block = blocks[index]
+    if (!block) return
+    runBlockMenuAction(action, {
+      'turn-into': ({ conversion }) => {
+        if (conversion.target === 'table') {
+          void turnIntoTable(index, conversion)
+          return
+        }
+        convertBlock(block, conversion)
+      },
+      'move-into-new-page': () => onMoveIntoNewPage?.(block),
+      'copy-link': () => void copyBlockLink(block.id),
+      delete: () => removeBlockAt(index),
+    })
   }
 
   function setBlockAt(index: number, next: Block) {
@@ -462,10 +509,9 @@ export function BlockCanvas({
       placeView(made.view, open.hostId, open.replace)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
-      stageDeletion({
+      stageUndo({
         message: 'Made a database',
         scope: 'block',
-        commit: () => {},
         undo: async () => {
           const current = blocksRef.current
           onChange(
@@ -624,19 +670,21 @@ export function BlockCanvas({
                 }}
                 onSlashClose={() => setSlashMenuOpenAt(null)}
                 menuOpen={menuOpenAt === i}
-                // Only the OPEN block's items are derived: menuItemsFor splits and
-                // regex-scans a text block's whole content, and this render runs on
-                // every keystroke anywhere on the page (#101 review).
-                menuItems={menuOpenAt === i ? menuItemsFor(block) : undefined}
-                onMenuToggle={() => setMenuOpenAt((open) => (open === i ? null : i))}
-                onMenuClose={() => setMenuOpenAt(null)}
-                onMenuSelect={(id) => {
-                  setMenuOpenAt(null)
-                  if (id === 'turn-into-table') void turnIntoTable(i)
-                  else if (id === 'delete') removeBlockAt(i)
-                }}
+                // Only the OPEN block's groups are derived: this render runs on every
+                // keystroke anywhere on the page.
+                menuGroups={
+                  menuOpenAt === i
+                    ? blockMenuGroups(block, { moveIntoNewPage: onMoveIntoNewPage !== undefined })
+                    : undefined
+                }
+                menuSize={slashSize}
+                onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
+                onMenuSelect={(action) => handleMenuSelect(i, action)}
                 isDragging={draggingIndex === i}
-                onDragStart={() => setDraggingIndex(i)}
+                onDragStart={() => {
+                  setMenuOpenAt(null)
+                  setDraggingIndex(i)
+                }}
                 onDragEnd={() => setDraggingIndex(null)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
@@ -785,9 +833,9 @@ function useBlockEmptyState(
  * the handle drags to reorder. `draggable` is armed only while the pointer is
  * down on the handle — an always-draggable block would hijack text-selection drags.
  *
- * #101 (board 6j): a CLICK on the handle (a press with no drag) opens the block
- * menu — `turn into › table` on a list, the block's own actions — anchored under
- * the handle at the block's left edge, where frame 2 draws it.
+ * A press on the handle, or ⌘/ (Ctrl+/ off Apple) anywhere in the block, opens
+ * the block menu (`PondMenu` kind `block`), and the block wears the open ring
+ * while it is open. A drag from the handle closes the menu its press opened.
  */
 function BlockEditor({
   block,
@@ -806,10 +854,10 @@ function BlockEditor({
   onSlashSelect,
   onSlashClose,
   menuOpen,
-  menuItems = [],
-  onMenuToggle,
+  menuGroups = [],
+  menuSize = 'desktop',
+  onMenuOpenChange,
   onMenuSelect,
-  onMenuClose,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -832,10 +880,10 @@ function BlockEditor({
   onSlashPickTemplate?: (pick: TemplatePick) => void
   onSlashClose?: () => void
   menuOpen?: boolean
-  menuItems?: BlockMenuItem[]
-  onMenuToggle?: () => void
-  onMenuSelect?: (id: string) => void
-  onMenuClose?: () => void
+  menuGroups?: PondMenuGroup<BlockMenuAction>[]
+  menuSize?: PondMenuSize
+  onMenuOpenChange?: (open: boolean) => void
+  onMenuSelect?: (action: BlockMenuAction) => void
   isDragging?: boolean
   onDragStart?: () => void
   onDragEnd?: () => void
@@ -843,7 +891,6 @@ function BlockEditor({
   onDrop?: (e: React.DragEvent) => void
 }) {
   const [dragArmed, setDragArmed] = useState(false)
-  const handleRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const [slashSide, setSlashSide] = useState<PickerSide>('bottom')
   // The `/` menu hangs off the caret, not the block (2c: "opens at the caret").
@@ -893,6 +940,11 @@ function BlockEditor({
   )
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (isBlockMenuChord(e.nativeEvent)) {
+      e.preventDefault()
+      onMenuOpenChange?.(true)
+      return
+    }
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault()
       onMoveUp?.()
@@ -915,15 +967,24 @@ function BlockEditor({
     }
   }
 
+  // ⌥↑/⌥↓ on the handle reorder the block: the menu's trigger would otherwise
+  // take the arrow to open the menu and keep it from reaching the block.
+  const handleTriggerKeyDown = (e: BaseUIEvent<React.KeyboardEvent<HTMLButtonElement>>) => {
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) e.preventBaseUIHandler()
+  }
+
   return (
     <div
       ref={rootRef}
       className={cn(
-        'group relative',
+        'group relative outline-none',
         settleOnMount && 'motion-settle-in',
-        isDragging && 'opacity-50'
+        isDragging && 'opacity-50',
+        menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
       )}
       id={blockDomId(block.id)}
+      // Focusable so a copied link to the block can land on it.
+      tabIndex={-1}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {
@@ -936,45 +997,47 @@ function BlockEditor({
     >
       {/* The gutter handle (#223) — the boards' ONLY row affordance, revealed on
           hover/focus. It is the six-dot mark 6j draws (10×14, dots r 1.1) in a
-          20×16 box; press-and-drag reorders, a click opens the block menu (#101),
-          which is where `delete block` lives. It sits on the 68% ink tier:
+          20×16 box; press-and-drag reorders, a click opens the block menu, which
+          is where `delete` lives. It sits on the 68% ink tier:
           PROJECT_RULES allows three tiers only (100 / 80 small meta / 68), so the
           mark may not drop to a fainter ink. */}
-      <div className="absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
-        <button
-          ref={handleRef}
-          type="button"
-          className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
-          title="Block menu · drag to reorder"
-          aria-label="Block menu"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen ? true : undefined}
-          onPointerDown={() => setDragArmed(true)}
-          onPointerUp={() => setDragArmed(false)}
-          onClick={onMenuToggle}
-        >
-          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
-            <circle cx="3" cy="3" r="1.1" />
-            <circle cx="7" cy="3" r="1.1" />
-            <circle cx="3" cy="7" r="1.1" />
-            <circle cx="7" cy="7" r="1.1" />
-            <circle cx="3" cy="11" r="1.1" />
-            <circle cx="7" cy="11" r="1.1" />
-          </svg>
-        </button>
-      </div>
-
-      {/* The block menu (#101, 6j frame 2): under the handle, at the block's left
-          edge — measured left −10 / top 36 off the frame. */}
-      {menuOpen && (
-        <BlockHandleMenu
-          items={menuItems}
+      <div
+        className={cn(
+          'absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+          menuOpen && 'opacity-100'
+        )}
+      >
+        <PondMenu
+          kind="block"
+          label="block menu"
+          size={menuSize}
+          groups={menuGroups}
+          open={menuOpen ?? false}
+          onOpenChange={onMenuOpenChange ?? (() => {})}
           onSelect={onMenuSelect ?? (() => {})}
-          onClose={onMenuClose ?? (() => {})}
-          anchorRef={handleRef}
-          className="absolute -left-2.5 top-9 z-10"
+          placement={{ anchor: rootRef, ...MENU_PLACEMENT[menuSize] }}
+          trigger={
+            <button
+              type="button"
+              className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
+              title="Block menu · drag to reorder"
+              aria-label="Block menu"
+              onPointerDown={() => setDragArmed(true)}
+              onPointerUp={() => setDragArmed(false)}
+              onKeyDown={handleTriggerKeyDown}
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden>
+                <circle cx="3" cy="3" r="1.1" />
+                <circle cx="7" cy="3" r="1.1" />
+                <circle cx="3" cy="7" r="1.1" />
+                <circle cx="7" cy="7" r="1.1" />
+                <circle cx="3" cy="11" r="1.1" />
+                <circle cx="7" cy="11" r="1.1" />
+              </svg>
+            </button>
+          }
         />
-      )}
+      </div>
 
       {/* The `/` menu hangs at the caret. */}
       {slashMenuOpen && (

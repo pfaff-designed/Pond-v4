@@ -14,6 +14,8 @@
  *    `undo` — guarded by {@link performUndo} so a click that loses the race
  *    against the commit timer can never restore an item whose delete is already
  *    in flight. Dismiss / window-elapse flushes the write.
+ *  - `stageUndo` — the caller has already applied a change and there is no
+ *    write left to defer; the toast only offers `undo` for the window.
  *  - `notify` — a plain, auto-expiring notice toast (no Undo), e.g. for a
  *    failed delete.
  *  - `flushScope` — commit-and-clear every pending toast staged with a given
@@ -49,6 +51,17 @@ export interface StageDeletionInput {
   scope?: string
 }
 
+export interface StageUndoInput {
+  /** Toast copy, e.g. `Turned into a list`. */
+  message: string
+  /** Put the change back — run on Undo. */
+  undo: () => void | Promise<void>
+  /** Group tag for {@link DeletionUndoContextValue.flushScope}. */
+  scope?: string
+}
+
+type StageInput = Omit<StageDeletionInput, 'commit'> & Partial<Pick<StageDeletionInput, 'commit'>>
+
 interface ActiveToast {
   id: string
   message: string
@@ -62,6 +75,7 @@ interface ActiveToast {
 
 interface DeletionUndoContextValue {
   stageDeletion: (input: StageDeletionInput) => void
+  stageUndo: (input: StageUndoInput) => void
   /**
    * Show a plain auto-expiring notice toast. When `action` is provided, a
    * secondary button appears alongside the dismiss control — useful for
@@ -89,8 +103,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
-  const stageDeletion = useCallback(
-    (input: StageDeletionInput) => {
+  const stage = useCallback(
+    (input: StageInput) => {
       const id =
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
@@ -99,7 +113,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
       const controller = scheduleDeferredCommit({
         commit: () => {
           remove(id)
-          return input.commit()
+          return input.commit?.()
         },
         graceMs: GRACE_WINDOW_MS,
       })
@@ -120,11 +134,18 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
     [remove]
   )
 
+  const stageDeletion = useCallback((input: StageDeletionInput) => stage(input), [stage])
+
+  const stageUndo = useCallback(
+    ({ message, undo, scope }: StageUndoInput) => stage({ message, undo, scope }),
+    [stage]
+  )
+
   const notify = useCallback(
     (message: string, action?: () => void, actionLabel?: string) => {
-      stageDeletion({ message, commit: () => {}, action, actionLabel })
+      stage({ message, action, actionLabel })
     },
-    [stageDeletion]
+    [stage]
   )
 
   const handleUndo = useCallback(
@@ -173,8 +194,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [])
 
   const value = useMemo(
-    () => ({ stageDeletion, notify, flushScope }),
-    [stageDeletion, notify, flushScope]
+    () => ({ stageDeletion, stageUndo, notify, flushScope }),
+    [stageDeletion, stageUndo, notify, flushScope]
   )
 
   return (

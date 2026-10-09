@@ -34,7 +34,7 @@ import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { ChartCard } from '@/lib/modules/chart/card'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
 import { ModuleDiffCard } from '@/components/molecules/ModuleDiffCard'
-import { BlockHandleMenu } from '@/components/molecules/BlockHandleMenu'
+import { PondMenu } from '@/components/molecules/PondMenu'
 import { ProposalActions } from '@/components/molecules/ProposalActions'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { TodoView } from '@/lib/modules/todo/view'
@@ -223,7 +223,7 @@ function resolveInherited(el: Element, decls: RegExp): string | null {
  * subtree — whether `font-mono` is on the element or on any ancestor. The
  * line-level source sweep below cannot see that inheritance, which is how both
  * of the misses behind the line sweep (a wide-tracked pill in the diff card, and the false positive
- * on `BlockHandleMenu`'s group label) got through review.
+ * on the old block menu's group label) got through review.
  *
  * Uppercase elements are exempt: that is the board's eyebrow (see the table).
  */
@@ -340,27 +340,37 @@ describe('rendered machine surfaces carry no wide tracking', () => {
     }
   })
 
-  it('the block handle menu — and its group label KEEPS the board’s .04em', () => {
-    const { container } = render(
-      <BlockHandleMenu
-        items={[
+  it('the block menu — its mono values run tight; its head is the sans UPPERCASE eyebrow', () => {
+    render(
+      <PondMenu
+        kind="block"
+        label="block menu"
+        groups={[
           {
-            id: 'table',
-            group: 'turn into',
-            label: 'table',
-            preview: '4 rows · 3 columns',
-            icon: 'table',
+            id: 'turn-into',
+            label: 'turn into',
+            heading: true,
+            items: [{ id: 'table', label: 'table', value: '3 rows · 2 columns', action: 'table' }],
           },
-          { id: 'delete', group: 'block', label: 'delete block', icon: 'delete' },
+          {
+            id: 'block',
+            label: 'block',
+            items: [{ id: 'delete', label: 'delete', action: 'delete' }],
+          },
         ]}
+        open
+        onOpenChange={jest.fn()}
         onSelect={jest.fn()}
-        onClose={jest.fn()}
+        trigger={<button type="button">handle</button>}
+        placement={{ anchor: { current: null }, align: 'start', top: 40, alignOffset: -8 }}
       />
     )
-    expect(wideTrackingOnMono(container)).toEqual([])
-    const label = screen.getByText('turn into')
-    expect(label.className).toMatch(/tracking-\[0\.04em\]/)
-    expect(label.className).toMatch(/text-\[10\.5px\]/)
+    // The popup is portaled to the body.
+    expect(wideTrackingOnMono(document.body)).toEqual([])
+    const head = screen.getByText('turn into')
+    expect(head.className).toMatch(/tracking-\[\.1em\]/)
+    expect(head.className).toMatch(/\buppercase\b/)
+    expect(screen.getByText('3 rows · 2 columns').className).not.toMatch(/tracking-/)
   })
 })
 
