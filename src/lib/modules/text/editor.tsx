@@ -1,15 +1,20 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import type { EditorView } from '@tiptap/pm/view'
 import type { ModuleViewProps } from '../types'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
-import { TEXT_PLACEHOLDER, TEXT_PROSE_CLASS } from './prose'
+import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import type { TextBlock } from './schema'
-import { StaticProse } from './static-prose'
+
+/** Where a person pressed on the block before its editor existed. */
+export interface Press {
+  left: number
+  top: number
+}
 
 /**
  * Has nothing been written here yet? Blank, or only markdown scaffolding the row
@@ -18,7 +23,10 @@ import { StaticProse } from './static-prose'
  */
 const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
 
-const extensions = [...proseExtensions, Placeholder.configure({ placeholder: TEXT_PLACEHOLDER })]
+const extensions = [
+  ...proseExtensions,
+  Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
+]
 
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
   if (event.key !== 'Escape') return false
@@ -52,15 +60,24 @@ const editorProps = {
 
 /**
  * The text block, edited in place: its markdown `content` as a typeset document.
- * Until the editor exists it draws the static render of the same document, so the
- * swap is invisible.
+ * Until the editor exists it draws `standIn`, the static render of the same
+ * document, so the swap is invisible; a press on it (`pressRef`) is where the
+ * caret lands when the editor arrives.
  *
  * Edits are written back as markdown on every change and the page's debounced save
  * commits them; until it does, ⌘Z is the editor's own history. Content that
  * arrives from outside (an accepted diff, the `/` menu clearing its query) replaces
  * the document without writing back and without entering that history.
  */
-const TextEditor = ({ data, onChange }: Pick<ModuleViewProps<TextBlock>, 'data' | 'onChange'>) => {
+const TextEditor = ({
+  data,
+  onChange,
+  standIn,
+  pressRef,
+}: Pick<ModuleViewProps<TextBlock>, 'data' | 'onChange'> & {
+  standIn: ReactNode
+  pressRef: RefObject<Press | null>
+}) => {
   // Options must be the same values on every render: any change makes `useEditor`
   // re-apply them, which redraws the document over keystrokes not yet read.
   const [opening] = useState(() => ({
@@ -84,15 +101,20 @@ const TextEditor = ({ data, onChange }: Pick<ModuleViewProps<TextBlock>, 'data' 
     autofocus: opening.autofocus,
     editorProps,
     onUpdate: ({ editor: updated }) => {
+      const { data: current, onChange: send } = latest.current
+      if (!send) return
       const content = serializeMarkdown(updated.state.doc)
       if (content === written.current) return
       written.current = content
       unechoed.current.push(content)
-      latest.current.onChange?.({ ...latest.current.data, content })
+      send({ ...current, content })
     },
   })
 
   useEffect(() => {
+    // Echoes arrive in the order written, so the earliest match is the one. An
+    // outside value equal to a write still awaiting its echo is taken for that
+    // echo — possible only when it lands in the same render as later typing.
     const echo = unechoed.current.indexOf(data.content)
     if (echo >= 0) unechoed.current.splice(0, echo + 1)
     if (!editor || echo >= 0 || data.content === written.current) return
@@ -105,7 +127,15 @@ const TextEditor = ({ data, onChange }: Pick<ModuleViewProps<TextBlock>, 'data' 
       .run()
   }, [editor, data.content])
 
-  if (!editor) return <StaticProse content={data.content} placeholder={TEXT_PLACEHOLDER} />
+  useEffect(() => {
+    const at = pressRef.current
+    if (!editor || !at) return
+    pressRef.current = null
+    const found = editor.view.posAtCoords(at)
+    if (found) editor.commands.focus(found.pos)
+  }, [editor, pressRef])
+
+  if (!editor) return standIn
   return <EditorContent editor={editor} className="w-full" />
 }
 

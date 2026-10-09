@@ -212,6 +212,47 @@ describe('text block markdown — the editor round-trip', () => {
     }
   )
 
+  const linked = (href: string, title: string | null = null): ProseNode => {
+    const { schema } = parseMarkdown('').type
+    const link = schema.marks.link.create({ href, title })
+    return schema.nodes.doc.create(
+      null,
+      schema.nodes.paragraph.create(null, schema.text('the plans', [link]))
+    )
+  }
+
+  const linkIn = (doc: ProseNode): { text: string; href: unknown; title: unknown } | null => {
+    let found: { text: string; href: unknown; title: unknown } | null = null
+    doc.descendants((node) => {
+      const link = node.marks.find((mark) => mark.type.name === 'link')
+      if (link) found = { text: node.text ?? '', href: link.attrs.href, title: link.attrs.title }
+    })
+    return found
+  }
+
+  it.each([
+    ['a b', 'a%20b'],
+    ['plans (draft).md', 'plans%20(draft).md'],
+    ['a <b> c', 'a%20%3Cb%3E%20c'],
+    ['line\nbreak', 'line%0Abreak'],
+    ['C:\\plans\\(a)', 'C:%5Cplans%5C(a)'],
+  ])('a link to %j is still a link to that address when read back', (href, read) => {
+    const markdown = serializeMarkdown(linked(href))
+    const doc = parseMarkdown(markdown)
+    expect(linkIn(doc)).toEqual({ text: 'the plans', href: read, title: null })
+    expect(roundTrip(serializeMarkdown(doc))).toBe(serializeMarkdown(doc))
+  })
+
+  it.each(['C:\\', 'say "hi"', 'a \\" b'])('a link titled %j keeps its title', (title) => {
+    const markdown = serializeMarkdown(linked('https://example.com', title))
+    expect(linkIn(parseMarkdown(markdown))).toEqual({
+      text: 'the plans',
+      href: 'https://example.com',
+      title,
+    })
+    expect(roundTrip(markdown)).toBe(markdown)
+  })
+
   it('a slash is never escaped, wherever it is typed', () => {
     for (const doc of [paragraphOf('/'), paragraphOf('before', '/'), paragraphOf('a / b //')]) {
       expect(serializeMarkdown(doc)).not.toContain('\\/')

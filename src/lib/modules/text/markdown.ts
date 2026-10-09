@@ -5,7 +5,7 @@ import {
   type MarkdownSerializerState,
 } from 'prosemirror-markdown'
 import type { Mark, Node as ProseNode } from '@tiptap/pm/model'
-import { proseSchema } from './document'
+import { numberAttr, proseSchema, stringAttr } from './document'
 
 /**
  * The text block's markdown `content` ⇄ its document. This parse is the only
@@ -68,15 +68,27 @@ const parser = new MarkdownParser(proseSchema, tokenizer, {
 /** A link whose text IS its address (as the autolinker and linkify make) writes back bare. */
 const isBareLink = (mark: Mark, parent: ProseNode, index: number): boolean => {
   const child = parent.child(index)
-  if (mark.attrs.title || !child.isText) return false
+  if (stringAttr(mark.attrs, 'title') || !child.isText) return false
   const text = child.text ?? ''
-  const href = String(mark.attrs.href ?? '')
+  const href = stringAttr(mark.attrs, 'href') ?? ''
   const sameAddress = [text, `http://${text}`, `https://${text}`, `mailto:${text}`].includes(href)
   const endsHere = index === parent.childCount - 1 || !mark.isInSet(parent.child(index + 1).marks)
   return sameAddress && endsHere && child.marks[child.marks.length - 1] === mark
 }
 
-const escapeHref = (href: string): string => href.replace(/[()"]/g, '\\$&')
+/**
+ * A link's address as markdown: bare where it can be, else in `<…>`, the only form
+ * that holds a space or a `<`. Neither holds a line break, so that is written as
+ * the `%0A` the parser would have made of it anyway.
+ */
+const linkDestination = (href: string): string => {
+  const unbroken = href.replace(/[\r\n]/g, encodeURIComponent)
+  if (!/[\s<>\x00-\x1f\x7f]/.test(unbroken)) return unbroken.replace(/[\\()]/g, '\\$&')
+  return `<${unbroken.replace(/[\\<>]/g, '\\$&')}>`
+}
+
+/** A link title in quotes, its backslashes escaped too, so a last one can't escape the closing quote. */
+const linkTitle = (title: string): string => ` "${title.replace(/[\\"]/g, '\\$&')}"`
 
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/
 /** Unknown neighbours (the edge of this text) count as not-space: escape to be safe. */
@@ -189,14 +201,14 @@ const serializer = new MarkdownSerializer(
     blockquote: (state, node) => state.wrapBlock('> ', null, node, () => state.renderContent(node)),
     codeBlock: (state, node) => {
       const fence = fenceFor(node.textContent)
-      state.write(`${fence}${node.attrs.language ?? ''}\n`)
+      state.write(`${fence}${stringAttr(node.attrs, 'language') ?? ''}\n`)
       state.text(node.textContent, false)
       state.write('\n')
       state.write(fence)
       state.closeBlock(node)
     },
     heading: (state, node) => {
-      state.write(`${state.repeat('#', node.attrs.level)} `)
+      state.write(`${state.repeat('#', numberAttr(node.attrs, 'level') ?? 1)} `)
       state.renderInline(node, false)
       state.closeBlock(node)
     },
@@ -204,9 +216,10 @@ const serializer = new MarkdownSerializer(
       state.write('---')
       state.closeBlock(node)
     },
-    bulletList: (state, node) => state.renderList(node, '  ', () => `${node.attrs.bullet ?? '-'} `),
+    bulletList: (state, node) =>
+      state.renderList(node, '  ', () => `${stringAttr(node.attrs, 'bullet') ?? '-'} `),
     orderedList: (state, node) => {
-      const start: number = node.attrs.start ?? 1
+      const start = numberAttr(node.attrs, 'start') ?? 1
       const width = String(start + node.childCount - 1).length
       state.renderList(node, state.repeat(' ', width + 2), (i) => {
         const number = String(start + i)
@@ -247,8 +260,9 @@ const serializer = new MarkdownSerializer(
       },
       close: (state: MarkdownSerializerState, mark: Mark) => {
         if (inBareLink.delete(state)) return ''
-        const title = mark.attrs.title ? ` "${String(mark.attrs.title).replace(/"/g, '\\"')}"` : ''
-        return `](${escapeHref(String(mark.attrs.href ?? ''))}${title})`
+        const title = stringAttr(mark.attrs, 'title')
+        const href = linkDestination(stringAttr(mark.attrs, 'href') ?? '')
+        return `](${href}${title ? linkTitle(title) : ''})`
       },
       mixable: true,
     },

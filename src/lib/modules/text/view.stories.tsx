@@ -48,6 +48,13 @@ const inkTheme: Decorator = (Story) => (
   </div>
 )
 
+/** No board turns ligatures off, so the prose sets them as the font does by default. */
+async function assertLigatures(element: HTMLElement) {
+  const style = getComputedStyle(element)
+  await expect(style.fontVariantLigatures).toBe('normal')
+  await expect(style.fontFeatureSettings).toBe('normal')
+}
+
 /** `PondAtom.dc.html` prose: serif 200, 17.5px (17 under 48rem), line-height 1.6, full ink. */
 async function assertProseType(canvasElement: HTMLElement, ink: string) {
   const paragraph = await within(canvasElement).findByText(/^Start with/, { selector: 'p' })
@@ -58,6 +65,7 @@ async function assertProseType(canvasElement: HTMLElement, ink: string) {
   await expect(ps.fontSize).toBe(`${size}px`)
   await expect(parseFloat(ps.lineHeight)).toBeCloseTo(size * 1.6, 1)
   await expect(ps.color).toBe(ink)
+  await assertLigatures(paragraph)
 }
 
 /** Read-only: markdown is typeset, no literal syntax survives, nothing is editable. */
@@ -115,6 +123,8 @@ export const EditInPlace: Story = {
     const canvas = within(canvasElement)
     const field = await findEditor(canvas)
     await expect(field).toHaveAttribute('contenteditable', 'true')
+    await assertLigatures(field)
+    await assertLigatures(within(field).getByText(/^Start with/, { selector: 'p' }))
     await expect(canvas.queryByRole('button', { name: 'Edit text block' })).toBeNull()
     await expect(within(field).getByRole('heading', { level: 2, name: 'Warm-up' })).toBeVisible()
     await expect(field.textContent).not.toMatch(/##|\*\*|`/)
@@ -190,7 +200,8 @@ export const EmptyStartsEditing: Story = {
 
 /**
  * `/heading` mints `'## '` — scaffolding, not writing. It opens as an empty
- * heading with the caret in it, so the first keystroke is the heading's words.
+ * heading reading `untitled` with the caret in it, so the first keystroke is the
+ * heading's words.
  */
 export const HeadingStartsEditing: Story = {
   args: { data: { id: 'txt-3', type: 'text', content: HEADING_PREFIX } as TextBlock },
@@ -199,8 +210,12 @@ export const HeadingStartsEditing: Story = {
     const canvas = within(canvasElement)
     const field = await findEditor(canvas)
     await waitFor(() => expect(field).toHaveFocus())
-    await expect(field.firstElementChild?.tagName).toBe('H2')
+    const heading = field.firstElementChild as HTMLElement
+    await expect(heading.tagName).toBe('H2')
     await expect(field.textContent).toBe('')
+    // An empty heading line is the heading atom's empty copy, not the prose atom's.
+    await expect(heading).toHaveAttribute('data-placeholder', 'untitled')
+    await expect(getComputedStyle(heading, '::before').content).toBe('"untitled"')
     await userEvent.keyboard('warm-up')
     await waitFor(() => expect(savedOf(canvasElement)).toBe(`${HEADING_PREFIX}warm-up`))
     await expect(within(field).getByRole('heading', { level: 2, name: 'warm-up' })).toBeVisible()

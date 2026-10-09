@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { EditorView } from '@tiptap/pm/view'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
 import {
@@ -7,6 +8,8 @@ import {
 } from '@/__tests__/helpers/text-block'
 import type { TextBlock } from './schema'
 import { TextView } from './view'
+import TextEditor from './editor'
+import { StaticProse } from './static-prose'
 import { TEXT_PROSE_CLASS } from './prose'
 
 const sample: TextBlock = {
@@ -202,6 +205,20 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(handleChange).toHaveBeenCalledTimes(2)
   })
 
+  it('with nowhere to send its writes, an outside value is never taken for one of them', async () => {
+    const at = (content: string): TextBlock => ({ id: 't', type: 'text', content })
+    const { rerender } = render(<TextView data={at('')} editable />)
+    const editor = editorOf(await findField())
+    act(() => {
+      editor.commands.insertContent('a')
+    })
+    act(() => {
+      editor.commands.insertContent('b')
+    })
+    rerender(<TextView data={at('a')} editable />)
+    expect(editor.getText()).toBe('a')
+  })
+
   it('opening a block never writes it — even content not in the serializer’s normal form', async () => {
     const handleChange = jest.fn()
     render(
@@ -247,6 +264,43 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     const line = field.querySelector('p')!
     expect(line).toHaveClass('is-editor-empty')
     expect(line).toHaveAttribute('data-placeholder', 'write something')
+  })
+
+  it('an empty heading reads `untitled`, the same before the editor loads and after', async () => {
+    const { container } = render(
+      <TextView data={{ id: 't', type: 'text', content: HEADING_PREFIX }} editable />
+    )
+    const standIn = container.querySelector('h2')!
+    expect(standIn).toHaveClass('is-editor-empty')
+    expect(standIn).toHaveAttribute('data-placeholder', 'untitled')
+    const heading = (await findField()).querySelector('h2')!
+    expect(heading).toHaveClass('is-editor-empty')
+    expect(heading).toHaveAttribute('data-placeholder', 'untitled')
+  })
+
+  it('a press on the prose before the editor existed puts the caret there when it arrives', async () => {
+    const posAtCoords = jest
+      .spyOn(EditorView.prototype, 'posAtCoords')
+      .mockReturnValue({ pos: 5, inside: -1 })
+    const pressRef = { current: { left: 40, top: 60 } }
+    render(<TextEditor data={sample} standIn={null} pressRef={pressRef} />)
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    expect(posAtCoords).toHaveBeenCalledWith({ left: 40, top: 60 })
+    expect(editorOf(field).state.selection.from).toBe(5)
+    expect(pressRef.current).toBeNull()
+    posAtCoords.mockRestore()
+  })
+
+  it('the stand-in records where it was pressed', () => {
+    const handleMouseDown = jest.fn()
+    const { container } = render(
+      <StaticProse content={sample.content} placeholder onMouseDown={handleMouseDown} />
+    )
+    fireEvent.mouseDown(container.querySelector('p')!, { clientX: 40, clientY: 60 })
+    expect(handleMouseDown).toHaveBeenCalledWith(
+      expect.objectContaining({ clientX: 40, clientY: 60 })
+    )
   })
 
   it('a minted heading opens focused on an empty heading, and typing fills it', async () => {

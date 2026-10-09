@@ -1,10 +1,15 @@
-/** The prose atom's empty copy (`PondAtom.dc.html` EMPTY.prose). */
-export const TEXT_PLACEHOLDER = 'write something'
+import { POND_ATOM_EMPTY } from '@/components/atoms/PondAtom'
+
+/** What a blank text block's line reads: the empty copy of the atom that line is. */
+export const textPlaceholderFor = (lineType: string): string =>
+  lineType === 'heading' ? POND_ATOM_EMPTY.heading : POND_ATOM_EMPTY.prose
 
 /**
  * Structure every reading of a text block shares, whatever type it is set in.
- * The first line is the editor's own surface (ProseMirror's injected style), so
- * the static render wraps and shapes text exactly as the editor does.
+ * The first line wraps text as the editor's own surface (ProseMirror's injected
+ * style) does, so the static render breaks lines where the editor would. That
+ * style also turns ligatures off, which no board does; it is unlayered, so only
+ * an `!important` utility turns them back on.
  *
  *   link      — underline at ink .3, offset 3, .75 on hover (`PondAtom.dc.html`)
  *   divider   — 1px at ink .09 in both themes, 200 wide (280), 12px above and below
@@ -16,7 +21,7 @@ export const TEXT_PLACEHOLDER = 'write something'
  *               between items and between an item's own blocks.
  */
 const TEXT_STRUCTURE = [
-  'whitespace-break-spaces break-words [font-variant-ligatures:none] [font-feature-settings:"liga"_0]',
+  'whitespace-break-spaces break-words [font-variant-ligatures:normal]! [font-feature-settings:normal]!',
   '[&_em]:italic [&_blockquote]:italic',
   '[&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5 [&_li]:pl-1 [&_li+li]:mt-1 [&_li>*+*]:mt-1',
   '[&_code]:font-mono [&_code]:font-normal [&_code]:rounded-mn-chrome [&_code]:bg-mn-text/5 [&_code]:px-1.5 [&_code]:py-0.5',
@@ -36,7 +41,7 @@ const TEXT_STRUCTURE = [
  *               3 → 18/500, 4 → 16/500, 5 → 13.5/500, 6 → 11/500 upper .1em
  *   quote     — serif 200 italic 19 (18), −.01em
  *   code      — 12 (13)
- *   empty     — the prose atom's `write something`, at ink .68
+ *   empty     — the line's own atom's empty copy (`untitled`, `write something`), at ink .68
  * Blocks inside one text block sit on the page's own 16px rhythm (`Pond 06.07`).
  */
 export const TEXT_PROSE_CLASS = [

@@ -1,12 +1,15 @@
-import { Fragment, type ReactNode } from 'react'
+import type { MouseEventHandler, ReactNode } from 'react'
 import type { Mark, Node as ProseNode } from '@tiptap/pm/model'
+import { isProseMarkName, numberAttr, stringAttr } from './document'
 import { parseMarkdown } from './markdown'
-import { TEXT_PROSE_CLASS } from './prose'
+import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 
 const HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 
 const renderMark = (mark: Mark, children: ReactNode[], key: number): ReactNode => {
-  switch (mark.type.name) {
+  const { name } = mark.type
+  if (!isProseMarkName(name)) throw new Error(`a text block has no \`${name}\` mark`)
+  switch (name) {
     case 'bold':
       return <strong key={key}>{children}</strong>
     case 'italic':
@@ -19,16 +22,18 @@ const renderMark = (mark: Mark, children: ReactNode[], key: number): ReactNode =
       return (
         <a
           key={key}
-          href={mark.attrs.href ?? undefined}
-          title={mark.attrs.title ?? undefined}
+          href={stringAttr(mark.attrs, 'href') ?? undefined}
+          title={stringAttr(mark.attrs, 'title') ?? undefined}
           target="_blank"
           rel="noopener noreferrer"
         >
           {children}
         </a>
       )
-    default:
-      return <Fragment key={key}>{children}</Fragment>
+    default: {
+      const unhandled: never = name
+      return unhandled
+    }
   }
 }
 
@@ -60,44 +65,52 @@ const renderInline = (nodes: readonly ProseNode[], depth = 0): ReactNode[] => {
 const renderTextblock = (node: ProseNode): ReactNode =>
   node.childCount === 0 ? <br /> : renderInline(node.content.content)
 
+/** The editor's placeholder decoration on a blank block's line, drawn the same. */
+const placeholderProps = (placeholder: string | null) =>
+  placeholder === null
+    ? {}
+    : { className: 'is-empty is-editor-empty', 'data-placeholder': placeholder }
+
 const renderBlock = (node: ProseNode, key: number, placeholder: string | null): ReactNode => {
   const renderChildren = () =>
     node.content.content.map((child, index) => renderBlock(child, index, null))
   switch (node.type.name) {
-    case 'paragraph': {
-      if (placeholder === null || node.childCount > 0) {
-        return <p key={key}>{renderTextblock(node)}</p>
-      }
+    case 'paragraph':
       return (
-        <p key={key} className="is-empty is-editor-empty" data-placeholder={placeholder}>
+        <p key={key} {...placeholderProps(placeholder)}>
           {renderTextblock(node)}
         </p>
       )
-    }
     case 'heading': {
-      const Heading = HEADING_TAGS[node.attrs.level - 1] ?? 'h1'
-      return <Heading key={key}>{renderTextblock(node)}</Heading>
+      const Heading = HEADING_TAGS[(numberAttr(node.attrs, 'level') ?? 1) - 1] ?? 'h1'
+      return (
+        <Heading key={key} {...placeholderProps(placeholder)}>
+          {renderTextblock(node)}
+        </Heading>
+      )
     }
     case 'bulletList':
       return <ul key={key}>{renderChildren()}</ul>
-    case 'orderedList':
+    case 'orderedList': {
+      const start = numberAttr(node.attrs, 'start') ?? 1
       return (
-        <ol key={key} start={node.attrs.start === 1 ? undefined : node.attrs.start}>
+        <ol key={key} start={start === 1 ? undefined : start}>
           {renderChildren()}
         </ol>
       )
+    }
     case 'listItem':
       return <li key={key}>{renderChildren()}</li>
     case 'blockquote':
       return <blockquote key={key}>{renderChildren()}</blockquote>
-    case 'codeBlock':
+    case 'codeBlock': {
+      const language = stringAttr(node.attrs, 'language')
       return (
         <pre key={key}>
-          <code className={node.attrs.language ? `language-${node.attrs.language}` : undefined}>
-            {node.textContent}
-          </code>
+          <code className={language ? `language-${language}` : undefined}>{node.textContent}</code>
         </pre>
       )
+    }
     case 'horizontalRule':
       return <hr key={key} />
     default:
@@ -105,31 +118,44 @@ const renderBlock = (node: ProseNode, key: number, placeholder: string | null): 
   }
 }
 
-const isBlank = (doc: ProseNode): boolean =>
-  doc.childCount === 1 &&
-  doc.firstChild?.type.name === 'paragraph' &&
-  doc.firstChild.childCount === 0
+/** Empty as the editor judges a document: no text and no leaf anywhere in it. */
+const isBlank = (node: ProseNode): boolean =>
+  node.isText ? !node.text : !node.isLeaf && node.content.content.every(isBlank)
+
+/**
+ * The editor marks the line its caret is on, and a blank block opens with the
+ * caret in its first line — when that is a line, not a list or a quote.
+ */
+const placeholderOf = (doc: ProseNode): string | null => {
+  const line = doc.firstChild
+  if (!line?.isTextblock || !isBlank(doc)) return null
+  return textPlaceholderFor(line.type.name)
+}
 
 /**
  * A text block's markdown, drawn from the same parsed document the editor edits,
- * with no editor: it renders on the server and paints at once. `placeholder` marks
+ * with no editor: it renders on the server and paints at once. `placeholder` draws
  * a blank block's line the way the editor's placeholder does.
  */
 export const StaticProse = ({
   content,
   className = TEXT_PROSE_CLASS,
-  placeholder,
+  placeholder = false,
+  onMouseDown,
 }: {
   content: string
   className?: string
-  placeholder?: string
+  placeholder?: boolean
+  onMouseDown?: MouseEventHandler
 }) => {
   const doc = parseMarkdown(content)
-  const blankLine = placeholder !== undefined && isBlank(doc) ? placeholder : null
+  const firstLine = placeholder ? placeholderOf(doc) : null
   return (
-    <div className="w-full">
+    <div className="w-full" onMouseDown={onMouseDown}>
       <div data-text-prose className={className}>
-        {doc.content.content.map((block, index) => renderBlock(block, index, blankLine))}
+        {doc.content.content.map((block, index) =>
+          renderBlock(block, index, index === 0 ? firstLine : null)
+        )}
       </div>
     </div>
   )

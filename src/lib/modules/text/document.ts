@@ -1,4 +1,21 @@
-import { Schema } from '@tiptap/pm/model'
+import { Schema, type Attrs, type MarkSpec } from '@tiptap/pm/model'
+
+const proseMarks = {
+  link: {
+    inclusive: true,
+    attrs: {
+      href: { default: null },
+      target: { default: '_blank' },
+      rel: { default: 'noopener noreferrer' },
+      class: { default: null },
+      title: { default: null },
+    },
+  },
+  bold: {},
+  code: { excludes: '_', code: true },
+  italic: {},
+  strike: {},
+} satisfies Record<string, MarkSpec>
 
 /**
  * The text block's document: the editor's schema (`proseExtensions`), declared
@@ -46,21 +63,23 @@ export const proseSchema = new Schema({
     },
     text: { group: 'inline' },
   },
-  marks: {
-    link: {
-      inclusive: true,
-      attrs: {
-        href: { default: null },
-        target: { default: '_blank' },
-        rel: { default: 'noopener noreferrer' },
-        class: { default: null },
-        title: { default: null },
-      },
-    },
-    bold: {},
-    code: { excludes: '_', code: true },
-    italic: {},
-    strike: {},
-  },
+  marks: proseMarks,
   topNode: 'doc',
 })
+
+export type ProseMarkName = keyof typeof proseMarks
+
+export const isProseMarkName = (name: string): name is ProseMarkName =>
+  Object.hasOwn(proseMarks, name)
+
+/** A string attribute, read as one: ProseMirror types every attribute `any`. */
+export const stringAttr = (attrs: Attrs, name: string): string | null => {
+  const value: unknown = attrs[name]
+  return typeof value === 'string' ? value : null
+}
+
+/** A number attribute, read as one: ProseMirror types every attribute `any`. */
+export const numberAttr = (attrs: Attrs, name: string): number | null => {
+  const value: unknown = attrs[name]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}

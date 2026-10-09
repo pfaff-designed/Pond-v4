@@ -38,6 +38,13 @@ describe('a text block renders on the server, with no window and no editor', () 
     expect(html).toContain('data-placeholder="write something"')
   })
 
+  it('an empty heading arrives reading the heading atom’s `untitled`', () => {
+    const html = renderToString(
+      <TextView data={{ id: 't', type: 'text', content: '## ' }} editable onChange={() => {}} />
+    )
+    expect(html).toContain('<h2 class="is-empty is-editor-empty" data-placeholder="untitled">')
+  })
+
   it('the diff card reads the block the same way', () => {
     const html = renderToString(
       <TextDiffer before={{ ...sample, content: 'milk\neggs' }} after={sample} />
