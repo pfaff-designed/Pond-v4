@@ -5,8 +5,8 @@ import { Markdown, MarkdownInline } from './Markdown'
 
 /**
  * The rendered-reading primitive (ticket-20). Verifies that markdown source is
- * typeset — no literal `##`, `**`, `---`, or pipe-table syntax survives — in both
- * the serif `reading` variant and the compact mono `terminal` variant.
+ * typeset — no literal `##`, `**`, `---`, or pipe-table syntax survives. Page prose
+ * is the text block's own document (`lib/modules/text`), not this molecule.
  */
 const meta = {
   title: 'Molecules/Markdown',
@@ -32,9 +32,9 @@ You'll need **dumbbells** and a *bench*. Reach for a mat when the floor is hard.
 | Press | 3 | 8 |
 `
 
-/** Reading variant: headings/bold/lists/rule/table all typeset in Press serif. */
-export const Reading: Story = {
-  args: { children: SAMPLE, variant: 'reading' },
+/** Headings/bold/lists/rule/table all typeset. */
+export const Typeset: Story = {
+  args: { children: SAMPLE, variant: 'terminal' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     // Heading rendered as an <h2>, not literal "## Equipment".
@@ -52,54 +52,6 @@ export const Reading: Story = {
     await expect(canvasElement.textContent).not.toContain('| Exercise |')
     // List items.
     await expect(canvas.getByText('Warm up first')).toBeInTheDocument()
-  },
-}
-
-/**
- * Reading preserves plain line breaks (remark-breaks): user-typed notes with single
- * newlines — the old whitespace-pre-wrap behavior — must not collapse into one
- * run-on paragraph.
- */
-export const ReadingPlainLineBreaks: Story = {
-  args: { children: 'Buy sandpaper\nSharpen chisels\nGlue the frame', variant: 'reading' },
-  play: async ({ canvasElement }) => {
-    // Single newlines become hard breaks — two <br>s between the three lines.
-    await expect(canvasElement.querySelectorAll('br')).toHaveLength(2)
-    await expect(canvasElement.textContent).toContain('Buy sandpaper')
-    await expect(canvasElement.textContent).toContain('Glue the frame')
-    // Each line renders at its own vertical offset (really separate lines).
-    const paragraph = canvasElement.querySelector('p')
-    await expect(paragraph).not.toBeNull()
-    const lineHeight = parseFloat(getComputedStyle(paragraph!).lineHeight)
-    await expect(paragraph!.getBoundingClientRect().height).toBeGreaterThan(lineHeight * 2)
-  },
-}
-
-/**
- * The smallest heading on a page is the EYEBROW, not a tiny serif title — the label
- * `Pond 06.01` 6a frame 5 puts over the "mentioned" list a made page is born with.
- * Measured on the board: PP Neue Montreal (sans) · 10.5px · 500 · .1em · uppercase.
- * Sans because it lives on a page; PROJECT_RULES § two registers, split by medium,
- * keeps the composer's own eyebrows in the mono.
- */
-export const ReadingPageEyebrow: Story = {
-  args: {
-    children: '###### mentioned\n\n- cabinet quote\n- worktop template',
-    variant: 'reading',
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    const eyebrow = canvas.getByRole('heading', { level: 6, name: 'mentioned' })
-    await expect(canvasElement.textContent).not.toContain('######')
-    const css = getComputedStyle(eyebrow)
-    await expect(css.fontFamily).toContain('PP Neue Montreal')
-    await expect(css.fontFamily).not.toContain('Mono')
-    await expect(css.fontSize).toBe('10.5px')
-    await expect(css.fontWeight).toBe('500')
-    await expect(css.letterSpacing).toBe('1.05px')
-    await expect(css.textTransform).toBe('uppercase')
-    // The list under it stays reading prose — only the label is the eyebrow.
-    await expect(canvas.getByText('cabinet quote')).toBeInTheDocument()
   },
 }
 

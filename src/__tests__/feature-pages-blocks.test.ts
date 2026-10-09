@@ -37,6 +37,7 @@ import { DATABASES_ROOT_TITLE, isDatabasesRoot } from '@/lib/pages/databases-roo
 import { ROW_TYPE, readSchema } from '@/lib/properties/schema'
 import type { Block } from '@/lib/documents/types'
 import { makeFakeSupabase, type Row } from './helpers/fake-supabase'
+import { queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -221,14 +222,14 @@ describe('the hover + inserts a block mid-page (06.07)', () => {
 
 describe('the / menu inserts a block', () => {
   it('replaces the `/…` text block in place, so the slash itself never survives the save', async () => {
-    const { container } = mount([note, { id: 'b-empty', type: 'text', content: '' }])
+    mount([note, { id: 'b-empty', type: 'text', content: '' }])
     const typing = await waitFor(() => {
-      const el = container.querySelector('textarea')
+      const el = queryAllTextBlocks().find((field) => field.textContent === '')
       if (!el) throw new Error('no empty text block to type into')
       return el
     })
 
-    fireEvent.change(typing, { target: { value: '/' } })
+    writeInTextBlock(typing, '/')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     fireEvent.click(within(menu).getByText('heading'))
 

@@ -10,9 +10,8 @@ import { blockFrame } from '@/lib/modules/block-frame'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
 
 /**
- * The `text` content block (ticket-20) — rendered reading by default, click-to-edit
- * source. Read-only always typesets markdown; editable starts in the rendered view
- * and drops into a source textarea on click (extends the ticket-10 edit loop).
+ * The `text` content block — its markdown typeset and edited in place, with no
+ * source field. Read-only renders the same document, not editable, in the same type.
  *
  * #258 — the bare/carded fork, from `PondTemplate.dc.html`'s `renderVals()`:
  *
@@ -42,48 +41,85 @@ const sample: TextBlock = {
   content: '## Warm-up\n\nStart with **light cardio**, then reach for the `foam roller`.',
 }
 
-/** Read-only: markdown is typeset, no literal syntax survives, no textarea. */
+/** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
+const inkTheme: Decorator = (Story) => (
+  <div className="dark rounded-mn-inner bg-raw-ink p-mn-6">
+    <Story />
+  </div>
+)
+
+/** `PondAtom.dc.html` prose: serif 200, 17.5px (17 under 48rem), line-height 1.6, full ink. */
+async function assertProseType(canvasElement: HTMLElement, ink: string) {
+  const paragraph = await within(canvasElement).findByText(/light cardio/, { selector: 'p' })
+  const ps = getComputedStyle(paragraph)
+  const size = window.matchMedia('(width < 48rem)').matches ? 17 : 17.5
+  await expect(ps.fontFamily).toContain('PP Editorial New')
+  await expect(ps.fontWeight).toBe('200')
+  await expect(ps.fontSize).toBe(`${size}px`)
+  await expect(parseFloat(ps.lineHeight)).toBeCloseTo(size * 1.6, 1)
+  await expect(ps.color).toBe(ink)
+}
+
+/** Read-only: markdown is typeset, no literal syntax survives, nothing is editable. */
 export const ReadOnly: Story = {
   args: { data: sample },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()
+    await expect(
+      await canvas.findByRole('heading', { level: 2, name: 'Warm-up' })
+    ).toBeInTheDocument()
     await expect(canvas.getByText('light cardio').tagName).toBe('STRONG')
     await expect(canvasElement.textContent).not.toContain('## Warm-up')
     await expect(canvas.queryByRole('textbox')).not.toBeInTheDocument()
+    await assertProseType(canvasElement, 'rgb(27, 29, 20)') // #1B1D14 ink
   },
 }
 
-/** Stateful host so editable play tests exercise real onChange round-trips. */
-function StatefulText({ data }: { data: TextBlock }) {
-  const [state, setState] = useState(data)
-  return <TextView data={state} editable onChange={setState} />
+/** The same prose on ink: paper-coloured, same type. */
+export const ReadOnlyInk: Story = {
+  ...ReadOnly,
+  decorators: [inkTheme],
+  play: async ({ canvasElement }) => {
+    await assertProseType(canvasElement, 'rgb(250, 249, 239)') // #FAF9EF paper
+  },
 }
 
-/** Editable: rendered by default; clicking opens the source textarea with content intact. */
-export const ClickToEdit: Story = {
+/**
+ * Stateful host so editable play tests exercise real onChange round-trips. The
+ * `data-saved` hook is story-local: it exposes the markdown the page would commit.
+ */
+function StatefulText({ data }: { data: TextBlock }) {
+  const [state, setState] = useState(data)
+  return (
+    <div data-saved={state.content}>
+      <TextView data={state} editable onChange={setState} />
+    </div>
+  )
+}
+
+const savedOf = (canvasElement: HTMLElement) =>
+  canvasElement.querySelector<HTMLElement>('[data-saved]')?.dataset.saved
+
+/** Editable: the prose IS the field — typeset while writing, written back as markdown. */
+export const EditInPlace: Story = {
   args: { data: sample },
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // Starts rendered — no textarea, markdown typeset.
-    await expect(canvas.getByRole('heading', { level: 2, name: 'Warm-up' })).toBeInTheDocument()
-    await expect(canvas.queryByRole('textbox')).not.toBeInTheDocument()
-    // Click drops into the source with full markdown intact and focused.
-    await userEvent.click(canvas.getByRole('button', { name: 'Edit text block' }))
-    const textarea = await canvas.findByRole('textbox')
-    await expect(textarea).toHaveValue(sample.content)
-    await waitFor(() => expect(textarea).toHaveFocus())
-    // Typing extends the source, then blur returns to the rendered view.
-    await userEvent.type(textarea, ' Go.')
-    await expect(textarea).toHaveValue(sample.content + ' Go.')
-    await userEvent.tab()
-    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
-    await expect(canvas.getByText('foam roller').tagName).toBe('CODE')
+    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    await expect(field).toHaveAttribute('contenteditable', 'true')
+    await expect(canvas.queryByRole('button', { name: 'Edit text block' })).toBeNull()
+    await expect(within(field).getByRole('heading', { level: 2, name: 'Warm-up' })).toBeVisible()
+    await expect(field.textContent).not.toMatch(/##|\*\*|`/)
+    // Typing at the end extends the prose; the markdown gains only what was typed.
+    await userEvent.type(field, ' Go.')
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
+    await expect(field.textContent).not.toMatch(/##|\*\*|`/)
+    await expect(within(field).getByText('foam roller').tagName).toBe('CODE')
   },
 }
 
-/** A link in an editable block navigates (new tab); everything else enters edit. */
+/** A link in an editable block opens in a new tab with the opener severed. */
 export const LinkInEditableBlock: Story = {
   args: {
     data: {
@@ -93,88 +129,78 @@ export const LinkInEditableBlock: Story = {
     } as TextBlock,
   },
   render: (args) => <StatefulText data={args.data} />,
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    // Keep the test tab from actually opening example.com; capture-phase so the
-    // wrapper's own bubble-phase link check still runs untouched.
-    canvasElement.addEventListener(
-      'click',
-      (e) => {
-        if (e.target instanceof Element && e.target.closest('a')) e.preventDefault()
-      },
-      true
-    )
-    // The link is a real anchor: href intact, new tab, opener severed.
-    const link = canvas.getByRole('link', { name: 'the plans' })
+    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    const link = within(field).getByRole('link', { name: 'the plans' })
     await expect(link).toHaveAttribute('href', 'https://example.com/plans')
     await expect(link).toHaveAttribute('target', '_blank')
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-    // Clicking the link does NOT enter edit mode.
-    await userEvent.click(link)
-    await expect(canvas.queryByRole('textbox')).not.toBeInTheDocument()
-    // Clicking the surrounding prose does.
+    // Keep the test tab from actually opening example.com.
+    const opened: Parameters<typeof window.open>[] = []
+    const open = window.open
+    window.open = (...args: Parameters<typeof window.open>) => {
+      opened.push(args)
+      return null
+    }
+    try {
+      await userEvent.click(link)
+    } finally {
+      window.open = open
+    }
+    await expect(opened).toEqual([['https://example.com/plans', '_blank', 'noopener,noreferrer']])
+    // Clicking the prose around it is just a caret in the field.
     await userEvent.click(canvas.getByText(/before cutting/))
-    await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
+    await expect(field).toHaveFocus()
+    await expect(savedOf(canvasElement)).toBe(args.data.content)
   },
 }
 
 /**
- * An empty editable block starts in edit mode so a freshly-added block is typeable;
- * blurring out of it leaves a visible placeholder (not a zero-height dead zone)
- * that mouse users can click to re-enter.
+ * An empty editable block opens focused so a freshly-added block is typeable, and
+ * shows the prose atom's placeholder — which stays when focus leaves, so the line
+ * is never a zero-height dead zone.
  */
 export const EmptyStartsEditing: Story = {
   args: { data: { id: 'txt-2', type: 'text', content: '' } as TextBlock },
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('textbox')).toBeInTheDocument()
-    // Blur without typing → read mode shows the placeholder, still clickable.
+    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    await waitFor(() => expect(field).toHaveFocus())
+    const line = field.querySelector<HTMLElement>('p')!
+    await expect(line).toHaveAttribute('data-placeholder', 'write something')
+    await expect(getComputedStyle(line, '::before').content).toBe('"write something"')
     await userEvent.tab()
-    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
-    const trigger = canvas.getByRole('button', { name: 'Edit text block' })
-    await expect(canvas.getByText('Write something…')).toBeInTheDocument()
-    await expect(trigger.getBoundingClientRect().height).toBeGreaterThan(0)
-    // Click re-enters edit mode.
-    await userEvent.click(trigger)
-    await expect(await canvas.findByRole('textbox')).toBeInTheDocument()
+    await expect(field).not.toHaveFocus()
+    await expect(line).toHaveClass('is-editor-empty')
+    await expect(field.getBoundingClientRect().height).toBeGreaterThan(0)
+    // Clicking the empty line puts the caret back in it.
+    await userEvent.click(line)
+    await expect(field).toHaveFocus()
   },
 }
 
 /**
- * `/heading` (#281) mints `'## '` — scaffolding, not writing. Keyed on
- * `content === ''` the block mounted in READ mode and drew an empty `<h2>`: a blank
- * strip with no caret and no placeholder, worse than `/text`. It must open typeable
- * with the caret after the marker, like any other freshly inserted block.
+ * `/heading` (#281) mints `'## '` — scaffolding, not writing. It opens as an empty
+ * heading with the caret in it, so the first keystroke is the heading's words.
  */
 export const HeadingStartsEditing: Story = {
   args: { data: { id: 'txt-3', type: 'text', content: HEADING_PREFIX } as TextBlock },
   render: (args) => <StatefulText data={args.data} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const field = await canvas.findByRole('textbox')
-    await expect(field).toHaveValue(HEADING_PREFIX)
-    await expect(field).toHaveFocus()
-    // The caret is after the marker, so the first keystroke is the heading's words.
-    await expect((field as HTMLTextAreaElement).selectionStart).toBe(HEADING_PREFIX.length)
+    const field = await canvas.findByRole('textbox', { name: 'text block' })
+    await waitFor(() => expect(field).toHaveFocus())
+    await expect(field.firstElementChild?.tagName).toBe('H2')
+    await expect(field.textContent).toBe('')
     await userEvent.keyboard('warm-up')
-    await expect(field).toHaveValue(`${HEADING_PREFIX}warm-up`)
-    // Once there are words it is written, so blur returns to the typeset heading.
-    await userEvent.tab()
-    await waitFor(() => expect(canvas.queryByRole('textbox')).not.toBeInTheDocument())
-    await expect(canvas.getByRole('heading', { level: 2, name: 'warm-up' })).toBeInTheDocument()
-    await expect(canvas.queryByText('Write something…')).not.toBeInTheDocument()
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${HEADING_PREFIX}warm-up`))
+    await expect(within(field).getByRole('heading', { level: 2, name: 'warm-up' })).toBeVisible()
   },
 }
 
 // ── #258: labelled → card, unlabelled → bare ───────────────────────────────────
-
-/** Storybook-only paper/ink decorator: flips the ambient role tokens via `.dark`. */
-const inkTheme: Decorator = (Story) => (
-  <div className="dark rounded-mn-inner bg-raw-ink p-mn-6">
-    <Story />
-  </div>
-)
 
 /** The board's `project → goal` fixture: a LABELLED text block. */
 const goal: TextBlock = {

@@ -324,7 +324,9 @@ describe('AITerminal — create_page contract', () => {
     renderWithQuery(<AITerminal />)
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 
-    expect(screen.getByText('Lasagna')).toBeInTheDocument()
+    expect(screen.getByText('Lasagna', { selector: 'div' })).toBeInTheDocument()
+    // The proposed text block previews typeset: its `# Lasagna` is a heading, not syntax.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Lasagna' })).toBeInTheDocument()
     expect(screen.getByText(/new page · recipe/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create page/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /destination/i })).toBeInTheDocument()

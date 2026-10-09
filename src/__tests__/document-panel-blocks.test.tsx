@@ -9,11 +9,17 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import {
+  findTextBlock,
+  queryAllTextBlocks,
+  textEditorOf,
+  writeInTextBlock,
+} from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -93,14 +99,30 @@ beforeEach(() => {
 })
 
 describe('DocumentPanel block rendering (via the module registry)', () => {
-  it('renders a text block click-to-edit: reading view first, textarea on click', async () => {
+  it('renders a text block in place as typeset prose — editable, with no source field', async () => {
     renderPanel()
-    // ticket-20: a non-empty text block renders its (mocked) markdown reading view,
-    // not a raw textarea. Clicking the edit trigger drops into the source with content intact.
-    const trigger = await screen.findByRole('button', { name: 'Edit text block' })
+    const field = await findTextBlock()
+    expect(field).toHaveAttribute('contenteditable', 'true')
+    expect(field).toHaveTextContent('Notes on the workbench build')
     expect(screen.queryByDisplayValue('Notes on the workbench build')).not.toBeInTheDocument()
-    fireEvent.click(trigger)
-    expect(await screen.findByDisplayValue('Notes on the workbench build')).toBeInTheDocument()
+  })
+
+  it('persists a formatted text edit as markdown through the debounced save', async () => {
+    renderPanel()
+    const editor = textEditorOf(await findTextBlock())
+    act(() => {
+      editor.chain().selectAll().toggleBold().run()
+    })
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
+    const [, , , savedBlocks, opts] = mockCommitBlocks.mock.calls[0]
+    const text = (savedBlocks as Block[]).find((b) => b.id === 'b-text')
+    expect(text).toEqual({
+      id: 'b-text',
+      type: 'text',
+      content: '**Notes on the workbench build**',
+    })
+    expect(opts).toMatchObject({ ownEdit: true })
   })
 
   it('renders a saved table block with its cells, not an empty shell', async () => {
@@ -177,7 +199,7 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
     ])
     // Its own content is reachable: title editor + the block's reading view.
     expect(await screen.findByLabelText('Page title')).toHaveValue('Workout Routines')
-    expect(await screen.findByRole('button', { name: 'Edit text block' })).toBeInTheDocument()
+    expect(await findTextBlock()).toHaveTextContent('Consistency beats intensity')
     // And its children still show, below, as the shared grid.
     expect(await screen.findByText('3-Day Full-Body Dumbbell Routine')).toBeInTheDocument()
   })
@@ -201,12 +223,12 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
       childRow,
     ])
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-    const editor = await screen.findByPlaceholderText('Write something…')
-    fireEvent.change(editor, { target: { value: '/' } })
+    const editor = await findTextBlock()
+    writeInTextBlock(editor, '/')
     // An empty page leads with its templates; typing a block's name returns to the blocks.
     await screen.findByRole('listbox', { name: 'page from template' })
     // #278: the query is the text typed on the page after the `/`.
-    fireEvent.change(editor, { target: { value: '/check' } })
+    writeInTextBlock(editor, '/check')
     // The matched label is split pre / hit / post, so find the row by its whole text.
     const row = await waitFor(() => {
       const match = screen.getAllByRole('option').find((o) => o.textContent?.includes('checklist'))
@@ -245,15 +267,15 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
 describe('the / menu on an empty page makes pages', () => {
   async function openSlash(typed: string) {
     fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
-    const editor = await screen.findByPlaceholderText('Write something…')
-    fireEvent.change(editor, { target: { value: '/' } })
+    const editor = await findTextBlock()
+    writeInTextBlock(editor, '/')
     return { editor, typed }
   }
 
   const pick = async (editor: HTMLElement, query: string, name: string) => {
     // An empty page opens on its templates; typing a name returns to the blocks.
     await screen.findByRole('listbox', { name: 'page from template' })
-    fireEvent.change(editor, { target: { value: `/${query}` } })
+    writeInTextBlock(editor, `/${query}`)
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     // The matched part of a label is its own span, so match the row by its whole text.
     const row = within(menu)
@@ -273,7 +295,7 @@ describe('the / menu on an empty page makes pages', () => {
       'user-1',
       expect.objectContaining({ parentId: 'page-1', type: 'page', title: 'untitled' })
     )
-    await waitFor(() => expect(screen.queryByDisplayValue(/^\/nested/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/^\/nested/)).not.toBeInTheDocument())
   })
 
   it('`page` makes a sibling: a child of this page’s own parent', async () => {
@@ -293,7 +315,7 @@ describe('the / menu on an empty page makes pages', () => {
     renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
     const { editor } = await openSlash('page')
     await screen.findByRole('listbox', { name: 'page from template' })
-    fireEvent.change(editor, { target: { value: '/page' } })
+    writeInTextBlock(editor, '/page')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
 
     // `page` is a sibling, so making it waits on the parent lookup — held here.
@@ -313,14 +335,15 @@ describe('the / menu on an empty page makes pages', () => {
         .getAllByRole('option')
         .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'text')!
     )
-    // The new block opens typeable; the `/page` block, blurred by the click, is read-only.
-    await screen.findByPlaceholderText('Write something…')
+    // The new block opens typeable, beside the `/page` block still waiting on its pick.
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
     expect(screen.getByText('/page')).toBeInTheDocument()
 
     release({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText('/page')).not.toBeInTheDocument())
-    expect(screen.getByPlaceholderText('Write something…')).toHaveValue('')
+    const [survivor] = queryAllTextBlocks()
+    expect(survivor).toHaveTextContent('')
   })
 
   it('a template of yours is listed under `yours` and applied whole, stamped once with where it came from', async () => {

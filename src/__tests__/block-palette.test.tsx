@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -190,11 +191,14 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
     fireEvent.click(handles[0])
     fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
 
-    // Now edit the surviving block (b2): drop into its textarea and change it.
-    const editTrigger = await screen.findByRole('button', { name: 'Edit text block' })
-    fireEvent.click(editTrigger)
-    const textarea = await screen.findByDisplayValue('Second')
-    fireEvent.change(textarea, { target: { value: 'Second (edited)' } })
+    // Now edit the surviving block (b2) in place.
+    const field = await waitFor(() => {
+      const fields = queryAllTextBlocks()
+      expect(fields).toHaveLength(1)
+      expect(fields[0]).toHaveTextContent('Second')
+      return fields[0]
+    })
+    writeInTextBlock(field, 'Second (edited)')
 
     // Undo the delete — b1 comes back, and b2 must keep the edit.
     fireEvent.click(await screen.findByText('Undo'))

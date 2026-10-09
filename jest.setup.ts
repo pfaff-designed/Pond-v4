@@ -7,6 +7,17 @@ if (typeof window !== 'undefined') {
   window.HTMLElement.prototype.scrollIntoView = jest.fn()
 }
 
+// jsdom has no layout, so a Range has no geometry. The text block's editor
+// (ProseMirror) measures the caret off its Range to keep it in view; an empty
+// rect list and a zero rect stand in.
+if (typeof window !== 'undefined' && typeof window.Range.prototype.getClientRects !== 'function') {
+  const emptyRect = { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 }
+  window.Range.prototype.getBoundingClientRect = () =>
+    ({ ...emptyRect, toJSON: () => emptyRect }) as DOMRect
+  window.Range.prototype.getClientRects = () =>
+    Object.assign([], { item: () => null }) as unknown as DOMRectList
+}
+
 // jsdom does not implement ResizeObserver — stub it so components that measure
 // their own track (gantt/timeline axis-tick thinning, #57) can mount. Width
 // reads come back 0 in jsdom, which the views treat as "unmeasured".

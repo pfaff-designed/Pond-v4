@@ -22,14 +22,15 @@
 import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { FOCUS_RING } from '@/components/atoms/focus-ring'
 import { POND_CONTROL_VARIANTS } from '@/components/atoms/PondControl'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
-import { READING_PROSE_CLASS, TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
+import { TERMINAL_PROSE_CLASS } from '@/components/molecules/Markdown'
+import { TEXT_PROSE_CLASS } from '@/lib/modules/text/prose'
 import { PropertyInspector } from '@/components/molecules/PropertyInspector'
 import { ChartCard } from '@/lib/modules/chart/card'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
@@ -127,7 +128,7 @@ describe('source sweep — no fourth ink tier is used for type anywhere', () => 
     const hits = linesMatching(/mn-mark-faint/)
     for (const hit of hits) {
       expect(hit).toMatch(
-        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|QuoteChip\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx/
+        /globals\.css|block-dom\.ts|PondAtom\.tsx|PondMolecule\.tsx|QuoteChip\.tsx|RelationChip\.tsx|Rail\.tsx|record-check\.tsx|text\/prose\.ts/
       )
     }
     expect(linesMatching(/-mn-text\/30\b/)).toEqual([])
@@ -464,9 +465,9 @@ describe('PropertyInspector — sans values, board field-row label', () => {
 
 // ── Page prose at the meta tier ─────────────────────────────────────────────
 
-describe('Markdown — page prose is full ink', () => {
-  it('reading and terminal prose carry text-mn-text, never the small-meta tier', () => {
-    for (const cls of [READING_PROSE_CLASS, TERMINAL_PROSE_CLASS]) {
+describe('Page prose is full ink', () => {
+  it('text block and terminal prose carry text-mn-text, never the small-meta tier', () => {
+    for (const cls of [TEXT_PROSE_CLASS, TERMINAL_PROSE_CLASS]) {
       const tokens = cls.split(' ')
       expect(tokens).toContain('text-mn-text')
       expect(tokens).not.toContain('text-mn-text-meta')
@@ -474,13 +475,12 @@ describe('Markdown — page prose is full ink', () => {
     }
   })
 
-  it('the text block’s empty placeholder sits on the 68 tier', () => {
+  it('the text block’s empty placeholder sits on the 68 tier', async () => {
     render(<TextView data={{ id: 't1', type: 'text', content: '' }} editable onChange={() => {}} />)
-    // An empty editable block opens in edit mode; blur it to see the placeholder span.
-    fireEvent.blur(screen.getByPlaceholderText('Write something…'))
-    const span = screen.getByText('Write something…', { selector: 'span' })
-    expect(span.className).toMatch(/text-mn-text-secondary/)
-    expect(span.className).not.toMatch(/mn-text-faint/)
+    const field = await screen.findByRole('textbox', { name: 'text block' })
+    expect(field.querySelector('p')).toHaveAttribute('data-placeholder', 'write something')
+    expect(TEXT_PROSE_CLASS).toContain('[&_.is-editor-empty]:before:text-mn-text-secondary')
+    expect(TEXT_PROSE_CLASS).not.toMatch(/mn-text-faint/)
   })
 })
 
