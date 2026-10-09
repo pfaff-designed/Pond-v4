@@ -141,6 +141,18 @@ const otherBlockPhrases = (before: Block[], after: Block[]): string[] => {
   ].filter((phrase): phrase is string => phrase !== null)
 }
 
+/** A text block added or removed with no prose in it, which no paragraph count sees. */
+const emptyTextPhrases = (before: Block[], after: Block[]): string[] => {
+  const texts = (blocks: Block[]) => blocks.filter((block) => block.type === 'text')
+  const idsOf = (blocks: Block[]) => new Set(blocks.map((block) => block.id))
+  const beforeIds = idsOf(before)
+  const afterIds = idsOf(after)
+  return [
+    blocksPhrase('added', texts(after).filter((block) => !beforeIds.has(block.id))),
+    blocksPhrase('removed', texts(before).filter((block) => !afterIds.has(block.id))),
+  ].filter((phrase): phrase is string => phrase !== null)
+}
+
 /**
  * What a block edit did, e.g. `wrote 3 paragraphs, added schedule table`. Null
  * when either side is not a block snapshot, or when nothing differs.
@@ -152,6 +164,9 @@ export const summarizeBlockEdit = (beforeValue: unknown, afterValue: unknown): s
 
   const phrases = [...prosePhrases(before, after), ...otherBlockPhrases(before, after)]
   if (phrases.length > 0) return phrases.join(', ')
+
+  const emptyText = emptyTextPhrases(before, after)
+  if (emptyText.length > 0) return emptyText.join(', ')
 
   const order = (blocks: Block[]) => blocks.map((block) => block.id)
   return jsonEqual(order(before), order(after)) ? null : 'moved a block'

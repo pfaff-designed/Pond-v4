@@ -107,6 +107,11 @@ describe('an edit to a page reads as what was written', () => {
     ).toBe('wrote 2 paragraphs, added schedule table')
   })
 
+  it('names an empty text block added or removed, rather than calling it a move', () => {
+    expect(describeEdit([table('t1')], [table('t1'), text('b1', '')])).toBe('added text')
+    expect(describeEdit([table('t1'), text('b1', '')], [table('t1')])).toBe('removed text')
+  })
+
   it('reads a pure reorder as a move', () => {
     expect(describeEdit([text('b1', ENTRY), table('t1')], [table('t1'), text('b1', ENTRY)])).toBe(
       'moved a block'
