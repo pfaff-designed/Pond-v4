@@ -1,6 +1,6 @@
 # Epic orchestrator
 
-You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merge. You do not write product code yourself: you launch subagents for building, reviewing and verifying, and you own the git, Jira, CI and merge steps in between.
+You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merge. You do not write product code yourself: you run a Ralph loop to build, launch subagents to review and verify, and own the git, Jira, CI and merge steps in between.
 
 **Inputs** (in the prompt that launched you): `EPIC`, `PORT`, `MAX_TICKETS`.
 
@@ -8,8 +8,8 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 
 - Repo: `/Users/charlespfaff/Documents/Code/Projects/Pond-v4` (call it `REPO`). Remote: `git@github.com:pfaff-designed/Pond-v4.git`; `gh` takes `--repo pfaff-designed/Pond-v4`.
 - Jira: Atlassian MCP, cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`. Transitions: `31` In Review, `41` Done. Labels are a full replace: read them before writing.
-- Role prompts: `REPO/.cursor/skills/ship-epics/{builder,reviewer,verifier}.md`. Read each before launching its subagent and pass its full text plus the inputs it names.
-- **The stall failsafe**: `REPO/.cursor/skills/ship-epics/failsafe.md`. Read it first; it binds you twice. As an agent: beat `/tmp/ship-epics/EPIC/orchestrator.hb` before every step below, and at the end write your return block to `/tmp/ship-epics/EPIC/orchestrator.result.md` and beat `DONE`. As a supervisor: **every subagent you launch gets `failsafe.md` appended to its prompt, plus its `HB` and `RESULT` paths (`/tmp/ship-epics/EPIC/<role>-<ticket>.hb` / `.result.md`), runs with `run_in_background: true`, and is polled and handled exactly as its "If you supervise" section says.** A subagent stopped by the failsafe is a stopped task: its ticket returns `stopped` with the step and both approaches.
+- Skill files: `REPO/.cursor/skills/ship-epics/` (call it `SKILL_DIR`). `builder.md` is the prompt every pass of the build loop gets; `reviewer.md` and `verifier.md` are subagent prompts — read each before launching its subagent and pass its full text plus the inputs it names. `ralph.sh` runs the build loop, `gates.sh` the gates, `heartbeat.sh` the failsafe's clock.
+- **The stall failsafe**: `SKILL_DIR/failsafe.md`. Read it first; it binds you twice. As an agent: beat `/tmp/ship-epics/EPIC/orchestrator.hb` before every step below, and at the end write your return block to `/tmp/ship-epics/EPIC/orchestrator.result.md` and beat `DONE`. As a supervisor: **every subagent you launch gets `failsafe.md` appended to its prompt, plus its `HB` and `RESULT` paths (`/tmp/ship-epics/EPIC/<role>-<ticket>.hb` / `.result.md`), runs with `run_in_background: true`, and is polled and handled exactly as its "If you supervise" section says** — and every build loop is supervised as its "Ralph loop" section says. A subagent or loop stopped by the failsafe is a stopped task: its ticket returns `stopped` with the step and both approaches.
 - Worktree for a ticket: `REPO/.claude-worktrees/feat-<key lowercased>`, branch `feat/<key lowercased>`.
 - Jest in a worktree: `npx jest --testPathIgnorePatterns "/node_modules/" "/\.claude/" "\.pglite\.test\.ts$" "/__tests__/helpers/"` (the repo config ignores `/.claude-worktrees/`).
 
@@ -17,7 +17,7 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 
 - `.env.local` points at the PRODUCTION Supabase project. Never run a `supabase` CLI command against the remote, never run a script that writes to it. Tests use pglite only.
 - Never force push. Never rewrite a pushed branch.
-- Never run a dev server, watcher or `serve` in the foreground: start it with `&`, record its PID, kill it when done.
+- Never run a dev server, watcher, `serve` or loop in the foreground. Start each as **its own shell call with `block_until_ms: 0`**, never with `&`: the shell tool kills everything a call started with `&` (even under `nohup`) the moment that call returns — tested 2026-10-09. Kill it with `pkill -f` when done.
 - Two attempts at the same approach is the limit. The second identical failure is a stop, with the reason.
 - Never write a handoff document.
 
@@ -50,21 +50,38 @@ for f in .env .env.local .env.development .env.development.local; do [ -f REPO/$
 mkdir -p WORKTREE/supabase && [ -d REPO/supabase/.temp ] && cp -R REPO/supabase/.temp WORKTREE/supabase/
 ```
 
-### 4. Build
+### 4. Build — a Ralph loop
 
-Launch the builder: `subagent_type: generalPurpose`, supervised in the background (failsafe), prompt = `builder.md` + `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS` (the person's path), and the epic's `Owns:` and `Migrations:` lines verbatim. Keep its agent id: fix rounds resume it, in the background, supervised the same way.
+The build is a loop, not one long agent: one fresh headless Claude Code pass per plan item, on Sonnet 5 (`ralph.sh` pins it), each committing one green step, until every item is ticked and `gates.sh` passes. Progress is measured from git, so a pass cannot report itself done. Read `ralph.sh`'s header once.
 
-If it returns `green: false`, read why. One more attempt with a changed instruction is allowed; a second failure is `stopped`.
+Write the loop state, `LOOP=/tmp/ship-epics/EPIC/ralph-<key lowercased>`:
+
+```sh
+mkdir -p LOOP && cp SKILL_DIR/builder.md LOOP/PROMPT.md && : > LOOP/PLAN.md
+printf '#!/usr/bin/env bash\nexec %s %s\n' SKILL_DIR/gates.sh WORKTREE > LOOP/GATES && chmod +x LOOP/GATES
+```
+
+and `LOOP/SPEC.md`: the ticket key and summary, its Jira description verbatim, `PATH_STEPS` (the person's path from step 2), and the epic's `Owns:` and `Migrations:` lines verbatim. Then start it as its own shell call with `block_until_ms: 0` and supervise it (failsafe, "Ralph loop"), with `HB=/tmp/ship-epics/EPIC/builder-<key>.hb` and `RESULT=/tmp/ship-epics/EPIC/builder-<key>.result.md`:
+
+```sh
+SKILL_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
+```
+
+`RESULT` says `status: green` or `status: stopped` with a reason, and carries the commits and `PLAN.md` — whose `## Notes` (choices, deviations, outside_stream, path_test, verify_steps) feed the review, the verifier and the PR body.
+
+- `stopped — blocked: <step> — <why>`: a pass found a step this ticket cannot build. If it is a path step another ticket owns, that is the reachability gate failing late: comment the re-split on the ticket and return `needs-user`. Otherwise judge it, and either fix the plan or return `needs-user` with the question.
+- `stopped — '<item>' missed twice`: read the attempts. One more run is allowed with a changed instruction — rewrite that item in `PLAN.md` (split it, or name the route the passes missed) and start the loop again; a second stop is `stopped`.
+- `stopped — pass budget spent`: the plan was mis-sized. `stopped`, with the plan.
 
 ### 5. Review
 
-This is AGENTS.md's one gate, `/code-review`. Read `~/.claude/skills/code-review/SKILL.md` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are `subagent_type: generalPurpose`, launched in **one message**, both in the background, supervised together (one poll checks both heartbeats). Into each one's prompt, after the skill's brief, paste `reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
+This is AGENTS.md's one gate, `/code-review`. Read `~/.claude/skills/code-review/SKILL.md` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are `subagent_type: generalPurpose`, `model: claude-opus-5-5-medium` (code review runs on Opus 5.5; name it on every launch and resume), launched in **one message**, both in the background, supervised together (one poll checks both heartbeats). Into each one's prompt, after the skill's brief, paste `reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
 
 A reviewer finding is checked before it is acted on: open the cited file and confirm it. Reviewers are sometimes wrong (on 2026-10-09 one disputed a line count that was eslint's count against the raw one — both were right).
 
 ### 6. Fix rounds
 
-Blocking findings go back to the builder (`resume` its id) with the confirmed list. Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
+Confirmed blocking findings go back into the build loop: one item per finding, `SKILL_DIR/ralph.sh add LOOP "fix: <file:line — what breaks, for whom>"` (it lands above the plan's notes); remove the old `HB` and `RESULT`; start `ralph.sh` again on the same `LOOP`, the same way as step 4 — each finding gets its own fresh pass. Then re-review on the axis that found them. **At most two rounds** across review, live verification and CI together. A third is `stopped`.
 
 ### 7. Live verification
 
@@ -74,14 +91,17 @@ The browser is one shared tab across every orchestrator. Take the lock first:
 mkdir /tmp/pond-browser.lock 2>/dev/null && echo "EPIC" > /tmp/pond-browser.lock/owner && echo GOT || { cat /tmp/pond-browser.lock/owner; echo BUSY; }
 ```
 
-One attempt per shell call; on `BUSY`, `sleep 30` in its own call and try again. Beat `verify: waiting for the browser lock` with `LIMIT` 1800 once, before the first attempt — a wait that passes 30 minutes is a stall, and you return `stopped: browser lock` with the owner it names. Then, in the background:
+One attempt per shell call; on `BUSY`, `sleep 30` in its own call and try again. Beat `verify: waiting for the browser lock` with `LIMIT` 1800 once, before the first attempt — a wait that passes 30 minutes is a stall, and you return `stopped: browser lock` with the owner it names. Then start the two servers, each as its own shell call with `block_until_ms: 0` (never `&` — see the hard rules):
 
 ```sh
-cd WORKTREE && (npx next dev -p PORT > /tmp/EPIC-dev.log 2>&1 &) ; echo started
-cd REPO && (npx -y serve wayfinder/design_handoff_pond -l $((PORT + 1500)) > /tmp/EPIC-serve.log 2>&1 &)
+cd WORKTREE && npx next dev -p PORT > /tmp/EPIC-dev.log 2>&1
 ```
 
-Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Launch the verifier, supervised in the background (failsafe): `subagent_type: browser-use`, prompt = `verifier.md` + `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
+```sh
+cd REPO && npx -y serve wayfinder/design_handoff_pond -l $((PORT + 1500)) > /tmp/EPIC-serve.log 2>&1
+```
+
+Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Launch the verifier, supervised in the background (failsafe): `subagent_type: browser-use`, no `model` (it inherits yours; Cursor has no Sonnet 5 for subagents), prompt = `verifier.md` + `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
 
 Afterwards, always — pass or fail:
 
@@ -98,7 +118,7 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
 ### 9. Land it
 
 1. **Rebase** onto `origin/main` (`git -C WORKTREE fetch -q origin main && git -C WORKTREE rebase origin/main`). An unpushed branch may be squashed first (`git reset --soft $(git merge-base HEAD origin/main)` + one commit) so conflicts are resolved once. A conflict whose resolution changes behaviour is a fix round, then re-review.
-2. **Gates**, from the worktree: `npx tsc --noEmit`, the jest command above, `npm run test-storybook` if components or stories changed, `npx eslint` on the changed files.
+2. **Gates**: `SKILL_DIR/gates.sh WORKTREE` (tsc, jest, eslint on the changed files, Storybook if components or stories changed, pglite if a migration did). Beat `land: gates` with `LIMIT` 1500 and run it with `block_until_ms` 1300000. Red after a rebase is a fix round.
 3. **Push** (`git -C WORKTREE push -q REMOTE BRANCH`) and **open the PR**: `gh pr create --repo pfaff-designed/Pond-v4 --base main --head BRANCH --title "KEY: <summary>" --body-file <file>`. The body says, in this order: the person's path; what the ticket's acceptance asked and where each is met; what the verifier measured against the board in light and dark; every choice made where the spec was silent; every deferral, with its ticket; the AUDIT p2/p3 items for this surface, resolved or deferred.
 4. Move the ticket to **In Review** (`31`).
 5. **Wait for CI in the foreground** and act on what it says — never background a watcher and move on:
@@ -109,7 +129,7 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
 
    This is the one command allowed past the failsafe's 10 minutes: beat `land: CI for #<N>` with `LIMIT` 1500 first, and run it with `block_until_ms` 1300000.
 
-   Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the builder (a fix round), push, wait again. A check that is still pending after the timeout is a stall: say so and stop.
+   Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the build loop (a fix round: one `fix:` item per failure), push, wait again. A check that is still pending after the timeout is a stall: say so and stop.
 
 6. **Merge**: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`41`).
 7. **Refill `now`**: add the label to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
