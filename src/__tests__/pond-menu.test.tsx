@@ -82,6 +82,7 @@ const openWithKeyboard = async (user: ReturnType<typeof userEvent.setup>) => {
   handle().focus()
   await user.keyboard('{Enter}')
   await screen.findByRole('menu', { name: 'block menu' })
+  await waitFor(() => expect(items()[0]).toHaveFocus())
 }
 
 describe('PondMenu kind block — structure and ARIA', () => {
@@ -230,7 +231,6 @@ describe('PondMenu kind block — keyboard', () => {
     const user = userEvent.setup()
     render(<Harness />)
     await openWithKeyboard(user)
-    await waitFor(() => expect(items()[0]).toHaveFocus())
     await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}')
     expect(items()[3]).toHaveFocus()
     expect(items()[3]).toHaveAttribute('data-highlighted')
