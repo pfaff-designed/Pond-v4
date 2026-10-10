@@ -18,3 +18,12 @@
 export function pagesKey(pondId?: string | null) {
   return pondId ? (['pages', pondId] as const) : (['pages'] as const)
 }
+
+/**
+ * The pond's root page — the home row `DocumentPanel` resolves for every page,
+ * whose title is the breadcrumb's root word. One root per pond. The one key
+ * for it: the query, the rename that writes it, and every reader build it here.
+ */
+export function homeQueryKey(pondId: string | null) {
+  return ['home', pondId] as const
+}

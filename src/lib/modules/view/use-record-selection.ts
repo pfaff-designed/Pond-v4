@@ -53,8 +53,11 @@ export function useRecordSelection<T extends { id: string }>(
         document.querySelector<HTMLElement>(`[data-row-focus="${selectedId}"]`)?.focus()
       }
     }
+    // An esc this takes is marked taken, so nothing further out (zen) acts on it too.
     const handleKeyDown = (e: KeyboardEvent | globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented) handleClose()
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      handleClose()
     }
     const handlePointerDown = (e: PointerEvent) => {
       if (!(e.target instanceof Element) || e.target.closest(KEEPS_SELECTION)) return

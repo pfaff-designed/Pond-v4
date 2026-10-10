@@ -14,16 +14,20 @@
  *                           the alternative is passing the trail down through four
  *                           hosts for a footer, and an empty cache degrades to the
  *                           page's own title rather than rendering a wrong path.
- *   `['home']`              the home row `DocumentPanel` resolves for every page —
- *                           the breadcrumb's root word (AUDIT W9: "starts at the
- *                           root page", not an assumed name). Read with
+ *   `homeQueryKey()`        the pond's root page, the home row `DocumentPanel`
+ *                           resolves for every page and keeps renamed — the
+ *                           breadcrumb's root word (AUDIT W9: "starts at the
+ *                           root page", not an assumed name). Scoped to the pond
+ *                           like the tree, so this reads the same pond's root
+ *                           the panel loaded; until it has, the path falls back
+ *                           to `life`. Read with
  *                           `getQueryData`, NOT a disabled `useQuery`: an observer
  *                           carries its `queryFn` onto the shared Query, so a stub
  *                           `() => null` would become the producer for the whole
  *                           app the moment anything refetched that key off the
  *                           cache rather than off `DocumentPanel`'s own observer.
- *                           Nothing invalidates `['home']` today; a reader with no
- *                           observer cannot start.
+ *                           Nothing invalidates the home key today; a reader
+ *                           with no observer cannot start.
  *
  * Pure derivation is `chartProvenance` (`chart/chrome.ts`); this is only the seam
  * between the caches and that function.
@@ -32,7 +36,7 @@
 import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchPages } from '@/lib/pages/tree'
-import { pagesKey } from '@/lib/pages/keys'
+import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import type { HomePage } from '@/lib/pages/home'
 import { usePondId } from '@/lib/pond/context'
 import { chartProvenance, type ChartProvenance } from '../chart/chrome'
@@ -49,7 +53,7 @@ export function useChartProvenance(
   })
   // A read, not a subscription: the root word only changes when the person renames
   // the home row, which re-renders this tree through `DocumentPanel` anyway.
-  const rootLabel = queryClient.getQueryData<HomePage | null>(['home'])?.title
+  const rootLabel = queryClient.getQueryData<HomePage | null>(homeQueryKey(pondId))?.title
   return useMemo(
     () => chartProvenance(rows, pageId, collectionId, rootLabel),
     [rows, pageId, collectionId, rootLabel]

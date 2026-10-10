@@ -89,6 +89,43 @@ export function paletteItems(
 }
 
 /**
+ * Zen's rows, under `mode` — `Pond 06.17` 6q frame 1, copied as the board writes
+ * them. Zen is a mode of the page in view, and every surface shows one, so they
+ * list whenever the palette does. While in zen the one row is the way out (7g:
+ * "esc, or ⌘K › leave zen").
+ */
+export const ZEN_ACTION: PaletteItem = {
+  id: 'action:zen',
+  label: 'zen',
+  kind: 'action',
+  action: 'zen',
+  sub: 'this page, everything else hidden',
+  key: '⌘.',
+  group: 'mode',
+}
+export const ZEN_ON_INK_ACTION: PaletteItem = {
+  id: 'action:zen-on-ink',
+  label: 'zen, on ink',
+  kind: 'action',
+  action: 'zen-on-ink',
+  sub: 'same, on the ink ground',
+  group: 'mode',
+}
+export const LEAVE_ZEN_ACTION: PaletteItem = {
+  id: 'action:leave-zen',
+  label: 'leave zen',
+  kind: 'action',
+  action: 'leave-zen',
+  group: 'mode',
+}
+
+const MODE_IN_ZEN: readonly PaletteItem[] = [LEAVE_ZEN_ACTION]
+const MODE_OUT_OF_ZEN: readonly PaletteItem[] = [ZEN_ACTION, ZEN_ON_INK_ACTION]
+
+export const modeItems = (inZen: boolean): readonly PaletteItem[] =>
+  inZen ? MODE_IN_ZEN : MODE_OUT_OF_ZEN
+
+/**
  * The other ponds, as `pond` rows — `PondPicker`'s `ponds` state: the pond's own
  * glyph and `pond · switch` beneath its name. The pond in view is left out (there is
  * nothing to switch to), and no `⌘n` hint rides on a row: those keys bind only in a

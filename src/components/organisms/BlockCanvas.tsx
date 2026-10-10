@@ -18,7 +18,7 @@
  * surfaces share one editor.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
@@ -76,6 +76,7 @@ import { isBlockMenuChord } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
+import { TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { instantiateTemplate, type InstantiatedTemplate } from '@/lib/templates/instantiate'
 import { getTemplate, listTemplates } from '@/lib/templates/client'
@@ -150,6 +151,10 @@ export interface BlockCanvasProps {
   insertedIds?: Set<string>
   /** Move a block into a page of its own. Without it the block menu does not offer the move. */
   onMoveIntoNewPage?: (block: Block) => void
+  /** False hides the editing chrome — every block's handle and the foot add — mounted (zen: the page and nothing else). */
+  chrome?: boolean
+  /** The block list's own layout, where a host spaces blocks its way. */
+  listStyle?: CSSProperties
 }
 
 /**
@@ -165,6 +170,8 @@ export function BlockCanvas({
   onUndoRemove,
   insertedIds,
   onMoveIntoNewPage,
+  chrome = true,
+  listStyle,
 }: BlockCanvasProps) {
   const { stageDeletion, stageUndo, notify } = useDeletionUndo()
   const getSupabase = useLazySupabase()
@@ -634,13 +641,14 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div ref={canvasRef} className="space-y-0">
+        <div ref={canvasRef} className="space-y-0" style={listStyle}>
           {blocks.map((block, i) => (
             <BlockEditor
               key={block.id}
               block={block}
               pageId={pageId}
               settleOnMount={insertedIds?.has(block.id) ?? false}
+              chrome={chrome}
               onChange={(next) => setBlockAt(i, next)}
               onRemoveEmpty={() => removeEmptyLineAt(i)}
               onReturn={() => insertLineAfter(i)}
@@ -692,7 +700,7 @@ export function BlockCanvas({
 
       {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
           in it summons the palette to swap type. */}
-      <AddBlockButton onAdd={addTextBlock} />
+      <AddBlockButton onAdd={addTextBlock} hidden={!chrome} />
       {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
@@ -829,6 +837,7 @@ function BlockEditor({
   block,
   pageId,
   settleOnMount = false,
+  chrome = true,
   onChange,
   onRemoveEmpty,
   onReturn,
@@ -856,6 +865,7 @@ function BlockEditor({
   block: Block
   pageId: string
   settleOnMount?: boolean
+  chrome?: boolean
   onChange: (next: Block) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
@@ -986,6 +996,7 @@ function BlockEditor({
           where `delete` lives. */}
       <div
         data-part="handle"
+        hidden={!chrome}
         className={cn(
           'absolute -left-3.5 top-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
           menuOpen && 'opacity-100'
@@ -1063,7 +1074,9 @@ function BlockEditor({
         </PondBlock>
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
-        <div className="px-1 py-0.5">{view}</div>
+        <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+          {view}
+        </div>
       ) : (
         // #227: a block that is its OWN card — the chart card — sits on the page as it is.
         view

@@ -387,7 +387,14 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
     { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: at },
     { id: 'sleep', parent_id: 'health', type: 'page', title: 'Sleep', order: 0, updated_at: at },
     { id: 'root-db', parent_id: null, type: 'page', title: 'databases', order: 9, updated_at: at },
-    { id: 'db-1', parent_id: 'root-db', type: 'page', title: 'ingredients', order: 0, updated_at: at },
+    {
+      id: 'db-1',
+      parent_id: 'root-db',
+      type: 'page',
+      title: 'ingredients',
+      order: 0,
+      updated_at: at,
+    },
   ]
   const opts = (current: string) => ({ rootTitle: 'life', current, pondGlyph: LIFE_GLYPH })
 
@@ -538,7 +545,11 @@ describe('ComposerHandle — the card never grows with the thread; only the pers
         {body}
       </TerminalDrawer>
     )
-    return { onHeightChange, onHeightCommit, card: screen.getByRole('region', { name: 'composer' }) }
+    return {
+      onHeightChange,
+      onHeightCommit,
+      card: screen.getByRole('region', { name: 'composer' }),
+    }
   }
 
   afterEach(() => window.localStorage.clear())
@@ -740,11 +751,18 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     expect(placed.className).toMatch(/\bleft-\[calc\(50%_\+_13px\)\]/)
     expect(placed.className.split(' ')).toContain('-translate-x-1/2')
     expect(main.contains(box)).toBe(false)
-    expect(await screen.findByText('Life', { selector: '[data-part="current"]' })).toBeInTheDocument()
+    expect(
+      await screen.findByText('Life', { selector: '[data-part="current"]' })
+    ).toBeInTheDocument()
 
     // The composer is the shell's child too — its calc(50% + 113px) is against the shell.
+    // Zen's chrome slot (KAN-91) sits between them unpositioned, so the shell is
+    // still the composer's containing block.
     const terminal = screen.getByRole('region', { name: 'composer' })
-    expect(terminal.parentElement).toBe(shell)
+    const slot = terminal.parentElement!
+    expect(slot.dataset.part).toBe('zen-chrome')
+    expect(slot.parentElement).toBe(shell)
+    expect(slot.className).not.toMatch(/\b(relative|absolute|fixed|sticky)\b/)
     expect(main.contains(terminal)).toBe(false)
 
     // No fixed 288px stand-in anywhere: <main> carries no bottom padding, and the
@@ -752,7 +770,7 @@ describe('WorkspaceShell — the chrome floats over one canvas', () => {
     // 76px down (under the pill — the mockup's 20px inset + 56px padding).
     expect(main.className).not.toMatch(/\bpb-/)
     expect(shell.querySelectorAll('.pb-72')).toHaveLength(0)
-    const column = main.querySelector<HTMLElement>('.mx-auto.px-8')!
+    const column = main.querySelector<HTMLElement>('[data-testid="page-column"]')!
     expect(column.className).toMatch(/\bpt-\[76px\]/)
     expect(column.getAttribute('style')).toContain(COMPOSER_CLEARANCE_VAR)
   })

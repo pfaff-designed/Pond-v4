@@ -215,8 +215,10 @@ export function usePageChangesPanel(pageId: string | null) {
     setOpenFor((current) => (current === pageId ? null : pageId))
   }, [pageId])
 
+  // On the document, so it runs before anything listening on the window (zen); an
+  // esc closes only an open panel, and is marked taken when it does.
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    const handleKeyDown = (e: KeyboardEvent) => {
       // `e.code`, not `e.key`: on macOS Option+H emits '˙', so a key check would
       // never match.
       if (e.altKey && e.metaKey && e.code === 'KeyH') {
@@ -224,11 +226,13 @@ export function usePageChangesPanel(pageId: string | null) {
         setOpenFor((current) => (current === pageId ? null : pageId))
         return
       }
-      if (e.key === 'Escape') setOpenFor(null)
+      if (e.key !== 'Escape' || !open || e.defaultPrevented) return
+      e.preventDefault()
+      setOpenFor(null)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [pageId])
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [pageId, open])
 
   // Paper, not frames (AGENTS.md): it floats over the canvas on shadow alone.
   const overlay =

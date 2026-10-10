@@ -85,8 +85,14 @@ export const TerminalDrawer = ({
         `${composerFootprintPx(card.offsetHeight, collapsed ? COMPOSER_TAB_INSET : undefined)}px`
       )
     publish()
+    // A card hidden with the shell's chrome (zen) keeps its last footprint: the
+    // page is not re-padded beneath it, so a scroll restored as it returns lands
+    // against the clearance it was read under.
+    const handleResize = () => {
+      if (card.getClientRects().length > 0) publish()
+    }
     // jsdom has no ResizeObserver; the first publish is all a unit test needs.
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(handleResize)
     observer?.observe(card)
     return () => {
       observer?.disconnect()

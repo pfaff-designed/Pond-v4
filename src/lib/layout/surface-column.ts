@@ -26,13 +26,18 @@ export interface SurfaceColumn {
   handle: { className: string; style: CSSProperties }
 }
 
+/** The column's own padding, each side — read wherever a width inside it is worked out. */
+export const PAGE_COLUMN_PAD_PX = 32
+/** A bare text block's inset, each side (`PondTemplate`: `padding 2px 4px`); the title row aligns to it. */
+export const TEXT_BLOCK_INSET_PX = 4
+
 export function useSurfaceColumn(maxWidth: number | string): SurfaceColumn {
   const floats = useCommandFloats()
   const bottom = composerClearancePadding()
   return {
     column: {
-      className: `relative mx-auto px-8 ${floats ? 'pt-[76px]' : 'pt-5'}`,
-      style: { maxWidth, paddingBottom: bottom },
+      className: `relative mx-auto ${floats ? 'pt-[76px]' : 'pt-5'}`,
+      style: { maxWidth, paddingBottom: bottom, paddingInline: PAGE_COLUMN_PAD_PX },
     },
     handle: {
       className: `absolute right-0 ${floats ? 'top-[76px]' : 'top-5'}`,
