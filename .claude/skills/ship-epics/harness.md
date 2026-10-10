@@ -100,4 +100,11 @@ One Playwright browser is shared by this whole session, orchestrators and verifi
 | `BANNED` | `browser_run_code_unsafe`, at all. `browser_evaluate` used to click, focus, dispatch an event, call an editor API or write storage. `browser_emulate_media` to change theme — the mode toggle in the breadcrumb pill is the thing under test.                  |
 | `TAB`    | There is no tab lock. `browser_navigate` after taking `/tmp/pond-browser.lock`, work in that one tab, and `browser_tabs` only to return to it. Do not `browser_close` the browser — the next orchestrator needs it; close just your own tab if you opened one. |
 
+**Screenshots must be written inside the repo.** `browser_take_screenshot` does take a `filename`, but it
+refuses any absolute path outside the repo: _"File access denied: … is outside allowed roots. Allowed roots:
+`<repo>/.playwright-mcp`, `<repo>`"_. So a verifier cannot write straight to `/tmp/ship-epics/<EPIC>/shots/`.
+Write under `<repo>/.playwright-mcp/<ticket>/` — which is gitignored — then copy the files to the run's own
+directory and remove the originals, and report the copied paths. A verification whose screenshots cannot be
+retrieved is thinner evidence than it looks. Found 2026-10-10.
+
 The ProseMirror workaround: instead of `browser_press_key` with Enter or `/`, use `browser_type` with `slowly: true` (it types one character at a time, which fires the page's key handlers) and `submit: true` where a return is wanted.

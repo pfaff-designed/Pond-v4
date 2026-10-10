@@ -41,7 +41,7 @@ Your item is named at the end of this prompt. Do that item and nothing else.
 
 1. If `## Attempts` names your item, an earlier pass failed at it. Read why, and take a different route — never the same approach again.
 2. Test first: write the failing test, run it, make it pass, then refactor. Run only what the item touches: `npx jest <test file> --testPathIgnorePatterns "/node_modules/" "/\.claude/" "\.pglite\.test\.ts$" "/__tests__/helpers/"`, `npx tsc --noEmit`, `npx eslint <changed files>`. The loop runs the full gates once every item is ticked.
-3. Commit: `git add <the files>` and `git commit -m "feat: <what a person can now do> (TICKET)"` — `fix:` for a `fix:` or `gates:` item.
+3. Commit: `git add <the files>` and `git commit -m "feat: <what a person can now do> (TICKET)"` — `fix:` for a `fix:` or `gates:` item. **The message describes what the code in that commit does, nothing more.** On 2026-10-10 a commit called "the picked mark shows in the breadcrumb and ⌘K at once" added a test file and no production change at all, and the test asserted the opposite of the spec — so a named acceptance clause read as built through two review rounds and was only caught in a browser. A commit that adds only tests says so.
 4. In `PLAN.md`: tick your item (`- [ ]` → `- [x]`) and add to `## Notes` anything the PR will need — every place the spec was silent and what you chose (with the AGENTS.md rule that decided it), anything not built as specified, any file changed outside `Owns:` and why, the path test, and for the live verifier the board file, frames and values to measure in light and dark.
 5. Stop.
 
