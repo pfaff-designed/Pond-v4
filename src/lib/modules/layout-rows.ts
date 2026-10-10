@@ -49,3 +49,20 @@ export function layoutRows<T extends { width?: BlockWidth }>(
 
   return rows
 }
+
+/** The gap between blocks in a row, and between stacked blocks (6x). */
+export const BLOCK_ROW_GAP_PX = 16
+
+/**
+ * A block's own CSS width, independent of its row-mates: `(100% + gap) *
+ * fraction - gap`. Summed over a row whose fractions add to a full twelve
+ * twelfths, the `- gap` terms cancel the real gaps between the blocks exactly,
+ * so the row totals 100% for any number of blocks in it — the formula
+ * `Pond 06.23 Blocks side by side.dc.html` draws its rows with. A row whose
+ * fractions add to less than full is short by the same amount, which is the
+ * leftover paper at the row's end.
+ */
+export function blockWidthStyle(width: BlockWidth = 'full'): string {
+  const fraction = TWELFTHS[width] / 12
+  return `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
+}

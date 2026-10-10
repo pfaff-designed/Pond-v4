@@ -57,6 +57,7 @@ import {
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
+import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock } from '@/lib/modules/text/focus'
@@ -652,6 +653,78 @@ export function BlockCanvas({
     onChange(next)
   }
 
+  // Rows are derived, never stored (6x): consecutive blocks whose widths add up
+  // to full or less share one row. Each entry keeps its real index into `blocks`
+  // so every per-block callback below still addresses the right block.
+  const blockRows = useMemo(
+    () => layoutRows(blocks.map((block, i) => ({ block, i, width: block.width }))),
+    [blocks]
+  )
+
+  function renderBlockEditor(block: Block, i: number) {
+    return (
+      <BlockEditor
+        key={block.id}
+        block={block}
+        pageId={pageId}
+        settleOnMount={insertedIds?.has(block.id) ?? false}
+        chrome={chrome}
+        onChange={(next) => setBlockAt(i, next)}
+        onRemoveEmpty={() => removeEmptyLineAt(i)}
+        onReturn={() => insertLineAfter(i)}
+        onMoveUp={() => moveBlockAt(i, 'up')}
+        onMoveDown={() => moveBlockAt(i, 'down')}
+        onSlashKey={() => openSlashMenuAt(i)}
+        slashMenuOpen={slashMenuOpenAt === i}
+        slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+        slashSize={slashSize}
+        yourTemplates={yourTemplates}
+        onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
+        onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
+        onSlashClose={closeSlashMenu}
+        menuOpen={menuOpenAt === i}
+        // Only the OPEN block's groups are derived: this render runs on every
+        // keystroke anywhere on the page.
+        menuGroups={
+          menuOpenAt === i
+            ? blockMenuGroups(block, {
+                moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                width: (
+                  <BlockWidthRow
+                    width={block.width}
+                    onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                  />
+                ),
+              })
+            : undefined
+        }
+        menuSize={slashSize}
+        onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
+        onMenuSelect={(action) => handleMenuSelect(i, action)}
+        isDragging={draggingIndex === i}
+        onDragStart={() => {
+          setMenuOpenAt(null)
+          setDraggingIndex(i)
+        }}
+        onDragEnd={() => setDraggingIndex(null)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault()
+          if (draggingIndex === null || draggingIndex === i) {
+            setDraggingIndex(null)
+            return
+          }
+          // Move the dragged block to position i (splice, not swap).
+          const next = [...blocks]
+          const [moved] = next.splice(draggingIndex, 1)
+          next.splice(i, 0, moved)
+          onChange(next)
+          setDraggingIndex(null)
+        }}
+      />
+    )
+  }
+
   return (
     <PageLinkProvider value={pageLinks}>
       {/* Provide sibling-block state so bound metrics derive live and their `→`
@@ -660,67 +733,40 @@ export function BlockCanvas({
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
         <div ref={canvasRef} className="space-y-0" style={listStyle}>
-          {blocks.map((block, i) => (
-            <BlockEditor
-              key={block.id}
-              block={block}
-              pageId={pageId}
-              settleOnMount={insertedIds?.has(block.id) ?? false}
-              chrome={chrome}
-              onChange={(next) => setBlockAt(i, next)}
-              onRemoveEmpty={() => removeEmptyLineAt(i)}
-              onReturn={() => insertLineAfter(i)}
-              onMoveUp={() => moveBlockAt(i, 'up')}
-              onMoveDown={() => moveBlockAt(i, 'down')}
-              onSlashKey={() => openSlashMenuAt(i)}
-              slashMenuOpen={slashMenuOpenAt === i}
-              slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
-              slashSize={slashSize}
-              yourTemplates={yourTemplates}
-              onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
-              onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
-              onSlashClose={closeSlashMenu}
-              menuOpen={menuOpenAt === i}
-              // Only the OPEN block's groups are derived: this render runs on every
-              // keystroke anywhere on the page.
-              menuGroups={
-                menuOpenAt === i
-                  ? blockMenuGroups(block, {
-                      moveIntoNewPage: onMoveIntoNewPage !== undefined,
-                      width: (
-                        <BlockWidthRow
-                          width={block.width}
-                          onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
-                        />
-                      ),
-                    })
-                  : undefined
-              }
-              menuSize={slashSize}
-              onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
-              onMenuSelect={(action) => handleMenuSelect(i, action)}
-              isDragging={draggingIndex === i}
-              onDragStart={() => {
-                setMenuOpenAt(null)
-                setDraggingIndex(i)
-              }}
-              onDragEnd={() => setDraggingIndex(null)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (draggingIndex === null || draggingIndex === i) {
-                  setDraggingIndex(null)
-                  return
-                }
-                // Move the dragged block to position i (splice, not swap).
-                const next = [...blocks]
-                const [moved] = next.splice(draggingIndex, 1)
-                next.splice(i, 0, moved)
-                onChange(next)
-                setDraggingIndex(null)
-              }}
-            />
-          ))}
+          {blockRows.map((row) => {
+            // A lone full-width block (every block, absent a width) renders exactly
+            // as before: no sizing wrapper, so today's DOM is untouched.
+            if (row.length === 1 && (row[0].block.width ?? 'full') === 'full') {
+              const { block, i } = row[0]
+              return renderBlockEditor(block, i)
+            }
+            // A row of one narrower block still needs its own width (it just has
+            // no row-mate to share the 16px gap with).
+            if (row.length === 1) {
+              const { block, i } = row[0]
+              return (
+                <div key={block.id} style={{ width: blockWidthStyle(block.width) }}>
+                  {renderBlockEditor(block, i)}
+                </div>
+              )
+            }
+            // Multiple blocks that fit on one line (6x): top-aligned, each its own
+            // height, the 16px gap also used between stacked blocks, nothing
+            // stretches to fill the row's leftover — that stays paper.
+            return (
+              <div
+                key={row[0].block.id}
+                className="flex items-start"
+                style={{ gap: BLOCK_ROW_GAP_PX }}
+              >
+                {row.map(({ block, i }) => (
+                  <div key={block.id} style={{ width: blockWidthStyle(block.width) }}>
+                    {renderBlockEditor(block, i)}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       </SiblingBlocksProvider>
 
