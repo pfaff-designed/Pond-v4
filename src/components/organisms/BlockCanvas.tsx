@@ -122,6 +122,17 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
 type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
 
+/**
+ * The default block list shape (6x frame 1): one 16px gap everywhere — between
+ * stacked blocks and between rows — the same shape zen's `ZEN_BLOCK_LIST_STYLE`
+ * gives its own column, just with the row gap instead of zen's.
+ */
+const BLOCK_LIST_STYLE: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  rowGap: BLOCK_ROW_GAP_PX,
+}
+
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
   blocks: Block[]
@@ -747,7 +758,7 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div ref={canvasRef} className="space-y-0" style={listStyle}>
+        <div ref={canvasRef} style={listStyle ?? BLOCK_LIST_STYLE}>
           {blockRows.map((row) => {
             const widths = row.map(({ block }) => block.width ?? 'full')
             // Widths and rows are kept, not shown: a row that stacks renders each
@@ -765,7 +776,9 @@ export function BlockCanvas({
             // div per block — so flipping between stacked/solo/shared-row never
             // changes an ancestor's element type and remounts the BlockEditor
             // beneath it (which would drop focus mid-edit or after a menu pick).
-            // The gap only matters once a row holds more than one block.
+            // This inline gap is only the within-row, side-by-side gap; the
+            // outer list's own rowGap gives the same 16px between rows (a
+            // stacked single-block "row" included), so a page has one gap.
             return (
               <div
                 key={rowKey}

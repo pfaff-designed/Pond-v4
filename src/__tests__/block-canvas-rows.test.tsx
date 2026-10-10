@@ -125,7 +125,7 @@ describe('rows in BlockCanvas', () => {
         const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
         const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
         const { container } = renderCanvas([half1, half2])
-        const canvas = container.querySelector('.space-y-0') as HTMLElement
+        const canvas = container.querySelector('.flex.items-start')!.parentElement as HTMLElement
 
         // Wide column: the row holds, sharing one line.
         jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
