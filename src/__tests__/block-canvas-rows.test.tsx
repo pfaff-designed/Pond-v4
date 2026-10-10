@@ -64,4 +64,17 @@ describe('rows in BlockCanvas', () => {
     // row wrapper sits between it and the canvas, same as before this item.
     expect(rootC.parentElement).toBe(canvas)
   })
+
+  // Stacking (6x) is measured off the canvas via a ResizeObserver. jsdom never
+  // measures (getBoundingClientRect stays 0), so this is a smoke render of the
+  // wiring itself — the holds/stacks decision is unit-tested directly on
+  // `rowHolds` in layout-rows.test.ts.
+  it('mounts and tears down its column ResizeObserver without crashing', () => {
+    const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
+    const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
+    const { unmount } = renderCanvas([half1, half2])
+
+    expect(blockRoot('b-1')).toBeTruthy()
+    expect(() => unmount()).not.toThrow()
+  })
 })

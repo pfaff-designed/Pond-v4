@@ -66,3 +66,21 @@ export function blockWidthStyle(width: BlockWidth = 'full'): string {
   const fraction = TWELFTHS[width] / 12
   return `calc((100% + ${BLOCK_ROW_GAP_PX}px) * ${fraction} - ${BLOCK_ROW_GAP_PX}px)`
 }
+
+/** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
+export const MIN_BLOCK_WIDTH_PX = 240
+
+/** A block's actual pixel width at a given column width — `blockWidthStyle`'s formula, numeric. */
+function blockWidthPx(columnWidthPx: number, width: BlockWidth): number {
+  const fraction = TWELFTHS[width] / 12
+  return (columnWidthPx + BLOCK_ROW_GAP_PX) * fraction - BLOCK_ROW_GAP_PX
+}
+
+/**
+ * A row holds while every block in it gets at least `MIN_BLOCK_WIDTH_PX` of the
+ * column; below that it stacks instead (6x), each block full width in reading
+ * order. `widths` is the row's blocks' own widths, absent meaning full.
+ */
+export function rowHolds(columnWidthPx: number, widths: readonly BlockWidth[]): boolean {
+  return widths.every((width) => blockWidthPx(columnWidthPx, width) >= MIN_BLOCK_WIDTH_PX)
+}

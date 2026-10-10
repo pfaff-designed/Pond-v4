@@ -57,7 +57,7 @@ import {
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
-import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows } from '@/lib/modules/layout-rows'
+import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock } from '@/lib/modules/text/focus'
@@ -661,6 +661,21 @@ export function BlockCanvas({
     [blocks]
   )
 
+  // Stacking (6x): measured off the content column itself (ResizeObserver on the
+  // canvas), not the viewport, so the side panel and window-narrowing both
+  // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
+  // "holds", so an unmeasured first render matches today's layout exactly.
+  const [columnWidth, setColumnWidth] = useState(0)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const read = () => setColumnWidth(el.getBoundingClientRect().width)
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   function renderBlockEditor(block: Block, i: number) {
     return (
       <BlockEditor
@@ -734,11 +749,16 @@ export function BlockCanvas({
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
         <div ref={canvasRef} className="space-y-0" style={listStyle}>
           {blockRows.map((row) => {
+            const widths = row.map(({ block }) => block.width ?? 'full')
+            // Widths and rows are kept, not shown: a row that stacks renders each
+            // block plain, full width, in reading order — the same shape as a
+            // lone full block below — and returns to its row on a wider measurement.
+            const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+
             // A lone full-width block (every block, absent a width) renders exactly
             // as before: no sizing wrapper, so today's DOM is untouched.
-            if (row.length === 1 && (row[0].block.width ?? 'full') === 'full') {
-              const { block, i } = row[0]
-              return renderBlockEditor(block, i)
+            if (stacks || (row.length === 1 && widths[0] === 'full')) {
+              return row.map(({ block, i }) => renderBlockEditor(block, i))
             }
             // A row of one narrower block still needs its own width (it just has
             // no row-mate to share the 16px gap with).
