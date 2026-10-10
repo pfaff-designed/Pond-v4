@@ -107,6 +107,7 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
    ```
 
    Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the builder (a fix round), push, wait again. A check that is still pending after the timeout is a stall: say so and stop.
+
 6. **Merge**: `gh pr merge <N> --repo pfaff-designed/Pond-v4 --squash --delete-branch`. Ticket to **Done** (`41`).
 7. **Refill `now`**: add the label to this Workstream's next not-Done ticket that lacks it, if the queue holds fewer than 8.
 8. **Sweep**: `git -C REPO worktree remove --force WORKTREE`, `git -C REPO branch -D BRANCH`, `REPO/scripts/sweep.sh`.
