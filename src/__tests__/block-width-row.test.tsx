@@ -11,12 +11,14 @@ import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import type { BlockWidth } from '@/lib/modules/content'
 
-type Pick = never
+// This harness's groups hold only `content` (the width row), never a selectable
+// `action` row, so the menu's action type is uninhabited.
+type NoAction = never
 
 const Harness = ({ width }: { width: BlockWidth | undefined }) => {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
-  const groups: PondMenuGroup<Pick>[] = [
+  const groups: PondMenuGroup<NoAction>[] = [
     {
       id: 'width',
       label: 'width',

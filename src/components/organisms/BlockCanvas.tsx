@@ -668,7 +668,11 @@ export function BlockCanvas({
   // to full or less share one row. Each entry keeps its real index into `blocks`
   // so every per-block callback below still addresses the right block.
   const blockRows = useMemo(
-    () => layoutRows(blocks.map((block, i) => ({ block, i, width: block.width }))),
+    () =>
+      layoutRows(
+        blocks.map((block, i) => ({ block, i })),
+        (entry) => entry.block.width
+      ),
     [blocks]
   )
 

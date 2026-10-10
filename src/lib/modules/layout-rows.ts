@@ -19,24 +19,37 @@ const TWELFTHS: Record<BlockWidth, number> = {
   full: 12,
 }
 
-/** A block's width in twelfths. Absent means full (6x). */
-function widthOf(block: { width?: BlockWidth }): number {
-  return TWELFTHS[block.width ?? 'full']
+/** A width's size in twelfths. Absent means full (6x). */
+function toTwelfths(width: BlockWidth | undefined): number {
+  return TWELFTHS[width ?? 'full']
 }
 
 /**
  * Pack `blocks` into rows: each row's widths sum to 12 twelfths (full) or less. A
  * block that would push the current row over 12 starts a new row instead.
+ *
+ * With no `widthOf`, an entry's own `width` is read directly — this is the plain
+ * case the unit tests use. A caller that packs a wrapper around each block (so it
+ * can carry something alongside, e.g. the block's original index) passes `widthOf`
+ * to read the wrapped block's width instead, rather than copying it onto the
+ * wrapper too — the wrapper and the render that follows then read the same single
+ * copy of the width.
  */
-export function layoutRows<T extends { width?: BlockWidth }>(
-  blocks: readonly T[]
+export function layoutRows<T extends { width?: BlockWidth }>(blocks: readonly T[]): T[][]
+export function layoutRows<T>(
+  blocks: readonly T[],
+  widthOf: (entry: T) => BlockWidth | undefined
+): T[][]
+export function layoutRows<T>(
+  blocks: readonly T[],
+  widthOf: (entry: T) => BlockWidth | undefined = (entry) => (entry as { width?: BlockWidth }).width
 ): T[][] {
   const rows: T[][] = []
   let row: T[] = []
   let used = 0
 
   for (const block of blocks) {
-    const width = widthOf(block)
+    const width = toTwelfths(widthOf(block))
     if (row.length > 0 && used + width > 12) {
       rows.push(row)
       row = []
@@ -68,7 +81,7 @@ export function blockWidthStyle(width: BlockWidth = 'full'): string {
 }
 
 /** Below this, a block in a row is too narrow to be useful, so the row stacks (6x). */
-export const MIN_BLOCK_WIDTH_PX = 240
+const MIN_BLOCK_WIDTH_PX = 240
 
 /** A block's actual pixel width at a given column width — `blockWidthStyle`'s formula, numeric. */
 function blockWidthPx(columnWidthPx: number, width: BlockWidth): number {
