@@ -139,10 +139,9 @@ export function applyProposedChanges(
     // so an edit must keep the block's own width across the swap, or accepting a
     // Pond diff would silently reset the person's layout choice to full. `hydrated`
     // can still carry a width of its own (blockSchema permits one; only
-    // moduleDataSchema strips it) — drop it unconditionally rather than gating the
-    // override on `target.width`, or a hydrated replacement's width would win.
-    const { width: _hydratedWidth, ...hydratedRest } = hydrated
-    const block = target.width !== undefined ? { ...hydratedRest, width: target.width } : hydratedRest
+    // moduleDataSchema strips it) — override it unconditionally with `target.width`
+    // (including `undefined`), or a hydrated replacement's width would win.
+    const block = { ...hydrated, width: target.width }
     if (change.after) {
       next = insertAfter(
         next.filter((b) => b.id !== change.blockId),

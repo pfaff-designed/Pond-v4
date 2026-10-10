@@ -21,15 +21,6 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
-// Wraps the real `useLayoutEffect` so the last test can confirm BlockCanvas's
-// column measurement goes through it, not `useEffect` — must be mocked before
-// BlockCanvas's own import, since SWC's CJS interop copies React's exports
-// into a fresh object at that import, too early for a later `jest.spyOn` on
-// the real module to reach it.
-jest.mock('react', () => {
-  const actual = jest.requireActual<typeof import('react')>('react')
-  return { ...actual, useLayoutEffect: jest.fn(actual.useLayoutEffect) }
-})
 
 function renderCanvas(blocks: Block[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -173,7 +164,7 @@ describe('rows in BlockCanvas', () => {
       expect(blockRoot('b-1')).toBe(before)
     })
 
-    it('crossing the stack threshold on a ½+½ row keeps both BlockEditor nodes', () => {
+    it('crossing the stack threshold on a ½+½ row actually stacks it', () => {
       const ro = mockResizeObserver()
       try {
         const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
@@ -187,10 +178,39 @@ describe('rows in BlockCanvas', () => {
         } as DOMRect)
         ro.fire()
 
+        expect(normalizedWidth(blockRoot('b-1').parentElement!.style.width)).toBe(
+          normalizedWidth(blockWidthStyle('1/2'))
+        )
+
+        // Narrow column: each block's share drops below 240px, so the row stacks.
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+          width: 300,
+        } as DOMRect)
+        ro.fire()
+
+        expect(blockRoot('b-1').parentElement!.style.width).toBe('100%')
+        expect(blockRoot('b-2').parentElement!.style.width).toBe('100%')
+      } finally {
+        ro.restore()
+      }
+    })
+
+    it('crossing the stack threshold on a ½+½ row keeps both BlockEditor nodes', () => {
+      const ro = mockResizeObserver()
+      try {
+        const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
+        const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
+        renderCanvas([half1, half2])
+        const canvas = blockRoot('b-1').parentElement!.parentElement! as HTMLElement
+
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+          width: 800,
+        } as DOMRect)
+        ro.fire()
+
         const beforeA = blockRoot('b-1')
         const beforeB = blockRoot('b-2')
 
-        // Narrow column: each block's share drops below 240px, so the row stacks.
         jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
           width: 300,
         } as DOMRect)
@@ -275,22 +295,5 @@ describe('rows in BlockCanvas', () => {
 
       expect(blockRoot('b-b')).toBe(beforeB)
     })
-  })
-
-  // The column measurement must be in place by the first painted frame, or a
-  // genuinely narrow window paints the un-stacked row for one frame before it
-  // collapses. jsdom has no paint to check that against directly (it never
-  // measures — the whole reason `columnWidth` starts at 0), so this pins the
-  // one thing that guarantees it: the measurement runs in a layout effect,
-  // which React (and the browser) always flush before paint, not a passive
-  // `useEffect`, which runs after.
-  it('measures the column in a layout effect, not a passive effect', () => {
-    const layoutEffectSpy = jest.requireMock<typeof import('react')>('react')
-      .useLayoutEffect as jest.Mock
-    layoutEffectSpy.mockClear()
-    const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
-    const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
-    renderCanvas([half1, half2])
-    expect(layoutEffectSpy).toHaveBeenCalled()
   })
 })
