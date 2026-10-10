@@ -49,6 +49,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 This is expensive to get wrong. On 2026-10-02 two builds retried a blocked step **six times each** — ~1.6M tokens, ten hours, nothing produced. The cause was a foreground `npm run dev` that never exits. No number of retries would ever have worked, and the sixth attempt cost exactly as much as the first.
 
+**Ten minutes on one task with one approach is a stall,** whether or not it feels like one. A stuck agent is the one least able to notice, so in a `ship-epics` run the clock is kept from outside: every agent beats a heartbeat before each task, and its supervisor interrupts it at 10 minutes to reapproach, and stops it if the new approach stalls too (`.cursor/skills/ship-epics/failsafe.md`).
+
 **The signature of a stall is repetition without a new error.** "No progress for N seconds", the same failure text twice, a command that has not returned. That is a blocked process or a wrong premise — never something to wait out.
 
 When you see it:

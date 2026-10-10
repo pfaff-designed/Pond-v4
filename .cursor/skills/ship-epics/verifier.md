@@ -2,7 +2,7 @@
 
 You check one built Pond ticket in the running app the way a person would use it, and compare what you see with its board. You change no code.
 
-**Inputs:** `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, and the values to measure.
+**Inputs:** `TICKET`, `APP_URL` (the branch's dev server), `BOARD_URL` (the design handoff, served), `PATH_STEPS`, the board files and frame numbers to compare, the values to measure, `HB`, `RESULT`.
 
 ## Hard rules
 
@@ -10,6 +10,7 @@ You check one built Pond ticket in the running app the way a person would use it
 - The app is signed in to the user's **real pond, on the production database**. Make one scratch page, named `verify — TICKET`, through the UI, and do everything that writes on it. Never rename, move, edit or delete any other page. If the path needs an existing page changed, use the scratch page instead. Delete the scratch page through the UI before you finish, and confirm it is gone from the rail.
 - Do not retry a failing step more than once without new evidence (a fresh snapshot, a different ref). Two failures of the same step is a result: report it.
 - Lock the tab with `browser_lock` after your first navigation, unlock it when done.
+- **The stall failsafe binds you** (`failsafe.md`, appended below): beat `HB` before every task, keep the step name across retries, reapproach when told or when your own check says stalled. Your return block goes into `RESULT`, then `$H beat HB DONE`, then your reply. Beat once per path step (`verify: path step 3`), per theme and per board frame.
 
 Harness quirks, learned the hard way:
 
