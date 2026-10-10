@@ -131,14 +131,25 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
 type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
 
 /**
- * The default block list shape (6x frame 1): one 16px gap everywhere — between
- * stacked blocks and between rows — the same shape zen's `ZEN_BLOCK_LIST_STYLE`
- * gives its own column, just with the row gap instead of zen's.
+ * The block list is the one flex container — gutted from a per-row wrapper div
+ * plus per-block sizing div: a flat sizing div per block, keyed `block.id`, with
+ * `flexWrap` so a 100%-wide sizing div (a stacked block) takes its own line,
+ * which IS the stack. No row-level element exists to carry a regrouping key, so
+ * a block changing rows can never remount — structurally impossible, not merely
+ * untested. A host's `listStyle` (zen's 22px) only overrides `rowGap`; `display`,
+ * `flexWrap` and `flexDirection` are reasserted here so a host passing
+ * `flexDirection:'column'` (zen's own shape) can't turn off wrapping.
  */
-const BLOCK_LIST_STYLE: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  rowGap: BLOCK_ROW_GAP_PX,
+function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
+  return {
+    ...listStyle,
+    display: 'flex',
+    flexWrap: 'wrap',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    columnGap: BLOCK_ROW_GAP_PX,
+    rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
+  }
 }
 
 export interface BlockCanvasProps {
@@ -687,10 +698,11 @@ export function BlockCanvas({
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
-  // "holds", so an unmeasured first render matches today's layout exactly. A
-  // layout effect, not a passive one: it measures and (if narrow) flips to
-  // stacked before the browser paints, so a genuinely narrow window never
-  // paints the un-stacked row for one frame first.
+  // "holds" — a page with no widths set (every block full) renders identically
+  // either way, since "holds" only narrows a sub-240px block's own share and a
+  // full block's share is always 100%. A layout effect, not a passive one: it
+  // measures and (if narrow) flips to stacked before the browser paints, so a
+  // genuinely narrow window never paints the un-stacked share for one frame first.
   const [columnWidth, setColumnWidth] = useState(0)
   useLayoutEffect(() => {
     const el = canvasRef.current
@@ -773,45 +785,36 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div ref={canvasRef} style={listStyle ?? BLOCK_LIST_STYLE}>
-          {blockRows.map((row) => {
-            const widths = row.map(({ block }) => block.width ?? 'full')
-            // Widths and rows are kept, not shown: a row that stacks renders each
-            // block plain, full width, in reading order, and returns to its row on
-            // a wider measurement.
-            const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-
-            // Keyed on the row's first block, not its index in `blockRows`: a
-            // raw array here would give React a position-dependent implicit key,
-            // so a block that shifts row (e.g. a neighbour removed) would read as
-            // a brand new element and remount — dropping any focus just set on it.
-            const rowKey = row[0].block.id
-
-            // One stable shape for every row — a flex row div wrapping a sizing
-            // div per block — so flipping between stacked/solo/shared-row never
-            // changes an ancestor's element type and remounts the BlockEditor
-            // beneath it (which would drop focus mid-edit or after a menu pick).
-            // This inline gap is only the within-row, side-by-side gap; the
-            // outer list's own rowGap gives the same 16px between rows (a
-            // stacked single-block "row" included), so a page has one gap.
-            return (
-              <div
-                key={rowKey}
-                className="flex items-start"
-                style={row.length > 1 ? { gap: BLOCK_ROW_GAP_PX } : undefined}
-              >
-                {row.map(({ block, i }) => {
-                  const width = block.width ?? 'full'
-                  const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
-                  return (
-                    <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
-                      {renderBlockEditor(block, i)}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+        <div ref={canvasRef} style={canvasListStyle(listStyle)}>
+          {/*
+           * A single flat `.flatMap()`, not a `.map()` of each row's own
+           * `.map()`: nested arrays give React an implicit key path scoped to
+           * their outer array index, so a block moving from row 0 to row 1
+           * would still remount even though its own `key` is unchanged — the
+           * exact bug a flat array (one key namespace, block.id only) removes.
+           */}
+          {blockRows
+            .flatMap((row) => {
+              const widths = row.map(({ block }) => block.width ?? 'full')
+              // Widths and rows are kept, not shown: a row that stacks renders
+              // each of its blocks' sizing divs at 100% width, which — because
+              // the list itself wraps — puts each on its own line, in reading
+              // order. That IS the stack; no row-level wrapper is rendered at
+              // all, so a block shifting from one row to another regroups
+              // `blockRows` without touching any ancestor element, and a
+              // remount is impossible rather than merely untested.
+              const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+              return row.map(({ block, i }) => ({ block, i, stacks }))
+            })
+            .map(({ block, i, stacks }) => {
+              const width = block.width ?? 'full'
+              const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+              return (
+                <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
+                  {renderBlockEditor(block, i)}
+                </div>
+              )
+            })}
         </div>
       </SiblingBlocksProvider>
 

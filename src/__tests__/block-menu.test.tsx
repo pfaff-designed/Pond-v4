@@ -395,13 +395,12 @@ describe('the width row — the block menu’s `width` group', () => {
     const rootB = document.getElementById('block-b-list')!
     expect(rootB.parentElement!.style.width).toBe(halfWidth)
 
-    // Re-query the heading's root: the row wrapper that now holds both blocks
-    // replaced the solo-width wrapper it sat in a moment ago.
-    const rowWrapper = document.getElementById('block-b-heading')!.parentElement!.parentElement!
-    expect(rowWrapper).toBe(rootB.parentElement!.parentElement)
-    expect(rowWrapper.className).toContain('flex')
-    expect(rowWrapper.className).toContain('items-start')
-    expect(rowWrapper.style.gap).toBe('16px')
+    // Both sizing divs are flat siblings of the one canvas list — sharing a
+    // row is the canvas's own flex-wrap putting two half-width divs on one
+    // line, not a dedicated row wrapper. `rootA`'s sizing div is keyed on
+    // `block.id` alone, so it's the SAME node captured above, never swapped
+    // out when the row gains its second block (gutted, KAN-43).
+    expect(rootA.parentElement!.parentElement).toBe(rootB.parentElement!.parentElement)
   })
 })
 

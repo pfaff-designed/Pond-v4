@@ -505,8 +505,8 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(handles.every((h) => h.hidden)).toBe(true)
     const add = screen.getByRole('button', { name: 'Add a block', hidden: true })
     expect(add.parentElement!.hidden).toBe(true)
-    // handle -> BlockEditor root -> per-block sizing div -> row div -> list.
-    const list = handles[0].parentElement!.parentElement!.parentElement!.parentElement!
+    // handle -> BlockEditor root -> per-block sizing div -> list (no row div).
+    const list = handles[0].parentElement!.parentElement!.parentElement!
     expect(getComputedStyle(list).display).toBe('flex')
     expect(getComputedStyle(list).rowGap).toBe('22px')
 
