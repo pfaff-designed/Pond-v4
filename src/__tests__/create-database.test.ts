@@ -58,6 +58,29 @@ describe('createDatabase', () => {
     expect(sb._pages.get(made.databaseId)!.parent_id).toBe(root.id)
   })
 
+  it('files a database under its own pond’s root, never another pond’s', async () => {
+    const sb = makeFakeSupabase([{ ...existingRoot, pond_id: 'pond-a' }])
+
+    const inB = await createDatabase(
+      sb as never,
+      { title: 'personal', schema: TITLE_ONLY, pondId: 'pond-b' },
+      counter()
+    )
+    const rootB = sb._pages.get(inB.databasesRootId)!
+    expect(inB.databasesRootId).not.toBe('root-db')
+    expect(inB.rootCreated).toBe(true)
+    expect(rootB.pond_id).toBe('pond-b')
+    expect(sb._pages.get(inB.databaseId)!.parent_id).toBe(rootB.id)
+
+    const inA = await createDatabase(
+      sb as never,
+      { title: 'recipes', schema: TITLE_ONLY, pondId: 'pond-a' },
+      counter()
+    )
+    expect(inA.databasesRootId).toBe('root-db')
+    expect(inA.rootCreated).toBe(false)
+  })
+
   it('makes the view in the mode the picker chose, carrying a chart kind when there is one', async () => {
     const sb = makeFakeSupabase([existingRoot])
     const gallery = await createDatabase(
