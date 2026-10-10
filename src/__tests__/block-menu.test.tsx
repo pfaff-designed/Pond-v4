@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { blockWidthStyle } from '@/lib/modules/layout-rows'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -112,6 +113,13 @@ const handleOf = (blockId: string) =>
   })
 
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
+
+/** jsdom's CSSStyleDeclaration reorders a `calc()`, so compare normalized values. */
+function normalizedWidth(value: string) {
+  const probe = document.createElement('div')
+  probe.style.width = value
+  return probe.style.width
+}
 
 const scrollIntoView = jest.mocked(HTMLElement.prototype.scrollIntoView)
 
@@ -366,6 +374,34 @@ describe('the width row — the block menu’s `width` group', () => {
 
     await user.click(await screen.findByRole('button', { name: /undo/i }))
     await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
+  })
+
+  it('PATH_STEPS: picking ½ on two blocks narrows each, then shares one row', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+
+    await user.click(handleOf('b-heading'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const rootA = document.getElementById('block-b-heading')!
+    const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
+    expect(rootA.parentElement!.style.width).toBe(halfWidth)
+
+    await user.click(handleOf('b-list'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const rootB = document.getElementById('block-b-list')!
+    expect(rootB.parentElement!.style.width).toBe(halfWidth)
+
+    // Re-query the heading's root: the row wrapper that now holds both blocks
+    // replaced the solo-width wrapper it sat in a moment ago.
+    const rowWrapper = document.getElementById('block-b-heading')!.parentElement!.parentElement!
+    expect(rowWrapper).toBe(rootB.parentElement!.parentElement)
+    expect(rowWrapper.className).toContain('flex')
+    expect(rowWrapper.className).toContain('items-start')
+    expect(rowWrapper.style.gap).toBe('16px')
   })
 })
 
