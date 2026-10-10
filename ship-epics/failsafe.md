@@ -36,6 +36,9 @@ The orchestrator supervises its build loop, reviewers and verifier; the conducto
 
 1. `mkdir -p /tmp/ship-epics/<EPIC>` and remove the child's old `HB` and `RESULT`. `LAUNCH` the child with its `HB` and `RESULT` paths. **Record the handle `LAUNCH` gives you** — `NUDGE` and `STOP` need it, and a child you cannot address is a child you cannot stop.
 2. **Poll**: `POLL HB`. While you poll, beat your own heartbeat with the child's step, its reapproach count and its limit plus a minute — `$H beat <your HB> "supervise <role>: <its step> #<reapproached>" <its limit + 60>` — so your clock moves when the child's work does, stalls when it stalls, and never fires before the child's own does.
+
+   **The child's step must appear verbatim, and must change as the child's changes.** `check` runs a step's clock from the first of a run of _identical_ beats, so a supervisor that beats a constant — `supervise builder: ralph kan-43` — never resets its own clock and reads `stalled` after its own limit while its child is perfectly healthy. That false positive happened on 2026-10-10 and cost a diagnosis. Copy the child's step out of `$H check` each time you poll; never abbreviate it to a fixed string, and never beat your own progress instead of the child's.
+
 3. **Act on what `check` says:**
    - `ok` — poll again.
    - `none` for more than 3 minutes after launch — the child is not beating: `NUDGE` it with "You have not written your heartbeat. Beat HB before every task, as failsafe.md says, starting now."
