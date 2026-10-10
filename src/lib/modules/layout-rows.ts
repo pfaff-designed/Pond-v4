@@ -26,30 +26,18 @@ function toTwelfths(width: BlockWidth | undefined): number {
 
 /**
  * Pack `blocks` into rows: each row's widths sum to 12 twelfths (full) or less. A
- * block that would push the current row over 12 starts a new row instead.
- *
- * With no `widthOf`, an entry's own `width` is read directly — this is the plain
- * case the unit tests use. A caller that packs a wrapper around each block (so it
- * can carry something alongside, e.g. the block's original index) passes `widthOf`
- * to read the wrapped block's width instead, rather than copying it onto the
- * wrapper too — the wrapper and the render that follows then read the same single
- * copy of the width.
+ * block that would push the current row over 12 starts a new row instead. Rows
+ * are built in array order, so flattening them back out reproduces that order —
+ * a caller that needs a block's original index can read it off the flattened
+ * position instead of threading a wrapper through.
  */
-export function layoutRows<T extends { width?: BlockWidth }>(blocks: readonly T[]): T[][]
-export function layoutRows<T>(
-  blocks: readonly T[],
-  widthOf: (entry: T) => BlockWidth | undefined
-): T[][]
-export function layoutRows<T>(
-  blocks: readonly T[],
-  widthOf: (entry: T) => BlockWidth | undefined = (entry) => (entry as { width?: BlockWidth }).width
-): T[][] {
+export function layoutRows<T extends { width?: BlockWidth }>(blocks: readonly T[]): T[][] {
   const rows: T[][] = []
   let row: T[] = []
   let used = 0
 
   for (const block of blocks) {
-    const width = toTwelfths(widthOf(block))
+    const width = toTwelfths(block.width)
     if (row.length > 0 && used + width > 12) {
       rows.push(row)
       row = []

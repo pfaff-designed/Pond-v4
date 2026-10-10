@@ -684,16 +684,10 @@ export function BlockCanvas({
   }
 
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
-  // to full or less share one row. Each entry keeps its real index into `blocks`
-  // so every per-block callback below still addresses the right block.
-  const blockRows = useMemo(
-    () =>
-      layoutRows(
-        blocks.map((block, i) => ({ block, i })),
-        (entry) => entry.block.width
-      ),
-    [blocks]
-  )
+  // to full or less share one row, in array order — so the flattened render
+  // below reproduces `blocks`' own order, and each block's position in it is
+  // its real index into `blocks`.
+  const blockRows = useMemo(() => layoutRows(blocks), [blocks])
 
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
@@ -795,7 +789,7 @@ export function BlockCanvas({
            */}
           {blockRows
             .flatMap((row) => {
-              const widths = row.map(({ block }) => block.width ?? 'full')
+              const widths = row.map((block) => block.width ?? 'full')
               // Widths and rows are kept, not shown: a row that stacks renders
               // each of its blocks' sizing divs at 100% width, which — because
               // the list itself wraps — puts each on its own line, in reading
@@ -804,9 +798,9 @@ export function BlockCanvas({
               // `blockRows` without touching any ancestor element, and a
               // remount is impossible rather than merely untested.
               const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
-              return row.map(({ block, i }) => ({ block, i, stacks }))
+              return row.map((block) => ({ block, stacks }))
             })
-            .map(({ block, i, stacks }) => {
+            .map(({ block, stacks }, i) => {
               const width = block.width ?? 'full'
               const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
               return (
