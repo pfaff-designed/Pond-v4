@@ -1,15 +1,14 @@
 'use client'
 
 /**
- * The shared block editor body (ticket-44) — the full manual-authoring surface
+ * The shared block editor body — the full manual-authoring surface
  * extracted from DocumentPanel so EVERY editable page renders it identically: the
  * document editor, an area page with content, AND the Life home page.
  *
- * It renders a `SiblingBlocksProvider`-wrapped list of blocks with the ticket-37
- * machinery — the `/` palette on an empty text block or an empty line inside one,
- * Return on a focused block opening a line after it, drag/⌥↑/⌥↓ reorder,
- * per-block delete with undo — and, at the foot, the ticket-44 always-visible
- * "+ Add a block". The handle is the only block chrome: nothing is drawn between
+ * It renders a `SiblingBlocksProvider`-wrapped list of blocks with the `/` palette
+ * on an empty text block or an empty line inside one, Return on a focused block
+ * opening a line after it, drag/⌥↑/⌥↓ reorder, per-block delete with undo — and,
+ * at the foot, an always-visible "+ Add a block". The handle is the only block chrome: nothing is drawn between
  * blocks.
  *
  * Persistence is the CALLER's concern: BlockCanvas is controlled (it takes
@@ -62,6 +61,7 @@ import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock } from '@/lib/modules/text/focus'
 import {
   landAtSlash,
+  undoLanding,
   useSlashPick,
   type Landing,
   type SlashTarget,
@@ -200,7 +200,7 @@ export function BlockCanvas({
   })
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
-  // The source picker (#280): which `/` pick summoned it, and where its view
+  // The source picker: which `/` pick summoned it, and where its view
   // lands. Table, gallery and chart all open the same picker.
   const [sourcePicker, setSourcePicker] = useState<{
     block: SourceBlock
@@ -411,7 +411,7 @@ export function BlockCanvas({
 
   /**
    * `/table`, `/gallery`, `/chart` open the source picker rather than minting a
-   * block (#280; PROJECT_RULES: "a table is always a view of a database"). The
+   * block (PROJECT_RULES: "a table is always a view of a database"). The
    * glass hangs off the `/` line, or the block it was typed in. AUDIT C9,
    * decided: a chart auto-wires "when one table is nearby" — the nearest linked
    * view on the page becomes its source and the picker opens on the chart types;
@@ -470,7 +470,7 @@ export function BlockCanvas({
    */
   function placeView(view: ViewBlock, target: SlashTarget): Landing {
     const current = blocksRef.current
-    const appended = { next: [...current, view], landed: view, slash: null }
+    const appended = { next: [...current, view], landed: view, split: null, slash: null }
     const landing = landAtSlash(current, target, view) ?? appended
     if (landing.landed) markInserted(landing.landed.id)
     onChange(landing.next)
@@ -526,20 +526,14 @@ export function BlockCanvas({
         },
         () => crypto.randomUUID()
       )
-      const { landed, slash } = placeView(made.view, open.target)
+      const landing = placeView(made.view, open.target)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
       stageUndo({
         message: 'Made a database',
         scope: 'block',
         undo: async () => {
-          const current = blocksRef.current
-          const landedId = landed?.id ?? made.view.id
-          onChange(
-            slash
-              ? current.map((b) => (b.id === landedId ? slash : b))
-              : current.filter((b) => b.id !== landedId)
-          )
+          onChange(undoLanding(blocksRef.current, landing))
           try {
             await deletePage(getSupabase(), made.databaseId)
           } catch (err) {
@@ -699,7 +693,7 @@ export function BlockCanvas({
       {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
           in it summons the palette to swap type. */}
       <AddBlockButton onAdd={addTextBlock} />
-      {/* The source picker (#280), hung off the block that summoned it. */}
+      {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
           block={sourcePicker.block}
@@ -817,9 +811,9 @@ function useBlockEmptyState(
  * that fold editing in (text/todo/table) emit full-state onChange; display-only
  * views ignore `editable`.
  *
- * Ticket-37: `/` in an empty text block opens the block palette (intercepted in the
- * onChange below, so the slash never persists); so does `/` on an empty line
- * inside one, which the text editor reports through `SlashLineContext`. ⌥↑/⌥↓
+ * `/` in an empty text block, or at the start of an empty line inside one, opens
+ * the block palette (`useSlashLine`). The slash stays as text — it is the query —
+ * until a pick lands in its place. ⌥↑/⌥↓
  * reorders the focused block; the handle drags to reorder. `draggable` is armed
  * only while the pointer is down on the handle — an always-draggable block would
  * hijack text-selection drags.
@@ -962,7 +956,10 @@ function BlockEditor({
     <div
       ref={rootRef}
       className={cn(
-        'group relative rounded-mn-card focus-visible:ring-2 focus-visible:ring-mn-text',
+        'group relative',
+        block.type === 'text'
+          ? 'outline-none'
+          : 'rounded-mn-card focus-visible:ring-2 focus-visible:ring-mn-text',
         settleOnMount && 'motion-settle-in',
         isDragging && 'opacity-50',
         menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'

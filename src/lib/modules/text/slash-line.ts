@@ -72,11 +72,13 @@ export const opensSlashLine = (was: ProseNode, doc: ProseNode, pos: number): boo
 }
 
 /**
- * The block split around its `/` line, with `inserted` (or nothing) in the line's
- * place. The block's identity — id and label — stays with the prose above, or
- * with the prose below when there is none above. With no prose left on either
- * side, `inserted` takes the identity: it replaces the block. `inserted` is the
- * block as it lands.
+ * The block split around its `/` line, with `inserted` in the line's place. The
+ * block's identity — id and label — stays with the prose above, or with the prose
+ * below when there is none above. With no prose left on either side, `inserted`
+ * takes the identity: it replaces the block. `inserted` is the block as it lands.
+ *
+ * With nothing inserted there is nothing to split around: the `/` line goes and
+ * the block stays one block, or goes too when it held nothing else.
  */
 export const splitAtSlashLine = (
   block: TextBlock,
@@ -86,13 +88,17 @@ export const splitAtSlashLine = (
 ): { blocks: Block[]; inserted: Block | null } => {
   const hasAbove = line.before.trim() !== ''
   const hasBelow = line.after.trim() !== ''
-  const placed = inserted ? [inserted] : []
+  if (!inserted) {
+    if (!hasAbove && !hasBelow) return { blocks: [], inserted }
+    const content = [line.before, line.after].filter((s) => s.trim() !== '').join('\n\n')
+    return { blocks: [{ ...block, content }], inserted }
+  }
+  const placed = [inserted]
   if (hasAbove) {
     const below: Block[] = hasBelow ? [{ id: mintId(), type: 'text', content: line.after }] : []
     return { blocks: [{ ...block, content: line.before }, ...placed, ...below], inserted }
   }
   if (hasBelow) return { blocks: [...placed, { ...block, content: line.after }], inserted }
-  if (!inserted) return { blocks: [], inserted }
   const replacing: Block = {
     ...inserted,
     id: block.id,

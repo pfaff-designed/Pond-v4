@@ -213,6 +213,7 @@ describe('Return after a block opens a line for `/`', () => {
     )
     expect(group).not.toHaveClass('outline-none')
     expect(blockRoot('b-note')).not.toHaveAttribute('role')
+    expect(blockRoot('b-note')).not.toHaveClass('focus-visible:ring-2')
   })
 })
 
@@ -434,18 +435,13 @@ describe('`/` on an empty line inside a text block splits it at that line', () =
     ])
   })
 
-  it('a `page` pick removes only the `/` line, never the text around it', async () => {
+  it('a `page` pick removes only the `/` line and leaves one block, label and all', async () => {
     mockCreatePage.mockResolvedValue({ id: 'new-page', title: 'untitled', type: 'page' })
-    const { onChange } = renderCanvas([prose])
+    const { onChange } = renderCanvas([{ ...prose, label: 'method' }])
     await slashAfterFirstLine()
     fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'nested page'))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(lastBlocks(onChange)).toEqual([
-        { id: 'b-prose', type: 'text', content: 'soak overnight' },
-        { id: expect.any(String), type: 'text', content: 'simmer with bay' },
-      ])
-    )
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([{ ...prose, label: 'method' }]))
   })
 })

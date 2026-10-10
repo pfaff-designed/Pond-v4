@@ -5,6 +5,7 @@ import type { SlashRow, TemplatePick } from '@/components/molecules/SlashMenu'
 import { sourceBlockOf, type SourceBlock } from '@/components/molecules/source-entries'
 import type { Block } from '@/lib/documents/types'
 import { mintPreset } from '@/lib/modules/palette'
+import type { TextBlock } from '@/lib/modules/text/schema'
 import { splitAtSlashLine, type SlashLine, type SlashLineAt } from '@/lib/modules/text/slash-line'
 
 const mintId = () => crypto.randomUUID()
@@ -17,11 +18,22 @@ export interface SlashTarget {
   line: SlashLine | null
 }
 
+/** A text block cut in two around the landed block: its halves as they landed. */
+export interface LandedSplit {
+  /** The half that kept the block's identity is `above` when there is one, else `below`. */
+  above: TextBlock | null
+  below: TextBlock | null
+  /** The block's content before the cut. */
+  content: string
+}
+
 export interface Landing {
   next: Block[]
   /** The inserted block as it landed: it can take the host's identity. */
   landed: Block | null
-  /** What puts the `/` back in the landed block's place; null when removing it is enough. */
+  /** Set when landing cut the host in two. */
+  split: LandedSplit | null
+  /** What takes the landed block's place when the halves can't rejoin; null when removing it is enough. */
   slash: Block | null
 }
 
@@ -31,16 +43,55 @@ const partsFor = (
   inserted: Block | null
 ): Omit<Landing, 'next'> & { parts: Block[] } => {
   const placed = inserted ? [inserted] : []
-  if (!target.line) return { parts: placed, landed: inserted, slash: host }
   if (host.type !== 'text' || host.content !== target.content)
-    return { parts: [host, ...placed], landed: inserted, slash: null }
-  const split = splitAtSlashLine(host, target.line, inserted, mintId)
-  const replacedHost = split.blocks.every((b) => b.id !== host.id || b === split.inserted)
+    return { parts: [host, ...placed], landed: inserted, split: null, slash: null }
+  if (!target.line) return { parts: placed, landed: inserted, split: null, slash: host }
+  const { blocks: parts, inserted: landed } = splitAtSlashLine(host, target.line, inserted, mintId)
+  const at = landed ? parts.indexOf(landed) : -1
+  const above = parts[at - 1]
+  const below = parts[at + 1]
+  if (at === -1 || (!above && !below)) return { parts, landed, split: null, slash: host }
   return {
-    parts: split.blocks,
-    landed: split.inserted,
-    slash: replacedHost ? host : { id: mintId(), type: 'text', content: target.line.markdown },
+    parts,
+    landed,
+    split: {
+      above: above?.type === 'text' ? above : null,
+      below: below?.type === 'text' ? below : null,
+      content: host.content,
+    },
+    slash: { id: mintId(), type: 'text', content: target.line.markdown },
   }
+}
+
+const isAsLanded = (now: Block | undefined, landed: TextBlock | null): boolean =>
+  landed === null ||
+  (now?.type === 'text' && now.id === landed.id && now.content === landed.content)
+
+/** The host whole again in place of the run its split left, if both halves are as they landed. */
+const rejoin = (blocks: Block[], at: number, { above, below, content }: LandedSplit) => {
+  const before = blocks[at - 1]
+  const after = blocks[at + 1]
+  if (!isAsLanded(before, above) || !isAsLanded(after, below)) return null
+  const host = above ? before : after
+  if (host?.type !== 'text') return null
+  const from = above ? at - 1 : at
+  const to = below ? at + 2 : at + 1
+  return [...blocks.slice(0, from), { ...host, content }, ...blocks.slice(to)]
+}
+
+/**
+ * The page with a landing taken back, read against `blocks` as they are now. A
+ * split whose halves are untouched rejoins into the block it was; one edited
+ * since keeps its halves and gets the `/` line back between them.
+ */
+export const undoLanding = (blocks: Block[], { landed, split, slash }: Landing): Block[] => {
+  if (!landed) return blocks
+  const at = blocks.findIndex((b) => b.id === landed.id)
+  if (at === -1) return blocks
+  const rejoined = split && rejoin(blocks, at, split)
+  if (rejoined) return rejoined
+  if (!slash) return blocks.filter((_, i) => i !== at)
+  return blocks.map((b, i) => (i === at ? slash : b))
 }
 
 /**
@@ -55,8 +106,8 @@ export const landAtSlash = (
 ): Landing | null => {
   const at = blocks.findIndex((b) => b.id === target.hostId)
   if (at === -1) return null
-  const { parts, landed, slash } = partsFor(blocks[at], target, inserted)
-  return { next: [...blocks.slice(0, at), ...parts, ...blocks.slice(at + 1)], landed, slash }
+  const { parts, ...landing } = partsFor(blocks[at], target, inserted)
+  return { next: [...blocks.slice(0, at), ...parts, ...blocks.slice(at + 1)], ...landing }
 }
 
 interface SlashPickOptions {

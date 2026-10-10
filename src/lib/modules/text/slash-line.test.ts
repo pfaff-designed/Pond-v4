@@ -144,10 +144,12 @@ describe('splitAtSlashLine — the block around the line, with the pick in its p
     expect(inserted).toEqual(replacing)
   })
 
-  it('with nothing to insert, only the `/` line goes', () => {
+  it('with nothing to insert, only the `/` line goes and the block stays one block', () => {
     expect(splitAtSlashLine(block, line, null, ids()).blocks).toEqual([
-      { id: 'b-text', type: 'text', content: '## method', label: 'notes' },
-      { id: 'new-1', type: 'text', content: 'soak overnight' },
+      { id: 'b-text', type: 'text', content: '## method\n\nsoak overnight', label: 'notes' },
+    ])
+    expect(splitAtSlashLine(block, { ...line, before: '' }, null, ids()).blocks).toEqual([
+      { id: 'b-text', type: 'text', content: 'soak overnight', label: 'notes' },
     ])
     expect(splitAtSlashLine(block, { ...line, before: '', after: '' }, null, ids()).blocks).toEqual(
       []
