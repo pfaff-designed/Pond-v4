@@ -18,6 +18,15 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 jest.mock('@/lib/supabase/client', () => ({ createClient: () => ({}) }))
+// Wraps the real `useLayoutEffect` so the last test can confirm BlockCanvas's
+// column measurement goes through it, not `useEffect` — must be mocked before
+// BlockCanvas's own import, since SWC's CJS interop copies React's exports
+// into a fresh object at that import, too early for a later `jest.spyOn` on
+// the real module to reach it.
+jest.mock('react', () => {
+  const actual = jest.requireActual<typeof import('react')>('react')
+  return { ...actual, useLayoutEffect: jest.fn(actual.useLayoutEffect) }
+})
 
 function renderCanvas(blocks: Block[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -51,6 +60,10 @@ describe('rows in BlockCanvas', () => {
     expect(rowWrapper.className).toContain('flex')
     expect(rowWrapper.className).toContain('items-start')
     expect(rowWrapper.style.gap).toBe('16px')
+    // The board sizes each row child with its own calc() width and does not let
+    // it grow past that share, so a wide min-content (a table at ½) must not be
+    // able to overflow it.
+    expect(rootA.parentElement!.className).toContain('min-w-0')
   })
 
   it('draws a `full` block after a row in the same stable row+sizing shape, full width', () => {
@@ -148,5 +161,22 @@ describe('rows in BlockCanvas', () => {
         window.ResizeObserver = setupObserver
       }
     })
+  })
+
+  // The column measurement must be in place by the first painted frame, or a
+  // genuinely narrow window paints the un-stacked row for one frame before it
+  // collapses. jsdom has no paint to check that against directly (it never
+  // measures — the whole reason `columnWidth` starts at 0), so this pins the
+  // one thing that guarantees it: the measurement runs in a layout effect,
+  // which React (and the browser) always flush before paint, not a passive
+  // `useEffect`, which runs after.
+  it('measures the column in a layout effect, not a passive effect', () => {
+    const layoutEffectSpy = jest.requireMock<typeof import('react')>('react')
+      .useLayoutEffect as jest.Mock
+    layoutEffectSpy.mockClear()
+    const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
+    const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
+    renderCanvas([half1, half2])
+    expect(layoutEffectSpy).toHaveBeenCalled()
   })
 })

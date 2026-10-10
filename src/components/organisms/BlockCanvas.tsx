@@ -18,7 +18,15 @@
  * surfaces share one editor.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
@@ -679,9 +687,12 @@ export function BlockCanvas({
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
   // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
-  // "holds", so an unmeasured first render matches today's layout exactly.
+  // "holds", so an unmeasured first render matches today's layout exactly. A
+  // layout effect, not a passive one: it measures and (if narrow) flips to
+  // stacked before the browser paints, so a genuinely narrow window never
+  // paints the un-stacked row for one frame first.
   const [columnWidth, setColumnWidth] = useState(0)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const read = () => setColumnWidth(el.getBoundingClientRect().width)
@@ -793,7 +804,7 @@ export function BlockCanvas({
                   const width = block.width ?? 'full'
                   const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
                   return (
-                    <div key={block.id} style={{ width: sizingWidth }}>
+                    <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
                       {renderBlockEditor(block, i)}
                     </div>
                   )
