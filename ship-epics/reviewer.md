@@ -1,6 +1,6 @@
-# Reviewer — Pond's additions to `/code-review`
+# Reviewer — Pond's additions to the code-review gate
 
-This is not a second review. AGENTS.md's one gate is `/code-review` (`~/.claude/skills/code-review/SKILL.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. The orchestrator runs that skill; this file is what it pastes into each sub-agent's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
+This is not a second review. AGENTS.md's one gate is the **code-review skill** (`REVIEW_SKILL` in your harness's `harness.md`): two parallel sub-agents, Standards and Spec, reported side by side and never reranked. The orchestrator runs that skill; this file is what it pastes into each sub-agent's prompt on top of the skill's own brief and smell baseline, because Pond's spec lives in Jira and its worst failure is a feature nobody can reach.
 
 You review one ticket's diff for Pond on one axis. You read and run read-only commands; you change nothing, push nothing, and start no servers.
 
@@ -28,7 +28,7 @@ Judge the code against this repo's conventions (`WORKTREE/AGENTS.md`, and two or
 
 ## AXIS = spec
 
-Read the ticket (`getJiraIssue { cloudId: '1535dfd5-6618-4e61-ac79-655c4c329842', issueIdOrKey: TICKET }`) and the board files it names, then judge whether the diff builds what it asks — every acceptance criterion and every inline value — and nothing it does not:
+Read the ticket (`JIRA.get TICKET`, as `harness.md` defines it) and the board files it names, then judge whether the diff builds what it asks — every acceptance criterion and every inline value — and nothing it does not:
 
 - For each acceptance criterion: the `file:function` that meets it and the test that proves it, or `missing` / `partial`.
 - Every inline board value the spec names: matched, or what the code has instead.

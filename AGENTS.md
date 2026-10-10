@@ -22,7 +22,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
   library with no picker, an HTML reader nothing called, a change log behind an unlisted shortcut —
   and nobody could use them. A ticket whose path needs a later ticket is mis-split: fold one entry
   point into it, or reorder the Workstream so the entry point lands first.
-- **Epics are worked by orchestrators.** `.cursor/skills/ship-epics/` is the workflow: the chat is
+- **Epics are worked by orchestrators.** `ship-epics/` is the workflow (its role prompts and scripts; `.claude/skills/ship-epics/` and `.cursor/skills/ship-epics/` are the two harness heads): the chat is
   the conductor, one orchestrator subagent per epic builds each ticket in a Ralph loop (a fresh agent
   pass per plan item, progress measured from git: `ralph.sh`) and runs reviewer and live-verifier
   subagents through to a merge, and only production migrations, failed reachability gates and real
@@ -50,7 +50,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 This is expensive to get wrong. On 2026-10-02 two builds retried a blocked step **six times each** — ~1.6M tokens, ten hours, nothing produced. The cause was a foreground `npm run dev` that never exits. No number of retries would ever have worked, and the sixth attempt cost exactly as much as the first.
 
-**Ten minutes on one task with one approach is a stall,** whether or not it feels like one. A stuck agent is the one least able to notice, so in a `ship-epics` run the clock is kept from outside: every agent beats a heartbeat before each task, and its supervisor interrupts it at 10 minutes to reapproach, and stops it if the new approach stalls too (`.cursor/skills/ship-epics/failsafe.md`).
+**Ten minutes on one task with one approach is a stall,** whether or not it feels like one. A stuck agent is the one least able to notice, so in a `ship-epics` run the clock is kept from outside: every agent beats a heartbeat before each task, and its supervisor interrupts it at 10 minutes to reapproach, and stops it if the new approach stalls too (`ship-epics/failsafe.md`).
 
 **The signature of a stall is repetition without a new error.** "No progress for N seconds", the same failure text twice, a command that has not returned. That is a blocked process or a wrong premise — never something to wait out.
 
