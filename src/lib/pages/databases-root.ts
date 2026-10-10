@@ -84,7 +84,7 @@ export function withoutDatabasesRoot<
 }
 
 /**
- * The user's databases root in this workspace, created on first use. Reads the
+ * The user's databases root in this pond, created on first use. Reads the pond's
  * top-level pages and matches with {@link isDatabasesRoot}; absent one, creates
  * it (the only moment the pond "has one to list", so the rail draws it from then
  * on). `created` lets a caller know the rail gained a root, not just a child.
@@ -96,11 +96,15 @@ export async function getOrCreateDatabasesRoot(
   pondId: string | null
 ): Promise<{ id: string; created: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let q: any = (supabase as any)
     .from('pages')
     .select('id, title')
     .eq('user_id', userId)
     .is('parent_id', null)
+  // Another pond's root would file this pond's databases where neither pond's
+  // tree reaches them. `.eq('pond_id', null)` would match only rows with NO pond.
+  if (pondId) q = q.eq('pond_id', pondId)
+  const { data, error } = await q
   if (error) throw new Error(error.message)
 
   const existing = ((data ?? []) as { id: string; title: string }[]).find((r) =>
