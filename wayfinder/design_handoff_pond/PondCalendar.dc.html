@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/mn/tokens/fonts.css">
+</helmet>
+<div style="{{ root }}">
+<div style="{{ head }}">
+<div style="{{ headL }}"><span style="{{ period }}">{{ periodLabel }}</span><div style="{{ navs }}"><span style="{{ navBtn }}" style-hover="{{ navHover }}" onClick="{{ prev }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2.5L4 6l3.5 3.5"></path></svg></span><span style="{{ navBtn }}" style-hover="{{ navHover }}" onClick="{{ next }}"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6 4.5 9.5"></path></svg></span></div></div>
+<div style="{{ headR }}"><div style="{{ seg }}"><sc-for list="{{ spans }}" as="s" hint-placeholder-count="4"><span style="{{ s.style }}" onClick="{{ s.go }}">{{ s.label }}</span></sc-for></div><span style="{{ todayBtn }}" onClick="{{ goToday }}">today</span></div>
+</div>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}"><span style="{{ emptyStyle }}">{{ emptyLine }}</span></sc-if>
+<sc-if value="{{ isMonthD }}" hint-placeholder-val="{{ true }}"><div style="{{ monthWrap }}">
+<div style="{{ dowRow }}"><sc-for list="{{ dows }}" as="d" hint-placeholder-count="7"><span style="{{ d.style }}">{{ d.l }}</span></sc-for></div>
+<sc-for list="{{ weeks }}" as="w" hint-placeholder-count="5"><div style="{{ w.style }}">
+<sc-for list="{{ w.cells }}" as="c" hint-placeholder-count="7"><div style="{{ c.style }}" onClick="{{ c.go }}"><span style="{{ c.numStyle }}">{{ c.num }}</span></div></sc-for>
+<sc-for list="{{ w.bars }}" as="b" hint-placeholder-count="0"><div style="{{ b.style }}"><span style="{{ b.tStyle }}">{{ b.t }}</span></div></sc-for>
+<sc-for list="{{ w.stacks }}" as="s" hint-placeholder-count="0"><div style="{{ s.style }}"><sc-for list="{{ s.items }}" as="it" hint-placeholder-count="1"><div style="{{ it.style }}"><span style="{{ it.box }}"></span><span style="{{ it.tStyle }}">{{ it.t }}</span><span style="{{ it.mStyle }}">{{ it.m }}</span></div></sc-for><sc-if value="{{ s.more }}"><span style="{{ s.moreStyle }}">{{ s.moreLabel }}</span></sc-if></div></sc-for>
+</div></sc-for>
+</div></sc-if>
+<sc-if value="{{ isMonthM }}" hint-placeholder-val="{{ false }}"><div style="{{ mGrid }}">
+<sc-for list="{{ dows }}" as="d" hint-placeholder-count="7"><span style="{{ d.style }}">{{ d.l }}</span></sc-for>
+<sc-for list="{{ mCells }}" as="c" hint-placeholder-count="35"><div style="{{ c.style }}" onClick="{{ c.go }}"><span style="{{ c.numStyle }}">{{ c.num }}</span><span style="{{ c.dotRow }}"><sc-for list="{{ c.dots }}" as="dt" hint-placeholder-count="0"><span style="{{ dt }}"></span></sc-for></span></div></sc-for>
+</div></sc-if>
+<sc-if value="{{ hasStrip }}" hint-placeholder-val="{{ false }}"><div style="{{ strip }}"><sc-for list="{{ stripDays }}" as="d" hint-placeholder-count="7"><div style="{{ d.style }}" onClick="{{ d.go }}"><span style="{{ d.dowStyle }}">{{ d.dl }}</span><span style="{{ d.numStyle }}">{{ d.num }}</span><span style="{{ d.dot }}"></span></div></sc-for></div></sc-if>
+<sc-if value="{{ isTime }}" hint-placeholder-val="{{ false }}"><div style="{{ tg }}">
+<sc-if value="{{ hasDayHead }}"><div style="{{ tgHead }}"><span></span><sc-for list="{{ tDays }}" as="d" hint-placeholder-count="7"><div style="{{ d.style }}" onClick="{{ d.go }}"><span style="{{ d.dowStyle }}">{{ d.dl }}</span><span style="{{ d.numStyle }}">{{ d.num }}</span></div></sc-for></div></sc-if>
+<div style="{{ adRow }}"><span style="{{ adLabel }}">all day</span><sc-for list="{{ adItems }}" as="a" hint-placeholder-count="2"><div style="{{ a.style }}"><span style="{{ a.box }}"></span><span style="{{ a.tStyle }}">{{ a.t }}</span></div></sc-for></div>
+<div style="{{ tgBody }}">
+<sc-for list="{{ hours }}" as="h" hint-placeholder-count="11"><span style="{{ h.line }}"></span><span style="{{ h.style }}">{{ h.l }}</span></sc-for>
+<span></span><sc-for list="{{ tCols }}" as="c" hint-placeholder-count="7"><div style="{{ c.style }}"><sc-for list="{{ c.events }}" as="e" hint-placeholder-count="0"><div style="{{ e.style }}"><span style="{{ e.tStyle }}">{{ e.t }}</span><span style="{{ e.mStyle }}">{{ e.m }}</span></div></sc-for><sc-if value="{{ c.isNow }}"><span style="{{ c.nowStyle }}"><span style="{{ c.nowDot }}"></span></span></sc-if></div></sc-for>
+</div>
+</div></sc-if>
+<sc-if value="{{ showList }}" hint-placeholder-val="{{ false }}"><div style="{{ agWrap }}"><sc-for list="{{ agDays }}" as="g" hint-placeholder-count="3"><div style="{{ g.style }}"><div style="{{ g.headStyle }}"><span style="{{ g.numStyle }}">{{ g.num }}</span><span style="{{ g.lStyle }}">{{ g.l }}</span></div><div style="{{ g.listStyle }}"><sc-for list="{{ g.items }}" as="it" hint-placeholder-count="2"><div style="{{ it.style }}"><span style="{{ it.box }}"></span><span style="{{ it.tStyle }}">{{ it.t }}</span><span style="{{ it.mStyle }}">{{ it.m }}</span></div></sc-for><sc-if value="{{ g.none }}"><span style="{{ g.noneStyle }}">nothing dated</span></sc-if></div></div></sc-for></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:900,&quot;height&quot;:680},&quot;span&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;month&quot;,&quot;week&quot;,&quot;day&quot;,&quot;agenda&quot;],&quot;default&quot;:&quot;month&quot;,&quot;tsType&quot;:&quot;'month'|'week'|'day'|'agenda'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rest&quot;,&quot;empty&quot;],&quot;default&quot;:&quot;rest&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;paper&quot;,&quot;ink&quot;],&quot;default&quot;:&quot;paper&quot;,&quot;tsType&quot;:&quot;'paper'|'ink'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;},&quot;today&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;2026-09-23&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;focus&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;now&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;11:20&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;selected&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;records&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;{t:string,d:string,e?:string,s?:string,f?:string,done?:boolean,rep?:number,rl?:string}[]&quot;}}">
+class Component extends DCLogic {
+  state = { span: null, off: 0, pick: null };
+  componentDidUpdate(pp) { if (pp.span !== this.props.span || pp.focus !== this.props.focus) this.setState({ span: null, off: 0, pick: null }); }
+  renderVals() {
+    const p = this.props;
+    const theme = p.theme ?? 'paper', mob = (p.size ?? 'desktop') === 'mobile', ink = theme === 'ink';
+    const fg = ink ? '#FAF9EF' : '#1B1D14', base = ink ? '250,249,239' : '27,29,20', a = x => `rgba(${base},${x})`;
+    const card = ink ? '#30312A' : '#FAF9EF';
+    const cardShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.34)' : '0 1px 2px rgba(40,34,24,.04),0 8px 24px rgba(40,34,24,.06)';
+    const evShadow = ink ? '0 1px 2px rgba(0,0,0,.3),0 2px 8px rgba(0,0,0,.3)' : '0 1px 2px rgba(40,34,24,.08),0 2px 8px rgba(40,34,24,.07)';
+    const evBg = ink ? '#4A4940' : '#FAF9EF';
+    const OR = '#D96629', INK = '#1B1D14';
+    const sans = "'PP Neue Montreal',system-ui,sans-serif";
+    const DAY = 864e5;
+    const D = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    const dt = t => new Date(t);
+    const dow = t => (dt(t).getUTCDay() + 6) % 7;
+    const MON = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    const MS = MON.map(m => m.slice(0, 3)), DW = ['mon','tue','wed','thu','fri','sat','sun'];
+    const dm = t => `${dt(t).getUTCDate()} ${MS[dt(t).getUTCMonth()]}`;
+    const hm = s => { const [h, m] = s.split(':').map(Number); return h + m / 60; };
+    const pj = v => { if (!v) return null; try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return null; } };
+    const state = p.state ?? 'rest', empty = state === 'empty';
+    const today = D(p.today ?? '2026-09-23');
+    const span = this.state.span ?? p.span ?? 'month';
+    const off = this.state.off;
+    let focus = this.state.pick ?? D(p.focus ?? p.today ?? '2026-09-23');
+    if (!this.state.pick && off) {
+      if (span === 'month') { const f = dt(focus); focus = Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + off, 1); }
+      else focus += off * (span === 'day' ? 1 : span === 'week' ? 7 : 14) * DAY;
+    }
+    const sel = p.selected ?? '';
+    const defs = [
+      { t: 'worktop lead time', d: '2026-09-14', e: '2026-09-22' },
+      { t: 'strip old units', d: '2026-09-18', done: true },
+      { t: 'plaster drying', d: '2026-09-21', e: '2026-09-24' },
+      { t: 'chase the cabinet quote', d: '2026-09-23', rep: 4, rl: 'every 4 days' },
+      { t: 'site visit with the builder', d: '2026-09-24', s: '10:00', f: '11:00' },
+      { t: 'confirm alcove at 84cm', d: '2026-09-24' },
+      { t: 'pay the builder', d: '2026-09-25', rep: 7, rl: 'every fri' },
+      { t: 'order splashback samples', d: '2026-09-25', s: '14:00', f: '14:30' },
+      { t: 'choose oak veneer finish', d: '2026-09-26' },
+      { t: 'kitchen fitting', d: '2026-09-28', e: '2026-10-02' },
+      { t: 'renew insurance', d: '2026-09-28' },
+      { t: 'electrician, first fix', d: '2026-09-29', s: '08:30', f: '12:00' },
+      { t: 'standup', d: '2026-09-30', s: '09:30', f: '09:45' }
+    ];
+    const recs = empty ? [] : (pj(p.records) || defs);
+    // view range
+    const monday = t => t - dow(t) * DAY;
+    const fm = dt(focus), y = fm.getUTCFullYear(), mo = fm.getUTCMonth();
+    const m1 = Date.UTC(y, mo, 1), mDays = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    const gStart = monday(m1), nWeeks = Math.ceil((dow(m1) + mDays) / 7);
+    let vs, ve;
+    if (span === 'month') { vs = gStart; ve = gStart + (nWeeks * 7 - 1) * DAY; }
+    else if (span === 'week') { vs = monday(focus); ve = vs + 6 * DAY; }
+    else if (span === 'day') { vs = mob ? monday(focus) : focus; ve = mob ? vs + 6 * DAY : focus; }
+    else { vs = monday(focus); ve = vs + 13 * DAY; }
+    // expand records, with projected repeats
+    const occ = [];
+    recs.forEach(r => {
+      const s = D(r.d), e = r.e ? D(r.e) : s;
+      const o = { t: r.t, start: s, end: e, s: r.s, f: r.f, done: !!r.done, rl: r.rl, proj: false };
+      occ.push(o);
+      if (r.rep) for (let k = 1; k < 40; k++) { const ps = s + k * r.rep * DAY; if (ps > ve + 14 * DAY) break; occ.push({ ...o, start: ps, end: ps + (e - s), done: false, proj: true }); }
+    });
+    const multi = o => o.end > o.start;
+    const onDay = t => occ.filter(o => !multi(o) && o.start === t).sort((x, z) => (x.s ? hm(x.s) : -1) - (z.s ? hm(z.s) : -1));
+    const lanesFor = (ws, we) => {
+      const bs = occ.filter(o => multi(o) && o.start <= we && o.end >= ws).sort((x, z) => x.start - z.start);
+      const laneEnd = [];
+      return { bars: bs.map(o => { let l = laneEnd.findIndex(e => e < Math.max(o.start, ws)); if (l < 0) { l = laneEnd.length; laneEnd.push(0); } laneEnd[l] = o.end; return { o, l }; }), n: laneEnd.length };
+    };
+    const ell = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+    const boxSt = (o, sz) => ({ flex: 'none', width: sz, height: sz, borderRadius: sz > 11 ? 4 : 2.5, boxSizing: 'border-box', ...(o.done ? { background: a(.68) } : o.proj ? { border: `1px dashed ${a(.4)}` } : { boxShadow: `inset 0 0 0 1.4px ${a(.32)}` }) });
+    const tSt = (o, fs) => ({ flex: 1, minWidth: 0, fontSize: fs, lineHeight: 1.3, color: o.done || o.proj ? a(.68) : fg, ...(o.done ? { textDecoration: 'line-through' } : {}), ...ell });
+    const mSt = fs => ({ flex: 'none', fontSize: fs, fontWeight: 500, color: a(.8), fontVariantNumeric: 'tabular-nums' });
+    const ring = o => o.t === sel && !o.proj ? { boxShadow: `inset 0 0 0 1.5px ${fg}` } : {};
+    const todayNum = (t, sz, fs, inMonth = true) => ({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: sz, height: sz, borderRadius: 999, fontSize: fs, fontWeight: 500, fontVariantNumeric: 'tabular-nums', boxSizing: 'border-box', padding: '0 4px', ...(t === today ? { background: OR, color: INK } : { color: inMonth ? fg : a(.68) }) });
+    const goDay = t => () => this.setState({ span: mob && span !== 'day' ? span : 'day', pick: t, off: 0 });
+    const hair = a(ink ? .14 : .09);
+
+    // header
+    const wkLabel = (s, e) => dt(s).getUTCMonth() === dt(e).getUTCMonth() ? `${dt(s).getUTCDate()} – ${dm(e)} ${dt(e).getUTCFullYear()}` : `${dm(s)} – ${dm(e)} ${dt(e).getUTCFullYear()}`;
+    const periodLabel = span === 'month' ? `${MON[mo]} ${y}` : span === 'week' ? wkLabel(vs, ve) : span === 'day' ? `${DW[dow(focus)]} ${dm(focus)} ${y}` : `from ${dm(vs)}`;
+    const step = d => () => this.setState(s => {
+      if (s.pick) { const st = { month: 0, week: 7, day: 1, agenda: 14 }[span]; if (st) return { pick: s.pick + d * st * DAY }; const f = dt(s.pick); return { pick: Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + d, 1) }; }
+      return { off: s.off + d };
+    });
+    const spans = ['month', 'week', 'day', 'agenda'].map(k => ({ label: k, go: () => this.setState(s => ({ span: k, pick: s.pick ?? focus, off: 0 })), style: { padding: mob ? '9px 11px' : '4px 10px', borderRadius: 999, cursor: 'pointer', ...(k === span ? { background: fg, color: ink ? INK : '#FAF9EF' } : { color: a(.68) }) } }));
+    const root = { position: 'relative', width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: mob ? 12 : 14, padding: mob ? '14px 12px 16px' : '18px 20px 20px', borderRadius: 20, background: card, boxShadow: cardShadow, fontFamily: sans, color: fg };
+    const head = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+    const headL = { display: 'flex', alignItems: 'center', gap: 6, ...(mob ? { width: '100%', justifyContent: 'space-between' } : {}) };
+    const period = { fontSize: mob ? 16 : 15, fontWeight: 500, minWidth: mob ? 0 : 150, fontVariantNumeric: 'tabular-nums' };
+    const navs = { display: 'flex', alignItems: 'center', gap: 2 };
+    const nb = mob ? 44 : 28;
+    const navBtn = { width: nb, height: nb, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: fg };
+    const navHover = { background: a(.07) };
+    const headR = { display: 'flex', alignItems: 'center', gap: 8, ...(mob ? { width: '100%', justifyContent: 'space-between' } : {}) };
+    const seg = { display: 'flex', alignItems: 'center', gap: 4, padding: 3, background: a(ink ? .08 : .055), borderRadius: 999, fontWeight: 500, fontSize: mob ? 12 : 10.5 };
+    const todayBtn = { padding: mob ? '12px 14px' : '6px 12px', borderRadius: 999, fontWeight: 500, fontSize: mob ? 12 : 10.5, cursor: 'pointer', boxShadow: `inset 0 0 0 1px ${a(.2)}` };
+    const emptyLine = 'nothing in this view has a date. records show here once they have one.';
+    const emptyStyle = { fontSize: 13, color: a(.68), padding: '0 2px' };
+
+    // desktop month
+    const isMonthD = span === 'month' && !mob, isMonthM = span === 'month' && mob;
+    const dows = DW.map((l, i) => ({ l, style: { fontWeight: 500, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68), padding: mob ? '0 0 4px' : '0 8px 6px', textAlign: mob ? 'center' : 'left' } }));
+    const monthWrap = { display: 'flex', flexDirection: 'column' };
+    const dowRow = { display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))' };
+    const weeks = isMonthD ? Array.from({ length: nWeeks }, (_, w) => {
+      const ws = gStart + w * 7 * DAY, we = ws + 6 * DAY;
+      const { bars, n } = lanesFor(ws, we);
+      const cells = Array.from({ length: 7 }, (_, i) => {
+        const t = ws + i * DAY, inM = dt(t).getUTCMonth() === mo;
+        return { num: dt(t).getUTCDate(), go: goDay(t), style: { gridRow: `1 / ${n + 3}`, gridColumn: i + 1, borderLeft: i ? `1px solid ${hair}` : 'none', background: i > 4 ? a(.025) : 'transparent', padding: '6px 6px', cursor: 'pointer' }, numStyle: todayNum(t, 22, 12, inM) };
+      });
+      const bs = bars.map(({ o, l }) => {
+        const s = Math.max(o.start, ws), e = Math.min(o.end, we);
+        const cl = o.start < ws, cr = o.end > we;
+        return { t: o.t, style: { gridRow: l + 2, gridColumn: `${dow(s) + 1} / ${dow(e) + 2}`, zIndex: 1, height: 20, margin: `1px ${cr ? 0 : 5}px 1px ${cl ? 0 : 5}px`, display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: `${cl ? 0 : 6}px ${cr ? 0 : 6}px ${cr ? 0 : 6}px ${cl ? 0 : 6}px`, background: a(ink ? .12 : .075), minWidth: 0, pointerEvents: 'none', ...ring(o) }, tStyle: { fontSize: 11.5, fontWeight: 500, ...ell, color: o.done ? a(.68) : fg } };
+      });
+      const stacks = Array.from({ length: 7 }, (_, i) => {
+        const t = ws + i * DAY, list = onDay(t), show = list.slice(0, 3);
+        return { style: { gridRow: n + 2, gridColumn: i + 1, zIndex: 1, display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 4px 8px', minWidth: 0, pointerEvents: 'none' },
+          items: show.map(o => ({ t: o.t, m: o.s || '', style: { display: 'flex', alignItems: 'center', gap: 6, height: 20, padding: '0 4px', borderRadius: 6, minWidth: 0, ...ring(o) }, box: boxSt(o, 9), tStyle: tSt(o, 11.5), mStyle: mSt(10.5) })),
+          more: list.length > 3, moreLabel: `＋${list.length - 3} more`, moreStyle: { fontSize: 10.5, fontWeight: 500, color: a(.68), padding: '1px 4px' } };
+      });
+      return { style: { display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', gridTemplateRows: `30px ${n ? `repeat(${n},22px) ` : ''}minmax(0,1fr)`, minHeight: 108, borderTop: `1px solid ${hair}` }, cells, bars: bs, stacks };
+    }) : [];
+
+    // mobile month
+    const dotSt = o => ({ width: 4, height: 4, borderRadius: 999, boxSizing: 'border-box', ...(o.proj ? { border: `1px solid ${a(.5)}` } : { background: o.done ? a(.4) : fg }) });
+    const mGrid = { display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', rowGap: 2 };
+    const mCells = isMonthM ? Array.from({ length: nWeeks * 7 }, (_, i) => {
+      const t = gStart + i * DAY, inM = dt(t).getUTCMonth() === mo;
+      const dots = occ.filter(o => o.start <= t && o.end >= t).slice(0, 3).map(dotSt);
+      const isF = t === focus && t !== today;
+      return { num: dt(t).getUTCDate(), go: goDay(t), dots, style: { height: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer' },
+        numStyle: { ...todayNum(t, 28, 13, inM), ...(isF ? { boxShadow: `inset 0 0 0 1.4px ${fg}` } : {}) }, dotRow: { display: 'flex', gap: 3, height: 4 } };
+    }) : [];
+
+    // strip (mobile week/day)
+    const hasStrip = mob && (span === 'week' || span === 'day');
+    const stripDays = hasStrip ? Array.from({ length: 7 }, (_, i) => {
+      const t = monday(focus) + i * DAY, has = occ.some(o => o.start <= t && o.end >= t), isF = t === focus;
+      return { dl: DW[i].slice(0, 1), num: dt(t).getUTCDate(), go: () => this.setState({ pick: t, off: 0 }), style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '6px 0', borderRadius: 14, cursor: 'pointer', ...(isF ? { boxShadow: `inset 0 0 0 1.4px ${fg}` } : {}) },
+        dowStyle: { fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: a(.68) }, numStyle: todayNum(t, 28, 14), dot: { width: 4, height: 4, borderRadius: 999, background: has ? fg : 'transparent' } };
+    }) : [];
+    const strip = { display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', gap: 2 };
+
+    // time grid
+    const isTime = (!mob && (span === 'week' || span === 'day')) || (mob && span === 'day');
+    const days = !isTime ? [] : (span === 'week' ? Array.from({ length: 7 }, (_, i) => vs + i * DAY) : [focus]);
+    const H0 = 8, H1 = 19, HH = mob ? 48 : 44, gut = mob ? 40 : 52;
+    const cols = `${gut}px repeat(${days.length || 1},minmax(0,1fr))`;
+    const hasDayHead = isTime && !mob;
+    const tDays = days.map(t => ({ dl: DW[dow(t)], num: dt(t).getUTCDate(), go: goDay(t), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '0 8px 8px', cursor: 'pointer' }, dowStyle: { fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.1em', color: a(.68) }, numStyle: todayNum(t, 26, 15) }));
+    const tg = { display: 'flex', flexDirection: 'column' };
+    const tgHead = { display: 'grid', gridTemplateColumns: cols };
+    let adItems = [], adN = 1;
+    if (isTime) {
+      const ws = days[0], we = days[days.length - 1];
+      const { bars, n } = lanesFor(ws, we);
+      adItems = bars.map(({ o, l }) => {
+        const s = Math.max(o.start, ws), e = Math.min(o.end, we), cl = o.start < ws, cr = o.end > we;
+        const c0 = Math.round((s - ws) / DAY), c1 = Math.round((e - ws) / DAY);
+        return { t: o.t, box: { display: 'none' }, tStyle: { fontSize: 11.5, fontWeight: 500, ...ell }, style: { gridRow: l + 1, gridColumn: `${c0 + 2} / ${c1 + 3}`, height: 22, margin: `1px ${cr ? 0 : 4}px 1px ${cl ? 0 : 4}px`, display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: `${cl ? 0 : 6}px ${cr ? 0 : 6}px ${cr ? 0 : 6}px ${cl ? 0 : 6}px`, background: a(ink ? .12 : .075), minWidth: 0, ...ring(o) } };
+      });
+      let maxK = 0;
+      days.forEach((t, i) => { onDay(t).filter(o => !o.s).forEach((o, k) => { maxK = Math.max(maxK, k + 1); adItems.push({ t: o.t, box: boxSt(o, 9), tStyle: tSt(o, 11.5), style: { gridRow: n + 1 + k, gridColumn: i + 2, height: 22, display: 'flex', alignItems: 'center', gap: 6, padding: '0 6px', margin: '1px 2px', borderRadius: 6, minWidth: 0, ...ring(o) } }); }); });
+      adN = Math.max(1, n + maxK);
+    }
+    const adRow = { display: 'grid', gridTemplateColumns: cols, gridTemplateRows: `repeat(${adN},24px)`, padding: '6px 0', borderTop: `1px solid ${hair}`, borderBottom: `1px solid ${hair}` };
+    const adLabel = { gridRow: 1, gridColumn: 1, alignSelf: 'center', fontSize: 10.5, fontWeight: 500, color: a(.68) };
+    const bodyH = (H1 - H0) * HH;
+    const tgBody = { position: 'relative', display: 'grid', gridTemplateColumns: cols, gridTemplateRows: `${bodyH}px`, marginTop: 6 };
+    const hours = isTime ? Array.from({ length: H1 - H0 }, (_, i) => ({ l: `${String(H0 + i).padStart(2, '0')}:00`, line: { position: 'absolute', left: gut, right: 0, top: i * HH, height: 1, background: hair, gridArea: '1/1' }, style: { position: 'absolute', left: 0, top: i * HH - 6, fontSize: 10.5, fontWeight: 500, color: a(.68), fontVariantNumeric: 'tabular-nums', gridArea: '1/1' } })) : [];
+    const nowH = hm(p.now ?? '11:20');
+    const tCols = days.map((t, i) => {
+      const ev = onDay(t).filter(o => o.s);
+      const isNow = t === today && nowH >= H0 && nowH <= H1;
+      return { style: { gridRow: 1, gridColumn: i + 2, position: 'relative', borderLeft: `1px solid ${hair}`, background: dow(t) > 4 ? a(.025) : 'transparent' },
+        events: ev.map(o => { const s = hm(o.s), f = o.f ? hm(o.f) : s + .5, h = Math.max((f - s) * HH - 3, 22); return { t: o.t, m: `${o.s}${o.f ? '–' + o.f : ''}`, style: { position: 'absolute', left: 4, right: 4, top: (s - H0) * HH + 1, height: h, boxSizing: 'border-box', padding: h < 34 ? '3px 8px' : '6px 8px', borderRadius: 8, background: evBg, boxShadow: o.t === sel ? `inset 0 0 0 1.5px ${fg},${evShadow}` : evShadow, display: 'flex', flexDirection: h < 34 ? 'row' : 'column', alignItems: h < 34 ? 'center' : 'stretch', gap: h < 34 ? 6 : 2, overflow: 'hidden', zIndex: 1, ...(o.proj ? { opacity: .68 } : {}) }, tStyle: { fontSize: 12, fontWeight: 500, lineHeight: 1.25, ...ell, ...(h < 34 ? { flex: 1, minWidth: 0 } : {}) }, mStyle: mSt(10.5) }; }),
+        isNow, nowStyle: { position: 'absolute', left: 0, right: 0, top: (nowH - H0) * HH, height: 1.4, background: fg, zIndex: 2 }, nowDot: { position: 'absolute', left: -4, top: -3, width: 7, height: 7, borderRadius: 999, background: fg } };
+    });
+
+    // list (agenda, and mobile month/week day list)
+    const showList = span === 'agenda' || (mob && (span === 'month' || span === 'week'));
+    const listDays = !showList ? [] : span === 'agenda' ? Array.from({ length: 14 }, (_, i) => vs + i * DAY) : [focus];
+    const rowH = mob ? 44 : 38;
+    const agDays = listDays.map((t, i) => {
+      const items = occ.filter(o => o.start === t || (i === 0 && o.start < t && o.end >= t)).sort((x, z) => (multi(z) - multi(x)) || ((x.s ? hm(x.s) : -1) - (z.s ? hm(z.s) : -1)));
+      return { t, items };
+    }).filter(g => g.items.length || span !== 'agenda' || g.t === today).map(({ t, items }) => ({
+      num: dt(t).getUTCDate(), l: `${DW[dow(t)]} ${MS[dt(t).getUTCMonth()]}${t === today ? ' · today' : ''}`, none: !items.length,
+      style: { display: 'grid', gridTemplateColumns: mob ? '52px minmax(0,1fr)' : '88px minmax(0,1fr)', gap: mob ? 8 : 16, padding: '10px 0', borderTop: `1px solid ${hair}` },
+      headStyle: { display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 6 }, numStyle: { ...todayNum(t, 30, 20), alignSelf: 'flex-start', padding: t === today ? '0 4px' : 0, justifyContent: t === today ? 'center' : 'flex-start' }, lStyle: { fontSize: 10.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', color: a(.68) },
+      listStyle: { display: 'flex', flexDirection: 'column' }, noneStyle: { fontSize: 13, color: a(.68), padding: '10px 0' },
+      items: items.map(o => ({ t: o.t, m: multi(o) ? (o.start < t ? `until ${dm(o.end)}` : `${dm(o.start)} – ${dm(o.end)}`) : o.proj ? `projected · ${o.rl}` : o.s ? `${o.s}${o.f ? '–' + o.f : ''}` : (o.rl || ''),
+        style: { display: 'flex', alignItems: 'center', gap: 10, minHeight: rowH, padding: '0 8px', borderRadius: 10, minWidth: 0, ...ring(o) },
+        box: multi(o) ? { flex: 'none', width: 13, height: 6, borderRadius: 3, background: a(ink ? .2 : .14) } : boxSt(o, 13), tStyle: tSt(o, mob ? 15 : 14), mStyle: mSt(11) }))
+    }));
+    const agWrap = { display: 'flex', flexDirection: 'column' };
+
+    return { root, head, headL, period, periodLabel, navs, navBtn, navHover, prev: step(-1), next: step(1), headR, seg, spans, todayBtn, goToday: () => this.setState({ pick: today, off: 0 }),
+      isEmpty: empty, emptyLine, emptyStyle, isMonthD, monthWrap, dowRow, dows, weeks, isMonthM, mGrid, mCells, hasStrip, strip, stripDays,
+      isTime, tg, hasDayHead, tgHead, tDays, adRow, adLabel, adItems, tgBody, hours, tCols, showList, agWrap, agDays };
+  }
+}
+</script>
+</body>
+</html>
