@@ -35,9 +35,15 @@ Paths, given to every agent at launch: `HB=/tmp/ship-epics/<EPIC>/<role>[-<ticke
 The orchestrator supervises its build loop, reviewers and verifier; the conductor supervises the orchestrators.
 
 1. `mkdir -p /tmp/ship-epics/<EPIC>` and remove the child's old `HB` and `RESULT`. `LAUNCH` the child with its `HB` and `RESULT` paths. **Record the handle `LAUNCH` gives you** — `NUDGE` and `STOP` need it, and a child you cannot address is a child you cannot stop.
-2. **Poll**: `POLL HB`. While you poll, beat your own heartbeat with the child's step, its reapproach count and its limit plus a minute — `$H beat <your HB> "supervise <role>: <its step> #<reapproached>" <its limit + 60>` — so your clock moves when the child's work does, stalls when it stalls, and never fires before the child's own does.
+2. **Poll**: `POLL HB`. Between polls, keep your own heartbeat alive with **`relay`**, never a hand-composed `beat`:
 
-   **The child's step must appear verbatim, and must change as the child's changes.** `check` runs a step's clock from the first of a run of _identical_ beats, so a supervisor that beats a constant — `supervise builder: ralph kan-43` — never resets its own clock and reads `stalled` after its own limit while its child is perfectly healthy. That false positive happened on 2026-10-10 and cost a diagnosis. Copy the child's step out of `$H check` each time you poll; never abbreviate it to a fixed string, and never beat your own progress instead of the child's.
+   ```
+   $H relay <your HB> <the child's HB> <role>
+   ```
+
+   `relay` reads the child's current step, reapproach count and limit, and beats your heartbeat with them in the same breath — so your clock moves when the child's work does, stalls when it stalls, and never fires before the child's own does. It also prints the child's `check` line, so one call both beats and polls.
+
+   **Use it rather than composing the beat yourself.** A supervisor that reads the child's step once and then re-beats that same string never resets its own clock, because `check` runs a step's clock from the first of a run of _identical_ beats. It then reads `stalled` while its child is perfectly healthy and moving — which invites killing a working loop, the exact opposite of what this file is for. That false positive cost three diagnoses on 2026-10-10: once from beating a constant (`supervise builder: ralph kan-43`), and twice from copying a real child step and letting it go stale while the child moved on two items.
 
 3. **Act on what `check` says:**
    - `ok` — poll again.

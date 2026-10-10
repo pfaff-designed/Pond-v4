@@ -23,11 +23,12 @@ The shared role files in `REPO/ship-epics/` name no tools. This file is the only
 
 ## Shell
 
-| Name      | Call                                                                                                                                                                        |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUN ms`  | `Bash` with `timeout: <ms>`. **The tool caps `timeout` at 600000**, so no single call can outlast the failsafe's ten minutes. Nothing to remember and nothing to get wrong. |
-| `BG`      | `Bash` with `run_in_background: true`. Never `&`, never `nohup`. The call returns at once and you are re-invoked when the process exits.                                    |
-| `POLL HB` | `Bash` with `run_in_background: true` and the bounded until-loop below. You are re-invoked when it exits, so you wake on the child's change rather than on a timer.         |
+| Name      | Call                                                                                                                                                                                                       |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUN ms`  | `Bash` with `timeout: <ms>`. **The tool caps `timeout` at 600000**, so no single call can outlast the failsafe's ten minutes. Nothing to remember and nothing to get wrong.                                |
+| `BG`      | `Bash` with `run_in_background: true`. Never `&`, never `nohup`. The call returns at once and you are re-invoked when the process exits.                                                                   |
+| `POLL HB` | `Bash` with `run_in_background: true` and the bounded until-loop below. You are re-invoked when it exits, so you wake on the child's change rather than on a timer.                                        |
+| `RELAY`   | `Bash` running `$H relay <your HB> <child HB> <role>` — one call that beats your heartbeat with the child's current step and prints the child's state. Supervisors use this instead of composing a `beat`. |
 
 **Never poll with a foreground `sleep`.** This harness recognises a sleep-based polling loop and refuses
 the call — _"Foreground `sleep` is blocked; use Monitor with an until-loop"_ — and the refusal explicitly

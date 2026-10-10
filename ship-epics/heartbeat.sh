@@ -4,6 +4,12 @@
 #   heartbeat.sh beat       FILE STEP [LIMIT]   record that the agent is on STEP (LIMIT seconds, default 600)
 #   heartbeat.sh reapproach FILE STEP NOTE      record that STEP stalled and is being taken a different way
 #   heartbeat.sh check      FILE                ok | stalled | done | none, with the step and how long it has run
+#   heartbeat.sh relay      FILE CHILD ROLE     beat FILE with CHILD's CURRENT step, read in the same breath
+#
+# `relay` exists because a supervisor that copies its child's step once and then re-beats that
+# stale string never resets its own clock, so it reads `stalled` while its child is healthy and
+# moving. That false positive cost three diagnoses on 2026-10-10 and invites a supervisor to kill
+# a working loop. Supervisors use `relay` instead of composing a `beat` by hand.
 #
 # The agent beats DONE as its very last action, after writing its result file.
 #
@@ -58,6 +64,24 @@ case "$cmd" in
         printf "%s\t%ds\tlimit %ds\treapproached %d\t%s\n", state, age, limit, re[step] + 0, step
         exit (state == "stalled") ? 3 : 0
       }' "$file"
+    ;;
+  relay)
+    child="${3:?relay needs the CHILD heartbeat file}"
+    role="${4:-child}"
+    line="$("$0" check "$child" 2>/dev/null || echo none)"
+    state="$(printf '%s' "$line" | cut -f1)"
+    case "$state" in
+      done) "$0" beat "$file" "supervise $role: finished" 300 ;;
+      none) "$0" beat "$file" "supervise $role: awaiting its first beat" 240 ;;
+      *)
+        step="$(printf '%s' "$line" | cut -f5)"
+        reap="$(printf '%s' "$line" | cut -f4 | tr -dc '0-9')"
+        lim="$(printf '%s' "$line" | cut -f3 | tr -dc '0-9')"
+        [ -n "$lim" ] || lim=$DEFAULT_LIMIT
+        "$0" beat "$file" "supervise $role: ${step:-working} #${reap:-0}" $((lim + 60))
+        ;;
+    esac
+    printf '%s\n' "$line"
     ;;
   *)
     echo "unknown command: $cmd" >&2
