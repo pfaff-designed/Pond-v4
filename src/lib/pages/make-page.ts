@@ -121,7 +121,7 @@ export async function recordPageProposal(
   input: {
     userId: string
     /** #312: the pond whose change log records this proposal. */
-    pondId?: string | null
+    pondId: string | null
     threadId: string | null
     proposal: PageProposal
   }

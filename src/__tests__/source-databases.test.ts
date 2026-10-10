@@ -74,13 +74,14 @@ describe('fetchRecordCounts', () => {
         }).then(resolve),
     }
     const from = jest.fn(() => builder)
-    const counts = await fetchRecordCounts({ from } as never, 'user-1')
+    const counts = await fetchRecordCounts({ from } as never, 'user-1', 'pond-life')
     expect(from).toHaveBeenCalledTimes(1)
     expect(from).toHaveBeenCalledWith('pages')
     expect(calls).toEqual([
       ['select', 'parent_id'],
       ['eq', 'user_id=user-1'],
       ['eq', `type=${ROW_TYPE}`],
+      ['eq', 'pond_id=pond-life'],
     ])
     expect([...counts.entries()]).toEqual([
       ['recipes', 2],
@@ -95,6 +96,8 @@ describe('fetchRecordCounts', () => {
       then: (resolve: (v: unknown) => unknown) =>
         Promise.resolve({ data: null, error: { message: 'nope' } }).then(resolve),
     }
-    await expect(fetchRecordCounts({ from: () => builder } as never, 'u')).rejects.toThrow('nope')
+    await expect(
+      fetchRecordCounts({ from: () => builder } as never, 'u', 'pond-life')
+    ).rejects.toThrow('nope')
   })
 })

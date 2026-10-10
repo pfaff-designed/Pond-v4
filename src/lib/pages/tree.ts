@@ -10,7 +10,7 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
@@ -33,7 +33,7 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
+export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
@@ -45,9 +45,9 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // PondProvider — fall back to the person's first, which is also what `?pond=`
   // resolves to on a cold load. Never return every pond's pages: that is how a
   // new pond would show the first pond's tree.
-  const scope = pondId ?? (await firstPondId(supabase, user.id))
+  const pond = await resolvePond(supabase, user.id, pondId)
 
-  let q = supabase
+  const q = supabase
     .from('pages')
     // #134: glyph + area_role ride along, so the ONE pagesKey() cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
@@ -71,9 +71,7 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // Filters before `.order()`: a PostgREST builder is chainable either way, but
   // ordering last keeps the shape readable and means a test double does not have
   // to return a chainable from `order`.
-  if (scope) q = q.eq('pond_id', scope)
-
-  const { data, error } = await q.order('order')
+  const { data, error } = await inPond(q, pond).order('order')
   if (error) throw error
   return (data ?? []) as PageRow[]
 }

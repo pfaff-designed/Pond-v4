@@ -40,7 +40,7 @@ import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogStatus } 
 export interface ResolveRecordInput {
   userId: string
   /** #312: which pond's log. A tool call id is unique per pond, not globally. */
-  pondId?: string | null
+  pondId: string | null
   /** The tool call whose card the person just decided. */
   toolCallId: string
   /** The decision, which is also the status the record lands on — the card's own
@@ -128,7 +128,7 @@ export interface ProposalForAccept {
  */
 export async function readProposalForAccept(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string | null; pondId?: string | null; toolCallId: string }
+  opts: { userId: string | null; pondId: string | null; toolCallId: string }
 ): Promise<ProposalForAccept> {
   if (opts.userId === null) return { record: null, staleReason: null }
   let record: ChangeLogRecord | null = null
@@ -153,7 +153,7 @@ export async function readProposalForAccept(
 export interface CommitAcceptedEditInput {
   userId: string | null
   /** #312: the pond whose log is advanced and swept. */
-  pondId?: string | null
+  pondId: string | null
   /** The record behind this accept, from {@link readProposalForAccept}. */
   record: ChangeLogRecord | null
   /** The page actually being written — the one the PERSON chose. */

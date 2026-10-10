@@ -20,7 +20,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 
 /** The reserved page type that marks the Life home row. */
 export const HOME_TYPE = 'home' as const
@@ -48,7 +48,7 @@ function toBlocks(value: unknown): Block[] {
  */
 export async function getOrCreateHomePage(
   supabase: SupabaseClient<Database>,
-  pondId?: string | null,
+  pondId: string | null,
   /**
    * #320: "a pond is born with one row, its root, titled with the pond's own
    * name." Omitted, the root falls back to `life` — which is right for the first
@@ -63,9 +63,9 @@ export async function getOrCreateHomePage(
 
   // Same fallback as `fetchPages`: a surface outside the shell's PondProvider
   // gets the person's first pond rather than the wrong pond's root.
-  const scope = pondId ?? (await firstPondId(supabase, user.id))
+  const pond = await resolvePond(supabase, user.id, pondId)
 
-  const existing = await readHomeRow(supabase, user.id, scope)
+  const existing = await readHomeRow(supabase, user.id, pond)
   if (existing) return existing
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,7 +74,7 @@ export async function getOrCreateHomePage(
     .from('pages')
     .insert({
       user_id: user.id,
-      ...(scope ? { pond_id: scope } : {}),
+      ...(pond ? { pond_id: pond } : {}),
       parent_id: null,
       type: HOME_TYPE,
       // #320: titled with the POND's name. Lowercase, like every other page name
@@ -93,7 +93,7 @@ export async function getOrCreateHomePage(
     // Lost the create race (unique index) or a transient failure — re-read the
     // winning row. If that also comes back empty, surface null rather than throw
     // so the caller can show a loading state rather than crash.
-    return readHomeRow(supabase, user.id, scope)
+    return readHomeRow(supabase, user.id, pond)
   }
 
   return {
@@ -107,23 +107,21 @@ export async function getOrCreateHomePage(
 async function readHomeRow(
   supabase: SupabaseClient<Database>,
   userId: string,
-  pondId: string | null
+  pond: string | null
 ): Promise<HomePage | null> {
   // #312: scoped by POND, not just by person. Without the pond clause a second
   // pond's get-or-create reads the FIRST pond's root and hands it back — the
   // blocker 0018 refused to create a second root around, closed by 0019 dropping
   // `pages_one_home_per_user`.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('id, title, blocks')
     .eq('user_id', userId)
     .eq('type', HOME_TYPE)
     .is('parent_id', null)
 
-  if (pondId) q = q.eq('pond_id', pondId)
-
-  const { data } = await q.limit(1).maybeSingle()
+  const { data } = await inPond(q, pond).limit(1).maybeSingle()
 
   if (!data) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

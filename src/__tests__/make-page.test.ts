@@ -268,6 +268,7 @@ describe('recordPageProposal — born `proposed`, in the proposed view', () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ok = await recordPageProposal(supabase as any, {
+      pondId: 'pond-1',
       userId: 'user-1',
       threadId: null,
       proposal: proposal(),

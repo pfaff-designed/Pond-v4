@@ -21,6 +21,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { PageRow } from '@/lib/pages/tree'
 import { isDatabasesRoot } from '@/lib/pages/databases-root'
 import { ROW_TYPE } from '@/lib/properties/schema'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import type { SourceDatabase } from '@/components/molecules/source-entries'
 
 /** Records per database — a map from the collection page's id to its `row` count. */
@@ -54,14 +55,17 @@ export function sourceDatabases(rows: readonly PageRow[], counts: RecordCounts):
  */
 export async function fetchRecordCounts(
   supabase: SupabaseClient<Database>,
-  userId: string
+  userId: string,
+  pondId: string | null
 ): Promise<RecordCounts> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('parent_id')
     .eq('user_id', userId)
     .eq('type', ROW_TYPE)
+  const { data, error } = await inPond(q, pond)
   if (error) throw new Error(error.message)
   const counts = new Map<string, number>()
   for (const r of (data ?? []) as { parent_id: string | null }[]) {

@@ -165,12 +165,16 @@ function tripPacking(opts: { single?: boolean; stoveLinks?: string[] } = {}): St
 describe('linkRecordsFromProposal', () => {
   it('links a target row into the source row’s relation value (titles → ids)', async () => {
     const sb = makeSupabase(tripPacking())
-    const out = await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      fromRow: 'Stove',
-      relation: 'Packs With',
-      toRows: ['Tent'],
-    })
+    const out = await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        fromRow: 'Stove',
+        relation: 'Packs With',
+        toRows: ['Tent'],
+      },
+      'pond-1'
+    )
     expect(out).toMatchObject({
       sourceRowId: 'row-stove',
       propertyId: 'p-packs',
@@ -181,47 +185,63 @@ describe('linkRecordsFromProposal', () => {
 
   it('appends to an existing multi value and dedupes an already-linked id', async () => {
     const sb = makeSupabase(tripPacking({ stoveLinks: ['row-rope'] }))
-    await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      fromRow: 'Stove',
-      relation: 'Packs With',
-      toRows: ['Tent', 'Rope'],
-    })
+    await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        fromRow: 'Stove',
+        relation: 'Packs With',
+        toRows: ['Tent', 'Rope'],
+      },
+      'pond-1'
+    )
     // Rope was already linked → deduped; Tent appended. ADD-only: nothing removed.
     expect(sb._page('row-stove')?.props['p-packs']).toEqual(['row-rope', 'row-tent'])
   })
 
   it('a single relation REPLACES the value with the picked row (radio cap)', async () => {
     const sb = makeSupabase(tripPacking({ single: true, stoveLinks: ['row-rope'] }))
-    await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      fromRow: 'Stove',
-      relation: 'Packs With',
-      toRows: ['Tent'],
-    })
+    await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        fromRow: 'Stove',
+        relation: 'Packs With',
+        toRows: ['Tent'],
+      },
+      'pond-1'
+    )
     expect(sb._page('row-stove')?.props['p-packs']).toEqual(['row-tent'])
   })
 
   it('matches the relation property name case-insensitively', async () => {
     const sb = makeSupabase(tripPacking())
-    await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-trip',
-      fromRow: 'Stove',
-      relation: 'packs with',
-      toRows: ['Rope'],
-    })
+    await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-trip',
+        fromRow: 'Stove',
+        relation: 'packs with',
+        toRows: ['Rope'],
+      },
+      'pond-1'
+    )
     expect(sb._page('row-stove')?.props['p-packs']).toEqual(['row-rope'])
   })
 
   it('throws on an unresolvable target title — never writes a dangling id', async () => {
     const sb = makeSupabase(tripPacking())
     await expect(
-      linkRecordsFromProposal(sb as never, {
-        collectionId: 'coll-trip',
-        fromRow: 'Stove',
-        relation: 'Packs With',
-        toRows: ['Lantern'],
-      })
+      linkRecordsFromProposal(
+        sb as never,
+        {
+          collectionId: 'coll-trip',
+          fromRow: 'Stove',
+          relation: 'Packs With',
+          toRows: ['Lantern'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/no row titled .*Lantern/i)
     expect(sb._updates).toHaveLength(0)
   })
@@ -239,12 +259,16 @@ describe('linkRecordsFromProposal', () => {
     })
     const sb = makeSupabase(pages)
     await expect(
-      linkRecordsFromProposal(sb as never, {
-        collectionId: 'coll-trip',
-        fromRow: 'Stove',
-        relation: 'Packs With',
-        toRows: ['Tent'],
-      })
+      linkRecordsFromProposal(
+        sb as never,
+        {
+          collectionId: 'coll-trip',
+          fromRow: 'Stove',
+          relation: 'Packs With',
+          toRows: ['Tent'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/multiple rows titled .*Tent/i)
     expect(sb._updates).toHaveLength(0)
   })
@@ -252,12 +276,16 @@ describe('linkRecordsFromProposal', () => {
   it('throws when the source row title matches nothing in the collection', async () => {
     const sb = makeSupabase(tripPacking())
     await expect(
-      linkRecordsFromProposal(sb as never, {
-        collectionId: 'coll-trip',
-        fromRow: 'Lantern',
-        relation: 'Packs With',
-        toRows: ['Tent'],
-      })
+      linkRecordsFromProposal(
+        sb as never,
+        {
+          collectionId: 'coll-trip',
+          fromRow: 'Lantern',
+          relation: 'Packs With',
+          toRows: ['Tent'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/no row titled .*Lantern/i)
     expect(sb._updates).toHaveLength(0)
   })
@@ -265,12 +293,16 @@ describe('linkRecordsFromProposal', () => {
   it('throws when the named property is not a relation on the collection', async () => {
     const sb = makeSupabase(tripPacking())
     await expect(
-      linkRecordsFromProposal(sb as never, {
-        collectionId: 'coll-trip',
-        fromRow: 'Stove',
-        relation: 'Weight',
-        toRows: ['Tent'],
-      })
+      linkRecordsFromProposal(
+        sb as never,
+        {
+          collectionId: 'coll-trip',
+          fromRow: 'Stove',
+          relation: 'Weight',
+          toRows: ['Tent'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/no relation .*Weight/i)
     expect(sb._updates).toHaveLength(0)
   })
@@ -278,12 +310,16 @@ describe('linkRecordsFromProposal', () => {
   it('throws when the collection does not exist or has no schema (card can revert)', async () => {
     const sb = makeSupabase(tripPacking())
     await expect(
-      linkRecordsFromProposal(sb as never, {
-        collectionId: 'ghost',
-        fromRow: 'Stove',
-        relation: 'Packs With',
-        toRows: ['Tent'],
-      })
+      linkRecordsFromProposal(
+        sb as never,
+        {
+          collectionId: 'ghost',
+          fromRow: 'Stove',
+          relation: 'Packs With',
+          toRows: ['Tent'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/not found/i)
 
     const noSchema = makeSupabase([
@@ -298,12 +334,16 @@ describe('linkRecordsFromProposal', () => {
       },
     ])
     await expect(
-      linkRecordsFromProposal(noSchema as never, {
-        collectionId: 'plain',
-        fromRow: 'Stove',
-        relation: 'Packs With',
-        toRows: ['Tent'],
-      })
+      linkRecordsFromProposal(
+        noSchema as never,
+        {
+          collectionId: 'plain',
+          fromRow: 'Stove',
+          relation: 'Packs With',
+          toRows: ['Tent'],
+        },
+        'pond-1'
+      )
     ).rejects.toThrow(/not a collection/i)
   })
 
@@ -338,12 +378,16 @@ describe('linkRecordsFromProposal', () => {
       },
     ]
     const sb = makeSupabase(pages)
-    const out = await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-notes',
-      fromRow: 'Kiln idea',
-      relation: 'Related',
-      toRows: ['Ceramics Studio Plan'],
-    })
+    const out = await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-notes',
+        fromRow: 'Kiln idea',
+        relation: 'Related',
+        toRows: ['Ceramics Studio Plan'],
+      },
+      'pond-1'
+    )
     expect(out.targetCollectionId).toBeUndefined()
     expect(sb._page('row-idea')?.props['p-rel']).toEqual(['page-studio'])
   })
@@ -392,12 +436,16 @@ describe('linkRecordsFromProposal', () => {
       },
     ]
     const sb = makeSupabase(pages)
-    const out = await linkRecordsFromProposal(sb as never, {
-      collectionId: 'coll-tasks',
-      fromRow: 'Pick tile',
-      relation: 'Project',
-      toRows: ['Kitchen Reno'],
-    })
+    const out = await linkRecordsFromProposal(
+      sb as never,
+      {
+        collectionId: 'coll-tasks',
+        fromRow: 'Pick tile',
+        relation: 'Project',
+        toRows: ['Kitchen Reno'],
+      },
+      'pond-1'
+    )
     expect(out.targetCollectionId).toBe('coll-projects')
     expect(sb._page('row-tile')?.props['p-proj']).toEqual(['row-reno'])
   })

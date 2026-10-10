@@ -2,6 +2,8 @@
  * Resolving a page reference — a UUID or a title — to a page id. Framework-agnostic.
  */
 
+import { inPond, resolvePond } from '@/lib/pond/scope'
+
 // ── UUID validation ────────────────────────────────────────────────────────
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -19,10 +21,9 @@ export async function resolveParentId(
   pondId: string | null
 ): Promise<string> {
   if (UUID_RE.test(idOrName)) return idOrName
-  let q = sb.from('pages').select('id').eq('user_id', userId)
-  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { data, error } = await q.ilike('title', idOrName).limit(1).maybeSingle()
+  const pond = await resolvePond(sb, userId, pondId)
+  const q = sb.from('pages').select('id').eq('user_id', userId)
+  const { data, error } = await inPond(q, pond).ilike('title', idOrName).limit(1).maybeSingle()
   if (error || !data) throw new Error(`Page "${idOrName}" not found`)
   return data.id as string
 }

@@ -61,6 +61,7 @@ describe('resolveChangeLogRecord', () => {
     mockedLookup.mockResolvedValue(record('proposed'))
 
     const out = await resolveChangeLogRecord(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       toolCallId: 'call-1',
       decision: 'rejected',
@@ -78,6 +79,7 @@ describe('resolveChangeLogRecord', () => {
     mockedLookup.mockResolvedValue(record('accepted'))
 
     const out = await resolveChangeLogRecord(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       toolCallId: 'call-1',
       decision: 'accepted',
@@ -92,6 +94,7 @@ describe('resolveChangeLogRecord', () => {
 
     await expect(
       resolveChangeLogRecord(supabase, {
+        pondId: 'pond-1',
         userId: USER,
         toolCallId: 'never-logged',
         decision: 'accepted',
@@ -110,6 +113,7 @@ describe('resolveChangeLogRecord', () => {
 
     await expect(
       resolveChangeLogRecord(supabase, {
+        pondId: 'pond-1',
         userId: USER,
         toolCallId: 'call-1',
         decision: 'rejected',
@@ -120,6 +124,7 @@ describe('resolveChangeLogRecord', () => {
     mockedLookup.mockRejectedValue(new Error('offline'))
     await expect(
       resolveChangeLogRecord(supabase, {
+        pondId: 'pond-1',
         userId: USER,
         toolCallId: 'call-1',
         decision: 'rejected',

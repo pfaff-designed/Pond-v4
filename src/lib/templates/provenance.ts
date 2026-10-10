@@ -33,6 +33,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { PondTemplate } from './types'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 
 // ── The stamp ────────────────────────────────────────────────────────────────
 
@@ -90,18 +91,17 @@ function stampFilter(templateId: string): Record<string, unknown> {
 export async function countPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond to count in; null, the person's first (`s6m5`). */
+  pondId: string | null,
   templateId: string
 ): Promise<number> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { count, error } = await q.contains('props', stampFilter(templateId))
+  const { count, error } = await inPond(q, pond).contains('props', stampFilter(templateId))
 
   if (error) throw new Error(error.message)
   return count ?? 0
@@ -126,18 +126,18 @@ type MadeFromRow = {
 export async function listPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond to list from; null, the person's first (`s6m5`). */
+  pondId: string | null,
   templateId: string,
   limit = 20
 ): Promise<PageMadeFrom[]> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('id, title, parent_id, props')
     .eq('user_id', userId)
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { data, error } = await q
+  const { data, error } = await inPond(q, pond)
     .contains('props', stampFilter(templateId))
     .order('updated_at', { ascending: false })
     .limit(limit)
@@ -163,13 +163,14 @@ export async function listPagesMadeFrom(
 export async function siblingTemplateRanking(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond the siblings live in; null, the person's first (`s6m5`). */
+  pondId: string | null,
   parentId: string | null
 ): Promise<string[]> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = (supabase as any).from('pages').select('props').eq('user_id', userId)
-  if (pondId) query = query.eq('pond_id', pondId)
+  const q: any = (supabase as any).from('pages').select('props').eq('user_id', userId)
+  let query = inPond(q, pond)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.
   query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId)

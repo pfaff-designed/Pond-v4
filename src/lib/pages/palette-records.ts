@@ -22,6 +22,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { formatTick } from '@/lib/modules/view/gantt-shared'
+import { inPond } from '@/lib/pond/scope'
 import type { Database, Json } from '@/lib/supabase/types'
 import {
   optionForValue,
@@ -127,12 +128,10 @@ export async function searchRecords(
   // The hand-authored `Database` types this select as `never[]`, so rows are cast
   // to their real shape, as `fetchPages` does.
   const rows = () =>
-    supabase
-      .from('pages')
-      .select('id, parent_id, title, props')
-      .eq('type', ROW_TYPE)
-      .eq('pond_id', pondId)
-      .order('updated_at', { ascending: false })
+    inPond(
+      supabase.from('pages').select('id, parent_id, title, props').eq('type', ROW_TYPE),
+      pondId
+    ).order('updated_at', { ascending: false })
 
   const { data: titled, error } = await rows()
     .ilike('title', `%${escapeLike(q)}%`)

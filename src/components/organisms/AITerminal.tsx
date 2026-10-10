@@ -1348,6 +1348,7 @@ export function AITerminal() {
       if (!user || cancelled) return
       const records = await listRecordsByToolCalls(supabase, {
         userId: user.id,
+        pondId,
         toolCallIds: [...liveDiffCards.keys()],
       })
       if (cancelled) return
