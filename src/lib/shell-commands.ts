@@ -1,5 +1,5 @@
 /**
- * The command-key chords — ⌘K for the palette, ⌘/ for a block's menu — read the
+ * The command-key chords — ⌘K for the palette, ⌘/ for a block's menu, ⌘. for zen — read the
  * same way wherever they are pressed.
  */
 
@@ -28,5 +28,14 @@ export const isPaletteChord = (e: KeyboardEvent) => {
 /** ⌘/ on a Mac, Ctrl+/ everywhere else: the focused block's menu. */
 export const isBlockMenuChord = (e: KeyboardEvent) => {
   if (e.altKey || e.key !== '/') return false
+  return isCommandOnly(e)
+}
+
+/**
+ * ⌘. on a Mac, Ctrl+. everywhere else: zen (`Pond 06.17` 6q frame 1). Mid-composition
+ * it is the IME's — macOS cancels a composition with ⌘. — so it is left alone then.
+ */
+export const isZenChord = (e: KeyboardEvent) => {
+  if (e.altKey || e.shiftKey || e.isComposing || e.key !== '.') return false
   return isCommandOnly(e)
 }

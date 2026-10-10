@@ -46,7 +46,7 @@ describe('DocumentPanel — the title row', () => {
     expect(row.className).toContain('flex')
     expect(row.className).toContain('items-end')
     expect(row.className).toContain('justify-between')
-    expect(row.className).toContain('px-[4px]')
+    expect(row.style.paddingInline).toBe('4px')
     expect(row.lastElementChild).toBe(screen.getByText('project — saved'))
   })
 

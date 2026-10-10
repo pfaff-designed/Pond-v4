@@ -7,9 +7,9 @@
  * first block on an empty page is always one click away. Mid-page, a block is
  * added by Return after a block, then `/` — nothing is drawn between blocks.
  */
-export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
+export function AddBlockButton({ onAdd, hidden }: { onAdd: () => void; hidden?: boolean }) {
   return (
-    <div className="mt-4">
+    <div className="mt-4" hidden={hidden}>
       <button
         className="font-mono lowercase text-xs text-mn-text-secondary hover:text-mn-text-meta transition-colors"
         aria-label="Add a block"

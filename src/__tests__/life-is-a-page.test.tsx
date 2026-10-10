@@ -17,6 +17,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
+import { homeQueryKey } from '@/lib/pages/keys'
+import type { HomePage } from '@/lib/pages/home'
+import { PondContext } from '@/lib/pond/context'
 import type { Block } from '@/lib/documents/types'
 import { withPathProbe } from './helpers/command-path-probe'
 import { findTextBlock, writeInTextBlock } from './helpers/text-block'
@@ -304,5 +307,34 @@ describe('an area is the same page (#108, #234)', () => {
       expect.anything(),
       expect.anything()
     )
+  })
+})
+
+describe('renaming the root page (#312: one root per pond)', () => {
+  const POND = { id: 'pond-1', name: 'garden', glyph: null, theme: 'default', order: 0 }
+
+  it('the new title lands in this pond’s home cache, the one the breadcrumb reads', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <PondContext.Provider
+          value={{ pond: POND, ponds: [POND], loading: false, reload: () => {}, addPond: () => {} }}
+        >
+          <DeletionUndoProvider>
+            <DocumentPanel />
+          </DeletionUndoProvider>
+        </PondContext.Provider>
+      </QueryClientProvider>
+    )
+    const title = await screen.findByLabelText('Page title')
+    const home = () => client.getQueryData<HomePage | null>(homeQueryKey('pond-1'))
+    expect(home()?.title).toBe('life')
+
+    fireEvent.change(title, { target: { value: 'garden' } })
+
+    await waitFor(() =>
+      expect(mockUpdateTitle).toHaveBeenCalledWith(expect.anything(), 'home-1', 'garden')
+    )
+    await waitFor(() => expect(home()?.title).toBe('garden'))
   })
 })

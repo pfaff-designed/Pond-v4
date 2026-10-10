@@ -8,8 +8,9 @@
  *            and the page you are on". That inference does not exist yet (#285),
  *            so the shell passes none and the group draws nothing: offered when
  *            true, never faked (`PROJECT_RULES.md`; the #239 precedent).
- *   typing   `pages`, then `records`, then `actions` (the matched ones, then
- *            `ask pond about “q”`); `ponds` lead when one matches (6m), and
+ *   typing   `pages`, then `records`, then `mode` (zen, `Pond 06.17` 6q frame 1),
+ *            then `actions` (the matched ones, then `ask pond about “q”` unless the
+ *            host cannot ask); `ponds` lead when one matches (6m), and
  *            `new pond “q”` joins the actions.
  *   actions  a leading `>` drops pages and records.
  *   empty    no dead end: a note, ask pond, make the page, then `did you mean`.
@@ -19,6 +20,7 @@
  * — one owner, not a second copy.
  */
 
+import type { ZenAction } from '@/lib/layout/use-zen-commands'
 import { normalizeQuery, splitMatch } from './slash-entries'
 
 export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
@@ -33,7 +35,7 @@ export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
  * board `6i` frame 3: "Saving is a page action, so it lives in the command
  * palette, not the / menu."
  */
-export type PaletteAction = 'new-page' | 'new-pond' | 'ask-pond' | 'save-as-template'
+export type PaletteAction = 'new-page' | 'new-pond' | 'ask-pond' | 'save-as-template' | ZenAction
 
 export interface PaletteItem {
   id: string
@@ -54,6 +56,8 @@ export interface PaletteItem {
   path?: readonly string[]
   /** Set on the rows the palette mints from the query itself (`ask pond about “q”`). */
   query?: string
+  /** An action that lists under its own group rather than `actions` — zen's `mode` (6q frame 1). */
+  group?: 'mode'
 }
 
 export interface PaletteScope {
@@ -84,6 +88,12 @@ export interface PaletteOptions {
    * is drawn.
    */
   suggested?: readonly PaletteItem[]
+  /**
+   * Whether the palette mints `ask pond about “q”`. The row lands in the composer,
+   * so a host whose composer is out of sight (zen) passes false rather than offer
+   * a row that does nothing visible. @default true
+   */
+  ask?: boolean
 }
 
 /** The ids of the two rows the palette mints from the query — the host acts on them. */
@@ -103,7 +113,13 @@ const DID_YOU_MEAN_MAX = 3
 export function paletteEntries(
   items: readonly PaletteItem[],
   query: string,
-  { scope = null, pondName = 'life', parentTitle = pondName, suggested = [] }: PaletteOptions = {}
+  {
+    scope = null,
+    pondName = 'life',
+    parentTitle = pondName,
+    suggested = [],
+    ask: canAsk = true,
+  }: PaletteOptions = {}
 ): PaletteEntry[] {
   const q = normalizeQuery(query)
 
@@ -143,17 +159,26 @@ export function paletteEntries(
   // A record is searched by the host (title or field value), so it is not
   // filtered on its label again here — a field match would never survive that.
   const records = pool.filter((i) => i.kind === 'record')
-  const actions = hits(['action'], items)
-  const ask: PaletteItem = {
-    id: ASK_POND_ID,
-    label: `ask pond about “${q}”`,
-    kind: 'action',
-    action: 'ask-pond',
-    query: q,
-  }
+  const matched = hits(['action'], items)
+  const modes = matched.filter((i) => i.group === 'mode')
+  const actions = matched.filter((i) => i.group !== 'mode')
+  const ask: PaletteEntry[] = canAsk
+    ? [
+        row(
+          {
+            id: ASK_POND_ID,
+            label: `ask pond about “${q}”`,
+            kind: 'action',
+            action: 'ask-pond',
+            query: q,
+          },
+          ''
+        ),
+      ]
+    : []
 
   // A query that matches only an action is not empty: the `typing` frame lists it.
-  if (!ponds.length && !pages.length && !records.length && !actions.length) {
+  if (!ponds.length && !pages.length && !records.length && !matched.length) {
     const make: PaletteItem = {
       id: NEW_PAGE_ID,
       label: `new page “${q}” under ${parentTitle}`,
@@ -164,7 +189,7 @@ export function paletteEntries(
     const near = didYouMean(pool, q)
     return [
       { kind: 'note', text: `no page or record called “${q}”` },
-      row(ask, ''),
+      ...ask,
       row(make, ''),
       ...(near.length ? [group('did you mean'), ...near.map((i) => row(i, '', subOf(i)))] : []),
     ]
@@ -178,6 +203,7 @@ export function paletteEntries(
       ...pages.map((i) => row(i, q, subOf(i)))
     )
   if (records.length) out.push(group('records'), ...records.map((i) => row(i, q, subOf(i))))
+  if (modes.length) out.push(group('mode'), ...modes.map((i) => row(i, q)))
   // `ponds` state: `new pond “q”` stands where the person is looking at ponds.
   const newPond: PaletteItem = {
     id: NEW_POND_ID,
@@ -186,12 +212,12 @@ export function paletteEntries(
     action: 'new-pond',
     query: q,
   }
-  out.push(
-    group('actions'),
+  const actionRows = [
     ...actions.map((i) => row(i, q)),
     ...(ponds.length ? [row(newPond, '')] : []),
-    row(ask, '')
-  )
+    ...ask,
+  ]
+  if (actionRows.length) out.push(group('actions'), ...actionRows)
   return out
 }
 

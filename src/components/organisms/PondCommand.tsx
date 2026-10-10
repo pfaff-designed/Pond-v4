@@ -92,6 +92,8 @@ export interface PondCommandProps {
   parentTitle?: string
   /** The `opened` state's `suggested` actions, when the host can infer them (#285). */
   suggested?: readonly PaletteItem[]
+  /** False while the composer is out of sight: no `ask pond about “q”` row. @default true */
+  ask?: boolean
   /** The query as it changes — how the host learns what to search records for. */
   onQueryChange?: (query: string) => void
   /** The query it first opens with — stories draw the board's frames. */
@@ -103,13 +105,11 @@ export interface PondCommandProps {
   className?: string
 }
 
-const ramp = (from: number, span: number) =>
-  `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
+const ramp = (from: number, span: number) => `clamp(0, calc((var(--e, 0) - ${from}) / ${span}), 1)`
 
 const MORPH = {
   box: {
-    width:
-      'calc(var(--rest-w, 240px) + (var(--open-w) - var(--rest-w, 240px)) * var(--e, 0))',
+    width: 'calc(var(--rest-w, 240px) + (var(--open-w) - var(--rest-w, 240px)) * var(--e, 0))',
     height: 'calc(40px + var(--body-h, 0px) * var(--e, 0))',
   },
   path: { opacity: 'clamp(0, calc(1 - var(--e, 0) / 0.35), 1)' },
@@ -149,8 +149,7 @@ const SCOPE =
 const BODY = 'absolute top-[39px] left-[-1px] w-[var(--open-w)]'
 const LIST = 'flex max-h-[60vh] flex-col gap-[2px] overflow-y-auto px-[10px] pt-[6px]'
 const GROUP = `${pageEyebrowClass} px-[12px] pt-[8px] pb-[4px]`
-const NOTE =
-  'px-[12px] py-[10px] font-mono text-[13px] text-mn-text-meta md:text-[12px]'
+const NOTE = 'px-[12px] py-[10px] font-mono text-[13px] text-mn-text-meta md:text-[12px]'
 const FOOT =
   'mt-[6px] flex flex-wrap gap-[14px] border-t border-mn-text/[0.09] px-[22px] pt-[10px] pb-[14px] font-mono text-[10.5px] text-mn-text-secondary'
 
@@ -164,6 +163,7 @@ export function PondCommand({
   pondName = 'life',
   parentTitle,
   suggested,
+  ask = true,
   onQueryChange,
   defaultQuery = '',
   sheet = null,
@@ -200,7 +200,13 @@ export function PondCommand({
   const shownItems = open ? items : held.items
   const shownSheet = open ? sheet : held.sheet
 
-  const entries = paletteEntries(shownItems, query, { scope, pondName, parentTitle, suggested })
+  const entries = paletteEntries(shownItems, query, {
+    scope,
+    pondName,
+    parentTitle,
+    suggested,
+    ask,
+  })
   const rows = entries.filter((e): e is PaletteRowEntry => e.kind === 'row')
   const active = Math.min(
     sel.query === query && sel.scope === scope ? sel.index : 0,
@@ -391,7 +397,15 @@ export function PondCommand({
           className={MODE}
           onClick={handleModeClick}
         >
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            aria-hidden
+          >
             <circle cx="7" cy="7" r="5" />
             <path d="M7 2a5 5 0 0 1 0 10Z" fill="currentColor" stroke="none" />
           </svg>
