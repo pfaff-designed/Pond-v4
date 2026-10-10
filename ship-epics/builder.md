@@ -31,7 +31,7 @@ path_test:
 verify_steps:
 ```
 
-Each item is **one thin step that leaves the branch green**: one acceptance criterion, one state of a component, one wiring hop from a control a person can see down to the data. A pass of ten minutes builds it test-first and commits it. Name in the item what it adds and the test that proves it.
+Each item is **one thin step that leaves the branch green**: one acceptance criterion, one state of a component, one wiring hop from a control a person can see down to the data. A pass of ten minutes builds it test-first and commits it — so size each item for **about six minutes of work, not ten**. A pass killed at its limit commits nothing and spends the item's one allowed miss; a second miss stops the loop. On 2026-10-10 three of eight items each cost an extra pass for this reason alone, roughly thirty minutes of one run. When in doubt, split. Name in the item what it adds and the test that proves it.
 
 `PATH_STEPS` is how a person reaches this feature in the running app, and **every step of it must work when the plan is done**, entry point included — the button, the menu row, the shortcut listed somewhere visible. Order the items so the entry point exists early, and make the last build item the path test: render the real surface that hosts the entry point (not the new component alone), act on it with `userEvent`, assert what a person sees. If a step of the path cannot be built inside this ticket, write that item as `- [!] <the step> — <why, and which ticket owns it>` and stop.
 
@@ -41,7 +41,7 @@ Your item is named at the end of this prompt. Do that item and nothing else.
 
 1. If `## Attempts` names your item, an earlier pass failed at it. Read why, and take a different route — never the same approach again.
 2. Test first: write the failing test, run it, make it pass, then refactor. Run only what the item touches: `npx jest <test file> --testPathIgnorePatterns "/node_modules/" "/\.claude/" "\.pglite\.test\.ts$" "/__tests__/helpers/"`, `npx tsc --noEmit`, `npx eslint <changed files>`. The loop runs the full gates once every item is ticked.
-3. Commit: `git add <the files>` and `git commit -m "feat: <what a person can now do> (TICKET)"` — `fix:` for a `fix:` or `gates:` item.
+3. Commit: `git add <the files>` and `git commit -m "feat: <what a person can now do> (TICKET)"` — `fix:` for a `fix:` or `gates:` item. **The message describes what the code in that commit does, nothing more.** On 2026-10-10 a commit called "the picked mark shows in the breadcrumb and ⌘K at once" added a test file and no production change at all, and the test asserted the opposite of the spec — so a named acceptance clause read as built through two review rounds and was only caught in a browser. A commit that adds only tests says so.
 4. In `PLAN.md`: tick your item (`- [ ]` → `- [x]`) and add to `## Notes` anything the PR will need — every place the spec was silent and what you chose (with the AGENTS.md rule that decided it), anything not built as specified, any file changed outside `Owns:` and why, the path test, and for the live verifier the board file, frames and values to measure in light and dark.
 5. Stop.
 
@@ -55,7 +55,7 @@ A `fix:` item is a confirmed review or verification finding, with its `file:line
 
 - **Nobody answers you.** A pass runs headless; a question ends the pass with nothing done. Where the spec is silent, pick the option most consistent with `AGENTS.md` and record it under `choices`; where you truly cannot go on, mark the item `[!]` with why.
 - Work only inside the worktree, with absolute paths. Never touch the primary checkout or `PLAN.md`'s neighbours (`PROMPT.md`, `SPEC.md`, `passes/`).
-- **You run with default-deny permissions.** Allowed: the file tools; `npx tsc`, `npx jest`, `npx eslint`, `npx prettier`, `npm run test-storybook`, `npm run test:pglite`; `git status / diff / log / show / add / commit / rm / mv / restore`; `rg`, `ls`, `wc`, `cd`. Everything else is refused — do not retry a refused command, take another route. Nothing in a pass pushes, reaches Supabase (`.env.local` is production), or starts a server.
+- **You run with default-deny permissions.** Allowed: the file tools; `npx tsc`, `npx jest`, `npx eslint`, `npx prettier`, `npm run test-storybook`, `npm run test:pglite`; `git status / diff / log / show / add / commit / rm / mv / restore`; `rg`, `ls`, `wc`, `cd`. Everything else is refused — do not retry a refused command, take another route. **One command per call:** a compound command (`npx jest x && git commit …`) is matched against the allowlist as a whole and refused as a whole, which reads like a blanket denial and is not one — run the parts separately. Nothing in a pass pushes, reaches Supabase (`.env.local` is production), or starts a server.
 - `Migrations:` names the only migration number you may use. Never take the next free one.
 - Stay inside `Owns:`. A file outside it, if the spec truly needs it, is changed minimally and listed under `outside_stream`.
 - Code style (the user's rules): strict TypeScript, no `any`; early returns; `const` arrow functions; event handlers named `handle*`; Tailwind classes for styling; accessible elements (labels, roles, keyboard).

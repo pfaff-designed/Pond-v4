@@ -13,6 +13,8 @@ conductor (this chat)
      ├─ build loop         ralph.sh: a fresh pass per item  builder.md      Sonnet 5 (Claude Code)
      ├─ reviewer × 2       standards + spec, in parallel    reviewer.md     Opus 5.5
      └─ live verifier      browser-use, one at a time       verifier.md     inherits Opus 5.5
+
+All five role files live in REPO/ship-epics/ and name no tools; harness.md here names them.
 ```
 
 **Models** (the user's call, 2026-10-09): orchestration and code review on **Opus 5.5**, execution on **Sonnet 5**.
@@ -21,7 +23,9 @@ conductor (this chat)
 - The build loop's passes: Claude Code `claude-sonnet-5`, pinned in `ralph.sh` by full name, not by the `sonnet` alias, so a new release cannot change the builder mid-run.
 - The live verifier is a Cursor `browser-use` subagent, and Cursor offers no Sonnet 5 for subagents (its Sonnet is 5.5), so it takes no `model` and inherits the orchestrator's Opus 5.5.
 
-The role prompts live next to this file. Pass each subagent its file's contents plus the inputs it names; never paraphrase a role from memory. **Every** subagent prompt, at every level, also carries `failsafe.md` — the 10-minute stall rule and how it is enforced. The build loop enforces it itself.
+**One source, two heads.** Every role prompt and every script lives once, in `REPO/ship-epics/`, and names no tools. This directory is the Cursor head: this file and `harness.md`, which is the only place a tool is named. `.claude/skills/ship-epics/` is the Claude Code head. **Read `harness.md` before you call anything**, and pass it to every orchestrator you launch.
+
+Pass each subagent its role file's contents plus the inputs it names; never paraphrase a role from memory. **Every** subagent prompt, at every level, also carries `ship-epics/failsafe.md` — the 10-minute stall rule and how it is enforced — and `harness.md`. The build loop enforces the rule itself.
 
 ## Why it is shaped like this
 
@@ -50,7 +54,7 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
 0. **Sync the boards once.** In a worktree off `origin/main`, run `./scripts/sync-handoff.sh`. If it changed anything, land it first as its own `chore: sync design handoff` PR (CI, squash-merge) so every orchestrator builds from the same boards. Orchestrators never sync: parallel syncs would put the same board changes into every PR.
 1. **Read the queue.** `project = KAN AND labels = now AND statusCategory != Done ORDER BY rank` (cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`). Group the tickets by parent epic. Read each epic's `## Workstream` section (numbered `KAN-123 · after: …` lines, `Owns:`, `Migrations:`). An epic with no Workstream section gets one written into its description before it is run.
 2. **Pick the epics.** An epic runs when its next Workstream ticket is ready: every `after:` is Done and no `feat/<key>` branch or open PR exists. At most **3** orchestrators at once — each runs jest, Storybook and a dev server.
-3. **Launch** every picked orchestrator in **one message**, `subagent_type: generalPurpose`, `model: claude-opus-5-5-medium`, `run_in_background: true`, prompt = `orchestrator.md` + `failsafe.md` plus its inputs (first `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>` for each):
+3. **Launch** every picked orchestrator with `LAUNCH`, all in **one message**. Each prompt is `ship-epics/orchestrator.md` + `ship-epics/failsafe.md` + `harness.md` plus its inputs (first `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>` for each):
    - `EPIC` — the epic key
    - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001)
    - `MAX_TICKETS` — 2 unless the user says otherwise
@@ -58,11 +62,11 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
 4. **Supervise** them, as `failsafe.md`'s "If you supervise" says, with one poll for all of them:
 
    ```sh
-   H=/Users/charlespfaff/Documents/Code/Projects/Pond-v4/.cursor/skills/ship-epics/heartbeat.sh
+   H=/Users/charlespfaff/Documents/Code/Projects/Pond-v4/ship-epics/heartbeat.sh
    sleep 60; for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s\t' "$(basename "$(dirname "$f")")"; $H check "$f"; done
    ```
 
-   An orchestrator's heartbeat follows its child's (`supervise build: <step> #<reapproaches>`), so a stall anywhere under it shows here within 10 minutes even if the orchestrator itself failed to act on it. Interrupt and stop exactly as `failsafe.md` says. When you stop an orchestrator, also free what it held: if `/tmp/pond-browser.lock/owner` names its epic, remove the lock; `pkill -f "ralph.sh /tmp/ship-epics/<EPIC>/"`; `pkill -f "next dev -p <its PORT>"`; `pkill -f "<its worktree path>"`. Each orchestrator is finished when its heartbeat reads `done`; its return is its `RESULT` file.
+   An orchestrator's heartbeat follows its child's (`supervise build: <step> #<reapproaches>`), so a stall anywhere under it shows here within 10 minutes even if the orchestrator itself failed to act on it. `NUDGE` and `STOP` exactly as `failsafe.md` says. When you stop an orchestrator, also free what it held: if `/tmp/pond-browser.lock/owner` names its epic, remove the lock; `pkill -f "ralph.sh /tmp/ship-epics/<EPIC>/"`; `pkill -f "next dev -p <its PORT>"`; `pkill -f "<its worktree path>"`. Each orchestrator is finished when its heartbeat reads `done`; its return is its `RESULT` file.
 
 5. **Act on each return:**
    - `merged` — record the PRs and each ticket's person's path. If the epic has a next ready ticket and the user asked for the run to continue, launch a fresh orchestrator for it.
@@ -76,7 +80,7 @@ These are restated in each role file; they are not optional for any of them.
 
 - `.env.local` points at the **production** Supabase project. No `supabase` CLI command against the remote, no script that writes to it, from any role. `supabase db push` happens only in this chat, after the user says "push NNNN".
 - No force push, no history rewrite on a pushed branch.
-- No dev server, watcher, `serve` or loop in the foreground. Each starts as its own shell call with `block_until_ms: 0` — never with `&`, which the shell tool kills when the call returns — and is killed with `pkill -f` when done.
+- No dev server, watcher, `serve` or loop in the foreground. Each starts with `BG` — never with `&`, which the shell tool kills when the call returns — and is killed with `pkill -f` when done.
 - Two attempts at the same approach is the limit (AGENTS.md). The third is a stop with a reason.
 - No task runs more than 10 minutes on one approach (`failsafe.md`): beat before every task; reapproach when told or when your own check says stalled; stop when a reapproach stalls too.
 - Building is a Ralph loop; judging is not. A loop's items are proven by commands; the reachability gate, review, live verification and every one-way door stay with an agent.
