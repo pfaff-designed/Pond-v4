@@ -91,8 +91,8 @@ function stampFilter(templateId: string): Record<string, unknown> {
 export async function countPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: the pond to count in; omitted, the person's first (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond to count in; null, the person's first (`s6m5`). */
+  pondId: string | null,
   templateId: string
 ): Promise<number> {
   const pond = await resolvePond(supabase, userId, pondId)
@@ -126,8 +126,8 @@ type MadeFromRow = {
 export async function listPagesMadeFrom(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: the pond to list from; omitted, the person's first (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond to list from; null, the person's first (`s6m5`). */
+  pondId: string | null,
   templateId: string,
   limit = 20
 ): Promise<PageMadeFrom[]> {
@@ -163,16 +163,14 @@ export async function listPagesMadeFrom(
 export async function siblingTemplateRanking(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: the pond the siblings live in; omitted, the person's first (`s6m5`). */
-  pondId: string | null | undefined,
+  /** #312: the pond the siblings live in; null, the person's first (`s6m5`). */
+  pondId: string | null,
   parentId: string | null
 ): Promise<string[]> {
   const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = inPond(
-    (supabase as any).from('pages').select('props').eq('user_id', userId),
-    pond
-  )
+  const q: any = (supabase as any).from('pages').select('props').eq('user_id', userId)
+  let query = inPond(q, pond)
 
   // PostgREST needs `.is()` for null, `.eq()` otherwise.
   query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId)

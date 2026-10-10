@@ -20,7 +20,7 @@ import { firstPondId } from './first'
 export async function resolvePond(
   supabase: SupabaseClient<Database>,
   userId: string,
-  pondId: string | null | undefined
+  pondId: string | null
 ): Promise<string | null> {
   return pondId ?? (await firstPondId(supabase, userId))
 }
