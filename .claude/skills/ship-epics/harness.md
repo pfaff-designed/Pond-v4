@@ -15,7 +15,7 @@ The shared role files in `REPO/ship-epics/` name no tools. This file is the only
 
 **Subagents here are already background.** `Agent` returns the child's id at once and the child runs on its own; there is no `run_in_background` to pass and no `interrupt` to set. You are notified when a child completes — when that happens, read its `RESULT` instead of polling a heartbeat that already says `done`.
 
-**Record the handle at launch.** Keep the agent id `Agent` returns, then call `ListAgents` once and keep the exact name its row prints. `NUDGE` and `STOP` take either; the name survives the child completing. A child whose handle you did not record is a child you cannot stop.
+**Record the handle at launch.** The agent id `Agent` returns **is** the handle — keep it. `NUDGE` and `STOP` both accept it, and it survives the child completing. `ListAgents` also prints a name, but it is not in every agent's tool list — a subagent supervising its own children usually lacks it, confirmed 2026-10-10 — so never depend on it: the id is always enough. A child whose handle you did not record is a child you cannot stop.
 
 **Launch siblings in one message.** Two reviewers, or three orchestrators, go in a single assistant turn with one `Agent` call each, or they run one after another.
 
@@ -27,7 +27,23 @@ The shared role files in `REPO/ship-epics/` name no tools. This file is the only
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RUN ms`  | `Bash` with `timeout: <ms>`. **The tool caps `timeout` at 600000**, so no single call can outlast the failsafe's ten minutes. Nothing to remember and nothing to get wrong. |
 | `BG`      | `Bash` with `run_in_background: true`. Never `&`, never `nohup`. The call returns at once and you are re-invoked when the process exits.                                    |
-| `POLL HB` | `Bash` with `timeout: 60000` and `command: 'sleep 30; $H check HB'`.                                                                                                        |
+| `POLL HB` | `Bash` with `run_in_background: true` and the bounded until-loop below. You are re-invoked when it exits, so you wake on the child's change rather than on a timer.         |
+
+**Never poll with a foreground `sleep`.** This harness recognises a sleep-based polling loop and refuses
+the call — _"Foreground `sleep` is blocked; use Monitor with an until-loop"_ — and the refusal explicitly
+forbids chaining shorter sleeps to get around it. A single foreground `sleep` may succeed, which is the
+trap: it works once and then blocks exactly when supervision needs it. Found on the first real run,
+2026-10-10. Poll like this instead:
+
+```sh
+prev=$($H check HB 2>/dev/null || true); end=$((SECONDS + 530))
+while [ $SECONDS -lt $end ]; do
+  cur=$($H check HB 2>/dev/null || true)
+  [ "$cur" != "$prev" ] && { echo "$cur"; exit 0; }
+  sleep 20
+done
+echo "timer: $cur"
+```
 
 ### `LONG cmd LOG LIMIT`
 

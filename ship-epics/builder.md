@@ -31,7 +31,7 @@ path_test:
 verify_steps:
 ```
 
-Each item is **one thin step that leaves the branch green**: one acceptance criterion, one state of a component, one wiring hop from a control a person can see down to the data. A pass of ten minutes builds it test-first and commits it. Name in the item what it adds and the test that proves it.
+Each item is **one thin step that leaves the branch green**: one acceptance criterion, one state of a component, one wiring hop from a control a person can see down to the data. A pass of ten minutes builds it test-first and commits it — so size each item for **about six minutes of work, not ten**. A pass killed at its limit commits nothing and spends the item's one allowed miss; a second miss stops the loop. On 2026-10-10 three of eight items each cost an extra pass for this reason alone, roughly thirty minutes of one run. When in doubt, split. Name in the item what it adds and the test that proves it.
 
 `PATH_STEPS` is how a person reaches this feature in the running app, and **every step of it must work when the plan is done**, entry point included — the button, the menu row, the shortcut listed somewhere visible. Order the items so the entry point exists early, and make the last build item the path test: render the real surface that hosts the entry point (not the new component alone), act on it with `userEvent`, assert what a person sees. If a step of the path cannot be built inside this ticket, write that item as `- [!] <the step> — <why, and which ticket owns it>` and stop.
 
