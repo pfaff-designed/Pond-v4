@@ -91,6 +91,16 @@ describe('the twelve, keyed off TEMPLATE_KINDS — no second hand-kept list', ()
   })
 })
 
+describe('Pond never authors layout (KAN-43) — a template sets no block width', () => {
+  it('no block in any of the twelve sets a `width`', () => {
+    for (const kind of TEMPLATE_KINDS) {
+      for (const block of PREMADE_TEMPLATES[kind].blocks) {
+        expect('width' in block).toBe(false)
+      }
+    }
+  })
+})
+
 describe("each template's block list matches the board's `T` table, in order", () => {
   it.each<[TemplateKind, string[]]>([
     ['page', ['text']],

@@ -34,6 +34,16 @@ describe('moduleDataSchema (AI-emitted module data)', () => {
     expect('id' in parsed).toBe(false)
   })
 
+  /**
+   * KAN-43 — "Pond never authors layout": `width` is structurally absent from this
+   * union (it imports the per-module schemas directly, not `blockSchema`), so a
+   * model that volunteers one is silently stripped, same as a volunteered id.
+   */
+  it('strips a `width` the model volunteers (Pond never authors layout, KAN-43)', () => {
+    const parsed = moduleDataSchema.parse({ type: 'text', content: 'hi', width: '1/2' })
+    expect('width' in parsed).toBe(false)
+  })
+
   it('strips nested todo item ids too', () => {
     const parsed = moduleDataSchema.parse({
       type: 'todo',
