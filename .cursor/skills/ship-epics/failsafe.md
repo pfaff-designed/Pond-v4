@@ -29,10 +29,10 @@ Paths, given to every agent at launch: `HB=/tmp/ship-epics/<EPIC>/<role>[-<ticke
 
 ## If you supervise
 
-The orchestrator supervises its builder, reviewers and verifier; the conductor supervises the orchestrators.
+The orchestrator supervises its build loop, reviewers and verifier; the conductor supervises the orchestrators.
 
 1. `mkdir -p /tmp/ship-epics/<EPIC>` and remove the child's old `HB` and `RESULT`. Launch the child with `run_in_background: true`, passing its `HB` and `RESULT`. Keep its agent id.
-2. **Poll**: `sleep 30; $H check HB` (`block_until_ms` 60000). While you poll, beat your own heartbeat with the child's current step (`supervise builder: <its step>`), so your clock moves when the child's work does and stalls when it stalls.
+2. **Poll**: `sleep 30; $H check HB` (`block_until_ms` 60000). While you poll, beat your own heartbeat with the child's step, its reapproach count and its limit plus a minute — `$H beat <your HB> "supervise <role>: <its step> #<reapproached>" <its limit + 60>` — so your clock moves when the child's work does, stalls when it stalls, and never fires before the child's own does.
 3. **Act on what `check` says:**
    - `ok` — poll again.
    - `none` for more than 3 minutes after launch — the child is not beating: resume it (`interrupt: true`, `run_in_background: true`): "You have not written your heartbeat. Beat HB before every task, as failsafe.md says, starting now."
@@ -40,6 +40,13 @@ The orchestrator supervises its builder, reviewers and verifier; the conductor s
    - `stalled`, `reapproached 1` or more — the second approach stalled too. Resume it the same way with: "Failsafe: '<step>' stalled again after a reapproach. Stop now, as failsafe.md says." Wait up to 3 minutes for `done`; then kill anything still running in its worktree (`pkill -f <worktree path>`), whether or not it answered. Treat the task as **stopped**, with the step and both approaches as the reason — never relaunch it unchanged.
    - `done` — read `RESULT`. That is the child's return.
 4. A child that is resumed with work (a fix round) gets a fresh `HB` run: its next beat starts the new step's clock.
+
+### A Ralph loop
+
+A build loop (`ralph.sh`) keeps its own clock, so you do not interrupt it. Every pass runs under `timeout` at 10 minutes; the script beats `HB` before each pass, writes the `reapproach` line itself when a pass misses, tells the next pass what failed, and stops on the second miss. Poll it exactly as above. Only two readings need you:
+
+- `done` — read `RESULT`.
+- `stalled` — the script itself has hung: its beats carry the pass limit plus two minutes (25 minutes for the gates), so a stall means no pass ran. `pkill -f "ralph.sh <LOOP>"` (the running pass's process group goes with it), and treat the task as **stopped**.
 
 The conductor, polling every orchestrator at once:
 

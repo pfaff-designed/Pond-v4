@@ -23,7 +23,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
   and nobody could use them. A ticket whose path needs a later ticket is mis-split: fold one entry
   point into it, or reorder the Workstream so the entry point lands first.
 - **Epics are worked by orchestrators.** `.cursor/skills/ship-epics/` is the workflow: the chat is
-  the conductor, one orchestrator subagent per epic runs builder, reviewer and live-verifier
+  the conductor, one orchestrator subagent per epic builds each ticket in a Ralph loop (a fresh agent
+  pass per plan item, progress measured from git: `ralph.sh`) and runs reviewer and live-verifier
   subagents through to a merge, and only production migrations, failed reachability gates and real
   ambiguities come back to the user.
 - **The queue is the `now` label.** The JQL
