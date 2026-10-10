@@ -169,8 +169,8 @@ const NO_CAPABILITIES: RowCapabilities = {
  * placeholder is no page at all. The databases root is a foot row: it can be moved
  * and dropped on, never added to, deleted or renamed.
  */
-const rowCapabilities = (id: string, node: RailNode, isEmpty: boolean): RowCapabilities => {
-  if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: !isEmpty }
+const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
+  if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
   if (id === DATABASES_PLACEHOLDER_ID) return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
@@ -760,7 +760,7 @@ export function RailView({
 
   const capabilitiesOf = (id: string): RowCapabilities => {
     const node = flat.find((f) => f.id === id)?.node
-    return node ? rowCapabilities(id, node, isEmpty) : NO_CAPABILITIES
+    return node ? rowCapabilities(id, node) : NO_CAPABILITIES
   }
 
   const handleRenameStart = (id: string) => {
@@ -908,7 +908,7 @@ export function RailView({
     // two calls would walk the ancestor chain twice for the same answer. Not for
     // the synthetic Life row, which is no `pages` row and carries `LIFE_MARK`.
     const mark = id === LIFE_ID ? null : rowMark(node, markMap)
-    const cap = rowCapabilities(id, node, isEmpty)
+    const cap = rowCapabilities(id, node)
     return id === LIFE_ID || mark === null ? (
       <RailRow
         ref={setRowRef(id)}
@@ -926,7 +926,8 @@ export function RailView({
         depth={0}
         isFolder={isFolder}
         isExpanded={lifeExpanded}
-        // `PondRail` `empty`: the lone root is not selected and draws no ＋.
+        // `PondRail` `empty`: the lone root is not selected, so it draws no resting ＋;
+        // hovered, it shows its tools like any row (`hasTools: hov`).
         isSelected={selectedId === null && !isEmpty}
         isFocused={rovingId === id}
         isBusy={false}

@@ -377,6 +377,28 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
       'no pages yet. ＋ new page, or ask pond to start one.'
     )
   })
+
+  it('empty: the root still makes the first page — its ＋ on hover, and + from the keyboard', () => {
+    const onAddChild = jest.fn()
+    renderRail({ tree: [], isEmpty: true, onAddChild })
+    const root = screen.getByRole('treeitem', { name: /Life/ })
+    expect(root).toHaveAttribute('aria-selected', 'false')
+
+    fireEvent.mouseEnter(root)
+    fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to Life' }))
+    expect(onAddChild).toHaveBeenCalledWith('__life__')
+
+    onAddChild.mockClear()
+    root.focus()
+    fireEvent.keyDown(root, { key: '+' })
+    expect(onAddChild).toHaveBeenCalledWith('__life__')
+  })
+
+  it('empty: the root has no × — a pond is not deleted from the rail', () => {
+    renderRail({ tree: [], isEmpty: true })
+    fireEvent.mouseEnter(screen.getByRole('treeitem', { name: /Life/ }))
+    expect(screen.queryByRole('button', { name: /^Delete/ })).toBeNull()
+  })
 })
 
 // ── AC2: the path `PondCommand` shows at rest ─────────────────────────────────
