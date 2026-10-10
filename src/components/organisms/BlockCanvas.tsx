@@ -233,7 +233,7 @@ export function BlockCanvas({
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      return user ? fetchRecordCounts(supabase, user.id) : new Map<string, number>()
+      return user ? fetchRecordCounts(supabase, user.id, pondId) : new Map<string, number>()
     },
     enabled: sourcePicker !== null,
     staleTime: 0,

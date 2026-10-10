@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import type { UIMessage } from 'ai'
 import { emptyResolutions, parseResolutions, type ConversationResolutions } from './resolutions'
 
@@ -30,18 +30,16 @@ export async function getOrCreateConversation(
    */
   pondId?: string | null
 ): Promise<ActiveConversation> {
-  const scope = pondId ?? (await firstPondId(supabase, userId))
+  const scope = await resolvePond(supabase, userId, pondId)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('conversations')
     .select('id, transcript')
     .eq('user_id', userId)
     .is('dissolved_at', null)
 
-  if (scope) q = q.eq('pond_id', scope)
-
-  const { data: existing } = await q
+  const { data: existing } = await inPond(q, scope)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()

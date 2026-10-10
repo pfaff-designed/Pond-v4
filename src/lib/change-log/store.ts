@@ -26,6 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { assertTransition, canRevise } from './status'
 import { jsonEqual } from '@/lib/json-equal'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import {
   ACTOR_YOU,
   isChangeLogStatus,
@@ -119,36 +120,31 @@ export function mapChangeLogRow(row: ChangeLogRow): ChangeLogRecord {
 
 // ── Appends ──────────────────────────────────────────────────────────────────
 
-/** Everything an append needs. `status` is the status the record is BORN with —
- *  `proposed` for anything awaiting a decision, `accepted` for a person's own
- *  edit (which applies as they type). */
 /**
- * The common read prefix, with the pond filter applied ONLY when there is a pond
- * (#312).
+ * The common read prefix, confined to one pond (#312).
  *
  * `Pond 06.13` `s6m5`: "pages, databases, memory, threads and **the change log**
  * are per pond. Nothing crosses over." Without the filter, the proposed view
- * showed every pond's diffs in every pond.
- *
- * Conditional for a reason worth naming: `.eq('pond_id', null)` matches only the
- * rows that have NO pond, which is the exact opposite of "read across ponds". A
- * first attempt at this did precisely that, so the condition lives here once
- * rather than at six call sites.
+ * showed every pond's diffs in every pond. The caller resolves the pond first
+ * (`resolvePond`), so an omitted pond reads the person's first, never all of them.
  */
 function readScoped(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; pondId?: string | null },
+  userId: string,
+  pond: string | null,
   select: string = COLUMNS,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   selectOpts?: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any).from(TABLE).select(select, selectOpts).eq('user_id', opts.userId)
-  if (opts.pondId) q = q.eq('pond_id', opts.pondId)
-  return q
+  const q: any = (supabase as any).from(TABLE).select(select, selectOpts).eq('user_id', userId)
+  return inPond(q, pond)
 }
 
+/** Everything an append needs. `status` is the status the record is BORN with —
+ *  `proposed` for anything awaiting a decision, `accepted` for a person's own
+ *  edit (which applies as they type). */
 export interface AppendRecordInput {
   userId: string
   /** #312: the pond this record belongs to. Unstamped, it escapes every filter. */
@@ -177,9 +173,10 @@ export async function appendRecord(
 ): Promise<ChangeLogRecord> {
   const now = new Date().toISOString()
   const actor = input.actor ?? ACTOR_YOU
+  const pond = await resolvePond(supabase, input.userId, input.pondId)
   const insert = {
     user_id: input.userId,
-    ...(input.pondId ? { pond_id: input.pondId } : {}),
+    ...(pond ? { pond_id: pond } : {}),
     status: input.status,
     action: input.action,
     actor,
@@ -280,7 +277,8 @@ export async function getRecordByToolCall(
   supabase: SupabaseClient<Database>,
   opts: { userId: string; pondId?: string | null; toolCallId: string }
 ): Promise<ChangeLogRecord | null> {
-  const { data, error } = await readScoped(supabase, opts)
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
+  const { data, error } = await readScoped(supabase, opts.userId, pond)
     .eq('tool_call_id', opts.toolCallId)
     .maybeSingle()
   // Taking only `data` made a broken query indistinguishable from "this call was
@@ -307,7 +305,10 @@ export async function listRecordsByToolCalls(
 ): Promise<ChangeLogRecord[]> {
   if (opts.toolCallIds.length === 0) return []
 
-  const { data, error } = await readScoped(supabase, opts).in('tool_call_id', [...opts.toolCallIds])
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
+  const { data, error } = await readScoped(supabase, opts.userId, pond).in('tool_call_id', [
+    ...opts.toolCallIds,
+  ])
   if (error) throw error
   return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
 }
@@ -420,7 +421,7 @@ export async function markOutdated(
   supabase: SupabaseClient<Database>,
   opts: {
     userId: string
-    /** #312: scope to one pond; omitted reads across ponds. */
+    /** #312: the pond to sweep; omitted, the person's first. */
     pondId?: string | null
     targetPageId: string
     /** Blocks the accepted diff touched. Empty ⇒ sweep the whole page. */
@@ -452,7 +453,11 @@ export async function markOutdated(
   }
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = readScoped(supabase, opts)
+  let q: any = readScoped(
+    supabase,
+    opts.userId,
+    await resolvePond(supabase, opts.userId, opts.pondId)
+  )
     .eq('target_page_id', opts.targetPageId)
     .eq('status', 'proposed')
   if (opts.actions !== undefined) q = q.in('action', opts.actions)
@@ -509,7 +514,7 @@ export async function redactRecordContent(
 /** Filters behind the log's saved views (all / proposed / by page / …). */
 export interface ListRecordsOptions {
   userId: string
-  /** #312: scope to one pond; omitted reads across ponds. */
+  /** #312: the pond to read; omitted, the person's first. */
   pondId?: string | null
   status?: ChangeLogStatus | ChangeLogStatus[]
   targetPageId?: string
@@ -528,7 +533,11 @@ export async function listRecords(
   opts: ListRecordsOptions
 ): Promise<ChangeLogRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = readScoped(supabase, opts)
+  let q: any = readScoped(
+    supabase,
+    opts.userId,
+    await resolvePond(supabase, opts.userId, opts.pondId)
+  )
   if (opts.status !== undefined) {
     q = Array.isArray(opts.status) ? q.in('status', opts.status) : q.eq('status', opts.status)
   }
@@ -552,10 +561,11 @@ export async function listRecords(
 export async function countProposed(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: the pond whose open records to count. Omitted, counts across ponds. */
+  /** #312: the pond whose open records to count. Omitted, the person's first. */
   pondId?: string | null
 ): Promise<number> {
-  const { count } = await readScoped(supabase, { userId, pondId }, 'id', {
+  const pond = await resolvePond(supabase, userId, pondId)
+  const { count } = await readScoped(supabase, userId, pond, 'id', {
     count: 'exact',
     head: true,
   }).eq('status', 'proposed')
@@ -576,7 +586,8 @@ export async function listRevertsOf(
   supabase: SupabaseClient<Database>,
   opts: { userId: string; pondId?: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
-  const { data, error } = await readScoped(supabase, opts)
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
+  const { data, error } = await readScoped(supabase, opts.userId, pond)
     .eq('links->>revert_of', opts.recordId)
     .order('created_at', { ascending: false })
   // A failed query read as "no reverts yet" would let a second revert be raised

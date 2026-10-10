@@ -21,6 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createPage } from '@/lib/pages/client'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 
 /**
  * The reserved title of the databases root page — lowercase, as 3c draws it
@@ -95,16 +96,16 @@ export async function getOrCreateDatabasesRoot(
   /** #312: the pond to write into. See `CreatePageInput.pondId`. */
   pondId: string | null
 ): Promise<{ id: string; created: boolean }> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('id, title')
     .eq('user_id', userId)
     .is('parent_id', null)
   // Another pond's root would file this pond's databases where neither pond's
-  // tree reaches them. `.eq('pond_id', null)` would match only rows with NO pond.
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { data, error } = await q
+  // tree reaches them.
+  const { data, error } = await inPond(q, pond)
   if (error) throw new Error(error.message)
 
   const existing = ((data ?? []) as { id: string; title: string }[]).find((r) =>
@@ -116,7 +117,7 @@ export async function getOrCreateDatabasesRoot(
     parentId: null,
     type: 'page',
     title: DATABASES_ROOT_TITLE,
-    pondId,
+    pondId: pond,
   })
   return { id: root.id, created: true }
 }

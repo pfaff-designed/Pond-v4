@@ -21,7 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/modules/content'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import {
   isTemplateKind,
   isTemplateOrigin,
@@ -113,14 +113,13 @@ function mapRow(row: TemplateRow): PondTemplate {
 export async function listTemplates(
   supabase: SupabaseClient<Database>,
   userId: string,
-  /** #312: scope to one pond; omitted reads across ponds (`s6m5`). */
+  /** #312: the pond whose templates to list; omitted, the person's first. */
   pondId?: string | null
 ): Promise<PondTemplate[]> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any).from('templates').select(TEMPLATE_COLUMNS).eq('user_id', userId)
-  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { data, error } = await q.order('name', { ascending: true })
+  const q: any = (supabase as any).from('templates').select(TEMPLATE_COLUMNS).eq('user_id', userId)
+  const { data, error } = await inPond(q, pond).order('name', { ascending: true })
 
   if (error) throw new Error(error.message)
   return ((data ?? []) as TemplateRow[]).map(mapRow)
@@ -165,7 +164,7 @@ export async function createTemplate(
   // null. Writing it through produced two invisible rows — and, because NULLs
   // are distinct in a unique index, `templates_name_uniq` could not even catch
   // them as duplicates of each other.
-  const pondId = input.pondId ?? (await firstPondId(supabase, userId))
+  const pondId = await resolvePond(supabase, userId, input.pondId)
 
   const insert = {
     user_id: userId,

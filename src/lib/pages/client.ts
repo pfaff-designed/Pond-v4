@@ -12,7 +12,7 @@
  * narrow well through the builder). Supersedes lib/documents/client.ts.
  *
  * #312: a page belongs to a pond, and the LIST reads (`listPages`, `siblingRows`)
- * take a `pondId` to isolate one. Reads by id (getPage, getChildPages,
+ * are confined to one with `inPond` — never every pond. Reads by id (getPage, getChildPages,
  * saveBlocks, updateTitle, deletePage) are id-scoped and trust the caller has
  * the right page — the id or the `parent_id` already pins the pond, and the FK
  * cascade keeps the subtree together. `workspace` was retired by 0020: the
@@ -22,7 +22,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import {
   ROW_TYPE,
   withSchema,
@@ -186,13 +186,12 @@ export async function getCollectionRows(
 export async function listPages(
   supabase: SupabaseClient<Database>,
   userId: string,
-  pondId?: string | null
+  pondId: string | null | undefined
 ): Promise<PondPage[]> {
+  const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any).from('pages').select(PAGE_COLUMNS).eq('user_id', userId)
-  // Conditional: `.eq('pond_id', null)` would match only rows with NO pond.
-  if (pondId) q = q.eq('pond_id', pondId)
-  const { data } = await q.order('order', { ascending: true })
+  const q: any = (supabase as any).from('pages').select(PAGE_COLUMNS).eq('user_id', userId)
+  const { data } = await inPond(q, pond).order('order', { ascending: true })
 
   const rows = (data ?? []) as PageRow[]
   return rows.map(mapRow)
@@ -209,14 +208,15 @@ async function siblingRows(
   supabase: SupabaseClient<Database>,
   userId: string,
   parentId: string | null,
-  pondId?: string | null
+  /** The page's own pond, already resolved: siblings are read where it lives. */
+  pond: string | null
 ): Promise<{ id: string; title: string }[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = (supabase as any).from('pages').select('id, title').eq('user_id', userId)
   // #312: 0018's `pages_sibling_title_pond_uniq` is keyed per pond, so the
   // auto-suffix must read THIS pond's siblings — otherwise it renames around a
   // name that does not collide.
-  if (pondId) q = q.eq('pond_id', pondId)
+  q = inPond(q, pond)
   q = parentId === null ? q.is('parent_id', null) : q.eq('parent_id', parentId)
   const { data } = await q
   return (data ?? []) as { id: string; title: string }[]
@@ -235,7 +235,7 @@ export async function createPage(
   // fallback remains ONLY for an explicit `null` — a caller that genuinely has no
   // pond — and resolves the person's first rather than writing null, because a
   // null `pond_id` passes no filter and the page is invisible everywhere.
-  const pondId = input.pondId ?? (await firstPondId(supabase, userId))
+  const pondId = await resolvePond(supabase, userId, input.pondId)
 
   const insert = {
     user_id: userId,
@@ -337,7 +337,12 @@ export async function updateTitle(
       .eq('id', id)
       .maybeSingle()
     if (self) {
-      const siblings = await siblingRows(supabase, self.user_id, self.parent_id, self.pond_id)
+      const siblings = await siblingRows(
+        supabase,
+        self.user_id,
+        self.parent_id,
+        self.pond_id ?? null
+      )
       const clashes = siblings.some((s) => s.id !== id && normalizeTitle(s.title) === normalized)
       if (clashes) throw new DuplicateTitleError(title.trim())
     }

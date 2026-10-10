@@ -58,7 +58,8 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
         return builder
       },
       is(col: string, val: null) {
-        filters.push((r) => (r as unknown as Record<string, unknown>)[col] === val)
+        // A seed row that omits a column holds null there, as a database row does.
+        filters.push((r) => ((r as unknown as Record<string, unknown>)[col] ?? null) === val)
         return builder
       },
       maybeSingle() {

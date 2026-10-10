@@ -232,10 +232,11 @@ describe('siblingTemplateRanking', () => {
     const chain = makeChain({ not: jest.fn().mockResolvedValue({ data: rows, error: null }) })
     const sb = makeSupabase(chain)
 
-    const out = await siblingTemplateRanking(sb as never, 'user-1', null, 'parent-1')
+    const out = await siblingTemplateRanking(sb as never, 'user-1', 'pond-life', 'parent-1')
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(chain.eq).toHaveBeenCalledWith('pond_id', 'pond-life')
     expect(chain.eq).toHaveBeenCalledWith('parent_id', 'parent-1')
     expect(chain.is).not.toHaveBeenCalled()
     // tpl-b ×3, then tpl-a and tpl-c ×1 each — tie broken by most recent stamp.

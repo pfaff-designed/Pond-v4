@@ -77,7 +77,7 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
 function fakeSupabase(result: { data?: unknown; error?: unknown }) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const q: any = {}
-  for (const method of ['from', 'select', 'eq', 'in', 'order', 'limit']) {
+  for (const method of ['from', 'select', 'eq', 'is', 'in', 'order', 'limit']) {
     q[method] = jest.fn(() => q)
   }
   q.then = (onOk: any, onErr: any) => Promise.resolve(result).then(onOk, onErr)

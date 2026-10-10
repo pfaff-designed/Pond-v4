@@ -186,10 +186,11 @@ describe('listPages', () => {
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: rows, error: null }) })
     const sb = makeSupabase(chain)
 
-    const result = await listPages(sb as never, 'user-1')
+    const result = await listPages(sb as never, 'user-1', 'pond-life')
 
     expect(sb.from).toHaveBeenCalledWith('pages')
     expect(chain.eq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(chain.eq).toHaveBeenCalledWith('pond_id', 'pond-life')
     expect(result).toHaveLength(2)
     expect(result[0]).toMatchObject({ id: 'a1', title: 'Personal', parentId: null })
     expect(result[1]).toMatchObject({ id: 'c1', title: 'Reading goals', parentId: 'a1' })
@@ -198,7 +199,7 @@ describe('listPages', () => {
   it('returns [] when the user has no pages', async () => {
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: [], error: null }) })
     const sb = makeSupabase(chain)
-    expect(await listPages(sb as never, 'user-1')).toEqual([])
+    expect(await listPages(sb as never, 'user-1', 'pond-life')).toEqual([])
   })
 })
 

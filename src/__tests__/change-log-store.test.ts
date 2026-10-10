@@ -59,6 +59,7 @@ function makeSupabase(
   const chain: Record<string, jest.Mock> & { then?: unknown } = {
     select: jest.fn(() => chain),
     eq: jest.fn(() => chain),
+    is: jest.fn(() => chain),
     in: jest.fn(() => chain),
     order: jest.fn(() => chain),
     limit: jest.fn(() => chain),

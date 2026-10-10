@@ -27,6 +27,9 @@ function makeClient(returnRows: unknown[]) {
     eq() {
       return builder
     },
+    is() {
+      return builder
+    },
     neq(col: string, val: unknown) {
       neq(col, val)
       return builder

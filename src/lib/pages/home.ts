@@ -20,7 +20,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 
 /** The reserved page type that marks the Life home row. */
 export const HOME_TYPE = 'home' as const
@@ -63,7 +63,7 @@ export async function getOrCreateHomePage(
 
   // Same fallback as `fetchPages`: a surface outside the shell's PondProvider
   // gets the person's first pond rather than the wrong pond's root.
-  const scope = pondId ?? (await firstPondId(supabase, user.id))
+  const scope = await resolvePond(supabase, user.id, pondId)
 
   const existing = await readHomeRow(supabase, user.id, scope)
   if (existing) return existing
@@ -114,16 +114,14 @@ async function readHomeRow(
   // blocker 0018 refused to create a second root around, closed by 0019 dropping
   // `pages_one_home_per_user`.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (supabase as any)
+  const q: any = (supabase as any)
     .from('pages')
     .select('id, title, blocks')
     .eq('user_id', userId)
     .eq('type', HOME_TYPE)
     .is('parent_id', null)
 
-  if (pondId) q = q.eq('pond_id', pondId)
-
-  const { data } = await q.limit(1).maybeSingle()
+  const { data } = await inPond(q, pondId).limit(1).maybeSingle()
 
   if (!data) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
