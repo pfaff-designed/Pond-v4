@@ -38,6 +38,7 @@ export interface Database {
         Row: { id: string; email: string; created_at: string }
         Insert: { id: string; email: string; created_at?: string }
         Update: { email?: string }
+        Relationships: []
       }
       // A pond is an instance of the shell (#312, migration 0018). One person may
       // have several and nothing crosses between them. `last_page_id` serves
@@ -77,6 +78,7 @@ export interface Database {
           recent_glyphs?: string[]
           updated_at?: string
         }
+        Relationships: []
       }
       pages: {
         Row: {
@@ -131,6 +133,7 @@ export interface Database {
           area_role?: string | null
           updated_at?: string
         }
+        Relationships: []
       }
       conversations: {
         Row: {
@@ -156,6 +159,7 @@ export interface Database {
           workspace?: Workspace
           dissolved_at?: string
         }
+        Relationships: []
       }
       // The durable change log (#102, migration 0011). One row = one diff:
       // before/after + one of eight statuses, scoped per pond (user + workspace).
@@ -214,6 +218,7 @@ export interface Database {
           /** Redaction only — may be set to null, never to other content. */
           after?: null
         }
+        Relationships: []
       }
       // The template store (#154, migration 0016). One row = one saved shape,
       // scoped per pond (user + workspace). A template is a shape you copy,
@@ -251,6 +256,21 @@ export interface Database {
           blocks?: Json
           updated_at?: string
         }
+        Relationships: []
+      }
+    }
+    // `Views` and each table's `Relationships` must exist for postgrest-js to
+    // accept this as a schema; without them every query and RPC types as `never`.
+    Views: Record<never, never>
+    // Migration 0021. Each returns the records it inserted, in the order applied.
+    Functions: {
+      undo_change_log_record: {
+        Args: { p_record_ids: string[]; p_pond_id: string; p_actor?: string }
+        Returns: Database['public']['Tables']['change_log']['Row'][]
+      }
+      redo_change_log_record: {
+        Args: { p_record_ids: string[]; p_pond_id: string; p_actor?: string }
+        Returns: Database['public']['Tables']['change_log']['Row'][]
       }
     }
   }

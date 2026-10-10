@@ -1,5 +1,5 @@
 /**
- * Session undo — src/lib/change-log/undo.ts and session-undo.ts (KAN-93).
+ * Session undo — src/lib/change-log/undo.ts and session-undo.ts.
  *
  * The RPCs themselves (compare-and-swap, status transitions, multi-record steps,
  * the outdated sweep) are proved against real Postgres in
@@ -7,8 +7,9 @@
  *
  *   - a refusal comes back as a reason code from a closed list, never raw text;
  *   - the session history is per pond, one step per remembered change, redo
- *     cleared by a new one, a refused step dropped, a failed call put back, and
- *     a result that arrives after the history moved on does not land on it;
+ *     cleared by a new one, a stale or refused step dropped, a blocked step and
+ *     a failed call put back, and a result that arrives after the history moved
+ *     on does not land on it;
  *   - it is emptied on pagehide.
  */
 
@@ -81,7 +82,7 @@ describe('undoStep', () => {
     ])
   })
 
-  it.each([['page-changed'], ['record-changed'], ['linked-elsewhere']])(
+  it.each([['page-changed'], ['record-changed']])(
     'reports a 40001 %s as stale, with no text from the database',
     async (reason) => {
       const { client } = fakeSupabase({
@@ -99,11 +100,19 @@ describe('undoStep', () => {
     ['P0002', 'not-found'],
     ['P0002', 'page-gone'],
     ['0A000', 'not-undoable'],
-    ['23505', 'name-taken'],
   ])('reports a %s %s as refused', async (code, reason) => {
     const { client } = fakeSupabase({ error: { code, details: reason, message: 'record 3a…' } })
 
     await expect(undoStep(client, STEP)).resolves.toEqual({ outcome: 'refused', reason })
+  })
+
+  it.each([
+    ['40001', 'linked-elsewhere'],
+    ['23505', 'name-taken'],
+  ])('reports a %s %s as blocked', async (code, reason) => {
+    const { client } = fakeSupabase({ error: { code, details: reason, message: 'record 3a…' } })
+
+    await expect(undoStep(client, STEP)).resolves.toEqual({ outcome: 'blocked', reason })
   })
 
   it('throws a stale code with a reason it does not know, rather than guess', async () => {
@@ -356,6 +365,51 @@ describe('createSessionUndo', () => {
 
     expect(outcome).toEqual({ outcome: 'stale', reason: 'page-changed', step: STEP })
     expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: false })
+  })
+
+  it('drops a refused step and reports why', async () => {
+    const { store, run } = makeStore()
+    run.undo.mockResolvedValue({ outcome: 'refused', reason: 'already-undone' })
+    store.remember(STEP)
+
+    const outcome = await store.undo(POND)
+
+    expect(outcome).toEqual({ outcome: 'refused', reason: 'already-undone', step: STEP })
+    expect(store.getSnapshot(POND).canUndo).toBe(false)
+  })
+
+  it('keeps a blocked undo on top and reports why, so it runs again once cleared', async () => {
+    const { store, run } = makeStore()
+    store.remember({ pondId: POND, recordIds: ['older'] })
+    store.remember(STEP)
+    run.undo.mockResolvedValueOnce({ outcome: 'blocked', reason: 'linked-elsewhere' })
+
+    const outcome = await store.undo(POND)
+
+    expect(outcome).toEqual({ outcome: 'blocked', reason: 'linked-elsewhere', step: STEP })
+    expect(store.getSnapshot(POND)).toEqual({ canUndo: true, canRedo: false })
+    await store.undo(POND)
+    expect(run.undo).toHaveBeenLastCalledWith(STEP)
+  })
+
+  it('keeps a blocked redo on top of redo', async () => {
+    const { store, run } = makeStore()
+    store.remember({ pondId: POND, recordIds: ['older'] })
+    store.remember(STEP)
+    await store.undo(POND)
+    await store.undo(POND)
+    run.redo.mockResolvedValueOnce({ outcome: 'blocked', reason: 'name-taken' })
+
+    const outcome = await store.redo(POND)
+
+    expect(outcome).toEqual({
+      outcome: 'blocked',
+      reason: 'name-taken',
+      step: { pondId: POND, recordIds: ['older'] },
+    })
+    expect(store.getSnapshot(POND)).toEqual({ canUndo: false, canRedo: true })
+    await store.redo(POND)
+    expect(run.redo).toHaveBeenLastCalledWith({ pondId: POND, recordIds: ['older'] })
   })
 
   it('puts a step back when the call itself failed, and rethrows', async () => {

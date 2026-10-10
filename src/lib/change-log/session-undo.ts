@@ -1,16 +1,14 @@
 'use client'
 
 /**
- * The session's undo history (KAN-93): per pond, a stack of steps, each the
- * change-log record ids one action made.
+ * The session's undo history: per pond, a stack of steps, each the change-log
+ * record ids one action made.
  *
- * AUDIT C1: "undo covers the session, until the tab or app closes. After that,
- * revert from the change log." So the history lives in memory only and is
- * emptied on `pagehide`; the log is what outlasts it.
+ * Undo covers the session, until the tab or app closes; after that, revert from
+ * the change log. So the history lives in memory only; the log is what outlasts it.
  *
- * Keyed by pond — `s6m5`: nothing crosses between ponds — so ⌘Z in one pond
- * never takes back a step made in another, and switching away and back keeps
- * both histories. A shell-level key handler passes the active pond:
+ * Keyed by pond — nothing crosses between ponds — so ⌘Z in one pond never takes
+ * back a step made in another, and switching away and back keeps both histories. A shell-level key handler passes the active pond:
  * `undo(pondId)`, `redo(pondId)`, `useSessionUndo(pondId)`. Features that make an
  * undoable change hand its records to `remember`. Calls run one after another,
  * so a quick ⌘Z ⌘Z takes back two steps in order.
@@ -25,8 +23,11 @@ export interface SessionUndoSnapshot {
   canRedo: boolean
 }
 
-/** What `undo()` / `redo()` did. A `stale` or `refused` step is dropped: the log
- *  only grows, so it cannot succeed later — revert from the change log instead. */
+/**
+ * What `undo()` / `redo()` did. A `blocked` step stays on top, so it runs again
+ * once the obstacle is cleared. A `stale` or `refused` step is dropped: the log
+ * only grows, so it cannot succeed later — revert from the change log instead.
+ */
 export type SessionUndoOutcome = { outcome: 'empty' } | (StepResult & { step: HistoryStep })
 
 export interface SessionUndo {
@@ -93,18 +94,22 @@ export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
       notify(history)
 
       const current = () => histories.get(pondId) === history
+      // Nothing was written, so it is still applied (undo) or still undone (redo)
+      // and goes back where it was — unless the history was cleared, or a new
+      // change has emptied redo.
+      const putBack = () => {
+        if (!current() || (direction === 'redo' && history.generation !== generation)) return
+        from.splice(Math.min(takenFrom, from.length), 0, taken)
+        notify(history)
+      }
       let result: StepResult
       try {
         result = await run[direction](taken)
       } catch (err) {
-        // Still applied (undo) or still undone (redo), so it goes back where it was
-        // — unless the history was cleared, or a new change has emptied redo.
-        if (current() && (direction === 'undo' || history.generation === generation)) {
-          from.splice(Math.min(takenFrom, from.length), 0, taken)
-          notify(history)
-        }
+        putBack()
         throw err
       }
+      if (result.outcome === 'blocked') putBack()
       if (result.outcome === 'done' && current()) {
         if (direction === 'undo' && history.generation === generation) {
           history.redo.push(taken)
@@ -144,7 +149,11 @@ export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
   }
 }
 
-/** Empty `undo` when the tab or app goes away. Returns the release. */
+/**
+ * Empty `undo` on `pagehide`. A closed tab loses its memory anyway; this only
+ * matters when the page is kept in the back/forward cache and restored, which
+ * would otherwise bring the old history back with it. Returns the release.
+ */
 export const clearOnPageHide = (target: Window, undo: SessionUndo): (() => void) => {
   const handlePageHide = () => undo.clear()
   target.addEventListener('pagehide', handlePageHide)

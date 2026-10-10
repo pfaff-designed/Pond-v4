@@ -1,5 +1,5 @@
 /**
- * Undo and redo as change-log records (KAN-93) — the calls into the database.
+ * Undo and redo as change-log records — the calls into the database.
  *
  * Each step is one RPC (migration 0021): it compares what the records changed
  * against how they left it, writes, logs the undo/redo records, advances the
@@ -13,10 +13,10 @@
  * Framework-agnostic — takes a SupabaseClient, no Next.js and no React.
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { mapChangeLogRow } from './store'
-import { ACTOR_YOU, type ChangeLogActor, type ChangeLogRecord, type ChangeLogRow } from './types'
+import { ACTOR_YOU, type ChangeLogActor, type ChangeLogRecord } from './types'
 
 /** One step of history: the record(s) one action made, in the pond it made them in. */
 export interface HistoryStep {
@@ -24,58 +24,45 @@ export interface HistoryStep {
   recordIds: readonly string[]
 }
 
-/** The thing moved since, so nothing was written. Revert from the log instead. */
-export const STALE_REASONS = ['page-changed', 'record-changed', 'linked-elsewhere'] as const
+/** The thing moved since, so nothing was written and the step can never land. Revert from the log instead. */
+export const STALE_REASONS = ['page-changed', 'record-changed'] as const
+/**
+ * Something else stands in the way — a relation pointing at the row, a sibling
+ * holding its name. Nothing was written; the step lands once that is cleared.
+ */
+export const BLOCKED_REASONS = ['linked-elsewhere', 'name-taken'] as const
 /** The step cannot be taken back (or put back) at all. */
 export const REFUSED_REASONS = [
   'already-undone',
   'not-undone',
   'not-undoable',
   'other-pond',
-  'name-taken',
   'not-found',
   'page-gone',
 ] as const
 
 export type StaleReason = (typeof STALE_REASONS)[number]
+export type BlockedReason = (typeof BLOCKED_REASONS)[number]
 export type RefusedReason = (typeof REFUSED_REASONS)[number]
 
 export type StepResult =
   /** It landed. One new record per record in the step, in the order applied. */
   | { outcome: 'done'; records: ChangeLogRecord[] }
   | { outcome: 'stale'; reason: StaleReason }
+  | { outcome: 'blocked'; reason: BlockedReason }
   | { outcome: 'refused'; reason: RefusedReason }
 
 const STALE_CODE = '40001'
 
-/** What PostgREST returns for a raised exception: DETAIL arrives as `details`. */
-interface RpcError {
-  code?: string
-  details?: string | null
-  message?: string
-}
-
 type StepRpc = 'undo_change_log_record' | 'redo_change_log_record'
-
-interface StepRpcArgs {
-  p_record_ids: string[]
-  p_pond_id: string
-  p_actor: ChangeLogActor
-}
-
-/** The two 0021 functions, which the generated `Database` types do not declare. */
-interface StepRpcClient {
-  rpc: (
-    fn: StepRpc,
-    args: StepRpcArgs
-  ) => PromiseLike<{ data: ChangeLogRow[] | null; error: RpcError | null }>
-}
 
 const isOneOf = <T extends string>(list: readonly T[], value: string): value is T =>
   (list as readonly string[]).includes(value)
 
-const classify = (error: RpcError): StepResult | null => {
+/** PostgREST returns a raised exception's DETAIL as `details`. */
+const classify = (error: PostgrestError): StepResult | null => {
   const reason = error.details ?? ''
+  if (isOneOf(BLOCKED_REASONS, reason)) return { outcome: 'blocked', reason }
   if (error.code === STALE_CODE) {
     return isOneOf(STALE_REASONS, reason) ? { outcome: 'stale', reason } : null
   }
@@ -88,8 +75,7 @@ const runStep = async (
   step: HistoryStep,
   actor: ChangeLogActor
 ): Promise<StepResult> => {
-  const client = supabase as unknown as StepRpcClient
-  const { data, error } = await client.rpc(fn, {
+  const { data, error } = await supabase.rpc(fn, {
     p_record_ids: [...step.recordIds],
     p_pond_id: step.pondId,
     p_actor: actor,

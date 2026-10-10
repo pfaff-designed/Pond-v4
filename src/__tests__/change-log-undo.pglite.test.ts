@@ -1,4 +1,4 @@
-// Schema tests for 0021_undo_redo.sql (KAN-93).
+// Schema tests for 0021_undo_redo.sql.
 //
 // "The undo is a record of its own, and the record it undid is marked undone."
 // "redo ⇧⌘Z is a record too." Both are promises about the DATABASE — a page write,
@@ -30,7 +30,7 @@ interface Row {
   transitions: { status: string; actor: string }[]
 }
 
-async function pondOf(db: PGlite, userId: string = USER): Promise<string> {
+const pondOf = async (db: PGlite, userId: string = USER): Promise<string> => {
   const res = await db.query<{ id: string }>(
     'select id from public.ponds where user_id = $1 order by "order" limit 1',
     [userId]
@@ -38,7 +38,7 @@ async function pondOf(db: PGlite, userId: string = USER): Promise<string> {
   return res.rows[0].id
 }
 
-async function otherPond(db: PGlite, userId: string = USER): Promise<string> {
+const otherPond = async (db: PGlite, userId: string = USER): Promise<string> => {
   const res = await db.query<{ id: string }>(
     `insert into public.ponds (user_id, name, "order") values ($1, 'elsewhere', 9) returning id`,
     [userId]
@@ -46,10 +46,10 @@ async function otherPond(db: PGlite, userId: string = USER): Promise<string> {
   return res.rows[0].id
 }
 
-async function addPage(
+const addPage = async (
   db: PGlite,
   opts: { userId?: string; pondId?: string; blocks?: unknown; title?: string } = {}
-): Promise<string> {
+): Promise<string> => {
   const { userId = USER, blocks = B, title = 'Target' } = opts
   const pondId = opts.pondId ?? (await pondOf(db, userId))
   const res = await db.query<{ id: string }>(
@@ -60,7 +60,7 @@ async function addPage(
   return res.rows[0].id
 }
 
-async function addRow(
+const addRow = async (
   db: PGlite,
   collectionId: string,
   opts: {
@@ -69,14 +69,15 @@ async function addRow(
     blocks?: unknown
     order?: number
     createdAt?: string
+    pondId?: string
   }
-): Promise<string> {
+): Promise<string> => {
   const res = await db.query<{ id: string }>(
     `insert into public.pages (user_id, pond_id, parent_id, type, title, props, blocks, "order", created_at)
      values ($1, $2, $3, 'row', $4, $5, $6, $7, $8) returning id`,
     [
       USER,
-      await pondOf(db),
+      opts.pondId ?? (await pondOf(db)),
       collectionId,
       opts.title,
       JSON.stringify(opts.props ?? {}),
@@ -88,7 +89,7 @@ async function addRow(
   return res.rows[0].id
 }
 
-async function addRecord(
+const addRecord = async (
   db: PGlite,
   opts: {
     userId?: string
@@ -101,7 +102,7 @@ async function addRecord(
     links?: unknown
     createdAt?: string
   } = {}
-): Promise<string> {
+): Promise<string> => {
   const {
     userId = USER,
     status = 'accepted',
@@ -134,7 +135,7 @@ async function addRecord(
   return res.rows[0].id
 }
 
-async function record(db: PGlite, id: string): Promise<Row> {
+const record = async (db: PGlite, id: string): Promise<Row> => {
   const res = await db.query<Row>(
     `select id, status, action, actor, pond_id, target_page_id, "before", "after", links, transitions
        from public.change_log where id = $1`,
@@ -143,17 +144,17 @@ async function record(db: PGlite, id: string): Promise<Row> {
   return res.rows[0]
 }
 
-async function blocksOf(db: PGlite, pageId: string): Promise<unknown> {
+const blocksOf = async (db: PGlite, pageId: string): Promise<unknown> => {
   const res = await db.query<{ blocks: unknown }>('select blocks from public.pages where id = $1', [
     pageId,
   ])
   return res.rows[0]?.blocks ?? null
 }
 
-async function rowOf(
+const rowOf = async (
   db: PGlite,
   id: string
-): Promise<{ title: string; props: Record<string, unknown> } | null> {
+): Promise<{ title: string; props: Record<string, unknown> } | null> => {
   const res = await db.query<{ title: string; props: Record<string, unknown> }>(
     'select title, props from public.pages where id = $1',
     [id]
@@ -161,7 +162,7 @@ async function rowOf(
   return res.rows[0] ?? null
 }
 
-async function logSize(db: PGlite): Promise<number> {
+const logSize = async (db: PGlite): Promise<number> => {
   const res = await db.query<{ n: number }>('select count(*)::int as n from public.change_log')
   return res.rows[0].n
 }
@@ -176,7 +177,7 @@ const redo = (db: PGlite, ids: string[], pondId: string) =>
 const refusal = (code: string, detail: string) => ({ code, detail })
 
 /** A page at B, and the accepted own edit that took it from A to B. */
-async function scene(db: PGlite) {
+const scene = async (db: PGlite) => {
   await seedUser(db, USER)
   const pondId = await pondOf(db)
   const pageId = await addPage(db, { blocks: B })
@@ -343,27 +344,6 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     await db.close()
   })
 
-  it('refuses to undo an accepted revert — reverting it is the path', async () => {
-    // `reverted` is terminal: undoing the revert would put the change back on the
-    // page while the record it set back went on reading `reverted`.
-    const db = await makeDb()
-    const { pondId, pageId, edit } = await scene(db)
-    const revert = await addRecord(db, {
-      action: 'revert',
-      pageId,
-      before: B,
-      after: A,
-      links: { revert_of: edit },
-    })
-    await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(A), pageId])
-
-    await expect(undo(db, [revert], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
-    expect(await blocksOf(db, pageId)).toEqual(A)
-    expect((await record(db, revert)).status).toBe('accepted')
-    expect(await logSize(db)).toBe(2)
-    await db.close()
-  })
-
   it('refuses to undo an undo record — redo is the path', async () => {
     const db = await makeDb()
     const { pondId, edit } = await scene(db)
@@ -372,6 +352,62 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     await expect(undo(db, [made.id], pondId)).rejects.toMatchObject(
       refusal('0A000', 'not-undoable')
     )
+    await db.close()
+  })
+})
+
+// ── Undo of a revert ─────────────────────────────────────────────────────────
+
+describe('undo and redo of an accepted revert', () => {
+  /** The scene's edit, reverted through `accept_revert_record`: the page is back at A. */
+  const reverted = async (db: PGlite) => {
+    const { pondId, pageId, edit } = await scene(db)
+    const revert = await addRecord(db, {
+      status: 'proposed',
+      action: 'revert',
+      pageId,
+      before: B,
+      after: A,
+      links: { revert_of: edit },
+    })
+    await db.query(`select public.accept_revert_record($1, $2, $3, 'you')`, [
+      revert,
+      JSON.stringify(A),
+      JSON.stringify(B),
+    ])
+    return { pondId, pageId, edit, revert }
+  }
+
+  it('undoes the revert: the page is as it was before it, the original stays reverted', async () => {
+    const db = await makeDb()
+    const { pondId, pageId, edit, revert } = await reverted(db)
+
+    const res = await undo(db, [revert], pondId)
+
+    expect(await blocksOf(db, pageId)).toEqual(B)
+    expect((await record(db, revert)).status).toBe('undone')
+    expect((await record(db, edit)).status).toBe('reverted')
+    expect(res.rows[0]).toMatchObject({
+      action: 'undo',
+      before: A,
+      after: B,
+      links: { undo_of: revert },
+    })
+    await db.close()
+  })
+
+  it('redoes the revert, taking the change off the page again', async () => {
+    const db = await makeDb()
+    const { pondId, pageId, edit, revert } = await reverted(db)
+    const undid = (await undo(db, [revert], pondId)).rows[0]
+
+    const res = await redo(db, [revert], pondId)
+
+    expect(await blocksOf(db, pageId)).toEqual(A)
+    expect(res.rows[0]).toMatchObject({ action: 'redo', links: { redo_of: revert } })
+    expect((await record(db, undid.id)).status).toBe('undone')
+    expect((await record(db, revert)).status).toBe('undone')
+    expect((await record(db, edit)).status).toBe('reverted')
     await db.close()
   })
 })
@@ -403,6 +439,32 @@ describe('undo_change_log_record — one step, several records', () => {
     expect((await record(db, first)).status).toBe('undone')
     expect((await record(db, second)).status).toBe('undone')
     expect(res.rows.map((r) => r.links.undo_of)).toEqual([second, first])
+    await db.close()
+  })
+
+  it('keeps the order through undo → redo → undo, every time, made at the same instant', async () => {
+    // Both records share one `created_at`, as a tick that wrote two would: only
+    // the caller's order tells them apart. The redo records a step writes must
+    // then be told apart too, or undoing them sets the second back first.
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+
+    for (let i = 0; i < 25; i += 1) {
+      const pageId = await addPage(db, { blocks: C, title: `Target ${i}` })
+      const createdAt = new Date().toISOString()
+      const first = await addRecord(db, { pageId, before: A, after: B, createdAt })
+      const second = await addRecord(db, { pageId, before: B, after: C, createdAt })
+
+      await undo(db, [first, second], pondId)
+      expect(await blocksOf(db, pageId)).toEqual(A)
+      const redone = (await redo(db, [first, second], pondId)).rows.map((r) => r.id)
+      expect(await blocksOf(db, pageId)).toEqual(C)
+      await undo(db, redone, pondId)
+      expect(await blocksOf(db, pageId)).toEqual(A)
+      await redo(db, redone, pondId)
+      expect(await blocksOf(db, pageId)).toEqual(C)
+    }
     await db.close()
   })
 
@@ -565,7 +627,7 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     shown: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, String(x)])),
   })
 
-  async function collection(db: PGlite) {
+  const collection = async (db: PGlite) => {
     await seedUser(db, USER)
     const pondId = await pondOf(db)
     const recipes = await addPage(db, { title: 'recipes', blocks: [] })
@@ -673,6 +735,31 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
       sunday,
     ])
     await undo(db, [added], pondId)
+    expect(await rowOf(db, rowId)).toBeNull()
+    await db.close()
+  })
+
+  it('looks for links only in the record’s own pond', async () => {
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const rowId = await addRow(db, recipes, { title: 'chickpeas, harissa', props: values })
+    const added = await addRecord(db, {
+      action: 'add_row',
+      pageId: recipes,
+      after: snapshot(rowId, 'chickpeas, harissa'),
+    })
+    const elsewhere = await otherPond(db)
+    const menus = await addPage(db, { title: 'menus', blocks: [], pondId: elsewhere })
+    await db.query(`update public.pages set props = $1 where id = $2`, [
+      JSON.stringify({
+        _schema: [{ id: 'dishes', name: 'dishes', type: 'relation', target: recipes }],
+      }),
+      menus,
+    ])
+    await addRow(db, menus, { title: 'sunday', props: { dishes: [rowId] }, pondId: elsewhere })
+
+    await undo(db, [added], pondId)
+
     expect(await rowOf(db, rowId)).toBeNull()
     await db.close()
   })
