@@ -193,27 +193,24 @@ async function assertThreadValues(root: HTMLElement, theme: Theme) {
   await expect(turnStyle.borderBottomWidth).toBe('1px')
   await expectInk(rule(turn), theme, 0.09)
 
-  // youRow: baseline, gap 8, 13px, .02em, ink .8; `you` 500; the words in full ink
+  // the question is built like the answer: a column at gap 7, the `you` eyebrow
+  // (the `pond` one), then the line in mono 13px / .02em at full ink
   const you = [...root.querySelectorAll<HTMLElement>('[data-part="you-row"]')].at(-1)!
-  const youStyle = getComputedStyle(you)
-  await expect(youStyle.columnGap).toBe('8px')
-  await expect(youStyle.alignItems).toBe('baseline')
-  await expect(youStyle.fontSize).toBe('13px')
-  await expect(px(youStyle.letterSpacing)).toBeCloseTo(0.26, 2)
-  await expect(youStyle.fontFamily).toMatch(/Mono|monospace/)
-  await expectInk(youStyle.color, theme, 0.8)
-  await expect(getComputedStyle(within(you).getByText('you')).fontWeight).toBe('500')
-  await expectInk(getComputedStyle(within(you).getByText(QUESTION)).color, theme, 1)
-  await expect(getComputedStyle(within(you).getByText('07:20')).fontSize).toBe('10.5px')
+  await expect(getComputedStyle(you).flexDirection).toBe('column')
+  await expect(getComputedStyle(you).rowGap).toBe('7px')
+  await assertEyebrow(within(you).getByText('you'), theme)
+  const line = getComputedStyle(within(you).getByText(QUESTION))
+  await expect(line.fontSize).toBe('13px')
+  await expect(px(line.letterSpacing)).toBeCloseTo(0.26, 2)
+  await expect(line.fontFamily).toMatch(/Mono|monospace/)
+  await expectInk(line.color, theme, 1)
+  const time = getComputedStyle(within(you).getByText('07:20'))
+  await expect(time.fontSize).toBe('10.5px')
+  await expectInk(time.color, theme, 0.8)
 }
 
-async function assertAnswerType(root: HTMLElement, theme: Theme, fontSize: string) {
-  const answer = [...root.querySelectorAll<HTMLElement>('[data-part="answer"]')].at(-1)!
-  // answerCol: gap 7
-  await expect(getComputedStyle(answer).rowGap).toBe('7px')
-
-  // eyebrow: sans 500, 10.5px, .1em, uppercase, ink .68
-  const eyebrow = within(answer).getByText('pond')
+// eyebrow: sans 500, 10.5px, .1em, uppercase, ink .68
+async function assertEyebrow(eyebrow: HTMLElement, theme: Theme) {
   const e = getComputedStyle(eyebrow)
   await expect(e.fontFamily).toMatch(/Neue Montreal/)
   await expect(e.fontFamily).not.toMatch(/Mono|monospace/)
@@ -222,6 +219,14 @@ async function assertAnswerType(root: HTMLElement, theme: Theme, fontSize: strin
   await expect(px(e.letterSpacing)).toBeCloseTo(1.05, 2)
   await expect(e.textTransform).toBe('uppercase')
   await expectInk(e.color, theme, 0.68)
+}
+
+async function assertAnswerType(root: HTMLElement, theme: Theme, fontSize: string) {
+  const answer = [...root.querySelectorAll<HTMLElement>('[data-part="answer"]')].at(-1)!
+  // answerCol: gap 7
+  await expect(getComputedStyle(answer).rowGap).toBe('7px')
+
+  await assertEyebrow(within(answer).getByText('pond'), theme)
 
   // answer: sans 400, 15px (16 mobile), lh 1.6, full ink, text-wrap pretty — not mono, not serif
   const text = within(answer).getByText(/At £4,000/)

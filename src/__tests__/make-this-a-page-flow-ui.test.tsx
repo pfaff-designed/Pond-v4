@@ -221,8 +221,8 @@ describe('the answer in the thread (6a frames 2–3)', () => {
     const question = screen.getByText(QUESTION)
     const youRow = question.closest('[data-part="you-row"]')!
     expect(youRow).toBeInTheDocument()
-    expect(youRow.className).toMatch(/font-mono/)
-    expect(within(youRow as HTMLElement).getByText('you')).toBeInTheDocument()
+    expect(question.className).toMatch(/font-mono/)
+    expect(within(youRow as HTMLElement).getByText('you').className).toMatch(/font-sans/)
     expect(within(youRow as HTMLElement).getByText('07:12')).toBeInTheDocument()
 
     // jest stubs react-markdown (the real renderer is covered in Storybook), so

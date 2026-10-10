@@ -13,6 +13,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 
 const RULE_CLASS = 'border-b border-mn-text/[0.09]'
 
@@ -116,17 +117,21 @@ export interface YouRowProps {
   time?: string | null
 }
 
-/** The question (`youRow`): `you` · the line · when it was said, 13px at ink .8, the
- *  words themselves in full ink. The chrome is lowercase; the person's words keep
- *  their own case. */
+/** The question, built like the answer under it: the `you` eyebrow (the same one as
+ *  `pond`) with when it was said, then the line — mono 13px, the person's words in
+ *  full ink and their own case. Departs from the board's one-line `youRow` at the
+ *  user's call (2026-10-10). */
 export const YouRow = ({ text, time }: YouRowProps) => (
-  <div
-    data-part="you-row"
-    className="flex items-baseline gap-2 font-mono text-[13px] tracking-[0.02em] text-mn-text-meta"
-  >
-    <span className="font-medium lowercase">you</span>
-    <span className="min-w-0 flex-1 text-mn-text break-words whitespace-pre-wrap">{text}</span>
-    {time && <span className="text-[10.5px]">{time}</span>}
+  <div data-part="you-row" className="flex flex-col gap-[7px]">
+    <div className="flex items-baseline gap-2">
+      <span className={pageEyebrowClass}>you</span>
+      {time && (
+        <span className="font-mono text-[10.5px] tracking-[0.02em] text-mn-text-meta">{time}</span>
+      )}
+    </div>
+    <p className="font-mono text-[13px] tracking-[0.02em] break-words whitespace-pre-wrap text-mn-text">
+      {text}
+    </p>
   </div>
 )
 
