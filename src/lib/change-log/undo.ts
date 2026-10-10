@@ -1,122 +1,111 @@
 /**
  * Undo and redo as change-log records (KAN-93) — the calls into the database.
  *
- * "The undo is a record of its own, and the record it undid is marked undone."
- * "redo ⇧⌘Z is a record too." Both happen inside one RPC each (migration 0021),
- * which compares the page against the state the record left before writing and
- * lands a whole step or nothing. This module calls them and turns their refusals
- * into outcomes a surface can say out loud: a page that changed since is `stale`,
- * a record that cannot be taken back is `refused`. Only a failure it cannot
- * classify — the network, most likely — is thrown, because that step may still
- * succeed if tried again.
+ * Each step is one RPC (migration 0021): it compares what the records changed
+ * against how they left it, writes, logs the undo/redo records, advances the
+ * originals and outdates the pending diffs it made stale — all or nothing. A
+ * refusal comes back as a reason code read off the SQL DETAIL, never as raw text:
+ * the code is what a surface turns into copy. Only a failure with no code — the
+ * network, most likely — is thrown, because that step may still succeed.
  *
- * The session stack that decides WHICH step is next lives in `session-undo.ts`.
+ * Which step is next lives in `session-undo.ts`.
  *
  * Framework-agnostic — takes a SupabaseClient, no Next.js and no React.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { mapChangeLogRow, markOutdated } from './store'
-import {
-  ACTOR_YOU,
-  BLOCK_ACTIONS,
-  type ChangeLogActor,
-  type ChangeLogRecord,
-  type ChangeLogRow,
-} from './types'
+import { mapChangeLogRow } from './store'
+import { ACTOR_YOU, type ChangeLogActor, type ChangeLogRecord, type ChangeLogRow } from './types'
 
-/** One undo step: the record(s) one action made, in the pond it made them in. */
-export interface UndoStep {
+/** One step of history: the record(s) one action made, in the pond it made them in. */
+export interface HistoryStep {
   pondId: string
   recordIds: readonly string[]
 }
 
-/** What became of an undo or redo. */
+/** The thing moved since, so nothing was written. Revert from the log instead. */
+export const STALE_REASONS = ['page-changed', 'record-changed', 'linked-elsewhere'] as const
+/** The step cannot be taken back (or put back) at all. */
+export const REFUSED_REASONS = [
+  'already-undone',
+  'not-undone',
+  'not-undoable',
+  'other-pond',
+  'name-taken',
+  'not-found',
+  'page-gone',
+] as const
+
+export type StaleReason = (typeof STALE_REASONS)[number]
+export type RefusedReason = (typeof REFUSED_REASONS)[number]
+
 export type StepResult =
   /** It landed. One new record per record in the step, in the order applied. */
-  | { kind: 'done'; records: ChangeLogRecord[] }
-  /** The page changed since, so nothing was written; revert from the log instead. */
-  | { kind: 'stale'; message: string }
-  /** The step cannot be taken back here (already undone, gone, another pond, …). */
-  | { kind: 'refused'; message: string }
+  | { outcome: 'done'; records: ChangeLogRecord[] }
+  | { outcome: 'stale'; reason: StaleReason }
+  | { outcome: 'refused'; reason: RefusedReason }
 
 const STALE_CODE = '40001'
 
-/** The SQLSTATEs 0021's functions raise on purpose, plus a redo re-adding a
- *  record whose name a sibling has taken since. */
-const REFUSAL_CODES: ReadonlySet<string> = new Set(['22023', 'P0002', '0A000', '23505'])
-
+/** What PostgREST returns for a raised exception: DETAIL arrives as `details`. */
 interface RpcError {
   code?: string
+  details?: string | null
   message?: string
 }
 
-const classify = (error: RpcError): StepResult | null => {
-  const message = error.message ?? ''
-  if (error.code === STALE_CODE) return { kind: 'stale', message }
-  if (error.code !== undefined && REFUSAL_CODES.has(error.code)) return { kind: 'refused', message }
-  return null
+type StepRpc = 'undo_change_log_record' | 'redo_change_log_record'
+
+interface StepRpcArgs {
+  p_record_ids: string[]
+  p_pond_id: string
+  p_actor: ChangeLogActor
 }
 
-/**
- * A page whose blocks a step just moved has pending block diffs written against
- * the state it left. `accept_change_log_record` writes without comparing, so they
- * must go `outdated` — the same sweep an accepted edit or revert runs. Once per
- * page, against the blocks it ended on; never throws, because the step has landed.
- */
-const sweepMovedPages = async (
-  supabase: SupabaseClient<Database>,
-  pondId: string,
-  records: readonly ChangeLogRecord[]
-): Promise<void> => {
-  const endedOn = new Map<string, { userId: string; blocks: unknown }>()
-  for (const record of records) {
-    if (record.targetPageId === null || !Array.isArray(record.after)) continue
-    endedOn.set(record.targetPageId, { userId: record.userId, blocks: record.after })
+/** The two 0021 functions, which the generated `Database` types do not declare. */
+interface StepRpcClient {
+  rpc: (
+    fn: StepRpc,
+    args: StepRpcArgs
+  ) => PromiseLike<{ data: ChangeLogRow[] | null; error: RpcError | null }>
+}
+
+const isOneOf = <T extends string>(list: readonly T[], value: string): value is T =>
+  (list as readonly string[]).includes(value)
+
+const classify = (error: RpcError): StepResult | null => {
+  const reason = error.details ?? ''
+  if (error.code === STALE_CODE) {
+    return isOneOf(STALE_REASONS, reason) ? { outcome: 'stale', reason } : null
   }
-  for (const [targetPageId, { userId, blocks }] of endedOn) {
-    try {
-      await markOutdated(supabase, {
-        userId,
-        pondId,
-        targetPageId,
-        actions: [...BLOCK_ACTIONS],
-        pageBlocks: blocks,
-        actor: ACTOR_YOU,
-      })
-    } catch (err) {
-      console.error('[change-log] outdated sweep failed after undo/redo', targetPageId, err)
-    }
-  }
+  return isOneOf(REFUSED_REASONS, reason) ? { outcome: 'refused', reason } : null
 }
 
 const runStep = async (
   supabase: SupabaseClient<Database>,
-  fn: 'undo_change_log_record' | 'redo_change_log_record',
-  step: UndoStep,
+  fn: StepRpc,
+  step: HistoryStep,
   actor: ChangeLogActor
 ): Promise<StepResult> => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc(fn, {
+  const client = supabase as unknown as StepRpcClient
+  const { data, error } = await client.rpc(fn, {
     p_record_ids: [...step.recordIds],
     p_pond_id: step.pondId,
     p_actor: actor,
   })
   if (error) {
-    const outcome = classify(error as RpcError)
-    if (outcome === null) throw error
-    return outcome
+    const result = classify(error)
+    if (result === null) throw error
+    return result
   }
-  const records = ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
-  await sweepMovedPages(supabase, step.pondId, records)
-  return { kind: 'done', records }
+  return { outcome: 'done', records: (data ?? []).map(mapChangeLogRow) }
 }
 
 /** Take a step back: each record in it goes `undone`, each gains an `undo` record. */
 export const undoStep = (
   supabase: SupabaseClient<Database>,
-  step: UndoStep,
+  step: HistoryStep,
   actor: ChangeLogActor = ACTOR_YOU
 ): Promise<StepResult> => runStep(supabase, 'undo_change_log_record', step, actor)
 
@@ -127,6 +116,6 @@ export const undoStep = (
  */
 export const redoStep = (
   supabase: SupabaseClient<Database>,
-  step: UndoStep,
+  step: HistoryStep,
   actor: ChangeLogActor = ACTOR_YOU
 ): Promise<StepResult> => runStep(supabase, 'redo_change_log_record', step, actor)

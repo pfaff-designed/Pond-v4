@@ -2,10 +2,10 @@
 //
 // "The undo is a record of its own, and the record it undid is marked undone."
 // "redo ⇧⌘Z is a record too." Both are promises about the DATABASE — a page write,
-// a new record and an advanced record land together or not at all — so they are
-// proved here against real Postgres (PGLite, the real migrations from disk).
-// Every refusal is checked for leaving the page AND the log exactly as they were:
-// the log only grows, so a half-applied undo could never be repaired.
+// a new record, an advanced record and the outdated sweep land together or not at
+// all — so they are proved here against real Postgres (PGLite, the real
+// migrations from disk). Every refusal is checked for its reason code and for
+// leaving the page AND the log exactly as they were.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { makeDb, seedUser } from './helpers/pglite-harness'
@@ -63,11 +63,17 @@ async function addPage(
 async function addRow(
   db: PGlite,
   collectionId: string,
-  opts: { title: string; props?: Record<string, unknown>; blocks?: unknown }
+  opts: {
+    title: string
+    props?: Record<string, unknown>
+    blocks?: unknown
+    order?: number
+    createdAt?: string
+  }
 ): Promise<string> {
   const res = await db.query<{ id: string }>(
-    `insert into public.pages (user_id, pond_id, parent_id, type, title, props, blocks)
-     values ($1, $2, $3, 'row', $4, $5, $6) returning id`,
+    `insert into public.pages (user_id, pond_id, parent_id, type, title, props, blocks, "order", created_at)
+     values ($1, $2, $3, 'row', $4, $5, $6, $7, $8) returning id`,
     [
       USER,
       await pondOf(db),
@@ -75,6 +81,8 @@ async function addRow(
       opts.title,
       JSON.stringify(opts.props ?? {}),
       JSON.stringify(opts.blocks ?? []),
+      opts.order ?? 0,
+      opts.createdAt ?? new Date().toISOString(),
     ]
   )
   return res.rows[0].id
@@ -164,6 +172,9 @@ const undo = (db: PGlite, ids: string[], pondId: string) =>
 const redo = (db: PGlite, ids: string[], pondId: string) =>
   db.query<Row>(`select * from public.redo_change_log_record($1::uuid[], $2, 'you')`, [ids, pondId])
 
+/** A refusal: its SQLSTATE and the reason code the client reads off DETAIL. */
+const refusal = (code: string, detail: string) => ({ code, detail })
+
 /** A page at B, and the accepted own edit that took it from A to B. */
 async function scene(db: PGlite) {
   await seedUser(db, USER)
@@ -185,8 +196,7 @@ describe('undo_change_log_record — the undo is a record of its own', () => {
     expect(await blocksOf(db, pageId)).toEqual(A)
     expect((await record(db, edit)).status).toBe('undone')
     expect(res.rows).toHaveLength(1)
-    const made = res.rows[0]
-    expect(made).toMatchObject({
+    expect(res.rows[0]).toMatchObject({
       status: 'accepted',
       action: 'undo',
       actor: 'you',
@@ -228,25 +238,16 @@ describe('undo_change_log_record — the undo is a record of its own', () => {
 // ── Undo: the compare-and-swap fails ─────────────────────────────────────────
 
 describe('undo_change_log_record — a stale undo fails cleanly', () => {
-  it('refuses when the page changed since, and writes nothing at all', async () => {
+  it('refuses when the page changed since, says so in a code, and writes nothing', async () => {
     const db = await makeDb()
     const { pondId, pageId, edit } = await scene(db)
     await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(C), pageId])
 
-    await expect(undo(db, [edit], pondId)).rejects.toThrow(/changed since/)
+    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
 
     expect(await blocksOf(db, pageId)).toEqual(C)
     expect((await record(db, edit)).status).toBe('accepted')
     expect(await logSize(db)).toBe(1)
-    await db.close()
-  })
-
-  it('reports the stale case with serialization_failure, so a caller can tell it apart', async () => {
-    const db = await makeDb()
-    const { pondId, pageId, edit } = await scene(db)
-    await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(C), pageId])
-
-    await expect(undo(db, [edit], pondId)).rejects.toMatchObject({ code: '40001' })
     await db.close()
   })
 
@@ -273,7 +274,7 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     const { pondId, pageId, edit } = await scene(db)
     await undo(db, [edit], pondId)
 
-    await expect(undo(db, [edit], pondId)).rejects.toThrow(/only an accepted record/)
+    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('22023', 'already-undone'))
     expect(await blocksOf(db, pageId)).toEqual(A)
     expect(await logSize(db)).toBe(2)
     await db.close()
@@ -284,7 +285,7 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     const { pageId, edit } = await scene(db)
     const elsewhere = await otherPond(db)
 
-    await expect(undo(db, [edit], elsewhere)).rejects.toThrow(/not in this pond/)
+    await expect(undo(db, [edit], elsewhere)).rejects.toMatchObject(refusal('22023', 'other-pond'))
     expect(await blocksOf(db, pageId)).toEqual(B)
     expect((await record(db, edit)).status).toBe('accepted')
     await db.close()
@@ -294,8 +295,8 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     const db = await makeDb()
     const { pondId } = await scene(db)
 
-    await expect(undo(db, ['99999999-9999-9999-9999-999999999999'], pondId)).rejects.toThrow(
-      /not found/
+    await expect(undo(db, ['99999999-9999-9999-9999-999999999999'], pondId)).rejects.toMatchObject(
+      refusal('P0002', 'not-found')
     )
     await db.close()
   })
@@ -304,7 +305,7 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     const db = await makeDb()
     const { pondId } = await scene(db)
 
-    await expect(undo(db, [], pondId)).rejects.toThrow(/nothing to undo/)
+    await expect(undo(db, [], pondId)).rejects.toMatchObject(refusal('22023', 'not-found'))
     await db.close()
   })
 
@@ -313,12 +314,12 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
     const { pondId, pageId, edit } = await scene(db)
     await db.query('delete from public.pages where id = $1', [pageId])
 
-    await expect(undo(db, [edit], pondId)).rejects.toThrow(/page it changed is gone/)
+    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('P0002', 'page-gone'))
     expect((await record(db, edit)).status).toBe('accepted')
     await db.close()
   })
 
-  it('refuses a kind of change it cannot set back, and says so', async () => {
+  it('refuses a kind of change it cannot set back', async () => {
     const db = await makeDb()
     const { pondId } = await scene(db)
     const made = await addRecord(db, {
@@ -326,8 +327,51 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
       after: { title: 'suppliers', parent: null },
     })
 
-    await expect(undo(db, [made], pondId)).rejects.toThrow(/a create_page cannot be undone/)
+    await expect(undo(db, [made], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
     expect((await record(db, made)).status).toBe('accepted')
+    await db.close()
+  })
+
+  it('decides by action, not by what the snapshots look like', async () => {
+    // A `move` carrying block arrays must not be set back as if it were an edit.
+    const db = await makeDb()
+    const { pondId, pageId } = await scene(db)
+    const moved = await addRecord(db, { action: 'move', pageId, before: A, after: B })
+
+    await expect(undo(db, [moved], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
+    expect(await blocksOf(db, pageId)).toEqual(B)
+    await db.close()
+  })
+
+  it('refuses to undo an accepted revert — reverting it is the path', async () => {
+    // `reverted` is terminal: undoing the revert would put the change back on the
+    // page while the record it set back went on reading `reverted`.
+    const db = await makeDb()
+    const { pondId, pageId, edit } = await scene(db)
+    const revert = await addRecord(db, {
+      action: 'revert',
+      pageId,
+      before: B,
+      after: A,
+      links: { revert_of: edit },
+    })
+    await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(A), pageId])
+
+    await expect(undo(db, [revert], pondId)).rejects.toMatchObject(refusal('0A000', 'not-undoable'))
+    expect(await blocksOf(db, pageId)).toEqual(A)
+    expect((await record(db, revert)).status).toBe('accepted')
+    expect(await logSize(db)).toBe(2)
+    await db.close()
+  })
+
+  it('refuses to undo an undo record — redo is the path', async () => {
+    const db = await makeDb()
+    const { pondId, edit } = await scene(db)
+    const made = (await undo(db, [edit], pondId)).rows[0]
+
+    await expect(undo(db, [made.id], pondId)).rejects.toMatchObject(
+      refusal('0A000', 'not-undoable')
+    )
     await db.close()
   })
 })
@@ -336,7 +380,6 @@ describe('undo_change_log_record — refusals leave everything as it was', () =>
 
 describe('undo_change_log_record — one step, several records', () => {
   it('undoes two records as one, newest first, whatever order they are passed in', async () => {
-    // One step that made two records on the same page: A → B, then B → C.
     const db = await makeDb()
     await seedUser(db, USER)
     const pondId = await pondOf(db)
@@ -370,10 +413,11 @@ describe('undo_change_log_record — one step, several records', () => {
     const pageId = await addPage(db, { blocks: B })
     const otherPage = await addPage(db, { blocks: C, title: 'Other' })
     const fine = await addRecord(db, { pageId, before: A, after: B })
-    // Claims the other page reads B; it reads C, so this half is stale.
     const stale = await addRecord(db, { pageId: otherPage, before: A, after: B })
 
-    await expect(undo(db, [fine, stale], pondId)).rejects.toThrow(/changed since/)
+    await expect(undo(db, [fine, stale], pondId)).rejects.toMatchObject(
+      refusal('40001', 'page-changed')
+    )
 
     expect(await blocksOf(db, pageId)).toEqual(B)
     expect(await blocksOf(db, otherPage)).toEqual(C)
@@ -402,9 +446,7 @@ describe('redo_change_log_record — redo is a record too', () => {
       after: B,
       links: { redo_of: edit },
     })
-    // Redo is the undo of the undo: the undo record is what gets taken back.
     expect((await record(db, undoRecord.id)).status).toBe('undone')
-    // The original stays undone — the redo record is the one that now stands.
     expect((await record(db, edit)).status).toBe('undone')
     await db.close()
   })
@@ -429,7 +471,7 @@ describe('redo_change_log_record — redo is a record too', () => {
     await undo(db, [edit], pondId)
     await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(C), pageId])
 
-    await expect(redo(db, [edit], pondId)).rejects.toMatchObject({ code: '40001' })
+    await expect(redo(db, [edit], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
 
     expect(await blocksOf(db, pageId)).toEqual(C)
     expect(await logSize(db)).toBe(2)
@@ -440,7 +482,7 @@ describe('redo_change_log_record — redo is a record too', () => {
     const db = await makeDb()
     const { pondId, edit } = await scene(db)
 
-    await expect(redo(db, [edit], pondId)).rejects.toThrow(/only an undone record/)
+    await expect(redo(db, [edit], pondId)).rejects.toMatchObject(refusal('22023', 'not-undone'))
     await db.close()
   })
 
@@ -450,7 +492,7 @@ describe('redo_change_log_record — redo is a record too', () => {
     await undo(db, [edit], pondId)
     await redo(db, [edit], pondId)
 
-    await expect(redo(db, [edit], pondId)).rejects.toThrow(/no standing undo/)
+    await expect(redo(db, [edit], pondId)).rejects.toMatchObject(refusal('22023', 'not-undone'))
     await db.close()
   })
 
@@ -459,7 +501,55 @@ describe('redo_change_log_record — redo is a record too', () => {
     const { pondId, edit } = await scene(db)
     await undo(db, [edit], pondId)
 
-    await expect(redo(db, [edit], await otherPond(db))).rejects.toThrow(/not in this pond/)
+    await expect(redo(db, [edit], await otherPond(db))).rejects.toMatchObject(
+      refusal('22023', 'other-pond')
+    )
+    await db.close()
+  })
+})
+
+// ── Pending diffs the step makes stale ───────────────────────────────────────
+
+describe('the outdated sweep runs inside the step', () => {
+  it('outdates a pending diff written against the state the undo left', async () => {
+    const db = await makeDb()
+    const { pondId, edit, pageId } = await scene(db)
+    const againstB = await addRecord(db, {
+      status: 'proposed',
+      pageId,
+      before: B,
+      after: C,
+    })
+    const againstA = await addRecord(db, { status: 'proposed', pageId, before: A, after: C })
+    const sentBack = await addRecord(db, {
+      status: 'changes_requested',
+      pageId,
+      before: B,
+      after: C,
+    })
+
+    await undo(db, [edit], pondId)
+
+    const swept = await record(db, againstB)
+    expect(swept.status).toBe('outdated')
+    expect(swept.transitions.map((t) => t.status)).toEqual(['proposed', 'outdated'])
+    // Written against the page as it now stands, so still applicable.
+    expect((await record(db, againstA)).status).toBe('proposed')
+    // Terminal: nothing advances out of changes requested.
+    expect((await record(db, sentBack)).status).toBe('changes_requested')
+    await db.close()
+  })
+
+  it('leaves nothing outdated when the step is refused', async () => {
+    const db = await makeDb()
+    const { pondId, edit, pageId } = await scene(db)
+    const pending = await addRecord(db, { status: 'proposed', pageId, before: B, after: C })
+    const otherPage = await addPage(db, { blocks: C, title: 'Other' })
+    const stale = await addRecord(db, { pageId: otherPage, before: A, after: B })
+
+    await expect(undo(db, [edit, stale], pondId)).rejects.toMatchObject({ code: '40001' })
+
+    expect((await record(db, pending)).status).toBe('proposed')
     await db.close()
   })
 })
@@ -487,7 +577,6 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
   }
 
   it('undoes an added record by removing it, and redo brings it back', async () => {
-    // The board's own example: "undo · added chickpeas, harissa" on recipes.
     const db = await makeDb()
     const { pondId, recipes } = await collection(db)
     const rowId = await addRow(db, recipes, { title: 'chickpeas, harissa', props: values })
@@ -508,6 +597,30 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     await db.close()
   })
 
+  it('puts a redone record back where it was and when it was made', async () => {
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const createdAt = '2026-01-02T03:04:05.000Z'
+    const rowId = await addRow(db, recipes, { title: 'dal', props: values, order: 7, createdAt })
+    const added = await addRecord(db, {
+      action: 'add_row',
+      pageId: recipes,
+      after: snapshot(rowId, 'dal'),
+    })
+
+    const made = (await undo(db, [added], pondId)).rows[0]
+    expect(made.before).toMatchObject({ position: { order: 7 } })
+    await redo(db, [added], pondId)
+
+    const res = await db.query<{ order: number; created_at: Date }>(
+      'select "order", created_at from public.pages where id = $1',
+      [rowId]
+    )
+    expect(res.rows[0].order).toBe(7)
+    expect(new Date(res.rows[0].created_at).toISOString()).toBe(createdAt)
+    await db.close()
+  })
+
   it('will not remove an added record that has had more written into it', async () => {
     const db = await makeDb()
     const { pondId, recipes } = await collection(db)
@@ -522,8 +635,62 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
       after: snapshot(rowId, 'chickpeas, harissa'),
     })
 
-    await expect(undo(db, [added], pondId)).rejects.toMatchObject({ code: '40001' })
+    await expect(undo(db, [added], pondId)).rejects.toMatchObject(
+      refusal('40001', 'record-changed')
+    )
     expect(await rowOf(db, rowId)).not.toBeNull()
+    await db.close()
+  })
+
+  it('will not remove an added record another record links to, until it is unlinked', async () => {
+    // Relations are forward-only: menus.dishes holds the id; recipes holds nothing.
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const rowId = await addRow(db, recipes, { title: 'chickpeas, harissa', props: values })
+    const added = await addRecord(db, {
+      action: 'add_row',
+      pageId: recipes,
+      after: snapshot(rowId, 'chickpeas, harissa'),
+    })
+    const menus = await addPage(db, { title: 'menus', blocks: [] })
+    await db.query(`update public.pages set props = $1 where id = $2`, [
+      JSON.stringify({
+        _schema: [{ id: 'dishes', name: 'dishes', type: 'relation', target: recipes }],
+      }),
+      menus,
+    ])
+    const sunday = await addRow(db, menus, { title: 'sunday', props: { dishes: [rowId] } })
+
+    await expect(undo(db, [added], pondId)).rejects.toMatchObject(
+      refusal('40001', 'linked-elsewhere')
+    )
+    expect(await rowOf(db, rowId)).not.toBeNull()
+    expect((await record(db, added)).status).toBe('accepted')
+    expect(await logSize(db)).toBe(1)
+
+    await db.query(`update public.pages set props = $1 where id = $2`, [
+      JSON.stringify({ dishes: [] }),
+      sunday,
+    ])
+    await undo(db, [added], pondId)
+    expect(await rowOf(db, rowId)).toBeNull()
+    await db.close()
+  })
+
+  it('does not mistake a non-relation value that happens to hold the id for a link', async () => {
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const rowId = await addRow(db, recipes, { title: 'chickpeas, harissa', props: values })
+    const added = await addRecord(db, {
+      action: 'add_row',
+      pageId: recipes,
+      after: snapshot(rowId, 'chickpeas, harissa'),
+    })
+    await addRow(db, recipes, { title: 'notes', props: { f1: [rowId] } })
+
+    await undo(db, [added], pondId)
+
+    expect(await rowOf(db, rowId)).toBeNull()
     await db.close()
   })
 
@@ -545,6 +712,39 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     await db.close()
   })
 
+  it('outdates a pending record edit written against the record the undo moved', async () => {
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const rowId = await addRow(db, recipes, { title: 'dal, weeknight', props: { f1: 'sides' } })
+    const otherRow = await addRow(db, recipes, { title: 'cacio e pepe', props: { f1: 'mains' } })
+    const edited = await addRecord(db, {
+      action: 'edit_row',
+      pageId: recipes,
+      before: snapshot(rowId, 'dal', { f1: 'mains' }),
+      after: snapshot(rowId, 'dal, weeknight', { f1: 'sides' }),
+    })
+    const pending = await addRecord(db, {
+      status: 'proposed',
+      action: 'edit_row',
+      pageId: recipes,
+      before: snapshot(rowId, 'dal, weeknight', { f1: 'sides' }),
+      after: snapshot(rowId, 'dal, weeknight', { f1: 'soups' }),
+    })
+    const unrelated = await addRecord(db, {
+      status: 'proposed',
+      action: 'edit_row',
+      pageId: recipes,
+      before: snapshot(otherRow, 'cacio e pepe', { f1: 'mains' }),
+      after: snapshot(otherRow, 'cacio e pepe', { f1: 'sides' }),
+    })
+
+    await undo(db, [edited], pondId)
+
+    expect((await record(db, pending)).status).toBe('outdated')
+    expect((await record(db, unrelated)).status).toBe('proposed')
+    await db.close()
+  })
+
   it('refuses a stale record edit', async () => {
     const db = await makeDb()
     const { pondId, recipes } = await collection(db)
@@ -556,8 +756,27 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
       after: snapshot(rowId, 'dal, weeknight', { f1: 'sides' }),
     })
 
-    await expect(undo(db, [edited], pondId)).rejects.toThrow(/changed since/)
+    await expect(undo(db, [edited], pondId)).rejects.toMatchObject(
+      refusal('40001', 'record-changed')
+    )
     expect(await rowOf(db, rowId)).toEqual({ title: 'dal, weeknight', props: { f1: 'soups' } })
+    await db.close()
+  })
+
+  it('refuses a redo whose name a sibling has taken since', async () => {
+    const db = await makeDb()
+    const { pondId, recipes } = await collection(db)
+    const rowId = await addRow(db, recipes, { title: 'dal', props: values })
+    const added = await addRecord(db, {
+      action: 'add_row',
+      pageId: recipes,
+      after: snapshot(rowId, 'dal'),
+    })
+    await undo(db, [added], pondId)
+    await addRow(db, recipes, { title: 'dal', props: values })
+
+    await expect(redo(db, [added], pondId)).rejects.toMatchObject(refusal('23505', 'name-taken'))
+    expect(await logSize(db)).toBe(2)
     await db.close()
   })
 
@@ -565,7 +784,10 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     const db = await makeDb()
     const { pondId, recipes } = await collection(db)
     const ticked = await addRow(db, recipes, { title: 'water plants', props: { f1: 'done' } })
-    const next = await addRow(db, recipes, { title: 'water plants, 16 oct', props: { f1: 'todo' } })
+    const next = await addRow(db, recipes, {
+      title: 'water plants, 16 oct',
+      props: { f1: 'todo' },
+    })
     const edit = await addRecord(db, {
       action: 'edit_row',
       pageId: recipes,
@@ -588,7 +810,36 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
   })
 })
 
-// ── Row-level security: the function runs as its caller ──────────────────────
+// ── The helpers are not part of the API ──────────────────────────────────────
+
+describe('0021 keeps its helpers out of the exposed schema', () => {
+  it('has no change_log_set_back in public', async () => {
+    const db = await makeDb()
+
+    const res = await db.query<{ n: number }>(
+      `select count(*)::int as n from pg_proc
+        where proname like 'change_log_%' and pronamespace = 'public'::regnamespace
+          and proname not in ('change_log_append_only', 'change_log_no_truncate')`
+    )
+    expect(res.rows[0].n).toBe(0)
+    await expect(db.query('select public.change_log_set_back()')).rejects.toThrow(/does not exist/)
+    await db.close()
+  })
+
+  it('grants the private schema to signed-in callers only', async () => {
+    const db = await makeDb()
+    await db.exec(`create role nobody_in_particular`)
+
+    const res = await db.query<{ signed_in: boolean; anyone: boolean }>(
+      `select has_schema_privilege('authenticated', 'private', 'usage') as signed_in,
+              has_schema_privilege('nobody_in_particular', 'private', 'usage') as anyone`
+    )
+    expect(res.rows[0]).toEqual({ signed_in: true, anyone: false })
+    await db.close()
+  })
+})
+
+// ── Row-level security: the functions run as their caller ─────────────────────
 
 describe('undo_change_log_record — another person’s record is out of reach', () => {
   /** Supabase's grants and auth.uid(), which the harness's owner connection lacks. */
@@ -602,7 +853,7 @@ describe('undo_change_log_record — another person’s record is out of reach',
     await db.exec(`set test.uid = '${userId}'; set role authenticated;`)
   }
 
-  it('lets the owner undo under row-level security', async () => {
+  it('lets the owner undo and redo under row-level security', async () => {
     const db = await makeDb()
     const { pondId, pageId, edit } = await scene(db)
     await actAs(db, USER)
@@ -622,7 +873,7 @@ describe('undo_change_log_record — another person’s record is out of reach',
     await seedUser(db, STRANGER)
     await actAs(db, STRANGER)
 
-    await expect(undo(db, [edit], pondId)).rejects.toThrow(/not found/)
+    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('P0002', 'not-found'))
 
     await db.exec('reset role;')
     expect(await blocksOf(db, pageId)).toEqual(B)

@@ -1,24 +1,24 @@
 'use client'
 
 /**
- * The session's undo history (KAN-93): a stack of undoable steps, each the
+ * The session's undo history (KAN-93): per pond, a stack of steps, each the
  * change-log record ids one action made.
  *
  * AUDIT C1: "undo covers the session, until the tab or app closes. After that,
- * revert from the change log." So the stack lives in memory only and is emptied
- * on `pagehide`; the log is what outlasts it. Undo and redo are themselves
- * records (`undo.ts`, migration 0021), so ⌘Z and the log always agree.
+ * revert from the change log." So the history lives in memory only and is
+ * emptied on `pagehide`; the log is what outlasts it.
  *
- * Features that make an undoable change hand its records to {@link
- * SessionUndo.remember}; a key binding calls `undo()` / `redo()` and reads
- * `canUndo` / `canRedo` through `useSessionUndo` (or `subscribe` +
- * `getSnapshot`). Calls run one after another, so a quick ⌘Z ⌘Z takes back two
- * steps in order.
+ * Keyed by pond — `s6m5`: nothing crosses between ponds — so ⌘Z in one pond
+ * never takes back a step made in another, and switching away and back keeps
+ * both histories. A shell-level key handler passes the active pond:
+ * `undo(pondId)`, `redo(pondId)`, `useSessionUndo(pondId)`. Features that make an
+ * undoable change hand its records to `remember`. Calls run one after another,
+ * so a quick ⌘Z ⌘Z takes back two steps in order.
  */
 
 import { useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { redoStep, undoStep, type StepResult, type UndoStep } from './undo'
+import { redoStep, undoStep, type HistoryStep, type StepResult } from './undo'
 
 export interface SessionUndoSnapshot {
   canUndo: boolean
@@ -27,32 +27,50 @@ export interface SessionUndoSnapshot {
 
 /** What `undo()` / `redo()` did. A `stale` or `refused` step is dropped: the log
  *  only grows, so it cannot succeed later — revert from the change log instead. */
-export type SessionUndoOutcome = { kind: 'empty' } | (StepResult & { step: UndoStep })
+export type SessionUndoOutcome = { outcome: 'empty' } | (StepResult & { step: HistoryStep })
 
 export interface SessionUndo {
-  /** Make one action's records the next thing undo takes back. Clears redo. */
-  remember: (step: UndoStep) => void
-  undo: () => Promise<SessionUndoOutcome>
-  redo: () => Promise<SessionUndoOutcome>
+  /** Make one action's records the next thing undo takes back in its pond. Clears that pond's redo. */
+  remember: (step: HistoryStep) => void
+  undo: (pondId: string) => Promise<SessionUndoOutcome>
+  redo: (pondId: string) => Promise<SessionUndoOutcome>
   clear: () => void
   subscribe: (listener: () => void) => () => void
-  getSnapshot: () => SessionUndoSnapshot
+  getSnapshot: (pondId: string) => SessionUndoSnapshot
 }
 
 export interface SessionUndoRunner {
-  undo: (step: UndoStep) => Promise<StepResult>
-  redo: (step: UndoStep) => Promise<StepResult>
+  undo: (step: HistoryStep) => Promise<StepResult>
+  redo: (step: HistoryStep) => Promise<StepResult>
 }
 
+interface PondHistory {
+  undo: HistoryStep[]
+  redo: HistoryStep[]
+  /** Bumped by every `remember`; a result that finds it moved arrived too late. */
+  generation: number
+  snapshot: SessionUndoSnapshot
+}
+
+const EMPTY: SessionUndoSnapshot = { canUndo: false, canRedo: false }
+
 export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
-  const undoStack: UndoStep[] = []
-  const redoStack: UndoStep[] = []
+  let histories = new Map<string, PondHistory>()
   const listeners = new Set<() => void>()
-  let snapshot: SessionUndoSnapshot = { canUndo: false, canRedo: false }
   let queue: Promise<unknown> = Promise.resolve()
 
-  const notify = () => {
-    snapshot = { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 }
+  const historyOf = (pondId: string): PondHistory => {
+    const existing = histories.get(pondId)
+    if (existing) return existing
+    const created: PondHistory = { undo: [], redo: [], generation: 0, snapshot: EMPTY }
+    histories.set(pondId, created)
+    return created
+  }
+
+  const notify = (history?: PondHistory) => {
+    if (history) {
+      history.snapshot = { canUndo: history.undo.length > 0, canRedo: history.redo.length > 0 }
+    }
     for (const listener of listeners) listener()
   }
 
@@ -62,46 +80,58 @@ export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
     return next
   }
 
-  /** Pop at run time, not call time, so queued calls each take the then-newest step. */
-  const step = (
-    from: UndoStep[],
-    apply: (step: UndoStep) => Promise<StepResult>,
-    onDone: (step: UndoStep, result: Extract<StepResult, { kind: 'done' }>) => void
-  ): Promise<SessionUndoOutcome> =>
+  /** Pops at run time, not call time, so queued calls each take the then-newest step. */
+  const runQueued = (pondId: string, direction: 'undo' | 'redo'): Promise<SessionUndoOutcome> =>
     enqueue(async () => {
-      const next = from.pop()
-      if (next === undefined) return { kind: 'empty' }
-      notify()
+      const history = histories.get(pondId)
+      const from = direction === 'undo' ? history?.undo : history?.redo
+      const taken = from?.pop()
+      if (!history || !from || taken === undefined) return { outcome: 'empty' }
+      const takenFrom = from.length
+      const undoDepth = history.undo.length
+      const generation = history.generation
+      notify(history)
+
+      const current = () => histories.get(pondId) === history
       let result: StepResult
       try {
-        result = await apply(next)
+        result = await run[direction](taken)
       } catch (err) {
-        from.push(next)
-        notify()
+        // Still applied (undo) or still undone (redo), so it goes back where it was
+        // — unless the history was cleared, or a new change has emptied redo.
+        if (current() && (direction === 'undo' || history.generation === generation)) {
+          from.splice(Math.min(takenFrom, from.length), 0, taken)
+          notify(history)
+        }
         throw err
       }
-      if (result.kind === 'done') {
-        onDone(next, result)
-        notify()
+      if (result.outcome === 'done' && current()) {
+        if (direction === 'undo' && history.generation === generation) {
+          history.redo.push(taken)
+        }
+        if (direction === 'redo') {
+          // Beneath anything remembered while it ran: those happened after it.
+          const redone = { pondId, recordIds: result.records.map((r) => r.id) }
+          history.undo.splice(Math.min(undoDepth, history.undo.length), 0, redone)
+        }
+        notify(history)
       }
-      return { ...result, step: next }
+      return { ...result, step: taken }
     })
 
   return {
-    remember: (next) => {
-      if (next.recordIds.length === 0) return
-      undoStack.push(next)
-      redoStack.length = 0
-      notify()
+    remember: (step) => {
+      if (step.recordIds.length === 0) return
+      const history = historyOf(step.pondId)
+      history.undo.push(step)
+      history.redo.length = 0
+      history.generation += 1
+      notify(history)
     },
-    undo: () => step(undoStack, run.undo, (undone) => redoStack.push(undone)),
-    redo: () =>
-      step(redoStack, run.redo, (redone, result) =>
-        undoStack.push({ pondId: redone.pondId, recordIds: result.records.map((r) => r.id) })
-      ),
+    undo: (pondId) => runQueued(pondId, 'undo'),
+    redo: (pondId) => runQueued(pondId, 'redo'),
     clear: () => {
-      undoStack.length = 0
-      redoStack.length = 0
+      histories = new Map()
       notify()
     },
     subscribe: (listener) => {
@@ -110,7 +140,7 @@ export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
         listeners.delete(listener)
       }
     },
-    getSnapshot: () => snapshot,
+    getSnapshot: (pondId) => histories.get(pondId)?.snapshot ?? EMPTY,
   }
 }
 
@@ -121,7 +151,7 @@ export const clearOnPageHide = (target: Window, undo: SessionUndo): (() => void)
   return () => target.removeEventListener('pagehide', handlePageHide)
 }
 
-/** The tab's one history. */
+/** The tab's history. */
 export const sessionUndo: SessionUndo = createSessionUndo({
   undo: (step) => undoStep(createClient(), step),
   redo: (step) => redoStep(createClient(), step),
@@ -129,8 +159,10 @@ export const sessionUndo: SessionUndo = createSessionUndo({
 
 if (typeof window !== 'undefined') clearOnPageHide(window, sessionUndo)
 
-const SERVER_SNAPSHOT: SessionUndoSnapshot = { canUndo: false, canRedo: false }
-
-/** `canUndo` / `canRedo` for the tab's history, re-rendering when either changes. */
-export const useSessionUndo = (): SessionUndoSnapshot =>
-  useSyncExternalStore(sessionUndo.subscribe, sessionUndo.getSnapshot, () => SERVER_SNAPSHOT)
+/** `canUndo` / `canRedo` in a pond, re-rendering when either changes. No pond, no history. */
+export const useSessionUndo = (pondId: string | null): SessionUndoSnapshot =>
+  useSyncExternalStore(
+    sessionUndo.subscribe,
+    () => (pondId === null ? EMPTY : sessionUndo.getSnapshot(pondId)),
+    () => EMPTY
+  )
