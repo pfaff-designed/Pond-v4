@@ -998,7 +998,10 @@ function BlockEditor({
         data-part="handle"
         hidden={!chrome}
         className={cn(
-          'absolute -left-3.5 top-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          'absolute -left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          // A card centres the 24px handle on its head row; bare prose has no head
+          // row, so it centres on the first line (2px inset + half the 28px line).
+          !frame && block.type === 'text' ? 'top-1' : 'top-3',
           menuOpen && 'opacity-100'
         )}
       >
