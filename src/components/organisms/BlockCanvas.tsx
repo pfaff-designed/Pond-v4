@@ -755,17 +755,27 @@ export function BlockCanvas({
             // lone full block below — and returns to its row on a wider measurement.
             const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
 
+            // Keyed on the row's first block, not its index in `blockRows`: a
+            // raw array here would give React a position-dependent implicit key,
+            // so a block that shifts row (e.g. a neighbour removed) would read as
+            // a brand new element and remount — dropping any focus just set on it.
+            const rowKey = row[0].block.id
+
             // A lone full-width block (every block, absent a width) renders exactly
             // as before: no sizing wrapper, so today's DOM is untouched.
             if (stacks || (row.length === 1 && widths[0] === 'full')) {
-              return row.map(({ block, i }) => renderBlockEditor(block, i))
+              return (
+                <React.Fragment key={rowKey}>
+                  {row.map(({ block, i }) => renderBlockEditor(block, i))}
+                </React.Fragment>
+              )
             }
             // A row of one narrower block still needs its own width (it just has
             // no row-mate to share the 16px gap with).
             if (row.length === 1) {
               const { block, i } = row[0]
               return (
-                <div key={block.id} style={{ width: blockWidthStyle(block.width) }}>
+                <div key={rowKey} style={{ width: blockWidthStyle(block.width) }}>
                   {renderBlockEditor(block, i)}
                 </div>
               )
@@ -774,11 +784,7 @@ export function BlockCanvas({
             // height, the 16px gap also used between stacked blocks, nothing
             // stretches to fill the row's leftover — that stays paper.
             return (
-              <div
-                key={row[0].block.id}
-                className="flex items-start"
-                style={{ gap: BLOCK_ROW_GAP_PX }}
-              >
+              <div key={rowKey} className="flex items-start" style={{ gap: BLOCK_ROW_GAP_PX }}>
                 {row.map(({ block, i }) => (
                   <div key={block.id} style={{ width: blockWidthStyle(block.width) }}>
                     {renderBlockEditor(block, i)}
