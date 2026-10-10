@@ -9,6 +9,7 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 - Repo: `/Users/charlespfaff/Documents/Code/Projects/Pond-v4` (call it `REPO`). Remote: `git@github.com:pfaff-designed/Pond-v4.git`; `gh` takes `--repo pfaff-designed/Pond-v4`.
 - Jira: Atlassian MCP, cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`. Transitions: `31` In Review, `41` Done. Labels are a full replace: read them before writing.
 - Role prompts: `REPO/.cursor/skills/ship-epics/{builder,reviewer,verifier}.md`. Read each before launching its subagent and pass its full text plus the inputs it names.
+- **The stall failsafe**: `REPO/.cursor/skills/ship-epics/failsafe.md`. Read it first; it binds you twice. As an agent: beat `/tmp/ship-epics/EPIC/orchestrator.hb` before every step below, and at the end write your return block to `/tmp/ship-epics/EPIC/orchestrator.result.md` and beat `DONE`. As a supervisor: **every subagent you launch gets `failsafe.md` appended to its prompt, plus its `HB` and `RESULT` paths (`/tmp/ship-epics/EPIC/<role>-<ticket>.hb` / `.result.md`), runs with `run_in_background: true`, and is polled and handled exactly as its "If you supervise" section says.** A subagent stopped by the failsafe is a stopped task: its ticket returns `stopped` with the step and both approaches.
 - Worktree for a ticket: `REPO/.claude-worktrees/feat-<key lowercased>`, branch `feat/<key lowercased>`.
 - Jest in a worktree: `npx jest --testPathIgnorePatterns "/node_modules/" "/\.claude/" "\.pglite\.test\.ts$" "/__tests__/helpers/"` (the repo config ignores `/.claude-worktrees/`).
 
@@ -51,13 +52,13 @@ mkdir -p WORKTREE/supabase && [ -d REPO/supabase/.temp ] && cp -R REPO/supabase/
 
 ### 4. Build
 
-Launch the builder: `subagent_type: generalPurpose`, foreground, prompt = `builder.md` + `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS` (the person's path), and the epic's `Owns:` and `Migrations:` lines verbatim. Keep its agent id: fix rounds resume it.
+Launch the builder: `subagent_type: generalPurpose`, supervised in the background (failsafe), prompt = `builder.md` + `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS` (the person's path), and the epic's `Owns:` and `Migrations:` lines verbatim. Keep its agent id: fix rounds resume it, in the background, supervised the same way.
 
 If it returns `green: false`, read why. One more attempt with a changed instruction is allowed; a second failure is `stopped`.
 
 ### 5. Review
 
-This is AGENTS.md's one gate, `/code-review`. Read `~/.claude/skills/code-review/SKILL.md` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are `subagent_type: generalPurpose`, launched in **one message**, foreground. Into each one's prompt, after the skill's brief, paste `reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
+This is AGENTS.md's one gate, `/code-review`. Read `~/.claude/skills/code-review/SKILL.md` and follow it with these bindings: the fixed point is `origin/main`, the diff is `git -C WORKTREE diff origin/main...BRANCH`, the spec is the Jira ticket, the standards source is `WORKTREE/AGENTS.md`. Its two sub-agents are `subagent_type: generalPurpose`, launched in **one message**, both in the background, supervised together (one poll checks both heartbeats). Into each one's prompt, after the skill's brief, paste `reviewer.md` with `AXIS` (`standards` / `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
 
 A reviewer finding is checked before it is acted on: open the cited file and confirm it. Reviewers are sometimes wrong (on 2026-10-09 one disputed a line count that was eslint's count against the raw one — both were right).
 
@@ -70,17 +71,17 @@ Blocking findings go back to the builder (`resume` its id) with the confirmed li
 The browser is one shared tab across every orchestrator. Take the lock first:
 
 ```sh
-until mkdir /tmp/pond-browser.lock 2>/dev/null; do sleep 30; done; echo "EPIC $$" > /tmp/pond-browser.lock/owner
+mkdir /tmp/pond-browser.lock 2>/dev/null && echo "EPIC" > /tmp/pond-browser.lock/owner && echo GOT || { cat /tmp/pond-browser.lock/owner; echo BUSY; }
 ```
 
-Give up after 30 minutes of waiting (return `stopped: browser lock`). Then, in the background:
+One attempt per shell call; on `BUSY`, `sleep 30` in its own call and try again. Beat `verify: waiting for the browser lock` with `LIMIT` 1800 once, before the first attempt — a wait that passes 30 minutes is a stall, and you return `stopped: browser lock` with the owner it names. Then, in the background:
 
 ```sh
 cd WORKTREE && (npx next dev -p PORT > /tmp/EPIC-dev.log 2>&1 &) ; echo started
 cd REPO && (npx -y serve wayfinder/design_handoff_pond -l $((PORT + 1500)) > /tmp/EPIC-serve.log 2>&1 &)
 ```
 
-Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Launch the verifier: `subagent_type: browser-use`, prompt = `verifier.md` + `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
+Wait until `curl -s -o /dev/null -w '%{http_code}' localhost:PORT` answers (poll with `sleep 5`, max 3 minutes). Launch the verifier, supervised in the background (failsafe): `subagent_type: browser-use`, prompt = `verifier.md` + `APP_URL=http://localhost:PORT`, `BOARD_URL=http://localhost:<PORT+1500>`, `PATH_STEPS`, the board files and frames the spec names, `TICKET`.
 
 Afterwards, always — pass or fail:
 
@@ -105,6 +106,8 @@ If the branch adds anything under `supabase/migrations/`: run `npm run test:pgli
    ```sh
    sleep 20; timeout 1200 gh pr checks <N> --repo pfaff-designed/Pond-v4 --watch --interval 30; echo "exit=$?"
    ```
+
+   This is the one command allowed past the failsafe's 10 minutes: beat `land: CI for #<N>` with `LIMIT` 1500 first, and run it with `block_until_ms` 1300000.
 
    Red: `gh run view <run> --repo pfaff-designed/Pond-v4 --log-failed`, fix through the builder (a fix round), push, wait again. A check that is still pending after the timeout is a stall: say so and stop.
 

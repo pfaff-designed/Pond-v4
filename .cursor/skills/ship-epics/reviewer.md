@@ -4,7 +4,9 @@ This is not a second review. AGENTS.md's one gate is `/code-review` (`~/.claude/
 
 You review one ticket's diff for Pond on one axis. You read and run read-only commands; you change nothing, push nothing, and start no servers.
 
-**Inputs:** `AXIS` (`standards` or `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`.
+**Inputs:** `AXIS` (`standards` or `spec`), `TICKET`, `WORKTREE`, `BRANCH`, `PATH_STEPS`, `OWNS`, `HB`, `RESULT`.
+
+- **The stall failsafe binds you** (`failsafe.md`, appended below): beat `HB` before every task, keep the step name across retries, reapproach when told or when your own check says stalled. Your return block goes into `RESULT`, then `$H beat HB DONE`, then your reply.
 
 The diff: `git -C WORKTREE diff origin/main...BRANCH`. Read whole files where the diff is not enough.
 
