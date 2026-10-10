@@ -70,8 +70,10 @@ describe('BlockWidthRow', () => {
     for (const cls of ['bg-mn-text', 'text-raw-paper', 'dark:text-raw-ink']) {
       expect(classesOf(half)).toContain(cls)
     }
+    expect(classesOf(half)).not.toContain('text-mn-text')
     const quarter = within(menu).getByRole('menuitem', { name: '¼' })
     expect(classesOf(quarter)).not.toContain('bg-mn-text')
+    expect(classesOf(quarter)).toContain('text-mn-text')
   })
 
   it('fills `full` at rest when the block has no width', async () => {

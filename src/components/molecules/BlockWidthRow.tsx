@@ -36,10 +36,11 @@ const ROW = 'flex gap-[2px] px-[4px] pt-[2px] pb-[4px]'
 
 const CELL =
   'flex h-[30px] min-w-0 cursor-default items-center justify-center rounded-[8px] font-medium ' +
-  'text-mn-text outline-none transition-[background] duration-150 [transition-timing-function:cubic-bezier(.22,.8,.2,1)]'
+  'outline-none transition-[background] duration-150 [transition-timing-function:cubic-bezier(.22,.8,.2,1)]'
 
 const CELL_FULL = 'flex-[1.4] font-mono text-[11px]'
 const CELL_FRACTION = 'flex-1 font-sans text-[14px]'
+const CELL_UNFILLED = 'text-mn-text'
 const CELL_FILLED = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 
 export const BlockWidthRow = ({ width, onSelect }: BlockWidthRowProps) => {
@@ -53,7 +54,7 @@ export const BlockWidthRow = ({ width, onSelect }: BlockWidthRowProps) => {
           label={label}
           onClick={() => onSelect(value)}
           className={`${CELL} ${value === 'full' ? CELL_FULL : CELL_FRACTION} ${
-            value === current ? CELL_FILLED : ''
+            value === current ? CELL_FILLED : CELL_UNFILLED
           }`}
         >
           {label}
