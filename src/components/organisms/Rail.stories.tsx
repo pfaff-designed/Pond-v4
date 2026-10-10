@@ -600,8 +600,9 @@ export const Loading: Story = {
 }
 
 /**
- * `PondRail` `empty`: the root row alone — not selected, no ＋ — and the hint,
- * verbatim, at `margin 8px 16px 0 34px` measured from the CARD edge, 12.5 / 1.5.
+ * `PondRail` `empty`: the root row alone — not selected, no resting ＋, its ＋ on
+ * hover like any row (`hasTools: hov`) — and the hint, verbatim, at
+ * `margin 8px 16px 0 34px` measured from the CARD edge, 12.5 / 1.5.
  */
 export const Empty: Story = {
   name: 'empty',
@@ -616,9 +617,14 @@ export const Empty: Story = {
       within(canvas.getByRole('tree', { name: 'Workspace' })).getAllByRole('treeitem')
     ).toHaveLength(1)
     await expect(root).toHaveAttribute('aria-selected', 'false')
-    await expect(within(root).queryByRole('button')).not.toBeInTheDocument()
+    const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
+    await expect(tools).not.toBeNull()
+    await expect(getComputedStyle(tools as HTMLElement).opacity).toBe('0')
     await userEvent.hover(root)
-    await expect(root.querySelector('[data-part="row-tools"]')).toBeNull()
+    await waitFor(() => expect(getComputedStyle(tools as HTMLElement).opacity).toBe('1'))
+    await expect(within(root).getByRole('button', { name: /^Add sub-page to/ })).toBeVisible()
+    await expect(within(root).queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
+    await userEvent.unhover(root)
 
     const card = cardOf(canvasElement)
     const box = hint.getBoundingClientRect()
@@ -1543,8 +1549,10 @@ export const EmptyRootHasNoChevron: Story = {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     await expect(life).not.toHaveAttribute('aria-expanded')
     await expect(life.querySelector('button[aria-hidden="true"]')).toBeNull()
-    // the board selects nothing here, so the root draws no ＋ at all
-    await expect(within(life).queryByRole('button')).not.toBeInTheDocument()
+    // the board selects nothing here, so the root draws no resting ＋ — only its hover tools
+    const tools = life.querySelector<HTMLElement>('[data-part="row-tools"]')
+    await expect(tools).not.toBeNull()
+    await expect(getComputedStyle(tools as HTMLElement).opacity).toBe('0')
   },
 }
 
