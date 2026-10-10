@@ -130,6 +130,22 @@ export function applyRenameOptimistic(
 }
 
 /**
+ * Optimistically set ONE row's glyph (KAN-248 6/8) in the pagesKey() cache —
+ * null restores the automatic mark — so the rail redraws through `resolveMark`
+ * before `setPageGlyph`'s write lands. Mirrors `applyRenameOptimistic`: touches
+ * only the picked row, so rolling back is the same call with the previous glyph.
+ */
+export function applyGlyphOptimistic(
+  queryClient: QueryClient,
+  pick: { id: string; glyph: string | null },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === pick.id ? { ...r, glyph: pick.glyph } : r))
+  )
+}
+
+/**
  * Optimistically apply a MOVE (F25) to the pagesKey() cache so the rail
  * restructures instantly — before movePage's write lands. Sets the moved row's
  * `parent_id` and rewrites `order = index` for every id in the reindexed target

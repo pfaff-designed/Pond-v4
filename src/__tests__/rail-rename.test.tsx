@@ -35,6 +35,7 @@ const databases = node('root-db', 'databases', [], null, 9)
 function setup(tree: RailNode[] = [creativity, scratch, databases], isEmpty = false) {
   const handlers = {
     onRename: jest.fn(),
+    onPickGlyph: jest.fn(),
     onDelete: jest.fn(),
     onAddChild: jest.fn(),
     onSelect: jest.fn(),

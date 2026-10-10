@@ -12,6 +12,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import { pushRecentGlyph } from '@/lib/rail/glyph-library'
 
 export interface Pond {
   id: string
@@ -19,9 +20,12 @@ export interface Pond {
   glyph: string | null
   theme: string
   order: number
+  /** Newest first, capped — KAN-27's `ponds.recent_glyphs`, `pushRecentGlyph`'s own shape.
+   *  Optional: several fixtures build a `Pond` by hand with no opinion on it. */
+  recentGlyphs?: string[]
 }
 
-const COLUMNS = 'id, name, glyph, theme, "order"'
+const COLUMNS = 'id, name, glyph, theme, "order", recentGlyphs:recent_glyphs'
 
 /** Every pond the signed-in person owns, in switcher order. */
 export async function listPonds(): Promise<Pond[]> {
@@ -82,4 +86,29 @@ export async function createPond(name: string): Promise<Pond> {
 
   if (error) throw error
   return data as Pond
+}
+
+/**
+ * Push `glyph` onto a pond's recent list and persist it — the write over
+ * `pushRecentGlyph`'s pure merge. Takes the pond's current list rather than
+ * reading it back: the caller (the rail's pick handler) already has it off
+ * `usePond()`, and both ends apply the same pure merge to the same snapshot,
+ * so there is nothing for a second read to disagree with.
+ */
+export async function pushRecentGlyphToPond(
+  pondId: string,
+  recentGlyphs: readonly string[],
+  glyph: string
+): Promise<string[]> {
+  const next = pushRecentGlyph(recentGlyphs, glyph)
+  const supabase = createClient()
+  // Cast as `createPond` does above: `Database` can't infer an Update shape
+  // for a quoted-identifier table either.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('ponds')
+    .update({ recent_glyphs: next })
+    .eq('id', pondId)
+  if (error) throw error
+  return next
 }

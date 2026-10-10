@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/test'
 
 import { RailView, type RailNode } from './Rail'
 import { srgbAsRgba } from './story-colour'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
-import type { AreaRole } from '@/lib/rail/glyph-library'
+import { pushRecentGlyph, type AreaRole } from '@/lib/rail/glyph-library'
 import type { MarkSource } from '@/lib/pages/mark'
 
 const node = (
@@ -75,6 +75,7 @@ const meta = {
     onAddChild: fn(),
     onDelete: fn(),
     onRename: fn(),
+    onPickGlyph: fn(),
     onLife: fn(),
     onToggleLife: fn(),
     onOpenDatabases: fn(),
@@ -154,6 +155,277 @@ export const Expanded: Story = {
     for (const [i, row] of rows.entries()) {
       await expect(row.closest('[role="treeitem"]')).toBe(items[i])
     }
+  },
+}
+
+/**
+ * KAN-248 (2/4): every rail row's mark is a real button now, not the
+ * decorative `span[aria-hidden]` it was — an area's glyph (`Health`) and a
+ * plain page's kind dot (`Scratchpad`) alike, both at rest (closed).
+ */
+export const MarkButton: Story = {
+  name: 'mark · button',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = (name: RegExp) => canvas.getByRole('treeitem', { name })
+
+    for (const [rowName, markName] of [
+      [/^Health/, 'change icon for Health'],
+      [/Scratchpad/, 'change icon for Scratchpad'],
+    ] as const) {
+      const mark = within(row(rowName)).getByRole('button', { name: markName })
+      await expect(mark).toHaveAttribute('aria-expanded', 'false')
+      await expect(mark).not.toHaveAttribute('aria-hidden')
+    }
+  },
+}
+
+/**
+ * KAN-248 (5/8): clicking a row's mark opens the glyph picker anchored under
+ * it (PATH_STEPS 2–3) — the row stays selected and the button reads
+ * `aria-expanded="true"`. Esc closes it, leaves the mark unchanged, and
+ * returns focus to the button (PATH_STEP 8). The glass portals to
+ * `document.body`, outside `canvasElement`, so its parts are read off the
+ * document (`ConfirmDialog.stories.tsx`'s own pattern for a portaled part).
+ * Also covers clicking the mark of a row that is NOT yet selected (6y frame
+ * 1: "clicking the workouts dot opens the picker under it" with the row
+ * selected) — `onSelect` must fire for that row too, not just the one the
+ * story starts out on.
+ */
+export const MarkOpensPicker: Story = {
+  name: 'mark · opens the glyph picker',
+  args: { selectedId: 'health' },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /^Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+
+    await userEvent.click(mark)
+    await expect(mark).toHaveAttribute('aria-expanded', 'true')
+    await expect(row).toHaveAttribute('aria-selected', 'true')
+    await expect(args.onSelect).toHaveBeenCalledWith('health')
+
+    const glass = document.body.querySelector('[data-part="glass"][data-kind="glyph"]')
+    await expect(glass).toBeTruthy()
+    // top to bottom: search head, the listbox (automatic row + the library
+    // grid), the foot — the glass's own direct children, not every nested
+    // `data-part` (the head's own `esc` key hint carries one too). The
+    // automatic row and the grid sit one level deeper now, inside the
+    // `role="listbox"` that gives `role="option"` its required ancestor.
+    const parts = [...glass!.children].map((p) => p.getAttribute('data-part'))
+    await expect(parts).toEqual(['head', 'list', 'foot'])
+    await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+
+    await userEvent.keyboard('{Escape}')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(mark).toHaveAttribute('aria-expanded', 'false')
+    await expect(mark).toHaveFocus()
+
+    // Health was already selected above — Scratchpad is not (`selectedId`
+    // stays 'health' throughout this story), so clicking ITS mark is the
+    // unselected-row case 6y frame 1 draws: `onSelect` must still fire for
+    // Scratchpad, not just open the picker under it.
+    const scratchRow = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const scratchMark = within(scratchRow).getByRole('button', {
+      name: 'change icon for Scratchpad',
+    })
+    await userEvent.click(scratchMark)
+    await expect(scratchMark).toHaveAttribute('aria-expanded', 'true')
+    await expect(args.onSelect).toHaveBeenCalledWith('scratch')
+  },
+}
+
+/**
+ * KAN-248 path walk 1/3 (PATH_STEPS 9, and 2-3 by key): the mark is reached by
+ * Tab alone, never a click, and ↵ opens its picker. `MarkOpensPicker` already
+ * covers the click route and Esc; this covers only the key route — that the
+ * mark carries no `tabIndex` override (unlike the ＋/× tools, which are
+ * deliberately `-1`) and is a normal stop in the tab order, and that ↵ opens
+ * the same picker once it has focus.
+ */
+export const MarkOpensPickerByKeyboard: Story = {
+  name: 'mark · opens the glyph picker from the keyboard',
+  args: { selectedId: 'scratchpad' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Scratchpad' })
+
+    // `scratchpad` is this tree's one roving tab stop (selectedId), so a
+    // keyboard user tabbing through the rail lands on its row first; the
+    // story picks the story up from there, scoped to the mark's own step.
+    row.focus()
+    await expect(row).toHaveFocus()
+
+    await userEvent.tab()
+    await expect(mark).toHaveFocus()
+    await expect(mark.tabIndex).toBe(0)
+    await expect(mark).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.keyboard('{Enter}')
+    await expect(mark).toHaveAttribute('aria-expanded', 'true')
+    await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+  },
+}
+
+/** The real node for `id` in `tree`, so a fabricated `MarkSource` carries its true `parentId` — `isArea` reads that, not the row's own id. */
+function findNode(tree: readonly RailNode[], id: string): RailNode | undefined {
+  for (const n of tree) {
+    if (n.id === id) return n
+    const found = findNode(n.children, id)
+    if (found) return found
+  }
+  return undefined
+}
+
+/**
+ * Plays the part of `Rail()`'s own `marks` memo (built from the `pagesKey()`
+ * cache `applyGlyphOptimistic` writes) AND its `recentGlyphs` overlay (built
+ * from the pond's own list plus `pushedGlyphs`, KAN-248 7/8): `onPickGlyph`
+ * updates both synchronously, so this story can show the row's mark
+ * redrawing through `resolveMark`, and the picker's own `recent` section
+ * carrying the pick on its next open, without a container, a QueryClient, or
+ * anything awaited in between — the same "before the write settles" instant
+ * this component owns, container aside.
+ */
+function GlyphPickHarness(args: ComponentProps<typeof RailView>) {
+  const [marks, setMarks] = useState<ReadonlyMap<string, MarkSource>>(new Map())
+  const [recentGlyphs, setRecentGlyphs] = useState<readonly string[]>(args.recentGlyphs ?? [])
+  return (
+    <RailView
+      {...args}
+      marks={marks}
+      recentGlyphs={recentGlyphs}
+      onPickGlyph={(id, glyph) => {
+        args.onPickGlyph(id, glyph)
+        const node = findNode(args.tree, id)
+        setMarks((prev) =>
+          new Map(prev).set(id, {
+            id,
+            parentId: node?.parentId ?? null,
+            title: node?.title ?? id,
+            glyph,
+          })
+        )
+        if (glyph) setRecentGlyphs((prev) => pushRecentGlyph(prev, glyph))
+      }}
+    />
+  )
+}
+
+/**
+ * KAN-248 (6/8): picking a cell commits at once. `onPickGlyph` fires with the
+ * row's id and the picked glyph (PATH_STEPS 5), the picker closes and focus
+ * returns to the mark, and the row's `AreaMark` repaints with the new glyph
+ * the instant `marks` carries it — no promise awaited, matching
+ * `applyGlyphOptimistic` landing in the cache ahead of `setPageGlyph`'s write.
+ */
+export const PickCommitsGlyph: Story = {
+  name: 'mark · a pick commits the glyph at once',
+  args: { selectedId: 'health' },
+  render: (args) => <GlyphPickHarness {...args} />,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /^Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+    const iconOf = () => row.querySelector('[data-area-mark] [data-icon]')?.getAttribute('data-icon')
+    const before = iconOf()
+
+    await userEvent.click(mark)
+    const input = await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+    await userEvent.type(input, 'fl')
+    await userEvent.keyboard('{Enter}')
+
+    await expect(args.onPickGlyph).toHaveBeenCalledWith('health', 'fat-flake')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(mark).toHaveAttribute('aria-expanded', 'false')
+    await expect(mark).toHaveFocus()
+    await expect(iconOf()).toBe('fat-flake')
+    await expect(iconOf()).not.toBe(before)
+  },
+}
+
+/**
+ * KAN-248 path walk 2/3 (PATH_STEPS 8): picking `automatic` on a row that
+ * already carries a glyph restores the plain kind dot IN THE RAIL —
+ * `GlyphPicker.stories.tsx`'s own `PickAutomatic` only proves the component
+ * calls `onPick(null)`; this proves the row the pick is anchored to actually
+ * repaints. Reuses `PickCommitsGlyph`'s own `GlyphPickHarness` rather than a
+ * second one (the harness now resolves the fabricated `MarkSource`'s
+ * `parentId`/`title` off the real `args.tree` node instead of a hardcoded
+ * `'health'` shape, so it carries any row truthfully). `Sleep` (a CHILD of
+ * `Health`, not a top-level row) is the target — `isArea` reads
+ * `parentId === null`, so a top-level page like `Scratchpad` is itself an
+ * "area" and its own automatic is a title-derived glyph, never a bare dot;
+ * only a nested leaf's automatic is the plain `KindDot` this item checks for.
+ * `Sleep` first gets a real glyph the same way `PickCommitsGlyph` does.
+ * Reopening the picker with a glyph already current initialises `active` to
+ * that glyph's OWN cell (the component's `useState(() =>
+ * cells.findIndex(…))` init), not `automatic` — so a bare `{Enter}` would
+ * just re-pick the same cell. A no-match query (`GlyphPicker.stories.tsx`'s
+ * own `NoMatch` story) drives `active` to the automatic row regardless of
+ * where the current glyph's cell sits in the grid, then `{Enter}` picks it.
+ */
+export const PickAutomaticRestoresKindDot: Story = {
+  name: 'mark · picking automatic restores the kind dot in the rail',
+  args: { expanded: new Set(['health']), selectedId: 'sleep' },
+  render: (args) => <GlyphPickHarness {...args} />,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /Sleep/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Sleep' })
+    const iconOf = () => row.querySelector('[data-area-mark] [data-icon]')?.getAttribute('data-icon')
+
+    await userEvent.click(mark)
+    const input = await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+    await userEvent.type(input, 'fl')
+    await userEvent.keyboard('{Enter}')
+    await expect(iconOf()).toBe('fat-flake')
+
+    await userEvent.click(mark)
+    const reopened = await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+    await userEvent.type(reopened, 'zzzz')
+    await userEvent.keyboard('{Enter}')
+
+    await expect(args.onPickGlyph).toHaveBeenCalledWith('sleep', null)
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(mark).toHaveAttribute('aria-expanded', 'false')
+    await expect(mark).toHaveFocus()
+    await expect(row.querySelector('[data-area-mark]')).toBeNull()
+    await expect(iconOf()).toBeUndefined()
+  },
+}
+
+/**
+ * KAN-248 (7/8): a pick also pushes onto the pond's recent list (KAN-27), and
+ * the picker's own `recent` section reads it back — not the empty list it drew
+ * before this item. Picks `fat-flake` once, closes (automatic, esc), reopens,
+ * and finds it first among the recent cells, ahead of the fixture's own seed.
+ */
+export const RecentGlyphPersists: Story = {
+  name: 'mark · a pick lands first in recent, next time the picker opens',
+  args: { selectedId: 'health', recentGlyphs: ['heart', 'leaf-01'] },
+  render: (args) => <GlyphPickHarness {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /^Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+
+    await userEvent.click(mark)
+    const input = await within(document.body).findByRole('combobox', { name: 'search glyphs' })
+    await userEvent.type(input, 'fl')
+    await userEvent.keyboard('{Enter}')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+
+    await userEvent.click(mark)
+    const recentGrid = await within(document.body).findByRole('grid', { name: 'recent' })
+    const cells = within(recentGrid).getAllByRole('gridcell')
+    await expect(cells[0]).toHaveAttribute('aria-label', 'fat-flake')
+    await expect(cells.map((c) => c.getAttribute('aria-label'))).toEqual([
+      'fat-flake',
+      'heart',
+      'leaf-01',
+    ])
   },
 }
 
@@ -1641,8 +1913,13 @@ export const Renaming: Story = {
       // is taller, so the row is 2px shorter while open. Never taller.
       await expect(books.getBoundingClientRect().height).toBe(heightAtRest - 2)
 
-      // No tools while renaming; neighbours are untouched.
-      await expect(within(books).queryByRole('button')).toBeNull()
+      // The ＋/× tools are gone while renaming — the mark button (KAN-248) is not
+      // one of them and stays, exactly like a file icon beside a renaming tab.
+      await expect(within(books).queryByRole('button', { name: /add sub-page/i })).toBeNull()
+      await expect(within(books).queryByRole('button', { name: /^delete/i })).toBeNull()
+      await expect(
+        within(books).getByRole('button', { name: 'change icon for books' })
+      ).toBeInTheDocument()
       await expect(within(treeRow(scope, 'recipes')).queryByRole('textbox')).toBeNull()
 
       await fireEvent.keyDown(field, { key: 'Escape' })
