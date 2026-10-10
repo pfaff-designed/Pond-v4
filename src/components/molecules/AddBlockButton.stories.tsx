@@ -1,14 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, screen, userEvent, within } from 'storybook/test'
 
-import { AddBlockButton } from './BlockInserters'
+import { AddBlockButton } from './AddBlockButton'
 
 /**
  * The foot add (ticket-44, UI-audit Slice 2a): drops a text block directly —
  * typing `/` in it summons the block palette.
  */
 const meta = {
-  title: 'Molecules/BlockInserters',
+  title: 'Molecules/AddBlockButton',
   component: AddBlockButton,
   parameters: { layout: 'padded' },
   decorators: [

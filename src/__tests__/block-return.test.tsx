@@ -1,6 +1,5 @@
 /**
- * Adding a block mid-page (`Pond 07.05 Blocks`, storyboard 6g frame 1): "Return
- * after the table, then /". Return on a focused block — the block itself, never
+ * Adding a block mid-page: "Return after the table, then /". Return on a focused block — the block itself, never
  * an editor inside it — opens an empty line after it, and `/` there is the
  * ordinary `/` menu. `/` at the start of an empty line inside a text block opens
  * the same menu and, on a pick, splits the block at that line. The handle is the
@@ -27,8 +26,9 @@ jest.mock('@/lib/templates/client', () => ({
   listTemplates: jest.fn().mockResolvedValue([]),
   getTemplate: jest.fn().mockResolvedValue(null),
 }))
+const mockFetchPages = jest.fn()
 jest.mock('@/lib/pages/tree', () => ({
-  fetchPages: jest.fn().mockResolvedValue([]),
+  fetchPages: (...args: unknown[]) => mockFetchPages(...args),
   insertPageOptimistic: jest.fn(),
 }))
 jest.mock('@/lib/pages/source-databases', () => ({
@@ -51,6 +51,20 @@ const table: Block = {
 }
 const note: Block = { id: 'b-note', type: 'text', content: 'Cabinets are the only open cost.' }
 const prose: Block = { id: 'b-prose', type: 'text', content: 'soak overnight\n\nsimmer with bay' }
+const emptyLine: Block = { id: 'b-empty', type: 'text', content: '' }
+const withSlashLine = { ...prose, content: 'soak overnight\n\n/\n\nsimmer with bay' }
+/** The pond's databases root and one database in it, as `fetchPages` lists them. */
+const databaseRows = [
+  { id: 'root', parent_id: null, type: 'page', title: 'databases', order: 0, updated_at: '' },
+  {
+    id: 'db-recipes',
+    parent_id: 'root',
+    type: 'database',
+    title: 'recipes',
+    order: 0,
+    updated_at: '',
+  },
+]
 
 function Harness({ initial, onChange }: { initial: Block[]; onChange: jest.Mock }) {
   const [blocks, setBlocks] = React.useState(initial)
@@ -94,9 +108,10 @@ const rowNamed = (menu: HTMLElement, name: string) =>
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockFetchPages.mockResolvedValue([])
 })
 
-describe('Return after a block opens a line for `/` (6g frame 1)', () => {
+describe('Return after a block opens a line for `/`', () => {
   it('Return after the table, then `/`', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([table, note])
@@ -151,12 +166,53 @@ describe('Return after a block opens a line for `/` (6g frame 1)', () => {
     await user.keyboard('{Backspace}')
     expect(lastBlocks(onChange)).toEqual([table, note])
     await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
+    expect(screen.queryByText(/deleted/i)).not.toBeInTheDocument()
+  })
+
+  it('Backspace in an empty line under text puts the caret at the end of that text, with nothing to undo', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([note, emptyLine])
+    const line = await textBlockIn('b-empty')
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+    expect(lastBlocks(onChange)).toEqual([note])
+    const above = await textBlockIn('b-note')
+    await waitFor(() => expect(above).toHaveFocus())
+    const { state } = textEditorOf(above)
+    expect(state.selection.from).toBe(state.doc.content.size - 1)
+    expect(screen.queryByText(/deleted/i)).not.toBeInTheDocument()
+  })
+
+  it('Backspace in an empty first line hands focus to the block after it, never the page', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([emptyLine, table])
+    const line = await textBlockIn('b-empty')
+    await waitFor(() => expect(line).toHaveFocus())
+
+    await user.keyboard('{Backspace}')
+    expect(lastBlocks(onChange)).toEqual([table])
+    await waitFor(() => expect(blockRoot('b-table')).toHaveFocus())
   })
 
   it('a non-text block is a tab stop; a text block’s focus is its editor', () => {
     renderCanvas([table, note])
     expect(blockRoot('b-table')).toHaveAttribute('tabindex', '0')
     expect(blockRoot('b-note')).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('a non-text block is a named group that says Return opens a line, and shows a ring on keyboard focus', () => {
+    renderCanvas([table, note])
+    const group = screen.getByRole('group', { name: 'table' })
+    expect(group).toBe(blockRoot('b-table'))
+    expect(group).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(group).toHaveClass(
+      'rounded-mn-card',
+      'focus-visible:ring-2',
+      'focus-visible:ring-mn-text'
+    )
+    expect(group).not.toHaveClass('outline-none')
+    expect(blockRoot('b-note')).not.toHaveAttribute('role')
   })
 })
 
@@ -291,15 +347,89 @@ describe('`/` on an empty line inside a text block splits it at that line', () =
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
-  it('`/table` splits the block and hangs the source picker off the `/` line', async () => {
+  /** The `/` line's paragraph, placed at a known spot on screen. */
+  const placeSlashLine = (editor: ReturnType<typeof textEditorOf>) => {
+    const element = editor.view.nodeDOM(editor.state.selection.$from.before(1)) as HTMLElement
+    jest.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      top: 300,
+      bottom: 320,
+      left: 40,
+      right: 400,
+      width: 360,
+      height: 20,
+      x: 40,
+      y: 300,
+      toJSON: () => ({}),
+    })
+  }
+
+  it('`/table` hangs the source picker off the `/` line and leaves the block whole while it is open', async () => {
+    const { onChange } = renderCanvas([prose])
+    placeSlashLine(await slashAfterFirstLine())
+    fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'table'))
+
+    const picker = await screen.findByRole('listbox', { name: '/table' })
+    expect(picker.closest('[data-part="glass"]')).toHaveStyle({ top: '324px', left: '40px' })
+    expect(lastBlocks(onChange)).toEqual([withSlashLine])
+  })
+
+  it('a source picker closed without a pick leaves the block as it was', async () => {
+    const user = userEvent.setup()
     const { onChange } = renderCanvas([prose])
     await slashAfterFirstLine()
     fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'table'))
+    await screen.findByRole('listbox', { name: '/table' })
 
-    expect(await screen.findByRole('listbox', { name: '/table' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    expect(onChange.mock.calls.every(([next]) => (next as Block[]).length === 1)).toBe(true)
+    expect(lastBlocks(onChange)).toEqual([withSlashLine])
+  })
+
+  it('picking a database lands its view between the two halves', async () => {
+    mockFetchPages.mockResolvedValue(databaseRows)
+    const { onChange } = renderCanvas([prose])
+    await slashAfterFirstLine()
+    fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'table'))
+    const picker = await screen.findByRole('listbox', { name: '/table' })
+
+    fireEvent.click(await within(picker).findByRole('option', { name: /recipes/ }))
+    await waitFor(() =>
+      expect(lastBlocks(onChange)).toEqual([
+        { id: 'b-prose', type: 'text', content: 'soak overnight' },
+        expect.objectContaining({ type: 'view', mode: 'table', collectionId: 'db-recipes' }),
+        { id: expect.any(String), type: 'text', content: 'simmer with bay' },
+      ])
+    )
+  })
+
+  it('a template pick whose page cannot be made leaves the block as it was', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+    mockCreatePage.mockRejectedValue(new Error('offline'))
+    const { onChange } = renderCanvas([prose])
+    await slashAfterFirstLine()
+    fireEvent.click(
+      rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'page from template')
+    )
+    fireEvent.click(
+      rowNamed(await screen.findByRole('listbox', { name: 'page from template' }), 'notes')
+    )
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith('Failed to make the page', expect.any(Error))
+    )
+    expect(lastBlocks(onChange)).toEqual([withSlashLine])
+    error.mockRestore()
+  })
+
+  it('a labelled block keeps its label on the text above the pick', async () => {
+    const { onChange } = renderCanvas([{ ...prose, label: 'method' }])
+    await slashAfterFirstLine()
+    fireEvent.click(rowNamed(await screen.findByRole('listbox', { name: 'blocks' }), 'checklist'))
+
     expect(lastBlocks(onChange)).toEqual([
-      { id: 'b-prose', type: 'text', content: 'soak overnight' },
-      { id: expect.any(String), type: 'text', content: '/' },
+      { id: 'b-prose', type: 'text', content: 'soak overnight', label: 'method' },
+      expect.objectContaining({ type: 'todo' }),
       { id: expect.any(String), type: 'text', content: 'simmer with bay' },
     ])
   })

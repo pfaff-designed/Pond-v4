@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import { Fragment, type Node as ProseNode } from '@tiptap/pm/model'
+import type { Block } from '../content'
 import { serializeMarkdown } from './markdown'
 import type { TextBlock } from './schema'
 
@@ -10,14 +11,20 @@ import type { TextBlock } from './schema'
  */
 export interface SlashLine {
   before: string
-  /** The line itself, `/` and the query. */
-  line: string
+  /** The line itself, `/` and the query, as markdown. */
+  markdown: string
   after: string
   query: string
 }
 
+/** A `/` line and the element that draws it, for anchoring what the pick opens. */
+export interface SlashLineAt {
+  line: SlashLine
+  element: Element | null
+}
+
 /** Told about the `/` line under the caret; `opened` when the `/` was just typed. */
-export type SlashLineListener = (line: SlashLine | null, opened: boolean) => void
+export type SlashLineListener = (at: SlashLineAt | null, opened: boolean) => void
 
 /** Provided by the page around a text block whose `/` lines it can split. */
 export const SlashLineContext = createContext<SlashLineListener | null>(null)
@@ -49,7 +56,7 @@ export const slashLineAt = (doc: ProseNode, pos: number): SlashLine | null => {
   if (!text.startsWith('/')) return null
   return {
     before: markdownOf(doc, 0, index),
-    line: markdownOf(doc, index, index + 1),
+    markdown: markdownOf(doc, index, index + 1),
     after: markdownOf(doc, index + 1, doc.childCount),
     query: text.slice(1),
   }
@@ -65,20 +72,31 @@ export const opensSlashLine = (was: ProseNode, doc: ProseNode, pos: number): boo
 }
 
 /**
- * The block split around its `/` line: the part above keeps the block, the line
- * becomes a block of its own (`host`, which the pick replaces), and the part below
- * is a new block. An empty side makes no block; with nothing above, the line
- * keeps the block's id.
+ * The block split around its `/` line, with `inserted` (or nothing) in the line's
+ * place. The block's identity — id and label — stays with the prose above, or
+ * with the prose below when there is none above. With no prose left on either
+ * side, `inserted` takes the identity: it replaces the block. `inserted` is the
+ * block as it lands.
  */
 export const splitAtSlashLine = (
   block: TextBlock,
   line: SlashLine,
+  inserted: Block | null,
   mintId: () => string
-): { blocks: TextBlock[]; host: TextBlock } => {
-  const keepsAbove = line.before.trim() !== ''
-  const above: TextBlock[] = keepsAbove ? [{ ...block, content: line.before }] : []
-  const host: TextBlock = { id: keepsAbove ? mintId() : block.id, type: 'text', content: line.line }
-  const below: TextBlock[] =
-    line.after.trim() !== '' ? [{ id: mintId(), type: 'text', content: line.after }] : []
-  return { blocks: [...above, host, ...below], host }
+): { blocks: Block[]; inserted: Block | null } => {
+  const hasAbove = line.before.trim() !== ''
+  const hasBelow = line.after.trim() !== ''
+  const placed = inserted ? [inserted] : []
+  if (hasAbove) {
+    const below: Block[] = hasBelow ? [{ id: mintId(), type: 'text', content: line.after }] : []
+    return { blocks: [{ ...block, content: line.before }, ...placed, ...below], inserted }
+  }
+  if (hasBelow) return { blocks: [...placed, { ...block, content: line.after }], inserted }
+  if (!inserted) return { blocks: [], inserted }
+  const replacing: Block = {
+    ...inserted,
+    id: block.id,
+    ...(block.label === undefined ? {} : { label: block.label }),
+  }
+  return { blocks: [replacing], inserted: replacing }
 }

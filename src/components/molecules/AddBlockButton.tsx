@@ -6,7 +6,7 @@
  * button. The user types `/` in the new block to swap to any other block type.
  * Present at rest (not hover-only) at the end of every editable page, so adding a
  * first block on an empty page is always one click away. Mid-page, a block is
- * added by Return after a block, then `/` (6g) — nothing is drawn between blocks.
+ * added by Return after a block, then `/` — nothing is drawn between blocks.
  */
 export function AddBlockButton({ onAdd }: { onAdd: () => void }) {
   return (

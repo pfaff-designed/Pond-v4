@@ -2,6 +2,7 @@ import type { Node as ProseNode } from '@tiptap/pm/model'
 import { proseSchema } from './document'
 import { parseMarkdown } from './markdown'
 import { opensSlashLine, slashLineAt, splitAtSlashLine, type SlashLine } from './slash-line'
+import type { Block } from '../content'
 import type { TextBlock } from './schema'
 
 /** A position inside the doc's top-level child at `index`. */
@@ -18,7 +19,7 @@ describe('slashLineAt — the `/` line under the caret', () => {
     const doc = parseMarkdown('## method\n\n/check\n\nsoak overnight')
     expect(slashLineAt(doc, inside(doc, 1))).toEqual({
       before: '## method',
-      line: '/check',
+      markdown: '/check',
       after: 'soak overnight',
       query: 'check',
     })
@@ -86,7 +87,7 @@ describe('opensSlashLine — `/` typed at the start of an empty line', () => {
   })
 })
 
-describe('splitAtSlashLine — the block around the line, as blocks', () => {
+describe('splitAtSlashLine — the block around the line, with the pick in its place', () => {
   const block: TextBlock = {
     id: 'b-text',
     type: 'text',
@@ -95,36 +96,61 @@ describe('splitAtSlashLine — the block around the line, as blocks', () => {
   }
   const line: SlashLine = {
     before: '## method',
-    line: '/check',
+    markdown: '/check',
     after: 'soak overnight',
     query: 'check',
   }
+  const picked: Block = { id: 'todo-1', type: 'todo', items: [] }
   const ids = () => {
     let n = 0
     return () => `new-${++n}`
   }
 
-  it('the part above keeps the block (id and label); the line and the part below are new', () => {
-    const { blocks, host } = splitAtSlashLine(block, line, ids())
+  it('middle: the prose above keeps the block’s id and label; the pick and the prose below are new', () => {
+    const { blocks, inserted } = splitAtSlashLine(block, line, picked, ids())
     expect(blocks).toEqual([
       { id: 'b-text', type: 'text', content: '## method', label: 'notes' },
-      { id: 'new-1', type: 'text', content: '/check' },
-      { id: 'new-2', type: 'text', content: 'soak overnight' },
-    ])
-    expect(host).toBe(blocks[1])
-  })
-
-  it('with nothing above, the line keeps the block’s id and no empty block is made', () => {
-    const { blocks, host } = splitAtSlashLine(block, { ...line, before: '' }, ids())
-    expect(blocks).toEqual([
-      { id: 'b-text', type: 'text', content: '/check' },
+      picked,
       { id: 'new-1', type: 'text', content: 'soak overnight' },
     ])
-    expect(host.id).toBe('b-text')
+    expect(inserted).toBe(picked)
   })
 
-  it('with nothing below, no empty block is made', () => {
-    const { blocks } = splitAtSlashLine(block, { ...line, after: '' }, ids())
-    expect(blocks.map((b) => b.content)).toEqual(['## method', '/check'])
+  it('nothing above: the prose below takes the block’s id and label', () => {
+    const { blocks } = splitAtSlashLine(block, { ...line, before: '' }, picked, ids())
+    expect(blocks).toEqual([
+      picked,
+      { id: 'b-text', type: 'text', content: 'soak overnight', label: 'notes' },
+    ])
+  })
+
+  it('nothing below: no empty block is made', () => {
+    const { blocks } = splitAtSlashLine(block, { ...line, after: '' }, picked, ids())
+    expect(blocks).toEqual([
+      { id: 'b-text', type: 'text', content: '## method', label: 'notes' },
+      picked,
+    ])
+  })
+
+  it('nothing either side: the pick replaces the block, taking its id and label', () => {
+    const { blocks, inserted } = splitAtSlashLine(
+      block,
+      { ...line, before: '', after: '' },
+      picked,
+      ids()
+    )
+    const replacing = { ...picked, id: 'b-text', label: 'notes' }
+    expect(blocks).toEqual([replacing])
+    expect(inserted).toEqual(replacing)
+  })
+
+  it('with nothing to insert, only the `/` line goes', () => {
+    expect(splitAtSlashLine(block, line, null, ids()).blocks).toEqual([
+      { id: 'b-text', type: 'text', content: '## method', label: 'notes' },
+      { id: 'new-1', type: 'text', content: 'soak overnight' },
+    ])
+    expect(splitAtSlashLine(block, { ...line, before: '', after: '' }, null, ids()).blocks).toEqual(
+      []
+    )
   })
 })

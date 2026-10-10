@@ -55,7 +55,7 @@ beforeEach(() => {
   mockFetchPages.mockResolvedValue([])
 })
 
-describe('Return after a block (6g)', () => {
+describe('Return after a block', () => {
   const table: Block = {
     id: 'b-table',
     type: 'table',

@@ -153,7 +153,7 @@ beforeEach(() => {
   )
 })
 
-/** "Return after the table, then /" (6g): the `/` menu, on a new line after the block. */
+/** "Return after the table, then /": the `/` menu, on a new line after the block. */
 async function returnAfterThenSlash(blockId: string) {
   await screen.findAllByRole('button', { name: /block menu/i })
   const block = document.getElementById(`block-${blockId}`)!

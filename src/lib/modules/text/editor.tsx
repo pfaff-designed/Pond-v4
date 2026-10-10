@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import type { EditorView } from '@tiptap/pm/view'
 import type { ModuleViewProps } from '../types'
@@ -9,7 +9,7 @@ import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import type { TextBlock } from './schema'
-import { opensSlashLine, SlashLineContext, slashLineAt } from './slash-line'
+import { opensSlashLine, SlashLineContext, slashLineAt, type SlashLineAt } from './slash-line'
 
 /** Where a person pressed on the block before its editor existed. */
 export interface Press {
@@ -46,6 +46,14 @@ const handleClick = (view: EditorView, _pos: number, event: MouseEvent): boolean
   if (!link || !href || !view.dom.contains(link)) return false
   window.open(href, '_blank', 'noopener,noreferrer')
   return true
+}
+
+const slashLineUnder = (editor: Editor): SlashLineAt | null => {
+  const { doc, selection } = editor.state
+  const line = slashLineAt(doc, selection.from)
+  if (!line) return null
+  const element = editor.view.nodeDOM(selection.$from.before(1))
+  return { line, element: element instanceof Element ? element : null }
 }
 
 const editorProps = {
@@ -108,16 +116,15 @@ const TextEditor = ({
     editorProps,
     onSelectionUpdate: ({ editor: updated, transaction }) => {
       if (transaction.docChanged) return
-      const { doc, selection } = updated.state
-      latest.current.onSlashLine?.(slashLineAt(doc, selection.from), false)
+      latest.current.onSlashLine?.(slashLineUnder(updated), false)
     },
     onUpdate: ({ editor: updated, transaction }) => {
       const { data: current, onChange: send, onSlashLine: report } = latest.current
       if (!send) return
       const { doc, selection } = updated.state
       if (report) {
-        const line = slashLineAt(doc, selection.from)
-        report(line, line !== null && opensSlashLine(transaction.before, doc, selection.from))
+        const at = slashLineUnder(updated)
+        report(at, at !== null && opensSlashLine(transaction.before, doc, selection.from))
       }
       const content = serializeMarkdown(doc)
       if (content === written.current) return
