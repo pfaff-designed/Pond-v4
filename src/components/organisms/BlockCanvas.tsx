@@ -751,8 +751,8 @@ export function BlockCanvas({
           {blockRows.map((row) => {
             const widths = row.map(({ block }) => block.width ?? 'full')
             // Widths and rows are kept, not shown: a row that stacks renders each
-            // block plain, full width, in reading order — the same shape as a
-            // lone full block below — and returns to its row on a wider measurement.
+            // block plain, full width, in reading order, and returns to its row on
+            // a wider measurement.
             const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
 
             // Keyed on the row's first block, not its index in `blockRows`: a
@@ -761,35 +761,26 @@ export function BlockCanvas({
             // a brand new element and remount — dropping any focus just set on it.
             const rowKey = row[0].block.id
 
-            // A lone full-width block (every block, absent a width) renders exactly
-            // as before: no sizing wrapper, so today's DOM is untouched.
-            if (stacks || (row.length === 1 && widths[0] === 'full')) {
-              return (
-                <React.Fragment key={rowKey}>
-                  {row.map(({ block, i }) => renderBlockEditor(block, i))}
-                </React.Fragment>
-              )
-            }
-            // A row of one narrower block still needs its own width (it just has
-            // no row-mate to share the 16px gap with).
-            if (row.length === 1) {
-              const { block, i } = row[0]
-              return (
-                <div key={rowKey} style={{ width: blockWidthStyle(block.width) }}>
-                  {renderBlockEditor(block, i)}
-                </div>
-              )
-            }
-            // Multiple blocks that fit on one line (6x): top-aligned, each its own
-            // height, the 16px gap also used between stacked blocks, nothing
-            // stretches to fill the row's leftover — that stays paper.
+            // One stable shape for every row — a flex row div wrapping a sizing
+            // div per block — so flipping between stacked/solo/shared-row never
+            // changes an ancestor's element type and remounts the BlockEditor
+            // beneath it (which would drop focus mid-edit or after a menu pick).
+            // The gap only matters once a row holds more than one block.
             return (
-              <div key={rowKey} className="flex items-start" style={{ gap: BLOCK_ROW_GAP_PX }}>
-                {row.map(({ block, i }) => (
-                  <div key={block.id} style={{ width: blockWidthStyle(block.width) }}>
-                    {renderBlockEditor(block, i)}
-                  </div>
-                ))}
+              <div
+                key={rowKey}
+                className="flex items-start"
+                style={row.length > 1 ? { gap: BLOCK_ROW_GAP_PX } : undefined}
+              >
+                {row.map(({ block, i }) => {
+                  const width = block.width ?? 'full'
+                  const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+                  return (
+                    <div key={block.id} style={{ width: sizingWidth }}>
+                      {renderBlockEditor(block, i)}
+                    </div>
+                  )
+                })}
               </div>
             )
           })}

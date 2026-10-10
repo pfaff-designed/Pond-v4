@@ -1,12 +1,13 @@
 /**
  * Rows are derived, never stored (6x): `BlockCanvas` groups the block list with
  * `layoutRows` and draws each row that holds more than one block as a single flex
- * row — 16px gap, top-aligned, nothing stretches. A row of one `full` block keeps
- * today's rendering exactly: no extra wrapper.
+ * row — 16px gap, top-aligned, nothing stretches. Every row, including a lone
+ * `full` block, renders the same row+sizing-div shape, so a width change never
+ * flips an ancestor's element type (KAN-43 fix: remount-on-reshape).
  */
 
 import React from 'react'
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -52,17 +53,20 @@ describe('rows in BlockCanvas', () => {
     expect(rowWrapper.style.gap).toBe('16px')
   })
 
-  it('leaves a `full` block after a row unchanged — no wrapper of its own', () => {
+  it('draws a `full` block after a row in the same stable row+sizing shape, full width', () => {
     const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
     const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
     const full: Block = { id: 'b-3', type: 'text', content: 'below' }
-    const { container } = renderCanvas([half1, half2, full])
+    renderCanvas([half1, half2, full])
 
-    const canvas = container.querySelector('.space-y-0')!
     const rootC = blockRoot('b-3')
-    // The handle div ('.group.relative') is the block's own root — no sizing or
-    // row wrapper sits between it and the canvas, same as before this item.
-    expect(rootC.parentElement).toBe(canvas)
+    const sizingDiv = rootC.parentElement!
+    const rowDiv = sizingDiv.parentElement!
+    expect(sizingDiv.style.width).toBe('100%')
+    expect(rowDiv.className).toContain('flex')
+    expect(rowDiv.className).toContain('items-start')
+    // A solo row carries no gap style — nothing to space.
+    expect(rowDiv.style.gap).toBe('')
   })
 
   // Stacking (6x) is measured off the canvas via a ResizeObserver. jsdom never
@@ -76,5 +80,73 @@ describe('rows in BlockCanvas', () => {
 
     expect(blockRoot('b-1')).toBeTruthy()
     expect(() => unmount()).not.toThrow()
+  })
+
+  // The one-stable-shape fix: every row branch (solo full, solo narrow, shared)
+  // is now the same row-div + sizing-div pair, so a width change or a stacking
+  // flip changes a style attribute, never an ancestor's element type — which is
+  // what kept React from remounting the BlockEditor beneath it.
+  describe('keeps the same BlockEditor node across a reshape', () => {
+    it('picking ½ on a lone full block keeps the same BlockEditor DOM node', () => {
+      const lone: Block = { id: 'b-1', type: 'text', content: 'solo' }
+      const { rerender } = renderCanvas([lone])
+      const before = blockRoot('b-1')
+
+      rerender(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <DeletionUndoProvider>
+            <BlockCanvas
+              blocks={[{ ...lone, width: '1/2' }]}
+              pageId="page-1"
+              pageTitle="sourdough, 78%"
+              onChange={() => {}}
+              onUndoRemove={() => {}}
+            />
+          </DeletionUndoProvider>
+        </QueryClientProvider>
+      )
+
+      expect(blockRoot('b-1')).toBe(before)
+    })
+
+    it('crossing the stack threshold on a ½+½ row keeps both BlockEditor nodes', () => {
+      const setupObserver = window.ResizeObserver
+      let observed: (() => void) | null = null
+      window.ResizeObserver = class {
+        constructor(callback: () => void) {
+          observed = callback
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver
+
+      try {
+        const half1: Block = { id: 'b-1', type: 'text', content: 'left', width: '1/2' }
+        const half2: Block = { id: 'b-2', type: 'text', content: 'right', width: '1/2' }
+        const { container } = renderCanvas([half1, half2])
+        const canvas = container.querySelector('.space-y-0') as HTMLElement
+
+        // Wide column: the row holds, sharing one line.
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+          width: 800,
+        } as DOMRect)
+        act(() => observed?.())
+
+        const beforeA = blockRoot('b-1')
+        const beforeB = blockRoot('b-2')
+
+        // Narrow column: each block's share drops below 240px, so the row stacks.
+        jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+          width: 300,
+        } as DOMRect)
+        act(() => observed?.())
+
+        expect(blockRoot('b-1')).toBe(beforeA)
+        expect(blockRoot('b-2')).toBe(beforeB)
+      } finally {
+        window.ResizeObserver = setupObserver
+      }
+    })
   })
 })
