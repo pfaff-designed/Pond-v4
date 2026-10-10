@@ -190,6 +190,7 @@ const childRow = nodeRow({
   title: '3-Day Full-Body Dumbbell Routine',
 })
 const quote: Block[] = [{ id: 'b-quote', type: 'text', content: 'Consistency beats intensity' }]
+const tools = blocks[1]
 
 describe('every page is the one page surface (ticket-22, #108, #234): blocks and children both render', () => {
   it('an area WITH blocks renders its content plus the children grid', async () => {
@@ -312,9 +313,9 @@ describe('the / menu on an empty page makes pages', () => {
   })
 
   it('removes the `/…` block by id, so a block inserted above it during the awaits survives', async () => {
-    renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [] })
+    renderWith({ id: 'page-1', parentId: 'root-1', type: 'page', title: 'Health', blocks: [tools] })
     const { editor } = await openSlash('page')
-    await screen.findByRole('listbox', { name: 'page from template' })
+    await screen.findByRole('listbox', { name: 'blocks' })
     writeInTextBlock(editor, '/page')
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
 
@@ -327,15 +328,12 @@ describe('the / menu on an empty page makes pages', () => {
     fireEvent.click(row)
     await waitFor(() => expect(mockGetPage).toHaveBeenCalled())
 
-    // While it waits, a block goes in above the `/…` block and moves its index.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Insert block' })[0])
-    const between = await screen.findByRole('listbox', { name: 'blocks' })
-    fireEvent.click(
-      within(between)
-        .getAllByRole('option')
-        .find((o) => o.querySelector('[data-part="label"]')?.textContent === 'text')!
-    )
-    // The new block opens typeable, beside the `/page` block still waiting on its pick.
+    // While it waits, Return after the table puts a line above the `/…` block
+    // and moves its index.
+    const table = document.getElementById('block-b-table')!
+    table.focus()
+    fireEvent.keyDown(table, { key: 'Enter' })
+    // The new line opens typeable, beside the `/page` block still waiting on its pick.
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
     expect(screen.getByText('/page')).toBeInTheDocument()
 
@@ -376,7 +374,7 @@ describe('the / menu on an empty page makes pages', () => {
   })
 })
 
-describe('the between-blocks `+` lists what the `/` menu does', () => {
+describe('Return after a block, then `/`, lists what the `/` menu does', () => {
   const originalMatchMedia = window.matchMedia
   afterEach(() => {
     window.matchMedia = originalMatchMedia
@@ -392,10 +390,18 @@ describe('the between-blocks `+` lists what the `/` menu does', () => {
     blocks: [{ id: 'old-1', type: 'text', content: 'chickpeas' }],
   }
 
+  const returnAfterTheTableThenSlash = async () => {
+    await screen.findAllByRole('button', { name: 'Block menu' })
+    const table = document.getElementById('block-b-table')!
+    table.focus()
+    fireEvent.keyDown(table, { key: 'Enter' })
+    writeInTextBlock(await findTextBlock(), '/')
+  }
+
   it('offers yours and applies one as a child page', async () => {
     mockListTemplates.mockResolvedValue([yours])
-    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: quote })
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Insert block' }))[0])
+    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [tools] })
+    await returnAfterTheTableThenSlash()
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
     fireEvent.click(
       within(menu)
@@ -418,8 +424,8 @@ describe('the between-blocks `+` lists what the `/` menu does', () => {
       addEventListener: () => {},
       removeEventListener: () => {},
     })) as unknown as typeof window.matchMedia
-    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: quote })
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Insert block' }))[0])
+    renderWith({ id: 'page-1', parentId: null, type: 'page', title: 'Health', blocks: [tools] })
+    await returnAfterTheTableThenSlash()
     await screen.findByRole('listbox', { name: 'blocks' })
     expect(document.querySelector('[data-part="glass"]')).toHaveClass('w-[340px]')
   })

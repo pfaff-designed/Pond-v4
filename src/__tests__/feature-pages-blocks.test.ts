@@ -8,7 +8,7 @@
  *
  * The paths (boards `Pond 06.07 Add a block mid-page`, `Pond 06.10 List into table`):
  *   1. edit a block → debounced autosave → the whole array persists → the tree refetches
- *   2. the hover `+` inserts a block MID-page, at the seam it was clicked
+ *   2. Return after a block, then `/`, inserts a block MID-page, right after it
  *   3. `/` in an empty text block swaps that block for the picked one, in place
  *   4. `/table` mints NO freeform table — it asks which database first
  *   5. `turn into › table` on a list makes a REAL database + a `view` over it
@@ -153,10 +153,18 @@ beforeEach(() => {
   )
 })
 
-/** The hover `+` at a seam: 0 is above the first block, n is below block n-1. */
-async function clickInserter(seam: number) {
-  const plus = await screen.findAllByRole('button', { name: 'Insert block' })
-  fireEvent.click(plus[seam])
+/** "Return after the table, then /": the `/` menu, on a new line after the block. */
+async function returnAfterThenSlash(blockId: string) {
+  await screen.findAllByRole('button', { name: /block menu/i })
+  const block = document.getElementById(`block-${blockId}`)!
+  block.focus()
+  fireEvent.keyDown(block, { key: 'Enter' })
+  const line = await waitFor(() => {
+    const el = queryAllTextBlocks().find((field) => field.textContent === '')
+    if (!el) throw new Error('no new line to type into')
+    return el
+  })
+  writeInTextBlock(line, '/')
   return screen.findByRole('listbox', { name: 'blocks' })
 }
 
@@ -193,11 +201,11 @@ describe('a block edit autosaves', () => {
   })
 })
 
-// ── 2. a block arrives mid-page through the inserter (06.07) ─────────────────
+// ── 2. a block arrives mid-page: Return after the table, then / (06.07) ─────
 
-describe('the hover + inserts a block mid-page (06.07)', () => {
-  // Every case is the same gesture at the same seam; only the row picked differs,
-  // and with it the preset that row mints.
+describe('Return after the table, then / inserts a block mid-page (06.07)', () => {
+  // Every case is the same gesture after the same block; only the row picked
+  // differs, and with it the preset that row mints.
   test.each([
     ['checklist', { type: 'todo', items: [{ label: '', checked: false }] }],
     ['list', { type: 'todo', marker: 'dot' }],
@@ -205,16 +213,15 @@ describe('the hover + inserts a block mid-page (06.07)', () => {
     ['big number', { type: 'view', mode: 'big-number' }],
     ['entry log', { type: 'entries', entries: [] }],
   ])('↵ %s lands its preset BETWEEN the two blocks and persists there', async (label, shape) => {
-    mount([note, tools])
-    const menu = await clickInserter(1)
+    mount([tools, note])
+    const menu = await returnAfterThenSlash('b-table')
     fireEvent.click(within(menu).getByText(label))
 
-    await waitFor(() => expect(persisted()).toHaveLength(3), { timeout: 3000 })
-    // In place: the new block took the seam, and its neighbours did not move.
-    expect(persisted().map((b) => b.id)).toEqual(['b-note', expect.any(String), 'b-table'])
-    expect(persisted()[1]).toMatchObject(shape)
-    expect(persisted()[0]).toEqual(note)
-    expect(persisted()[2]).toEqual(tools)
+    await waitFor(() => expect(persisted()[1]).toMatchObject(shape), { timeout: 3000 })
+    // In place: the new block took the line after the table, and its neighbours did not move.
+    expect(persisted().map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b-note'])
+    expect(persisted()[0]).toEqual(tools)
+    expect(persisted()[2]).toEqual(note)
   })
 })
 
@@ -248,13 +255,21 @@ describe('the / menu inserts a block', () => {
   // database" (PROJECT_RULES, AUDIT § Decided 26 sep 6j) — a grid with no records
   // behind it, chartable by nothing.
   it('`/table` mints no freeform table — it asks which database first', async () => {
-    mount([note])
-    const menu = await clickInserter(1)
-    fireEvent.click(within(menu).getByText('table'))
+    mount([note, { id: 'b-empty', type: 'text', content: '' }])
+    const typing = await waitFor(() => {
+      const el = queryAllTextBlocks().find((field) => field.textContent === '')
+      if (!el) throw new Error('no empty text block to type into')
+      return el
+    })
+    writeInTextBlock(typing, '/')
+    fireEvent.click(
+      within(await screen.findByRole('listbox', { name: 'blocks' })).getByText('table')
+    )
 
     expect(await screen.findByRole('listbox', { name: '/table' })).toBeInTheDocument()
-    expect(persisted()).toEqual([note])
-    expect(mockSaveBlocks).not.toHaveBeenCalled()
+    // The `/` line is saved as typed; nothing table-shaped reaches the page.
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled(), { timeout: 3000 })
+    expect(persisted()).toEqual([note, { id: 'b-empty', type: 'text', content: '/' }])
   })
 })
 

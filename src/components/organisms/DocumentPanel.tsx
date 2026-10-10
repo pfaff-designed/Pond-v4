@@ -18,7 +18,7 @@
  * query. Re-embedding on save is wired in Slice 6 alongside the retrieval switch.
  *
  * Manual block authoring (ticket-37, ticket-44): the user is an equal author to
- * the AI. The editor body — the `/` palette, hover `+` insert, reorder, and the
+ * the AI. The editor body — the `/` palette, Return after a block, reorder, and the
  * always-visible "+ Add a block" foot affordance — is the shared <BlockCanvas>,
  * so every page authors identically. This panel owns the title header, the
  * debounced save, and the children grid; BlockCanvas owns the blocks.
@@ -402,10 +402,10 @@ export function DocumentPanel() {
           </PondBlock>
         )}
 
-        {/* The shared authoring surface (ticket-44): the `/` palette, hover `+`
-            InsertBetween, reorder, bound metrics, and the always-visible palette-
-            first "+ Add a block" foot affordance. Controlled — it emits the full
-            next array and this panel schedules the debounced whole-array save. */}
+        {/* The shared authoring surface (ticket-44): the `/` palette, Return after
+            a block, reorder, bound metrics, and the always-visible "+ Add a block"
+            foot affordance. Controlled — it emits the full next array and this
+            panel schedules the debounced whole-array save. */}
         <BlockCanvas
           blocks={viewBlocks}
           pageId={page.id}
