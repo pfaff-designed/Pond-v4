@@ -367,8 +367,10 @@ export function BlockCanvas({
 
   /**
    * The width row's keep (6x): the same in-place-swap-by-id route as
-   * `convertBlock`, so one ⌘Z restores the block's previous width (absent
-   * means `full`).
+   * `convertBlock`, so the undo toast restores the block's previous width
+   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
+   * block that key reaches the editor instead — so the toast is the undo the
+   * board's "click to keep, with undo" has here.
    */
   const setBlockWidth = (before: Block, width: BlockWidth) => {
     const after = { ...before, width } as Block
