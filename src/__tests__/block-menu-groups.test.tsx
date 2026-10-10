@@ -102,6 +102,7 @@ describe('runBlockMenuAction', () => {
     'move-into-new-page': jest.fn(),
     'copy-link': jest.fn(),
     delete: jest.fn(),
+    'set-width': jest.fn(),
   })
 
   it('hands each item’s action to its own handler, and to no other', () => {

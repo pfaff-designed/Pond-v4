@@ -354,6 +354,21 @@ describe('turn into — table', () => {
   })
 })
 
+describe('the width row — the block menu’s `width` group', () => {
+  it('keeps the picked width in place and closes the menu; undo restores the absent width', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+    await user.click(handleOf('b-list'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(lastBlocks(onChange)).toEqual([heading, { ...list, width: '1/2' }])
+
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
+  })
+})
+
 describe('copy link to block', () => {
   it('copies the page’s own URL with the block’s anchor', async () => {
     const user = userEvent.setup()

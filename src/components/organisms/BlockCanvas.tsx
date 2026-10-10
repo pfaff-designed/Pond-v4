@@ -56,6 +56,7 @@ import {
   type PondMenuSize,
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
+import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock } from '@/lib/modules/text/focus'
@@ -100,6 +101,7 @@ import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
+import type { BlockWidth } from '@/lib/modules/content'
 
 /** What a block is called to assistive tech: its heading, else its kind. */
 const blockName = (block: Block, frame: BlockFrame | null): string =>
@@ -332,6 +334,21 @@ export function BlockCanvas({
     })
   }
 
+  /**
+   * The width row's keep (6x): the same in-place-swap-by-id route as
+   * `convertBlock`, so one ⌘Z restores the block's previous width (absent
+   * means `full`).
+   */
+  const setBlockWidth = (before: Block, width: BlockWidth) => {
+    const after = { ...before, width } as Block
+    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+    stageUndo({
+      message: 'Set the block width',
+      scope: 'block',
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
+  }
+
   /** The page's own URL, anchored at the block — arriving there lands on it. */
   const copyBlockLink = async (blockId: string) => {
     try {
@@ -364,6 +381,7 @@ export function BlockCanvas({
       'move-into-new-page': () => onMoveIntoNewPage?.(block),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => removeBlockAt(index),
+      'set-width': ({ width }) => setBlockWidth(block, width),
     })
   }
 
@@ -667,7 +685,15 @@ export function BlockCanvas({
               // keystroke anywhere on the page.
               menuGroups={
                 menuOpenAt === i
-                  ? blockMenuGroups(block, { moveIntoNewPage: onMoveIntoNewPage !== undefined })
+                  ? blockMenuGroups(block, {
+                      moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                      width: (
+                        <BlockWidthRow
+                          width={block.width}
+                          onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                        />
+                      ),
+                    })
                   : undefined
               }
               menuSize={slashSize}
