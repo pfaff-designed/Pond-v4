@@ -147,8 +147,9 @@ function readScoped(
  *  edit (which applies as they type). */
 export interface AppendRecordInput {
   userId: string
-  /** #312: the pond this record belongs to. Unstamped, it escapes every filter. */
-  pondId?: string | null
+  /** #312: the pond this record belongs to; null, the person's first. A record
+   *  with no pond would show in no pond's log. */
+  pondId: string | null
   status: ChangeLogStatus
   action: ChangeLogAction
   actor?: ChangeLogActor
@@ -233,7 +234,7 @@ export async function appendOwnEdit(
 export async function reviseRecord(
   supabase: SupabaseClient<Database>,
   original: ChangeLogRecord,
-  input: Omit<AppendRecordInput, 'status' | 'links' | 'userId'> & { userId?: string }
+  input: Omit<AppendRecordInput, 'status' | 'links' | 'userId' | 'pondId'> & { userId?: string }
 ): Promise<ChangeLogRecord> {
   if (!canRevise(original.status)) {
     throw new Error(
@@ -242,8 +243,8 @@ export async function reviseRecord(
   }
   return appendProposal(supabase, {
     userId: original.userId,
-    pondId: original.pondId,
     ...input,
+    pondId: original.pondId,
     links: { revisedFrom: original.id },
   })
 }
@@ -275,7 +276,7 @@ export async function getRecord(
  */
 export async function getRecordByToolCall(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; pondId?: string | null; toolCallId: string }
+  opts: { userId: string; pondId: string | null; toolCallId: string }
 ): Promise<ChangeLogRecord | null> {
   const pond = await resolvePond(supabase, opts.userId, opts.pondId)
   const { data, error } = await readScoped(supabase, opts.userId, pond)
@@ -299,7 +300,7 @@ export async function listRecordsByToolCalls(
   supabase: SupabaseClient<Database>,
   opts: {
     userId: string
-    pondId?: string | null
+    pondId: string | null
     toolCallIds: readonly string[]
   }
 ): Promise<ChangeLogRecord[]> {
@@ -422,7 +423,7 @@ export async function markOutdated(
   opts: {
     userId: string
     /** #312: the pond to sweep; omitted, the person's first. */
-    pondId?: string | null
+    pondId: string | null
     targetPageId: string
     /** Blocks the accepted diff touched. Empty ⇒ sweep the whole page. */
     blockIds?: string[]
@@ -452,12 +453,9 @@ export async function markOutdated(
     actor?: ChangeLogActor
   }
 ): Promise<ChangeLogRecord[]> {
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = readScoped(
-    supabase,
-    opts.userId,
-    await resolvePond(supabase, opts.userId, opts.pondId)
-  )
+  let q: any = readScoped(supabase, opts.userId, pond)
     .eq('target_page_id', opts.targetPageId)
     .eq('status', 'proposed')
   if (opts.actions !== undefined) q = q.in('action', opts.actions)
@@ -515,7 +513,7 @@ export async function redactRecordContent(
 export interface ListRecordsOptions {
   userId: string
   /** #312: the pond to read; omitted, the person's first. */
-  pondId?: string | null
+  pondId: string | null
   status?: ChangeLogStatus | ChangeLogStatus[]
   targetPageId?: string
   action?: ChangeLogAction | ChangeLogAction[]
@@ -532,12 +530,9 @@ export async function listRecords(
   supabase: SupabaseClient<Database>,
   opts: ListRecordsOptions
 ): Promise<ChangeLogRecord[]> {
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = readScoped(
-    supabase,
-    opts.userId,
-    await resolvePond(supabase, opts.userId, opts.pondId)
-  )
+  let q: any = readScoped(supabase, opts.userId, pond)
   if (opts.status !== undefined) {
     q = Array.isArray(opts.status) ? q.in('status', opts.status) : q.eq('status', opts.status)
   }
@@ -562,7 +557,7 @@ export async function countProposed(
   supabase: SupabaseClient<Database>,
   userId: string,
   /** #312: the pond whose open records to count. Omitted, the person's first. */
-  pondId?: string | null
+  pondId: string | null
 ): Promise<number> {
   const pond = await resolvePond(supabase, userId, pondId)
   const { count } = await readScoped(supabase, userId, pond, 'id', {
@@ -584,7 +579,7 @@ export async function countProposed(
  */
 export async function listRevertsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; pondId?: string | null; recordId: string }
+  opts: { userId: string; pondId: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
   const pond = await resolvePond(supabase, opts.userId, opts.pondId)
   const { data, error } = await readScoped(supabase, opts.userId, pond)
@@ -604,7 +599,7 @@ export async function listRevertsOf(
  */
 export async function listRevisionsOf(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; pondId?: string | null; recordId: string }
+  opts: { userId: string; pondId: string | null; recordId: string }
 ): Promise<ChangeLogRecord[]> {
   const all = await listRecords(supabase, { userId: opts.userId, pondId: opts.pondId })
   const byRevisedFrom = new Map<string, ChangeLogRecord>()

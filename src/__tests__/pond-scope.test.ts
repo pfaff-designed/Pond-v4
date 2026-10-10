@@ -5,16 +5,11 @@
  * per pond. Nothing crosses over." Every read of a set of rows is confined with
  * `inPond`, and a reader that is not handed a pond reads the person's first —
  * never every pond.
- *
- * This file was `sandbox-scope.test.ts` and asserted the `workspace` column's
- * main/sandbox isolation. Migration 0020 retired that column: #315 ruled the
- * sandbox becomes a POND, and 0018's backfill made it one, so what survives is the
- * `fetchPages` scoping — including the case that used to FAIL, where the route
- * said `main` and the pond said sandbox.
  */
 
 import { fetchPages } from '@/lib/pages/tree'
 import { buildChatContext, resolveMention } from '@/lib/context/assemble'
+import { makeFakeSupabase, type Row } from './helpers/fake-supabase'
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: jest.fn(),
@@ -112,7 +107,7 @@ describe('fetchPages scope isolation', () => {
       'pond-life'
     )
 
-    const rows = await fetchPages()
+    const rows = await fetchPages(null)
 
     expect(rows.map((r) => r.id)).toEqual(['m1'])
     expect(eqCalls).toContainEqual(['pond_id', 'pond-life'])
@@ -124,48 +119,13 @@ describe('fetchPages scope isolation', () => {
       'no pond': [row('n1', 'Unfiled')],
     })
 
-    const rows = await fetchPages()
+    const rows = await fetchPages(null)
 
     expect(rows.map((r) => r.id)).toEqual(['n1'])
     expect(isCalls).toContainEqual(['pond_id', null])
     expect(eqCalls.map(([col]) => col)).not.toContain('pond_id')
   })
 })
-
-/** An in-memory table double: enough of PostgREST for the composer's reads. */
-type Row = Record<string, unknown>
-function makeDb(tables: Record<string, Row[]>) {
-  const from = (table: string) => {
-    const filters: Array<(r: Row) => boolean> = []
-    const rows = () => (tables[table] ?? []).filter((r) => filters.every((f) => f(r)))
-    const builder = {
-      select: () => builder,
-      eq: (col: string, val: unknown) => {
-        filters.push((r) => r[col] === val)
-        return builder
-      },
-      is: (col: string, val: null) => {
-        filters.push((r) => (r[col] ?? null) === val)
-        return builder
-      },
-      ilike: (col: string, val: string) => {
-        filters.push((r) => String(r[col]).toLowerCase() === val.toLowerCase())
-        return builder
-      },
-      in: (col: string, vals: unknown[]) => {
-        filters.push((r) => vals.includes(r[col]))
-        return builder
-      },
-      order: () => builder,
-      limit: () => builder,
-      maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null, error: null }),
-      then: (resolve: (v: { data: Row[]; error: null }) => unknown) =>
-        Promise.resolve({ data: rows(), error: null }).then(resolve),
-    }
-    return builder
-  }
-  return { from } as never
-}
 
 const page = (id: string, pond: string, title: string): Row => ({
   id,
@@ -182,17 +142,20 @@ const page = (id: string, pond: string, title: string): Row => ({
 describe('naming a page in the composer (KAN-271)', () => {
   // The same title in two ponds: unique per pond, so two different pages.
   const db = () =>
-    makeDb({
-      ponds: [
-        { id: 'pond-life', user_id: 'user-1', order: 0 },
-        { id: 'pond-life-2', user_id: 'user-1', order: 1 },
-      ],
-      pages: [
+    makeFakeSupabase(
+      [
         page('life-personal', 'pond-life', 'personal'),
         page('life-2-personal', 'pond-life-2', 'Personal'),
         page('life-2-journal', 'pond-life-2', 'journal'),
       ],
-    })
+      undefined,
+      {
+        ponds: [
+          { id: 'pond-life', user_id: 'user-1', order: 0 },
+          { id: 'pond-life-2', user_id: 'user-1', order: 1 },
+        ],
+      }
+    ) as never
 
   it('resolves a name only among the asking pond’s pages', async () => {
     const sb = db()
@@ -226,7 +189,10 @@ describe('naming a page in the composer (KAN-271)', () => {
   })
 
   it('reads the first pond when the composer names none', async () => {
-    const context = await buildChatContext(db(), 'user-1', { latestUserText: 'see @journal' })
+    const context = await buildChatContext(db(), 'user-1', {
+      latestUserText: 'see @journal',
+      pondId: null,
+    })
 
     expect(context).not.toContain('journal')
   })

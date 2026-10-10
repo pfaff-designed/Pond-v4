@@ -31,7 +31,7 @@ export interface ProposeRevertInput {
    * has a revert waiting on you". The log only grows, so the page becomes
    * permanently unrevertable with nothing on screen to explain it.
    */
-  pondId?: string | null
+  pondId: string | null
   /** The accepted record being set back. */
   record: ChangeLogRecord
   /** The target page's blocks as they stand now. */
@@ -133,7 +133,7 @@ export interface AcceptRevertInput {
    * has a revert waiting on you". The log only grows, so the page becomes
    * permanently unrevertable with nothing on screen to explain it.
    */
-  pondId?: string | null
+  pondId: string | null
   /** The `proposed` revert record being answered. */
   revert: ChangeLogRecord
   /** The target page's blocks as they stand NOW. */

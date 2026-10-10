@@ -428,7 +428,7 @@ export interface BuildChatContextOptions {
   nodeType?: NodeType | null
   latestUserText?: string
   /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
-  pondId?: string | null
+  pondId: string | null
 }
 
 /**

@@ -33,7 +33,7 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
+export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
@@ -45,7 +45,7 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // PondProvider — fall back to the person's first, which is also what `?pond=`
   // resolves to on a cold load. Never return every pond's pages: that is how a
   // new pond would show the first pond's tree.
-  const scope = await resolvePond(supabase, user.id, pondId)
+  const pond = await resolvePond(supabase, user.id, pondId)
 
   const q = supabase
     .from('pages')
@@ -71,7 +71,7 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // Filters before `.order()`: a PostgREST builder is chainable either way, but
   // ordering last keeps the shape readable and means a test double does not have
   // to return a chainable from `order`.
-  const { data, error } = await inPond(q, scope).order('order')
+  const { data, error } = await inPond(q, pond).order('order')
   if (error) throw error
   return (data ?? []) as PageRow[]
 }

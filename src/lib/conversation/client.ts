@@ -28,9 +28,9 @@ export async function getOrCreateConversation(
    * which also means its context and read chips referred to pages that pond cannot
    * see. Omitted, it falls back to the person's first pond.
    */
-  pondId?: string | null
+  pondId: string | null
 ): Promise<ActiveConversation> {
-  const scope = await resolvePond(supabase, userId, pondId)
+  const pond = await resolvePond(supabase, userId, pondId)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const q: any = (supabase as any)
@@ -39,7 +39,7 @@ export async function getOrCreateConversation(
     .eq('user_id', userId)
     .is('dissolved_at', null)
 
-  const { data: existing } = await inPond(q, scope)
+  const { data: existing } = await inPond(q, pond)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -59,7 +59,7 @@ export async function getOrCreateConversation(
     .from('conversations')
     // A new thread is born in the pond it was started from, so it never leaks
     // into another one.
-    .insert({ user_id: userId, ...(scope ? { pond_id: scope } : {}) })
+    .insert({ user_id: userId, ...(pond ? { pond_id: pond } : {}) })
     .select('id')
     .single()
 

@@ -43,7 +43,7 @@ export interface CreateTemplateInput {
    * unstamped template is invisible in every pond. `workspace` was retired by
    * 0020 — the sandbox is a pond (#315).
    */
-  pondId?: string | null
+  pondId: string | null
 }
 
 type TemplateRow = {
@@ -114,7 +114,7 @@ export async function listTemplates(
   supabase: SupabaseClient<Database>,
   userId: string,
   /** #312: the pond whose templates to list; omitted, the person's first. */
-  pondId?: string | null
+  pondId: string | null
 ): Promise<PondTemplate[]> {
   const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

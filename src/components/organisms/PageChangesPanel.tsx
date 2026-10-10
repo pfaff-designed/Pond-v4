@@ -158,6 +158,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         // vouch for it if it did.
         const result = await acceptRevert(ctx.supabase, {
           userId: ctx.userId,
+          pondId,
           revert,
           current: ctx.page.blocks,
         })
@@ -167,7 +168,7 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         }
         await refreshPage()
       }),
-    [run, loadWriteContext, records, refreshPage]
+    [run, loadWriteContext, records, pondId, refreshPage]
   )
 
   const onReject = useCallback(

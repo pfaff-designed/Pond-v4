@@ -242,7 +242,7 @@ beforeEach(() => {
  */
 const SCOPES: Array<{
   scope: string
-  read: (pondId: string | null | undefined) => Promise<string[]>
+  read: (pondId: string | null) => Promise<string[]>
   inLife: string[]
   inNoise: string[]
 }> = [
@@ -332,16 +332,14 @@ describe('switching pond', () => {
 
   /**
    * The high-risk edge, and the reason it earns a place: a surface rendered
-   * outside the shell's `PondProvider` names no pond, and both of these fall
-   * back to the person's FIRST pond. If that fallback ever resolves to nothing,
-   * the pond filter is dropped and the read spans every pond — with no error,
-   * no empty state and nothing going red. The change log and templates read
-   * across ponds by design when unscoped, so they are not in this pair.
+   * outside the shell's `PondProvider` names no pond, and every scope falls back
+   * to the person's FIRST pond. A read that spanned every pond instead would do
+   * so with no error, no empty state and nothing going red.
    */
-  it.each(SCOPES.slice(0, 2))(
+  it.each(SCOPES)(
     '$scope falls back to the FIRST pond when none is named, never across ponds',
     async ({ read, inLife }) => {
-      expect(await read(undefined)).toEqual(inLife)
+      expect(await read(null)).toEqual(inLife)
     }
   )
 })

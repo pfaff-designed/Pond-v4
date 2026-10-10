@@ -45,7 +45,7 @@ export async function writeAcceptedChanges(opts: {
    *  there is no session, which means there is no pond to scope a record to. */
   userId: string | null
   /** Which pond. Scopes both the record lookup and the outdated sweep. */
-  pondId?: string | null
+  pondId: string | null
   resolutions: ConversationResolutions
   toolCallId: string
   openNodeId: string | null

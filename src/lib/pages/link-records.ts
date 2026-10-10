@@ -65,7 +65,7 @@ export async function relationCandidates(
   supabase: SupabaseClient<Database>,
   userId: string,
   target: string | undefined,
-  pondId?: string | null
+  pondId: string | null
 ): Promise<RowCandidate[]> {
   if (target) {
     const rows = await getCollectionRows(supabase, userId, target)
@@ -121,7 +121,7 @@ export async function linkRecordsFromProposal(
   supabase: SupabaseClient<Database>,
   proposal: LinkRecordsProposal,
   /** #312: the pond an UNTARGETED relation's candidates come from. */
-  pondId?: string | null
+  pondId: string | null
 ): Promise<LinkedRecords> {
   const collection = await getPage(supabase, proposal.collectionId)
   if (!collection) {

@@ -5,10 +5,7 @@
  *
  * Every read of a SET of rows — pages, templates, change-log records, threads —
  * is confined with `inPond`. Reads by id are not: the id names one row already.
- *
- * Before this, each reader wrote `if (pondId) q = q.eq('pond_id', pondId)`, so a
- * reader that was not handed a pond read every pond. That is how `@personal` typed
- * in one pond resolved to another pond's `personal` page (KAN-271).
+ * Readers take the pond as a required argument, so leaving it out cannot compile.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

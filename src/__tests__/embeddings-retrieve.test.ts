@@ -73,24 +73,59 @@ describe('retrievePages', () => {
     mockMatch.mockReset()
   })
 
-  it('embeds the query and returns matches', async () => {
+  /** The pond check: `pages` rows by id, answering with the ids in `pond`. */
+  const ponds = (byPond: Record<string, string[]>) => {
+    const calls: Array<[string, unknown]> = []
+    let pond = ''
+    const builder = {
+      select: () => builder,
+      in: () => builder,
+      eq: (col: string, val: string) => {
+        calls.push([col, val])
+        if (col === 'pond_id') pond = val
+        return builder
+      },
+      then: (resolve: (v: unknown) => unknown) =>
+        Promise.resolve({ data: (byPond[pond] ?? []).map((id) => ({ id })), error: null }).then(
+          resolve
+        ),
+    }
+    return { sb: { from: () => builder } as never, calls }
+  }
+
+  it('embeds the query and returns this pond’s matches, nearest first', async () => {
     const vec = Array(1536).fill(0.02)
     mockEmbedText.mockResolvedValue(vec)
-    mockMatch.mockResolvedValue([page()])
+    mockMatch.mockResolvedValue([page({ id: 'p1' })])
+    const { sb, calls } = ponds({ 'pond-life': ['p1'] })
 
-    const out = await retrievePages({} as never, 'user-1', 'oak table finish', {
+    const out = await retrievePages(sb, 'user-1', 'pond-life', 'oak table finish', {
       matchCount: 3,
     })
 
     expect(mockEmbedText).toHaveBeenCalledWith('oak table finish')
-    expect(mockMatch).toHaveBeenCalledWith(expect.anything(), 'user-1', vec, 3)
-    expect(out).toHaveLength(1)
+    expect(mockMatch).toHaveBeenCalledWith(expect.anything(), 'user-1', vec, 25)
+    expect(calls).toContainEqual(['pond_id', 'pond-life'])
+    expect(out.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('never returns another pond’s page, however close it is', async () => {
+    mockEmbedText.mockResolvedValue(Array(1536).fill(0.02))
+    mockMatch.mockResolvedValue([
+      page({ id: 'theirs', similarity: 0.95 }),
+      page({ id: 'ours', similarity: 0.6 }),
+    ])
+    const { sb } = ponds({ 'pond-life': ['theirs'], 'pond-life-2': ['ours'] })
+
+    const out = await retrievePages(sb, 'user-1', 'pond-life-2', 'q', { matchCount: 1 })
+
+    expect(out.map((p) => p.id)).toEqual(['ours'])
   })
 
   it('returns [] for an empty query without hitting the RPC', async () => {
     mockEmbedText.mockResolvedValue(null)
 
-    const out = await retrievePages({} as never, 'user-1', '   ')
+    const out = await retrievePages({} as never, 'user-1', 'pond-life', '   ')
 
     expect(out).toEqual([])
     expect(mockMatch).not.toHaveBeenCalled()
@@ -102,8 +137,9 @@ describe('retrievePages', () => {
       page({ id: 'hi', similarity: 0.8 }),
       page({ id: 'lo', similarity: 0.1 }),
     ])
+    const { sb } = ponds({ 'pond-life': ['hi', 'lo'] })
 
-    const out = await retrievePages({} as never, 'user-1', 'q', { minSimilarity: 0.5 })
+    const out = await retrievePages(sb, 'user-1', 'pond-life', 'q', { minSimilarity: 0.5 })
 
     expect(out.map((p) => p.id)).toEqual(['hi'])
   })

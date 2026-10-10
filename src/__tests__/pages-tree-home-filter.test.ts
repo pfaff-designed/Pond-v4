@@ -48,14 +48,14 @@ function makeClient(returnRows: unknown[]) {
 it('applies a .neq filter excluding the home type', async () => {
   const client = makeClient([])
   mockCreateClient.mockReturnValue(client)
-  await fetchPages()
+  await fetchPages('pond-1')
   expect(client._neq).toHaveBeenCalledWith('type', HOME_TYPE)
 })
 
 it('applies a .neq filter excluding the row type (#18 — rows never enter the tree)', async () => {
   const client = makeClient([])
   mockCreateClient.mockReturnValue(client)
-  await fetchPages()
+  await fetchPages('pond-1')
   expect(client._neq).toHaveBeenCalledWith('type', ROW_TYPE)
 })
 
@@ -67,5 +67,5 @@ it('returns [] when unauthenticated (no query)', async () => {
     },
   }
   mockCreateClient.mockReturnValue(client)
-  expect(await fetchPages()).toEqual([])
+  expect(await fetchPages('pond-1')).toEqual([])
 })

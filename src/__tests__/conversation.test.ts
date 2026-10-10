@@ -45,7 +45,7 @@ describe('getOrCreateConversation', () => {
     chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
     const sb = makeSupabase(chain)
 
-    const result = await getOrCreateConversation(sb as never, 'user-1')
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
 
     expect(result.id).toBe('conv-1')
     expect(result.messages).toHaveLength(1)
@@ -62,7 +62,7 @@ describe('getOrCreateConversation', () => {
     chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: stored }, error: null })
     const sb = makeSupabase(chain)
 
-    const result = await getOrCreateConversation(sb as never, 'user-1')
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
 
     expect(result.messages).toHaveLength(1)
     expect(result.resolutions.changes).toEqual({ 'pc1:0': 'accepted' })
@@ -74,11 +74,11 @@ describe('getOrCreateConversation', () => {
     chain.maybeSingle.mockResolvedValue({ data: null, error: null })
     const sb = makeSupabase(chain)
 
-    const result = await getOrCreateConversation(sb as never, 'user-1')
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
 
     expect(result.id).toBe('conv-1')
     expect(result.messages).toEqual([])
-    expect(chain.insert).toHaveBeenCalledWith({ user_id: 'user-1' })
+    expect(chain.insert).toHaveBeenCalledWith({ user_id: 'user-1', pond_id: 'pond-1' })
   })
 
   it('returns empty messages when transcript is not an array', async () => {
@@ -86,7 +86,7 @@ describe('getOrCreateConversation', () => {
     chain.maybeSingle.mockResolvedValue({ data: { id: 'conv-1', transcript: null }, error: null })
     const sb = makeSupabase(chain)
 
-    const result = await getOrCreateConversation(sb as never, 'user-1')
+    const result = await getOrCreateConversation(sb as never, 'user-1', 'pond-1')
     expect(result.messages).toEqual([])
   })
 })

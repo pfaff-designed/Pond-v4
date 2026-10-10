@@ -8,7 +8,8 @@
  * cascading to children the way the self-referential FK does), and
  * `getPage` / `saveBlocks` for a composition check. Assert end-state via
  * `_pages`. `failInsertAt` makes the Nth insert (1-based) fail, which is how a
- * partial-failure rollback is exercised.
+ * partial-failure rollback is exercised. `tables` seeds any other table — `ponds`,
+ * say — for reads only.
  */
 
 export type Row = {
@@ -23,7 +24,13 @@ export type Row = {
   order: number
 }
 
-export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
+type AnyRow = Record<string, unknown>
+
+export function makeFakeSupabase(
+  seed: Row[],
+  failInsertAt?: number,
+  tables: Record<string, AnyRow[]> = {}
+) {
   const pages = new Map<string, Row>(seed.map((r) => [r.id, { ...r }]))
   let seq = 0
   let inserts = 0
@@ -34,11 +41,13 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
       cascade([...pages.values()].filter((r) => r.parent_id === victim.id))
     }
   }
-  const from = () => {
+  const from = (table = 'pages') => {
     let op: 'select' | 'insert' | 'update' | 'delete' | null = null
     let insertPayload: Record<string, unknown> | null = null
-    const filters: Array<(r: Row) => boolean> = []
-    const matching = () => [...pages.values()].filter((r) => filters.every((f) => f(r)))
+    const filters: Array<(r: AnyRow) => boolean> = []
+    const source = (): AnyRow[] =>
+      table === 'pages' ? ([...pages.values()] as unknown as AnyRow[]) : (tables[table] ?? [])
+    const matching = () => source().filter((r) => filters.every((f) => f(r)))
     const builder = {
       select() {
         if (op === null) op = 'select'
@@ -54,12 +63,27 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
         return builder
       },
       eq(col: string, val: string) {
-        filters.push((r) => (r as unknown as Record<string, unknown>)[col] === val)
+        filters.push((r) => r[col] === val)
         return builder
       },
+      // A seed row that omits a column holds null there, as a database row does.
       is(col: string, val: null) {
-        // A seed row that omits a column holds null there, as a database row does.
-        filters.push((r) => ((r as unknown as Record<string, unknown>)[col] ?? null) === val)
+        filters.push((r) => (r[col] ?? null) === val)
+        return builder
+      },
+      /** Case-insensitive equality: every caller here passes a bare name, no `%`. */
+      ilike(col: string, val: string) {
+        filters.push((r) => String(r[col]).toLowerCase() === val.toLowerCase())
+        return builder
+      },
+      in(col: string, vals: unknown[]) {
+        filters.push((r) => vals.includes(r[col]))
+        return builder
+      },
+      order() {
+        return builder
+      },
+      limit() {
         return builder
       },
       maybeSingle() {
@@ -90,9 +114,9 @@ export function makeFakeSupabase(seed: Row[], failInsertAt?: number) {
         return Promise.resolve({ data: { id }, error: null })
       },
       // The root lookup and the delete both await the filtered builder directly.
-      then(resolve: (v: { data: Row[] | null; error: null }) => unknown) {
+      then(resolve: (v: { data: AnyRow[] | null; error: null }) => unknown) {
         if (op === 'delete') {
-          cascade(matching())
+          cascade(matching() as unknown as Row[])
           return Promise.resolve({ data: null, error: null }).then(resolve)
         }
         return Promise.resolve({ data: matching(), error: null }).then(resolve)

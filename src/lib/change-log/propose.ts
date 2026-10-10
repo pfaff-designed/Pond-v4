@@ -71,7 +71,7 @@ export interface RecordProposalsInput {
    * A record written without one escapes every pond filter, so it would appear in
    * the proposed view of every pond.
    */
-  pondId?: string | null
+  pondId: string | null
   /** The page the person has open — the default target of a block proposal. */
   openPageId: string | null
   /** The conversation the proposal came from, when the caller knows it. */

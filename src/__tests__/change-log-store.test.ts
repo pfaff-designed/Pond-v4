@@ -102,6 +102,7 @@ describe('appendProposal', () => {
   it('persists the full before/after snapshot, not just a decision', async () => {
     const sb = makeSupabase()
     await store.appendProposal(sb as never, {
+      pondId: 'pond-1',
       userId: USER,
       action: 'edit',
       targetPageId: 'page-1',
@@ -125,7 +126,11 @@ describe('appendProposal', () => {
 
   it('stamps the birth status as the first transition', async () => {
     const sb = makeSupabase()
-    await store.appendProposal(sb as never, { userId: USER, action: 'create_page' })
+    await store.appendProposal(sb as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      action: 'create_page',
+    })
     const transitions = writtenTo(sb, 'insert').transitions as { status: string; actor: string }[]
     expect(transitions).toHaveLength(1)
     expect(transitions[0].status).toBe('proposed')
@@ -134,7 +139,7 @@ describe('appendProposal', () => {
 
   it('defaults the pond scope to main and carries sandbox through', async () => {
     const sb = makeSupabase()
-    await store.appendProposal(sb as never, { userId: USER, action: 'edit' })
+    await store.appendProposal(sb as never, { pondId: 'pond-1', userId: USER, action: 'edit' })
 
     // 0020 retired `workspace`; a record carries its POND.
     await store.appendProposal(sb as never, { userId: USER, action: 'edit', pondId: 'pond-2' })
@@ -146,6 +151,7 @@ describe('appendOwnEdit', () => {
   it('lands a person’s own edit directly as accepted, by you', async () => {
     const sb = makeSupabase({ single: row({ status: 'accepted', actor: 'you' }) })
     const record = await store.appendOwnEdit(sb as never, {
+      pondId: 'pond-1',
       userId: USER,
       action: 'edit',
       targetPageId: 'page-1',
@@ -302,6 +308,7 @@ describe('markOutdated (G2)', () => {
     })
 
     const swept = await store.markOutdated(sb as never, {
+      pondId: 'pond-1',
       userId: USER,
       targetPageId: 'page-1',
       blockIds: ['b1'],
@@ -329,7 +336,7 @@ describe('markOutdated (G2)', () => {
     // at a block that has moved on, which is the precise state `outdated` exists
     // to prevent.
     await expect(
-      store.markOutdated(sb as never, { userId: USER, targetPageId: 'page-1' })
+      store.markOutdated(sb as never, { pondId: 'pond-1', userId: USER, targetPageId: 'page-1' })
     ).rejects.toThrow(/connection reset/)
     expect(sb.rpc).not.toHaveBeenCalled()
   })
@@ -339,7 +346,11 @@ describe('markOutdated (G2)', () => {
       list: [row({ id: 'a', target_block_id: 'b1' }), row({ id: 'b', target_block_id: 'b9' })],
       maybeSingle: row({ status: 'proposed' }),
     })
-    const swept = await store.markOutdated(sb as never, { userId: USER, targetPageId: 'page-1' })
+    const swept = await store.markOutdated(sb as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      targetPageId: 'page-1',
+    })
     expect(swept).toHaveLength(2)
   })
 
@@ -356,6 +367,7 @@ describe('markOutdated (G2)', () => {
         maybeSingle: row({ status: 'proposed' }),
       })
       const swept = await store.markOutdated(sb as never, {
+        pondId: 'pond-1',
         userId: USER,
         targetPageId: 'page-1',
         pageBlocks: BLOCKS,
@@ -370,6 +382,7 @@ describe('markOutdated (G2)', () => {
         maybeSingle: row({ status: 'proposed' }),
       })
       const swept = await store.markOutdated(sb as never, {
+        pondId: 'pond-1',
         userId: USER,
         targetPageId: 'page-1',
         pageBlocks: [{ id: 'b1', type: 'text', content: 'the person typed this' }],
@@ -396,6 +409,7 @@ describe('markOutdated (G2)', () => {
         maybeSingle: row({ status: 'proposed' }),
       })
       const swept = await store.markOutdated(sb as never, {
+        pondId: 'pond-1',
         userId: USER,
         targetPageId: 'page-1',
         pageBlocks: BLOCKS,
@@ -409,6 +423,7 @@ describe('markOutdated (G2)', () => {
         maybeSingle: row({ status: 'proposed' }),
       })
       const swept = await store.markOutdated(sb as never, {
+        pondId: 'pond-1',
         userId: USER,
         targetPageId: 'page-1',
       })
@@ -459,16 +474,20 @@ describe('listRecords', () => {
 
   it('filters the saved views: proposed, by page, memory', async () => {
     const sb = makeSupabase({ list: [] })
-    await store.listRecords(sb as never, { userId: USER, status: 'proposed' })
+    await store.listRecords(sb as never, { pondId: 'pond-1', userId: USER, status: 'proposed' })
     expect(sb._chain.eq.mock.calls).toContainEqual(['status', 'proposed'])
 
-    await store.listRecords(sb as never, { userId: USER, targetPageId: 'page-1' })
+    await store.listRecords(sb as never, { pondId: 'pond-1', userId: USER, targetPageId: 'page-1' })
     expect(sb._chain.eq.mock.calls).toContainEqual(['target_page_id', 'page-1'])
 
-    await store.listRecords(sb as never, { userId: USER, action: 'memory_note' })
+    await store.listRecords(sb as never, { pondId: 'pond-1', userId: USER, action: 'memory_note' })
     expect(sb._chain.eq.mock.calls).toContainEqual(['action', 'memory_note'])
 
-    await store.listRecords(sb as never, { userId: USER, status: ['accepted', 'reverted'] })
+    await store.listRecords(sb as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      status: ['accepted', 'reverted'],
+    })
     expect(sb._chain.in).toHaveBeenCalledWith('status', ['accepted', 'reverted'])
   })
 })
@@ -476,14 +495,14 @@ describe('listRecords', () => {
 describe('countProposed', () => {
   it('counts the pond’s open records — the "N proposed, waiting on you" figure', async () => {
     const sb = makeSupabase({ count: 3 })
-    expect(await store.countProposed(sb as never, USER)).toBe(3)
+    expect(await store.countProposed(sb as never, USER, 'pond-1')).toBe(3)
     expect(sb._chain.eq.mock.calls).toContainEqual(['status', 'proposed'])
     expect(sb._chain.select).toHaveBeenCalledWith('id', { count: 'exact', head: true })
   })
 
   it('reads zero when the pond has nothing waiting', async () => {
     const sb = makeSupabase({ count: undefined })
-    expect(await store.countProposed(sb as never, USER)).toBe(0)
+    expect(await store.countProposed(sb as never, USER, 'pond-1')).toBe(0)
   })
 })
 
@@ -508,7 +527,11 @@ describe('getRecordByToolCall', () => {
   it('reads null for a call with no record, which is an answer not an error', async () => {
     const sb = makeSupabase({ maybeSingle: null })
     await expect(
-      store.getRecordByToolCall(sb as never, { userId: USER, toolCallId: 'never-logged' })
+      store.getRecordByToolCall(sb as never, {
+        pondId: 'pond-1',
+        userId: USER,
+        toolCallId: 'never-logged',
+      })
     ).resolves.toBeNull()
   })
 
@@ -520,7 +543,11 @@ describe('getRecordByToolCall', () => {
     const sb = makeSupabase({ maybeSingle: null })
     sb._chain.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } })
     await expect(
-      store.getRecordByToolCall(sb as never, { userId: USER, toolCallId: 'call-1' })
+      store.getRecordByToolCall(sb as never, {
+        pondId: 'pond-1',
+        userId: USER,
+        toolCallId: 'call-1',
+      })
     ).rejects.toMatchObject({ message: 'boom' })
   })
 })
@@ -534,7 +561,11 @@ describe('listRevisionsOf', () => {
         row({ id: 'unrelated', links: {} }),
       ],
     })
-    const chain = await store.listRevisionsOf(sb as never, { userId: USER, recordId: 'v1' })
+    const chain = await store.listRevisionsOf(sb as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      recordId: 'v1',
+    })
     expect(chain.map((r) => r.id)).toEqual(['v2', 'v3'])
   })
 })
@@ -693,7 +724,7 @@ describe('listRecordsByToolCalls (#98)', () => {
   it('asks nothing for an empty set', async () => {
     const sb = makeSupabase()
     await expect(
-      store.listRecordsByToolCalls(sb as never, { userId: USER, toolCallIds: [] })
+      store.listRecordsByToolCalls(sb as never, { pondId: 'pond-1', userId: USER, toolCallIds: [] })
     ).resolves.toEqual([])
     expect(sb.from).not.toHaveBeenCalled()
   })
@@ -701,7 +732,11 @@ describe('listRecordsByToolCalls (#98)', () => {
   it('raises on a failed query instead of reporting nothing', async () => {
     const sb = makeSupabase({ listError: { message: 'boom' } })
     await expect(
-      store.listRecordsByToolCalls(sb as never, { userId: USER, toolCallIds: ['c1'] })
+      store.listRecordsByToolCalls(sb as never, {
+        pondId: 'pond-1',
+        userId: USER,
+        toolCallIds: ['c1'],
+      })
     ).rejects.toBeTruthy()
   })
 })

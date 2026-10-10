@@ -56,7 +56,7 @@ export function sourceDatabases(rows: readonly PageRow[], counts: RecordCounts):
 export async function fetchRecordCounts(
   supabase: SupabaseClient<Database>,
   userId: string,
-  pondId: string | null | undefined
+  pondId: string | null
 ): Promise<RecordCounts> {
   const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

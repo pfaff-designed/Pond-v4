@@ -186,7 +186,7 @@ export async function getCollectionRows(
 export async function listPages(
   supabase: SupabaseClient<Database>,
   userId: string,
-  pondId: string | null | undefined
+  pondId: string | null
 ): Promise<PondPage[]> {
   const pond = await resolvePond(supabase, userId, pondId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,10 +231,9 @@ export async function createPage(
   const parentId = input.parentId ?? null
   const desired = input.title ?? ''
 
-  // #312: `pondId` is required, so a caller that knows its pond says so. The
-  // fallback remains ONLY for an explicit `null` — a caller that genuinely has no
-  // pond — and resolves the person's first rather than writing null, because a
-  // null `pond_id` passes no filter and the page is invisible everywhere.
+  // #312: `pondId` is required, so a caller that knows its pond says so. An
+  // explicit `null` — a caller that genuinely has no pond — resolves the person's
+  // first rather than writing null: a page with no pond shows in no pond.
   const pondId = await resolvePond(supabase, userId, input.pondId)
 
   const insert = {
