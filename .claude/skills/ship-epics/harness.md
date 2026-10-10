@@ -36,13 +36,16 @@ trap: it works once and then blocks exactly when supervision needs it. Found on 
 2026-10-10. Poll like this instead:
 
 ```sh
-prev=$($H check HB 2>/dev/null || true); end=$((SECONDS + 530))
+# Compare state + reapproach count + step, NEVER the whole line: `check` leads with an
+# elapsed-age column that changes every tick, so comparing the line fires constantly.
+key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}' || echo none; }
+prev=$(key); end=$((SECONDS + 530))
 while [ $SECONDS -lt $end ]; do
-  cur=$($H check HB 2>/dev/null || true)
-  [ "$cur" != "$prev" ] && { echo "$cur"; exit 0; }
+  cur=$(key)
+  [ "$cur" != "$prev" ] && { $H check HB; exit 0; }
   sleep 20
 done
-echo "timer: $cur"
+echo "timer: $(key)"
 ```
 
 ### `LONG cmd LOG LIMIT`

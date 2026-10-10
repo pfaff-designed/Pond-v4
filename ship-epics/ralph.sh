@@ -151,8 +151,16 @@ Do this item and nothing else, then stop. If PLAN.md's attempts section names th
   local pid=$!
   echo "$pid" >"$loop/pass.pid"
   cd - >/dev/null
+  # `timeout` has been seen not to fire: on 2026-10-10 a pass was alive at 19:44 with no SIGTERM at
+  # 600s and no SIGKILL at 630s, which hung the loop past the failsafe and — because an unkilled pass
+  # never returns — silently skipped the miss accounting the two-attempt rule depends on. It is
+  # intermittent (four passes in the same run were killed correctly), so the limit cannot rest on it.
+  # This watchdog kills the pass's process group itself, a minute after timeout should already have.
+  ( sleep $((pass_seconds + 60)); kill -KILL -- -"$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  local watchdog=$!
   local code=0
   wait "$pid" || code=$?
+  kill "$watchdog" 2>/dev/null || true
   if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
     echo "ralph: pass killed at its ${pass_seconds}s limit" >>"$log"
   elif [ "$code" -ne 0 ]; then
