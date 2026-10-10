@@ -16,6 +16,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Only `size-S` and `size-M` tickets get built.** Size is a Jira label. A `size-L` is not a unit
   of work, it is an unsplit one. Split it into S/M children _before_ starting. On 2026-10-03 there
   were 23 open `size-L` issues and 47 recorded `/handoff` calls; those two numbers are the same fact.
+- **Split vertically, never by layer.** Every child ticket ends in something a person can do in the
+  running app: a thin path from a control they can see down to the data, not "the engine" now and
+  "the entry point" later. On 2026-10-09 three of seven merged tickets were engine-only — the glyph
+  library with no picker, an HTML reader nothing called, a change log behind an unlisted shortcut —
+  and nobody could use them. A ticket whose path needs a later ticket is mis-split: fold one entry
+  point into it, or reorder the Workstream so the entry point lands first.
+- **Epics are worked by orchestrators.** `.cursor/skills/ship-epics/` is the workflow: the chat is
+  the conductor, one orchestrator subagent per epic runs builder, reviewer and live-verifier
+  subagents through to a merge, and only production migrations, failed reachability gates and real
+  ambiguities come back to the user.
 - **The queue is the `now` label.** The JQL
   `project = KAN AND labels = now AND statusCategory != Done ORDER BY rank` is the whole answer to
   "what next" — at most 8 tickets, all S or M. Never re-derive priority by reading the backlog; if
@@ -118,7 +128,7 @@ A clear, small, fully-specified request needs neither — act on it directly.
 
 ## Definition of done: it looks like the mockup, or it is not done
 
-A slice is finished when the built surface **matches the mockup it came from** — layout, colour, type, spacing, radii, shadow, copy — and the features that storyboard commits to actually work. Rendering without errors is not done. Passing tests is not done.
+A slice is finished when the built surface **matches the mockup it came from** — layout, colour, type, spacing, radii, shadow, copy — and the features that storyboard commits to actually work. Rendering without errors is not done. Passing tests is not done. **Code nobody can reach is not done**: write the person's path (the clicks and keys from an open page to the feature) before building, and walk it with real input before the PR. A path that only works through the console, the editor API or a dispatched event does not work.
 
 How to check, every time, before opening a PR:
 
