@@ -2,14 +2,12 @@
  * Block palette in DocumentPanel — integration tests.
  *
  * Covers:
- * - Typing '/' in an empty text block opens the slash palette
- * - Selecting a palette item replaces the block
- * - Insert-between affordance renders '+' buttons
+ * - Return after a block opens an empty line, saved like any edit; no `+` between blocks
  * - Keyboard reorder: ⌥↑ / ⌥↓ swaps blocks
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -57,38 +55,36 @@ beforeEach(() => {
   mockFetchPages.mockResolvedValue([])
 })
 
-describe('Insert-between affordance', () => {
-  it('renders Insert block buttons between blocks', async () => {
+describe('Return after a block (6g)', () => {
+  const table: Block = {
+    id: 'b-table',
+    type: 'table',
+    columns: ['Tool', 'Location'],
+    rows: [{ id: 'r1', cells: ['Saw', 'Wall'] }],
+  }
+
+  it('draws no `+` between blocks', async () => {
     const blocks: Block[] = [
       { id: 'b1', type: 'text', content: 'First' },
       { id: 'b2', type: 'text', content: 'Second' },
     ]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const insertButtons = await screen.findAllByRole('button', { name: 'Insert block' })
-    // Should have at least one insert-between button
-    expect(insertButtons.length).toBeGreaterThanOrEqual(1)
+    await screen.findAllByRole('button', { name: 'Block menu' })
+    expect(screen.queryByRole('button', { name: 'Insert block' })).not.toBeInTheDocument()
   })
 
-  it('clicking Insert block opens the block palette', async () => {
-    const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Hello' }]
+  it('opens an empty line after the block, and the page saves it like any edit', async () => {
+    const blocks: Block[] = [table, { id: 'b2', type: 'text', content: 'Second' }]
     renderWith({ id: 'page-1', title: 'Test', blocks })
-    const insertButtons = await screen.findAllByRole('button', { name: 'Insert block' })
-    fireEvent.click(insertButtons[0])
-    // The `/` menu lists the blocks (#278: no filter input — the query is typed on the page)
-    expect(await screen.findByRole('listbox', { name: 'blocks' })).toBeInTheDocument()
-  })
+    await screen.findAllByRole('button', { name: 'Block menu' })
+    const root = document.getElementById('block-b-table')!
+    root.focus()
+    fireEvent.keyDown(root, { key: 'Enter' })
 
-  it('selecting from palette inserts a new block', async () => {
-    const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Hello' }]
-    renderWith({ id: 'page-1', title: 'Test', blocks })
-    const insertButtons = await screen.findAllByRole('button', { name: 'Insert block' })
-    fireEvent.click(insertButtons[0])
-    const menu = await screen.findByRole('listbox', { name: 'blocks' })
-    fireEvent.click(within(menu).getByText('checklist'))
-    // Should commit blocks with a new todo block
     await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
     const savedBlocks = mockCommitBlocks.mock.calls[0][3] as Block[]
-    expect(savedBlocks.some((b) => b.type === 'todo')).toBe(true)
+    expect(savedBlocks.map((b) => b.id)).toEqual(['b-table', expect.any(String), 'b2'])
+    expect(savedBlocks[1]).toMatchObject({ type: 'text', content: '' })
   })
 })
 

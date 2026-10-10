@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import type { EditorView } from '@tiptap/pm/view'
@@ -9,6 +9,7 @@ import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
 import type { TextBlock } from './schema'
+import { opensSlashLine, SlashLineContext, slashLineAt } from './slash-line'
 
 /** Where a person pressed on the block before its editor existed. */
 export interface Press {
@@ -66,8 +67,12 @@ const editorProps = {
  *
  * Edits are written back as markdown on every change and the page's debounced save
  * commits them; until it does, ⌘Z is the editor's own history. Content that
- * arrives from outside (an accepted diff, the `/` menu clearing its query) replaces
- * the document without writing back and without entering that history.
+ * arrives from outside (an accepted diff, the `/` menu clearing its query, a `/`
+ * pick splitting the block) replaces the document without writing back and
+ * without entering that history.
+ *
+ * Under a `SlashLineContext` it reports the `/` line the caret is on, so the page
+ * can open the `/` menu there and split the block on a pick.
  */
 const TextEditor = ({
   data,
@@ -89,9 +94,10 @@ const TextEditor = ({
   // render an earlier write after a later one is typed; that value is an echo,
   // not a change from outside, and must not rewind the document.
   const unechoed = useRef<string[]>([])
-  const latest = useRef({ data, onChange })
+  const onSlashLine = useContext(SlashLineContext)
+  const latest = useRef({ data, onChange, onSlashLine })
   useEffect(() => {
-    latest.current = { data, onChange }
+    latest.current = { data, onChange, onSlashLine }
   })
 
   const editor = useEditor({
@@ -100,10 +106,20 @@ const TextEditor = ({
     immediatelyRender: false,
     autofocus: opening.autofocus,
     editorProps,
-    onUpdate: ({ editor: updated }) => {
-      const { data: current, onChange: send } = latest.current
+    onSelectionUpdate: ({ editor: updated, transaction }) => {
+      if (transaction.docChanged) return
+      const { doc, selection } = updated.state
+      latest.current.onSlashLine?.(slashLineAt(doc, selection.from), false)
+    },
+    onUpdate: ({ editor: updated, transaction }) => {
+      const { data: current, onChange: send, onSlashLine: report } = latest.current
       if (!send) return
-      const content = serializeMarkdown(updated.state.doc)
+      const { doc, selection } = updated.state
+      if (report) {
+        const line = slashLineAt(doc, selection.from)
+        report(line, line !== null && opensSlashLine(transaction.before, doc, selection.from))
+      }
+      const content = serializeMarkdown(doc)
       if (content === written.current) return
       written.current = content
       unechoed.current.push(content)

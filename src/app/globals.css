@@ -613,7 +613,7 @@
     animation: motion-toast-in var(--motion-calm) var(--ease-out) both;
   }
 
-  /* Menu / palette open (SlashMenu, InsertBetween palette). Quick, grows from
+  /* Menu / palette open (SlashMenu). Quick, grows from
      the anchor set by the caller's transform-origin. */
   .motion-menu {
     transform-origin: var(--motion-menu-origin, top left);

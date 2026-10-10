@@ -1,12 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
 import { expect, fn, screen, userEvent, within } from 'storybook/test'
 
-import { AddBlockButton, InsertBetween } from './BlockInserters'
+import { AddBlockButton } from './BlockInserters'
 
 /**
- * The two shared block-insertion affordances (ticket-37, ticket-44).
- * `InsertBetween` opens the registry-derived palette; `AddBlockButton` (UI-audit
- * Slice 2a) drops a text block directly — typing `/` in it summons that same palette.
+ * The foot add (ticket-44, UI-audit Slice 2a): drops a text block directly —
+ * typing `/` in it summons the block palette.
  */
 const meta = {
   title: 'Molecules/BlockInserters',
@@ -42,24 +41,5 @@ export const AlwaysVisibleAdd: Story = {
     await userEvent.click(add)
     await expect(args.onAdd).toHaveBeenCalled()
     await expect(screen.queryByRole('listbox', { name: 'blocks' })).not.toBeInTheDocument()
-  },
-}
-
-/**
- * The mid-page hover `+` (ticket-37): a quiet hairline whose `+` opens the same
- * palette and inserts THERE. The `+` is a real button (reachable without hover in
- * the play test).
- */
-export const InsertBetweenBlocks: StoryObj<typeof InsertBetween> = {
-  render: (args) => <InsertBetween {...args} />,
-  args: { onInsert: fn() },
-  play: async ({ canvasElement, args }) => {
-    const canvas = within(canvasElement)
-    const insert = canvas.getByRole('button', { name: 'Insert block' })
-    await userEvent.click(insert)
-    // The menu portals to document.body, so query it via `screen`. Rows speak
-    // Pond's words (#278): the todo type's row is `checklist`.
-    await userEvent.click(await screen.findByText('checklist'))
-    await expect(args.onInsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'checklist' }))
   },
 }

@@ -5,10 +5,12 @@
  * extracted from DocumentPanel so EVERY editable page renders it identically: the
  * document editor, an area page with content, AND the Life home page.
  *
- * It renders a `SiblingBlocksProvider`-wrapped list of blocks with, at every seam,
- * the ticket-37 machinery — the `/` palette on an empty text block, the hover `+`
- * InsertBetween, drag/⌥↑/⌥↓ reorder, per-block delete with undo — and, at the
- * foot, the ticket-44 always-visible palette-first "+ Add a block".
+ * It renders a `SiblingBlocksProvider`-wrapped list of blocks with the ticket-37
+ * machinery — the `/` palette on an empty text block or an empty line inside one,
+ * Return on a focused block opening a line after it (6g: "Return after the table,
+ * then /"), drag/⌥↑/⌥↓ reorder, per-block delete with undo — and, at the foot,
+ * the ticket-44 always-visible "+ Add a block". The handle is the only block
+ * chrome (7e): nothing is drawn between blocks.
  *
  * Persistence is the CALLER's concern: BlockCanvas is controlled (it takes
  * `blocks` and emits the full next array via `onChange`), so DocumentPanel keeps
@@ -54,7 +56,13 @@ import {
   type PondMenuPlacement,
   type PondMenuSize,
 } from '@/components/molecules/PondMenu'
-import { InsertBetween, AddBlockButton } from '@/components/molecules/BlockInserters'
+import { AddBlockButton } from '@/components/molecules/BlockInserters'
+import {
+  SlashLineContext,
+  splitAtSlashLine,
+  type SlashLine,
+  type SlashLineListener,
+} from '@/lib/modules/text/slash-line'
 import {
   blockMenuGroups,
   runBlockMenuAction,
@@ -179,14 +187,12 @@ export function BlockCanvas({
   const [slashMenuOpenAt, setSlashMenuOpenAt] = useState<number | null>(null)
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
-  // The source picker (#280): which `/` pick summoned it, and where its block
-  // lands — `at` replaces the `/…` block that opened the menu, or inserts
-  // between. `Pond 02` 2e: table, gallery and chart all open the same picker.
+  // The source picker (#280): which `/` pick summoned it, and the `/…` block its
+  // view replaces. `Pond 02` 2e: table, gallery and chart all open the same picker.
   const [sourcePicker, setSourcePicker] = useState<{
     block: SourceBlock
-    /** The block the view lands against — the `/…` block it replaces, or the one above an insert. */
-    hostId: string | undefined
-    replace: boolean
+    /** The `/…` block the view replaces. */
+    hostId: string
     /** Where to look for a nearby source (AUDIT C9) — a position, read once at open. */
     at: number
     anchor: Element | null
@@ -220,7 +226,6 @@ export function BlockCanvas({
 
   // The person's own templates, read only while a `/` menu is open — the pane's
   // `yours` group. Refetched on each open, so one saved a moment ago is there.
-  const [insertMenuOpen, setInsertMenuOpen] = useState(false)
   const { data: templates = [] } = useQuery({
     queryKey: ['templates', pondId],
     queryFn: async () => {
@@ -230,7 +235,7 @@ export function BlockCanvas({
       } = await supabase.auth.getUser()
       return user ? listTemplates(supabase, user.id, pondId) : []
     },
-    enabled: slashMenuOpenAt !== null || insertMenuOpen,
+    enabled: slashMenuOpenAt !== null,
     staleTime: 0,
   })
   const yourTemplates = useMemo<YourTemplate[]>(
@@ -366,35 +371,38 @@ export function BlockCanvas({
     })
   }
 
-  // Insert the block a `/` row mints at `at` (ticket-37, #278). A row is a preset
-  // — `list` is `todo` at the dot marker, `chart` is `view` in chart mode — so the
-  // palette mints it; a row with no factory is a no-op, never a crash.
-  function insertBlockAt(at: number, row: SlashRow) {
-    if (makePageFromRow(row, null)) return
-    const source = sourceBlockOf(row.id)
-    if (source) {
-      openSourcePicker(source, at, false)
-      return
-    }
-    const nb = mintPreset(row.id)
+  /**
+   * Backspace in an empty text block removes it. When the block above is not
+   * text, focus goes back to it, so Return then Backspace leaves the person where
+   * they started.
+   */
+  function removeEmptyLineAt(index: number) {
+    const above = blocks[index - 1]
+    removeBlockAt(index)
+    if (!above || above.type === 'text') return
+    document.getElementById(blockDomId(above.id))?.focus()
+  }
+
+  // Return on a focused block opens an empty text block after it; its editor
+  // opens with the caret in it, ready for `/`.
+  function insertLineAfter(index: number) {
+    const nb = emptyBlockForType('text')
     if (!nb) return
     markInserted(nb.id)
-    onChange([...blocks.slice(0, at), nb, ...blocks.slice(at)])
+    onChange([...blocks.slice(0, index + 1), nb, ...blocks.slice(index + 1)])
   }
 
   /**
    * `/table`, `/gallery`, `/chart` open the source picker rather than minting a
    * block (#280; PROJECT_RULES: "a table is always a view of a database"). The
-   * glass hangs off the block that summoned it — the `/…` block itself, or the
-   * one above an insert-between (the canvas for the top slot). AUDIT C9, decided:
-   * a chart auto-wires "when one table is nearby" — the nearest linked view on
-   * the page becomes its source and the picker opens on the chart types;
+   * glass hangs off the block the `/` was typed in (`anchorId`). AUDIT C9,
+   * decided: a chart auto-wires "when one table is nearby" — the nearest linked
+   * view on the page becomes its source and the picker opens on the chart types;
    * otherwise it opens on the sources.
    */
-  function openSourcePicker(block: SourceBlock, at: number, replace: boolean) {
-    const host = blocks[replace ? at : at - 1]
-    const anchor = host ? document.getElementById(blockDomId(host.id)) : canvasRef.current
-    setSourcePicker({ block, hostId: host?.id, replace, at, anchor })
+  function openSourcePicker(block: SourceBlock, hostId: string, at: number, anchorId: string) {
+    const anchor = document.getElementById(blockDomId(anchorId)) ?? canvasRef.current
+    setSourcePicker({ block, hostId, at, anchor })
   }
 
   function nearestSource(at: number): string | null {
@@ -433,27 +441,17 @@ export function BlockCanvas({
   )
 
   /**
-   * Put the picked view block where the `/` was (replace) or between (insert).
-   * Keyed on the HOST BLOCK'S ID, not the index the picker opened at: making a
-   * database is an await, and a block inserted or removed meanwhile would move
-   * that index under us. With no host (an insert at the top, or a block that went
-   * away while the glass was open) the view lands at the end, which is where an
-   * append belongs.
+   * Put the picked view block where the `/` was. Keyed on the HOST BLOCK'S ID,
+   * not the index the picker opened at: making a database is an await, and a
+   * block inserted or removed meanwhile would move that index under us. A `/…`
+   * block that went away while the glass was open gets the view appended rather
+   * than dropped; the undo takes it back.
    */
-  function placeView(view: ViewBlock, hostId: string | undefined, replace: boolean) {
+  function placeView(view: ViewBlock, hostId: string) {
     markInserted(view.id)
     const current = blocksRef.current
-    const at = hostId ? current.findIndex((b) => b.id === hostId) : -1
-    if (replace) {
-      // The `/…` block went away while the glass was open — append rather than
-      // drop the thing the person asked for; the undo takes it back.
-      onChange(at === -1 ? [...current, view] : current.map((b, i) => (i === at ? view : b)))
-      return
-    }
-    // An insert-between hangs off the block ABOVE the slot, so no host means the
-    // top slot.
-    const insertAt = at === -1 ? 0 : at + 1
-    onChange([...current.slice(0, insertAt), view, ...current.slice(insertAt)])
+    const at = current.findIndex((b) => b.id === hostId)
+    onChange(at === -1 ? [...current, view] : current.map((b, i) => (i === at ? view : b)))
   }
 
   /**
@@ -490,10 +488,10 @@ export function BlockCanvas({
         collectionId: pick.database.id,
         ...(chart ? { chart } : {}),
       }
-      placeView(view, open.hostId, open.replace)
+      placeView(view, open.hostId)
       return
     }
-    const replaced = open.replace ? blocksRef.current.find((b) => b.id === open.hostId) : undefined
+    const replaced = blocksRef.current.find((b) => b.id === open.hostId)
     try {
       const made = await createDatabase(
         getSupabase(),
@@ -506,7 +504,7 @@ export function BlockCanvas({
         },
         () => crypto.randomUUID()
       )
-      placeView(made.view, open.hostId, open.replace)
+      placeView(made.view, open.hostId)
       queryClient.invalidateQueries({ queryKey: pagesKey() })
       queryClient.invalidateQueries({ queryKey: ['record-counts', pondId] })
       stageUndo({
@@ -540,7 +538,7 @@ export function BlockCanvas({
   const makePage = async (
     source: NewPage | null,
     placement: 'sibling' | 'child',
-    replaceId: string | null
+    replaceId: string
   ) => {
     if (!source) return
     try {
@@ -560,7 +558,7 @@ export function BlockCanvas({
         pondId,
       })
       if (source.schema) await defineSchema(supabase, created.id, source.schema)
-      if (replaceId !== null) onChange(blocksRef.current.filter((b) => b.id !== replaceId))
+      onChange(blocksRef.current.filter((b) => b.id !== replaceId))
       insertPageOptimistic(
         queryClient,
         {
@@ -590,21 +588,62 @@ export function BlockCanvas({
     }
   }
 
-  const makePageFromTemplate = async (pick: TemplatePick, replaceId: string | null) =>
+  const makePageFromTemplate = async (pick: TemplatePick, replaceId: string) =>
     makePage(await newPageFromPick(pick), 'child', replaceId)
 
-  const makePageFromRow = (row: SlashRow, replaceId: string | null) => {
-    if (!row.placement) return false
-    void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), row.placement, replaceId)
-    return true
+  /**
+   * Where a `/` pick lands: in place of the `/…` block, or — for a `/` line inside
+   * a text block — in place of that line, split out of the block with the text
+   * above and below kept as blocks of their own (the boards are silent on the
+   * split; it is "Return after the table, then /" applied inside prose).
+   */
+  const slashTargetOf = (
+    index: number,
+    line: SlashLine | null
+  ): { next: Block[]; host: Block } | null => {
+    const block = blocks[index]
+    if (!block) return null
+    if (!line || block.type !== 'text') return { next: blocks, host: block }
+    const split = splitAtSlashLine(block, line, () => crypto.randomUUID())
+    return {
+      next: [...blocks.slice(0, index), ...split.blocks, ...blocks.slice(index + 1)],
+      host: split.host,
+    }
   }
 
-  // What every `/` inserter shares, so each host lists and behaves the same.
-  const inserterProps = {
-    size: slashSize,
-    yourTemplates,
-    onPickTemplate: (pick: TemplatePick) => void makePageFromTemplate(pick, null),
-    onOpenChange: setInsertMenuOpen,
+  /**
+   * The `/` gesture (ticket-37, #278): the picked row's block takes the `/…`
+   * block's place. A row is a preset — `list` is `todo` at the dot marker, `chart`
+   * is `view` in chart mode — so the palette mints it, as one page change with
+   * any split; a row with no factory is a no-op. The three source rows go through
+   * the picker first (#280), and the page rows make a page and drop the `/…` block.
+   */
+  function handleSlashSelect(index: number, row: SlashRow, line: SlashLine | null) {
+    setSlashMenuOpenAt(null)
+    const target = slashTargetOf(index, line)
+    if (!target) return
+    const { next, host } = target
+    const source = sourceBlockOf(row.id)
+    const { placement } = row
+    if (source || placement) {
+      if (next !== blocks) onChange(next)
+      if (source) openSourcePicker(source, host.id, next.indexOf(host), blocks[index].id)
+      else if (placement)
+        void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, host.id)
+      return
+    }
+    const nb = mintPreset(row.id)
+    if (!nb) return
+    markInserted(nb.id)
+    onChange(next.map((b) => (b.id === host.id ? nb : b)))
+  }
+
+  function handleSlashPickTemplate(index: number, pick: TemplatePick, line: SlashLine | null) {
+    setSlashMenuOpenAt(null)
+    const target = slashTargetOf(index, line)
+    if (!target) return
+    if (target.next !== blocks) onChange(target.next)
+    void makePageFromTemplate(pick, target.host.id)
   }
 
   // The foot add (UI-audit Slice 2a): drop an empty text block at the end, ready
@@ -632,77 +671,57 @@ export function BlockCanvas({
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
         <div ref={canvasRef} className="space-y-0">
-          <InsertBetween onInsert={(row) => insertBlockAt(0, row)} {...inserterProps} />
           {blocks.map((block, i) => (
-            <React.Fragment key={block.id}>
-              <BlockEditor
-                block={block}
-                pageId={pageId}
-                settleOnMount={insertedIds?.has(block.id) ?? false}
-                onChange={(next) => setBlockAt(i, next)}
-                onRemove={() => removeBlockAt(i)}
-                onMoveUp={() => moveBlockAt(i, 'up')}
-                onMoveDown={() => moveBlockAt(i, 'down')}
-                onSlashKey={() => setSlashMenuOpenAt(i)}
-                slashMenuOpen={slashMenuOpenAt === i}
-                slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
-                slashSize={slashSize}
-                yourTemplates={yourTemplates}
-                onSlashSelect={(row) => {
-                  // Replace the `/…` text block at i with the picked row's block
-                  // (the `/` gesture: text block → chosen block). The three
-                  // source rows go through the picker first (#280).
-                  setSlashMenuOpenAt(null)
-                  if (makePageFromRow(row, block.id)) return
-                  const source = sourceBlockOf(row.id)
-                  if (source) {
-                    openSourcePicker(source, i, true)
-                    return
-                  }
-                  const nb = mintPreset(row.id)
-                  if (!nb) return
-                  markInserted(nb.id)
-                  onChange(blocks.map((b, bi) => (bi === i ? nb : b)))
-                }}
-                onSlashPickTemplate={(pick) => {
-                  setSlashMenuOpenAt(null)
-                  void makePageFromTemplate(pick, block.id)
-                }}
-                onSlashClose={() => setSlashMenuOpenAt(null)}
-                menuOpen={menuOpenAt === i}
-                // Only the OPEN block's groups are derived: this render runs on every
-                // keystroke anywhere on the page.
-                menuGroups={
-                  menuOpenAt === i
-                    ? blockMenuGroups(block, { moveIntoNewPage: onMoveIntoNewPage !== undefined })
-                    : undefined
-                }
-                menuSize={slashSize}
-                onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
-                onMenuSelect={(action) => handleMenuSelect(i, action)}
-                isDragging={draggingIndex === i}
-                onDragStart={() => {
-                  setMenuOpenAt(null)
-                  setDraggingIndex(i)
-                }}
-                onDragEnd={() => setDraggingIndex(null)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  if (draggingIndex === null || draggingIndex === i) {
-                    setDraggingIndex(null)
-                    return
-                  }
-                  // Move the dragged block to position i (splice, not swap).
-                  const next = [...blocks]
-                  const [moved] = next.splice(draggingIndex, 1)
-                  next.splice(i, 0, moved)
-                  onChange(next)
+            <BlockEditor
+              key={block.id}
+              block={block}
+              pageId={pageId}
+              settleOnMount={insertedIds?.has(block.id) ?? false}
+              onChange={(next) => setBlockAt(i, next)}
+              onRemoveEmpty={() => removeEmptyLineAt(i)}
+              onReturn={() => insertLineAfter(i)}
+              onMoveUp={() => moveBlockAt(i, 'up')}
+              onMoveDown={() => moveBlockAt(i, 'down')}
+              onSlashKey={() => setSlashMenuOpenAt(i)}
+              slashMenuOpen={slashMenuOpenAt === i}
+              slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+              slashSize={slashSize}
+              yourTemplates={yourTemplates}
+              onSlashSelect={(row, line) => handleSlashSelect(i, row, line)}
+              onSlashPickTemplate={(pick, line) => handleSlashPickTemplate(i, pick, line)}
+              onSlashClose={() => setSlashMenuOpenAt(null)}
+              menuOpen={menuOpenAt === i}
+              // Only the OPEN block's groups are derived: this render runs on every
+              // keystroke anywhere on the page.
+              menuGroups={
+                menuOpenAt === i
+                  ? blockMenuGroups(block, { moveIntoNewPage: onMoveIntoNewPage !== undefined })
+                  : undefined
+              }
+              menuSize={slashSize}
+              onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
+              onMenuSelect={(action) => handleMenuSelect(i, action)}
+              isDragging={draggingIndex === i}
+              onDragStart={() => {
+                setMenuOpenAt(null)
+                setDraggingIndex(i)
+              }}
+              onDragEnd={() => setDraggingIndex(null)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (draggingIndex === null || draggingIndex === i) {
                   setDraggingIndex(null)
-                }}
-              />
-              <InsertBetween onInsert={(item) => insertBlockAt(i + 1, item)} {...inserterProps} />
-            </React.Fragment>
+                  return
+                }
+                // Move the dragged block to position i (splice, not swap).
+                const next = [...blocks]
+                const [moved] = next.splice(draggingIndex, 1)
+                next.splice(i, 0, moved)
+                onChange(next)
+                setDraggingIndex(null)
+              }}
+            />
           ))}
         </div>
       </SiblingBlocksProvider>
@@ -829,9 +848,14 @@ function useBlockEmptyState(
  * views ignore `editable`.
  *
  * Ticket-37: `/` in an empty text block opens the block palette (intercepted in the
- * onChange below, so the slash never persists); ⌥↑/⌥↓ reorders the focused block;
- * the handle drags to reorder. `draggable` is armed only while the pointer is
- * down on the handle — an always-draggable block would hijack text-selection drags.
+ * onChange below, so the slash never persists); so does `/` on an empty line
+ * inside one, which the text editor reports through `SlashLineContext`. ⌥↑/⌥↓
+ * reorders the focused block; the handle drags to reorder. `draggable` is armed
+ * only while the pointer is down on the handle — an always-draggable block would
+ * hijack text-selection drags.
+ *
+ * Return on the block itself — not on anything inside it — opens a line after a
+ * block that is not text (6g). A text block's Return is its editor's.
  *
  * A press on the handle, or ⌘/ (Ctrl+/ off Apple) anywhere in the block, opens
  * the block menu (`PondMenu` kind `block`), and the block wears the open ring
@@ -842,7 +866,8 @@ function BlockEditor({
   pageId,
   settleOnMount = false,
   onChange,
-  onRemove,
+  onRemoveEmpty,
+  onReturn,
   onMoveUp,
   onMoveDown,
   onSlashKey,
@@ -868,7 +893,10 @@ function BlockEditor({
   pageId: string
   settleOnMount?: boolean
   onChange: (next: Block) => void
-  onRemove: () => void
+  /** Backspace in an empty text block. */
+  onRemoveEmpty: () => void
+  /** Return on a focused block that is not text. */
+  onReturn: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
@@ -876,8 +904,9 @@ function BlockEditor({
   slashPane?: SlashPane
   slashSize?: PickerSize
   yourTemplates?: readonly YourTemplate[]
-  onSlashSelect?: (row: SlashRow) => void
-  onSlashPickTemplate?: (pick: TemplatePick) => void
+  /** `line` is the `/` line the menu opened on inside the block, if it did. */
+  onSlashSelect?: (row: SlashRow, line: SlashLine | null) => void
+  onSlashPickTemplate?: (pick: TemplatePick, line: SlashLine | null) => void
   onSlashClose?: () => void
   menuOpen?: boolean
   menuGroups?: PondMenuGroup<BlockMenuAction>[]
@@ -902,47 +931,83 @@ function BlockEditor({
     []
   )
   const frame = blockFrame(block)
+  // The `/` line inside this text block the menu opened on. Kept after the menu
+  // closes, so it is read only while the menu is open; every open sets it.
+  const [slashLine, setSlashLine] = useState<SlashLine | null>(null)
+  const openLine = slashMenuOpen ? slashLine : null
   // The `/` menu's query is what follows the slash in THIS text block (#278): the
   // board has no filter input — the person keeps typing on the page.
   const slashQuery =
-    slashMenuOpen && block.type === 'text' ? (block as { content: string }).content.slice(1) : ''
+    openLine?.query ?? (slashMenuOpen && block.type === 'text' ? block.content.slice(1) : '')
   const { state, onEmptyAction, emptyLine } = useBlockEmptyState(block, frame, pageId, onChange)
 
+  const openSlashMenu = (line: SlashLine | null) => {
+    setSlashLine(line)
+    if (rootRef.current) {
+      setSlashSide(
+        sideTowardFreeSpace(
+          caretRect(rootRef.current),
+          window.innerHeight,
+          slashMenuHeight(slashRows, slashSize, window.innerHeight)
+        )
+      )
+    }
+    onSlashKey?.()
+  }
+
+  // The editor reports the `/` line under the caret on every change: it opens
+  // the menu when the `/` was just typed, narrows it as the query grows, and
+  // closes it when the line stops being a `/` line.
+  const handleSlashLine: SlashLineListener = (line, opened) => {
+    if (opened && line) {
+      openSlashMenu(line)
+      return
+    }
+    if (!openLine) return
+    setSlashLine(line)
+    if (!line) onSlashClose?.()
+  }
+
   const view = (
-    <ModuleView
-      type={block.type}
-      data={block}
-      editable
-      onChange={(next) => {
-        const nextBlock = next as Block
-        if (nextBlock.type === 'text' && block.type === 'text') {
-          const was = (block as { content: string }).content
-          const now = (nextBlock as { content: string }).content
-          // `/` typed into an EMPTY text block opens the menu.
-          // The slash STAYS as text — it is the query the person is typing, and
-          // esc keeps it. Deleting it back out closes the menu.
-          if (was === '' && now === '/') {
-            if (rootRef.current) {
-              setSlashSide(
-                sideTowardFreeSpace(
-                  caretRect(rootRef.current),
-                  window.innerHeight,
-                  slashMenuHeight(slashRows, slashSize, window.innerHeight)
-                )
-              )
-            }
-            onSlashKey?.()
-          } else if (slashMenuOpen && !now.startsWith('/')) onSlashClose?.()
-        }
-        onChange(nextBlock)
-      }}
-    />
+    <SlashLineContext.Provider value={handleSlashLine}>
+      <ModuleView
+        type={block.type}
+        data={block}
+        editable
+        onChange={(next) => {
+          const nextBlock = next as Block
+          if (nextBlock.type === 'text' && block.type === 'text') {
+            const was = block.content
+            const now = nextBlock.content
+            // `/` typed into an EMPTY text block opens the menu.
+            // The slash STAYS as text — it is the query the person is typing, and
+            // esc keeps it. Deleting it back out closes the menu.
+            if (was === '' && now === '/') openSlashMenu(null)
+            else if (slashMenuOpen && !openLine && !now.startsWith('/')) onSlashClose?.()
+          }
+          onChange(nextBlock)
+        }}
+      />
+    </SlashLineContext.Provider>
   )
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (isBlockMenuChord(e.nativeEvent)) {
       e.preventDefault()
       onMenuOpenChange?.(true)
+      return
+    }
+    if (
+      e.key === 'Enter' &&
+      e.target === e.currentTarget &&
+      block.type !== 'text' &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      e.preventDefault()
+      onReturn()
       return
     }
     if (e.altKey && e.key === 'ArrowUp') {
@@ -956,14 +1021,9 @@ function BlockEditor({
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
     // which stops propagation) — only a bare empty block deletes.
-    if (
-      e.key === 'Backspace' &&
-      !slashMenuOpen &&
-      block.type === 'text' &&
-      (block as { content: string }).content === ''
-    ) {
+    if (e.key === 'Backspace' && !slashMenuOpen && block.type === 'text' && block.content === '') {
       e.preventDefault()
-      onRemove()
+      onRemoveEmpty()
     }
   }
 
@@ -983,8 +1043,9 @@ function BlockEditor({
         menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
       )}
       id={blockDomId(block.id)}
-      // Focusable so a copied link to the block can land on it.
-      tabIndex={-1}
+      // Focusable so a copied link to the block can land on it, and a tab stop
+      // when it is not text so Return can reach it; a text block's focus is its editor.
+      tabIndex={block.type === 'text' ? -1 : 0}
       draggable={dragArmed}
       onDragStart={onDragStart}
       onDragEnd={() => {
@@ -995,15 +1056,16 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* The gutter handle (#223) — the boards' ONLY row affordance, revealed on
-          hover/focus. It is the six-dot mark 6j draws (10×14, dots r 1.1) in a
-          20×16 box; press-and-drag reorders, a click opens the block menu, which
-          is where `delete` lives. It sits on the 68% ink tier:
-          PROJECT_RULES allows three tiers only (100 / 80 small meta / 68), so the
-          mark may not drop to a fainter ink. */}
+      {/* The handle, as `PondBlock.dc.html` draws it (ADR 0011: the component DC
+          over the storyboards' pasted copies) — the only block chrome (7e),
+          revealed on hover and on keyboard focus. The six-dot mark (10×14, dots
+          r 1.1) in a 12×24 box at left −14, top 12, radius 6, on the 68% ink
+          tier; open, it is full ink on the 7% wash. Press-and-drag reorders, a
+          click opens the block menu, which is where `delete` lives. */}
       <div
+        data-part="handle"
         className={cn(
-          'absolute -left-10 top-1 flex items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+          'absolute -left-3.5 top-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
           menuOpen && 'opacity-100'
         )}
       >
@@ -1019,7 +1081,10 @@ function BlockEditor({
           trigger={
             <button
               type="button"
-              className="flex h-5 w-4 items-center justify-center rounded text-mn-text-secondary hover:text-mn-text outline-none focus-visible:ring-2 focus-visible:ring-mn-text cursor-grab"
+              className={cn(
+                'flex h-6 w-3 cursor-grab items-center justify-center rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
+              )}
               title="Block menu · drag to reorder"
               aria-label="Block menu"
               onPointerDown={() => setDragArmed(true)}
@@ -1047,10 +1112,11 @@ function BlockEditor({
           anchor={slashAnchor}
           side={slashSide}
           size={slashSize}
-          onSelect={onSlashSelect ?? (() => {})}
-          onPickTemplate={onSlashPickTemplate}
+          onSelect={(row) => onSlashSelect?.(row, openLine)}
+          onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, openLine))}
           yourTemplates={yourTemplates}
-          defaultPane={slashPane}
+          // A `/` line has text around it, so the page is not blank.
+          defaultPane={openLine ? 'rows' : slashPane}
           onClose={onSlashClose ?? (() => {})}
         />
       )}
