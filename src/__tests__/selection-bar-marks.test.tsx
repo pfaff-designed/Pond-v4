@@ -66,3 +66,23 @@ describe('SelectionBar bold/italic', () => {
     expect(screen.getByRole('button', { name: 'italic' })).toHaveAttribute('aria-pressed', 'true')
   })
 })
+
+describe('SelectionBar list', () => {
+  afterEach(() => clearSelection())
+
+  it('turns the selected line into a bullet list, then back into a plain paragraph', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'soak')
+    fireEvent.click(screen.getByRole('button', { name: 'list' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('- soak overnight')
+    expect(screen.getByRole('button', { name: 'list' })).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'list' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
+    expect(screen.getByRole('button', { name: 'list' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})

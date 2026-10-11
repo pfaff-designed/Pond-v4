@@ -12,7 +12,13 @@ import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
 import { editorForSelection } from '@/lib/modules/text/active-editor'
-import { activeMarks, toggleBold, toggleItalic, type ActiveMarks } from '@/lib/modules/text/format'
+import {
+  activeMarks,
+  toggleBold,
+  toggleBulletList,
+  toggleItalic,
+  type ActiveMarks,
+} from '@/lib/modules/text/format'
 
 import { useAnchoredBox, type PickerAnchorBox } from './use-anchored-box'
 
@@ -226,6 +232,9 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const [ctx, setCtx] = useState<SelectionContext | null>(null)
   const [rect, setRect] = useState<SelectionRect | null>(null)
   const [marks, setMarks] = useState<ActiveMarks>(NO_MARKS)
+  // `activeMarks` only reads bold/italic (per format.ts) — list is its own
+  // read, `editor.isActive('bulletList')`, kept alongside it.
+  const [listActive, setListActive] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
 
@@ -271,6 +280,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       const editor = editorForSelection(sel)
       if (editor) syncEditorSelection(editor, sel)
       setMarks(editor ? activeMarks(editor) : NO_MARKS)
+      setListActive(editor ? editor.isActive('bulletList') : false)
     }
 
     document.addEventListener('selectionchange', onSelectionChange)
@@ -322,6 +332,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     if (!editor) return
     toggle(editor)
     setMarks(activeMarks(editor))
+    setListActive(editor.isActive('bulletList'))
   }
 
   // Gated on `disabled` directly (not an effect that calls `hide`), so the
@@ -342,7 +353,13 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
             type="button"
             aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
             aria-pressed={
-              item.id === 'bold' ? marks.bold : item.id === 'italic' ? marks.italic : undefined
+              item.id === 'bold'
+                ? marks.bold
+                : item.id === 'italic'
+                  ? marks.italic
+                  : item.id === 'list'
+                    ? listActive
+                    : undefined
             }
             onClick={
               item.id === 'ask-pond'
@@ -351,7 +368,9 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                   ? applyMark(toggleBold)
                   : item.id === 'italic'
                     ? applyMark(toggleItalic)
-                    : undefined
+                    : item.id === 'list'
+                      ? applyMark(toggleBulletList)
+                      : undefined
             }
             // A selection button isn't where the caret belongs — stop the
             // browser from collapsing the selection onto it before `onClick` runs.
