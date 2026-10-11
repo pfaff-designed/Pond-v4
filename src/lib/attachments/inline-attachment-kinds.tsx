@@ -39,7 +39,9 @@ const csvDescriptor: InlineAttachmentDescriptor<CsvInlineAttachment> = {
   ),
 }
 
-const INLINE_ATTACHMENT_DESCRIPTORS: InlineAttachmentDescriptor<InlineAttachment>[] = [csvDescriptor]
+export const INLINE_ATTACHMENT_DESCRIPTORS: InlineAttachmentDescriptor<InlineAttachment>[] = [
+  csvDescriptor,
+]
 
 export function getInlineAttachmentDescriptor(
   kind: InlineAttachment['kind']

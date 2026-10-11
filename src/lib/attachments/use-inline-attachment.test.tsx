@@ -1,64 +1,81 @@
 /**
- * useInlineAttachment — proves the single-slot API is kind-agnostic: a CSV
- * attachment and an HTML attachment are siblings through one
- * setAttachment/clear API, not two parallel code paths.
+ * Proves the ticket's criterion 2: a second attachment kind is a sibling
+ * through the registry's own lookups, not a new branch at any of
+ * AITerminal.tsx's three call sites (send-time formatContext, pill render,
+ * file-matching in handlePickedFiles). Registers a second kind directly in
+ * the registry and resolves it through the same generic functions those
+ * three sites call — no AITerminal-specific code involved.
  */
 
-import { renderHook, act } from '@testing-library/react'
-import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
+import { render, screen } from '@testing-library/react'
+import {
+  getInlineAttachmentDescriptor,
+  getInlineAttachmentDescriptorForFile,
+  INLINE_ATTACHMENT_DESCRIPTORS,
+  type InlineAttachment,
+  type InlineAttachmentDescriptor,
+} from '@/lib/attachments/inline-attachment-kinds'
 
-type CsvAttachment = { kind: 'csv'; filename: string; rows: number }
-type HtmlAttachment = { kind: 'html'; url: string }
-type InlineAttachment = CsvAttachment | HtmlAttachment
+type HtmlInlineAttachment = { kind: 'html'; url: string }
 
-describe('useInlineAttachment', () => {
-  it('starts empty', () => {
-    const { result } = renderHook(() => useInlineAttachment<InlineAttachment>())
-    expect(result.current.attachment).toBeNull()
+// Not typed as InlineAttachmentDescriptor<HtmlInlineAttachment> on purpose: that
+// generic requires T extends InlineAttachment, which today has only one member
+// (csv). This shape stands in for a future kind the type system doesn't know
+// about yet, cast below where it's pushed into the real registry.
+const htmlDescriptor = {
+  kind: 'html' as const,
+  matchesFile: (file: File) => file.name.toLowerCase().endsWith('.html'),
+  formatContext: (attachment: HtmlInlineAttachment) => `imported page: ${attachment.url}`,
+  Pill: ({ attachment, onRemove }: { attachment: HtmlInlineAttachment; onRemove: () => void }) => (
+    <button onClick={onRemove}>{attachment.url}</button>
+  ),
+}
+
+describe('a second registered kind needs no AITerminal call-site change', () => {
+  beforeEach(() => {
+    INLINE_ATTACHMENT_DESCRIPTORS.push(
+      htmlDescriptor as unknown as InlineAttachmentDescriptor<InlineAttachment>
+    )
   })
 
-  it('holds a csv attachment set through setAttachment', () => {
-    const { result } = renderHook(() => useInlineAttachment<InlineAttachment>())
-
-    act(() => {
-      result.current.setAttachment({ kind: 'csv', filename: 'board.csv', rows: 3 })
-    })
-
-    expect(result.current.attachment).toEqual({ kind: 'csv', filename: 'board.csv', rows: 3 })
+  afterEach(() => {
+    const index = INLINE_ATTACHMENT_DESCRIPTORS.indexOf(
+      htmlDescriptor as unknown as InlineAttachmentDescriptor<InlineAttachment>
+    )
+    INLINE_ATTACHMENT_DESCRIPTORS.splice(index, 1)
   })
 
-  it('holds an html attachment through the same setAttachment API', () => {
-    const { result } = renderHook(() => useInlineAttachment<InlineAttachment>())
+  it('the file-matching site resolves the new kind by extension alone', () => {
+    const file = new File(['<p>hi</p>'], 'board.html', { type: 'text/html' })
 
-    act(() => {
-      result.current.setAttachment({ kind: 'html', url: 'https://example.com' })
-    })
+    const descriptor = getInlineAttachmentDescriptorForFile(file)
 
-    expect(result.current.attachment).toEqual({ kind: 'html', url: 'https://example.com' })
+    expect(descriptor?.kind).toBe('html')
   })
 
-  it('replacing one kind with another is a single setAttachment call, not a second slot', () => {
-    const { result } = renderHook(() => useInlineAttachment<InlineAttachment>())
+  it('the send-time formatContext site resolves the new kind by attachment.kind alone', () => {
+    const attachment = { kind: 'html', url: 'https://example.com/board' } as const
 
-    act(() => {
-      result.current.setAttachment({ kind: 'csv', filename: 'a.csv', rows: 1 })
-    })
-    expect(result.current.attachment?.kind).toBe('csv')
+    const descriptor = getInlineAttachmentDescriptor(attachment.kind as InlineAttachment['kind'])
 
-    act(() => {
-      result.current.setAttachment({ kind: 'html', url: 'https://example.com/b' })
-    })
-    expect(result.current.attachment).toEqual({ kind: 'html', url: 'https://example.com/b' })
+    expect(descriptor?.formatContext(attachment as never)).toBe(
+      'imported page: https://example.com/board'
+    )
   })
 
-  it('clear empties the slot regardless of which kind was held', () => {
-    const { result } = renderHook(() => useInlineAttachment<InlineAttachment>())
+  it('the pill-render site resolves the new kind\'s Pill by attachment.kind alone', () => {
+    const attachment = { kind: 'html', url: 'https://example.com/board' } as const
+    const onRemove = jest.fn()
 
-    act(() => {
-      result.current.setAttachment({ kind: 'html', url: 'https://example.com' })
-    })
-    act(() => result.current.clear())
+    const descriptor = getInlineAttachmentDescriptor(attachment.kind as InlineAttachment['kind'])
+    render(descriptor ? descriptor.Pill({ attachment: attachment as never, onRemove }) : null)
 
-    expect(result.current.attachment).toBeNull()
+    expect(screen.getByText('https://example.com/board')).toBeInTheDocument()
+  })
+
+  it('the existing csv kind still resolves unchanged alongside the new one', () => {
+    const descriptor = getInlineAttachmentDescriptor('csv')
+
+    expect(descriptor?.kind).toBe('csv')
   })
 })
