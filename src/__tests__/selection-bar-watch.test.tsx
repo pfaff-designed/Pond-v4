@@ -1,7 +1,6 @@
 /**
- * KAN-95 — the selection bar's own selection watching, ported from
- * `TextSelectionPopover`: `selectionchange`, the container-containment
- * check, `data-block-id` resolution into `SelectionContext`, and the
+ * KAN-95 — the selection bar's own selection watching: `selectionchange`,
+ * the container-containment check, `data-block-id` resolution into `SelectionContext`, and the
  * `document.body` portal. Positioning and `pointerdown`-outside dismissal
  * are exercised through behaviour here, not through a stubbed rect —
  * jsdom has no selection geometry (`jest.setup.ts`).

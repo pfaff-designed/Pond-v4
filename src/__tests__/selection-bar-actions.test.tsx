@@ -43,6 +43,18 @@ describe('SelectionBar copy', () => {
     expect(writeText).toHaveBeenCalledWith('select me')
   })
 
+  it('swallows a denied clipboard write instead of leaking an unhandled rejection', async () => {
+    writeText.mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'))
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+    renderWithSelection()
+    fireEvent.click(screen.getByRole('button', { name: 'copy' }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    process.off('unhandledRejection', unhandled)
+    expect(writeText).toHaveBeenCalledWith('select me')
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
   it('does not call onAsk', () => {
     const onAsk = renderWithSelection()
     fireEvent.click(screen.getByRole('button', { name: 'copy' }))

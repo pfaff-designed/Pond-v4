@@ -3,8 +3,8 @@
 /**
  * The one selection bar (`Pond 02 Component library.dc.html` frame `2t`,
  * item order AUDIT C6): text style, bold, italic, link, list, highlight,
- * comment, ask pond, new page from this, copy. Per-item wiring beyond
- * `ask pond`, bold and italic lands in later KAN-95 items.
+ * comment, ask pond, new page from this, copy. `highlight`, `comment` and
+ * `new page from this` are drawn disabled until their own tickets wire them.
  */
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -146,7 +146,7 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
             strokeWidth={1.4}
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ transform: 'rotate(90deg)' }}
+            className="rotate-90"
             aria-hidden
           >
             <path d="M3.5 2 L7 5 L3.5 8" />
@@ -268,9 +268,9 @@ const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
  * The one selection bar: watches the document selection, resolves the block
  * it is within, and portals its glass above the selection — centred and
  * clamped inside the viewport, flipping or clamping vertically
- * (`selection-bar-position.ts`). Ported from `TextSelectionPopover`'s own tracking; its
- * zero-size-rect bail is dropped — jsdom's `Range` rect is always zero
- * (`jest.setup.ts`), and `sel.isCollapsed`/`text` already prove a real one.
+ * (`selection-bar-position.ts`). A zero-size range rect does not hide it:
+ * jsdom's `Range` rect is always zero (`jest.setup.ts`), so a real selection
+ * is proven by `sel.isCollapsed` and the trimmed text alone.
  */
 export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProps) {
   const [ctx, setCtx] = useState<SelectionContext | null>(null)
@@ -349,7 +349,6 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
         return
       }
 
-      // Resolve blockId from the nearest ancestor carrying it.
       const anchor = sel.anchorNode
       const blockEl =
         anchor instanceof Element
@@ -380,10 +379,9 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     if (linkMode) linkInputRef.current?.focus()
   }, [linkMode])
 
-  // A press outside the bar dismisses it, same as the popover's own rule.
-  // The style menu portals as the bar's own sibling, not its child, so it
-  // needs its own containment check: a press outside it (but still on the
-  // bar) only closes the menu, and a press outside both dismisses the bar.
+  // The style menu portals as the bar's sibling, not its child, so it needs its
+  // own containment check: a press on the bar outside the menu only closes the
+  // menu, and a press outside both dismisses the bar.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node
@@ -436,7 +434,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     }
   }, [rect])
   const style = useSelectionBarBox(readRect, barWidth, barHeight)
-  // The style menu hangs off its own button, not the selection rect — `GlyphPicker`'s own anchor pattern.
+  // The style menu hangs off its own button, not the selection rect.
   const menuStyle = useAnchoredBox(styleButtonRef, 'bottom', STYLE_MENU_WIDTH)
 
   const handleAsk = () => {
@@ -447,14 +445,14 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     window.getSelection()?.removeAllRanges()
   }
 
-  // The selection stays up after a copy — nothing about the text or page changes.
   const handleCopy = () => {
     if (!ctx) return
-    void navigator.clipboard.writeText(window.getSelection()?.toString() || ctx.text)
+    navigator.clipboard
+      .writeText(window.getSelection()?.toString() || ctx.text)
+      // A denied clipboard permission has no surface to report on and changes nothing.
+      .catch(() => {})
   }
 
-  // Resolved fresh (not from a stored ref) because the last-synced editor is
-  // exactly the one `editorForSelection` already matched this selection to.
   const applyMark = (toggle: (editor: Editor) => void) => () => {
     const sel = window.getSelection()
     const editor = sel && editorForSelection(sel)
@@ -509,9 +507,6 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     }
   }
 
-  // Resolved fresh for the same reason as `applyMark` — the row's own click
-  // is the only thing that needs an editor, so there is nothing to resolve
-  // before the menu opens.
   // A focused menu row can move the DOM selection off the editor, so the choice falls
   // back to the editor the bar was last drawn for.
   const chooseStyle = (level: Level | null) => () => {
