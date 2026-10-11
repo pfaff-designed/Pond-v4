@@ -26,6 +26,7 @@ import { ICON, TPL_ICON, type SlashGroup } from '@/components/molecules/slash-en
 import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
+import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
 const ROW_CHROME: Partial<
@@ -40,34 +41,28 @@ const ROW_CHROME: Partial<
 }
 
 /**
- * The `view` rows are the view's own modes: each id IS the `ViewMode` it opens in
- * (`mintPreset` parses it with `viewModeSchema`), so a row here that names no mode
- * does not compile, and a new mode's row needs no second table.
+ * A `view` row is one view KIND (ADR 0009): its id IS the `ViewMode` it opens in
+ * (`mintPreset` parses it with `viewModeSchema`), so a row that names no mode does
+ * not compile, and its label is the kind's own (`VIEW_KINDS`), never a second copy.
  */
+const viewRow = (
+  mode: ViewMode,
+  icon: SlashIcon,
+  alias?: string
+): SlashRow & { id: ViewMode } => ({
+  id: mode,
+  type: 'view',
+  group: 'blocks',
+  label: VIEW_KINDS[mode].label,
+  ...(alias ? { alias } : {}),
+  icon,
+})
+
 const VIEW_ROWS = [
-  {
-    id: 'gallery',
-    type: 'view',
-    group: 'blocks',
-    label: 'gallery',
-    icon: ICON.gallery,
-  },
-  {
-    id: 'chart',
-    type: 'view',
-    group: 'blocks',
-    label: 'chart',
-    alias: 'graph',
-    icon: ICON.chart,
-  },
-  {
-    id: 'big-number',
-    type: 'view',
-    group: 'blocks',
-    label: 'big number',
-    icon: ICON.number,
-  },
-] satisfies readonly (SlashRow & { id: ViewMode })[]
+  viewRow('gallery', ICON.gallery),
+  viewRow('chart', ICON.chart, 'graph'),
+  viewRow('big-number', ICON.number),
+]
 
 /**
  * What `/heading` types for you — the second markdown level, with its trailing

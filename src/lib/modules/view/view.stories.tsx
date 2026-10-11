@@ -223,25 +223,20 @@ export const TableEmptyBare: Story = {
   },
 }
 
-// ── The view bar ───────────────────────────────────────────────────────────────
+// ── The head row ───────────────────────────────────────────────────────────────
 
 /**
- * `Pond 06.21 Tasks` 6u.1's head row (KAN-59):
- *
- *     tasks   grouped by status                 board │ timeline │ table │ calendar
- *
- * `list` is the fifth segment and arrives with the list mode (KAN-63).
+ * `Pond 06.21 Tasks` 6u.1's head row (KAN-59): the database's name and how the view
+ * reads it. A view's kind is fixed once made (ADR 0009, KAN-44), so the head carries
+ * no switch between kinds; the bar over a block's saved views is KAN-32's.
  *
  * Values read inline from 6u.1:
  *
  *   head      flex · space-between · padding 4px 4px 0
  *   name      15px / 500
  *   facts     10.5px / 500 / ink .8 — read-only text, no record count, no select
- *   track     ink .055 · padding 3 · radius 999 · gap 4 · 10.5 / 500
- *   active    #1B1D14 ground · #FAF9EF text · 4px 10px · radius 999
- *   inactive  ink .68, same padding, no ground
  */
-export const ViewBarGeometry: Story = {
+export const ViewHeadGeometry: Story = {
   args: {
     config: boardConfig,
     schema,
@@ -265,83 +260,13 @@ export const ViewBarGeometry: Story = {
     await expect(facts).toHaveTextContent(/^grouped by status$/)
     // …as text. There is no group-by select.
     await expect(within(head).queryByRole('combobox')).toBeNull()
-
-    const bar = getComputedStyle(head.querySelector<HTMLElement>('[data-part="view-bar"]')!)
-    await expect(pxOf(bar.columnGap)).toBeCloseTo(4, 1)
-    await expect(pxOf(bar.padding)).toBeCloseTo(3, 1)
-    // A pill TRACK, not a row of buttons — a tinted ground at .055.
-    await expectTier(bar.backgroundColor, 'ink', 0.055)
-
-    const active = canvasElement.querySelector<HTMLElement>(
-      '[data-part="view-segment"][data-active]'
-    )!
-    const as = getComputedStyle(active)
-    await expect(pxOf(as.paddingLeft)).toBeCloseTo(10, 1)
-    await expect(pxOf(as.paddingTop)).toBeCloseTo(4, 1)
-    // Inverted: full-ink ground, paper text.
-    await expectTier(as.backgroundColor, 'ink', 1)
-    await expectTier(as.color, 'paper', 1)
-    // …and it is the mode the config names.
-    await expect(active).toHaveTextContent(/^board$/)
+    // A kind is fixed once made: nothing in the head switches it.
+    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
   },
 }
 
-export const ViewBarGeometryInk: Story = {
-  args: {
-    config: boardConfig,
-    schema,
-    rows,
-    collectionName: 'tasks',
-    editable: true,
-    onConfigChange: fn(),
-  },
-  decorators: [
-    (Story) => (
-      <div className="dark bg-raw-ink p-mn-4">
-        <Story />
-      </div>
-    ),
-  ],
-  play: async ({ canvasElement }) => {
-    const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
-    // The track's tint and the active segment's inversion both reassign.
-    await expectTier(
-      getComputedStyle(head.querySelector<HTMLElement>('[data-part="view-bar"]')!).backgroundColor,
-      'paper',
-      0.055
-    )
-    const as = getComputedStyle(
-      canvasElement.querySelector<HTMLElement>('[data-part="view-segment"][data-active]')!
-    )
-    await expectTier(as.backgroundColor, 'paper', 1)
-    await expectTier(as.color, 'ink', 1)
-  },
-}
-
-/** The switcher is the five modes that exist, lowercase, in the board's order. */
-export const ViewBarSegments: Story = {
-  args: {
-    config: boardConfig,
-    schema,
-    rows,
-    collectionName: 'tasks',
-    editable: true,
-    onConfigChange: fn(),
-  },
-  play: async ({ canvasElement }) => {
-    const segments = [...canvasElement.querySelectorAll('[data-part="view-segment"]')]
-    await expect(segments.map((el) => el.textContent)).toEqual([
-      'board',
-      'timeline',
-      'table',
-      'calendar',
-      'list',
-    ])
-  },
-}
-
-/** Timeline is the gantt mode: its segment writes `gantt`, and lights when the block is one. */
-export const ViewBarTimelineIsGantt: Story = {
+/** Every kind is its own block (ADR 0009): none draws a switch to another kind. */
+export const ViewHeadSwitchesNoKind: Story = {
   args: {
     config: ganttConfig,
     schema: ganttSchema,
@@ -352,33 +277,16 @@ export const ViewBarTimelineIsGantt: Story = {
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'timeline' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    )
-    await userEvent.click(canvas.getByRole('button', { name: 'board' }))
-    await expect(args.onConfigChange).toHaveBeenCalledWith({ mode: 'board' })
-  },
-}
-
-/** Gallery, chart and big number are their own blocks (ADR 0009): no switcher over them. */
-export const ViewBarAbsentOnOwnBlocks: Story = {
-  args: {
-    config: galleryConfig,
-    schema,
-    rows,
-    collectionName: 'tasks',
-    editable: true,
-    onConfigChange: fn(),
-  },
-  play: async ({ canvasElement }) => {
-    await expect(canvasElement.querySelector('[data-part="view-bar"]')).toBeNull()
     await expect(canvasElement.querySelector('[data-part="db-name"]')).toBeInTheDocument()
+    for (const kind of ['board', 'timeline', 'table', 'calendar', 'list']) {
+      await expect(canvas.queryByRole('button', { name: kind })).toBeNull()
+    }
+    await expect(args.onConfigChange).not.toHaveBeenCalled()
   },
 }
 
 /** The group-by clause belongs to the mode that has one — a table claims no grouping. */
-export const ViewBarFactsPerMode: Story = {
+export const ViewHeadFactsPerMode: Story = {
   args: {
     config: { id: 'v', type: 'view', mode: 'table' } as ViewBlock,
     schema,
@@ -393,13 +301,13 @@ export const ViewBarFactsPerMode: Story = {
 }
 
 /** Off a page host there is no database name — the row simply omits it. */
-export const ViewBarWithoutAName: Story = {
+export const ViewHeadWithoutAName: Story = {
   args: { config: boardConfig, schema, rows, editable: true, onConfigChange: fn() },
   play: async ({ canvasElement }) => {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head.querySelector('[data-part="db-name"]')).toBeNull()
-    // The bar is still there — the views do not depend on the name.
-    await expect(head.querySelector('[data-part="view-bar"]')).toBeInTheDocument()
+    // The facts still read — they do not depend on the name.
+    await expect(head.querySelector('[data-part="db-facts"]')).toHaveTextContent('grouped by status')
   },
 }
 
@@ -1359,29 +1267,17 @@ export const PageHoldsOneOrangeAndOnePeek: Story = {
 }
 
 /**
- * 6v's head: the database's name, `grouped by due`, and the switcher with `list`
- * lit — all drawn above the card, none inside it.
+ * 6v's head: the database's name and `grouped by due`, drawn above the card, not
+ * inside it. No switch to another kind (ADR 0009, KAN-44).
  */
-export const ListHeadAndSwitcher: Story = {
+export const ListHead: Story = {
   args: { ...listArgs, collectionName: 'tasks', editable: true, onConfigChange: fn() },
-  play: async ({ canvasElement, args }) => {
+  play: async ({ canvasElement }) => {
     const head = canvasElement.querySelector<HTMLElement>('[data-part="view-head"]')!
     await expect(head).toHaveTextContent('tasks')
     await expect(head).toHaveTextContent('grouped by due')
-    const segments = [...canvasElement.querySelectorAll('[data-part="view-segment"]')]
-    await expect(segments.map((s) => s.textContent)).toEqual([
-      'board',
-      'timeline',
-      'table',
-      'calendar',
-      'list',
-    ])
-    await expect(
-      canvasElement.querySelector('[data-part="view-segment"][data-active]')
-    ).toHaveTextContent('list')
+    await expect(within(head).queryAllByRole('button')).toHaveLength(0)
     await expect(canvasElement.querySelector('[data-part="list-card"]')!.contains(head)).toBe(false)
-    await userEvent.click(within(canvasElement).getByRole('button', { name: 'board' }))
-    await expect(args.onConfigChange).toHaveBeenCalledWith({ mode: 'board' })
   },
 }
 
@@ -1729,42 +1625,6 @@ export const BigNumberNoValues: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByRole('status', { name: 'Priority (avg): —' })).toBeInTheDocument()
     await expect(canvas.getByText('Priority (avg) · over 1 record')).toBeInTheDocument()
-  },
-}
-
-/**
- * Switching modes keeps the SAME database: only the view config changes, so the
- * records are still there when you switch back. Chart, gallery and big number are
- * their own blocks (ADR 0009) and are not offered here.
- */
-export const SwitchBetweenViews: Story = {
-  args: { config: tableConfig, schema, rows },
-  render: function Render(args) {
-    const [config, setConfig] = useState<ViewBlock>(args.config)
-    return (
-      <CollectionView
-        config={config}
-        schema={schema}
-        rows={rows}
-        editable
-        onConfigChange={(patch) => setConfig((prev) => ({ ...prev, ...patch }))}
-      />
-    )
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    for (const gone of ['Chart', 'chart', 'Big number', 'big number', 'Gallery', 'gallery']) {
-      await expect(canvas.queryByRole('button', { name: gone })).not.toBeInTheDocument()
-    }
-    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
-
-    await userEvent.click(canvas.getByRole('button', { name: 'board' }))
-    await expect(canvas.getByText('Doing').closest('section')).toBeInTheDocument()
-    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
-
-    await userEvent.click(canvas.getByRole('button', { name: 'table' }))
-    await expect(canvas.getByText('Trim the rim')).toBeInTheDocument()
-    await expect(canvas.getByText('Celadon glaze test')).toBeInTheDocument()
   },
 }
 

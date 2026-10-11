@@ -18,7 +18,7 @@
  *   - A block the frame returns `null` for is BARE: an unlabelled `text` block
  *     (`PondTemplate.dc.html`: `bare = k === 'text' && !label`) names itself
  *     "heading" when the prose opens on a markdown heading, else "text"; a board, list or
- *     chart-card view names itself by its mode.
+ *     chart-card view names itself by its kind (`VIEW_KINDS`).
  *
  * That last split is not invented here. `modules/palette.ts` already rules it:
  * "`heading` is the `text` block opened on a markdown heading, not a block kind" —
@@ -33,6 +33,7 @@
 import type { Block } from '@/lib/modules/content'
 import { blockFrame, isFramelessView } from '@/lib/modules/block-frame'
 import type { PondBlockKind } from '@/lib/modules/block-frame'
+import { viewKind } from '@/lib/modules/view/kinds'
 
 /**
  * The two frame kinds whose slug is not how the board says it. Everything else in
@@ -50,13 +51,10 @@ const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
 /** What one block is called in the summary line. */
 export function blockWord(block: Block): string {
   const frame = blockFrame(block)
-  // `kind` is guarded as well as `frame`: the frame for a view whose `mode` is
-  // not one of `VIEW_MODES` comes back shaped but kindless, and a summary line
-  // must never render `undefined` at the person.
-  if (frame?.kind) return KIND_WORD[frame.kind] ?? frame.kind
+  if (frame) return KIND_WORD[frame.kind] ?? frame.kind
   // No frame: bare prose, or a view that sets itself on the page without the block
-  // card — named by its mode.
-  if (block.type === 'view' && isFramelessView(block)) return block.mode
+  // card — named by its kind.
+  if (block.type === 'view' && isFramelessView(block)) return viewKind(block).label
   if (block.type === 'text') {
     return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
   }

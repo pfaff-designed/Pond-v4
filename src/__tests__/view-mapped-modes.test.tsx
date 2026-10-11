@@ -35,10 +35,10 @@ import { galleryCardMeta } from '@/lib/modules/view/apply'
 import {
   blockEmptyBox,
   blockFrame,
-  GANTT_EMPTY_LINE,
   POND_BLOCK_WIDTHS,
   propertiesFrame,
 } from '@/lib/modules/block-frame'
+import { GANTT_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { GANTT_BAR_INK, GANTT_TICK_COUNT, ganttRowDone } from '@/lib/modules/view/gantt-shared'
 import { POND_BLOCK_FILTERED_EMPTY_LINE } from '@/components/organisms/PondBlock'
 import type { Block } from '@/lib/documents/types'
@@ -180,7 +180,7 @@ describe('blockFrame — the four mappings (#260)', () => {
   })
 
   it('gantt → the table card at 500: PondBlock.dc.html has no gantt kind and the template gives it no width (confirmed)', () => {
-    expect(blockFrame(gantt)).toEqual({ kind: 'table', heading: 'gantt', headNote: '' })
+    expect(blockFrame(gantt)).toEqual({ kind: 'table', heading: 'timeline', headNote: '' })
     expect(POND_BLOCK_WIDTHS.table).toBe(500)
     // The template's label is the eyebrow — `project › tasks — timeline`.
     expect(blockFrame({ ...gantt, label: 'tasks — timeline' })).toMatchObject({

@@ -3,12 +3,8 @@ import { expect } from 'storybook/test'
 
 import { CollectionView } from './view'
 import { PondBlock } from '@/components/organisms/PondBlock'
-import {
-  blockEmptyBox,
-  blockFrame,
-  GANTT_EMPTY_LINE,
-  POND_BLOCK_FILTERED_EMPTY_LINE,
-} from '@/lib/modules/block-frame'
+import { blockEmptyBox, blockFrame, POND_BLOCK_FILTERED_EMPTY_LINE } from '@/lib/modules/block-frame'
+import { GANTT_EMPTY_LINE } from './kinds'
 import { GANTT_TICK_COUNT } from './gantt-shared'
 import type { CollectionRow } from './apply'
 import type { ViewBlock } from './schema'
