@@ -143,7 +143,7 @@ describe('writeAcceptedChanges', () => {
     ])
   })
 
-  it('no stamp and no open node → every change skipped, nothing written', async () => {
+  it('no stamp and no open node → every change skipped (defence only — the card guard above must never let accept reach this)', async () => {
     const result = await writeAcceptedChanges({
       pondId: 'pond-1',
       supabase,

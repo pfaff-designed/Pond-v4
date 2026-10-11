@@ -335,13 +335,14 @@ describe('answerQuestion / pickDestination / advanceLifecycle / stampTarget', ()
   })
 
   it('pickDestination writes the right session-scoped picker per type (never projected)', () => {
-    const cases: { type: Exclude<ProposalType, 'changes'>; field: keyof ProposalState }[] = [
+    const cases: { type: ProposalType; field: keyof ProposalState }[] = [
       { type: 'creates', field: 'createParent' },
       { type: 'schemas', field: 'schemaTarget' },
       { type: 'rows', field: 'rowTarget' },
       { type: 'views', field: 'viewTarget' },
       { type: 'links', field: 'linkTarget' },
       { type: 'promotions', field: 'promotionTarget' },
+      { type: 'changes', field: 'changePlace' },
     ]
     for (const { type, field } of cases) {
       const s = proposalReducer(initialProposalState(), {

@@ -12,6 +12,7 @@ import {
 } from '@/lib/conversation/client'
 import {
   resolveStampTarget,
+  resolveAcceptTarget,
   type ConversationResolutions,
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
@@ -471,6 +472,7 @@ export function AITerminal() {
     createParent,
     schemaTarget,
     rowTarget,
+    changePlace,
     viewTarget,
     linkTarget,
     promotionTarget,
@@ -1211,7 +1213,7 @@ export function AITerminal() {
         pondId,
         resolutions,
         toolCallId,
-        openNodeId: nodeId,
+        openNodeId: changePlace[toolCallId] ?? nodeId,
         changes: indices.map((i) => allChanges[i]),
         // Ticket-31: refs resolve against the FULL batch (not just this click's
         // subset), with minted ids remembered per proposal across clicks.
@@ -1232,7 +1234,10 @@ export function AITerminal() {
       // stamped target name is the human label; contextLabel is the same-page
       // fallback an unstamped legacy card writes to. Fired via the notify bridge:
       // the terminal mounts outside the DeletionUndoProvider (see notify-bridge).
-      const targetName = changeTargets[toolCallId]?.nodeName || contextLabel
+      const placeName = changePlace[toolCallId]
+        ? allPages.find((p) => p.id === changePlace[toolCallId])?.title
+        : undefined
+      const targetName = changeTargets[toolCallId]?.nodeName || placeName || contextLabel
       const blockNoun = (n: number) => `${n} block${n === 1 ? '' : 's'}`
       if (result.applied > 0) {
         const suffix =
@@ -1266,6 +1271,7 @@ export function AITerminal() {
       resolutions,
       nodeId,
       changeTargets,
+      changePlace,
       contextLabel,
       router,
       allPages,
@@ -1966,12 +1972,29 @@ export function AITerminal() {
       const targetBlocks = crossPage
         ? (blocksForTarget.get(crossPage.nodeId) ?? [])
         : (currentPage?.blocks ?? [])
+      const effectiveOpenNodeId = changePlace[part.toolCallId] ?? nodeId
+      const needsPlace =
+        !targetMissing &&
+        resolveAcceptTarget(resolutions, part.toolCallId, effectiveOpenNodeId) === null
+      // KAN-267: a picked place names no stamp, so without this the header (and
+      // the accept receipt below) would keep reading the pond's own name even
+      // after the person chose a real page to write to.
+      const placeName = changePlace[part.toolCallId]
+        ? allPages.find((p) => p.id === changePlace[part.toolCallId])?.title
+        : undefined
       diffCards.push({
         id: part.toolCallId,
         changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
         status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
-        targetName: target?.nodeName || contextLabel,
+        // KAN-267: needsPlace with nothing picked yet means there IS no target —
+        // falling to contextLabel here would claim the pond itself as the
+        // target while the card, in the same breath, says it needs a place.
+        targetName:
+          needsPlace && !placeName ? undefined : target?.nodeName || placeName || contextLabel,
         targetMissing,
+        needsPlace,
+        parentOptions,
+        pondName,
         note: changeNotes[part.toolCallId],
         revised: !!revisions[part.toolCallId],
         skippedCount: changeSkipped[part.toolCallId] ?? 0,
@@ -1980,6 +2003,12 @@ export function AITerminal() {
     }
     const allIndices = (id: string) => (batchById.get(id) ?? []).map((_, i) => i)
     const pendingDiffIds = diffCards.filter((c) => c.status === 'pending').map((c) => c.id)
+    // KAN-267: accept-all must skip exactly what a single card's own accept
+    // button would refuse (targetMissing || needsPlace) — reject all stays over
+    // EVERY pending id, since reject always lands regardless of a target.
+    const acceptablePendingDiffIds = diffCards
+      .filter((c) => c.status === 'pending' && !c.targetMissing && !c.needsPlace)
+      .map((c) => c.id)
     // A request-changes note renders under its card (from the envelope),
     // not as a second "you" line in the thread.
     const isRequestChangesNote =
@@ -2078,6 +2107,9 @@ export function AITerminal() {
               cards={diffCards}
               onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
               onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
+              onPickPlace={(id, destinationId) => {
+                dispatch({ kind: 'pickDestination', type: 'changes', id, destinationId })
+              }}
               onRequestChanges={(id, note) =>
                 sendRequestChanges(id, allIndices(id).length, note, 'note')
               }
@@ -2093,7 +2125,7 @@ export function AITerminal() {
                 // and two cards can name the same page, so parallel accepts would drop
                 // the first batch. Also keeps the toast receipts in card order.
                 void (async () => {
-                  for (const id of pendingDiffIds) {
+                  for (const id of acceptablePendingDiffIds) {
                     await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
                   }
                 })()
