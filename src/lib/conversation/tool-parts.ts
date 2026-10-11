@@ -5,7 +5,9 @@ import {
   ADD_ROW_TYPE,
   CONFIGURE_VIEW_TYPE,
   LINK_RECORDS_TYPE,
+  PROMOTE_TABLE_TYPE,
 } from '@/lib/conversation/proposals'
+import { ASK_QUESTION_TYPE, SUGGEST_FOLLOWUPS_TYPE } from '@/lib/conversation/parts'
 import type { AiPropertyDef } from '@/lib/properties/schema'
 import type {
   ViewMode,
@@ -146,4 +148,51 @@ export interface LinkRecordsPart {
 
 export function isLinkRecordsPart(part: { type: string }): part is LinkRecordsPart {
   return part.type === LINK_RECORDS_TYPE
+}
+
+/** A promote_table tool part — a proposal to convert an EXISTING freeform `table`
+ *  block on a page into a schema-bound collection (#29). Client-resolved (no
+ *  execute); the card below drives accept/reject + which page it applies to. The
+ *  model names only the page + block by id — the terminal reads that table to
+ *  preview the inferred columns. */
+export interface PromoteTablePart {
+  type: typeof PROMOTE_TABLE_TYPE
+  toolCallId: string
+  state: string
+  input?: {
+    pageId?: string
+    blockId?: string
+    reason?: string
+  }
+}
+
+export function isPromoteTablePart(part: { type: string }): part is PromoteTablePart {
+  return part.type === PROMOTE_TABLE_TYPE
+}
+
+/** An ask_question tool part — a branch-pause question card (ticket-39). Client-
+ *  resolved (no execute); the QuestionCard below drives the answer, which rides
+ *  the resolutions envelope. */
+export interface AskQuestionPart {
+  type: typeof ASK_QUESTION_TYPE
+  toolCallId: string
+  state: string
+  input?: { question?: string; options?: string[]; branch?: string }
+}
+
+export function isAskQuestionPart(part: { type: string }): part is AskQuestionPart {
+  return part.type === ASK_QUESTION_TYPE
+}
+
+/** A suggest_followups tool part — quiet follow-up chips (ticket-39). Client-
+ *  resolved (no execute); clicking a chip sends its text. */
+export interface SuggestFollowupsPart {
+  type: typeof SUGGEST_FOLLOWUPS_TYPE
+  toolCallId: string
+  state: string
+  input?: { suggestions?: string[] }
+}
+
+export function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowupsPart {
+  return part.type === SUGGEST_FOLLOWUPS_TYPE
 }

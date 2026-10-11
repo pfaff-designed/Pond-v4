@@ -111,10 +111,8 @@ import {
   unresolvedProposalIds,
   batchStatus,
   reconcileCardStatus,
-  PROMOTE_TABLE_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
-import { ASK_QUESTION_TYPE, SUGGEST_FOLLOWUPS_TYPE } from '@/lib/conversation/parts'
 import {
   isProposeChangesPart,
   isCreatePagePart,
@@ -122,11 +120,15 @@ import {
   isAddRowPart,
   isConfigureViewPart,
   isLinkRecordsPart,
+  isPromoteTablePart,
+  isAskQuestionPart,
+  isSuggestFollowupsPart,
   type CreatePagePart,
   type DefineSchemaPart,
   type AddRowPart,
   type ConfigureViewPart,
   type LinkRecordsPart,
+  type PromoteTablePart,
 } from '@/lib/conversation/tool-parts'
 import {
   detectLifecycleIntent,
@@ -153,26 +155,6 @@ import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
 const REVISE_NOTE =
   'the page changed since this was proposed — revise it against the page as it now stands.'
 
-/** A promote_table tool part — a proposal to convert an EXISTING freeform `table`
- *  block on a page into a schema-bound collection (#29). Client-resolved (no
- *  execute); the card below drives accept/reject + which page it applies to. The
- *  model names only the page + block by id — the terminal reads that table to
- *  preview the inferred columns. */
-interface PromoteTablePart {
-  type: typeof PROMOTE_TABLE_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    pageId?: string
-    blockId?: string
-    reason?: string
-  }
-}
-
-function isPromoteTablePart(part: { type: string }): part is PromoteTablePart {
-  return part.type === PROMOTE_TABLE_TYPE
-}
-
 /** Preview what a promote_table would produce, read from the host page's blocks:
  *  the named `table` block (or the page's sole table when unnamed) reduced to its
  *  inferred columns + row count + caption. Null when the page/table isn't resolved
@@ -194,33 +176,6 @@ function tablePromotionPreview(
     type: inferColumnType(t.rows.map((r) => r.cells[col] ?? '')),
   }))
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
-}
-
-/** An ask_question tool part — a branch-pause question card (ticket-39). Client-
- *  resolved (no execute); the QuestionCard below drives the answer, which rides
- *  the resolutions envelope. */
-interface AskQuestionPart {
-  type: typeof ASK_QUESTION_TYPE
-  toolCallId: string
-  state: string
-  input?: { question?: string; options?: string[]; branch?: string }
-}
-
-function isAskQuestionPart(part: { type: string }): part is AskQuestionPart {
-  return part.type === ASK_QUESTION_TYPE
-}
-
-/** A suggest_followups tool part — quiet follow-up chips (ticket-39). Client-
- *  resolved (no execute); clicking a chip sends its text. */
-interface SuggestFollowupsPart {
-  type: typeof SUGGEST_FOLLOWUPS_TYPE
-  toolCallId: string
-  state: string
-  input?: { suggestions?: string[] }
-}
-
-function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowupsPart {
-  return part.type === SUGGEST_FOLLOWUPS_TYPE
 }
 
 export function AITerminal() {
