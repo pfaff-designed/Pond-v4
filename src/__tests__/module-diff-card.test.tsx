@@ -9,6 +9,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ModuleDiffCard } from '@/components/molecules/ModuleDiffCard'
 import type { ChangePreview } from '@/lib/modules/preview'
+import type { ProposalStatus } from '@/components/molecules/ProposalActions'
 
 const create: ChangePreview = {
   op: 'create',
@@ -71,6 +72,49 @@ describe('ModuleDiffCard — needsPlace', () => {
     )
 
     expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled()
+    expect(screen.queryByRole('combobox', { name: 'under' })).not.toBeInTheDocument()
+  })
+
+  it.each<ProposalStatus>(['outdated', 'changes_requested', 'accepted'])(
+    'does not show the place notice or picker on a settled %s card, even if needsPlace is still true',
+    (status) => {
+      render(
+        <ModuleDiffCard
+          changes={[create]}
+          needsPlace
+          status={status}
+          parentOptions={[{ id: 'cre-1', title: 'Creativity' }]}
+          pondName="life"
+          onPickPlace={jest.fn()}
+          onAccept={jest.fn()}
+          onReject={jest.fn()}
+          onRequestChanges={jest.fn()}
+        />
+      )
+
+      expect(screen.queryByText(/need a place to accept to/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('combobox', { name: 'under' })).not.toBeInTheDocument()
+    }
+  )
+
+  it('does not show the place notice or picker on a rejected card unfolded by "show proposal"', () => {
+    render(
+      <ModuleDiffCard
+        changes={[create]}
+        needsPlace
+        status="rejected"
+        parentOptions={[{ id: 'cre-1', title: 'Creativity' }]}
+        pondName="life"
+        onPickPlace={jest.fn()}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onRequestChanges={jest.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'show proposal' }))
+
+    expect(screen.queryByText(/need a place to accept to/)).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'under' })).not.toBeInTheDocument()
   })
 })

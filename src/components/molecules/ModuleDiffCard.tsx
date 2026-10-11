@@ -208,7 +208,7 @@ export function ModuleDiffCard({
               target page not found — this proposal can’t be applied.
             </p>
           )}
-          {needsPlace && (
+          {pending && needsPlace && (
             <div className="flex flex-col gap-1.5">
               <p className="text-[11px] text-mn-text-meta">
                 these changes need a place to accept to
