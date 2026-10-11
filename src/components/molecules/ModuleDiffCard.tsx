@@ -48,7 +48,13 @@ import { chipBaseClass } from '@/components/atoms/kicker'
 import { PondControl } from '@/components/atoms/PondControl'
 import { ChangeRows, NoteBox } from './diff-card-parts'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
-import { PlaceRow, type PlaceOption } from './place-row'
+import {
+  PlaceRow,
+  type PlaceOption,
+  placeRowClass,
+  placeLabelClass,
+  placeFieldClass,
+} from './place-row'
 
 export interface ModuleDiffCardProps {
   /** Every change in the batch, in emission order. */
@@ -225,9 +231,9 @@ export function ModuleDiffCard({
                   // The placeholder option is disabled — a real pick is always a page id.
                   if (id !== null) onPickPlace?.(id)
                 }}
-                rowClassName="flex items-baseline gap-3"
-                labelClassName="w-[52px] flex-none text-mn-text-meta"
-                fieldClassName="min-w-0 flex-1 appearance-none border-0 border-b border-transparent bg-transparent p-0 font-mono text-[11px] lowercase tracking-[0.02em] text-foreground outline-none focus:border-mn-text/40"
+                rowClassName={placeRowClass}
+                labelClassName={placeLabelClass}
+                fieldClassName={placeFieldClass}
               />
             </div>
           )}

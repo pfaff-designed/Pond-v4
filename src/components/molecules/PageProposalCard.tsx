@@ -27,7 +27,14 @@ import { useId, useRef } from 'react'
 import { chipBaseClass, machineEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
-import { PlaceRow, type PlaceOption, type PlaceRowHandle } from '@/components/molecules/place-row'
+import {
+  PlaceRow,
+  type PlaceOption,
+  type PlaceRowHandle,
+  placeRowClass,
+  placeLabelClass,
+  placeFieldClass,
+} from '@/components/molecules/place-row'
 
 export type { PlaceOption }
 
@@ -54,10 +61,9 @@ export interface PageProposalCardProps {
   className?: string
 }
 
-const rowClass = 'flex items-baseline gap-3 px-2 py-0.5'
-const labelClass = 'w-[52px] flex-none text-mn-text-meta'
-const fieldClass =
-  'min-w-0 flex-1 appearance-none border-0 border-b border-transparent bg-transparent p-0 font-mono text-[11px] lowercase tracking-[0.02em] text-foreground outline-none focus:border-mn-text/40'
+const rowClass = cn(placeRowClass, 'px-2 py-0.5')
+const labelClass = placeLabelClass
+const fieldClass = placeFieldClass
 const controlClass =
   'rounded-mn-pill px-[13px] py-[7px] text-[11px] font-medium leading-none transition-colors disabled:opacity-50'
 
