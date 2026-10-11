@@ -3,6 +3,7 @@
 import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
+import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
 import type { ModuleViewProps } from '../types'
 import { proseExtensions } from './extensions'
@@ -29,10 +30,30 @@ const extensions = [
   Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
 ]
 
+// Matches prosemirror-keymap's own `mac` check, so `Mod` below means what its
+// `Mod-z` binding means on this platform.
+const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|[oa]d)/.test(navigator.platform)
+
+/**
+ * ProseMirror's own `Mod-z`/`Mod-Shift-z` keymap command no-ops (returns `false`,
+ * never calling `preventDefault`) when its history has nothing to undo/redo —
+ * always true for a freshly mounted editor. Left unhandled, the keydown then
+ * reaches the browser's native contenteditable undo, which wipes a field it
+ * never saw typed. Intercepting here and always returning `true` keeps that
+ * native undo from ever seeing the key, whether or not there was anything to do.
+ */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
-  if (event.key !== 'Escape') return false
-  view.dom.blur()
-  return true
+  if (event.key === 'Escape') {
+    view.dom.blur()
+    return true
+  }
+  const mod = isMac ? event.metaKey : event.ctrlKey
+  if (mod && event.key.toLowerCase() === 'z') {
+    const command = event.shiftKey ? redo : undo
+    command(view.state, (tr) => view.dispatch(tr))
+    return true
+  }
+  return false
 }
 
 /**
