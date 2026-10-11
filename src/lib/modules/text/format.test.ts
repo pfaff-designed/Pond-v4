@@ -3,10 +3,12 @@ import { TextSelection } from '@tiptap/pm/state'
 import {
   activeMarks,
   currentTextStyle,
+  setLink,
   setTextStyle,
   toggleBold,
   toggleBulletList,
   toggleItalic,
+  unsetLink,
 } from './format'
 import { proseExtensions } from './extensions'
 import { serializeMarkdown } from './markdown'
@@ -98,6 +100,25 @@ describe('setTextStyle', () => {
 
     expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
     expect(currentTextStyle(editor)).toBe('text')
+
+    editor.destroy()
+  })
+})
+
+describe('setLink', () => {
+  it('links a selected range, then reverts it to plain text', () => {
+    const editor = mountEditor('<p>soak overnight</p>')
+    selectWord(editor, 'overnight')
+
+    setLink(editor, 'https://example.com')
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak [overnight](https://example.com)')
+    expect(editor.isActive('link')).toBe(true)
+
+    unsetLink(editor)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
+    expect(editor.isActive('link')).toBe(false)
 
     editor.destroy()
   })

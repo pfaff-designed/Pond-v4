@@ -41,3 +41,11 @@ export const currentTextStyle = (editor: Editor): TextStyle => {
   }
   return 'text'
 }
+
+export const setLink = (editor: Editor, href: string): void => {
+  editor.chain().focus().extendMarkRange('link').setLink({ href }).run()
+}
+
+export const unsetLink = (editor: Editor): void => {
+  editor.chain().focus().extendMarkRange('link').unsetLink().run()
+}
