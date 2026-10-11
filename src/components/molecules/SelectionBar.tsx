@@ -222,6 +222,15 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
   }
 }
 
+/** Items that act on a Tiptap editor — drawn disabled where no registered editor owns the selection. */
+const NEEDS_EDITOR: ReadonlySet<SelectionBarItemId> = new Set([
+  'text-style',
+  'bold',
+  'italic',
+  'link',
+  'list',
+])
+
 const NO_MARKS: ActiveMarks = { bold: false, italic: false }
 
 /** The first enabled item — the toolbar's tab stop until focus moves within it. */
@@ -271,6 +280,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // read, `editor.isActive('bulletList')`, kept alongside it.
   const [listActive, setListActive] = useState(false)
   const [styleLabel, setStyleLabel] = useState<TextStyle>('text')
+  const [editorOwnsSelection, setEditorOwnsSelection] = useState(false)
   const [styleMenuOpen, setStyleMenuOpen] = useState(false)
   const [linkActive, setLinkActive] = useState(false)
   const [linkMode, setLinkMode] = useState(false)
@@ -355,6 +365,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       const editor = editorForSelection(sel)
       shownSelectionRef.current = { key, editor }
       if (editor) syncEditorSelection(editor, sel)
+      setEditorOwnsSelection(Boolean(editor))
       setMarks(editor ? activeMarks(editor) : NO_MARKS)
       setListActive(editor ? editor.isActive('bulletList') : false)
       setLinkActive(editor ? editor.isActive('link') : false)
@@ -610,6 +621,14 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     link: linkActive,
   }
 
+  const isItemEnabled = (item: SelectionBarItem) =>
+    item.enabled && (editorOwnsSelection || !NEEDS_EDITOR.has(item.id))
+  // The tab stop is the roving item while it is enabled, else the first enabled one.
+  const enabledItems = SELECTION_BAR_ITEMS.filter(isItemEnabled)
+  const tabStopId = enabledItems.some((item) => item.id === rovingId)
+    ? rovingId
+    : enabledItems[0]?.id
+
   const bar = createPortal(
     <div
       ref={barRef}
@@ -639,7 +658,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
             <button
               ref={item.id === 'text-style' ? styleButtonRef : undefined}
               type="button"
-              tabIndex={item.id === rovingId ? 0 : -1}
+              tabIndex={item.id === tabStopId ? 0 : -1}
               onFocus={() => setRovingId(item.id)}
               aria-label={
                 item.id === 'link' && linkActive
@@ -671,10 +690,10 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
               // A selection button isn't where the caret belongs — stop the
               // browser from collapsing the selection onto it before `onClick` runs.
               onMouseDown={(e) => e.preventDefault()}
-              disabled={!item.enabled}
-              aria-disabled={item.enabled ? undefined : true}
+              disabled={!isItemEnabled(item)}
+              aria-disabled={isItemEnabled(item) ? undefined : true}
               className={`box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] ${
-                item.enabled
+                isItemEnabled(item)
                   ? `hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07] ${pressedById[item.id] ? 'bg-mn-text/[0.07]' : ''}`
                   : 'text-mn-text-secondary'
               }`}

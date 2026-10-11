@@ -11,18 +11,13 @@ import { SelectionBar } from '@/components/molecules/SelectionBar'
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
 import { proseExtensions } from '@/lib/modules/text/extensions'
 import { escLeavesZen } from '@/lib/layout/zen'
-import { clearSelection, selectText, selectWord } from './helpers/selection'
+import { clearSelection, selectWord } from './helpers/selection'
 
 const ENABLED = ['text', 'bold', 'italic', 'link', 'list', 'ask pond', 'copy']
 
 const renderBar = () => {
-  render(
-    <>
-      <SelectionBar onAsk={jest.fn()} />
-      <p>select me</p>
-    </>
-  )
-  selectText(screen.getByText('select me'))
+  render(<Host onEditor={() => undefined} />)
+  selectWord(screen.getByText('soak overnight'), 'overnight')
   return screen.getByRole('toolbar', { name: 'selection' })
 }
 
@@ -31,8 +26,7 @@ const enabledButtons = (toolbar: HTMLElement) =>
 
 const focusButton = (button: HTMLElement) => act(() => button.focus())
 
-const nameOf = (button: Element | null) =>
-  button?.getAttribute('aria-label') ?? button?.textContent
+const nameOf = (button: Element | null) => button?.getAttribute('aria-label') ?? button?.textContent
 
 describe('SelectionBar toolbar', () => {
   afterEach(() => clearSelection())
