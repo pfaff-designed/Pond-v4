@@ -11,6 +11,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/react'
 import type { Level } from '@tiptap/extension-heading'
+import { isActive } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { editorForSelection } from '@/lib/modules/text/active-editor'
 import {
@@ -23,6 +24,7 @@ import {
   setLink,
   unsetLink,
   type ActiveMarks,
+  type FormatReader,
   type TextStyle,
 } from '@/lib/modules/text/format'
 
@@ -249,19 +251,35 @@ const selectionKey = (sel: Selection): string => {
   return `${anchor}-${head}`
 }
 
-/**
- * The bar watches `window.getSelection()`, not any editor's own ProseMirror
- * state — so before a command runs on an editor resolved for that selection,
- * its range is applied as that editor's own selection too.
- */
-const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
-  if (!sel.anchorNode || !sel.focusNode) return false
+/** The editor selection that `sel` lays out, in the editor's own positions. */
+const selectionInEditor = (editor: Editor, sel: Selection): TextSelection | null => {
+  if (!sel.anchorNode || !sel.focusNode) return null
   const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
   const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
-  editor.view.dispatch(
-    editor.state.tr.setSelection(TextSelection.create(editor.state.doc, anchor, head))
-  )
+  return TextSelection.create(editor.state.doc, anchor, head)
+}
+
+/**
+ * The bar watches `window.getSelection()`, not any editor's own ProseMirror
+ * state — so immediately before a bar command runs on an editor resolved for
+ * that selection, its range is applied as that editor's own selection too.
+ * Never on a plain `selectionchange`: ProseMirror's own DOM rewrite (lifting a
+ * list item) emits transient ones, and writing those back collapses the selection.
+ */
+const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
+  const selection = selectionInEditor(editor, sel)
+  if (!selection) return false
+  editor.view.dispatch(editor.state.tr.setSelection(selection))
   return true
+}
+
+/** Reads formatting at `sel` without moving the editor's own selection. */
+const formatReaderAt = (editor: Editor, sel: Selection): FormatReader => {
+  const selection = selectionInEditor(editor, sel)
+  const state = selection
+    ? editor.state.apply(editor.state.tr.setSelection(selection))
+    : editor.state
+  return { isActive: (name, attributes) => isActive(state, name, attributes) }
 }
 
 /**
@@ -363,12 +381,12 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
       const editor = editorForSelection(sel)
       shownSelectionRef.current = { key, editor }
-      if (editor) syncEditorSelection(editor, sel)
       setEditorOwnsSelection(Boolean(editor))
-      setMarks(editor ? activeMarks(editor) : NO_MARKS)
-      setListActive(editor ? editor.isActive('bulletList') : false)
-      setLinkActive(editor ? editor.isActive('link') : false)
-      setStyleLabel(editor ? currentTextStyle(editor) : 'text')
+      const reader = editor ? formatReaderAt(editor, sel) : null
+      setMarks(reader ? activeMarks(reader) : NO_MARKS)
+      setListActive(reader ? reader.isActive('bulletList') : false)
+      setLinkActive(reader ? reader.isActive('link') : false)
+      setStyleLabel(reader ? currentTextStyle(reader) : 'text')
     }
 
     document.addEventListener('selectionchange', onSelectionChange)
@@ -457,6 +475,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     const sel = window.getSelection()
     const editor = sel && editorForSelection(sel)
     if (!editor) return
+    syncEditorSelection(editor, sel)
     toggle(editor)
     setMarks(activeMarks(editor))
     setListActive(editor.isActive('bulletList'))
@@ -471,6 +490,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     const sel = window.getSelection()
     const editor = sel && editorForSelection(sel)
     if (!editor) return
+    syncEditorSelection(editor, sel)
     const { from, to } = editor.state.selection
     linkTargetRef.current = { editor, from, to }
     setLinkHref('')
@@ -511,7 +531,9 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // back to the editor the bar was last drawn for.
   const chooseStyle = (level: Level | null) => () => {
     const sel = window.getSelection()
-    const editor = (sel && editorForSelection(sel)) ?? shownSelectionRef.current?.editor
+    const selectedEditor = sel && editorForSelection(sel)
+    if (sel && selectedEditor) syncEditorSelection(selectedEditor, sel)
+    const editor = selectedEditor ?? shownSelectionRef.current?.editor
     if (editor) {
       setTextStyle(editor, level)
       setStyleLabel(currentTextStyle(editor))
