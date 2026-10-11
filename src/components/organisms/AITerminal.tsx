@@ -111,7 +111,6 @@ import {
   unresolvedProposalIds,
   batchStatus,
   reconcileCardStatus,
-  DEFINE_SCHEMA_TYPE,
   ADD_ROW_TYPE,
   PROMOTE_TABLE_TYPE,
   CONFIGURE_VIEW_TYPE,
@@ -119,6 +118,13 @@ import {
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
 import { ASK_QUESTION_TYPE, SUGGEST_FOLLOWUPS_TYPE } from '@/lib/conversation/parts'
+import {
+  isProposeChangesPart,
+  isCreatePagePart,
+  isDefineSchemaPart,
+  type CreatePagePart,
+  type DefineSchemaPart,
+} from '@/lib/conversation/tool-parts'
 import {
   detectLifecycleIntent,
   detectLifecycleSignal,
@@ -136,10 +142,9 @@ import {
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { listRecordsByToolCalls } from '@/lib/change-log/store'
 import { previewForChange } from '@/lib/modules/preview'
-import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
-import type { NodeType } from '@/lib/supabase/types'
-import { withSchema, isCollection, readSchema, type AiPropertyDef } from '@/lib/properties/schema'
+import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
 import type {
   ViewMode,
   FilterOp,
@@ -148,61 +153,10 @@ import type {
   ViewFigureFormat,
 } from '@/lib/modules/view/schema'
 
-/** A propose_changes tool part — the generalized composition batch (t16 Phase 5).
- *  `targetPageId` (ticket-30) names a page OTHER than the open one to edit. */
-interface ProposeChangesPart {
-  type: 'tool-propose_changes'
-  toolCallId: string
-  state: string
-  input?: { targetPageId?: string; changes?: ModuleChange[] }
-}
-
-function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
-  return part.type === 'tool-propose_changes'
-}
-
 /** The canned note `revise` sends on an outdated card (#98, G2): Pond redrafts
  *  the diff against the page as it now stands. */
 const REVISE_NOTE =
   'the page changed since this was proposed — revise it against the page as it now stands.'
-
-/** A create_page tool part — a proposed brand-new page + scaffold (M1). Client-
- *  resolved (no execute); the card below drives accept/reject + placement. */
-interface CreatePagePart {
-  type: 'tool-create_page'
-  toolCallId: string
-  state: string
-  input?: {
-    type?: NodeType
-    kind?: string
-    title?: string
-    parentTitle?: string | null
-    blocks?: ModuleData[]
-    reason?: string
-  }
-}
-
-function isCreatePagePart(part: { type: string }): part is CreatePagePart {
-  return part.type === 'tool-create_page'
-}
-
-/** A define_schema tool part — a proposed property schema for an EXISTING page
- *  (#17 slice 5). Client-resolved (no execute); the card below drives
- *  accept/reject + which page it applies to. */
-interface DefineSchemaPart {
-  type: typeof DEFINE_SCHEMA_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    pageId?: string
-    properties?: AiPropertyDef[]
-    reason?: string
-  }
-}
-
-function isDefineSchemaPart(part: { type: string }): part is DefineSchemaPart {
-  return part.type === DEFINE_SCHEMA_TYPE
-}
 
 /** An add_row tool part — a proposed row (a schema-bound child page) for an
  *  EXISTING collection (#18). Client-resolved (no execute); the card below drives
