@@ -1773,6 +1773,9 @@ export function AITerminal() {
   const handleAskAgain = (messageIndex: number) => {
     if (isStreaming) return
     const message = messages[messageIndex]
+    // regenerate() replaces the LAST message, so an older answer cannot be re-asked;
+    // the error row passes the trailing user line, which regenerate() just resends.
+    if (message?.role === 'assistant' && messageIndex !== lastAssistantIndex) return
     pendingRegenerate.current = message?.role === 'assistant' ? { message, messageIndex } : null
     // The question was sent (and its lifecycle advanced) on the original turn, so
     // the phase rides along as it stands; the body is otherwise sendText's.
@@ -2046,7 +2049,7 @@ export function AITerminal() {
               onRevise={(id) =>
                 sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
               }
-              onAskAgain={() => handleAskAgain(messageIndex)}
+              onAskAgain={isLastAssistant ? () => handleAskAgain(messageIndex) : undefined}
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop

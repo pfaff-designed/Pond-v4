@@ -294,6 +294,38 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('resolutions')
   })
 
+  it('ask again is offered only on the last answer: an older turn has none, its rejected card included', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'older answer' }, batch('pc1')],
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+      {
+        id: 'm2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'newer answer' }, batch('pc2')],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    for (const reject of screen.getAllByRole('button', { name: 'reject' })) {
+      await user.click(reject)
+    }
+
+    const newerAnswer = await screen.findByText('newer answer')
+    const askAgains = await screen.findAllByRole('button', { name: 'ask again' })
+    for (const askAgain of askAgains) {
+      expect(newerAnswer.compareDocumentPosition(askAgain)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    }
+
+    await user.click(askAgains[0])
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
   it('ask again does nothing once a stream is running (double-press guard)', async () => {
     const user = userEvent.setup()
     mockMessages = [
