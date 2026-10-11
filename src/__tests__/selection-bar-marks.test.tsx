@@ -57,6 +57,20 @@ describe('SelectionBar bold/italic', () => {
     expect(screen.getByRole('button', { name: 'bold' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('draws the active fill as a resting class only while a toggle is pressed', () => {
+    render(<Host onAsk={jest.fn()} onEditor={jest.fn()} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    expect(screen.getByRole('button', { name: 'bold' })).not.toHaveClass('bg-mn-text/[0.07]')
+
+    fireEvent.click(screen.getByRole('button', { name: 'bold' }))
+    expect(screen.getByRole('button', { name: 'bold' })).toHaveClass('bg-mn-text/[0.07]')
+    expect(screen.getByRole('button', { name: 'italic' })).not.toHaveClass('bg-mn-text/[0.07]')
+
+    fireEvent.click(screen.getByRole('button', { name: 'bold' }))
+    expect(screen.getByRole('button', { name: 'bold' })).not.toHaveClass('bg-mn-text/[0.07]')
+  })
+
   it('italicizes the selected word and reads the button as pressed', () => {
     let editor: Editor | null = null
     render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)

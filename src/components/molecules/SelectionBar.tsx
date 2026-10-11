@@ -544,6 +544,13 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // needed — `AITerminal`'s `disabled={isStreaming}` flips mid-selection.
   if (typeof document === 'undefined' || disabled || !ctx || !rect) return null
 
+  const pressedById: Partial<Record<SelectionBarItemId, boolean>> = {
+    bold: marks.bold,
+    italic: marks.italic,
+    list: listActive,
+    link: linkActive,
+  }
+
   const bar = createPortal(
     <div
       ref={barRef}
@@ -584,17 +591,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
               }
               aria-haspopup={item.id === 'text-style' ? 'menu' : undefined}
               aria-expanded={item.id === 'text-style' ? styleMenuOpen : undefined}
-              aria-pressed={
-                item.id === 'bold'
-                  ? marks.bold
-                  : item.id === 'italic'
-                    ? marks.italic
-                    : item.id === 'list'
-                      ? listActive
-                      : item.id === 'link'
-                        ? linkActive
-                        : undefined
-              }
+              aria-pressed={pressedById[item.id]}
               onClick={
                 item.id === 'ask-pond'
                   ? handleAsk
@@ -619,7 +616,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
               aria-disabled={item.enabled ? undefined : true}
               className={`box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] ${
                 item.enabled
-                  ? 'hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]'
+                  ? `hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07] ${pressedById[item.id] ? 'bg-mn-text/[0.07]' : ''}`
                   : 'text-mn-text-secondary'
               }`}
             >
