@@ -72,6 +72,7 @@ A Ralph loop (Geoffrey Huntley's name for it) is a dumb loop around a fresh agen
    - `merged` — record the PRs and each ticket's person's path. If the epic has a next ready ticket and the user asked for the run to continue, launch a fresh orchestrator for it.
    - `needs-user` — collect it. Three kinds: a migration waiting for production (ADR 0003: never push without the user's explicit "push NNNN"), a ticket that failed the reachability gate (the proposed re-split is on the ticket as a comment), and a genuine spec ambiguity.
    - `stopped` — a stall or a failure after two fix rounds. Read the reason; do not relaunch the same thing.
+   - `stopped` with `usage limit, resets <time>` — not a failure. Launch no more orchestrators until the reset; then relaunch the same epic, which resumes from its worktree, `PLAN.md` and the ticket's comment.
 6. **Bring the user one batch**, once every orchestrator has returned: what merged and what a person can now do (the path, not the ticket title), then every `needs-user` item in one `ASK`.
 
 ## Rules every role carries

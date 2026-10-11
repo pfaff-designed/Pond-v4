@@ -19,11 +19,28 @@ The shared role files in `REPO/ship-epics/` name no tools. This file is the only
 
 ## Shell
 
-| Name      | Call                                                                                                                                                                                 |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `RUN ms`  | A shell call with `block_until_ms: <ms>`, at most 600000, and `timeout 600` inside anything that could hang.                                                                         |
-| `BG`      | Its **own** shell call with `block_until_ms: 0`. Never `&`, never `nohup`: the shell tool kills everything a call started with `&` the moment that call returns — tested 2026-10-09. |
-| `POLL HB` | A shell call with `block_until_ms: 60000` and `sleep 30; $H check HB`.                                                                                                               |
+| Name      | Call                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUN ms`  | A shell call with `block_until_ms: <ms>`, at most 600000, and `timeout 600` inside anything that could hang.                                                                            |
+| `BG`      | Its **own** shell call with `block_until_ms: 0`. Never `&`, never `nohup`: the shell tool kills everything a call started with `&` the moment that call returns — tested 2026-10-09.    |
+| `POLL HB` | `RUN 600000` with the bounded until-loop below. It returns when the child's state changes, so you wake on the child's change rather than on a timer.                                    |
+| `RELAY`   | `RUN 60000` with `$H relay <your HB> <child HB> <role>`: one call that beats your heartbeat with the child's current step and prints the child's state. Never compose a `beat` instead. |
+
+Poll on change, not every 30 seconds: a fixed `sleep 30; check` costs the supervisor one turn per tick, and
+over a ten-minute build pass that fills its context with identical lines. Compare state, reapproach count
+and step, **never the whole line**: `check` leads with an elapsed-age column that changes every tick, so
+comparing the line fires constantly (found in Claude Code, 2026-10-10). Leave the loop with `break`, never
+`exit`: Cursor's shell calls share one session, and `exit` ends it.
+
+```sh
+key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}' || echo none; }
+prev=$(key); end=$((SECONDS + 530)); changed=
+while [ $SECONDS -lt $end ]; do
+  [ "$(key)" != "$prev" ] && { changed=1; break; }
+  sleep 20
+done
+if [ -n "$changed" ]; then $H check HB; else echo "timer: $(key)"; fi
+```
 
 ### `LONG cmd LOG LIMIT`
 
@@ -53,7 +70,7 @@ Atlassian MCP, every call taking `cloudId: '1535dfd5-6618-4e61-ac79-655c4c329842
 | `JIRA.get KEY`           | `getJiraIssue { issueIdOrKey: KEY, view: 'full', responseContentFormat: 'markdown' }`. The default `compact` view is for scanning and will not give you the whole description — and the description is the spec.                     |
 | `JIRA.jql`               | `searchJiraIssuesUsingJql { jql }`.                                                                                                                                                                                                  |
 | `JIRA.comment KEY`       | `addOrEditJiraIssueComment { issueIdOrKey: KEY, commentBody }` (markdown). Omit `commentId` to add.                                                                                                                                  |
-| `JIRA.transition KEY ID` | `transitionJiraIssue { issueIdOrKey: KEY, transitionId: '<ID>' }` — flat, not nested. `31` In Review, `41` Done.                                                                                                                     |
+| `JIRA.transition KEY ID` | `transitionJiraIssue { issueIdOrKey: KEY, transitionId: '<ID>' }` — flat, not nested. `31` In Review, `41` Done. It returns the status actually reached; trust that over a read-back.                                                |
 | `JIRA.labels KEY`        | `editJiraIssue { issueIdOrKey: KEY, fields: { labels: [...] } }`. **Every field is set, not appended**: `JIRA.get` the current labels and send the whole list back with yours added, or you will erase `now`, `size-S` and the rest. |
 
 ## The user

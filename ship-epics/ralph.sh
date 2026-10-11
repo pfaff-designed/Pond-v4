@@ -19,7 +19,8 @@
 # Progress is measured, never taken from the pass's word: a pass progressed if HEAD moved or the
 # plan grew (a planning pass, or an item split into smaller ones). A pass that misses gets a
 # reapproach line in HB and a note in PLAN.md, so the next fresh pass knows what failed and takes
-# another route; a second miss on the same item stops the loop (AGENTS.md: two attempts).
+# another route; a second miss on the same item stops the loop (AGENTS.md: two attempts). A pass
+# ended by Claude Code's usage limit is not a miss: the loop stops at once with `usage limit:`.
 #
 # Every pass runs under `timeout` (GNU, which kills the pass's whole process group), so no pass
 # outlives the failsafe's 10 minutes, and HB is beaten before each one: a supervisor polling HB sees
@@ -180,6 +181,14 @@ record_miss() {
   echo "$item" >>"$misses"
 }
 
+# Claude Code's account limit ends a pass with no commit, which reads exactly like a miss. It is not
+# one: the item was never attempted. On 2026-10-11 two loops counted the limit twice and stopped on a
+# false "missed twice", with the limit's message written into PLAN.md as the item's failed attempt.
+# Waiting it out is no better: the reset is hours away, and a loop asleep that long reads as stalled.
+usage_limit() {
+  tail -20 "$1" | rg -m1 -i "hit your (session|usage|weekly) limit|usage limit reached|error type rate_limit" || return 1
+}
+
 pass=0
 while :; do
   blocker=$(sed -n 's/^- \[!\] //p' "$plan" | head -1)
@@ -215,6 +224,9 @@ while :; do
     grep -vxF -- "$step" "$misses" >"$misses.tmp" || true
     mv "$misses.tmp" "$misses"
     continue
+  fi
+  if limit=$(usage_limit "$log"); then
+    finish stopped "usage limit: $limit — not a miss; once it resets, run the loop again on the same LOOP (the worktree may hold this pass's uncommitted edits)"
   fi
   rg -qxF -- "$step" "$misses" && finish stopped "'$step' missed twice — see the attempts in PLAN.md"
   record_miss "$step" "$log"

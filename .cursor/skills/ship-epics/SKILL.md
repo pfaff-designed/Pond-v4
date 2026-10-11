@@ -20,7 +20,7 @@ All five role files live in REPO/ship-epics/ and name no tools; harness.md here 
 **Models** (the user's call, 2026-10-09): orchestration and code review on **Opus 5.5**, execution on **Sonnet 5**.
 
 - Orchestrators and both reviewers: Cursor `Task` with `model: claude-opus-5-5-medium`. Name it on every launch and every resume — never rely on inheritance for these.
-- The build loop's passes: Claude Code `claude-sonnet-5`, pinned in `ralph.sh` by full name, not by the `sonnet` alias, so a new release cannot change the builder mid-run.
+- The build loop's passes: Claude Code `claude-sonnet-5`, pinned in `ralph.sh` by full name, not by the `sonnet` alias, so a new release cannot change the builder mid-run. **They run on the Claude Code account even when Cursor conducts**: a Claude Code usage limit stops every build loop here too, and `ralph.sh` reports it as `usage limit:`, not as a miss.
 - The live verifier is a Cursor `browser-use` subagent, and Cursor offers no Sonnet 5 for subagents (its Sonnet is 5.5), so it takes no `model` and inherits the orchestrator's Opus 5.5.
 
 **One source, two heads.** Every role prompt and every script lives once, in `REPO/ship-epics/`, and names no tools. This directory is the Cursor head: this file and `harness.md`, which is the only place a tool is named. `.claude/skills/ship-epics/` is the Claude Code head. **Read `harness.md` before you call anything**, and pass it to every orchestrator you launch.
@@ -61,20 +61,24 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
    - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001)
    - `MAX_TICKETS` — 2 unless the user says otherwise
    - `HB=/tmp/ship-epics/<EPIC>/orchestrator.hb`, `RESULT=/tmp/ship-epics/<EPIC>/orchestrator.result.md`
-4. **Supervise** them, as `failsafe.md`'s "If you supervise" says, with one poll for all of them:
+
+   Then record every handle, as `harness.md` says: the agent id each `Task` call returned.
+
+4. **Supervise** them, as `failsafe.md`'s "If you supervise" says, with one poll for all of them (`RUN 90000`):
 
    ```sh
    H=/Users/charlespfaff/Documents/Code/Projects/Pond-v4/ship-epics/heartbeat.sh
    sleep 60; for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s\t' "$(basename "$(dirname "$f")")"; $H check "$f"; done
    ```
 
-   An orchestrator's heartbeat follows its child's (`supervise build: <step> #<reapproaches>`), so a stall anywhere under it shows here within 10 minutes even if the orchestrator itself failed to act on it. `NUDGE` and `STOP` exactly as `failsafe.md` says. When you stop an orchestrator, also free what it held: if `/tmp/pond-browser.lock/owner` names its epic, remove the lock; `pkill -f "ralph.sh /tmp/ship-epics/<EPIC>/"`; `pkill -f "next dev -p <its PORT>"`; `pkill -f "<its worktree path>"`. Each orchestrator is finished when its heartbeat reads `done`; its return is its `RESULT` file.
+   An orchestrator's heartbeat follows its child's (`supervise build: <step> #<reapproaches>`), so a stall anywhere under it shows here within 10 minutes even if the orchestrator itself failed to act on it. `NUDGE` and `STOP` exactly as `failsafe.md` says. When you stop an orchestrator, also free what it held: if `/tmp/pond-browser.lock/owner` names its epic, remove the lock; `pkill -f "ralph.sh /tmp/ship-epics/<EPIC>/"`; `pkill -f "next dev -p <its PORT>"`; `pkill -f "<its worktree path>"`. An orchestrator is finished when Cursor reports its background task complete or its heartbeat reads `done`; its return is its `RESULT` file, not its reply.
 
 5. **Act on each return:**
    - `merged` — record the PRs and each ticket's person's path. If the epic has a next ready ticket and the user asked for the run to continue, launch a fresh orchestrator for it.
    - `needs-user` — collect it. Three kinds: a migration waiting for production (ADR 0003: never push without the user's explicit "push NNNN"), a ticket that failed the reachability gate (the proposed re-split is on the ticket as a comment), and a genuine spec ambiguity.
    - `stopped` — a stall or a failure after two fix rounds. Read the reason; do not relaunch the same thing.
-6. **Bring the user one batch**, once every orchestrator has returned: what merged and what a person can now do (the path, not the ticket title), then every `needs-user` item in one `AskQuestion`.
+   - `stopped` with `usage limit, resets <time>` — not a failure. Launch no more orchestrators until the reset; then relaunch the same epic, which resumes from its worktree, `PLAN.md` and the ticket's comment.
+6. **Bring the user one batch**, once every orchestrator has returned: what merged and what a person can now do (the path, not the ticket title), then every `needs-user` item in one `ASK`.
 
 ## Rules every role carries
 

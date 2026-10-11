@@ -74,6 +74,7 @@ SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 - `stopped — blocked: <step> — <why>`: a pass found a step this ticket cannot build. If it is a path step another ticket owns, that is the reachability gate failing late: comment the re-split on the ticket and return `needs-user`. Otherwise judge it, and either fix the plan or return `needs-user` with the question.
 - `stopped — '<item>' missed twice`: read the attempts. One more run is allowed with a changed instruction — rewrite that item in `PLAN.md` (split it, or name the route the passes missed) and start the loop again; a second stop is `stopped`.
 - `stopped — pass budget spent`: the plan was mis-sized. `stopped`, with the plan.
+- `stopped — usage limit: <message>`: Claude Code's account is out until the time in the message. Nothing failed and nothing is re-split. Leave the worktree as it is, including any uncommitted edits, comment the reset time and the loop's state on the ticket (`JIRA.comment`), and return `stopped` with `reason: usage limit, resets <time>`. The same limit stops every other loop, so do not start the next ticket.
 
 ### 5. Review
 
