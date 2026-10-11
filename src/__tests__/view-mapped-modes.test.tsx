@@ -353,7 +353,7 @@ describe('CollectionGantt — PondTemplate.dc.html’s gHead / gRow / gTrack / b
 
   it('a collection with no date property keeps its own notice — a configuration problem, not an empty state', () => {
     renderView(gantt, taskSchema.slice(0, 1), taskRows)
-    expect(screen.getByText('This gantt needs a date property.')).toBeInTheDocument()
+    expect(screen.getByText('This timeline needs a date property.')).toBeInTheDocument()
   })
 })
 

@@ -31,7 +31,7 @@
  */
 
 import type { Block } from '@/lib/modules/content'
-import { blockFrame, isFramelessView } from '@/lib/modules/block-frame'
+import { blockFrame } from '@/lib/modules/block-frame'
 import type { PondBlockKind } from '@/lib/modules/block-frame'
 import { viewKind } from '@/lib/modules/view/kinds'
 
@@ -54,7 +54,7 @@ export function blockWord(block: Block): string {
   if (frame) return KIND_WORD[frame.kind] ?? frame.kind
   // No frame: bare prose, or a view that sets itself on the page without the block
   // card — named by its kind.
-  if (block.type === 'view' && isFramelessView(block)) return viewKind(block).label
+  if (block.type === 'view') return viewKind(block).label
   if (block.type === 'text') {
     return OPENS_ON_A_HEADING.test(block.content) ? 'heading' : 'text'
   }

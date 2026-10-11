@@ -1476,7 +1476,7 @@ export const GanttNeedsDate: Story = {
   args: { config: ganttConfig, schema: noDateSchema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('This gantt needs a date property.')).toBeInTheDocument()
+    await expect(canvas.getByText('This timeline needs a date property.')).toBeInTheDocument()
   },
 }
 

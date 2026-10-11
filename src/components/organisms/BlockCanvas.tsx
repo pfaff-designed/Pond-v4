@@ -468,8 +468,8 @@ export function BlockCanvas({
   }
 
   /**
-   * `/table`, `/gallery`, `/chart` open the source picker rather than minting a
-   * block (PROJECT_RULES: "a table is always a view of a database"). The
+   * A view kind's `/` row (`SOURCE_BLOCKS`) opens the source picker rather than
+   * minting a block (PROJECT_RULES: "a table is always a view of a database"). The
    * glass hangs off the `/` line, or the block it was typed in. AUDIT C9,
    * decided: a chart auto-wires "when one table is nearby" — the nearest linked
    * view on the page becomes its source and the picker opens on the chart types;

@@ -181,7 +181,7 @@ export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
  *
  * `chartLine` rather than the string: the compact mark's copy is `CHART_EMPTY_LINE`
  * in `chart/card.tsx`, a React module this server-safe file cannot import — the same
- * reason `VIEW_EMPTY.chart` carries no `line`. The caller substitutes it. Making the
+ * reason the chart kind in `VIEW_KINDS` carries no `line`. The caller substitutes it. Making the
  * boundary explicit beats moving a constant six call sites away for a nicer return.
  */
 export type ViewFrameState =
@@ -394,15 +394,10 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
 /**
  * The card a view block sits in — its kind's (`VIEW_KINDS`), or `null` for a view that
  * sets itself on the page without the block card: the board's lanes, the list (its
- * own card) and the chart card (`PondChart` draws its own paper). The one reading the
- * frame and the summary line both take.
+ * own card) and the chart card (`PondChart` draws its own paper).
  */
 function viewCard(block: ViewBlock): PondBlockKind | null {
   return isChartCard(block) ? null : viewKind(block).frame
-}
-
-export function isFramelessView(block: ViewBlock): boolean {
-  return viewCard(block) === null
 }
 
 // `many` is explicit for an irregular plural (`entry` → `entries`), so every head

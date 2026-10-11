@@ -1,25 +1,22 @@
 /**
- * The view KINDS (KAN-44, ADR 0009) — each kind of view is its own block to the
- * person: its own name, its own card, its own empty state. One table, exhaustive
- * over `ViewMode`, so an added mode is a compile error until it says all three.
+ * The view KINDS (ADR 0009) — each kind of view is its own block to the person: its
+ * own name, mark, card and empty state. One table, exhaustive over `ViewMode`, so an
+ * added mode is a compile error until it says all four.
  *
- * **Representation, a stated choice** (ADR 0009 left it to KAN-44): the stored block
- * stays the one `view` carrier keyed by `mode`, not eight block types. The tasks
- * feature (7j: "board, timeline, table, calendar and list are views of it") and the
- * change log (6o f2) draw several views of one database on one surface, which one
- * carrier holds naturally (KAN-32 adds the list). So "a kind is its own block" is
- * this table and the `/` rows read from it, not a new persisted type, and every
- * stored `{ type: 'view', mode }` reads as its kind with no migration.
+ * The stored block is the one `view` carrier keyed by `mode`; a kind is this table
+ * and the `/` row read from it, so every stored `{ type: 'view', mode }` reads as its
+ * kind with no migration.
  *
- * A kind is fixed once made: nothing here, or anywhere, switches an existing view's
- * mode in place. Changing what a block shows is KAN-32's `＋ view`, not a conversion.
+ * A person cannot change a view's kind: there is no in-place switch, and the config
+ * patch a view writes (`ViewConfigPatch`) has no `mode`. Pond's `configure_view` still
+ * rewrites the page's first view block wholesale when a person accepts it.
  *
- * Server-safe, no React: `block-frame.ts`, the template summary and the proposal
- * card all read it. The `/` row's mark is client chrome and lives with the rest of
- * the menu's marks in `palette.ts`.
+ * Server-safe, no React: `block-frame.ts`, the `/` rows, the template summary and the
+ * proposal card all read it.
  */
-import type { ViewMode } from './schema'
+import type { ViewBlock, ViewMode } from './schema'
 import type { BlockEmptyBox, PondBlockKind } from '../block-frame'
+import { ICON, type SlashIcon } from '@/components/molecules/slash-entries'
 
 /**
  * The gantt kind's empty line — `PondTemplate.dc.html`'s `gantt` `e:` value verbatim
@@ -36,12 +33,14 @@ export interface ViewKind {
    * the stored mode keeps its build name.
    */
   label: string
+  /** The kind's mark on its `/` row, from the picker's hand-drawn `ICON` table. */
+  icon: SlashIcon
   /**
    * The `PondBlock.dc.html` card the kind sits in, or `null` when it sets itself on
    * the page without one: the board's lanes lie straight on the page, and the list
    * is a card of its own (a frame around it would be a card inside a card). A chart
    * drawn as the card is frameless too, but that turns on its presentation, not its
-   * kind — `isFramelessView` asks `isChartCard` for it.
+   * kind — `blockFrame` asks `isChartCard` for it.
    *
    * #260 confirmed the mapped kinds against the board's `W`: `gallery` is its own 580
    * card and `big-number` the 400 `number` card, while timeline, calendar and the
@@ -62,14 +61,24 @@ export interface ViewKind {
 }
 
 export const VIEW_KINDS: Record<ViewMode, ViewKind> = {
-  table: { label: 'table', frame: 'table', empty: { box: 'box' } },
-  board: { label: 'board', frame: null, empty: { box: 'box' } },
-  calendar: { label: 'calendar', frame: 'table', empty: { box: 'box' } },
-  list: { label: 'list', frame: null, empty: { box: 'box' } },
-  gallery: { label: 'gallery', frame: 'gallery', empty: { box: 'box' } },
-  gantt: { label: 'timeline', frame: 'table', empty: { box: 'void', line: GANTT_EMPTY_LINE } },
-  chart: { label: 'chart', frame: 'table', empty: { box: 'per-mark' } },
-  'big-number': { label: 'big number', frame: 'number', empty: { box: 'box' } },
+  table: { label: 'table', icon: ICON.table, frame: 'table', empty: { box: 'box' } },
+  board: { label: 'board', icon: ICON.board, frame: null, empty: { box: 'box' } },
+  calendar: { label: 'calendar', icon: ICON.calendar, frame: 'table', empty: { box: 'box' } },
+  list: { label: 'list', icon: ICON.list, frame: null, empty: { box: 'box' } },
+  gallery: { label: 'gallery', icon: ICON.gallery, frame: 'gallery', empty: { box: 'box' } },
+  gantt: {
+    label: 'timeline',
+    icon: ICON.timeline,
+    frame: 'table',
+    empty: { box: 'void', line: GANTT_EMPTY_LINE },
+  },
+  chart: { label: 'chart', icon: ICON.chart, frame: 'table', empty: { box: 'per-mark' } },
+  'big-number': {
+    label: 'big number',
+    icon: ICON.number,
+    frame: 'number',
+    empty: { box: 'box' },
+  },
 }
 
 /**
@@ -80,3 +89,6 @@ export const VIEW_KINDS: Record<ViewMode, ViewKind> = {
 export function viewKind(block: { mode: ViewMode }): ViewKind {
   return VIEW_KINDS[block.mode] ?? VIEW_KINDS.table
 }
+
+/** What a view may rewrite of its own config: anything but which block it is, or its kind. */
+export type ViewConfigPatch = Partial<Omit<ViewBlock, 'id' | 'type' | 'mode'>>

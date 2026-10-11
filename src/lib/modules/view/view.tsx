@@ -65,7 +65,7 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { GANTT_EMPTY_LINE } from './kinds'
+import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   coerceValue,
   optionForValue,
@@ -101,7 +101,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   const onConfigChange = onChange
-    ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
+    ? (patch: ViewConfigPatch) => onChange({ ...data, ...patch })
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -159,7 +159,7 @@ export interface CollectionViewProps {
   onRenameRow?: (rowId: string, title: string) => void
   /** Rewrite the view block's own config — chart and big-number setup. Never its
    *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. */
-  onConfigChange?: (patch: Partial<ViewBlock>) => void
+  onConfigChange?: (patch: ViewConfigPatch) => void
   /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
    *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
   onOpenRow?: (rowId: string) => void
@@ -329,9 +329,8 @@ export function CollectionView({
 
 /**
  * The editable head row (6u.1): the database's name and how the board reads it
- * (`grouped by status`, read-only text). A view's kind is fixed once made (ADR 0009,
- * KAN-44), so there is no in-place switch between kinds here: seeing the same
- * database another way is KAN-32's saved views. Chart and big-number setup rewrite
+ * (`grouped by status`, read-only text). A view's kind is fixed once made (ADR 0009),
+ * so there is no in-place switch between kinds here. Chart and big-number setup rewrite
  * the block's config through `onConfigChange` (the whole-block save path).
  */
 function ViewControls({
@@ -343,7 +342,7 @@ function ViewControls({
   config: ViewBlock
   schema: PropertySchema
   collectionName?: string
-  onConfigChange: (patch: Partial<ViewBlock>) => void
+  onConfigChange: (patch: ViewConfigPatch) => void
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -1013,7 +1012,7 @@ function CollectionGantt({
   }, [])
 
   if (!defs) {
-    return <ViewNotice>This gantt needs a date property.</ViewNotice>
+    return <ViewNotice>This timeline needs a date property.</ViewNotice>
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
     // Nothing dated: the shared voidBox with the template's own line — true whether the

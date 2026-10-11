@@ -43,25 +43,27 @@ const ROW_CHROME: Partial<
 /**
  * A `view` row is one view KIND (ADR 0009): its id IS the `ViewMode` it opens in
  * (`mintPreset` parses it with `viewModeSchema`), so a row that names no mode does
- * not compile, and its label is the kind's own (`VIEW_KINDS`), never a second copy.
+ * not compile, and its label and mark are the kind's own (`VIEW_KINDS`).
+ *
+ * `table` and `list` have no view row here: `/table` is the static table's row,
+ * which opens the source picker, and `list` is the bulleted list's.
  */
-const viewRow = (
-  mode: ViewMode,
-  icon: SlashIcon,
-  alias?: string
-): SlashRow & { id: ViewMode } => ({
+const viewRow = (mode: ViewMode, alias?: string): SlashRow & { id: ViewMode } => ({
   id: mode,
   type: 'view',
   group: 'blocks',
   label: VIEW_KINDS[mode].label,
   ...(alias ? { alias } : {}),
-  icon,
+  icon: VIEW_KINDS[mode].icon,
 })
 
 const VIEW_ROWS = [
-  viewRow('gallery', ICON.gallery),
-  viewRow('chart', ICON.chart, 'graph'),
-  viewRow('big-number', ICON.number),
+  viewRow('board', 'kanban'),
+  viewRow('calendar'),
+  viewRow('gallery'),
+  viewRow('gantt', 'gantt'),
+  viewRow('chart', 'graph'),
+  viewRow('big-number'),
 ]
 
 /**
@@ -113,7 +115,7 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
  */
 export const WITHHELD = {
   page: 'structural — a page is made through the rail or `page from template`, not inserted as a block',
-  view: 'wholly covered by its variants — gallery, chart and big number are the rows a person picks',
+  view: 'wholly covered by its variants — each view kind is its own row (ADR 0009)',
 } as const satisfies Partial<Record<DescriptorType, string>>
 
 /**
@@ -129,7 +131,10 @@ export const BOARD_ORDER: readonly string[] = [
   'list',
   'checklist',
   'table',
+  'board',
+  'calendar',
   'gallery',
+  'gantt',
   'chart',
   'big-number',
   'entry-log',

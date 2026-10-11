@@ -13,6 +13,7 @@
 
 import { useMemo } from 'react'
 import { CHART_PRESENTATIONS, type ViewBlock, type ViewChartPresentation } from './schema'
+import type { ViewConfigPatch } from './kinds'
 import type { CollectionRow } from './apply'
 import {
   AGG_LABELS,
@@ -89,7 +90,7 @@ export function ChartControls({
 }: {
   config: ViewBlock
   schema: PropertySchema
-  onConfigChange: (patch: Partial<ViewBlock>) => void
+  onConfigChange: (patch: ViewConfigPatch) => void
 }) {
   const inferred = resolveChartConfig(schema, config.chart)
   const seriesProp = config.chart?.series[0]
@@ -202,7 +203,7 @@ export function BigNumberControls({
 }: {
   config: ViewBlock
   schema: PropertySchema
-  onConfigChange: (patch: Partial<ViewBlock>) => void
+  onConfigChange: (patch: ViewConfigPatch) => void
 }) {
   const current = config.bigNumber
   const write = (patch: Partial<NonNullable<ViewBlock['bigNumber']>>) =>

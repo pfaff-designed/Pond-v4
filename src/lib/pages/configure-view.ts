@@ -354,7 +354,7 @@ export async function configureViewFromProposal(
   // collection with none, so the card reverts rather than writing an un-drawable view.
   if (proposal.mode === 'gantt' && !schema.some((d) => d.type === 'date')) {
     throw new Error(
-      `Cannot configure a gantt: collection ${schemaSource.id} has no date property to place bars on`
+      `Cannot configure a timeline: collection ${schemaSource.id} has no date property to place bars on`
     )
   }
 
