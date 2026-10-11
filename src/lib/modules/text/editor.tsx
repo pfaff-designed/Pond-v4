@@ -5,6 +5,7 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
 import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
+import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
@@ -30,27 +31,27 @@ const extensions = [
   Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
 ]
 
-// Matches prosemirror-keymap's own `mac` check, so `Mod` below means what its
-// `Mod-z` binding means on this platform.
-const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|[oa]d)/.test(navigator.platform)
-
 /**
  * ProseMirror's own `Mod-z`/`Mod-Shift-z` keymap command no-ops (returns `false`,
  * never calling `preventDefault`) when its history has nothing to undo/redo —
  * always true for a freshly mounted editor. Left unhandled, the keydown then
  * reaches the browser's native contenteditable undo, which wipes a field it
  * never saw typed. Intercepting here and always returning `true` keeps that
- * native undo from ever seeing the key, whether or not there was anything to do.
+ * native undo from ever seeing the key, whether or not there was anything to do
+ * — also true of `@tiptap/extensions`' own `Mod-y`/`Mod-я`/`Shift-Mod-я` undo
+ * keymap bindings, which this predicate matches too (KAN-268).
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
   if (event.key === 'Escape') {
     view.dom.blur()
     return true
   }
-  const mod = isMac ? event.metaKey : event.ctrlKey
-  if (mod && event.key.toLowerCase() === 'z') {
-    const command = event.shiftKey ? redo : undo
-    command(view.state, (tr) => view.dispatch(tr))
+  if (isUndoChord(event)) {
+    undo(view.state, (tr) => view.dispatch(tr))
+    return true
+  }
+  if (isRedoChord(event)) {
+    redo(view.state, (tr) => view.dispatch(tr))
     return true
   }
   return false

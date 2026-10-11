@@ -39,3 +39,31 @@ export const isZenChord = (e: KeyboardEvent) => {
   if (e.altKey || e.shiftKey || e.isComposing || e.key !== '.') return false
   return isCommandOnly(e)
 }
+
+/**
+ * ⌘Z on a Mac, Ctrl+Z everywhere else: undo. Also matches `я`, the Cyrillic-layout
+ * key sharing `z`'s QWERTY position, so a non-Latin layout binds the same chord
+ * (KAN-268). Unlike `isZenChord`, this is never refused for `isComposing`: an
+ * unhandled ⌘Z falls through to the browser's own contenteditable undo, which
+ * wipes a field it never saw typed — intercepting is the fix, so there is no safe
+ * reason to hand the keydown back.
+ */
+export const isUndoChord = (e: KeyboardEvent) => {
+  if (e.altKey || e.shiftKey) return false
+  const key = e.key.toLowerCase()
+  if (key !== 'z' && key !== 'я') return false
+  return isCommandOnly(e)
+}
+
+/**
+ * ⌘⇧Z or ⌘Y on a Mac, Ctrl equivalents everywhere else: redo, including the
+ * Cyrillic-layout ⌘⇧Я and ⌘Я (KAN-268). Same no-`isComposing`-refusal reasoning
+ * as `isUndoChord`.
+ */
+export const isRedoChord = (e: KeyboardEvent) => {
+  if (e.altKey) return false
+  const key = e.key.toLowerCase()
+  const matchesKey = e.shiftKey ? key === 'z' || key === 'я' : key === 'y'
+  if (!matchesKey) return false
+  return isCommandOnly(e)
+}
