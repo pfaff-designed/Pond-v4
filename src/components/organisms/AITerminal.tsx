@@ -70,7 +70,11 @@ import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv, type CsvParseOk } from '@/lib/csv/parse-csv'
-import { getInlineAttachmentDescriptor } from '@/lib/attachments/inline-attachment-kinds'
+import {
+  getInlineAttachmentDescriptor,
+  getInlineAttachmentDescriptorForFile,
+  type InlineAttachment,
+} from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
@@ -520,8 +524,13 @@ export function AITerminal() {
 
   const handlePickedFiles = useCallback(
     (files: FileList | null) => {
+      // Kind → parse handler: a new kind extends this map, not a new branch.
+      const kindParsers: Record<InlineAttachment['kind'], (file: File) => void> = {
+        csv: processCsvFile,
+      }
       for (const file of Array.from(files ?? [])) {
-        if (file.name.toLowerCase().endsWith('.csv')) processCsvFile(file)
+        const descriptor = getInlineAttachmentDescriptorForFile(file)
+        if (descriptor) kindParsers[descriptor.kind](file)
         else void addFile(file)
       }
     },
