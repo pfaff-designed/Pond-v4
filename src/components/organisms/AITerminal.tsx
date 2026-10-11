@@ -69,11 +69,12 @@ import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
-import { parseCsv, type CsvParseOk } from '@/lib/csv/parse-csv'
+import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
   getInlineAttachmentDescriptorForFile,
   type InlineAttachment,
+  type CsvInlineAttachment,
 } from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
@@ -182,9 +183,6 @@ function tablePromotionPreview(
   }))
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
 }
-
-// useInlineAttachment stays generic across kinds; only AITerminal needs the CSV shape.
-type CsvInlineAttachment = { kind: 'csv'; filename: string; parsed: CsvParseOk }
 
 export function AITerminal() {
   const router = useRouter()
