@@ -64,12 +64,18 @@ import {
   TextSelectionPopover,
   type SelectionContext,
 } from '@/components/molecules/TextSelectionPopover'
-import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
+import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
-import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
+import { parseCsv } from '@/lib/csv/parse-csv'
+import {
+  getInlineAttachmentDescriptor,
+  getInlineAttachmentDescriptorForFile,
+  type InlineAttachment,
+  type CsvInlineAttachment,
+} from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
@@ -111,14 +117,25 @@ import {
   unresolvedProposalIds,
   batchStatus,
   reconcileCardStatus,
-  DEFINE_SCHEMA_TYPE,
-  ADD_ROW_TYPE,
-  PROMOTE_TABLE_TYPE,
-  CONFIGURE_VIEW_TYPE,
-  LINK_RECORDS_TYPE,
   type ProposalMessageLike,
 } from '@/lib/conversation/proposals'
-import { ASK_QUESTION_TYPE, SUGGEST_FOLLOWUPS_TYPE } from '@/lib/conversation/parts'
+import {
+  isProposeChangesPart,
+  isCreatePagePart,
+  isDefineSchemaPart,
+  isAddRowPart,
+  isConfigureViewPart,
+  isLinkRecordsPart,
+  isPromoteTablePart,
+  isAskQuestionPart,
+  isSuggestFollowupsPart,
+  type CreatePagePart,
+  type DefineSchemaPart,
+  type AddRowPart,
+  type ConfigureViewPart,
+  type LinkRecordsPart,
+  type PromoteTablePart,
+} from '@/lib/conversation/tool-parts'
 import {
   detectLifecycleIntent,
   detectLifecycleSignal,
@@ -136,175 +153,13 @@ import {
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { listRecordsByToolCalls } from '@/lib/change-log/store'
 import { previewForChange } from '@/lib/modules/preview'
-import type { ModuleChange, ModuleData } from '@/lib/modules/ai-composition'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
-import type { NodeType } from '@/lib/supabase/types'
-import { withSchema, isCollection, readSchema, type AiPropertyDef } from '@/lib/properties/schema'
-import type {
-  ViewMode,
-  FilterOp,
-  ViewChartKind,
-  ViewAggValue,
-  ViewFigureFormat,
-} from '@/lib/modules/view/schema'
-
-/** A propose_changes tool part — the generalized composition batch (t16 Phase 5).
- *  `targetPageId` (ticket-30) names a page OTHER than the open one to edit. */
-interface ProposeChangesPart {
-  type: 'tool-propose_changes'
-  toolCallId: string
-  state: string
-  input?: { targetPageId?: string; changes?: ModuleChange[] }
-}
-
-function isProposeChangesPart(part: { type: string }): part is ProposeChangesPart {
-  return part.type === 'tool-propose_changes'
-}
-
+import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
 /** The canned note `revise` sends on an outdated card (#98, G2): Pond redrafts
  *  the diff against the page as it now stands. */
 const REVISE_NOTE =
   'the page changed since this was proposed — revise it against the page as it now stands.'
-
-/** A create_page tool part — a proposed brand-new page + scaffold (M1). Client-
- *  resolved (no execute); the card below drives accept/reject + placement. */
-interface CreatePagePart {
-  type: 'tool-create_page'
-  toolCallId: string
-  state: string
-  input?: {
-    type?: NodeType
-    kind?: string
-    title?: string
-    parentTitle?: string | null
-    blocks?: ModuleData[]
-    reason?: string
-  }
-}
-
-function isCreatePagePart(part: { type: string }): part is CreatePagePart {
-  return part.type === 'tool-create_page'
-}
-
-/** A define_schema tool part — a proposed property schema for an EXISTING page
- *  (#17 slice 5). Client-resolved (no execute); the card below drives
- *  accept/reject + which page it applies to. */
-interface DefineSchemaPart {
-  type: typeof DEFINE_SCHEMA_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    pageId?: string
-    properties?: AiPropertyDef[]
-    reason?: string
-  }
-}
-
-function isDefineSchemaPart(part: { type: string }): part is DefineSchemaPart {
-  return part.type === DEFINE_SCHEMA_TYPE
-}
-
-/** An add_row tool part — a proposed row (a schema-bound child page) for an
- *  EXISTING collection (#18). Client-resolved (no execute); the card below drives
- *  accept/reject + which collection it joins. */
-interface AddRowPart {
-  type: typeof ADD_ROW_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    collectionId?: string
-    title?: string
-    props?: Record<string, unknown>
-    reason?: string
-  }
-}
-
-function isAddRowPart(part: { type: string }): part is AddRowPart {
-  return part.type === ADD_ROW_TYPE
-}
-
-/** A configure_view tool part — a proposed view config (mode + optional group-by /
- *  sort / filter, keyed by property NAME) for an EXISTING collection (#19 slice 5).
- *  Client-resolved (no execute); the card below drives accept/reject + which
- *  collection it applies to. */
-interface ConfigureViewPart {
-  type: typeof CONFIGURE_VIEW_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    pageId?: string
-    mode?: ViewMode
-    groupBy?: string
-    sort?: { key: string; dir: 'asc' | 'desc' }
-    filter?: { property: string; op: FilterOp; value: string }
-    startDate?: string
-    endDate?: string
-    /** Chart mode (#111): kind + the property NAMES that bucket and get plotted. */
-    chart?: {
-      kind: ViewChartKind
-      xProperty?: string
-      series: Array<{ property: string; agg: ViewAggValue }>
-      stacked?: boolean
-      target?: number
-    }
-    /** Big-number mode (#111): the one figure, by property NAME + verb + format. */
-    bigNumber?: {
-      property?: string
-      agg: ViewAggValue
-      format?: ViewFigureFormat
-      delta?: { property: string; value: string }
-    }
-    /** Linked view (#41): NAME of ANOTHER collection whose rows this view draws. */
-    targetCollection?: string
-    reason?: string
-  }
-}
-
-function isConfigureViewPart(part: { type: string }): part is ConfigureViewPart {
-  return part.type === CONFIGURE_VIEW_TYPE
-}
-
-/** A link_records tool part — a proposal to link EXISTING rows through an
- *  existing relation property (#40). Everything is named by TITLE (the model
- *  never sees row ids); the accept path resolves titles→ids strictly on accept.
- *  Client-resolved (no execute); the card below drives accept/reject + which
- *  collection the source row is in. */
-interface LinkRecordsPart {
-  type: typeof LINK_RECORDS_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    fromRow?: string
-    fromCollection?: string
-    relation?: string
-    toRows?: string[]
-    reason?: string
-  }
-}
-
-function isLinkRecordsPart(part: { type: string }): part is LinkRecordsPart {
-  return part.type === LINK_RECORDS_TYPE
-}
-
-/** A promote_table tool part — a proposal to convert an EXISTING freeform `table`
- *  block on a page into a schema-bound collection (#29). Client-resolved (no
- *  execute); the card below drives accept/reject + which page it applies to. The
- *  model names only the page + block by id — the terminal reads that table to
- *  preview the inferred columns. */
-interface PromoteTablePart {
-  type: typeof PROMOTE_TABLE_TYPE
-  toolCallId: string
-  state: string
-  input?: {
-    pageId?: string
-    blockId?: string
-    reason?: string
-  }
-}
-
-function isPromoteTablePart(part: { type: string }): part is PromoteTablePart {
-  return part.type === PROMOTE_TABLE_TYPE
-}
 
 /** Preview what a promote_table would produce, read from the host page's blocks:
  *  the named `table` block (or the page's sole table when unnamed) reduced to its
@@ -327,33 +182,6 @@ function tablePromotionPreview(
     type: inferColumnType(t.rows.map((r) => r.cells[col] ?? '')),
   }))
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
-}
-
-/** An ask_question tool part — a branch-pause question card (ticket-39). Client-
- *  resolved (no execute); the QuestionCard below drives the answer, which rides
- *  the resolutions envelope. */
-interface AskQuestionPart {
-  type: typeof ASK_QUESTION_TYPE
-  toolCallId: string
-  state: string
-  input?: { question?: string; options?: string[]; branch?: string }
-}
-
-function isAskQuestionPart(part: { type: string }): part is AskQuestionPart {
-  return part.type === ASK_QUESTION_TYPE
-}
-
-/** A suggest_followups tool part — quiet follow-up chips (ticket-39). Client-
- *  resolved (no execute); clicking a chip sends its text. */
-interface SuggestFollowupsPart {
-  type: typeof SUGGEST_FOLLOWUPS_TYPE
-  toolCallId: string
-  state: string
-  input?: { suggestions?: string[] }
-}
-
-function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowupsPart {
-  return part.type === SUGGEST_FOLLOWUPS_TYPE
 }
 
 export function AITerminal() {
@@ -652,25 +480,29 @@ export function AITerminal() {
   }, [])
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
-  const [csvAttachment, setCsvAttachment] = useState<{
-    parsed: CsvParseOk
-    filename: string
-  } | null>(null)
+  const {
+    attachment: csvAttachment,
+    setAttachment: setCsvAttachment,
+    clear: clearCsvAttachment,
+  } = useInlineAttachment<CsvInlineAttachment>()
 
-  const processCsvFile = useCallback((file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const raw = e.target?.result
-      if (typeof raw !== 'string') return
-      const result = parseCsv(raw)
-      if (!result.ok) {
-        setInput(`[CSV error: ${result.message}]`)
-        return
+  const processCsvFile = useCallback(
+    (file: File) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const raw = e.target?.result
+        if (typeof raw !== 'string') return
+        const result = parseCsv(raw)
+        if (!result.ok) {
+          setInput(`[CSV error: ${result.message}]`)
+          return
+        }
+        setCsvAttachment({ kind: 'csv', parsed: result, filename: file.name })
       }
-      setCsvAttachment({ parsed: result, filename: file.name })
-    }
-    reader.readAsText(file)
-  }, [])
+      reader.readAsText(file)
+    },
+    [setCsvAttachment]
+  )
 
   // ── File attachments (#61) ────────────────────────────────────────────────
   // Images + documents upload to Supabase Storage and ride the outgoing message
@@ -689,8 +521,13 @@ export function AITerminal() {
 
   const handlePickedFiles = useCallback(
     (files: FileList | null) => {
+      // Kind → parse handler: a new kind extends this map, not a new branch.
+      const kindParsers: Record<InlineAttachment['kind'], (file: File) => void> = {
+        csv: processCsvFile,
+      }
       for (const file of Array.from(files ?? [])) {
-        if (file.name.toLowerCase().endsWith('.csv')) processCsvFile(file)
+        const descriptor = getInlineAttachmentDescriptorForFile(file)
+        if (descriptor) kindParsers[descriptor.kind](file)
         else void addFile(file)
       }
     },
@@ -1038,9 +875,9 @@ export function AITerminal() {
         setQuoteCtx(null)
       }
       if (csvAttachment) {
-        const ctx = formatCsvContext(csvAttachment.parsed, csvAttachment.filename)
-        finalText = `${finalText}\n\n${ctx}`
-        setCsvAttachment(null)
+        const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext(csvAttachment)
+        finalText = ctx ? `${finalText}\n\n${ctx}` : finalText
+        clearCsvAttachment()
       }
 
       // Send the open node so the server can auto-inject its context (Track C),
@@ -1082,6 +919,7 @@ export function AITerminal() {
       pondId,
       quoteCtx,
       csvAttachment,
+      clearCsvAttachment,
       fileParts,
       clearAttachments,
       research,
@@ -2467,6 +2305,10 @@ export function AITerminal() {
   // Send is off with nothing to send; mid-stream it is the stop square.
   const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
 
+  const csvAttachmentDescriptor = csvAttachment
+    ? getInlineAttachmentDescriptor(csvAttachment.kind)
+    : undefined
+
   const inputFooter = (
     <div
       className="flex flex-col gap-[14px]"
@@ -2477,12 +2319,8 @@ export function AITerminal() {
       onDrop={handleDrop}
     >
       {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
-      {csvAttachment && (
-        <CsvAttachmentPill
-          filename={csvAttachment.filename}
-          rowCount={csvAttachment.parsed.totalRows}
-          onRemove={() => setCsvAttachment(null)}
-        />
+      {csvAttachment && csvAttachmentDescriptor && (
+        <csvAttachmentDescriptor.Pill attachment={csvAttachment} onRemove={clearCsvAttachment} />
       )}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
