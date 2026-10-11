@@ -3,7 +3,9 @@
 import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
+import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
+import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
@@ -29,10 +31,30 @@ const extensions = [
   Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
 ]
 
+/**
+ * ProseMirror's own `Mod-z`/`Mod-Shift-z` keymap command no-ops (returns `false`,
+ * never calling `preventDefault`) when its history has nothing to undo/redo —
+ * always true for a freshly mounted editor. Left unhandled, the keydown then
+ * reaches the browser's native contenteditable undo, which wipes a field it
+ * never saw typed. Intercepting here and always returning `true` keeps that
+ * native undo from ever seeing the key, whether or not there was anything to do
+ * — also true of `@tiptap/extensions`' own `Mod-y`/`Mod-я`/`Shift-Mod-я` undo
+ * keymap bindings, which this predicate matches too (KAN-268).
+ */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
-  if (event.key !== 'Escape') return false
-  view.dom.blur()
-  return true
+  if (event.key === 'Escape') {
+    view.dom.blur()
+    return true
+  }
+  if (isUndoChord(event)) {
+    undo(view.state, (tr) => view.dispatch(tr))
+    return true
+  }
+  if (isRedoChord(event)) {
+    redo(view.state, (tr) => view.dispatch(tr))
+    return true
+  }
+  return false
 }
 
 /**

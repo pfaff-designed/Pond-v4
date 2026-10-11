@@ -8,6 +8,7 @@ import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame } from '@/lib/modules/block-frame'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { onApplePlatform } from '@/lib/shell-commands'
 
 /**
  * The `text` content block — its markdown typeset and edited in place, with no
@@ -133,6 +134,55 @@ export const EditInPlace: Story = {
     await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
     await expect(field.textContent).not.toMatch(/##|\*\*|`/)
     await expect(within(field).getByText('foam roller').tagName).toBe('CODE')
+  },
+}
+
+/**
+ * The same platform read `isUndoChord`/`isRedoChord` use, so the chord this test
+ * sends can never drift from the chord production listens for.
+ */
+const MOD_KEY = onApplePlatform() ? 'Meta' : 'Control'
+
+const pressUndo = () => userEvent.keyboard(`{${MOD_KEY}>}z{/${MOD_KEY}}`)
+const pressRedo = () => userEvent.keyboard(`{${MOD_KEY}>}{Shift>}z{/Shift}{/${MOD_KEY}}`)
+
+/**
+ * No typing happens in this story, and that absence is the point: ProseMirror's
+ * own history is empty on a freshly mounted editor.
+ */
+export const UndoWithNothingTypedKeepsText: Story = {
+  args: { data: sample },
+  render: (args) => <StatefulText data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = await findEditor(canvas)
+    await userEvent.click(within(field).getByText(/^Start with/, { selector: 'p' }))
+    await expect(field).toHaveFocus()
+    await pressUndo()
+    await expect(field.textContent).toContain('Start with')
+    await expect(savedOf(canvasElement)).toBe(sample.content)
+  },
+}
+
+/**
+ * The ticket's acceptance shape: typing first gives ProseMirror's own history a
+ * step to revert, so ⌘Z undoes just that step and ⌘⇧Z brings it back — the
+ * behaviour a person expects inside any text field.
+ */
+export const TypeUndoRedo: Story = {
+  args: { data: sample },
+  render: (args) => <StatefulText data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = await findEditor(canvas)
+    await userEvent.click(within(field).getByText(/^Start with/, { selector: 'p' }))
+    await userEvent.type(field, ' Go.')
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
+    await pressUndo()
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(sample.content))
+    await expect(field.textContent).toContain('Start with')
+    await pressRedo()
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
   },
 }
 
