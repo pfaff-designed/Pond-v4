@@ -153,6 +153,10 @@ export interface ProposalState {
   linkTarget: Record<string, string>
   /** promote_table chosen target page, by toolCallId. */
   promotionTarget: Record<string, string>
+  /** propose_changes chosen place, by toolCallId (KAN-267) — same family as
+   *  `createParent`/`schemaTarget`/`rowTarget`, not `targets`: `targets` is the
+   *  write-once stream-time stamp, this is the person's own later pick. */
+  changePlace: Record<string, string>
 }
 
 /**
@@ -239,6 +243,7 @@ export function initialProposalState(): ProposalState {
     viewTarget: {},
     linkTarget: {},
     promotionTarget: {},
+    changePlace: {},
   }
 }
 
@@ -383,9 +388,9 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
         case 'promotions':
           return { ...state, promotionTarget: { ...state.promotionTarget, [id]: destinationId } }
         case 'changes':
-          // propose_changes has no destination picker — its target is stamped at
-          // stream time (stampTarget), not chosen. No-op.
-          return state
+          // KAN-267 — a propose_changes pick its own session-scoped slot,
+          // separate from `targets` (the write-once stream-time stamp).
+          return { ...state, changePlace: { ...state.changePlace, [id]: destinationId } }
       }
     }
 
