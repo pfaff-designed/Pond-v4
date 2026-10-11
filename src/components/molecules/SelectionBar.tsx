@@ -308,7 +308,10 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const linkTargetRef = useRef<{ editor: Editor; from: number; to: number } | null>(null)
   const linkInputRef = useRef<HTMLInputElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
-  const styleButtonRef = useRef<HTMLButtonElement>(null)
+  const styleButtonRef = useRef<HTMLButtonElement | null>(null)
+  // The element too, in state: `useAnchoredBox` measures in a layout effect keyed on its
+  // anchor, and a ref object is stable, so it would only run before the button exists.
+  const [styleButtonEl, setStyleButtonEl] = useState<HTMLButtonElement | null>(null)
   const styleMenuRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
   const [barHeight, setBarHeight] = useState(0)
@@ -453,7 +456,11 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   }, [rect])
   const style = useSelectionBarBox(readRect, barWidth, barHeight)
   // The style menu hangs off its own button, not the selection rect.
-  const menuStyle = useAnchoredBox(styleButtonRef, 'bottom', STYLE_MENU_WIDTH)
+  const menuStyle = useAnchoredBox(styleMenuOpen ? styleButtonEl : null, 'bottom', STYLE_MENU_WIDTH)
+  const handleStyleButtonRef = useCallback((el: HTMLButtonElement | null) => {
+    styleButtonRef.current = el
+    setStyleButtonEl(el)
+  }, [])
 
   const handleAsk = () => {
     if (!ctx) return
@@ -673,7 +680,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
         SELECTION_BAR_ITEMS.map((item) => (
           <Fragment key={item.id}>
             <button
-              ref={item.id === 'text-style' ? styleButtonRef : undefined}
+              ref={item.id === 'text-style' ? handleStyleButtonRef : undefined}
               type="button"
               tabIndex={item.id === tabStopId ? 0 : -1}
               onFocus={() => setRovingId(item.id)}

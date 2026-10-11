@@ -127,6 +127,35 @@ describe('SelectionBar text style', () => {
     expect(screen.getByRole('button', { name: 'text' })).toBeInTheDocument()
   })
 
+  it('hangs the menu 4px under the style button once it opens', () => {
+    const original = Element.prototype.getBoundingClientRect
+    const spy = jest.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.getAttribute('aria-haspopup') !== 'menu') return original.call(this)
+      return {
+        top: 300,
+        bottom: 332,
+        left: 200,
+        right: 260,
+        width: 60,
+        height: 32,
+        x: 200,
+        y: 300,
+        toJSON: () => ({}),
+      }
+    })
+    render(<Host onAsk={jest.fn()} onEditor={jest.fn()} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'text' }))
+
+    const menu = screen.getByRole('menu', { name: 'text style' })
+    expect(menu.style.top).toBe('336px')
+    expect(menu.style.left).toBe('200px')
+    spy.mockRestore()
+  })
+
   describe('from the keyboard', () => {
     const openMenu = (key: string, label = 'text') => {
       selectWord(screen.getByText('soak overnight'), 'overnight')
