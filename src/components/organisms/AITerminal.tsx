@@ -1999,6 +1999,12 @@ export function AITerminal() {
     }
     const allIndices = (id: string) => (batchById.get(id) ?? []).map((_, i) => i)
     const pendingDiffIds = diffCards.filter((c) => c.status === 'pending').map((c) => c.id)
+    // KAN-267: accept-all must skip exactly what a single card's own accept
+    // button would refuse (targetMissing || needsPlace) — reject all stays over
+    // EVERY pending id, since reject always lands regardless of a target.
+    const acceptablePendingDiffIds = diffCards
+      .filter((c) => c.status === 'pending' && !c.targetMissing && !c.needsPlace)
+      .map((c) => c.id)
     // A request-changes note renders under its card (from the envelope),
     // not as a second "you" line in the thread.
     const isRequestChangesNote =
@@ -2118,7 +2124,7 @@ export function AITerminal() {
                 // and two cards can name the same page, so parallel accepts would drop
                 // the first batch. Also keeps the toast receipts in card order.
                 void (async () => {
-                  for (const id of pendingDiffIds) {
+                  for (const id of acceptablePendingDiffIds) {
                     await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
                   }
                 })()

@@ -66,6 +66,10 @@ export function ProposalGroup({
   if (cards.length === 0) return null
   const pending = cards.filter((c) => c.status === 'pending')
   const showGroupBar = pending.length > 1
+  // KAN-267: the same honesty a single card has — accept all is withheld, not
+  // silently narrowed to the placeable subset, while any pending card still
+  // can't land. Reject all is unaffected: reject always lands.
+  const anyPendingUnplaceable = pending.some((c) => c.targetMissing || c.needsPlace)
 
   return (
     <div
@@ -84,6 +88,7 @@ export function ProposalGroup({
             onAccept={onAcceptAll}
             onReject={onRejectAll}
             labels={{ accept: 'accept all', reject: 'reject all' }}
+            acceptDisabled={anyPendingUnplaceable}
           />
         </div>
       )}

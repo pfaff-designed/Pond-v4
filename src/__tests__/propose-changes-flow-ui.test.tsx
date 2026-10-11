@@ -381,4 +381,23 @@ describe('AITerminal — propose_changes card (#98)', () => {
       )
     )
   })
+
+  // KAN-267 — "accept all" must never reproduce the defect through the group
+  // bar: with no page open and nothing stamped, neither pending card can land,
+  // so accept all is withheld rather than silently writing nothing.
+  it('two unstamped cards with no page open: accept all is withheld, not a silent no-op write', async () => {
+    const user = userEvent.setup()
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    expect(screen.getAllByText('these changes need a place to accept to')).toHaveLength(2)
+    const acceptAll = screen.getByRole('button', { name: 'accept all' })
+    expect(acceptAll).toBeDisabled()
+
+    await user.click(acceptAll)
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
 })

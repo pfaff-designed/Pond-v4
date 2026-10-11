@@ -40,6 +40,9 @@ interface ProposalActionsProps {
   divider?: boolean
   /** Quieten the controls while the decision's write is in flight (#103). */
   disabled?: boolean
+  /** KAN-267: disable ONLY accept — e.g. the group bar's "accept all" while a
+   *  pending card still needs a place. Reject must stay live: it always lands. */
+  acceptDisabled?: boolean
   className?: string
 }
 
@@ -55,6 +58,7 @@ export function ProposalActions({
   labels,
   divider = true,
   disabled = false,
+  acceptDisabled = false,
   className,
 }: ProposalActionsProps) {
   if (status !== 'pending') {
@@ -90,7 +94,7 @@ export function ProposalActions({
         size="sm"
         variant="primary"
         className={proposalButtonClass}
-        disabled={disabled}
+        disabled={disabled || acceptDisabled}
         onClick={onAccept}
       >
         {labels?.accept ?? 'accept'}
