@@ -424,6 +424,7 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(screen.getAllByText('these changes need a place to accept to')).toHaveLength(2)
     const acceptAll = screen.getByRole('button', { name: 'accept all' })
     expect(acceptAll).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'reject all' })).toBeEnabled()
 
     await user.click(acceptAll)
 
