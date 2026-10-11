@@ -1986,7 +1986,11 @@ export function AITerminal() {
         id: part.toolCallId,
         changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
         status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
-        targetName: target?.nodeName || placeName || contextLabel,
+        // KAN-267: needsPlace with nothing picked yet means there IS no target —
+        // falling to contextLabel here would claim the pond itself as the
+        // target while the card, in the same breath, says it needs a place.
+        targetName:
+          needsPlace && !placeName ? undefined : target?.nodeName || placeName || contextLabel,
         targetMissing,
         needsPlace,
         parentOptions,

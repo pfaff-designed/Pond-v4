@@ -330,6 +330,36 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(screen.queryByRole('group', { name: /revised edit/ })).not.toBeInTheDocument()
   })
 
+  // KAN-267 — a card that needsPlace and has nothing picked yet has no target:
+  // it must not claim the pond ("life") as its target while also saying it
+  // needs a place. Once a place is picked, the target names that page instead.
+  it('with needsPlace and nothing picked, the card names no target — not the pond', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }))
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const card = screen.getByRole('group', { name: 'proposed edit' })
+    expect(within(card).queryByText('life')).not.toBeInTheDocument()
+    expect(within(card).queryByText(/— life/)).not.toBeInTheDocument()
+
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+
+    expect(await within(card).findByText('Page B')).toBeInTheDocument()
+  })
+
   // KAN-267 — PATH_STEPS 1-5: no page open, an unstamped batch offers no live
   // accept; picking a page in the place row offers one, and accepting writes to
   // the chosen page, naming it in the receipt.
