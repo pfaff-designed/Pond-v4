@@ -68,7 +68,8 @@ const focusSelectionBar = (): boolean => {
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
   if (event.key === 'Escape') {
-    view.dom.blur()
+    // The selection bar claims an Esc pressed while it is up (it is dismissed, the editor keeps focus).
+    if (!event.defaultPrevented) view.dom.blur()
     return true
   }
   if (isTabIntoSelectionBar(view, event)) return focusSelectionBar()

@@ -378,6 +378,28 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [hide])
 
+  // Esc pressed outside the bar (in the editor, after a drag-select) dismisses it. Capture
+  // phase, so it runs before the editor's own Esc, which then sees `defaultPrevented` and
+  // leaves focus where it is. Keys inside the bar or its menu are handled there.
+  useEffect(() => {
+    if (!ctx || disabled) return
+    function onEscape(e: KeyboardEvent) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target
+      if (
+        target instanceof Node &&
+        (barRef.current?.contains(target) || styleMenuRef.current?.contains(target))
+      ) {
+        return
+      }
+      e.preventDefault()
+      dismissedKeyRef.current = shownSelectionRef.current?.key ?? null
+      hide()
+    }
+    document.addEventListener('keydown', onEscape, true)
+    return () => document.removeEventListener('keydown', onEscape, true)
+  }, [ctx, disabled, hide])
+
   // Measured after the items render, so centring uses the bar's real width.
   useLayoutEffect(() => {
     if (!barRef.current) return
