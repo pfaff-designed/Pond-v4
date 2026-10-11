@@ -326,6 +326,29 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(mockRegenerate).toHaveBeenCalledTimes(1)
   })
 
+  it('a thread ending on a user line offers no ask again on the answer above it; the error row still resends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'the first answer' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByText(/1 earlier turn/))
+
+    expect(await screen.findByText('the first answer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ask again' })).not.toBeInTheDocument()
+
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
   it('ask again does nothing once a stream is running (double-press guard)', async () => {
     const user = userEvent.setup()
     mockMessages = [

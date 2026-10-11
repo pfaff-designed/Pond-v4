@@ -692,6 +692,8 @@ export function AITerminal() {
       const switched = prev !== undefined && prev !== pondId
       loadedPondRef.current = pondId
       if (switched || conversation.messages.length > 0) {
+        // The stashed answer belongs to the thread being replaced.
+        pendingRegenerate.current = null
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
         setMessages(conversation.messages)
       }
@@ -871,6 +873,7 @@ export function AITerminal() {
     await dissolveConversation(supabase, conversationId)
     const fresh = await getOrCreateConversation(supabase, user.id, pondId)
     setConversationId(fresh.id)
+    pendingRegenerate.current = null
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
@@ -1783,9 +1786,11 @@ export function AITerminal() {
   const handleAskAgain = (messageIndex: number) => {
     if (isStreaming) return
     const message = messages[messageIndex]
-    // regenerate() replaces the LAST message, so an older answer cannot be re-asked;
-    // the error row passes the trailing user line, which regenerate() just resends.
-    if (message?.role === 'assistant' && messageIndex !== lastAssistantIndex) return
+    // regenerate() acts on the LAST message, so only an answer that is the last
+    // message can be re-asked (a thread ending on a user line would resend that
+    // line instead); the error row passes the trailing user line, which
+    // regenerate() just resends.
+    if (message?.role === 'assistant' && messageIndex !== messages.length - 1) return
     pendingRegenerate.current = message?.role === 'assistant' ? { message, messageIndex } : null
     // The question was sent (and its lifecycle advanced) on the original turn, so
     // the phase rides along as it stands; the body is otherwise sendText's.
@@ -1840,6 +1845,7 @@ export function AITerminal() {
       .map((p) => (p as { type: 'text'; text: string }).text)
       .join('')
     const isLastAssistant = messageIndex === lastAssistantIndex
+    const canAskAgain = messageIndex === messages.length - 1
     const answerStreaming = isLastAssistant && isStreaming
     const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
     const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
@@ -2047,7 +2053,7 @@ export function AITerminal() {
                 read,
               })
             }}
-            onAskAgain={() => handleAskAgain(messageIndex)}
+            onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
             onStop={stop}
           />
         )}
@@ -2066,7 +2072,7 @@ export function AITerminal() {
               onRevise={(id) =>
                 sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
               }
-              onAskAgain={isLastAssistant ? () => handleAskAgain(messageIndex) : undefined}
+              onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop
