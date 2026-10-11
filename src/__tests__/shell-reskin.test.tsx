@@ -424,6 +424,7 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
   it('at the root: the root page alone, under the pond’s own mark', () => {
     expect(commandPath(ROWS, null, opts('ignored'))).toEqual({
       glyph: LIFE_GLYPH,
+      role: null,
       trail: [],
       current: 'life',
     })
@@ -435,8 +436,13 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
     expect(healthMark).not.toBeNull()
     const area = commandPath(ROWS, 'health', opts('Health'))
     const child = commandPath(ROWS, 'sleep', opts('Sleep'))
-    expect(area).toEqual({ glyph: healthMark, trail: ['life'], current: 'Health' })
-    expect(child).toEqual({ glyph: healthMark, trail: ['life', 'Health'], current: 'Sleep' })
+    expect(area).toEqual({ glyph: healthMark, role: null, trail: ['life'], current: 'Health' })
+    expect(child).toEqual({
+      glyph: healthMark,
+      role: null,
+      trail: ['life', 'Health'],
+      current: 'Sleep',
+    })
   })
 
   // #101 review: every segment is the page title verbatim — the root reads

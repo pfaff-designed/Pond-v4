@@ -10,6 +10,7 @@
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
+  AREA_COLOUR_SWATCHES,
   GLYPH_FAMILIES,
   GLYPH_LIBRARY,
   NAMED_GLYPHS,
@@ -107,6 +108,17 @@ describe('pushRecentGlyph — the last 8 distinct, newest first', () => {
     const recent = Object.freeze(['moon', 'sun'])
     pushRecentGlyph(recent, 'heart')
     expect(recent).toEqual(['moon', 'sun'])
+  })
+})
+
+describe('AREA_COLOUR_SWATCHES — the picker’s colour row, in DC order', () => {
+  it('is ink (null, the default), sage, mist, navy — four entries, ink first', () => {
+    expect(AREA_COLOUR_SWATCHES).toEqual([
+      { role: null, label: 'ink' },
+      { role: 'area-a', label: 'sage' },
+      { role: 'area-b', label: 'mist' },
+      { role: 'area-c', label: 'navy' },
+    ])
   })
 })
 
