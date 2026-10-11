@@ -26,7 +26,7 @@ export interface PlaceRowHandle {
  *  a `PlaceRow` reads these instead of pasting its own copy (AGENTS.md "a
  *  value written in a board is final", so two copies would only drift). */
 export const placeRowClass = 'flex items-baseline gap-3'
-export const placeLabelClass = 'w-[52px] flex-none text-mn-text-meta'
+export const placeLabelClass = 'w-[52px] flex-none text-[11px] text-mn-text-meta'
 export const placeFieldClass =
   'min-w-0 flex-1 appearance-none border-0 border-b border-transparent bg-transparent p-0 font-mono text-[11px] lowercase tracking-[0.02em] text-foreground outline-none focus:border-mn-text/40'
 

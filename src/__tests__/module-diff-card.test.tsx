@@ -36,6 +36,9 @@ describe('ModuleDiffCard — needsPlace', () => {
     expect(screen.getByRole('button', { name: 'accept' })).toBeDisabled()
     expect(screen.getByText(/need a place to accept to/)).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'under' })).toBeInTheDocument()
+    // jsdom's getComputedStyle can't resolve a Tailwind arbitrary-value class, so
+    // assert the class carrying the board's 11px (PondComposer sFields) is present.
+    expect(screen.getByText('under')).toHaveClass('text-[11px]')
   })
 
   it('offers only real pages in the under select — no option names the pond root', () => {
