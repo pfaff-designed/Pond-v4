@@ -183,8 +183,7 @@ function tablePromotionPreview(
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
 }
 
-// Local to this call site: only AITerminal needs the CSV shape, and
-// useInlineAttachment stays generic across kinds (see KAN-279 plan notes).
+// useInlineAttachment stays generic across kinds; only AITerminal needs the CSV shape.
 type CsvInlineAttachment = { kind: 'csv'; filename: string; parsed: CsvParseOk }
 
 export function AITerminal() {
