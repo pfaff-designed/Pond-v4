@@ -31,6 +31,12 @@ case "$cmd" in
   beat)
     step="${3:?beat needs a STEP}"
     limit="${4:-$DEFAULT_LIMIT}"
+    # A record is one line of three tab-separated fields. Strip any newline or tab out of STEP
+    # rather than trusting the caller: a multi-line step writes a malformed record, and `check`
+    # then reads that fragment as the current beat and its first field as a timestamp, which
+    # reports a wild age and a false `stalled`. Seen 2026-10-11 via a bad `relay`.
+    step="$(printf '%s' "$step" | tr '\n\r\t' '   ')"
+    case "$limit" in ''|*[!0-9]*) limit=$DEFAULT_LIMIT ;; esac
     mkdir -p "$(dirname "$file")"
     printf '%s\t%s\t%s\n' "$(date +%s)" "$limit" "$step" >>"$file"
     ;;
@@ -45,16 +51,20 @@ case "$cmd" in
     # A reapproach line belongs to the step it names and starts that step's run afresh; its limit
     # is the step's own, from the step's last ordinary beat.
     awk -F'\t' -v now="$(date +%s)" '
+      # Skip anything that is not a well-formed record: three fields, first one numeric.
+      NF < 3 || $1 !~ /^[0-9]+$/ { next }
       {
-        at[NR] = $1; lim[NR] = $2; key[NR] = $3; fresh[NR] = 0
+        n++
+        at[n] = $1; lim[n] = $2; key[n] = $3; fresh[n] = 0
         if (index($3, "REAPPROACH ") == 1) {
           rest = substr($3, 12); cut = index(rest, " — ")
-          key[NR] = cut ? substr(rest, 1, cut - 1) : rest
-          fresh[NR] = 1; re[key[NR]]++
+          key[n] = cut ? substr(rest, 1, cut - 1) : rest
+          fresh[n] = 1; re[key[n]]++
         } else limitOf[$3] = $2
       }
       END {
-        last = NR; step = key[last]
+        if (n == 0) { print "none"; exit 4 }
+        last = n; step = key[last]
         if (step == "DONE") { printf "done\t%ds\t\t\tDONE\n", now - at[last]; exit 5 }
         first = last
         while (first > 1 && !fresh[first] && key[first - 1] == step) first--
@@ -68,7 +78,12 @@ case "$cmd" in
   relay)
     child="${3:?relay needs the CHILD heartbeat file}"
     role="${4:-child}"
-    line="$("$0" check "$child" 2>/dev/null || echo none)"
+    # `check` exits 3 stalled / 4 none / 5 done on purpose, so a non-zero exit is NOT a failure.
+    # The old `|| echo none` appended a spurious line for three of the four states, which wrote a
+    # two-line beat and corrupted the supervisor's own file.
+    line="$("$0" check "$child" 2>/dev/null)" || true
+    [ -n "$line" ] || line="none"
+    line="$(printf '%s' "$line" | head -1)"
     state="$(printf '%s' "$line" | cut -f1)"
     case "$state" in
       done) "$0" beat "$file" "supervise $role: finished" 300 ;;
