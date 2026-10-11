@@ -7,6 +7,7 @@ import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
+import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
@@ -171,6 +172,11 @@ const TextEditor = ({
       .setContent(parseMarkdown(data.content).toJSON(), { emitUpdate: false })
       .run()
   }, [editor, data.content])
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
 
   useEffect(() => {
     const at = pressRef.current
