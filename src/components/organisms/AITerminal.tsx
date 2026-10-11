@@ -200,8 +200,12 @@ export function AITerminal() {
   // CI) never constructs a real client and throws (#38); queryFns, effects and
   // the accept handlers below construct it only when they actually run.
   const getSupabase = useLazySupabase()
-  const { pond, loading: pondsLoading } = usePond()
+  const { pond, ponds, loading: pondsLoading } = usePond()
   const pondId = pond?.id ?? null
+  // An unresolved pond reads as the person's FIRST pond (`resolvePond`), so a thread
+  // may only load once the list has loaded and named this one. A `?pond=` the list
+  // does not hold (yet) resolves to null too; only an empty list means no pond scope.
+  const pondSettled = !pondsLoading && (pond !== null || ponds.length === 0)
   const composerHeight = useComposerHeight()
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
@@ -467,8 +471,9 @@ export function AITerminal() {
   const [research, setResearch] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   // The pond whose thread is on screen; `undefined` until the first thread lands.
-  // Ready means the thread on screen is THIS pond's: mid-switch, a message would
-  // carry the new pond's context into the old pond's thread.
+  // Ready means the thread on screen is THIS pond's: mid-switch, a send would carry
+  // the new pond's context into the old pond's thread, and a save could pair one
+  // pond's messages with the other's conversation id.
   const [threadPondId, setThreadPondId] = useState<string | null | undefined>(undefined)
   const isReady = threadPondId !== undefined && threadPondId === pondId
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -624,12 +629,12 @@ export function AITerminal() {
   /** Which pond's thread was last loaded (#312); `undefined` before the first. */
   const loadedPondRef = useRef<string | null | undefined>(undefined)
   useEffect(() => {
-    // Ponds load async, and an unresolved pond reads as the person's FIRST pond
-    // (`resolvePond`). Loading then would fetch the wrong pond's thread on every
-    // cold load of another pond — and the switcher is a full page load.
-    if (pondsLoading) return
+    if (!pondSettled) return
+    // Switched away and back before the other pond's thread landed: this pond's is
+    // still on screen, and reloading it would wipe a turn sent meanwhile.
+    if (loadedPondRef.current === pondId) return
     // A turn still streaming belongs to the pond it was asked in.
-    if (loadedPondRef.current !== undefined && loadedPondRef.current !== pondId) stop()
+    if (loadedPondRef.current !== undefined) stop()
     // Only the latest pond's load may land: an earlier one resolving after it would
     // put that pond's thread, and its conversation id, under this pond's context.
     let cancelled = false
@@ -645,17 +650,15 @@ export function AITerminal() {
       if (cancelled) return
       setConversationId(conversation.id)
       // #312: a thread is per pond, so SWITCHING ponds replaces what is on screen.
-      // Switching is a client-side navigation and this component never unmounts, so
-      // without this the previous pond's conversation stayed visible in the new
-      // pond, its context chips pointing at pages that pond cannot see.
+      // The palette switches by client-side navigation, where this component does
+      // not unmount, so without this the previous pond's conversation stayed
+      // visible in the new pond, its context chips pointing at pages that pond
+      // cannot see.
       //
-      // Guarded on the pond having actually CHANGED, not on every run: a first
-      // mount with an empty thread must not touch `setMessages`, which is what two
-      // 6a tests assert (an error must drop exactly one answer, and asking again
-      // must not reset the thread).
-      // `undefined` means "nothing loaded yet", which is NOT a switch — a first
-      // mount with an empty thread must not touch `setMessages`, as two 6a tests
-      // assert.
+      // Guarded on the pond having actually CHANGED, not on every run: `undefined`
+      // means "nothing loaded yet", and a first mount with an empty thread must not
+      // touch `setMessages`, which is what two 6a tests assert (an error must drop
+      // exactly one answer, and asking again must not reset the thread).
       const prev = loadedPondRef.current
       const switched = prev !== undefined && prev !== pondId
       loadedPondRef.current = pondId
@@ -676,16 +679,16 @@ export function AITerminal() {
       cancelled = true
     }
     // `pondId` is a real dependency: the thread it loads belongs to that pond.
-  }, [setMessages, getSupabase, pondId, pondsLoading, stop])
+  }, [setMessages, getSupabase, pondId, pondSettled, stop])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
   // persists immediately, not only after the next exchange.
   useEffect(() => {
-    if (status === 'ready' && conversationId && messages.length > 0) {
+    if (isReady && status === 'ready' && conversationId && messages.length > 0) {
       saveTranscript(getSupabase(), conversationId, messages, resolutions).catch(console.error)
     }
-  }, [status, conversationId, messages, resolutions, getSupabase])
+  }, [isReady, status, conversationId, messages, resolutions, getSupabase])
 
   // ── Stamp proposal targets on stream ──────────────────────────────────────
   // The moment a propose_changes part finishes streaming, record which page it
@@ -866,6 +869,7 @@ export function AITerminal() {
   // and clears the input.
   const sendText = useCallback(
     (text: string) => {
+      if (!isReady) return
       const advanced = nextLifecycle(text)
       dispatch({ kind: 'advanceLifecycle', lifecycle: advanced })
       const outgoing: ConversationResolutions = isLifecycleActive(advanced)
@@ -915,6 +919,7 @@ export function AITerminal() {
       setResearch(false)
     },
     [
+      isReady,
       nextLifecycle,
       resolutions,
       sendMessage,
@@ -1131,6 +1136,7 @@ export function AITerminal() {
   // with a canned note — the record is already settled, so nothing re-decides.
   const sendRequestChanges = useCallback(
     (toolCallId: string, count: number, note: string, reason: 'note' | 'outdated') => {
+      if (!isReady) return
       let next = proposals
       if (reason === 'note') {
         for (let i = 0; i < count; i++) {
@@ -1164,7 +1170,7 @@ export function AITerminal() {
       clearError?.()
       sendMessage({ text: note, metadata }, { body })
     },
-    [proposals, logDecision, nodeId, nodeType, pondId, sendMessage, clearError]
+    [isReady, proposals, logDecision, nodeId, nodeType, pondId, sendMessage, clearError]
   )
 
   // ── Read the cards' records back (#98, G2) ────────────────────────────────

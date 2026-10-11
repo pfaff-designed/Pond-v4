@@ -1,12 +1,8 @@
 /**
- * The composer's thread is the active pond's, and nothing else's (KAN-283, `s6m5`:
- * "threads … are per pond. Nothing crosses over").
- *
- * The switcher is a full page load, and ponds load async: the composer first
- * renders with no pond resolved. An unresolved pond reads as the person's FIRST
- * pond, so a load started then fetched the wrong pond's thread — and if it
- * resolved after the real one, that thread (and its conversation id) stayed under
- * the current pond's context, and every turn was saved into the wrong pond.
+ * The composer's thread is the active pond's, and nothing else's (`s6m5`: "threads
+ * … are per pond. Nothing crosses over"). Ponds load async and an unresolved pond
+ * reads as the person's first, so the thread waits for the pond to be known, and
+ * nothing is sent or saved while another pond's thread is on screen.
  */
 
 import React from 'react'
@@ -43,10 +39,12 @@ jest.mock('@/lib/conversation/client', () => ({
 
 const mockSetMessages = jest.fn()
 const mockStop = jest.fn()
+const mockSendMessage = jest.fn()
+let mockMessages: UIMessage[] = []
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
-    messages: [],
-    sendMessage: jest.fn(),
+    messages: mockMessages,
+    sendMessage: mockSendMessage,
     addToolOutput: jest.fn(),
     setMessages: mockSetMessages,
     stop: mockStop,
@@ -56,7 +54,7 @@ jest.mock('@ai-sdk/react', () => ({
 
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { PondContext, type PondContextValue } from '@/lib/pond/context'
-import { getOrCreateConversation } from '@/lib/conversation/client'
+import { getOrCreateConversation, saveTranscript } from '@/lib/conversation/client'
 import type { Pond } from '@/lib/pond/client'
 
 const LIFE = { id: 'pond-life', name: 'life' } as Pond
@@ -73,9 +71,13 @@ const threadOf = (pond: Pond): Thread => ({
   resolutions: {},
 })
 
-const pondContext = (pond: Pond | null, loading: boolean): PondContextValue => ({
+const pondContext = (
+  pond: Pond | null,
+  loading: boolean,
+  ponds: Pond[] = [LIFE, LIFE_2]
+): PondContextValue => ({
   pond,
-  ponds: [LIFE, LIFE_2],
+  ponds,
   loading,
   reload: () => {},
   addPond: () => {},
@@ -108,6 +110,7 @@ beforeEach(() => {
   jest.clearAllMocks()
   pending.clear()
   window.localStorage.clear()
+  mockMessages = []
 })
 
 describe('the composer thread follows the active pond', () => {
@@ -148,6 +151,55 @@ describe('the composer thread follows the active pond', () => {
 
     await resolveThread(LIFE_2)
     await waitFor(() => expect(line()).toBeEnabled())
+  })
+
+  it('a `?pond=` the list does not hold loads nothing — never the first pond’s thread', async () => {
+    renderIn(pondContext(null, false))
+    await act(async () => {})
+    expect(getOrCreateConversation).not.toHaveBeenCalled()
+    expect(line()).toBeDisabled()
+  })
+
+  it('with no ponds at all, the unscoped thread loads', async () => {
+    renderIn(pondContext(null, false, []))
+    await waitFor(() => expect(pending.has(null)).toBe(true))
+    await act(async () => pending.get(null)!({ id: 'conv-none', messages: [], resolutions: {} }))
+    await waitFor(() => expect(line()).toBeEnabled())
+  })
+
+  it('switching away and back before the other thread lands keeps this pond’s thread', async () => {
+    const { rerenderIn } = renderIn(pondContext(LIFE, false))
+    await resolveThread(LIFE)
+    rerenderIn(pondContext(LIFE_2, false))
+    await waitFor(() => expect(pending.has(LIFE_2.id)).toBe(true))
+
+    rerenderIn(pondContext(LIFE, false))
+    expect(line()).toBeEnabled()
+    await act(async () => pending.get(LIFE_2.id)!(threadOf(LIFE_2)))
+
+    expect(getOrCreateConversation).toHaveBeenCalledTimes(2)
+    expect(lastShown()).toBe(`m-${LIFE.id}`)
+  })
+
+  it('nothing is saved or sent while another pond’s thread is on screen', async () => {
+    mockMessages = [
+      turn('q1', 'what is blocking the renovation?'),
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'the tiler' }] },
+    ]
+    const { rerenderIn } = renderIn(pondContext(LIFE, false))
+    await resolveThread(LIFE)
+    await waitFor(() =>
+      expect(saveTranscript).toHaveBeenCalledWith(expect.anything(), `conv-${LIFE.id}`, mockMessages, expect.anything())
+    )
+    jest.mocked(saveTranscript).mockClear()
+
+    rerenderIn(pondContext(LIFE_2, false))
+    mockMessages = [...mockMessages]
+    rerenderIn(pondContext(LIFE_2, false))
+    screen.getByRole('button', { name: 'ask again' }).click()
+
+    expect(saveTranscript).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
   it('a switch stops the turn still streaming in the pond it was asked in', async () => {
