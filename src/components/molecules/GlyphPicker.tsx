@@ -192,10 +192,11 @@ const SIZES = {
  * Everything in the glass BUT the list — head, the inherit row (non-area
  * targets only), foot, and the glass's own padding/border — hand-estimated
  * the same way `BOX_HEIGHT`'s own entries are. A close bound, not a DC
- * literal, and not what the list's own cap uses once the glass has mounted
- * (`glyphPickerMeasuredChrome`); this estimate's only job now is the
- * before-mount side choice (`glyphPickerHeight` → `sideTowardFreeSpace`),
- * where a close bound is fine because nothing has rendered yet to measure.
+ * literal; this estimate's only job is the before-mount side choice
+ * (`glyphPickerHeight` → `sideTowardFreeSpace`), where a close bound is fine
+ * because nothing has rendered yet to measure. Once mounted, the glass bounds
+ * its own box to `room` directly (an inline `maxHeight`) — no second estimate
+ * of its chrome is needed.
  */
 export function glyphPickerChrome(target: GlyphPickerTarget, size: GlyphPickerSize): number {
   const sizes = SIZES[size]
@@ -208,8 +209,9 @@ export function glyphPickerChrome(target: GlyphPickerTarget, size: GlyphPickerSi
  * host can choose which way it opens BEFORE the glass exists to measure —
  * mirrors `slashMenuHeight`'s own shape (`slash-entries.ts`): the list capped
  * at `LIST_MAX_VH`, plus `glyphPickerChrome`'s rows around it. This is the
- * CEILING the glass would need if the chosen side had unlimited room;
- * `glyphPickerListMaxPx` is what actually renders once a side is chosen.
+ * CEILING the glass would need if the chosen side had unlimited room; the
+ * mounted glass instead bounds its own box to `room` (`glyphPickerRoom`)
+ * directly, once a side is chosen.
  */
 export function glyphPickerHeight(
   target: GlyphPickerTarget,
@@ -247,65 +249,6 @@ export function glyphPickerRoom(
   return side === 'top'
     ? anchorRect.top - ANCHOR_GAP
     : viewportHeight - anchorRect.bottom - ANCHOR_GAP
-}
-
-/**
- * The list's real cap: the 60vh ceiling (`LIST_MAX_VH`), or the room left on
- * the chosen side once the glass's non-list chrome is subtracted — whichever
- * is tighter. `chrome` defaults to `glyphPickerChrome`'s hand estimate (the
- * ceiling callers who have no glass to measure yet, e.g. the side-choice
- * prediction, still rely on) but the mounted glass passes its own
- * `glyphPickerMeasuredChrome` reading instead, so the cap matches what
- * actually renders rather than the estimate's few px of drift per row.
- */
-export function glyphPickerListMaxPx(
-  target: GlyphPickerTarget,
-  size: GlyphPickerSize,
-  room: number,
-  viewportHeight: number,
-  chrome: number = glyphPickerChrome(target, size)
-): number {
-  return Math.max(0, Math.min(viewportHeight * LIST_MAX_VH, room - chrome))
-}
-
-/**
- * `glyphPickerChrome`'s rendered twin: the glass's padding+border, the head,
- * the inherit row (when the target isn't an area) and the foot (desktop
- * only), measured after layout — their own margin-box heights, not the
- * hand-estimated `BOX_HEIGHT` figures — plus the glass's own flex `gap`
- * between each of them. Reads positions and sizes that do NOT depend on the
- * list's own height, so feeding the result back into the list's `maxHeight`
- * cap never loops.
- */
-export function glyphPickerMeasuredChrome(
-  glass: HTMLElement,
-  head: HTMLElement,
-  inherit: HTMLElement | null,
-  foot: HTMLElement | null
-): number {
-  const glassStyle = getComputedStyle(glass)
-  const paddingBorder =
-    parseFloat(glassStyle.paddingTop) +
-    parseFloat(glassStyle.paddingBottom) +
-    parseFloat(glassStyle.borderTopWidth) +
-    parseFloat(glassStyle.borderBottomWidth)
-  const gap = parseFloat(glassStyle.rowGap || glassStyle.columnGap || '0') || 0
-  const gapCount = 1 + (inherit ? 1 : 0) + (foot ? 1 : 0)
-  const marginBoxHeight = (el: HTMLElement) => {
-    const style = getComputedStyle(el)
-    return (
-      el.getBoundingClientRect().height +
-      parseFloat(style.marginTop) +
-      parseFloat(style.marginBottom)
-    )
-  }
-  return (
-    paddingBorder +
-    marginBoxHeight(head) +
-    (inherit ? marginBoxHeight(inherit) : 0) +
-    (foot ? marginBoxHeight(foot) : 0) +
-    gap * gapCount
-  )
 }
 
 /** Splits a section's cells into fixed-width rows — `role="row"` needs real rows, not a flat grid. */
@@ -414,9 +357,6 @@ export function GlyphPicker({
   }, [])
 
   const glassRef = useRef<HTMLDivElement>(null)
-  const headRef = useRef<HTMLDivElement>(null)
-  const inheritRef = useRef<HTMLDivElement>(null)
-  const footRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     glassRef.current?.querySelector(`#${CSS.escape(`${listId}-${active}`)}`)?.scrollIntoView({
       block: 'nearest',
@@ -440,30 +380,19 @@ export function GlyphPicker({
   const foot = mobile ? [] : [selName, '←→↑↓ move', '↵ pick', 'esc close'].filter(Boolean)
   const style = useAnchoredBox(anchor, side, sizes.widthPx)
 
-  // The room the CHOSEN side actually has, so the list can be bounded to it —
-  // `useAnchoredBox` positions the glass off this same anchor rect, but never
-  // caps anything, which is how a glass taller than its room ran past the
-  // fold (position: fixed, so nothing below scrolls it back into view). Read
-  // `window.innerHeight` only inside the effect, never during render — this
-  // component can still render (as `null`) on the server. `chrome` is read
-  // from the mounted glass itself (`glyphPickerMeasuredChrome`), not the hand
-  // estimate, so the cap matches what actually renders; measuring only the
-  // head/inherit/foot (never the list) keeps this from feeding back into
-  // itself.
-  const [bounds, setBounds] = useState<
-    { room: number; viewportHeight: number; chrome: number } | undefined
-  >(undefined)
+  // The room the CHOSEN side actually has, so the glass can be bounded to it
+  // directly (its own inline `maxHeight`, below) — `useAnchoredBox` positions
+  // the glass off this same anchor rect, but never caps anything, which is
+  // how a glass taller than its room ran past the fold (position: fixed, so
+  // nothing below scrolls it back into view). Read `window.innerHeight` only
+  // inside the effect, never during render — this component can still render
+  // (as `null`) on the server.
+  const [room, setRoom] = useState<number | undefined>(undefined)
   useLayoutEffect(() => {
     const el = anchor && 'current' in anchor ? anchor.current : anchor
-    const glass = glassRef.current
-    const head = headRef.current
-    if (!el || !glass || !head) return
+    if (!el) return
     const update = () =>
-      setBounds({
-        room: glyphPickerRoom(el.getBoundingClientRect(), side, window.innerHeight),
-        viewportHeight: window.innerHeight,
-        chrome: glyphPickerMeasuredChrome(glass, head, inheritRef.current, footRef.current),
-      })
+      setRoom(glyphPickerRoom(el.getBoundingClientRect(), side, window.innerHeight))
     update()
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
@@ -472,9 +401,6 @@ export function GlyphPicker({
       window.removeEventListener('scroll', update, true)
     }
   }, [anchor, side])
-  const listMaxPx = bounds
-    ? glyphPickerListMaxPx(target, size, bounds.room, bounds.viewportHeight, bounds.chrome)
-    : undefined
 
   if (typeof document === 'undefined') return null
   return createPortal(
@@ -486,10 +412,9 @@ export function GlyphPicker({
       className={`${GLYPH_GLASS} ${sizes.width} ${sizes.glassPadding} ${sizes.glassRadius} ${
         side === 'top' ? '[--motion-menu-origin:bottom_left]' : ''
       }`}
-      style={style}
+      style={room === undefined ? style : { ...style, maxHeight: room }}
     >
       <div
-        ref={headRef}
         data-part="head"
         className={`${mobile ? SLASH_SIZES.mobile.head : HEAD} ${sizes.headExtra}`}
       >
@@ -534,7 +459,6 @@ export function GlyphPicker({
         role="listbox"
         aria-label="glyphs"
         className={`${LIST} min-h-0 flex-1`}
-        style={listMaxPx === undefined ? undefined : { maxHeight: listMaxPx }}
       >
         <div
           id={rowId(0)}
@@ -615,7 +539,6 @@ export function GlyphPicker({
 
       {!target.isArea && (
         <div
-          ref={inheritRef}
           data-part="inherit"
           className={`flex items-baseline justify-between gap-[12px] mt-[8px] border-t border-mn-text/[0.09] font-sans text-[10.5px] font-medium tracking-[0.1em] text-mn-text-secondary uppercase ${sizes.inheritRow}`}
         >
@@ -629,7 +552,7 @@ export function GlyphPicker({
       )}
 
       {foot.length > 0 && (
-        <div ref={footRef} data-part="foot" className={FOOT}>
+        <div data-part="foot" className={FOOT}>
           {foot.map((f) => (
             <span key={f}>{f}</span>
           ))}
