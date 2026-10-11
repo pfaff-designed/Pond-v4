@@ -5,7 +5,7 @@
  */
 
 import { useEffect } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
@@ -84,5 +84,30 @@ describe('SelectionBar list', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'list' })).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+describe('SelectionBar text style', () => {
+  afterEach(() => clearSelection())
+
+  it('opens the style menu, sets h2, then reverts to a paragraph', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'text' }))
+
+    let menu = screen.getByRole('menu', { name: 'text style' })
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'h2' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('## soak overnight')
+    expect(screen.getByRole('button', { name: 'h2' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'h2' }))
+    menu = screen.getByRole('menu', { name: 'text style' })
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'text' }))
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
+    expect(screen.getByRole('button', { name: 'text' })).toBeInTheDocument()
   })
 })

@@ -10,17 +10,36 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/react'
+import type { Level } from '@tiptap/extension-heading'
 import { TextSelection } from '@tiptap/pm/state'
 import { editorForSelection } from '@/lib/modules/text/active-editor'
 import {
   activeMarks,
+  currentTextStyle,
+  setTextStyle,
   toggleBold,
   toggleBulletList,
   toggleItalic,
   type ActiveMarks,
+  type TextStyle,
 } from '@/lib/modules/text/format'
 
+import { GLASS, SLASH_SIZES } from './picker-chrome'
 import { useAnchoredBox, type PickerAnchorBox } from './use-anchored-box'
+
+/** The text-style menu's own rows, `7g` frame 9's own list — a plain paragraph or one of the six headings. */
+const STYLE_ROWS: ReadonlyArray<{ style: TextStyle; level: Level | null }> = [
+  { style: 'text', level: null },
+  { style: 'h1', level: 1 },
+  { style: 'h2', level: 2 },
+  { style: 'h3', level: 3 },
+  { style: 'h4', level: 4 },
+  { style: 'h5', level: 5 },
+  { style: 'h6', level: 6 },
+]
+
+/** The style menu's own width — small, mono rows (`picker-chrome.ts`), beside/under the bar. */
+const STYLE_MENU_WIDTH = 120
 
 export interface SelectionContext {
   /** The selected text. */
@@ -114,12 +133,12 @@ const MonoLabel = ({ children }: { children: string }) => (
 )
 
 /** Each item's mark, read off the board's own svg path data and type. */
-const Mark = ({ item }: { item: SelectionBarItem }) => {
+const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyle }) => {
   switch (item.id) {
     case 'text-style':
       return (
         <>
-          <SansLabel>text</SansLabel>
+          <SansLabel>{textStyle}</SansLabel>
           <svg
             width="9"
             height="9"
@@ -235,12 +254,17 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // `activeMarks` only reads bold/italic (per format.ts) — list is its own
   // read, `editor.isActive('bulletList')`, kept alongside it.
   const [listActive, setListActive] = useState(false)
+  const [styleLabel, setStyleLabel] = useState<TextStyle>('text')
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
+  const styleButtonRef = useRef<HTMLButtonElement>(null)
+  const styleMenuRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
 
   const hide = useCallback(() => {
     setCtx(null)
     setRect(null)
+    setStyleMenuOpen(false)
   }, [])
 
   useEffect(() => {
@@ -281,6 +305,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       if (editor) syncEditorSelection(editor, sel)
       setMarks(editor ? activeMarks(editor) : NO_MARKS)
       setListActive(editor ? editor.isActive('bulletList') : false)
+      setStyleLabel(editor ? currentTextStyle(editor) : 'text')
     }
 
     document.addEventListener('selectionchange', onSelectionChange)
@@ -288,9 +313,15 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   }, [containerRef, disabled, hide])
 
   // A press outside the bar dismisses it, same as the popover's own rule.
+  // The style menu portals as the bar's own sibling, not its child, so it
+  // needs its own containment check: a press outside it (but still on the
+  // bar) only closes the menu, and a press outside both dismisses the bar.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      if (barRef.current && barRef.current.contains(e.target as Node)) return
+      const target = e.target as Node
+      if (styleMenuRef.current && !styleMenuRef.current.contains(target)) setStyleMenuOpen(false)
+      if (barRef.current && barRef.current.contains(target)) return
+      if (styleMenuRef.current && styleMenuRef.current.contains(target)) return
       hide()
     }
     document.addEventListener('pointerdown', onPointerDown)
@@ -315,6 +346,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     }
   }, [rect, barWidth])
   const style = useAnchoredBox(anchor, 'top', barWidth)
+  // The style menu hangs off its own button, not the selection rect — `GlyphPicker`'s own anchor pattern.
+  const menuStyle = useAnchoredBox(styleButtonRef, 'bottom', STYLE_MENU_WIDTH)
 
   const handleAsk = () => {
     if (!ctx) return
@@ -335,12 +368,25 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     setListActive(editor.isActive('bulletList'))
   }
 
+  // Resolved fresh for the same reason as `applyMark` — the row's own click
+  // is the only thing that needs an editor, so there is nothing to resolve
+  // before the menu opens.
+  const chooseStyle = (level: Level | null) => () => {
+    const sel = window.getSelection()
+    const editor = sel && editorForSelection(sel)
+    if (editor) {
+      setTextStyle(editor, level)
+      setStyleLabel(currentTextStyle(editor))
+    }
+    setStyleMenuOpen(false)
+  }
+
   // Gated on `disabled` directly (not an effect that calls `hide`), so the
   // bar disappears the instant `disabled` turns true, with no selectionchange
   // needed — `AITerminal`'s `disabled={isStreaming}` flips mid-selection.
   if (typeof document === 'undefined' || disabled || !ctx || !rect) return null
 
-  return createPortal(
+  const bar = createPortal(
     <div
       ref={barRef}
       data-part="selection-bar"
@@ -350,8 +396,11 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       {SELECTION_BAR_ITEMS.map((item) => (
         <Fragment key={item.id}>
           <button
+            ref={item.id === 'text-style' ? styleButtonRef : undefined}
             type="button"
             aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
+            aria-haspopup={item.id === 'text-style' ? 'menu' : undefined}
+            aria-expanded={item.id === 'text-style' ? styleMenuOpen : undefined}
             aria-pressed={
               item.id === 'bold'
                 ? marks.bold
@@ -370,19 +419,52 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                     ? applyMark(toggleItalic)
                     : item.id === 'list'
                       ? applyMark(toggleBulletList)
-                      : undefined
+                      : item.id === 'text-style'
+                        ? () => setStyleMenuOpen(true)
+                        : undefined
             }
             // A selection button isn't where the caret belongs — stop the
             // browser from collapsing the selection onto it before `onClick` runs.
             onMouseDown={(e) => e.preventDefault()}
             className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
           >
-            <Mark item={item} />
+            <Mark item={item} textStyle={styleLabel} />
           </button>
           {item.dividerAfter && <span aria-hidden className="h-[18px] w-px bg-mn-text/[0.12]" />}
         </Fragment>
       ))}
     </div>,
     document.body
+  )
+
+  return (
+    <>
+      {bar}
+      {styleMenuOpen &&
+        createPortal(
+          <div
+            ref={styleMenuRef}
+            role="menu"
+            aria-label="text style"
+            className={`${GLASS} w-[120px]`}
+            style={menuStyle}
+          >
+            {STYLE_ROWS.map((row) => (
+              <button
+                key={row.style}
+                type="button"
+                role="menuitem"
+                aria-current={styleLabel === row.style ? 'true' : undefined}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={chooseStyle(row.level)}
+                className={`${SLASH_SIZES.desktop.row} w-full text-left`}
+              >
+                {row.style}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </>
   )
 }
