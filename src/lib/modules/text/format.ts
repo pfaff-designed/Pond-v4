@@ -14,6 +14,10 @@ export const toggleItalic = (editor: Editor): void => {
   editor.chain().focus().toggleItalic().run()
 }
 
+export const toggleBulletList = (editor: Editor): void => {
+  editor.chain().focus().toggleBulletList().run()
+}
+
 export const activeMarks = (editor: Editor): ActiveMarks => ({
   bold: editor.isActive('bold'),
   italic: editor.isActive('italic'),
