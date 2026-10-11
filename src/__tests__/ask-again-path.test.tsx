@@ -94,7 +94,7 @@ type ChatMessage = {
 }
 
 type ChatController = {
-  streamAnswer: (id: string, text: string, sentAt: string) => void
+  streamAnswer: (id: string, text: string) => void
   finish: () => void
   fail: () => void
 }
@@ -112,12 +112,12 @@ jest.mock('@ai-sdk/react', () => {
       const [error, setError] = useState<Error | undefined>(undefined)
 
       mockChat.current = {
-        streamAnswer: (id, text, sentAt) => {
+        // Like the real route: an answer arrives with no metadata of its own.
+        streamAnswer: (id, text) => {
           setMessages((prev) => {
             const next: ChatMessage = {
               id,
               role: 'assistant',
-              metadata: { sentAt },
               parts: [{ type: 'text', text }],
             }
             const last = prev[prev.length - 1]
@@ -195,8 +195,10 @@ const youRows = () => document.querySelectorAll('[data-part="you-row"]')
 const foldLines = () => screen.queryAllByRole('button', { name: /^earlier answer/ })
 const askAgainButtons = () => screen.queryAllByRole('button', { name: 'ask again' })
 
-const answer = (id: string, text: string, sentAt: string) => {
-  act(() => chat().streamAnswer(id, text, sentAt))
+const foldTime = /^earlier answer · \d{2}:\d{2}$/
+
+const answer = (id: string, text: string) => {
+  act(() => chat().streamAnswer(id, text))
 }
 const settle = () => {
   act(() => chat().finish())
@@ -220,7 +222,7 @@ describe('ask again — the whole path (KAN-164)', () => {
       'what is on my page?{Enter}'
     )
     expect(mockSendMessage).toHaveBeenCalledTimes(1)
-    answer('a1', 'first answer', '2026-10-01T07:12:00')
+    answer('a1', 'first answer')
     settle()
     expect(await screen.findByText('first answer')).toBeInTheDocument()
     expect(youRows()).toHaveLength(1)
@@ -230,7 +232,7 @@ describe('ask again — the whole path (KAN-164)', () => {
     await user.click(screen.getByRole('button', { name: 'ask again' }))
     expect(mockRegenerate).toHaveBeenCalledTimes(1)
     expect(mockSendMessage).toHaveBeenCalledTimes(1)
-    answer('a2', 'second answer', '2026-10-01T07:15:00')
+    answer('a2', 'second answer')
 
     // Mid-stream there is nothing to press: ask again is gone, so a double press cannot start a second run.
     expect(askAgainButtons()).toHaveLength(0)
@@ -245,7 +247,7 @@ describe('ask again — the whole path (KAN-164)', () => {
     // The fold opens in place and closes again.
     const [fold] = foldLines()
     expect(fold).toHaveAttribute('aria-expanded', 'false')
-    expect(fold).toHaveTextContent('07:12')
+    expect(fold).toHaveTextContent(foldTime)
     await user.click(fold)
     expect(fold).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('first answer')).toBeInTheDocument()
@@ -255,20 +257,20 @@ describe('ask again — the whole path (KAN-164)', () => {
 
     // 3 — a second ask again appends: two fold lines, the oldest still intact.
     await user.click(screen.getByRole('button', { name: 'ask again' }))
-    answer('a3', 'third answer', '2026-10-01T07:18:00')
+    answer('a3', 'third answer')
     settle()
     expect(await screen.findByText('third answer')).toBeInTheDocument()
     await waitFor(() => expect(foldLines()).toHaveLength(2))
     expect(youRows()).toHaveLength(1)
     const oldest = foldLines()[1]
-    expect(oldest).toHaveTextContent('07:12')
+    expect(oldest).toHaveTextContent(foldTime)
     await user.click(oldest)
     expect(screen.getByText('first answer')).toBeInTheDocument()
     await user.click(oldest)
 
     // 4 — esc during a regenerate stops it and keeps what arrived.
     await user.click(screen.getByRole('button', { name: 'ask again' }))
-    answer('a4', 'a partial thought', '2026-10-01T07:20:00')
+    answer('a4', 'a partial thought')
     await user.click(screen.getByRole('textbox', { name: 'Message Pond' }))
     await user.keyboard('{Escape}')
     expect(await screen.findByText('a partial thought')).toBeInTheDocument()
@@ -277,7 +279,7 @@ describe('ask again — the whole path (KAN-164)', () => {
 
     // 5 — a failed regenerate drops its partial and puts the earlier answer back as current.
     await user.click(screen.getByRole('button', { name: 'ask again' }))
-    answer('a5', 'half an ans', '2026-10-01T07:22:00')
+    answer('a5', 'half an ans')
     act(() => chat().fail())
     const errorRow = await screen.findByRole('alert')
     expect(await screen.findByText('a partial thought')).toBeInTheDocument()
@@ -288,7 +290,7 @@ describe('ask again — the whole path (KAN-164)', () => {
     const regeneratesBefore = mockRegenerate.mock.calls.length
     await user.click(within(errorRow).getByRole('button', { name: 'ask again' }))
     expect(mockRegenerate).toHaveBeenCalledTimes(regeneratesBefore + 1)
-    answer('a6', 'the final answer', '2026-10-01T07:25:00')
+    answer('a6', 'the final answer')
     settle()
     expect(await screen.findByText('the final answer')).toBeInTheDocument()
     await waitFor(() => expect(foldLines()).toHaveLength(4))
@@ -311,7 +313,7 @@ describe('ask again — the whole path (KAN-164)', () => {
     await waitFor(() => expect(foldLines()).toHaveLength(4))
     expect(youRows()).toHaveLength(1)
     const reloadedOldest = foldLines()[3]
-    expect(reloadedOldest).toHaveTextContent('07:12')
+    expect(reloadedOldest).toHaveTextContent(foldTime)
     await user.click(reloadedOldest)
     expect(screen.getByText('first answer')).toBeInTheDocument()
   })

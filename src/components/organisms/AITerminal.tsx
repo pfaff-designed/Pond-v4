@@ -1718,16 +1718,30 @@ export function AITerminal() {
     )
     if (unstamped.length === 0) return
     const ids = new Set(unstamped.map((m) => m.id))
+    const landedAt = new Date().toISOString()
+    // The route sends no messageMetadata, so an answer has no `sentAt` of its own:
+    // the fold line ('earlier answer · 07:12') and the time beside an answer read
+    // it. An answer re-seeded from a saved transcript landed in another session —
+    // stamping it now would invent a time — so only a live answer gets one, and
+    // never over a `sentAt` it already carries.
+    const withLandedAt = (m: (typeof messages)[number]): (typeof messages)[number] => {
+      if (initialMessageIds.has(m.id)) return m
+      const base = typeof m.metadata === 'object' && m.metadata !== null ? m.metadata : {}
+      if (typeof (base as { sentAt?: unknown }).sentAt === 'string') return m
+      return { ...m, metadata: { ...base, sentAt: landedAt } }
+    }
     setMessages((prev) =>
       prev.map((m) =>
         ids.has(m.id)
-          ? withReadStamp(
-              m,
-              readChips({
-                contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
-                parts: m.parts as ReadPartLike[],
-                resolvePageName,
-              })
+          ? withLandedAt(
+              withReadStamp(
+                m,
+                readChips({
+                  contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
+                  parts: m.parts as ReadPartLike[],
+                  resolvePageName,
+                })
+              )
             )
           : m
       )

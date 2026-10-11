@@ -525,15 +525,15 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
   it('two ask agains leave two fold lines, newest nearest the answer, each opening on its own', async () => {
     const user = userEvent.setup()
-    const answer = (id: string, text: string, sentAt: string) => ({
+    // Like the real route: an answer arrives with no metadata, so the terminal stamps its time.
+    const answer = (id: string, text: string) => ({
       id,
       role: 'assistant',
-      metadata: { sentAt },
       parts: [{ type: 'text', text }],
     })
     mockMessages = [
       { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
-      answer('m1', 'first answer', '2026-10-01T07:12:00'),
+      answer('m1', 'first answer'),
     ]
     const { rerender } = renderWithQuery(<AITerminal />)
     await ready()
@@ -557,16 +557,22 @@ describe('AITerminal — propose_changes card (#98)', () => {
       rerender(<AITerminal />)
     }
 
+    // setMessages is a spy here, so the stamp an answer gets on landing is folded in by hand.
+    const landStamps = () => {
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    landStamps()
     await user.click(await screen.findByRole('button', { name: 'ask again' }))
-    regenerateInto(answer('m2', 'second answer', '2026-10-01T07:15:00'))
+    regenerateInto(answer('m2', 'second answer'))
+    landStamps()
     await user.click(await screen.findByRole('button', { name: 'ask again' }))
-    regenerateInto(answer('m3', 'third answer', '2026-10-01T07:18:00'))
+    regenerateInto(answer('m3', 'third answer'))
 
     const folds = await screen.findAllByRole('button', { name: /^earlier answer/ })
-    expect(folds.map((f) => f.textContent)).toEqual([
-      expect.stringContaining('07:15'),
-      expect.stringContaining('07:12'),
-    ])
+    expect(folds).toHaveLength(2)
+    for (const fold of folds) expect(fold).toHaveTextContent(/^earlier answer · \d{2}:\d{2}$/)
     expect(screen.getByText('third answer')).toBeInTheDocument()
     expect(screen.queryByText('second answer')).not.toBeInTheDocument()
     expect(screen.queryByText('first answer')).not.toBeInTheDocument()
