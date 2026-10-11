@@ -90,6 +90,16 @@ export interface ModuleDiffCardProps {
  *  button (14px type, 20px sides), so the card says so in classes. */
 const MOBILE_BUTTON = 'max-md:h-11 max-md:px-5 max-md:text-[14px]'
 
+/** KAN-267 build point 3: N identical reasons render as one line with a count,
+ *  in first-occurrence order. */
+function countByReason(reasons: string[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const reason of reasons) {
+    counts.set(reason, (counts.get(reason) ?? 0) + 1)
+  }
+  return counts
+}
+
 export function ModuleDiffCard({
   changes,
   targetName,
@@ -326,7 +336,12 @@ export function ModuleDiffCard({
           {skippedCount > 0 && (
             <div role="note" className="space-y-0.5 text-[10.5px] text-mn-text-meta">
               {skippedReasons.length > 0 ? (
-                skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
+                Array.from(countByReason(skippedReasons)).map(([reason, reasonCount]) => (
+                  <p key={reason}>
+                    {reasonCount} change{reasonCount > 1 ? 's' : ''} couldn’t be placed —{' '}
+                    {reason}
+                  </p>
+                ))
               ) : (
                 <p>
                   {skippedCount} change{skippedCount > 1 ? 's' : ''} couldn’t be placed and{' '}

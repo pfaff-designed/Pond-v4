@@ -74,3 +74,45 @@ describe('ModuleDiffCard — needsPlace', () => {
     expect(screen.queryByRole('combobox', { name: 'under' })).not.toBeInTheDocument()
   })
 })
+
+describe('ModuleDiffCard — skippedReasons', () => {
+  it('collapses identical reasons to one line carrying the count', () => {
+    render(
+      <ModuleDiffCard
+        changes={[create]}
+        skippedCount={4}
+        skippedReasons={[
+          'no target page to write to',
+          'no target page to write to',
+          'no target page to write to',
+          'no target page to write to',
+        ]}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onRequestChanges={jest.fn()}
+      />
+    )
+
+    const note = screen.getByRole('note')
+    expect(note.querySelectorAll('p')).toHaveLength(1)
+    expect(screen.getByText('4 changes couldn’t be placed — no target page to write to')).toBeInTheDocument()
+  })
+
+  it('renders one line per distinct reason', () => {
+    render(
+      <ModuleDiffCard
+        changes={[create]}
+        skippedCount={2}
+        skippedReasons={['no target page to write to', 'block type not supported']}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onRequestChanges={jest.fn()}
+      />
+    )
+
+    const note = screen.getByRole('note')
+    expect(note.querySelectorAll('p')).toHaveLength(2)
+    expect(screen.getByText('1 change couldn’t be placed — no target page to write to')).toBeInTheDocument()
+    expect(screen.getByText('1 change couldn’t be placed — block type not supported')).toBeInTheDocument()
+  })
+})
