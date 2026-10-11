@@ -23,16 +23,13 @@
  * the `.mn-proposal` roles.
  */
 
-import { useId, useRef, useState } from 'react'
+import { useId, useRef } from 'react'
 import { chipBaseClass, machineEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
+import { PlaceRow, type PlaceOption, type PlaceRowHandle } from '@/components/molecules/place-row'
 
-/** A candidate parent (title-resolved and disambiguated upstream). */
-export interface PlaceOption {
-  id: string
-  title: string
-}
+export type { PlaceOption }
 
 export interface PageProposalCardProps {
   name: string
@@ -82,10 +79,7 @@ export function PageProposalCard({
   className,
 }: PageProposalCardProps) {
   const ids = useId()
-  const underRef = useRef<HTMLSelectElement>(null)
-  // "change place" opens the picker; until then the place reads as text, like
-  // the frame ("creativity › kitchen renovation"). Both are the same <select>.
-  const [placing, setPlacing] = useState(false)
+  const placeRowRef = useRef<PlaceRowHandle>(null)
 
   if (status === 'rejected') return null
 
@@ -113,21 +107,7 @@ export function PageProposalCard({
     )
   }
 
-  const changePlace = () => {
-    setPlacing(true)
-    requestAnimationFrame(() => {
-      const el = underRef.current
-      if (!el) return
-      el.focus()
-      // Chromium ships showPicker(); elsewhere focus alone is the affordance.
-      const withPicker = el as HTMLSelectElement & { showPicker?: () => void }
-      try {
-        withPicker.showPicker?.()
-      } catch {
-        /* a user gesture is required in some browsers — focus already landed */
-      }
-    })
-  }
+  const changePlace = () => placeRowRef.current?.changePlace()
 
   return (
     <div
@@ -159,27 +139,17 @@ export function PageProposalCard({
             className={fieldClass}
           />
         </div>
-        <div className={rowClass}>
-          <label htmlFor={`${ids}-under`} className={labelClass}>
-            under
-          </label>
-          <select
-            ref={underRef}
-            id={`${ids}-under`}
-            aria-label="under"
-            value={parentId ?? ''}
-            onChange={(e) => onParentChange(e.target.value || null)}
-            onBlur={() => setPlacing(false)}
-            className={cn(fieldClass, 'cursor-pointer', placing && 'border-mn-text/40')}
-          >
-            <option value="">{pondName}</option>
-            {parentOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <PlaceRow
+          ref={placeRowRef}
+          id={`${ids}-under`}
+          parentId={parentId}
+          parentOptions={parentOptions}
+          pondName={pondName}
+          onParentChange={onParentChange}
+          rowClassName={rowClass}
+          labelClassName={labelClass}
+          fieldClassName={fieldClass}
+        />
         <div className={rowClass}>
           <label htmlFor={`${ids}-kind`} className={labelClass}>
             kind
