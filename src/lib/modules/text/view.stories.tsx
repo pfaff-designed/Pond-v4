@@ -8,6 +8,7 @@ import { PondBlock } from '@/components/organisms/PondBlock'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 import { blockFrame } from '@/lib/modules/block-frame'
 import { HEADING_PREFIX } from '@/lib/modules/palette'
+import { onApplePlatform } from '@/lib/shell-commands'
 
 /**
  * The `text` content block — its markdown typeset and edited in place, with no
@@ -137,22 +138,17 @@ export const EditInPlace: Story = {
 }
 
 /**
- * ProseMirror's own `mac` detection (`prosemirror-keymap`), reused here so the
- * chord this test sends is the one the keymap is actually listening for on
- * whatever platform runs it — CI is Linux, a laptop running this locally is not.
+ * The same platform read `isUndoChord`/`isRedoChord` use, so the chord this test
+ * sends can never drift from the chord production listens for.
  */
-const MOD_KEY = /Mac|iP(hone|[oa]d)/.test(navigator.platform) ? 'Meta' : 'Control'
+const MOD_KEY = onApplePlatform() ? 'Meta' : 'Control'
 
 const pressUndo = () => userEvent.keyboard(`{${MOD_KEY}>}z{/${MOD_KEY}}`)
 const pressRedo = () => userEvent.keyboard(`{${MOD_KEY}>}{Shift>}z{/Shift}{/${MOD_KEY}}`)
 
 /**
- * KAN-268's reproduction, as the live verifier found it: focus lands in a block
- * that already has written content, nothing is typed, and ⌘Z fires. ProseMirror's
- * own history is empty on a freshly mounted editor, so its `Mod-z` keymap command
- * returns `false` and never calls `preventDefault` — the keydown reaches the
- * browser's native contenteditable undo instead, which wipes a field it never saw
- * typed. No typing happens in this story; that absence is the point.
+ * No typing happens in this story, and that absence is the point: ProseMirror's
+ * own history is empty on a freshly mounted editor.
  */
 export const UndoWithNothingTypedKeepsText: Story = {
   args: { data: sample },

@@ -10,7 +10,7 @@ interface NavigatorWithUserAgentData extends Navigator {
 const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i
 
 /** Read at press time, not import time: the platform is a fact of the browser, not of the module. */
-const onApplePlatform = () => {
+export const onApplePlatform = () => {
   const nav = navigator as NavigatorWithUserAgentData
   return APPLE_PLATFORM.test(nav.userAgentData?.platform ?? nav.platform)
 }
