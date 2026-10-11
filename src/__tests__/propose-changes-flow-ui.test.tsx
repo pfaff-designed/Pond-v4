@@ -425,6 +425,65 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(mockSetMessages).not.toHaveBeenCalled()
   })
 
+  it('two ask agains leave two fold lines, newest nearest the answer, each opening on its own', async () => {
+    const user = userEvent.setup()
+    const answer = (id: string, text: string, sentAt: string) => ({
+      id,
+      role: 'assistant',
+      metadata: { sentAt },
+      parts: [{ type: 'text', text }],
+    })
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      answer('m1', 'first answer', '2026-10-01T07:12:00'),
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m2', 'second answer', '2026-10-01T07:15:00'))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m3', 'third answer', '2026-10-01T07:18:00'))
+
+    const folds = await screen.findAllByRole('button', { name: /^earlier answer/ })
+    expect(folds.map((f) => f.textContent)).toEqual([
+      expect.stringContaining('07:15'),
+      expect.stringContaining('07:12'),
+    ])
+    expect(screen.getByText('third answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+    expect(screen.queryByText('first answer')).not.toBeInTheDocument()
+
+    await user.click(folds[1])
+    expect(folds[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(folds[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('first answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+
+    await user.click(folds[0])
+    expect(screen.getByText('second answer')).toBeInTheDocument()
+    expect(screen.getByText('first answer')).toBeInTheDocument()
+  })
+
   it('two cards in one message offer accept all; one does not (C10)', async () => {
     mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
     renderWithQuery(<AITerminal />)

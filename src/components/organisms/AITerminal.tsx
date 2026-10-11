@@ -83,6 +83,7 @@ import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
   AnswerError,
+  EarlierAnswerFold,
   EarlierTurns,
   ThreadHead,
   Turn,
@@ -1833,6 +1834,14 @@ export function AITerminal() {
             resolvePageName,
           }))
         : []
+    const earlierFolds = [...earlierAnswers(message.metadata)].reverse().map((entry) => ({
+      sentAt: entry.sentAt,
+      read: entry.read,
+      text: entry.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { type: 'text'; text: string }).text)
+        .join(''),
+    }))
     const cardsForMessage = Object.values(pageProposals).filter((p) => p.messageId === message.id)
     const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
     // A sent message's file parts render as inert chips: the message is already out.
@@ -1974,6 +1983,17 @@ export function AITerminal() {
             <ReadChips read={read} />
           </div>
         )}
+        {/* Stashed oldest first; the most recently replaced answer sits nearest the current one. */}
+        {message.role === 'assistant' &&
+          earlierFolds.map((earlier, i) => (
+            <EarlierAnswerFold
+              key={`${message.id}-earlier-${earlierFolds.length - 1 - i}`}
+              time={formatThreadTime(earlier.sentAt)}
+            >
+              <Markdown>{earlier.text}</Markdown>
+              <ReadChips read={earlier.read} />
+            </EarlierAnswerFold>
+          ))}
         {/* Make-this-a-page cards: editable while pending; make page is the only write. */}
         {cardsForMessage.map((proposal) => (
           <PageProposalCard
