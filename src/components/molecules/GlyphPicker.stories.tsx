@@ -108,15 +108,14 @@ type Story = StoryObj<typeof meta>
 const glassOf = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-part="glass"]')!
 
 /**
- * `glyphPickerListMaxPx`'s cap makes the glass's box exactly fill `room` by
- * construction (`chrome + (room − chrome)`), so a perfectly-measured glass
- * lands its far edge exactly on the viewport edge with zero slack. Real
- * Chromium layout doesn't hit that float exactly — flex/border sub-pixel
- * rounding lands the rendered edge a few tenths of a px either side of it
- * from run to run (observed here, not asserted: ~900.0–900.2 across repeat
- * runs at the SAME anchor). A tolerance this small still catches the actual
- * defect class this file exists to catch (10.5px / 8.75px overshoots) by two
- * orders of magnitude.
+ * The glass caps its own box to `room`, so a glass with no slack lands its far
+ * edge exactly on the viewport edge. Real Chromium layout doesn't hit that
+ * float exactly — flex/border sub-pixel rounding lands the rendered edge a few
+ * tenths of a px either side of it from run to run (observed here, not
+ * asserted: ~900.0–900.2 across repeat runs at the SAME anchor). A tolerance
+ * this small still catches the defect class this file exists to catch — the
+ * 10.5px / 8.75px overshoots of the hand-estimated cap, and the 3.8125px /
+ * 2.664px of the measured one — by one to two orders of magnitude.
  */
 const SUBPIXEL_TOLERANCE_PX = 1
 
@@ -420,8 +419,13 @@ function PinnedAnchorFrame({ anchorTop, anchorBottom, side, ...props }: Geometry
 }
 
 /**
- * The glass's own BOX — not just its content — must stay inside the viewport:
- * `glyphPickerMeasuredChrome`'s whole reason to exist (fix pass, 10 oct 2026).
+ * The glass's own BOX — not just its content — must stay inside the viewport.
+ * It keeps itself there by capping its own height to `room` (an inline
+ * `maxHeight`), so the browser subtracts the real chrome and nothing predicts
+ * it. Three predictions were tried first and each came out right in direction
+ * and short in magnitude — hand-estimated constants (10.5px / 8.75px over),
+ * then a measured chrome (3.8125px / 2.664px over) — which is what finally
+ * argued for deleting the arithmetic rather than correcting it a fourth time.
  * jsdom has no layout engine, so a jest assertion here could only ever replay
  * the component's own estimate back at itself — confirmed on the retired
  * `glyph-picker-side.test.ts`, whose `renderedHeight` helper summed
@@ -437,22 +441,21 @@ function PinnedAnchorFrame({ anchorTop, anchorBottom, side, ...props }: Geometry
  * via `position: fixed`.
  *
  * `OnScreenBelowAnchor`'s anchor (`bottom: 282`) is the one the live walk
- * measured overshooting the viewport's bottom edge by 10.5px before the
- * chrome-measuring fix; `OnScreenBelowAnchorArea` reuses it for an area
- * target (no inherit row), which overshot by a different constant (8.75px)
- * for the same reason; `OnScreenAboveAnchor` opens upward (`side="top"`)
- * from a low anchor, where the same bug ran the glass's TOP edge above 0
- * instead ("mirrored at the top when it opens upward").
+ * measured overshooting the viewport's bottom edge — 10.5px over with the
+ * hand-estimated chrome, 3.8125px over with the measured one;
+ * `OnScreenBelowAnchorArea` reuses it for an area target (no inherit row),
+ * which overshot by a different constant each time (8.75px, then 2.664px) for
+ * the same reason; `OnScreenAboveAnchor` opens upward (`side="top"`) from a
+ * low anchor, where the same bug ran the glass's TOP edge above 0 instead
+ * ("mirrored at the top when it opens upward").
  *
- * Verified these three FAIL against the pre-fix shape: temporarily changed
- * `glyphPickerListMaxPx`'s call site inside `GlyphPicker.tsx` to pass the
- * hand-estimated `glyphPickerChrome(target, size)` instead of the mounted
- * glass's `glyphPickerMeasuredChrome(...)` reading (the exact code this fix
- * replaced) and ran `npm run test-storybook -- GlyphPicker` — all three
- * failed (`OnScreenBelowAnchor` and `OnScreenBelowAnchorArea` on the
- * `rect.bottom`/foot assertion, `OnScreenAboveAnchor` on the `rect.top`
- * assertion), then reverted the production file back to the real fix. See
- * the commit message for the exact numbers.
+ * These three were each verified to FAIL against the shapes they replaced, by
+ * temporarily restoring the predicted cap inside `GlyphPicker.tsx` and running
+ * `npm run test-storybook -- GlyphPicker`: all three failed
+ * (`OnScreenBelowAnchor` and `OnScreenBelowAnchorArea` on the `rect.bottom`
+ * and foot assertions, `OnScreenAboveAnchor` on `rect.top`), then the
+ * production file was put back. They are the only reason either residual was
+ * ever caught: the retired jest helper was green through both of them.
  */
 export const OnScreenBelowAnchor: Story = {
   name: 'on screen · opens below a low anchor',
