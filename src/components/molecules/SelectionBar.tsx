@@ -228,6 +228,22 @@ const Mark = ({ item, textStyle }: { item: SelectionBarItem; textStyle: TextStyl
 
 const NO_MARKS: ActiveMarks = { bold: false, italic: false }
 
+/** The first enabled item — the toolbar's tab stop until focus moves within it. */
+const FIRST_ITEM_ID: SelectionBarItemId = 'text-style'
+
+/**
+ * Identifies a selection by editor position where an editor owns it, else by
+ * text, so a selection the bar was dismissed from reads the same after the
+ * editor takes focus back.
+ */
+const selectionKey = (sel: Selection): string => {
+  const editor = editorForSelection(sel)
+  if (!editor || !sel.anchorNode || !sel.focusNode) return sel.toString().trim()
+  const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
+  const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
+  return `${anchor}-${head}`
+}
+
 /**
  * The bar watches `window.getSelection()`, not any editor's own ProseMirror
  * state — so before a command runs on an editor resolved for that selection,
@@ -271,12 +287,19 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const styleButtonRef = useRef<HTMLButtonElement>(null)
   const styleMenuRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
+  // Roving tab stop: the one item in the tab order, the rest are reached by arrows.
+  const [rovingId, setRovingId] = useState<SelectionBarItemId>(FIRST_ITEM_ID)
+  // Set by Esc: the bar stays down while the selection it was dismissed from stands.
+  const dismissedKeyRef = useRef<string | null>(null)
+  // The selection the bar was last drawn for, and the editor that owns it.
+  const shownSelectionRef = useRef<{ key: string; editor: Editor | null } | null>(null)
 
   const hide = useCallback(() => {
     setCtx(null)
     setRect(null)
     setStyleMenuOpen(false)
     setLinkMode(false)
+    setRovingId(FIRST_ITEM_ID)
   }, [])
 
   useEffect(() => {
@@ -286,14 +309,22 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        dismissedKeyRef.current = null
         hide()
         return
       }
 
       const text = sel.toString().trim()
       if (!text) {
+        dismissedKeyRef.current = null
         hide()
         return
+      }
+
+      const key = selectionKey(sel)
+      if (dismissedKeyRef.current !== null) {
+        if (dismissedKeyRef.current === key) return
+        dismissedKeyRef.current = null
       }
 
       const range = sel.getRangeAt(0)
@@ -315,6 +346,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
 
       const editor = editorForSelection(sel)
+      shownSelectionRef.current = { key, editor }
       if (editor) syncEditorSelection(editor, sel)
       setMarks(editor ? activeMarks(editor) : NO_MARKS)
       setListActive(editor ? editor.isActive('bulletList') : false)
@@ -450,6 +482,41 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     setStyleMenuOpen(false)
   }
 
+  const handleToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      // Consumed here, so `escLeavesZen` (`lib/layout/zen.tsx`) leaves zen alone.
+      e.preventDefault()
+      // From the last selectionchange, not `getSelection()` now: focus inside the bar may have moved it.
+      const shown = shownSelectionRef.current
+      dismissedKeyRef.current = shown?.key ?? null
+      hide()
+      shown?.editor?.commands.focus()
+      return
+    }
+
+    const buttons = Array.from(
+      barRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []
+    )
+    const current = buttons.findIndex((button) => button === e.target)
+    if (current === -1) return
+
+    const lastIndex = buttons.length - 1
+    const nextIndex =
+      e.key === 'ArrowRight'
+        ? (current + 1) % buttons.length
+        : e.key === 'ArrowLeft'
+          ? (current + lastIndex) % buttons.length
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? lastIndex
+              : -1
+    if (nextIndex === -1) return
+
+    e.preventDefault()
+    buttons[nextIndex].focus()
+  }
+
   // Gated on `disabled` directly (not an effect that calls `hide`), so the
   // bar disappears the instant `disabled` turns true, with no selectionchange
   // needed — `AITerminal`'s `disabled={isStreaming}` flips mid-selection.
@@ -459,6 +526,10 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     <div
       ref={barRef}
       data-part="selection-bar"
+      role="toolbar"
+      aria-label="selection"
+      aria-orientation="horizontal"
+      onKeyDown={handleToolbarKeyDown}
       className="mn-glass fixed z-[5] box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
       style={style}
     >
@@ -480,6 +551,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
             <button
               ref={item.id === 'text-style' ? styleButtonRef : undefined}
               type="button"
+              tabIndex={item.id === rovingId ? 0 : -1}
+              onFocus={() => setRovingId(item.id)}
               aria-label={
                 item.id === 'link' && linkActive
                   ? 'unlink'
