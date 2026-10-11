@@ -3,11 +3,38 @@
 /**
  * The one selection bar (`Pond 02 Component library.dc.html` frame `2t`,
  * item order AUDIT C6): text style, bold, italic, link, list, highlight,
- * comment, ask pond, new page from this, copy. Static for now — selection
- * watching, positioning and per-item wiring land in later KAN-95 items.
+ * comment, ask pond, new page from this, copy. Per-item wiring beyond
+ * `ask pond` lands in later KAN-95 items.
  */
 
-import { Fragment } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+
+import { useAnchoredBox, type PickerAnchorBox } from './use-anchored-box'
+
+export interface SelectionContext {
+  /** The selected text. */
+  text: string
+  /** The id of the block the selection is within, if determinable. */
+  blockId?: string
+}
+
+export interface SelectionBarProps {
+  /** The container within which selections are watched. Defaults to document. */
+  containerRef?: React.RefObject<HTMLElement | null>
+  /** Called when the user clicks "ask pond" with the selected context. */
+  onAsk: (ctx: SelectionContext) => void
+  /** While true (e.g. during streaming), the bar is suppressed. */
+  disabled?: boolean
+}
+
+/** A selection's own box, in viewport coordinates — plain fields, not a live `DOMRect`. */
+interface SelectionRect {
+  top: number
+  bottom: number
+  left: number
+  width: number
+}
 
 export type SelectionBarItemId =
   | 'text-style'
@@ -169,20 +196,118 @@ const Mark = ({ item }: { item: SelectionBarItem }) => {
 }
 
 /**
- * The one selection bar: the board's glass, gap and item chrome over the ten
- * items, in order. No selection watching, positioning or handlers yet.
+ * The one selection bar: watches the document selection, resolves the block
+ * it is within, and portals its glass above the selection — centred and
+ * clamped inside the viewport (`useAnchoredBox`/`clampLeft`, as `GlyphPicker`
+ * anchors off). Ported from `TextSelectionPopover`'s own tracking; its
+ * zero-size-rect bail is dropped — jsdom's `Range` rect is always zero
+ * (`jest.setup.ts`), and `sel.isCollapsed`/`text` already prove a real one.
  */
-export function SelectionBar() {
-  return (
+export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProps) {
+  const [ctx, setCtx] = useState<SelectionContext | null>(null)
+  const [rect, setRect] = useState<SelectionRect | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+  const [barWidth, setBarWidth] = useState(0)
+
+  const hide = useCallback(() => {
+    setCtx(null)
+    setRect(null)
+  }, [])
+
+  useEffect(() => {
+    function onSelectionChange() {
+      if (disabled) return
+
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        hide()
+        return
+      }
+
+      const text = sel.toString().trim()
+      if (!text) {
+        hide()
+        return
+      }
+
+      const range = sel.getRangeAt(0)
+      if (containerRef?.current && !containerRef.current.contains(range.commonAncestorContainer)) {
+        hide()
+        return
+      }
+
+      // Resolve blockId from the nearest ancestor carrying it.
+      const anchor = sel.anchorNode
+      const blockEl =
+        anchor instanceof Element
+          ? anchor.closest('[data-block-id]')
+          : anchor?.parentElement?.closest('[data-block-id]')
+      const blockId = blockEl?.getAttribute('data-block-id') ?? undefined
+
+      const r = range.getBoundingClientRect()
+      setCtx({ text, blockId })
+      setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
+    }
+
+    document.addEventListener('selectionchange', onSelectionChange)
+    return () => document.removeEventListener('selectionchange', onSelectionChange)
+  }, [containerRef, disabled, hide])
+
+  // A press outside the bar dismisses it, same as the popover's own rule.
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (barRef.current && barRef.current.contains(e.target as Node)) return
+      hide()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [hide])
+
+  // Measured after the items render, so centring uses the bar's real width.
+  useLayoutEffect(() => {
+    if (barRef.current) setBarWidth(barRef.current.offsetWidth)
+  }, [ctx, rect])
+
+  // `useAnchoredBox` anchors on the box's own left edge, so centring is
+  // folded into the anchor's own rect; its `clampLeft` then holds it in view.
+  const anchor = useMemo<PickerAnchorBox | null>(() => {
+    if (!rect) return null
+    return {
+      getBoundingClientRect: () => ({
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left + rect.width / 2 - barWidth / 2,
+      }),
+    }
+  }, [rect, barWidth])
+  const style = useAnchoredBox(anchor, 'top', barWidth)
+
+  const handleAsk = () => {
+    if (!ctx) return
+    onAsk(ctx)
+    hide()
+    // Clear the browser selection so the quote chip in the composer is the only remnant.
+    window.getSelection()?.removeAllRanges()
+  }
+
+  // Gated on `disabled` directly (not an effect that calls `hide`), so the
+  // bar disappears the instant `disabled` turns true, with no selectionchange
+  // needed — `AITerminal`'s `disabled={isStreaming}` flips mid-selection.
+  if (typeof document === 'undefined' || disabled || !ctx || !rect) return null
+
+  return createPortal(
     <div
+      ref={barRef}
       data-part="selection-bar"
-      className="mn-glass box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
+      className="mn-glass fixed z-[5] box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
+      style={style}
     >
       {SELECTION_BAR_ITEMS.map((item) => (
         <Fragment key={item.id}>
           <button
             type="button"
             aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
+            onClick={item.id === 'ask-pond' ? handleAsk : undefined}
             className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
           >
             <Mark item={item} />
@@ -190,6 +315,7 @@ export function SelectionBar() {
           {item.dividerAfter && <span aria-hidden className="h-[18px] w-px bg-mn-text/[0.12]" />}
         </Fragment>
       ))}
-    </div>
+    </div>,
+    document.body
   )
 }

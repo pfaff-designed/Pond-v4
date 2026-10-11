@@ -8,17 +8,32 @@
 
 import { render, screen } from '@testing-library/react'
 import { SelectionBar } from '@/components/molecules/SelectionBar'
+import { clearSelection, selectText } from './helpers/selection'
 
-const getBar = (container: HTMLElement) => {
-  const bar = container.querySelector('[data-part="selection-bar"]')
+/** The bar only portals once a real selection is up — give it one, against `document.body` directly. */
+const renderBarWithSelection = () => {
+  const result = render(
+    <>
+      <SelectionBar onAsk={jest.fn()} />
+      <p>select me</p>
+    </>
+  )
+  selectText(screen.getByText('select me'))
+  return result
+}
+
+const getBar = () => {
+  const bar = document.body.querySelector('[data-part="selection-bar"]')
   if (!(bar instanceof HTMLElement)) throw new Error('selection bar not found')
   return bar
 }
 
 describe('SelectionBar chrome', () => {
+  afterEach(() => clearSelection())
+
   it('the bar is .mn-glass plus the board’s own flex/gap/padding/radius', () => {
-    const { container } = render(<SelectionBar />)
-    const bar = getBar(container)
+    renderBarWithSelection()
+    const bar = getBar()
     expect(bar.className).toContain('mn-glass')
     expect(bar.className).toContain('flex')
     expect(bar.className).toContain('gap-[2px]')
@@ -27,7 +42,7 @@ describe('SelectionBar chrome', () => {
   })
 
   it('each item is 32px tall, 32px min-width, 9px horizontal padding, 10px radius, with active/hover fill', () => {
-    render(<SelectionBar />)
+    renderBarWithSelection()
     for (const button of screen.getAllByRole('button')) {
       expect(button.className).toContain('h-[32px]')
       expect(button.className).toContain('min-w-[32px]')
@@ -39,8 +54,8 @@ describe('SelectionBar chrome', () => {
   })
 
   it('each divider is a 1px × 18px rule at ink/paper .12', () => {
-    const { container } = render(<SelectionBar />)
-    const bar = getBar(container)
+    renderBarWithSelection()
+    const bar = getBar()
     const dividers = bar.querySelectorAll('[aria-hidden]:not(svg)')
     expect(dividers.length).toBe(3)
     for (const divider of Array.from(dividers)) {

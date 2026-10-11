@@ -7,6 +7,19 @@ import fs from 'fs'
 import path from 'path'
 import { render, screen } from '@testing-library/react'
 import { SelectionBar, SELECTION_BAR_ITEMS } from '@/components/molecules/SelectionBar'
+import { clearSelection, selectText } from './helpers/selection'
+
+/** The bar only portals once a real selection is up — give it one before each render assertion. */
+const renderWithSelection = () => {
+  const result = render(
+    <>
+      <SelectionBar onAsk={jest.fn()} />
+      <p>select me</p>
+    </>
+  )
+  selectText(screen.getByText('select me'))
+  return result
+}
 
 const board = fs.readFileSync(
   path.join(process.cwd(), 'wayfinder/design_handoff_pond/Pond 02 Component library.dc.html'),
@@ -59,8 +72,10 @@ describe('the board draws the ten items in this order (2t)', () => {
 })
 
 describe('SelectionBar renders the ten items in order', () => {
+  afterEach(() => clearSelection())
+
   it('buttons appear in board order, by accessible name', () => {
-    render(<SelectionBar />)
+    renderWithSelection()
     const names = screen
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label') ?? button.textContent)
@@ -79,7 +94,7 @@ describe('SelectionBar renders the ten items in order', () => {
   })
 
   it('the two type registers stay apart: text/highlight/comment sans 12.5px, ask pond/new page from this mono 11.5px', () => {
-    render(<SelectionBar />)
+    renderWithSelection()
     const sans = ['text', 'highlight', 'comment']
     const mono = ['ask pond', 'new page from this']
 
