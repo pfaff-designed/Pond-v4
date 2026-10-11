@@ -23,8 +23,9 @@ import type { Block } from './content'
 import { todoMarker, type TodoBlock, type TodoMarker } from './todo/schema'
 import type { TableBlock } from './table/schema'
 import type { EntriesBlock } from './entries/schema'
-import type { ViewBlock, ViewMode } from './view/schema'
+import type { ViewBlock } from './view/schema'
 import { COMPACT_MARK_EMPTY, compactChartMark, isChartCard } from './view/chart-compact'
+import { viewKind } from './view/kinds'
 import { blockLabel, trimmedOrNone } from './types'
 import { isImageMediaType, mediaTypeForFilename } from '@/lib/attachments/validate'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -141,47 +142,9 @@ export const POND_BLOCK_FILTERED_EMPTY_LINE = 'nothing matches this filter'
  */
 export type BlockEmptyBox = 'box' | 'void'
 
-/**
- * The gantt mode's empty line — `PondTemplate.dc.html`'s `gantt` `e:` value verbatim
- * (#260). Declared here, with the rest of the per-kind block copy, rather than in the
- * view layer: this file is server-safe, so a host reaches the string without pulling
- * in a React module, and `VIEW_EMPTY` below can hold it beside the box that draws it.
- */
-export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
-
-/**
- * How each view mode is empty: which box the frame draws, and the line that goes in
- * it when the mode owns one (#260). **Exhaustive over `ViewMode`, so an eighth mode
- * is a compile error here** rather than silently inheriting the default box — the
- * defect this file exists to prevent, and the reason `VIEW_KIND` and `VIEW_HEADING`
- * above are tables too.
- *
- * `chart` is the one mode whose box is not static — a compact `bar` is empty as the
- * voidBox and the card presentation is not — so it reads `'per-mark'` and
- * `blockEmptyBox()` asks `compactChartMark`. The marker is in the table rather than a
- * `mode === 'chart'` test outside it so the table never STATES something false about
- * a mode: a caller reading `.box` directly gets `'per-mark'`, not a wrong answer.
- * `chart` carries no `line` for the same reason — its copy is `CHART_EMPTY_LINE`,
- * which lives in the React module `chart/card.tsx` and cannot be reached from here.
- *
- * Both consumers read THIS — `blockEmptyBox()` takes `.box` and `BlockCanvas`'s
- * `useBlockEmptyState` takes `.line`. Before this they each tested `mode === 'gantt'`
- * separately, so one fact about one mode lived in two files keyed off a raw string.
- */
-export const VIEW_EMPTY: Record<ViewMode, { box: BlockEmptyBox | 'per-mark'; line?: string }> = {
-  table: { box: 'box' },
-  board: { box: 'box' },
-  calendar: { box: 'box' },
-  list: { box: 'box' },
-  gallery: { box: 'box' },
-  'big-number': { box: 'box' },
-  gantt: { box: 'void', line: GANTT_EMPTY_LINE },
-  chart: { box: 'per-mark' },
-}
-
 export function blockEmptyBox(block: Block): BlockEmptyBox {
   if (block.type !== 'view') return 'box'
-  const { box } = VIEW_EMPTY[block.mode]
+  const { box } = viewKind(block).empty
   if (box !== 'per-mark') return box
   const mark = compactChartMark(block)
   return mark !== null && COMPACT_MARK_EMPTY[mark] === 'void' ? 'void' : 'box'
@@ -218,7 +181,7 @@ export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
  *
  * `chartLine` rather than the string: the compact mark's copy is `CHART_EMPTY_LINE`
  * in `chart/card.tsx`, a React module this server-safe file cannot import — the same
- * reason `VIEW_EMPTY.chart` carries no `line`. The caller substitutes it. Making the
+ * reason the chart kind in `VIEW_KINDS` carries no `line`. The caller substitutes it. Making the
  * boundary explicit beats moving a constant six call sites away for a nicer return.
  */
 export type ViewFrameState =
@@ -243,9 +206,9 @@ export function viewFrameState(
       : { state: 'rest' }
   }
   if (markEmpty === 'void') return { state: 'empty', chartLine: true }
-  // #260: a mode that owns its empty line takes it from `VIEW_EMPTY`, the one table
-  // that also decides the mode's box, so the box and the line cannot disagree.
-  const modeLine = VIEW_EMPTY[block.mode].line
+  // #260: a kind that owns its empty line takes it from the kind, which also decides
+  // its box, so the box and the line cannot disagree.
+  const modeLine = viewKind(block).empty.line
   if (modeLine !== undefined) return { state: 'empty', line: modeLine }
   // Keyed off the board KIND, not the view mode: a new mode mapping to `number`
   // inherits the no-action rule rather than wiring `addRow` to `pick a field`.
@@ -429,42 +392,12 @@ export const TODO_ROW: Record<TodoMarker, TodoRowSpec> = {
 }
 
 /**
- * A view block draws a database; its card is the board kind of its render mode.
- * #260 confirmed all three mapped modes against `PondBlock.dc.html`'s `W`: `gallery`
- * is its own 580 card and `big-number` the 400 `number` card, while `gantt` stays
- * in the 500 `table` card — the block board has no gantt kind and `PondTemplate`
- * gives it no width of its own, exactly as `calendar` and `chart`.
- *
- * `board` is absent: its lanes lie straight on the page. `list` is absent: it is a
- * card of its own, and a frame around it would be a card inside a card.
+ * The card a view block sits in — its kind's (`VIEW_KINDS`), or `null` for a view that
+ * sets itself on the page without the block card: the board's lanes, the list (its
+ * own card) and the chart card (`PondChart` draws its own paper).
  */
-type FramedViewMode = Exclude<ViewMode, 'board' | 'list'>
-
-/**
- * A view that sets itself on the page without the block card: the board's lanes, the
- * list (its own card) and the chart card (`PondChart` draws its own paper). The one
- * predicate the frame and the summary line both read.
- */
-export function isFramelessView(block: ViewBlock): boolean {
-  return block.mode === 'board' || block.mode === 'list' || isChartCard(block)
-}
-
-const VIEW_KIND: Record<FramedViewMode, PondBlockKind> = {
-  table: 'table',
-  calendar: 'table',
-  gantt: 'table',
-  chart: 'table',
-  gallery: 'gallery',
-  'big-number': 'number',
-}
-
-const VIEW_HEADING: Record<FramedViewMode, string> = {
-  table: 'table',
-  calendar: 'calendar',
-  gantt: 'gantt',
-  chart: 'chart',
-  gallery: 'gallery',
-  'big-number': 'big number',
+function viewCard(block: ViewBlock): PondBlockKind | null {
+  return isChartCard(block) ? null : viewKind(block).frame
 }
 
 // `many` is explicit for an irregular plural (`entry` → `entries`), so every head
@@ -536,21 +469,18 @@ export function blockFrame(block: Block): BlockFrame | null {
         heading: trimmedOrNone(block.title) ?? 'table',
         headNote: plural((block.rows ?? []).length, 'row'),
       }
-    case 'view':
+    case 'view': {
       // #227: a chart drawn as the CARD is `PondChart` — level 3 beside `PondBlock`
       // (`Pond 02` 2o: "charts: blocks that draw a database") — and it draws its
       // own paper, shadow, head and footer. A card inside a card is drawn by no
       // board, so the frame steps aside. The compact marks (#259) are the
       // template's, and keep its card.
-      if (isFramelessView(block)) return null
+      const card = viewCard(block)
+      if (card === null) return null
       // The row count lives with the rows, which the view fetches itself — the
       // frame can't name it from config alone, so the note stays empty here.
-      return {
-        // Every mode `isFramelessView` passes is a `FramedViewMode`.
-        kind: VIEW_KIND[block.mode as FramedViewMode],
-        heading: blockLabel(block) ?? VIEW_HEADING[block.mode as FramedViewMode],
-        headNote: '',
-      }
+      return { kind: card, heading: blockLabel(block) ?? viewKind(block).label, headNote: '' }
+    }
     case 'image': {
       const mediaType = block.mediaType ?? mediaTypeForFilename(block.url) ?? ''
       return {

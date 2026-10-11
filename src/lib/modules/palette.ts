@@ -26,6 +26,7 @@ import { ICON, TPL_ICON, type SlashGroup } from '@/components/molecules/slash-en
 import type { SlashIcon, SlashRow } from '@/components/molecules/SlashMenu'
 import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
+import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 
 /** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
 const ROW_CHROME: Partial<
@@ -40,34 +41,30 @@ const ROW_CHROME: Partial<
 }
 
 /**
- * The `view` rows are the view's own modes: each id IS the `ViewMode` it opens in
- * (`mintPreset` parses it with `viewModeSchema`), so a row here that names no mode
- * does not compile, and a new mode's row needs no second table.
+ * A `view` row is one view KIND (ADR 0009): its id IS the `ViewMode` it opens in
+ * (`mintPreset` parses it with `viewModeSchema`), so a row that names no mode does
+ * not compile, and its label and mark are the kind's own (`VIEW_KINDS`).
+ *
+ * `table` and `list` have no view row here: `/table` is the static table's row,
+ * which opens the source picker, and `list` is the bulleted list's.
  */
+const viewRow = (mode: ViewMode, alias?: string): SlashRow & { id: ViewMode } => ({
+  id: mode,
+  type: 'view',
+  group: 'blocks',
+  label: VIEW_KINDS[mode].label,
+  ...(alias ? { alias } : {}),
+  icon: VIEW_KINDS[mode].icon,
+})
+
 const VIEW_ROWS = [
-  {
-    id: 'gallery',
-    type: 'view',
-    group: 'blocks',
-    label: 'gallery',
-    icon: ICON.gallery,
-  },
-  {
-    id: 'chart',
-    type: 'view',
-    group: 'blocks',
-    label: 'chart',
-    alias: 'graph',
-    icon: ICON.chart,
-  },
-  {
-    id: 'big-number',
-    type: 'view',
-    group: 'blocks',
-    label: 'big number',
-    icon: ICON.number,
-  },
-] satisfies readonly (SlashRow & { id: ViewMode })[]
+  viewRow('board', 'kanban'),
+  viewRow('calendar'),
+  viewRow('gallery'),
+  viewRow('gantt', 'gantt'),
+  viewRow('chart', 'graph'),
+  viewRow('big-number'),
+]
 
 /**
  * What `/heading` types for you — the second markdown level, with its trailing
@@ -118,7 +115,7 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
  */
 export const WITHHELD = {
   page: 'structural — a page is made through the rail or `page from template`, not inserted as a block',
-  view: 'wholly covered by its variants — gallery, chart and big number are the rows a person picks',
+  view: 'wholly covered by its variants — each view kind is its own row (ADR 0009)',
 } as const satisfies Partial<Record<DescriptorType, string>>
 
 /**
@@ -134,7 +131,10 @@ export const BOARD_ORDER: readonly string[] = [
   'list',
   'checklist',
   'table',
+  'board',
+  'calendar',
   'gallery',
+  'gantt',
   'chart',
   'big-number',
   'entry-log',

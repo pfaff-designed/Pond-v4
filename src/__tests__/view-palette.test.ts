@@ -6,7 +6,7 @@
  * a future registry change can't silently drop it back out or return a crash-prone
  * empty state.
  */
-import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
+import { slashRows, emptyBlockForType, mintPreset } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { moduleRenderers } from '@/lib/modules/renderers'
 
@@ -72,7 +72,8 @@ describe('the deleted data-holding display blocks (#111)', () => {
     expect(reached.sort()).toEqual(registered.sort())
   })
 
-  it('offers no `board` row — the board (design) draws none; a board is the view block’s mode (ADR 0007)', () => {
-    expect(slashRows.some((r) => r.id === 'board')).toBe(false)
+  it('the `board` row makes a view block in board mode, not a data-holding board (ADR 0009)', () => {
+    expect(slashRows.find((r) => r.id === 'board')?.type).toBe('view')
+    expect(mintPreset('board')).toMatchObject({ type: 'view', mode: 'board' })
   })
 })

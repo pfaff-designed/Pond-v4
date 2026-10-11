@@ -21,7 +21,7 @@
 
 import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
-import type { ViewBlock, ViewMode } from './schema'
+import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
 import { viewCollectionId } from '../block-frame'
 import { useCollectionRows } from './use-collection-rows'
@@ -65,7 +65,7 @@ import {
   GANTT_TRACK_STYLE,
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
-import { GANTT_EMPTY_LINE } from '@/lib/modules/block-frame'
+import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   coerceValue,
   optionForValue,
@@ -98,10 +98,10 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
 
-  // Config edits (mode/group-by) rewrite the persisted view block through the
+  // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
   const onConfigChange = onChange
-    ? (patch: Partial<ViewBlock>) => onChange({ ...data, ...patch })
+    ? (patch: ViewConfigPatch) => onChange({ ...data, ...patch })
     : undefined
 
   // A row IS a page: `open ›` on the record peek navigates to it through the page-link
@@ -157,9 +157,9 @@ export interface CollectionViewProps {
    *  editable host; Storybook renders static data and omits them. */
   onAddRow?: (values?: Record<string, PropertyValue>) => Promise<string | null>
   onRenameRow?: (rowId: string, title: string) => void
-  /** Rewrite the view block's own config — the mode switcher
-   *  (board-authoring Slice 3). Absent on read-only / Storybook hosts. */
-  onConfigChange?: (patch: Partial<ViewBlock>) => void
+  /** Rewrite the view block's own config — chart and big-number setup. Never its
+   *  kind (fixed once made, KAN-44). Absent on read-only / Storybook hosts. */
+  onConfigChange?: (patch: ViewConfigPatch) => void
   /** Navigate to a row's page — a row IS a page, so this receives the row id. Draws
    *  the record peek's `open ›`; absent on Storybook/static renders (no dead affordance). */
   onOpenRow?: (rowId: string) => void
@@ -325,29 +325,13 @@ export function CollectionView({
   )
 }
 
-// ── View controls (head row + mode switcher) ─────────────────────────────────
+// ── View controls (head row) ─────────────────────────────────────────────────
 
 /**
- * The switcher's segments, in `Pond 06.21` 6u.1's order and words. `timeline` is the
- * `gantt` mode, and `list` is the fifth segment (6v).
- * Gallery, chart and big number are not here: each is its own block (ADR 0009), so
- * a block in one of those modes draws no switcher at all.
- */
-const VIEW_SEGMENTS: readonly { mode: ViewMode; label: string }[] = [
-  { mode: 'board', label: 'board' },
-  { mode: 'gantt', label: 'timeline' },
-  { mode: 'table', label: 'table' },
-  { mode: 'calendar', label: 'calendar' },
-  { mode: 'list', label: 'list' },
-]
-
-/**
- * The editable head row (6u.1): the database's name, how the board reads it
- * (`grouped by status`, read-only text), and the switcher that flips the SAME
- * collection between render modes. Every change rewrites the view block's config
- * through `onConfigChange` (the whole-block save path). A mode whose data
- * prerequisite is missing (gantt/calendar with no date property) still switches —
- * the renderer shows its own calm "needs a date property" notice.
+ * The editable head row (6u.1): the database's name and how the board reads it
+ * (`grouped by status`, read-only text). A view's kind is fixed once made (ADR 0009),
+ * so there is no in-place switch between kinds here. Chart and big-number setup rewrite
+ * the block's config through `onConfigChange` (the whole-block save path).
  */
 function ViewControls({
   config,
@@ -358,7 +342,7 @@ function ViewControls({
   config: ViewBlock
   schema: PropertySchema
   collectionName?: string
-  onConfigChange: (patch: Partial<ViewBlock>) => void
+  onConfigChange: (patch: ViewConfigPatch) => void
 }) {
   // The head's fact: a board reads its lanes' property, a list the date it groups by.
   const groupDef =
@@ -368,13 +352,9 @@ function ViewControls({
         ? pickDateDef(schema, config.groupBy)
         : undefined
   const groupName = groupDef?.name.toLowerCase()
-  const switchable = VIEW_SEGMENTS.some((s) => s.mode === config.mode)
 
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      {/* `flex-wrap`: 6u.1 draws the name and the bar on ONE line, but it has the
-          full canvas. In a narrow column the bar wraps onto its own line rather
-          than crushing the name to a single letter. */}
       <div
         data-part="view-head"
         className="flex w-full flex-wrap items-center justify-between gap-x-[10px] gap-y-[6px] px-[4px] pt-[4px]"
@@ -391,38 +371,6 @@ function ViewControls({
             </span>
           )}
         </div>
-
-        {switchable && (
-          <div
-            data-part="view-bar"
-            className="flex flex-none items-center gap-[4px] rounded-full bg-mn-text/[0.055] p-[3px] text-[10.5px] font-medium"
-          >
-            {VIEW_SEGMENTS.map(({ mode, label }) => {
-              const active = config.mode === mode
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  data-part="view-segment"
-                  data-active={active || undefined}
-                  aria-pressed={active}
-                  onClick={() => onConfigChange({ mode })}
-                  className={[
-                    'rounded-full px-[10px] py-[4px] transition-colors duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none',
-                    // The board's active segment is `#1B1D14` ground with `#FAF9EF`
-                    // text — the same inversion `ui/button`'s `primary` makes, so it
-                    // reassigns correctly in dark rather than staying ink-on-ink.
-                    active
-                      ? 'bg-mn-text text-raw-paper dark:text-raw-ink'
-                      : 'text-mn-text-secondary hover:text-mn-text',
-                  ].join(' ')}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        )}
       </div>
 
       {config.mode === 'chart' && (
@@ -1064,7 +1012,7 @@ function CollectionGantt({
   }, [])
 
   if (!defs) {
-    return <ViewNotice>This gantt needs a date property.</ViewNotice>
+    return <ViewNotice>This timeline needs a date property.</ViewNotice>
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
     // Nothing dated: the shared voidBox with the template's own line — true whether the

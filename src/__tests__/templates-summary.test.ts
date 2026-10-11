@@ -85,10 +85,8 @@ describe('blockWord — each block’s name', () => {
     expect(blockWord(text(content))).toBe(word)
   })
 
-  it('a view whose mode is not a real ViewMode still gets a word, never undefined', () => {
-    // `blockFrame` returns a shaped-but-kindless frame for an unknown mode. The
-    // line falls back to the block's type rather than rendering `undefined`.
-    expect(blockWord({ id: 'x', type: 'view', mode: 'nonsense' } as unknown as Block)).toBe('view')
+  it('a view whose mode is not a real ViewMode is named the table it renders as, never undefined', () => {
+    expect(blockWord({ id: 'x', type: 'view', mode: 'nonsense' } as unknown as Block)).toBe('table')
   })
 
   it('a LABELLED text block is a card, not bare prose, so it takes its frame kind', () => {

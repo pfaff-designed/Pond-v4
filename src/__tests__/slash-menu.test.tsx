@@ -16,6 +16,7 @@ import { SlashMenu } from '@/components/molecules/SlashMenu'
 import { slashRows, mintPreset, BOARD_ORDER, HEADING_PREFIX, WITHHELD } from '@/lib/modules/palette'
 import { moduleDescriptors } from '@/lib/modules/registry'
 import { TEMPLATE_KINDS } from '@/lib/templates/types'
+import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 import { readHandoff } from './helpers/handoff'
 
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8')
@@ -42,7 +43,14 @@ function boardSlashWords(): string[] {
   return [...items, ...groups]
 }
 
-const ALLOWED = new Set([...glossaryTerms(), ...boardSlashWords(), ...TEMPLATE_KINDS])
+// ADR 0009 gives each view kind its own row, named as 6u.1's head names it.
+const VIEW_KIND_WORDS = Object.values(VIEW_KINDS).map((k) => k.label)
+const ALLOWED = new Set([
+  ...glossaryTerms(),
+  ...boardSlashWords(),
+  ...TEMPLATE_KINDS,
+  ...VIEW_KIND_WORDS,
+])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
   const onSelect = jest.fn()
@@ -185,8 +193,13 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(labels).not.toContain('pond — update')
   })
 
-  it('the board draws no `board` row, so the menu offers none', () => {
-    expect(slashRows.some((r) => r.id === 'board' || r.label === 'board')).toBe(false)
+  it('board, calendar and timeline are each a row that makes a view of that kind (ADR 0009)', () => {
+    for (const mode of ['board', 'calendar', 'gantt'] as const) {
+      const row = slashRows.find((r) => r.id === mode)
+      expect(row).toMatchObject({ type: 'view', group: 'blocks', label: VIEW_KINDS[mode].label })
+      expect(mintPreset(mode)).toMatchObject({ type: 'view', mode })
+    }
+    expect(slashRows.find((r) => r.id === 'gantt')?.alias).toBe('gantt')
   })
 
   it('rows follow the board’s order within the board’s groups', () => {
@@ -198,7 +211,10 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/list',
       'blocks/checklist',
       'blocks/table',
+      'blocks/board',
+      'blocks/calendar',
       'blocks/gallery',
+      'blocks/timeline',
       'blocks/chart',
       'blocks/big number',
       'blocks/entry log',
@@ -372,7 +388,7 @@ describe('mobile', () => {
       options()
         .map((o) => labelOf(o as HTMLElement))
         .at(-1)
-    ).toBe('big number')
+    ).toBe('gallery')
   })
 
   it('does not cap a query', () => {
