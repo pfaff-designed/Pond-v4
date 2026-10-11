@@ -5,7 +5,7 @@
  */
 
 import { useEffect } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
@@ -125,6 +125,80 @@ describe('SelectionBar text style', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'text' })).toBeInTheDocument()
+  })
+
+  describe('from the keyboard', () => {
+    const openMenu = (key: string, label = 'text') => {
+      selectWord(screen.getByText('soak overnight'), 'overnight')
+      const button = screen.getByRole('button', { name: label })
+      act(() => button.focus())
+      fireEvent.keyDown(button, { key })
+      // A native button turns Enter/Space into a click; jsdom does not.
+      fireEvent.click(button)
+      return button
+    }
+
+    it.each(['Enter', ' '])('opens on %j with focus on the current style row', (key) => {
+      render(<Host onAsk={jest.fn()} onEditor={jest.fn()} />)
+      openMenu(key)
+
+      const menu = screen.getByRole('menu', { name: 'text style' })
+      expect(within(menu).getByRole('menuitem', { name: 'text' })).toHaveFocus()
+    })
+
+    it('moves with arrows (wrapping) and Home/End, then Enter chooses and closes', () => {
+      let editor: Editor | null = null
+      render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+      const button = openMenu('Enter')
+      const menu = screen.getByRole('menu', { name: 'text style' })
+      const row = (name: string) => within(menu).getByRole('menuitem', { name })
+
+      fireEvent.keyDown(row('text'), { key: 'ArrowDown' })
+      expect(row('h1')).toHaveFocus()
+      fireEvent.keyDown(row('h1'), { key: 'ArrowDown' })
+      expect(row('h2')).toHaveFocus()
+      fireEvent.keyDown(row('h2'), { key: 'End' })
+      expect(row('h6')).toHaveFocus()
+      fireEvent.keyDown(row('h6'), { key: 'ArrowDown' })
+      expect(row('text')).toHaveFocus()
+      fireEvent.keyDown(row('text'), { key: 'ArrowUp' })
+      expect(row('h6')).toHaveFocus()
+      fireEvent.keyDown(row('h6'), { key: 'Home' })
+      expect(row('text')).toHaveFocus()
+      fireEvent.keyDown(row('text'), { key: 'ArrowDown' })
+      fireEvent.keyDown(row('h1'), { key: 'ArrowDown' })
+
+      fireEvent.keyDown(row('h2'), { key: 'Enter' })
+
+      expect(serializeMarkdown(editor!.state.doc)).toBe('## soak overnight')
+      expect(screen.queryByRole('menu', { name: 'text style' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'h2' })).toHaveFocus()
+      expect(button).toBeInTheDocument()
+    })
+
+    it('opens on the current style when it is not the first row', () => {
+      render(<Host onAsk={jest.fn()} onEditor={jest.fn()} content="<h3>soak overnight</h3>" />)
+      openMenu('Enter', 'h3')
+
+      const menu = screen.getByRole('menu', { name: 'text style' })
+      expect(within(menu).getByRole('menuitem', { name: 'h3' })).toHaveFocus()
+    })
+
+    it('closes on Esc, returns focus to the button, and leaves the bar up', () => {
+      render(<Host onAsk={jest.fn()} onEditor={jest.fn()} />)
+      openMenu('Enter')
+      const menu = screen.getByRole('menu', { name: 'text style' })
+
+      // `fireEvent` returns false when the event was default-prevented.
+      const notPrevented = fireEvent.keyDown(within(menu).getByRole('menuitem', { name: 'text' }), {
+        key: 'Escape',
+      })
+
+      expect(notPrevented).toBe(false)
+      expect(screen.queryByRole('menu', { name: 'text style' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'text' })).toHaveFocus()
+      expect(screen.getByRole('toolbar', { name: 'selection' })).toBeInTheDocument()
+    })
   })
 })
 

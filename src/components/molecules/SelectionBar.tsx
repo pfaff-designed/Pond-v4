@@ -494,15 +494,67 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // Resolved fresh for the same reason as `applyMark` — the row's own click
   // is the only thing that needs an editor, so there is nothing to resolve
   // before the menu opens.
+  // A focused menu row can move the DOM selection off the editor, so the choice falls
+  // back to the editor the bar was last drawn for.
   const chooseStyle = (level: Level | null) => () => {
     const sel = window.getSelection()
-    const editor = sel && editorForSelection(sel)
+    const editor = (sel && editorForSelection(sel)) ?? shownSelectionRef.current?.editor
     if (editor) {
       setTextStyle(editor, level)
       setStyleLabel(currentTextStyle(editor))
     }
     setStyleMenuOpen(false)
   }
+
+  const closeStyleMenuToButton = () => {
+    setStyleMenuOpen(false)
+    styleButtonRef.current?.focus()
+  }
+
+  const handleStyleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      // Closes the menu only: the bar stays, and `escLeavesZen` must not also fire.
+      e.preventDefault()
+      closeStyleMenuToButton()
+      return
+    }
+
+    const rows = Array.from(
+      styleMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []
+    )
+    const current = rows.findIndex((row) => row === e.target)
+    if (current === -1) return
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      chooseStyle(STYLE_ROWS[current].level)()
+      styleButtonRef.current?.focus()
+      return
+    }
+
+    const lastIndex = rows.length - 1
+    const nextIndex =
+      e.key === 'ArrowDown'
+        ? (current + 1) % rows.length
+        : e.key === 'ArrowUp'
+          ? (current + lastIndex) % rows.length
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? lastIndex
+              : -1
+    if (nextIndex === -1) return
+
+    e.preventDefault()
+    rows[nextIndex].focus()
+  }
+
+  useEffect(() => {
+    if (!styleMenuOpen) return
+    const rows = styleMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+    const target = styleMenuRef.current?.querySelector<HTMLButtonElement>('[aria-current="true"]')
+    ;(target ?? rows?.[0])?.focus()
+  }, [styleMenuOpen])
 
   const handleToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
@@ -639,6 +691,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
             ref={styleMenuRef}
             role="menu"
             aria-label="text style"
+            aria-orientation="vertical"
+            onKeyDown={handleStyleMenuKeyDown}
             className={`${GLASS} w-[120px]`}
             style={menuStyle}
           >
@@ -647,6 +701,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                 key={row.style}
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 aria-current={styleLabel === row.style ? 'true' : undefined}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={chooseStyle(row.level)}
