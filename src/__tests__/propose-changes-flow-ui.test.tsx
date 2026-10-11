@@ -40,9 +40,11 @@ jest.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
+const mockGetPage = jest.fn().mockResolvedValue(null)
+const mockListPages = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/pages/client', () => ({
-  getPage: jest.fn().mockResolvedValue(null),
-  listPages: jest.fn().mockResolvedValue([]),
+  getPage: (...args: unknown[]) => mockGetPage(...args),
+  listPages: (...args: unknown[]) => mockListPages(...args),
 }))
 jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
@@ -53,6 +55,13 @@ jest.mock('@/lib/pages/create-page', () => ({
 jest.mock('@/lib/pages/tree', () => ({
   fetchPages: jest.fn().mockResolvedValue([]),
   insertPageOptimistic: jest.fn(),
+}))
+// KAN-267: the write path an accept lands through — the place picker needs a
+// real target page to resolve the accept against.
+const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
+jest.mock('@/lib/pages/commit', () => ({
+  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
 }))
 
 let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
@@ -74,6 +83,13 @@ jest.mock('@/lib/change-log/store', () => ({
   advanceStatus: jest.fn(),
   acceptRecord: jest.fn(),
   markOutdated: jest.fn(),
+}))
+
+// KAN-267: the receipt toast fires through the notify bridge (the terminal
+// mounts outside DeletionUndoProvider), so it has to be mocked to be read.
+const mockRequestNotify = jest.fn()
+jest.mock('@/lib/deletion/notify-bridge', () => ({
+  requestNotify: (...args: unknown[]) => mockRequestNotify(...args),
 }))
 
 const mockSendMessage = jest.fn()
@@ -143,6 +159,9 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  mockGetPage.mockReset().mockResolvedValue(null)
+  mockListPages.mockReset().mockResolvedValue([])
+  mockCommitBlocks.mockReset().mockResolvedValue(undefined)
   mockStatus = 'ready'
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
 })
@@ -309,5 +328,57 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const stamped = groups.find((g) => within(g).queryByText('first line of pc9'))
     expect(stamped).toHaveAttribute('aria-label', expect.stringContaining('proposed edit'))
     expect(screen.queryByRole('group', { name: /revised edit/ })).not.toBeInTheDocument()
+  })
+
+  // KAN-267 — PATH_STEPS 1-5: no page open, an unstamped batch offers no live
+  // accept; picking a page in the place row offers one, and accepting writes to
+  // the chosen page, naming it in the receipt.
+  it('with no page open, picking a place in the card offers accept and writes there (KAN-267)', async () => {
+    const user = userEvent.setup()
+    const pageA = { id: 'page-a', parentId: null, type: 'page', title: 'Page A' }
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageA, pageB])
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: id === pageB.id ? pageB.title : pageA.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }))
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    // Nothing is stamped and no page is open: accept cannot land, so the card
+    // says so before any click, and offers a place instead.
+    expect(screen.getByText('these changes need a place to accept to')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'accept' })).toBeDisabled()
+
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
+    const [, , committedTargetId, committedBlocks] = mockCommitBlocks.mock.calls[0] as [
+      unknown,
+      unknown,
+      string,
+      Array<{ content?: string }>,
+    ]
+    expect(committedTargetId).toBe(pageB.id)
+    expect(committedBlocks.map((b) => b.content)).toEqual(
+      expect.arrayContaining(['first line of pc1', 'second line of pc1'])
+    )
+
+    await waitFor(() =>
+      expect(mockRequestNotify).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining(pageB.title) })
+      )
+    )
   })
 })

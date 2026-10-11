@@ -1234,7 +1234,10 @@ export function AITerminal() {
       // stamped target name is the human label; contextLabel is the same-page
       // fallback an unstamped legacy card writes to. Fired via the notify bridge:
       // the terminal mounts outside the DeletionUndoProvider (see notify-bridge).
-      const targetName = changeTargets[toolCallId]?.nodeName || contextLabel
+      const placeName = changePlace[toolCallId]
+        ? allPages.find((p) => p.id === changePlace[toolCallId])?.title
+        : undefined
+      const targetName = changeTargets[toolCallId]?.nodeName || placeName || contextLabel
       const blockNoun = (n: number) => `${n} block${n === 1 ? '' : 's'}`
       if (result.applied > 0) {
         const suffix =
@@ -1973,11 +1976,17 @@ export function AITerminal() {
       const needsPlace =
         !targetMissing &&
         resolveAcceptTarget(resolutions, part.toolCallId, effectiveOpenNodeId) === null
+      // KAN-267: a picked place names no stamp, so without this the header (and
+      // the accept receipt below) would keep reading the pond's own name even
+      // after the person chose a real page to write to.
+      const placeName = changePlace[part.toolCallId]
+        ? allPages.find((p) => p.id === changePlace[part.toolCallId])?.title
+        : undefined
       diffCards.push({
         id: part.toolCallId,
         changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
         status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
-        targetName: target?.nodeName || contextLabel,
+        targetName: target?.nodeName || placeName || contextLabel,
         targetMissing,
         needsPlace,
         parentOptions,
