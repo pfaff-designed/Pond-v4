@@ -39,7 +39,7 @@ trap: it works once and then blocks exactly when supervision needs it. Found on 
 ```sh
 # Compare state + reapproach count + step, NEVER the whole line: `check` leads with an
 # elapsed-age column that changes every tick, so comparing the line fires constantly.
-key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}' || echo none; }
+key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}'; }
 prev=$(key); end=$((SECONDS + 530))
 while [ $SECONDS -lt $end ]; do
   cur=$(key)

@@ -61,8 +61,14 @@ A build loop (`ralph.sh`) keeps its own clock, so you do not interrupt it. Every
 - `done` — read `RESULT`.
 - `stalled` — the script itself has hung: its beats carry the pass limit plus two minutes (25 minutes for the gates), so a stall means no pass ran. `pkill -f "ralph.sh <LOOP>"` (the running pass's process group goes with it), and treat the task as **stopped**.
 
-The conductor, polling every orchestrator at once:
+The conductor, polling every orchestrator at once, run as `POLL` runs: it returns as soon as any orchestrator's state, reapproach count or step changes, or after about nine minutes, then prints every orchestrator's `check` line. Compare those three fields, never the line: its age column changes every tick.
 
 ```sh
-sleep 60; for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s\t' "$(basename "$(dirname "$f")")"; $H check "$f"; done
+key() { for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s ' "$f"; $H check "$f" | awk -F'\t' '{print $1, $4, $5}'; done; }
+prev=$(key); end=$((SECONDS + 530))
+while [ $SECONDS -lt $end ]; do
+  [ "$(key)" != "$prev" ] && break
+  sleep 20
+done
+for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s\t' "$(basename "$(dirname "$f")")"; $H check "$f"; done
 ```

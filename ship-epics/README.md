@@ -89,6 +89,7 @@ flowchart TD
     ADD --> ITEM
     GATES -->|"green"| DONE["<b>status: green</b>"]
     ITEM -.->|"a step another ticket owns"| BL["<b>stop</b>: blocker"]
+    ITEM -.->|"Claude Code's usage limit"| UL["<b>stop</b>: usage limit<br/>not a miss; resume after the reset"]
 ```
 
 **Use a loop when all four hold:** the work is a list of items; each is proven by a command, not by
@@ -114,7 +115,7 @@ Only four things, batched once every orchestrator has returned:
 | -------------- | ------------------------------------------------------------------------------------------------ |
 | **merged**     | what landed, and what a person can now _do_ — the path, not the ticket title                     |
 | **needs-user** | a production migration, a failed reachability gate with a proposed re-split, or a genuine ruling |
-| **stopped**    | a stall, or a failure after two fix rounds                                                       |
+| **stopped**    | a stall, a failure after two fix rounds, or Claude Code's usage limit (resume after the reset)   |
 | **blocked**    | nothing in the epic is ready, and what each candidate waits on                                   |
 
 Everything else — picking, planning, building, reviewing, fixing, verifying, rebasing, merging and
