@@ -165,6 +165,18 @@ import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
 const REVISE_NOTE =
   'the page changed since this was proposed — revise it against the page as it now stands.'
 
+/** An ask again that ends without a replacement (failed, or stopped before its first
+ *  chunk) puts the answer it was replacing back verbatim at its own index. It never
+ *  left the person's thread, so it is not folded into `earlier`. */
+const restoreReplacedAnswer = <T extends { id: string }>(
+  thread: T[],
+  stashed: { message: T; messageIndex: number } | null
+): T[] => {
+  if (!stashed || thread.some((m) => m.id === stashed.message.id)) return thread
+  const at = Math.min(stashed.messageIndex, thread.length)
+  return [...thread.slice(0, at), stashed.message, ...thread.slice(at)]
+}
+
 /** Preview what a promote_table would produce, read from the host page's blocks:
  *  the named `table` block (or the page's sole table when unnamed) reduced to its
  *  inferred columns + row count + caption. Null when the page/table isn't resolved
@@ -481,9 +493,7 @@ export function AITerminal() {
     setMessages((prev) => {
       const last = prev[prev.length - 1]
       const kept = last?.role === 'assistant' ? prev.slice(0, -1) : prev
-      if (!stashed || kept.some((m) => m.id === stashed.message.id)) return kept
-      const at = Math.min(stashed.messageIndex, kept.length)
-      return [...kept.slice(0, at), stashed.message, ...kept.slice(at)]
+      return restoreReplacedAnswer(kept, stashed)
     })
   }, [error, setMessages])
   // Deep research: the only road to the web, off by default and spent per question.
@@ -1796,7 +1806,14 @@ export function AITerminal() {
     const pending = pendingRegenerate.current
     if (!pending || isStreaming) return
     const replacement = messages[pending.messageIndex]
-    if (replacement?.role !== 'assistant' || replacement.id === pending.message.id) return
+    if (replacement?.role !== 'assistant') {
+      // Stopped before the first chunk: regenerate() already sliced the answer out
+      // and nothing replaced it.
+      pendingRegenerate.current = null
+      setMessages((prev) => restoreReplacedAnswer(prev, pending))
+      return
+    }
+    if (replacement.id === pending.message.id) return
     pendingRegenerate.current = null
     const replaced = pending.message
     const replacedSentAt = (replaced.metadata as { sentAt?: unknown } | undefined)?.sentAt

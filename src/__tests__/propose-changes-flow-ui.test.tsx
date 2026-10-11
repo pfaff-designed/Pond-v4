@@ -457,6 +457,49 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(mockSetMessages).not.toHaveBeenCalled()
   })
 
+  it('stopping an ask again before its first chunk puts the replaced answer back, unfolded', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() slices the answer out and submits; stop lands before any chunk.
+    mockMessages = mockMessages.slice(0, 1)
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    applySetMessages()
+    rerender(<AITerminal />)
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+    expect(screen.queryByRole('button', { name: /^earlier answer/ })).not.toBeInTheDocument()
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
   it('two ask agains leave two fold lines, newest nearest the answer, each opening on its own', async () => {
     const user = userEvent.setup()
     const answer = (id: string, text: string, sentAt: string) => ({
