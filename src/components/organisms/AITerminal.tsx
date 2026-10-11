@@ -66,9 +66,9 @@ import { promoteTableFromProposal, inferColumnType } from '@/lib/pages/promote-t
 import { linkRecordsFromProposal } from '@/lib/pages/link-records'
 import { requestNotify } from '@/lib/deletion/notify-bridge'
 import {
-  TextSelectionPopover,
+  SelectionBar,
   type SelectionContext,
-} from '@/components/molecules/TextSelectionPopover'
+} from '@/components/molecules/SelectionBar'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
@@ -3099,7 +3099,7 @@ export function AITerminal() {
   return (
     <>
       {/* Highlight-to-ask popover (ticket-40 F20) — global selection listener */}
-      <TextSelectionPopover onAsk={handleAskFromSelection} disabled={isStreaming} />
+      <SelectionBar onAsk={handleAskFromSelection} disabled={isStreaming} />
       <TerminalDrawer
         collapsed={effectiveCollapsed}
         landed={answerLanded}
