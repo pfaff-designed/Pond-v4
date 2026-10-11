@@ -64,7 +64,6 @@ import {
   TextSelectionPopover,
   type SelectionContext,
 } from '@/components/molecules/TextSelectionPopover'
-import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
@@ -2300,6 +2299,10 @@ export function AITerminal() {
   // Send is off with nothing to send; mid-stream it is the stop square.
   const canSend = isReady && !isUploading && (input.trim().length > 0 || attachments.length > 0)
 
+  const csvAttachmentDescriptor = csvAttachment
+    ? getInlineAttachmentDescriptor(csvAttachment.kind)
+    : undefined
+
   const inputFooter = (
     <div
       className="flex flex-col gap-[14px]"
@@ -2310,12 +2313,8 @@ export function AITerminal() {
       onDrop={handleDrop}
     >
       {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
-      {csvAttachment && (
-        <CsvAttachmentPill
-          filename={csvAttachment.filename}
-          rowCount={csvAttachment.parsed.totalRows}
-          onRemove={clearCsvAttachment}
-        />
+      {csvAttachment && csvAttachmentDescriptor && (
+        <csvAttachmentDescriptor.Pill attachment={csvAttachment} onRemove={clearCsvAttachment} />
       )}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
