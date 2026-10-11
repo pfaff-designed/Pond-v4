@@ -1,6 +1,13 @@
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { activeMarks, toggleBold, toggleBulletList, toggleItalic } from './format'
+import {
+  activeMarks,
+  currentTextStyle,
+  setTextStyle,
+  toggleBold,
+  toggleBulletList,
+  toggleItalic,
+} from './format'
 import { proseExtensions } from './extensions'
 import { serializeMarkdown } from './markdown'
 
@@ -70,6 +77,27 @@ describe('toggleBulletList', () => {
 
     expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
     expect(editor.isActive('bulletList')).toBe(false)
+
+    editor.destroy()
+  })
+})
+
+describe('setTextStyle', () => {
+  it('turns the selected line into an h2, then back into a plain paragraph', () => {
+    const editor = mountEditor('<p>soak overnight</p>')
+    selectWord(editor, 'soak')
+
+    expect(currentTextStyle(editor)).toBe('text')
+
+    setTextStyle(editor, 2)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('## soak overnight')
+    expect(currentTextStyle(editor)).toBe('h2')
+
+    setTextStyle(editor, null)
+
+    expect(serializeMarkdown(editor.state.doc)).toBe('soak overnight')
+    expect(currentTextStyle(editor)).toBe('text')
 
     editor.destroy()
   })
