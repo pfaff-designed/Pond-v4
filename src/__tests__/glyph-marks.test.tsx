@@ -224,6 +224,7 @@ function renderRail(marks?: ReadonlyMap<string, MarkSource>, pondGlyph?: string)
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
       onRename={jest.fn()}
+      onPickGlyph={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
       onOpenDatabases={jest.fn()}
@@ -456,6 +457,7 @@ describe('Rail — the seed title resolves too', () => {
         onAddChild={jest.fn()}
         onDelete={jest.fn()}
         onRename={jest.fn()}
+        onPickGlyph={jest.fn()}
         onLife={jest.fn()}
         onToggleLife={jest.fn()}
         onOpenDatabases={jest.fn()}

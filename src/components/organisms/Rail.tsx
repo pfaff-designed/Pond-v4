@@ -55,15 +55,23 @@ import {
   insertPageOptimistic,
   applyMoveOptimistic,
   applyRenameOptimistic,
+  applyGlyphOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
+import { setPageGlyph } from '@/lib/pages/mark-client'
+import { appendOwnEdit } from '@/lib/change-log/store'
+import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
-import { usePondId } from '@/lib/pond/context'
+import { usePondId, usePond } from '@/lib/pond/context'
+import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
-import { markAccent } from '@/lib/rail/glyph-library'
-import { ancestorPath } from '@/lib/pages/crumbs'
+import { markAccent, pushRecentGlyph } from '@/lib/rail/glyph-library'
+import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
+import { GlyphPicker, glyphPickerHeight } from '@/components/molecules/GlyphPicker'
+import type { PickerSide } from '@/components/molecules/use-anchored-box'
+import { sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import {
@@ -99,6 +107,7 @@ import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { PondMark } from '@/components/atoms/PondMark'
+import { KindDot } from '@/components/atoms/PondAtom'
 import { Caret } from '@/components/atoms/Caret'
 import { RailRenameField } from './RailRenameField'
 
@@ -409,8 +418,10 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         title={label}
         meta=""
         handle={false}
-        // Every row without a glyph draws the dot; `accent` only recolours it.
-        dot={leading === undefined}
+        // `leading` (markButton, below) always carries the row's mark now, dot or
+        // glyph, and re-implements the selected-row ink rule itself — the molecule's
+        // own kind dot would just double it.
+        dot={false}
         accent={accent}
         emphasis={isAreaRow || isSelected}
         leading={leading}
@@ -426,10 +437,13 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         trailing={
           isRenaming ? null : (
             <>
-              {/* The tree has one roving tab stop, so ＋ and × are out of the Tab order
-                (tabIndex -1) and reached by + and Delete. The selected row shows ＋
-                alone; a hovered or focused row shows ＋ and ×; at rest the tools take
-                no width. The root takes ＋ and never ×. */}
+              {/* The row is the tree's roving tab stop; ＋ and × ride along on it rather
+                than adding stops of their own (tabIndex -1), reached instead by + and
+                Delete. The mark button is the one exception — it follows the row's own
+                roving tabIndex (markButton, below) so Tab from the focused row reaches
+                it without adding a stop per row. The selected row shows ＋ alone; a
+                hovered or focused row shows ＋ and ×; at rest the tools take no width.
+                The root takes ＋ and never ×. */}
               {(onAddChild || (!isRoot && onDelete)) && (
                 <span
                   data-part="row-tools"
@@ -518,6 +532,9 @@ export interface RailViewProps {
   /** The pond's own glyph — the root row's mark, the same one the head draws.
    *  Omit in Storybook and the root falls back to `LIFE_GLYPH`. */
   pondGlyph?: string
+  /** The pond's recent glyphs, newest first — the picker's `recent` section
+   *  (KAN-27's `ponds.recent_glyphs`). Omit in Storybook and it draws empty. */
+  recentGlyphs?: readonly string[]
   /**
    * The pond's pages, for resolving each row's mark (#134). Omit in Storybook
    * and every row falls back to its derived mark, which is what the rail did
@@ -537,6 +554,8 @@ export interface RailViewProps {
   onDelete: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
+  /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
+  onPickGlyph: (id: string, glyph: string | null) => void
   onLife: () => void
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
@@ -633,19 +652,79 @@ const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMa
     title: node.title,
   })
 
+/** The mark button's accessible name — a page and an area read the same (6y frame 1). */
+const changeIconLabel = (title: string) => `change icon for ${title || 'Untitled'}`
+
 /**
- * A row's leading glyph in its area's colour, or nothing — the row then keeps its
- * KindDot, which carries the same colour through `accent`. An area always has a
- * glyph (its automatic one is derived from its title); a page has one only when
+ * A row's mark, as a real control (KAN-248 2/4, wired to the glyph picker in
+ * 5/8). Draws the glyph in its area's colour when the page has one, else the
+ * KindDot `accent` still carries (the row no longer draws its own: `leading`
+ * is never `undefined` for a page row). An area always has a glyph (its
+ * automatic one is derived from its title); a plain page has one only when
  * the person picked it.
+ *
+ * `onToggle` opens or closes the picker for this row, handed the button's own
+ * element to anchor the glass off (read from the click event, never from a
+ * ref during render). `stopPropagation` only keeps the row's own click
+ * handler (navigation) from also firing; `onToggle` selects the row itself
+ * (6y frame 1: opening its picker leaves the row selected).
+ *
+ * The row carries the tree's one roving tab stop; the mark button follows it
+ * rather than adding a stop of its own (`tabIndex={isFocused ? 0 : -1}`, same
+ * rule as ＋/×'s row above) — Tab from the focused row reaches its mark, but
+ * Tab no longer stops on every row's mark on the way through the tree.
  */
-const leadingMark = (mark: PageMark): ReactNode =>
-  mark.glyph ? <AreaMark glyph={mark.glyph} color={markAccent(mark.role)} /> : undefined
+const markButton = (
+  mark: PageMark,
+  title: string,
+  accent: string | undefined,
+  isSelected: boolean,
+  isOpen: boolean,
+  isFocused: boolean,
+  onToggle: (el: HTMLButtonElement) => void
+): ReactNode => (
+  <button
+    type="button"
+    tabIndex={isFocused ? 0 : -1}
+    aria-expanded={isOpen}
+    aria-label={changeIconLabel(title)}
+    className="inline-flex flex-none items-center rounded-mn-hair outline-none focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50"
+    onClick={(e) => {
+      e.stopPropagation()
+      onToggle(e.currentTarget)
+    }}
+  >
+    {mark.glyph ? (
+      <AreaMark glyph={mark.glyph} color={accent} />
+    ) : (
+      <KindDot
+        accent={accent}
+        className={!accent ? (isSelected ? 'bg-mn-text' : 'bg-mn-text/50') : undefined}
+      />
+    )}
+  </button>
+)
+
+/** The mark button whose picker is currently open, and what the picker needs. */
+interface OpenGlyphPicker {
+  id: string
+  title: string
+  isArea: boolean
+  current: string | null
+  accent: string | undefined
+  /** The area a non-area target's colour comes from — the picker's inherit footer names it. */
+  inheritsFrom: string
+  /** The button that opened it — the glass's anchor, and where Esc/outside-close returns focus. */
+  anchor: HTMLButtonElement
+  /** Chosen at open time from the anchor's own room, so a mark low in the rail still fits on screen. */
+  side: PickerSide
+}
 
 export function RailView({
   tree,
   pondName,
   pondGlyph = LIFE_GLYPH,
+  recentGlyphs = [],
   marks,
   selectedId,
   expanded,
@@ -658,6 +737,7 @@ export function RailView({
   onAddChild,
   onDelete,
   onRename,
+  onPickGlyph,
   onLife,
   onToggleLife,
   onOpenDatabases,
@@ -674,6 +754,39 @@ export function RailView({
       else rowRefs.current.delete(id)
     },
     []
+  )
+
+  // The glyph picker (KAN-248 5/8): at most one open, anchored on the button
+  // that opened it — captured off the click event itself (never read from a
+  // ref during render).
+  const [picker, setPicker] = useState<OpenGlyphPicker | null>(null)
+  const closePicker = useCallback(() => {
+    picker?.anchor.focus()
+    setPicker(null)
+  }, [picker])
+  const toggleMarkPicker = useCallback(
+    (id: string, node: RailNode, mark: PageMark, anchor: HTMLButtonElement) => {
+      // The mark button is never shown for the databases root (it draws
+      // `DATABASES_MARK` instead), so the row-only special case in
+      // `handleSelect` never applies here — `onSelect` direct is equivalent.
+      onSelect(id)
+      setPicker((cur) => {
+        if (cur?.id === id) return null
+        const target = { isArea: mark.isArea, title: node.title }
+        const height = glyphPickerHeight(target, 'desktop', recentGlyphs, window.innerHeight)
+        return {
+          id,
+          title: node.title,
+          isArea: mark.isArea,
+          current: mark.glyph,
+          accent: markAccent(mark.role),
+          inheritsFrom: areaOf(Array.from(markMap.values()), id) ?? '',
+          anchor,
+          side: sideTowardFreeSpace(anchor.getBoundingClientRect(), window.innerHeight, height),
+        }
+      })
+    },
+    [markMap, onSelect, recentGlyphs]
   )
 
   // 3c: the databases root is the pond's SECOND root — "life for reading,
@@ -965,7 +1078,19 @@ export function RailView({
         // The databases root carries its own functional mark, no area colour.
         // Everywhere else the dot is ink until the person colours its area.
         accent={isDatabasesRoot(node) ? undefined : markAccent(mark.role)}
-        leading={isDatabasesRoot(node) ? DATABASES_MARK : leadingMark(mark)}
+        leading={
+          isDatabasesRoot(node)
+            ? DATABASES_MARK
+            : markButton(
+                mark,
+                node.title,
+                markAccent(mark.role),
+                id === selectedId,
+                picker?.id === id,
+                rovingId === id,
+                (el) => toggleMarkPicker(id, node, mark, el)
+              )
+        }
         // A row revealed on expand (any non-top-level row) settles in rather than
         // popping. Keyed by id, so only newly-mounted rows animate.
         settleOnMount={depth > 0}
@@ -1002,111 +1127,129 @@ export function RailView({
   // --mn-shadow-card roles. Three bands: the head (the pond's name), the
   // scrolling tree, and the foot.
   return (
-    <aside
-      className="bg-mn-card shadow-mn-card rounded-mn-card relative my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans has-[[data-part=pond-switcher][aria-expanded=true]]:overflow-visible"
-      style={{ width: RAIL_WIDTH_PX }}
-    >
-      {/* The switcher chevron appears only once there is a pond to list: before
+    <>
+      <aside
+        className="bg-mn-card shadow-mn-card rounded-mn-card relative my-5 ml-5 flex flex-shrink-0 flex-col self-stretch overflow-hidden pt-[18px] pb-[14px] font-sans has-[[data-part=pond-switcher][aria-expanded=true]]:overflow-visible"
+        style={{ width: RAIL_WIDTH_PX }}
+      >
+        {/* The switcher chevron appears only once there is a pond to list: before
           migration 0018 `listPonds()` returns [] and the head is the plain name,
           rather than an affordance that opens an empty menu. */}
-      <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
+        <PondSwitcher fallbackName={pondName} trailing={REMINDERS_BELL} />
 
-      <div
-        ref={bodyRef}
-        onDragOver={handleBodyDragOver}
-        className="relative flex min-h-0 flex-1 flex-col"
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto px-2">
-          <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
-            {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
-          </div>
+        <div
+          ref={bodyRef}
+          onDragOver={handleBodyDragOver}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto px-2">
+            <div role="tree" aria-label="Workspace" aria-multiselectable={false}>
+              {!isLoading && flat.filter((f) => !databasesIds.has(f.id)).map(renderRow)}
+            </div>
 
-          {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
+            {/* Status lives OUTSIDE the tree — role="tree" only allows treeitem
               children (WAI-ARIA); a <p> inside it would be an illegal child.
               Loading = PondRail's skeleton bars (7f / G6); empty = its hint. */}
-          {isLoading && (
-            <div className="px-3 py-2" role="status">
-              <span className="sr-only">Loading pages…</span>
-              <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
-                {SKELETON_WIDTHS.map((w, i) => (
-                  <span
-                    key={i}
-                    className="block h-[9px] rounded-[5px] bg-mn-text/[0.08]"
-                    style={{ width: `${w}%`, marginLeft: (i % 3) * 14 }}
-                  />
-                ))}
+            {isLoading && (
+              <div className="px-3 py-2" role="status">
+                <span className="sr-only">Loading pages…</span>
+                <div data-part="rail-skeleton" aria-hidden className="flex flex-col gap-3.5">
+                  {SKELETON_WIDTHS.map((w, i) => (
+                    <span
+                      key={i}
+                      className="block h-[9px] rounded-[5px] bg-mn-text/[0.08]"
+                      style={{ width: `${w}%`, marginLeft: (i % 3) * 14 }}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          {!isLoading && isEmpty && (
-            <p
-              className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
-              role="status"
+            )}
+            {!isLoading && isEmpty && (
+              <p
+                className="mt-2 mr-2 ml-[26px] text-[12.5px] leading-[1.5] text-pretty text-mn-text-secondary"
+                role="status"
+              >
+                no pages yet. ＋ new page, or ask pond to start one.
+              </p>
+            )}
+          </div>
+
+          {/* `PondRail` `dragging`: a chip that follows the pointer's Y at the
+            board's `left: 58` — the native drag image is blanked in dragstart. */}
+          {draggingId && (
+            <div
+              data-part="drag-ghost"
+              aria-hidden
+              className="pointer-events-none absolute left-[58px] z-10 flex max-w-[calc(100%-66px)] items-center gap-[7px] rounded-mn-row bg-mn-drag-ghost px-2.5 py-1.5 text-[13px] leading-[normal] text-mn-text shadow-mn-drag-ghost [transform:translateY(-50%)_rotate(-1.5deg)]"
+              style={{ top: ghostY }}
             >
-              no pages yet. ＋ new page, or ask pond to start one.
-            </p>
+              <span className="size-[7px] flex-none rounded-mn-hair bg-mn-text" />
+              <span className="min-w-0 truncate">{draggedTitle}</span>
+            </div>
           )}
         </div>
 
-        {/* `PondRail` `dragging`: a chip that follows the pointer's Y at the
-            board's `left: 58` — the native drag image is blanked in dragstart. */}
-        {draggingId && (
-          <div
-            data-part="drag-ghost"
-            aria-hidden
-            className="pointer-events-none absolute left-[58px] z-10 flex max-w-[calc(100%-66px)] items-center gap-[7px] rounded-mn-row bg-mn-drag-ghost px-2.5 py-1.5 text-[13px] leading-[normal] text-mn-text shadow-mn-drag-ghost [transform:translateY(-50%)_rotate(-1.5deg)]"
-            style={{ top: ghostY }}
-          >
-            <span className="size-[7px] flex-none rounded-mn-hair bg-mn-text" />
-            <span className="min-w-0 truncate">{draggedTitle}</span>
-          </div>
-        )}
-      </div>
-
-      {/* The foot: a full-width hairline, then the databases root (3c: the
+        {/* The foot: a full-width hairline, then the databases root (3c: the
           pond's SECOND root, its own ARIA tree so the structure says what the rail
           says) and `settings`. The databases tree is capped at 40vh so an expanded
           root scrolls inside the foot instead of swallowing the rail. The scroller
           clips at its padding box, so it carries 2px of padding (cancelled by a -2px
           margin) to keep the rows' 2px focus ring visible. */}
-      <div
-        data-part="rail-foot"
-        className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
-      >
         <div
-          role="tree"
-          aria-label="Databases"
-          aria-multiselectable={false}
-          className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+          data-part="rail-foot"
+          className="flex flex-col gap-0.5 border-t border-mn-text/[0.09] px-2 pt-2.5"
         >
-          {databasesFlat.map(renderRow)}
-        </div>
-        {/* Not interactive until a settings surface exists: like the bell, a dead
+          <div
+            role="tree"
+            aria-label="Databases"
+            aria-multiselectable={false}
+            className="-m-0.5 max-h-[40vh] overflow-y-auto p-0.5"
+          >
+            {databasesFlat.map(renderRow)}
+          </div>
+          {/* Not interactive until a settings surface exists: like the bell, a dead
             button is worse than none. */}
-        <div
-          data-part="settings"
-          className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
-        >
-          <span className="inline-flex items-center gap-2">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 14 14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              aria-hidden
-              className="flex-none"
-            >
-              <circle cx="7" cy="7" r="2.2" />
-              <path d="M7 1.4v1.8M7 10.8v1.8M1.4 7h1.8M10.8 7h1.8M3 3l1.3 1.3M9.7 9.7 11 11M3 11l1.3-1.3M9.7 4.3 11 3" />
-            </svg>
-            settings
-          </span>
+          <div
+            data-part="settings"
+            className="px-2 py-[6px] text-[12.5px] leading-[normal] text-mn-text-secondary"
+          >
+            <span className="inline-flex items-center gap-2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                aria-hidden
+                className="flex-none"
+              >
+                <circle cx="7" cy="7" r="2.2" />
+                <path d="M7 1.4v1.8M7 10.8v1.8M1.4 7h1.8M10.8 7h1.8M3 3l1.3 1.3M9.7 9.7 11 11M3 11l1.3-1.3M9.7 4.3 11 3" />
+              </svg>
+              settings
+            </span>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+      {picker && (
+        <GlyphPicker
+          target={{ isArea: picker.isArea, title: picker.title }}
+          current={picker.current}
+          accent={picker.accent}
+          recentGlyphs={recentGlyphs}
+          inheritsFrom={picker.inheritsFrom}
+          anchor={picker.anchor}
+          side={picker.side}
+          onPick={(glyph) => {
+            onPickGlyph(picker.id, glyph)
+            closePicker()
+          }}
+          onClose={closePicker}
+        />
+      )}
+    </>
   )
 }
 
@@ -1119,6 +1262,20 @@ export function Rail() {
   const pondId = usePondId()
   const pondName = usePondName()
   const pondGlyph = usePondGlyph()
+  const { pond } = usePond()
+  // The pond's own recent list, overridden optimistically the instant a pick
+  // lands (KAN-248 7/8) — mirrors `applyGlyphOptimistic`'s "redraw before the
+  // write settles", but as a session-only overlay rather than mirrored local
+  // state: `pushedGlyphs` is only ever appended from the pick handler itself
+  // (never synced from `pond` in an effect, which `react-hooks/set-state-in-effect`
+  // already rules out elsewhere in this file), and replaying it over `pond`'s
+  // own list is idempotent — `pushRecentGlyph` dedupes — so it never drifts
+  // once a refetch catches up.
+  const [pushedGlyphs, setPushedGlyphs] = useState<readonly string[]>([])
+  const recentGlyphs = useMemo(
+    () => pushedGlyphs.reduce(pushRecentGlyph, pond?.recentGlyphs ?? []),
+    [pond, pushedGlyphs]
+  )
   // Area folders start collapsed and open per session; Life starts expanded so
   // the tree is visible on load (collapsing Life is the "collapse everything").
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -1360,6 +1517,64 @@ export function Rail() {
     void queryClient.invalidateQueries({ queryKey: ['page', id] })
   }
 
+  /**
+   * A pick commits at once: the mark redraws through `resolveMark` before
+   * `setPageGlyph`'s write lands (`marks` is rebuilt from the same cache
+   * `applyGlyphOptimistic` writes). A failed write rolls back to the row's
+   * previous glyph and notifies, matching `handleRename`'s pattern.
+   *
+   * It also pushes onto the pond's recent list (KAN-27): `recentGlyphs`
+   * redraws from the same pure `pushRecentGlyph` merge `pushRecentGlyphToPond`
+   * persists, so the picker's `recent` section never waits on that write
+   * either — and a pick of `null` (automatic) has no glyph to push. A failed
+   * push rolls its own entry out of `pushedGlyphs` (not the page glyph write
+   * above, which already succeeded or failed on its own).
+   *
+   * One change, one undoable record (the 10 oct ruling): once `setPageGlyph`
+   * lands, the pick is logged as the person's own `edit_glyph` record —
+   * picking `automatic` (glyph `null`) is a change too, so it is logged the
+   * same way. The ⌘Z chord that replays it is KAN-93's; this ticket only owes
+   * the record. Logging is a side-record of a write that already landed
+   * (`own-edit.ts`'s own rule), so a failed append is console-logged, never
+   * rolled back into the real write's success/failure handling.
+   */
+  const handlePickGlyph = async (id: string, glyph: string | null) => {
+    const previous = marks.get(id)?.glyph ?? null
+    applyGlyphOptimistic(queryClient, { id, glyph }, pondId)
+    if (glyph && pondId) {
+      setPushedGlyphs((prev) => [...prev, glyph])
+      pushRecentGlyphToPond(pondId, recentGlyphs, glyph).catch((error) => {
+        console.error('[recent-glyphs] push not persisted', glyph, error)
+        setPushedGlyphs((prev) => {
+          const index = prev.lastIndexOf(glyph)
+          return index === -1 ? prev : [...prev.slice(0, index), ...prev.slice(index + 1)]
+        })
+      })
+    }
+    try {
+      await withUser(async (sb, uid) => {
+        await setPageGlyph(sb, id, glyph)
+        if (jsonEqual(previous, glyph)) return
+        try {
+          await appendOwnEdit(sb, {
+            userId: uid,
+            pondId,
+            action: 'edit_glyph',
+            targetPageId: id,
+            before: previous,
+            after: glyph,
+          })
+        } catch (err) {
+          console.error('[change-log] glyph pick not logged', id, err)
+        }
+      })
+    } catch {
+      applyGlyphOptimistic(queryClient, { id, glyph: previous }, pondId)
+      notify(`Couldn't change the icon for "${nodeById.get(id)?.title || 'Untitled'}"`)
+      void queryClient.invalidateQueries({ queryKey: pagesKey() })
+    }
+  }
+
   function handleToggle(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -1440,6 +1655,7 @@ export function Rail() {
         tree={tree}
         pondName={pondName}
         pondGlyph={pondGlyph}
+        recentGlyphs={recentGlyphs}
         marks={marks}
         selectedId={selectedNodeId}
         expanded={expanded}
@@ -1452,6 +1668,7 @@ export function Rail() {
         onAddChild={handleAddChild}
         onDelete={handleDelete}
         onRename={handleRename}
+        onPickGlyph={handlePickGlyph}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
