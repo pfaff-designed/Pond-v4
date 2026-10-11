@@ -183,7 +183,7 @@ export function SelectionBar() {
           <button
             type="button"
             aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
-            className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07]"
+            className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
           >
             <Mark item={item} />
           </button>
