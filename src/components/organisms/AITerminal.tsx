@@ -17,7 +17,7 @@ import {
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
-import { usePondId } from '@/lib/pond/context'
+import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import {
@@ -200,7 +200,8 @@ export function AITerminal() {
   // CI) never constructs a real client and throws (#38); queryFns, effects and
   // the accept handlers below construct it only when they actually run.
   const getSupabase = useLazySupabase()
-  const pondId = usePondId()
+  const { pond, loading: pondsLoading } = usePond()
+  const pondId = pond?.id ?? null
   const composerHeight = useComposerHeight()
 
   // A no-execute client tool's part stays `input-available` after addToolOutput,
@@ -465,7 +466,11 @@ export function AITerminal() {
   // Deep research: the only road to the web, off by default and spent per question.
   const [research, setResearch] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [isReady, setIsReady] = useState(false)
+  // The pond whose thread is on screen; `undefined` until the first thread lands.
+  // Ready means the thread on screen is THIS pond's: mid-switch, a message would
+  // carry the new pond's context into the old pond's thread.
+  const [threadPondId, setThreadPondId] = useState<string | null | undefined>(undefined)
+  const isReady = threadPondId !== undefined && threadPondId === pondId
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
@@ -616,20 +621,18 @@ export function AITerminal() {
   // Likewise the page proposals re-seeded from the saved envelope: still in the
   // thread, but only a card opened THIS session pins the composer open.
   const [seededProposalIds, setSeededProposalIds] = useState<ReadonlySet<string>>(new Set())
-  /**
-   * Which pond's thread is on screen (#312).
-   *
-   * Seeded with a SENTINEL, not `null`. Seeded with null, the `null → <pond>`
-   * transition — which happens on every mount, because ponds load async and the
-   * first run always has `pondId === null` — counted as "not switched". So a
-   * direct load of `?pond=B` ran: fetch with null → the first pond's thread →
-   * `setMessages(A)` and `conversationId = A`; then run 2 with pond B saw
-   * `switched === false`, left A's messages on screen, and the save effect wrote
-   * them into B's conversation row. The sentinel makes the first resolve a real
-   * change.
-   */
+  /** Which pond's thread was last loaded (#312); `undefined` before the first. */
   const loadedPondRef = useRef<string | null | undefined>(undefined)
   useEffect(() => {
+    // Ponds load async, and an unresolved pond reads as the person's FIRST pond
+    // (`resolvePond`). Loading then would fetch the wrong pond's thread on every
+    // cold load of another pond — and the switcher is a full page load.
+    if (pondsLoading) return
+    // A turn still streaming belongs to the pond it was asked in.
+    if (loadedPondRef.current !== undefined && loadedPondRef.current !== pondId) stop()
+    // Only the latest pond's load may land: an earlier one resolving after it would
+    // put that pond's thread, and its conversation id, under this pond's context.
+    let cancelled = false
     // Async IIFE so an envless client construction (#38) rejects into the catch
     // below instead of throwing out of the effect and crashing the mount.
     ;(async () => {
@@ -637,8 +640,9 @@ export function AITerminal() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user || cancelled) return
       const conversation = await getOrCreateConversation(supabase, user.id, pondId)
+      if (cancelled) return
       setConversationId(conversation.id)
       // #312: a thread is per pond, so SWITCHING ponds replaces what is on screen.
       // Switching is a client-side navigation and this component never unmounts, so
@@ -651,9 +655,7 @@ export function AITerminal() {
       // must not reset the thread).
       // `undefined` means "nothing loaded yet", which is NOT a switch — a first
       // mount with an empty thread must not touch `setMessages`, as two 6a tests
-      // assert. `null` means "loaded, with no pond resolved", which IS a real
-      // previous state: the null → pond transition is exactly the direct-load
-      // case that was copying the first pond's thread into another pond.
+      // assert.
       const prev = loadedPondRef.current
       const switched = prev !== undefined && prev !== pondId
       loadedPondRef.current = pondId
@@ -668,10 +670,13 @@ export function AITerminal() {
       // the persisted-derived fields and leaves session-scoped aux empty.
       dispatch({ kind: 'reseed', resolutions: conversation.resolutions })
       setSeededProposalIds(new Set(Object.keys(conversation.resolutions.pageProposals ?? {})))
-      setIsReady(true)
+      setThreadPondId(pondId)
     })().catch(console.error)
+    return () => {
+      cancelled = true
+    }
     // `pondId` is a real dependency: the thread it loads belongs to that pond.
-  }, [setMessages, getSupabase, pondId])
+  }, [setMessages, getSupabase, pondId, pondsLoading, stop])
 
   // ── Save transcript after each completed exchange ─────────────────────────
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss

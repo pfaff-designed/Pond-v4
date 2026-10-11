@@ -18,10 +18,14 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
-jest.mock('@/lib/pond/context', () => ({
-  ...jest.requireActual('@/lib/pond/context'),
-  usePondId: () => 'pond-7',
-}))
+jest.mock('@/lib/pond/context', () => {
+  const active = { pond: { id: 'pond-7' }, ponds: [], loading: false, reload: () => {}, addPond: () => {} }
+  return {
+    ...jest.requireActual('@/lib/pond/context'),
+    usePond: () => active,
+    usePondId: () => 'pond-7',
+  }
+})
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
