@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
+import { blockWidthStyle } from '@/lib/modules/layout-rows'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -112,6 +113,13 @@ const handleOf = (blockId: string) =>
   })
 
 const lastBlocks = (onChange: jest.Mock) => onChange.mock.calls.at(-1)![0] as Block[]
+
+/** jsdom's CSSStyleDeclaration reorders a `calc()`, so compare normalized values. */
+function normalizedWidth(value: string) {
+  const probe = document.createElement('div')
+  probe.style.width = value
+  return probe.style.width
+}
 
 const scrollIntoView = jest.mocked(HTMLElement.prototype.scrollIntoView)
 
@@ -351,6 +359,48 @@ describe('turn into — table', () => {
 
     await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
     await waitFor(() => expect(mockDeletePage).toHaveBeenCalledWith(expect.anything(), 'db-1'))
+  })
+})
+
+describe('the width row — the block menu’s `width` group', () => {
+  it('keeps the picked width in place and closes the menu; undo restores the absent width', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+    await user.click(handleOf('b-list'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(lastBlocks(onChange)).toEqual([heading, { ...list, width: '1/2' }])
+
+    await user.click(await screen.findByRole('button', { name: /undo/i }))
+    await waitFor(() => expect(lastBlocks(onChange)).toEqual([heading, list]))
+  })
+
+  it('PATH_STEPS: picking ½ on two blocks narrows each, then shares one row', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, list])
+
+    await user.click(handleOf('b-heading'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const rootA = document.getElementById('block-b-heading')!
+    const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
+    expect(rootA.parentElement!.style.width).toBe(halfWidth)
+
+    await user.click(handleOf('b-list'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const rootB = document.getElementById('block-b-list')!
+    expect(rootB.parentElement!.style.width).toBe(halfWidth)
+
+    // Both sizing divs are flat siblings of the one canvas list — sharing a
+    // row is the canvas's own flex-wrap putting two half-width divs on one
+    // line, not a dedicated row wrapper. `rootA`'s sizing div is keyed on
+    // `block.id` alone, so it's the SAME node captured above, never swapped
+    // out when the row gains its second block (gutted, KAN-43).
+    expect(rootA.parentElement!.parentElement).toBe(rootB.parentElement!.parentElement)
   })
 })
 

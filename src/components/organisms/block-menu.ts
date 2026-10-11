@@ -8,13 +8,14 @@
 import type { ReactNode } from 'react'
 import type { PondMenuGroup, PondMenuItem } from '@/components/molecules/PondMenu'
 import { conversionsFor, type Conversion } from '@/lib/modules/conversions'
-import type { Block } from '@/lib/modules/content'
+import type { Block, BlockWidth } from '@/lib/modules/content'
 
 export type BlockMenuAction =
   | { type: 'turn-into'; conversion: Conversion }
   | { type: 'move-into-new-page' }
   | { type: 'copy-link' }
   | { type: 'delete' }
+  | { type: 'set-width'; width: BlockWidth }
 
 export interface BlockMenuSlots {
   /** The width row, drawn under a `width` head. */

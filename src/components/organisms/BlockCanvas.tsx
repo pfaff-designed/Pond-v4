@@ -18,7 +18,15 @@
  * surfaces share one editor.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
@@ -56,6 +64,8 @@ import {
   type PondMenuSize,
 } from '@/components/molecules/PondMenu'
 import { AddBlockButton } from '@/components/molecules/AddBlockButton'
+import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
+import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock } from '@/lib/modules/text/focus'
@@ -100,6 +110,7 @@ import { PageLinkProvider } from '@/lib/modules/page-link/context'
 import { usePageLinkCapabilities } from '@/lib/modules/page-link/use-capabilities'
 import { cn } from '@/lib/utils'
 import type { Block } from '@/lib/documents/types'
+import type { BlockWidth } from '@/lib/modules/content'
 
 /** What a block is called to assistive tech: its heading, else its kind. */
 const blockName = (block: Block, frame: BlockFrame | null): string =>
@@ -118,6 +129,28 @@ const MENU_PLACEMENT: Record<PondMenuSize, Omit<PondMenuPlacement, 'anchor'>> = 
 
 /** The page a `/` pick makes: a template's shape, or a person's own copied whole. */
 type NewPage = InstantiatedTemplate & { props?: Record<string, unknown> }
+
+/**
+ * The block list is the one flex container — gutted from a per-row wrapper div
+ * plus per-block sizing div: a flat sizing div per block, keyed `block.id`, with
+ * `flexWrap` so a 100%-wide sizing div (a stacked block) takes its own line,
+ * which IS the stack. No row-level element exists to carry a regrouping key, so
+ * a block changing rows can never remount — structurally impossible, not merely
+ * untested. A host's `listStyle` (zen's 22px) only overrides `rowGap`; `display`,
+ * `flexWrap` and `flexDirection` are reasserted here so a host passing
+ * `flexDirection:'column'` (zen's own shape) can't turn off wrapping.
+ */
+function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
+  return {
+    ...listStyle,
+    display: 'flex',
+    flexWrap: 'wrap',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    columnGap: BLOCK_ROW_GAP_PX,
+    rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
+  }
+}
 
 export interface BlockCanvasProps {
   /** The blocks to render — controlled by the caller. */
@@ -332,6 +365,23 @@ export function BlockCanvas({
     })
   }
 
+  /**
+   * The width row's keep (6x): the same in-place-swap-by-id route as
+   * `convertBlock`, so the undo toast restores the block's previous width
+   * (absent means `full`). Pond binds no ⌘Z anywhere — inside a focused text
+   * block that key reaches the editor instead — so the toast is the undo the
+   * board's "click to keep, with undo" has here.
+   */
+  const setBlockWidth = (before: Block, width: BlockWidth) => {
+    const after = { ...before, width } as Block
+    onChange(blocks.map((b) => (b.id === before.id ? after : b)))
+    stageUndo({
+      message: 'Set the block width',
+      scope: 'block',
+      undo: () => onChange(blocksRef.current.map((b) => (b.id === before.id ? before : b))),
+    })
+  }
+
   /** The page's own URL, anchored at the block — arriving there lands on it. */
   const copyBlockLink = async (blockId: string) => {
     try {
@@ -364,6 +414,7 @@ export function BlockCanvas({
       'move-into-new-page': () => onMoveIntoNewPage?.(block),
       'copy-link': () => void copyBlockLink(block.id),
       delete: () => removeBlockAt(index),
+      'set-width': ({ width }) => setBlockWidth(block, width),
     })
   }
 
@@ -634,6 +685,95 @@ export function BlockCanvas({
     onChange(next)
   }
 
+  // Rows are derived, never stored (6x): consecutive blocks whose widths add up
+  // to full or less share one row, in array order — so the flattened render
+  // below reproduces `blocks`' own order, and each block's position in it is
+  // its real index into `blocks`.
+  const blockRows = useMemo(() => layoutRows(blocks), [blocks])
+
+  // Stacking (6x): measured off the content column itself (ResizeObserver on the
+  // canvas), not the viewport, so the side panel and window-narrowing both
+  // trigger it. 0 means "not yet measured" (jsdom never measures) and is read as
+  // "holds" — a page with no widths set (every block full) renders identically
+  // either way, since "holds" only narrows a sub-240px block's own share and a
+  // full block's share is always 100%. A layout effect, not a passive one: it
+  // measures and (if narrow) flips to stacked before the browser paints, so a
+  // genuinely narrow window never paints the un-stacked share for one frame first.
+  const [columnWidth, setColumnWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = canvasRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const read = () => setColumnWidth(el.getBoundingClientRect().width)
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  function renderBlockEditor(block: Block, i: number) {
+    return (
+      <BlockEditor
+        key={block.id}
+        block={block}
+        pageId={pageId}
+        settleOnMount={insertedIds?.has(block.id) ?? false}
+        chrome={chrome}
+        onChange={(next) => setBlockAt(i, next)}
+        onRemoveEmpty={() => removeEmptyLineAt(i)}
+        onReturn={() => insertLineAfter(i)}
+        onMoveUp={() => moveBlockAt(i, 'up')}
+        onMoveDown={() => moveBlockAt(i, 'down')}
+        onSlashKey={() => openSlashMenuAt(i)}
+        slashMenuOpen={slashMenuOpenAt === i}
+        slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+        slashSize={slashSize}
+        yourTemplates={yourTemplates}
+        onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
+        onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
+        onSlashClose={closeSlashMenu}
+        menuOpen={menuOpenAt === i}
+        // Only the OPEN block's groups are derived: this render runs on every
+        // keystroke anywhere on the page.
+        menuGroups={
+          menuOpenAt === i
+            ? blockMenuGroups(block, {
+                moveIntoNewPage: onMoveIntoNewPage !== undefined,
+                width: (
+                  <BlockWidthRow
+                    width={block.width}
+                    onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                  />
+                ),
+              })
+            : undefined
+        }
+        menuSize={slashSize}
+        onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
+        onMenuSelect={(action) => handleMenuSelect(i, action)}
+        isDragging={draggingIndex === i}
+        onDragStart={() => {
+          setMenuOpenAt(null)
+          setDraggingIndex(i)
+        }}
+        onDragEnd={() => setDraggingIndex(null)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault()
+          if (draggingIndex === null || draggingIndex === i) {
+            setDraggingIndex(null)
+            return
+          }
+          // Move the dragged block to position i (splice, not swap).
+          const next = [...blocks]
+          const [moved] = next.splice(draggingIndex, 1)
+          next.splice(i, 0, moved)
+          onChange(next)
+          setDraggingIndex(null)
+        }}
+      />
+    )
+  }
+
   return (
     <PageLinkProvider value={pageLinks}>
       {/* Provide sibling-block state so bound metrics derive live and their `→`
@@ -641,60 +781,36 @@ export function BlockCanvas({
           checklist toggle re-derives every metric in the same render. `pageId`
           lets a cross-page rollup metric find this page's children (ticket-38). */}
       <SiblingBlocksProvider value={{ blocks, scrollToBlock, pageId }}>
-        <div ref={canvasRef} className="space-y-0" style={listStyle}>
-          {blocks.map((block, i) => (
-            <BlockEditor
-              key={block.id}
-              block={block}
-              pageId={pageId}
-              settleOnMount={insertedIds?.has(block.id) ?? false}
-              chrome={chrome}
-              onChange={(next) => setBlockAt(i, next)}
-              onRemoveEmpty={() => removeEmptyLineAt(i)}
-              onReturn={() => insertLineAfter(i)}
-              onMoveUp={() => moveBlockAt(i, 'up')}
-              onMoveDown={() => moveBlockAt(i, 'down')}
-              onSlashKey={() => openSlashMenuAt(i)}
-              slashMenuOpen={slashMenuOpenAt === i}
-              slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
-              slashSize={slashSize}
-              yourTemplates={yourTemplates}
-              onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
-              onSlashPickTemplate={(pick, at) => handleSlashPickTemplate(i, pick, at)}
-              onSlashClose={closeSlashMenu}
-              menuOpen={menuOpenAt === i}
-              // Only the OPEN block's groups are derived: this render runs on every
-              // keystroke anywhere on the page.
-              menuGroups={
-                menuOpenAt === i
-                  ? blockMenuGroups(block, { moveIntoNewPage: onMoveIntoNewPage !== undefined })
-                  : undefined
-              }
-              menuSize={slashSize}
-              onMenuOpenChange={(open) => handleMenuOpenChange(i, open)}
-              onMenuSelect={(action) => handleMenuSelect(i, action)}
-              isDragging={draggingIndex === i}
-              onDragStart={() => {
-                setMenuOpenAt(null)
-                setDraggingIndex(i)
-              }}
-              onDragEnd={() => setDraggingIndex(null)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (draggingIndex === null || draggingIndex === i) {
-                  setDraggingIndex(null)
-                  return
-                }
-                // Move the dragged block to position i (splice, not swap).
-                const next = [...blocks]
-                const [moved] = next.splice(draggingIndex, 1)
-                next.splice(i, 0, moved)
-                onChange(next)
-                setDraggingIndex(null)
-              }}
-            />
-          ))}
+        <div ref={canvasRef} style={canvasListStyle(listStyle)}>
+          {/*
+           * A single flat `.flatMap()`, not a `.map()` of each row's own
+           * `.map()`: nested arrays give React an implicit key path scoped to
+           * their outer array index, so a block moving from row 0 to row 1
+           * would still remount even though its own `key` is unchanged — the
+           * exact bug a flat array (one key namespace, block.id only) removes.
+           */}
+          {blockRows
+            .flatMap((row) => {
+              const widths = row.map((block) => block.width ?? 'full')
+              // Widths and rows are kept, not shown: a row that stacks renders
+              // each of its blocks' sizing divs at 100% width, which — because
+              // the list itself wraps — puts each on its own line, in reading
+              // order. That IS the stack; no row-level wrapper is rendered at
+              // all, so a block shifting from one row to another regroups
+              // `blockRows` without touching any ancestor element, and a
+              // remount is impossible rather than merely untested.
+              const stacks = columnWidth > 0 && !rowHolds(columnWidth, widths)
+              return row.map((block) => ({ block, stacks }))
+            })
+            .map(({ block, stacks }, i) => {
+              const width = block.width ?? 'full'
+              const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
+              return (
+                <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
+                  {renderBlockEditor(block, i)}
+                </div>
+              )
+            })}
         </div>
       </SiblingBlocksProvider>
 

@@ -21,18 +21,38 @@ import { imageSchema } from './image/schema'
 import { highlightSchema } from './highlight/schema'
 import { entriesSchema } from './entries/schema'
 
+/**
+ * A block's width (6x), set from its handle. `'1/4' | '1/3' | '1/2' | '2/3' | '3/4'
+ * | 'full'`. Absent means full, so every existing page reads unchanged.
+ */
+const blockWidthSchema = z.enum(['1/4', '1/3', '1/2', '2/3', '3/4', 'full'])
+export type BlockWidth = z.infer<typeof blockWidthSchema>
+
+/**
+ * The shared `width` mixin (KAN-43), extended onto every union member HERE rather
+ * than inside each per-module schema file, the way `labelledBlockFields` is. That
+ * keeps the per-module files untouched and, since `ai-composition.ts` imports those
+ * files directly rather than `blockSchema`, keeps `width` out of the AI-facing
+ * unions for free — Pond never authors layout.
+ */
+const blockWidthFields = {
+  width: blockWidthSchema
+    .optional()
+    .describe('Never set by the AI. Reserved for the person\'s own layout choice.'),
+}
+
 export const blockSchema = z.discriminatedUnion('type', [
-  textSchema,
-  todoSchema,
-  tableSchema,
+  textSchema.extend(blockWidthFields),
+  todoSchema.extend(blockWidthFields),
+  tableSchema.extend(blockWidthFields),
   // #19: the inline collection view block (config only; rows are child pages).
-  viewSchema,
+  viewSchema.extend(blockWidthFields),
   // #61: an uploaded image / file attachment, referenced by storage URL.
-  imageSchema,
+  imageSchema.extend(blockWidthFields),
   // #249: a kept passage — wheat's one legal job (ADR 0005 / 0007).
-  highlightSchema,
+  highlightSchema.extend(blockWidthFields),
   // #250: dated prose — serif only when the block's own flag says so (ADR 0005 / 0007).
-  entriesSchema,
+  entriesSchema.extend(blockWidthFields),
 ])
 
 /** A content module persisted in a page's `blocks` array. */

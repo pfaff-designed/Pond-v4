@@ -505,7 +505,8 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(handles.every((h) => h.hidden)).toBe(true)
     const add = screen.getByRole('button', { name: 'Add a block', hidden: true })
     expect(add.parentElement!.hidden).toBe(true)
-    const list = handles[0].parentElement!.parentElement!
+    // handle -> BlockEditor root -> per-block sizing div -> list (no row div).
+    const list = handles[0].parentElement!.parentElement!.parentElement!
     expect(getComputedStyle(list).display).toBe('flex')
     expect(getComputedStyle(list).rowGap).toBe('22px')
 
@@ -513,7 +514,7 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     expect(properties.closest('.hidden')).toBeNull()
     expect(handles.some((h) => h.hidden)).toBe(false)
     expect(add.parentElement!.hidden).toBe(false)
-    expect(list.style.rowGap).toBe('')
+    expect(list.style.rowGap).toBe('16px')
   })
 
   it('esc leaves, and puts everything back — the rail, the breadcrumb, the composer and the scroll', async () => {
