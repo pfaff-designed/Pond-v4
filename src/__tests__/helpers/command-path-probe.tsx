@@ -13,7 +13,7 @@ function PathProbe() {
   const path = useCommandPath()
   if (!path) return null
   return (
-    <output data-testid="command-path" data-glyph={path.glyph}>
+    <output data-testid="command-path" data-glyph={path.glyph} data-role={path.role ?? ''}>
       {[...path.trail, path.current].join(' › ')}
     </output>
   )

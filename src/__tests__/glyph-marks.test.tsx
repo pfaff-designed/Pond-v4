@@ -337,20 +337,28 @@ describe('DocumentPanel — the path it publishes leads with the area’s mark',
     return probe.getAttribute('data-glyph')
   }
 
-  // `PondCommand.dc.html`: `GLYPH[path[1]] || GLYPH[path[0]]`, drawn in ink — the
-  // mark names the area, and the pill is chrome, so it carries no area role.
-  it('a page inside a mapped area leads its path with that area’s glyph', async () => {
+  const publishedRole = async (findByTestId: (id: string) => Promise<HTMLElement>) => {
+    const probe = await findByTestId('command-path')
+    return probe.getAttribute('data-role')
+  }
+
+  // `PondCommand.dc.html`: `GLYPH[path[1]] || GLYPH[path[0]]`, drawn in ink by
+  // default — the mark names the area, and carries that area's role (comment
+  // 10076) only once one has been coloured.
+  it('a page inside an uncoloured area leads its path with that area’s glyph and no role', async () => {
     const { findByTestId } = renderPanel('food')
     await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe('house'))
+    expect(await publishedRole(findByTestId)).toBe('')
   })
 
-  it('a glyph the person chose beats the title-derived one (#134)', async () => {
+  it('a glyph the person chose beats the title-derived one (#134), and its area’s role carries', async () => {
     const { findByTestId } = renderPanel('food', {
       id: 'personal',
       glyph: 'tulip-01',
       area_role: 'area-c',
     })
     await waitFor(async () => expect(await publishedGlyph(findByTestId)).toBe('tulip-01'))
+    expect(await publishedRole(findByTestId)).toBe('area-c')
   })
 
   it('a top-level page is its own area, so the path leads with its own mark', async () => {

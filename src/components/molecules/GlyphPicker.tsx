@@ -8,15 +8,20 @@
  * Search, keys and picking (4/8): typing narrows `sections` through
  * `glyph-entries.ts`'s own `glyphSections`, and resets the active cell to the
  * first hit (or `automatic`, on no hits). ← → ↑ ↓ move a flattened
- * `[automatic, ...cells]` index — up/down cross in and out of the automatic
- * row at the grid's edges, left/right stay inside the grid. ↵ calls `onPick`
- * with the active cell's glyph (`null` for automatic); esc calls `onClose`
- * with nothing picked, same as `SourcePicker`'s document-capture listener so
- * the keys reach the glass even while the search input is focused. The ring
- * (`PICKED_RING`) still marks `current`, the already-applied pick; the active
- * row or cell (keyboard focus, not yet committed) gets its own flatter
- * highlight (`ACTIVE_HILITE`) — the DC's own `cell()` keeps the two separate
- * (`gl === gsel` vs `cur === gl`).
+ * `[automatic, ...cells, ...swatches]` index (the colour row, area targets
+ * only, joins right after the last cell) — up/down cross in and out of the
+ * automatic row at the grid's edges and, for an area, in and out of the
+ * colour row at the grid's bottom; left/right stay inside whichever row the
+ * active index is in. ↵ calls `onPick` with the active cell's glyph (`null`
+ * for automatic) or `onPickColour` with the active swatch's role; esc calls
+ * `onClose` with nothing picked, same as `SourcePicker`'s document-capture
+ * listener so the keys reach the glass even while the search input is
+ * focused. The ring (`PICKED_RING`) still marks `current` (or `role`, for a
+ * swatch), the already-applied pick; the active row, cell or swatch
+ * (keyboard focus, not yet committed) gets its own flatter highlight
+ * (`ACTIVE_HILITE`) — the DC's own `cell()`/`swatches` map keeps the two
+ * separate (`gl === gsel` vs `cur === gl`, and the same shape for `k ===
+ * gsel` vs `p.colour === k`).
  *
  * Wiring (KAN-248 5/8): a press outside the glass also calls `onClose`,
  * `SourcePicker`'s own pattern — the host (the rail row's mark button) is
@@ -55,7 +60,12 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@/components/atoms/Icon'
 import { AreaMark } from '@/components/atoms/AreaMark'
 import { KindDot } from '@/components/atoms/PondAtom'
-import { GLYPH_LIBRARY } from '@/lib/rail/glyph-library'
+import {
+  AREA_COLOUR_SWATCHES,
+  GLYPH_LIBRARY,
+  markAccent,
+  type AreaRole,
+} from '@/lib/rail/glyph-library'
 
 import {
   BOX_HEIGHT,
@@ -91,6 +101,10 @@ export interface GlyphPickerProps {
   recentGlyphs?: readonly string[]
   /** The area a non-area target's colour comes from — the foot note names it. Unused for an area target. */
   inheritsFrom: string
+  /** The area's current colour, or `null` for ink. Ignored outside an area target. */
+  role?: AreaRole | null
+  /** A click on a colour swatch — the area target only; the host decides whether to keep the glass open. */
+  onPickColour?: (role: AreaRole | null) => void
   /** The mark (or button) the glass hangs off. */
   anchor: PickerAnchor
   /** @default 'bottom' */
@@ -145,6 +159,7 @@ const SIZES = {
     inheritRow: 'p-[10px_2px_2px]',
     inheritRowPx: 36,
     inheritText: 'text-[10.5px]',
+    swatchRow: 'h-[34px] rounded-[10px]',
   },
   mobile: {
     widthPx: 390,
@@ -164,6 +179,7 @@ const SIZES = {
     inheritRow: 'p-[12px_2px_4px]',
     inheritRowPx: 42,
     inheritText: 'text-[12px]',
+    swatchRow: 'h-[44px] rounded-[12px]',
   },
 } as const satisfies Record<
   GlyphPickerSize,
@@ -185,6 +201,7 @@ const SIZES = {
     inheritRow: string
     inheritRowPx: number
     inheritText: string
+    swatchRow: string
   }
 >
 
@@ -264,6 +281,8 @@ export function GlyphPicker({
   accent,
   recentGlyphs,
   inheritsFrom,
+  role = null,
+  onPickColour,
   anchor,
   side = 'bottom',
   container,
@@ -279,8 +298,12 @@ export function GlyphPicker({
   const sections = glyphSections(query, recent)
   const cells = sections.flatMap((section) => section.cells)
   const cellIndexOf = new Map(cells.map((cell, i) => [cell, i]))
-  // Flattened as `[automatic, ...cells]` — index 0 is the automatic row, so a
-  // cell's own slot is one past its index in `cells`.
+  // The colour row joins the SAME active index, right after the cells — an
+  // area target only; a page target has no swatches to join.
+  const swatches = target.isArea ? AREA_COLOUR_SWATCHES : []
+  // Flattened as `[automatic, ...cells, ...swatches]` — index 0 is the
+  // automatic row, a cell's own slot is one past its index in `cells`, and a
+  // swatch's slot follows every cell.
   const [active, setActive] = useState(() => {
     const i = cells.findIndex((cell) => cell.glyph === current)
     return i === -1 ? 0 : i + 1
@@ -298,6 +321,11 @@ export function GlyphPicker({
   const pickActive = () => {
     if (active === 0) {
       onPick(null)
+      return
+    }
+    if (active > cells.length) {
+      const swatch = swatches[active - cells.length - 1]
+      if (swatch) onPickColour?.(swatch.role)
       return
     }
     const cell = cells[active - 1]
@@ -320,22 +348,38 @@ export function GlyphPicker({
         }
       }
       const cellIndex = active - 1
+      // A swatch's own index within the colour row, once `active` is past
+      // every cell — `-1` when `active` is the automatic row or a cell.
+      const swatchIndex = active - cells.length - 1
       let handled = true
       if (e.key === 'ArrowDown') {
         if (active === 0) setActive(cells.length ? 1 : 0)
-        else {
+        else if (active <= cells.length) {
           const next = cellIndex + sizes.cols
           if (next < cells.length) setActive(next + 1)
+          else if (swatches.length) setActive(cells.length + 1)
         }
       } else if (e.key === 'ArrowUp') {
-        if (active !== 0) {
+        if (swatchIndex >= 0) {
+          // Return to the grid, same column where the grid is that wide.
+          const lastRowStart = cells.length
+            ? Math.floor((cells.length - 1) / sizes.cols) * sizes.cols
+            : -1
+          const target =
+            lastRowStart < 0 ? -1 : Math.min(lastRowStart + swatchIndex, cells.length - 1)
+          setActive(target >= 0 ? target + 1 : 0)
+        } else if (active !== 0) {
           const next = cellIndex - sizes.cols
           setActive(next >= 0 ? next + 1 : 0)
         }
       } else if (e.key === 'ArrowLeft') {
-        if (active !== 0 && cellIndex > 0) setActive(cellIndex)
+        if (swatchIndex >= 0) {
+          if (swatchIndex > 0) setActive(active - 1)
+        } else if (active !== 0 && cellIndex > 0) setActive(cellIndex)
       } else if (e.key === 'ArrowRight') {
-        if (active !== 0 && cellIndex + 1 < cells.length) setActive(cellIndex + 2)
+        if (swatchIndex >= 0) {
+          if (swatchIndex + 1 < swatches.length) setActive(active + 1)
+        } else if (active !== 0 && cellIndex + 1 < cells.length) setActive(cellIndex + 2)
       } else if (e.key === 'Enter') pickActive()
       else if (e.key === 'Escape') onClose()
       else handled = false
@@ -374,9 +418,14 @@ export function GlyphPicker({
   }, [onClose])
 
   // `selName`, `PondPicker.dc.html`'s `gsel === 'auto' ? 'automatic' : gsel`:
-  // the foot always names the active row or cell, never the query or the
-  // (possibly different) already-picked `current`.
-  const selName = active === 0 ? 'automatic' : (cells[active - 1]?.label ?? '')
+  // the foot always names the active row, cell or swatch, never the query or
+  // the (possibly different) already-picked `current`.
+  const selName =
+    active === 0
+      ? 'automatic'
+      : active > cells.length
+        ? (swatches[active - cells.length - 1]?.label ?? '')
+        : (cells[active - 1]?.label ?? '')
   const foot = mobile ? [] : [selName, '←→↑↓ move', '↵ pick', 'esc close'].filter(Boolean)
   const style = useAnchoredBox(anchor, side, sizes.widthPx)
 
@@ -501,7 +550,11 @@ export function GlyphPicker({
                   {section.count}
                 </span>
               </div>
-              <div role="grid" aria-label={section.label} className={`flex flex-col ${sizes.rowGap}`}>
+              <div
+                role="grid"
+                aria-label={section.label}
+                className={`flex flex-col ${sizes.rowGap}`}
+              >
                 {chunkRows(section.cells, sizes.cols).map((row, ri) => (
                   <div key={ri} role="row" className={`flex ${sizes.rowGap}`}>
                     {row.map((cell) => {
@@ -534,6 +587,54 @@ export function GlyphPicker({
               </div>
             </div>
           ))
+        )}
+
+        {target.isArea && (
+          <div data-part="colour">
+            <div
+              className={`flex items-baseline justify-between font-sans text-[10.5px] font-medium tracking-[0.1em] text-mn-text-secondary uppercase ${sizes.gHead}`}
+            >
+              <span>colour</span>
+              <span className="font-mono tracking-normal text-mn-text-secondary normal-case">
+                marks only
+              </span>
+            </div>
+            <div role="grid" aria-label="colour" className={`grid grid-cols-4 ${sizes.rowGap}`}>
+              {swatches.map((swatch, i) => {
+                const slot = cells.length + 1 + i
+                const isActive = active === slot
+                const isCurrent = swatch.role === role
+                return (
+                  <span
+                    key={swatch.label}
+                    id={rowId(slot)}
+                    role="gridcell"
+                    aria-label={swatch.label}
+                    aria-selected={isCurrent}
+                    onMouseEnter={() => setActive(slot)}
+                    onClick={() => {
+                      setActive(slot)
+                      onPickColour?.(swatch.role)
+                    }}
+                    className={`flex items-center justify-center gap-[7px] font-mono ${sizes.swatchRow} ${sizes.inheritText} ${
+                      isActive
+                        ? ACTIVE_HILITE
+                        : isCurrent
+                          ? 'bg-mn-text/[0.05]'
+                          : 'bg-mn-text/[0.04]'
+                    } ${isCurrent ? PICKED_RING : ''}`}
+                  >
+                    <AreaMark
+                      glyph={current ?? auto.glyph ?? 'heart'}
+                      color={markAccent(swatch.role)}
+                      size={13}
+                    />
+                    <span>{swatch.label}</span>
+                  </span>
+                )
+              })}
+            </div>
+          </div>
         )}
       </div>
 

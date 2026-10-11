@@ -112,7 +112,12 @@ export function ShellCommands() {
   const records = usePaletteRecords(normalizeQuery(query))
 
   // Before the open page has published its path, the pill reads the pond's root.
-  const path = published ?? { glyph: pond?.glyph ?? LIFE_GLYPH, trail: [], current: pondName }
+  const path = published ?? {
+    glyph: pond?.glyph ?? LIFE_GLYPH,
+    trail: [],
+    current: pondName,
+    role: null,
+  }
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])
   const templateSheet = useSaveAsTemplateSheet({ pondId, onOpen: closePalette })

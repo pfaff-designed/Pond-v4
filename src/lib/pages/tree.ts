@@ -14,6 +14,7 @@ import { inPond, resolvePond } from '@/lib/pond/scope'
 import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
+import type { AreaRole } from '@/lib/rail/glyph-library'
 
 export interface PageRow {
   id: string
@@ -142,6 +143,22 @@ export function applyGlyphOptimistic(
 ): void {
   queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
     rows?.map((r) => (r.id === pick.id ? { ...r, glyph: pick.glyph } : r))
+  )
+}
+
+/**
+ * Optimistically set ONE area's colour (KAN-249 1/7) in the pagesKey() cache —
+ * null restores ink — so the rail and breadcrumb redraw through resolveMark
+ * before setAreaRole's write lands. Mirrors applyGlyphOptimistic: touches only
+ * the picked row, so rolling back is the same call with the previous role.
+ */
+export function applyAreaRoleOptimistic(
+  queryClient: QueryClient,
+  pick: { id: string; role: AreaRole | null },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === pick.id ? { ...r, area_role: pick.role } : r))
   )
 }
 

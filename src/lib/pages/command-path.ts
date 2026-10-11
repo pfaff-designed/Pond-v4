@@ -11,6 +11,8 @@
  * page itself when it is top-level — else the root's, else the pond's own glyph.
  */
 
+import type { AreaRole } from '@/lib/rail/glyph-library'
+
 import { crumbTrail } from './crumbs'
 import { markIndex, resolveMark } from './mark'
 import type { PageRow } from './tree'
@@ -21,6 +23,8 @@ export interface CommandPath {
   trail: string[]
   /** The page in view. */
   current: string
+  /** The role of the area the page sits in, or itself if it is one; null for ink. */
+  role: AreaRole | null
 }
 
 export function commandPath(
@@ -28,20 +32,24 @@ export function commandPath(
   nodeId: string | null,
   { rootTitle, current, pondGlyph }: { rootTitle: string; current: string; pondGlyph: string }
 ): CommandPath {
-  if (!nodeId) return { glyph: pondGlyph, trail: [], current: rootTitle }
+  if (!nodeId) return { glyph: pondGlyph, trail: [], current: rootTitle, role: null }
+  const index = markIndex(rows)
   const { root, crumbs } = crumbTrail(rows, nodeId)
-  if (root?.id === nodeId) return { glyph: glyphOf(rows, nodeId) ?? pondGlyph, trail: [], current }
+  const own = resolveMark(nodeId, index)
+  if (root?.id === nodeId) {
+    return { glyph: own.glyph ?? pondGlyph, trail: [], current, role: own.role }
+  }
   const area = crumbs[0]?.id ?? nodeId
-  const own = resolveMark(nodeId, markIndex(rows))
   return {
     glyph:
       (own.glyphIsOwn ? own.glyph : null) ??
-      glyphOf(rows, area) ??
-      (root && glyphOf(rows, root.id)) ??
+      glyphOf(area, index) ??
+      (root && glyphOf(root.id, index)) ??
       pondGlyph,
     trail: [root?.title ?? rootTitle, ...crumbs.map((c) => c.title)],
     current,
+    role: own.role,
   }
 }
 
-const glyphOf = (rows: PageRow[], id: string) => resolveMark(id, markIndex(rows)).glyph
+const glyphOf = (id: string, index: ReturnType<typeof markIndex>) => resolveMark(id, index).glyph

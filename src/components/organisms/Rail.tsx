@@ -56,9 +56,10 @@ import {
   applyMoveOptimistic,
   applyRenameOptimistic,
   applyGlyphOptimistic,
+  applyAreaRoleOptimistic,
   type PageRow,
 } from '@/lib/pages/tree'
-import { setPageGlyph } from '@/lib/pages/mark-client'
+import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
@@ -67,7 +68,7 @@ import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
-import { markAccent, pushRecentGlyph } from '@/lib/rail/glyph-library'
+import { markAccent, pushRecentGlyph, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
 import { GlyphPicker, glyphPickerHeight } from '@/components/molecules/GlyphPicker'
 import type { PickerSide } from '@/components/molecules/use-anchored-box'
@@ -556,6 +557,10 @@ export interface RailViewProps {
   onRename: (id: string, title: string) => void
   /** A glyph picker pick — `null` for `automatic`. Applies at once (KAN-248 6/8). */
   onPickGlyph: (id: string, glyph: string | null) => void
+  /** An area's colour row pick — `null` for ink. Applies at once, picker stays open (KAN-249).
+   *  Optional so the existing `RailView` call sites (stories, unit tests predating this ticket)
+   *  keep compiling untouched; omit it and a colour pick no-ops. */
+  onPickColour?: (id: string, role: AreaRole | null) => void
   onLife: () => void
   onToggleLife: () => void
   /** Open the databases root, creating it first when the pond has none yet. */
@@ -711,7 +716,6 @@ interface OpenGlyphPicker {
   title: string
   isArea: boolean
   current: string | null
-  accent: string | undefined
   /** The area a non-area target's colour comes from — the picker's inherit footer names it. */
   inheritsFrom: string
   /** The button that opened it — the glass's anchor, and where Esc/outside-close returns focus. */
@@ -738,6 +742,7 @@ export function RailView({
   onDelete,
   onRename,
   onPickGlyph,
+  onPickColour = () => {},
   onLife,
   onToggleLife,
   onOpenDatabases,
@@ -779,7 +784,6 @@ export function RailView({
           title: node.title,
           isArea: mark.isArea,
           current: mark.glyph,
-          accent: markAccent(mark.role),
           inheritsFrom: areaOf(Array.from(markMap.values()), id) ?? '',
           anchor,
           side: sideTowardFreeSpace(anchor.getBoundingClientRect(), window.innerHeight, height),
@@ -1117,6 +1121,12 @@ export function RailView({
     )
   }
 
+  // The open picker's colour role, read off `markMap` on every render rather
+  // than frozen into `picker` at open time: a colour pick lands in `markMap`
+  // the instant the optimistic apply runs, so the open glass's own cells and
+  // ring redraw without closing it.
+  const pickerRole = picker ? resolveMark(picker.id, markMap).role : null
+
   // #96 — the rail is a floating PAPER CARD over the canvas (`Pond 05 Shell` /
   // `PondRail`, measured: 206 wide, inset 20px from the top, left and bottom,
   // padding 18px 0 14px, radius 20, the card paper + the card shadow, no
@@ -1237,7 +1247,10 @@ export function RailView({
         <GlyphPicker
           target={{ isArea: picker.isArea, title: picker.title }}
           current={picker.current}
-          accent={picker.accent}
+          // Live off `markMap`, not frozen at open time: a colour pick redraws
+          // the open glass's own cells and ring without closing it.
+          accent={markAccent(pickerRole)}
+          role={pickerRole}
           recentGlyphs={recentGlyphs}
           inheritsFrom={picker.inheritsFrom}
           anchor={picker.anchor}
@@ -1246,6 +1259,7 @@ export function RailView({
             onPickGlyph(picker.id, glyph)
             closePicker()
           }}
+          onPickColour={(role) => onPickColour(picker.id, role)}
           onClose={closePicker}
         />
       )}
@@ -1575,6 +1589,43 @@ export function Rail() {
     }
   }
 
+  /**
+   * A colour pick commits at once, same shape as `handlePickGlyph`: optimistic
+   * apply, `setAreaRole`'s write, a rollback + notify on failure. The picker
+   * itself stays open (frame 3/4) — closing it is never this function's job.
+   *
+   * Logged as the person's own `edit_area_role` record, skipped on a no-op
+   * pick, for the same reason `handlePickGlyph` skips its own: KAN-93's
+   * unlanded ⌘Z replays it, this ticket only owes the record.
+   */
+  const handlePickColour = async (id: string, role: AreaRole | null) => {
+    const stored = marks.get(id)?.areaRole
+    const previous = isAreaRole(stored) ? stored : null
+    applyAreaRoleOptimistic(queryClient, { id, role }, pondId)
+    try {
+      await withUser(async (sb, uid) => {
+        await setAreaRole(sb, id, role)
+        if (jsonEqual(previous, role)) return
+        try {
+          await appendOwnEdit(sb, {
+            userId: uid,
+            pondId,
+            action: 'edit_area_role',
+            targetPageId: id,
+            before: previous,
+            after: role,
+          })
+        } catch (err) {
+          console.error('[change-log] colour pick not logged', id, err)
+        }
+      })
+    } catch {
+      applyAreaRoleOptimistic(queryClient, { id, role: previous }, pondId)
+      notify(`Couldn't change the colour for "${nodeById.get(id)?.title || 'Untitled'}"`)
+      void queryClient.invalidateQueries({ queryKey: pagesKey() })
+    }
+  }
+
   function handleToggle(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -1669,6 +1720,7 @@ export function Rail() {
         onDelete={handleDelete}
         onRename={handleRename}
         onPickGlyph={handlePickGlyph}
+        onPickColour={handlePickColour}
         onLife={() => router.push(workspaceUrl(null))}
         onToggleLife={handleToggleLife}
         onOpenDatabases={handleOpenDatabases}
