@@ -19,3 +19,23 @@ export function clearSelection(): void {
     document.dispatchEvent(new Event('selectionchange'))
   })
 }
+
+/** Selects just `word` within `el`'s rendered text as a real `Range`/`Selection`, then fires `selectionchange`. */
+export function selectWord(el: HTMLElement, word: string): void {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const index = node.textContent?.indexOf(word) ?? -1
+    if (index === -1) continue
+    const range = document.createRange()
+    range.setStart(node, index)
+    range.setEnd(node, index + word.length)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'))
+    })
+    return
+  }
+  throw new Error(`"${word}" not found in element's text`)
+}

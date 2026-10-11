@@ -4,11 +4,15 @@
  * The one selection bar (`Pond 02 Component library.dc.html` frame `2t`,
  * item order AUDIT C6): text style, bold, italic, link, list, highlight,
  * comment, ask pond, new page from this, copy. Per-item wiring beyond
- * `ask pond` lands in later KAN-95 items.
+ * `ask pond`, bold and italic lands in later KAN-95 items.
  */
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import type { Editor } from '@tiptap/react'
+import { TextSelection } from '@tiptap/pm/state'
+import { editorForSelection } from '@/lib/modules/text/active-editor'
+import { activeMarks, toggleBold, toggleItalic, type ActiveMarks } from '@/lib/modules/text/format'
 
 import { useAnchoredBox, type PickerAnchorBox } from './use-anchored-box'
 
@@ -195,6 +199,21 @@ const Mark = ({ item }: { item: SelectionBarItem }) => {
   }
 }
 
+const NO_MARKS: ActiveMarks = { bold: false, italic: false }
+
+/**
+ * The bar watches `window.getSelection()`, not any editor's own ProseMirror
+ * state — so before a command runs on an editor resolved for that selection,
+ * its range is applied as that editor's own selection too.
+ */
+const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
+  if (!sel.anchorNode || !sel.focusNode) return false
+  const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
+  const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
+  editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, anchor, head)))
+  return true
+}
+
 /**
  * The one selection bar: watches the document selection, resolves the block
  * it is within, and portals its glass above the selection — centred and
@@ -206,6 +225,7 @@ const Mark = ({ item }: { item: SelectionBarItem }) => {
 export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProps) {
   const [ctx, setCtx] = useState<SelectionContext | null>(null)
   const [rect, setRect] = useState<SelectionRect | null>(null)
+  const [marks, setMarks] = useState<ActiveMarks>(NO_MARKS)
   const barRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
 
@@ -247,6 +267,10 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       const r = range.getBoundingClientRect()
       setCtx({ text, blockId })
       setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
+
+      const editor = editorForSelection(sel)
+      if (editor) syncEditorSelection(editor, sel)
+      setMarks(editor ? activeMarks(editor) : NO_MARKS)
     }
 
     document.addEventListener('selectionchange', onSelectionChange)
@@ -290,6 +314,16 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     window.getSelection()?.removeAllRanges()
   }
 
+  // Resolved fresh (not from a stored ref) because the last-synced editor is
+  // exactly the one `editorForSelection` already matched this selection to.
+  const applyMark = (toggle: (editor: Editor) => void) => () => {
+    const sel = window.getSelection()
+    const editor = sel && editorForSelection(sel)
+    if (!editor) return
+    toggle(editor)
+    setMarks(activeMarks(editor))
+  }
+
   // Gated on `disabled` directly (not an effect that calls `hide`), so the
   // bar disappears the instant `disabled` turns true, with no selectionchange
   // needed — `AITerminal`'s `disabled={isStreaming}` flips mid-selection.
@@ -307,7 +341,21 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
           <button
             type="button"
             aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
-            onClick={item.id === 'ask-pond' ? handleAsk : undefined}
+            aria-pressed={
+              item.id === 'bold' ? marks.bold : item.id === 'italic' ? marks.italic : undefined
+            }
+            onClick={
+              item.id === 'ask-pond'
+                ? handleAsk
+                : item.id === 'bold'
+                  ? applyMark(toggleBold)
+                  : item.id === 'italic'
+                    ? applyMark(toggleItalic)
+                    : undefined
+            }
+            // A selection button isn't where the caret belongs — stop the
+            // browser from collapsing the selection onto it before `onClick` runs.
+            onMouseDown={(e) => e.preventDefault()}
             className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
           >
             <Mark item={item} />
