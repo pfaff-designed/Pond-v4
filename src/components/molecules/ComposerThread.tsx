@@ -11,7 +11,7 @@
  * `--mn-line`, which dark lifts to .12.
  */
 
-import type { ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
 
@@ -134,6 +134,40 @@ export const YouRow = ({ text, time }: YouRowProps) => (
     </p>
   </div>
 )
+
+export interface EarlierAnswerFoldProps {
+  /** When the earlier answer was given, already formatted — absent for a re-seeded one. */
+  time?: string | null
+  /** The earlier answer as it was shown: its text and its own read chips. */
+  children: ReactNode
+}
+
+/** An answer that `ask again` replaced, kept under the current one: a quiet meta line
+ *  (the `YouRow` time's register) that opens the old answer in place. The board draws
+ *  no fold, so it takes no card and no colour of its own. */
+export const EarlierAnswerFold = ({ time, children }: EarlierAnswerFoldProps) => {
+  const [open, setOpen] = useState(false)
+  const bodyId = useId()
+  const handleToggle = () => setOpen((wasOpen) => !wasOpen)
+  return (
+    <div data-part="earlier-answer-fold" className="flex flex-col gap-[7px]">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        className="w-fit cursor-pointer text-left font-mono text-[10.5px] tracking-[0.02em] text-mn-text-secondary hover:text-mn-text"
+      >
+        earlier answer{time ? ` · ${time}` : ''}
+      </button>
+      {open && (
+        <div id={bodyId} data-part="earlier-answer" className="flex flex-col gap-[7px]">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export interface AnswerErrorProps {
   /** Sends the question again — absent when there is no question to resend. */

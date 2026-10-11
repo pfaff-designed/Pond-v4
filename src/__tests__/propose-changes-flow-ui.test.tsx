@@ -97,6 +97,7 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
 }))
 
 const mockSendMessage = jest.fn()
+const mockRegenerate = jest.fn()
 const mockSetMessages = jest.fn()
 const mockAddToolOutput = jest.fn()
 let mockMessages: Array<{
@@ -108,13 +109,16 @@ let mockMessages: Array<{
 
 // The turn's lifecycle, under test control: 'ready' means the turn has settled.
 let mockStatus = 'ready'
+let mockError: Error | undefined
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: mockAddToolOutput,
     setMessages: mockSetMessages,
     status: mockStatus,
+    error: mockError,
   })),
 }))
 
@@ -167,6 +171,7 @@ beforeEach(() => {
   mockListPages.mockReset().mockResolvedValue([])
   mockCommitBlocks.mockReset().mockResolvedValue(undefined)
   mockStatus = 'ready'
+  mockError = undefined
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
 })
 
@@ -270,6 +275,317 @@ describe('AITerminal — propose_changes card (#98)', () => {
     ]
     expect(options.body.requestChanges).toMatchObject({ toolCallId: 'pc1', reason: 'outdated' })
     expect(options.body.pondId).toBe('pond-7')
+  })
+
+  it('ask again on a rejected card regenerates the answer; it does not send a new turn', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockRegenerate.mock.calls[0][0].body).toMatchObject({ pondId: 'pond-7' })
+    expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('resolutions')
+  })
+
+  it('ask again is offered only on the last answer: an older turn has none, its rejected card included', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'older answer' }, batch('pc1')],
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+      {
+        id: 'm2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'newer answer' }, batch('pc2')],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    for (const reject of screen.getAllByRole('button', { name: 'reject' })) {
+      await user.click(reject)
+    }
+
+    const newerAnswer = await screen.findByText('newer answer')
+    const askAgains = await screen.findAllByRole('button', { name: 'ask again' })
+    for (const askAgain of askAgains) {
+      expect(newerAnswer.compareDocumentPosition(askAgain)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    }
+
+    await user.click(askAgains[0])
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  it('a thread ending on a user line offers no ask again on the answer above it; the error row still resends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'the first answer' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByText(/1 earlier turn/))
+
+    expect(await screen.findByText('the first answer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ask again' })).not.toBeInTheDocument()
+
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  it('ask again does nothing once a stream is running (double-press guard)', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    await user.click(askAgain)
+
+    expect(mockRegenerate).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('a finished regenerate folds the replaced answer into metadata.earlier; a second one appends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+        parts: [batch('pc1')],
+      },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    // The test's setMessages is a spy: fold its updaters into the mocked thread.
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    // regenerate() drops the answer, streams a replacement with a new id, then settles.
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({
+      id: 'm2',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:15:00.000Z' },
+      parts: [batch('pc2')],
+    })
+
+    const firstEarlier = {
+      parts: [batch('pc1')],
+      sentAt: '2026-10-01T07:12:00.000Z',
+      read: ['life'],
+    }
+    expect(mockMessages[1].id).toBe('m2')
+    expect(mockMessages[1].metadata?.earlier).toEqual([firstEarlier])
+
+    await user.click(await screen.findByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({ id: 'm3', role: 'assistant', parts: [batch('pc3')] })
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(2)
+    expect(mockMessages[1].id).toBe('m3')
+    const earlier = mockMessages[1].metadata?.earlier as Array<{ parts: unknown[] }>
+    expect(earlier).toHaveLength(2)
+    expect(earlier[0]).toEqual(firstEarlier)
+    expect(earlier[1].parts).toEqual([batch('pc2')])
+  })
+
+  it('a failed regenerate puts the replaced answer back as current, unfolded, and clears the stash', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() drops the answer and starts a replacement, which then fails.
+    mockMessages = [
+      mockMessages[0],
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'half an ans' }] },
+    ]
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    applySetMessages()
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+
+    // The stash is spent: a later settle must not fold anything onto the restored answer.
+    mockError = undefined
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  it('stopping an ask again before its first chunk puts the replaced answer back, unfolded', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() slices the answer out and submits; stop lands before any chunk.
+    mockMessages = mockMessages.slice(0, 1)
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    applySetMessages()
+    rerender(<AITerminal />)
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+    expect(screen.queryByRole('button', { name: /^earlier answer/ })).not.toBeInTheDocument()
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  it('two ask agains leave two fold lines, newest nearest the answer, each opening on its own', async () => {
+    const user = userEvent.setup()
+    // Like the real route: an answer arrives with no metadata, so the terminal stamps its time.
+    const answer = (id: string, text: string) => ({
+      id,
+      role: 'assistant',
+      parts: [{ type: 'text', text }],
+    })
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      answer('m1', 'first answer'),
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    // setMessages is a spy here, so the stamp an answer gets on landing is folded in by hand.
+    const landStamps = () => {
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    landStamps()
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m2', 'second answer'))
+    landStamps()
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m3', 'third answer'))
+
+    const folds = await screen.findAllByRole('button', { name: /^earlier answer/ })
+    expect(folds).toHaveLength(2)
+    for (const fold of folds) expect(fold).toHaveTextContent(/^earlier answer · \d{2}:\d{2}$/)
+    expect(screen.getByText('third answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+    expect(screen.queryByText('first answer')).not.toBeInTheDocument()
+
+    await user.click(folds[1])
+    expect(folds[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(folds[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('first answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+
+    await user.click(folds[0])
+    expect(screen.getByText('second answer')).toBeInTheDocument()
+    expect(screen.getByText('first answer')).toBeInTheDocument()
   })
 
   it('two cards in one message offer accept all; one does not (C10)', async () => {

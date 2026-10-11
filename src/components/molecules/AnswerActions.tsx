@@ -19,7 +19,8 @@ export interface AnswerActionsProps {
   /** True while the answer is still arriving — shows stop, hides the chips. */
   streaming: boolean
   onMakePage: () => void
-  onAskAgain: () => void
+  /** Omitted when the answer is not the thread's last message: regenerate() acts on that one. */
+  onAskAgain?: () => void
   onStop: () => void
   /** Hide "make this a page" (e.g. a card for this answer is already open). */
   canMakePage?: boolean
@@ -49,7 +50,7 @@ export function AnswerActions({
           make this a page
         </button>
       )}
-      {!streaming && (
+      {!streaming && onAskAgain && (
         <button type="button" className={chipClass} onClick={onAskAgain}>
           ask again
         </button>

@@ -31,11 +31,14 @@ import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/p
 import {
   DEFAULT_PAGE_KIND,
   derivePageName,
+  earlierAnswers,
   formatThreadTime,
   openPageProposalIds,
   readChips,
   readStamp,
+  withEarlierAnswer,
   withReadStamp,
+  type EarlierAnswer,
   type PageProposal,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
@@ -80,6 +83,7 @@ import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
   AnswerError,
+  EarlierAnswerFold,
   EarlierTurns,
   ThreadHead,
   Turn,
@@ -160,6 +164,18 @@ import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
  *  the diff against the page as it now stands. */
 const REVISE_NOTE =
   'the page changed since this was proposed — revise it against the page as it now stands.'
+
+/** An ask again that ends without a replacement (failed, or stopped before its first
+ *  chunk) puts the answer it was replacing back verbatim at its own index. It never
+ *  left the person's thread, so it is not folded into `earlier`. */
+const restoreReplacedAnswer = <T extends { id: string }>(
+  thread: T[],
+  stashed: { message: T; messageIndex: number } | null
+): T[] => {
+  if (!stashed || thread.some((m) => m.id === stashed.message.id)) return thread
+  const at = Math.min(stashed.messageIndex, thread.length)
+  return [...thread.slice(0, at), stashed.message, ...thread.slice(at)]
+}
 
 /** Preview what a promote_table would produce, read from the host page's blocks:
  *  the named `table` block (or the page's sole table when unnamed) reduced to its
@@ -442,7 +458,8 @@ export function AITerminal() {
   // a proposal card below) — there is no create_node tool in this path, so useChat
   // needs no onToolCall handler. The manual creation gesture is the top bar's ＋
   // (CreatePageModal, ticket-26), not this terminal.
-  const { messages, sendMessage, setMessages, status, stop, error, clearError } = useChat()
+  const { messages, sendMessage, regenerate, setMessages, status, stop, error, clearError } =
+    useChat()
   const [input, setInput] = useState('')
   // 6a frame 2: "an error keeps nothing" — a turn that failed mid-stream drops
   // its partial answer, so the thread never holds half an answer as if it were
@@ -454,7 +471,16 @@ export function AITerminal() {
   // can leave two assistant messages in a row — a tool-only one, then the text —
   // and re-running on the shortened list would eat the earlier, complete answer
   // too.
+  //
+  // A failed ask again also puts the answer it was replacing back, verbatim and
+  // at its own index, as the current answer: it never left the person's thread,
+  // so it is not folded into `earlier`. The stash is cleared here, before the
+  // merge effect below can mistake the partial replacement for a finished one.
   const droppedForError = useRef<unknown>(null)
+  const pendingRegenerate = useRef<{
+    message: (typeof messages)[number]
+    messageIndex: number
+  } | null>(null)
   useEffect(() => {
     if (!error) {
       droppedForError.current = null
@@ -462,9 +488,12 @@ export function AITerminal() {
     }
     if (droppedForError.current === error) return
     droppedForError.current = error
+    const stashed = pendingRegenerate.current
+    pendingRegenerate.current = null
     setMessages((prev) => {
       const last = prev[prev.length - 1]
-      return last?.role === 'assistant' ? prev.slice(0, -1) : prev
+      const kept = last?.role === 'assistant' ? prev.slice(0, -1) : prev
+      return restoreReplacedAnswer(kept, stashed)
     })
   }, [error, setMessages])
   // Deep research: the only road to the web, off by default and spent per question.
@@ -663,6 +692,8 @@ export function AITerminal() {
       const switched = prev !== undefined && prev !== pondId
       loadedPondRef.current = pondId
       if (switched || conversation.messages.length > 0) {
+        // The stashed answer belongs to the thread being replaced.
+        pendingRegenerate.current = null
         setInitialMessageIds(new Set(conversation.messages.map((m) => m.id)))
         setMessages(conversation.messages)
       }
@@ -842,6 +873,7 @@ export function AITerminal() {
     await dissolveConversation(supabase, conversationId)
     const fresh = await getOrCreateConversation(supabase, user.id, pondId)
     setConversationId(fresh.id)
+    pendingRegenerate.current = null
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
@@ -1686,16 +1718,30 @@ export function AITerminal() {
     )
     if (unstamped.length === 0) return
     const ids = new Set(unstamped.map((m) => m.id))
+    const landedAt = new Date().toISOString()
+    // The route sends no messageMetadata, so an answer has no `sentAt` of its own:
+    // the fold line ('earlier answer · 07:12') and the time beside an answer read
+    // it. An answer re-seeded from a saved transcript landed in another session —
+    // stamping it now would invent a time — so only a live answer gets one, and
+    // never over a `sentAt` it already carries.
+    const withLandedAt = (m: (typeof messages)[number]): (typeof messages)[number] => {
+      if (initialMessageIds.has(m.id)) return m
+      const base = typeof m.metadata === 'object' && m.metadata !== null ? m.metadata : {}
+      if (typeof (base as { sentAt?: unknown }).sentAt === 'string') return m
+      return { ...m, metadata: { ...base, sentAt: landedAt } }
+    }
     setMessages((prev) =>
       prev.map((m) =>
         ids.has(m.id)
-          ? withReadStamp(
-              m,
-              readChips({
-                contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
-                parts: m.parts as ReadPartLike[],
-                resolvePageName,
-              })
+          ? withLandedAt(
+              withReadStamp(
+                m,
+                readChips({
+                  contextLabel: initialMessageIds.has(m.id) ? '' : contextLabel,
+                  parts: m.parts as ReadPartLike[],
+                  resolvePageName,
+                })
+              )
             )
           : m
       )
@@ -1748,12 +1794,74 @@ export function AITerminal() {
   }
   const lastQuestion = questionBefore(messages.length)
 
+  // Ask again replaces the answer under the same question instead of opening a new
+  // turn. The answer being replaced is held WHOLE: regenerate() drops it from the
+  // thread at once, and a failed run must be able to put it back verbatim.
+  const handleAskAgain = (messageIndex: number) => {
+    // Mid-switch the thread on screen is the previous pond's: regenerating would
+    // resend into it with the new pond's context (KAN-283).
+    if (!isReady || isStreaming) return
+    const message = messages[messageIndex]
+    // regenerate() acts on the LAST message, so only an answer that is the last
+    // message can be re-asked (a thread ending on a user line would resend that
+    // line instead); the error row passes the trailing user line, which
+    // regenerate() just resends.
+    if (message?.role === 'assistant' && messageIndex !== messages.length - 1) return
+    pendingRegenerate.current = message?.role === 'assistant' ? { message, messageIndex } : null
+    // The question was sent (and its lifecycle advanced) on the original turn, so
+    // the phase rides along as it stands; the body is otherwise sendText's.
+    const outgoing: ConversationResolutions = isLifecycleActive(lifecycle)
+      ? { ...resolutions, lifecycle }
+      : { ...resolutions, lifecycle: undefined }
+    clearError?.()
+    void regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    setResearch(false)
+  }
+
+  // The replaced answer folds under its replacement only once the run is over:
+  // the SDK rebuilds the streaming message on every chunk, so metadata set
+  // mid-stream would be overwritten. The replacement arrives as a fresh message
+  // (new id) with no metadata.earlier of its own, so the stash it replaced
+  // carries over — a second ask again appends to the first.
+  useEffect(() => {
+    const pending = pendingRegenerate.current
+    if (!pending || isStreaming) return
+    const replacement = messages[pending.messageIndex]
+    if (replacement?.role !== 'assistant') {
+      // Stopped before the first chunk: regenerate() already sliced the answer out
+      // and nothing replaced it.
+      pendingRegenerate.current = null
+      setMessages((prev) => restoreReplacedAnswer(prev, pending))
+      return
+    }
+    if (replacement.id === pending.message.id) return
+    pendingRegenerate.current = null
+    const replaced = pending.message
+    const replacedSentAt = (replaced.metadata as { sentAt?: unknown } | undefined)?.sentAt
+    const entries: EarlierAnswer[] = [
+      ...earlierAnswers(replaced.metadata),
+      {
+        parts: replaced.parts,
+        sentAt: typeof replacedSentAt === 'string' ? replacedSentAt : null,
+        read: readStamp(replaced.metadata) ?? [],
+      },
+    ]
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === replacement.id
+          ? entries.reduce((acc, entry) => withEarlierAnswer(acc, entry), m)
+          : m
+      )
+    )
+  }, [isStreaming, messages, setMessages])
+
   const renderMessage = (message: (typeof messages)[number], messageIndex: number) => {
     const text = message.parts
       .filter((p) => p.type === 'text')
       .map((p) => (p as { type: 'text'; text: string }).text)
       .join('')
     const isLastAssistant = messageIndex === lastAssistantIndex
+    const canAskAgain = messageIndex === messages.length - 1
     const answerStreaming = isLastAssistant && isStreaming
     const sentAt = (message.metadata as { sentAt?: unknown } | undefined)?.sentAt
     const sentLabel = formatThreadTime(typeof sentAt === 'string' ? sentAt : null)
@@ -1768,6 +1876,14 @@ export function AITerminal() {
             resolvePageName,
           }))
         : []
+    const earlierFolds = [...earlierAnswers(message.metadata)].reverse().map((entry) => ({
+      sentAt: entry.sentAt,
+      read: entry.read,
+      text: entry.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { type: 'text'; text: string }).text)
+        .join(''),
+    }))
     const cardsForMessage = Object.values(pageProposals).filter((p) => p.messageId === message.id)
     const hasOpenCard = cardsForMessage.some((p) => p.status === 'proposed')
     // A sent message's file parts render as inert chips: the message is already out.
@@ -1909,6 +2025,17 @@ export function AITerminal() {
             <ReadChips read={read} />
           </div>
         )}
+        {/* Stashed oldest first; the most recently replaced answer sits nearest the current one. */}
+        {message.role === 'assistant' &&
+          earlierFolds.map((earlier, i) => (
+            <EarlierAnswerFold
+              key={`${message.id}-earlier-${earlierFolds.length - 1 - i}`}
+              time={formatThreadTime(earlier.sentAt)}
+            >
+              <Markdown>{earlier.text}</Markdown>
+              <ReadChips read={earlier.read} />
+            </EarlierAnswerFold>
+          ))}
         {/* Make-this-a-page cards: editable while pending; make page is the only write. */}
         {cardsForMessage.map((proposal) => (
           <PageProposalCard
@@ -1942,11 +2069,7 @@ export function AITerminal() {
                 read,
               })
             }}
-            onAskAgain={() => {
-              // Asks the same question as a NEW turn; the earlier answer stays.
-              const q = questionBefore(messageIndex).text
-              if (q && !isStreaming) sendText(q)
-            }}
+            onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
             onStop={stop}
           />
         )}
@@ -1965,10 +2088,7 @@ export function AITerminal() {
               onRevise={(id) =>
                 sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
               }
-              onAskAgain={() => {
-                const q = questionBefore(messageIndex).text
-                if (q && !isStreaming) sendText(q)
-              }}
+              onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop
@@ -2300,7 +2420,9 @@ export function AITerminal() {
                   {/* An error keeps nothing: the partial answer was dropped above. */}
                   {error && !isStreaming && (
                     <AnswerError
-                      onAskAgain={lastQuestion.text ? () => sendText(lastQuestion.text) : undefined}
+                      onAskAgain={
+                        lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
+                      }
                     />
                   )}
                 </>
