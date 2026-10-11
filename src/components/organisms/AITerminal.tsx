@@ -2313,7 +2313,7 @@ export function AITerminal() {
         <CsvAttachmentPill
           filename={csvAttachment.filename}
           rowCount={csvAttachment.parsed.totalRows}
-          onRemove={() => setCsvAttachment(null)}
+          onRemove={clearCsvAttachment}
         />
       )}
       {attachments.length > 0 && (
