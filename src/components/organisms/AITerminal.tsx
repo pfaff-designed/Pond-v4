@@ -67,6 +67,7 @@ import {
 import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
 import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
+import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
@@ -177,6 +178,10 @@ function tablePromotionPreview(
   }))
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
 }
+
+// Local to this call site: only AITerminal needs the CSV shape, and
+// useInlineAttachment stays generic across kinds (see KAN-279 plan notes).
+type CsvInlineAttachment = { kind: 'csv'; filename: string; parsed: CsvParseOk }
 
 export function AITerminal() {
   const router = useRouter()
@@ -474,25 +479,26 @@ export function AITerminal() {
   }, [])
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
-  const [csvAttachment, setCsvAttachment] = useState<{
-    parsed: CsvParseOk
-    filename: string
-  } | null>(null)
+  const { attachment: csvAttachment, setAttachment: setCsvAttachment } =
+    useInlineAttachment<CsvInlineAttachment>()
 
-  const processCsvFile = useCallback((file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const raw = e.target?.result
-      if (typeof raw !== 'string') return
-      const result = parseCsv(raw)
-      if (!result.ok) {
-        setInput(`[CSV error: ${result.message}]`)
-        return
+  const processCsvFile = useCallback(
+    (file: File) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const raw = e.target?.result
+        if (typeof raw !== 'string') return
+        const result = parseCsv(raw)
+        if (!result.ok) {
+          setInput(`[CSV error: ${result.message}]`)
+          return
+        }
+        setCsvAttachment({ kind: 'csv', parsed: result, filename: file.name })
       }
-      setCsvAttachment({ parsed: result, filename: file.name })
-    }
-    reader.readAsText(file)
-  }, [])
+      reader.readAsText(file)
+    },
+    [setCsvAttachment]
+  )
 
   // ── File attachments (#61) ────────────────────────────────────────────────
   // Images + documents upload to Supabase Storage and ride the outgoing message
