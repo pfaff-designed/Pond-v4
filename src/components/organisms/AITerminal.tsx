@@ -12,6 +12,7 @@ import {
 } from '@/lib/conversation/client'
 import {
   resolveStampTarget,
+  resolveAcceptTarget,
   type ConversationResolutions,
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
@@ -471,6 +472,7 @@ export function AITerminal() {
     createParent,
     schemaTarget,
     rowTarget,
+    changePlace,
     viewTarget,
     linkTarget,
     promotionTarget,
@@ -1211,7 +1213,7 @@ export function AITerminal() {
         pondId,
         resolutions,
         toolCallId,
-        openNodeId: nodeId,
+        openNodeId: changePlace[toolCallId] ?? nodeId,
         changes: indices.map((i) => allChanges[i]),
         // Ticket-31: refs resolve against the FULL batch (not just this click's
         // subset), with minted ids remembered per proposal across clicks.
@@ -1266,6 +1268,7 @@ export function AITerminal() {
       resolutions,
       nodeId,
       changeTargets,
+      changePlace,
       contextLabel,
       router,
       allPages,
@@ -1966,12 +1969,19 @@ export function AITerminal() {
       const targetBlocks = crossPage
         ? (blocksForTarget.get(crossPage.nodeId) ?? [])
         : (currentPage?.blocks ?? [])
+      const effectiveOpenNodeId = changePlace[part.toolCallId] ?? nodeId
+      const needsPlace =
+        !targetMissing &&
+        resolveAcceptTarget(resolutions, part.toolCallId, effectiveOpenNodeId) === null
       diffCards.push({
         id: part.toolCallId,
         changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
         status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
         targetName: target?.nodeName || contextLabel,
         targetMissing,
+        needsPlace,
+        parentOptions,
+        pondName,
         note: changeNotes[part.toolCallId],
         revised: !!revisions[part.toolCallId],
         skippedCount: changeSkipped[part.toolCallId] ?? 0,
@@ -2078,6 +2088,12 @@ export function AITerminal() {
               cards={diffCards}
               onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
               onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
+              onPickPlace={(id, destinationId) => {
+                // The pond-root option (null) names no page to write blocks to —
+                // not a valid propose_changes place, so the pick is inert.
+                if (destinationId === null) return
+                dispatch({ kind: 'pickDestination', type: 'changes', id, destinationId })
+              }}
               onRequestChanges={(id, note) =>
                 sendRequestChanges(id, allIndices(id).length, note, 'note')
               }
