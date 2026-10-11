@@ -20,6 +20,8 @@ import {
   toggleBold,
   toggleBulletList,
   toggleItalic,
+  setLink,
+  unsetLink,
   type ActiveMarks,
   type TextStyle,
 } from '@/lib/modules/text/format'
@@ -235,7 +237,9 @@ const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
   if (!sel.anchorNode || !sel.focusNode) return false
   const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
   const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
-  editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, anchor, head)))
+  editor.view.dispatch(
+    editor.state.tr.setSelection(TextSelection.create(editor.state.doc, anchor, head))
+  )
   return true
 }
 
@@ -256,6 +260,13 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const [listActive, setListActive] = useState(false)
   const [styleLabel, setStyleLabel] = useState<TextStyle>('text')
   const [styleMenuOpen, setStyleMenuOpen] = useState(false)
+  const [linkActive, setLinkActive] = useState(false)
+  const [linkMode, setLinkMode] = useState(false)
+  const [linkHref, setLinkHref] = useState('')
+  // Focusing the field moves the browser's selection out of the editor, so the
+  // range the link applies to is captured when the field opens.
+  const linkTargetRef = useRef<{ editor: Editor; from: number; to: number } | null>(null)
+  const linkInputRef = useRef<HTMLInputElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const styleButtonRef = useRef<HTMLButtonElement>(null)
   const styleMenuRef = useRef<HTMLDivElement>(null)
@@ -265,11 +276,13 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     setCtx(null)
     setRect(null)
     setStyleMenuOpen(false)
+    setLinkMode(false)
   }, [])
 
   useEffect(() => {
     function onSelectionChange() {
-      if (disabled) return
+      // The link field owns focus (and so the browser's selection) while open.
+      if (disabled || linkMode) return
 
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed || !sel.rangeCount) {
@@ -305,12 +318,17 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       if (editor) syncEditorSelection(editor, sel)
       setMarks(editor ? activeMarks(editor) : NO_MARKS)
       setListActive(editor ? editor.isActive('bulletList') : false)
+      setLinkActive(editor ? editor.isActive('link') : false)
       setStyleLabel(editor ? currentTextStyle(editor) : 'text')
     }
 
     document.addEventListener('selectionchange', onSelectionChange)
     return () => document.removeEventListener('selectionchange', onSelectionChange)
-  }, [containerRef, disabled, hide])
+  }, [containerRef, disabled, hide, linkMode])
+
+  useEffect(() => {
+    if (linkMode) linkInputRef.current?.focus()
+  }, [linkMode])
 
   // A press outside the bar dismisses it, same as the popover's own rule.
   // The style menu portals as the bar's own sibling, not its child, so it
@@ -331,7 +349,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   // Measured after the items render, so centring uses the bar's real width.
   useLayoutEffect(() => {
     if (barRef.current) setBarWidth(barRef.current.offsetWidth)
-  }, [ctx, rect])
+  }, [ctx, rect, linkMode])
 
   // `useAnchoredBox` anchors on the box's own left edge, so centring is
   // folded into the anchor's own rect; its `clampLeft` then holds it in view.
@@ -366,6 +384,51 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     toggle(editor)
     setMarks(activeMarks(editor))
     setListActive(editor.isActive('bulletList'))
+    setLinkActive(editor.isActive('link'))
+  }
+
+  const handleLinkClick = () => {
+    if (linkActive) {
+      applyMark(unsetLink)()
+      return
+    }
+    const sel = window.getSelection()
+    const editor = sel && editorForSelection(sel)
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    linkTargetRef.current = { editor, from, to }
+    setLinkHref('')
+    setLinkMode(true)
+  }
+
+  // Returns the caret to the text the link was opened on.
+  const closeLinkField = (apply: boolean) => {
+    const target = linkTargetRef.current
+    linkTargetRef.current = null
+    setLinkMode(false)
+    if (!target) return
+    target.editor.commands.setTextSelection({ from: target.from, to: target.to })
+    const href = linkHref.trim()
+    if (apply && href) {
+      setLink(target.editor, href)
+      setLinkActive(target.editor.isActive('link'))
+      return
+    }
+    target.editor.commands.focus()
+  }
+
+  const handleLinkKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      closeLinkField(true)
+      return
+    }
+    if (e.key === 'Escape') {
+      // Consumed here, so it must not also leave zen or blur the editor.
+      e.preventDefault()
+      e.stopPropagation()
+      closeLinkField(false)
+    }
   }
 
   // Resolved fresh for the same reason as `applyMark` — the row's own click
@@ -393,46 +456,70 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       className="mn-glass fixed z-[5] box-border flex items-center gap-[2px] rounded-[14px] p-[4px]"
       style={style}
     >
-      {SELECTION_BAR_ITEMS.map((item) => (
-        <Fragment key={item.id}>
-          <button
-            ref={item.id === 'text-style' ? styleButtonRef : undefined}
-            type="button"
-            aria-label={HAS_VISIBLE_LABEL.has(item.id) ? undefined : item.label}
-            aria-haspopup={item.id === 'text-style' ? 'menu' : undefined}
-            aria-expanded={item.id === 'text-style' ? styleMenuOpen : undefined}
-            aria-pressed={
-              item.id === 'bold'
-                ? marks.bold
-                : item.id === 'italic'
-                  ? marks.italic
-                  : item.id === 'list'
-                    ? listActive
-                    : undefined
-            }
-            onClick={
-              item.id === 'ask-pond'
-                ? handleAsk
-                : item.id === 'bold'
-                  ? applyMark(toggleBold)
+      {linkMode ? (
+        <input
+          ref={linkInputRef}
+          type="text"
+          inputMode="url"
+          aria-label="link address"
+          placeholder="paste a link"
+          value={linkHref}
+          onChange={(e) => setLinkHref(e.target.value)}
+          onKeyDown={handleLinkKeyDown}
+          className="box-border h-[32px] w-[240px] rounded-[10px] bg-transparent px-[9px] font-mono text-[11.5px] lowercase text-mn-text outline-none placeholder:text-mn-text-secondary"
+        />
+      ) : (
+        SELECTION_BAR_ITEMS.map((item) => (
+          <Fragment key={item.id}>
+            <button
+              ref={item.id === 'text-style' ? styleButtonRef : undefined}
+              type="button"
+              aria-label={
+                item.id === 'link' && linkActive
+                  ? 'unlink'
+                  : HAS_VISIBLE_LABEL.has(item.id)
+                    ? undefined
+                    : item.label
+              }
+              aria-haspopup={item.id === 'text-style' ? 'menu' : undefined}
+              aria-expanded={item.id === 'text-style' ? styleMenuOpen : undefined}
+              aria-pressed={
+                item.id === 'bold'
+                  ? marks.bold
                   : item.id === 'italic'
-                    ? applyMark(toggleItalic)
+                    ? marks.italic
                     : item.id === 'list'
-                      ? applyMark(toggleBulletList)
-                      : item.id === 'text-style'
-                        ? () => setStyleMenuOpen(true)
+                      ? listActive
+                      : item.id === 'link'
+                        ? linkActive
                         : undefined
-            }
-            // A selection button isn't where the caret belongs — stop the
-            // browser from collapsing the selection onto it before `onClick` runs.
-            onMouseDown={(e) => e.preventDefault()}
-            className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
-          >
-            <Mark item={item} textStyle={styleLabel} />
-          </button>
-          {item.dividerAfter && <span aria-hidden className="h-[18px] w-px bg-mn-text/[0.12]" />}
-        </Fragment>
-      ))}
+              }
+              onClick={
+                item.id === 'ask-pond'
+                  ? handleAsk
+                  : item.id === 'bold'
+                    ? applyMark(toggleBold)
+                    : item.id === 'italic'
+                      ? applyMark(toggleItalic)
+                      : item.id === 'list'
+                        ? applyMark(toggleBulletList)
+                        : item.id === 'text-style'
+                          ? () => setStyleMenuOpen(true)
+                          : item.id === 'link'
+                            ? handleLinkClick
+                            : undefined
+              }
+              // A selection button isn't where the caret belongs — stop the
+              // browser from collapsing the selection onto it before `onClick` runs.
+              onMouseDown={(e) => e.preventDefault()}
+              className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
+            >
+              <Mark item={item} textStyle={styleLabel} />
+            </button>
+            {item.dividerAfter && <span aria-hidden className="h-[18px] w-px bg-mn-text/[0.12]" />}
+          </Fragment>
+        ))
+      )}
     </div>,
     document.body
   )

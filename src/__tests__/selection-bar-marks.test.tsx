@@ -16,13 +16,15 @@ import { clearSelection, selectWord } from './helpers/selection'
 function Host({
   onAsk,
   onEditor,
+  content = '<p>soak overnight</p>',
 }: {
   onAsk: (ctx: SelectionContext) => void
   onEditor: (editor: Editor) => void
+  content?: string
 }) {
   const editor = useEditor({
     extensions: proseExtensions,
-    content: '<p>soak overnight</p>',
+    content,
     immediatelyRender: false,
   })
 
@@ -109,5 +111,61 @@ describe('SelectionBar text style', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'text' })).toBeInTheDocument()
+  })
+})
+
+describe('SelectionBar link', () => {
+  afterEach(() => clearSelection())
+
+  const typeUrl = (url: string) => {
+    const field = screen.getByRole('textbox', { name: 'link address' })
+    fireEvent.change(field, { target: { value: url } })
+    return field
+  }
+
+  it('opens a one-field input, and ↵ links the selected word', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'link' }))
+    fireEvent.keyDown(typeUrl('https://example.com'), { key: 'Enter' })
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak [overnight](https://example.com)')
+    expect(screen.queryByRole('textbox', { name: 'link address' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'unlink' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('cancels back to the bar on Esc, leaving the text unlinked', () => {
+    let editor: Editor | null = null
+    render(<Host onAsk={jest.fn()} onEditor={(e) => (editor = e)} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    fireEvent.click(screen.getByRole('button', { name: 'link' }))
+    fireEvent.keyDown(typeUrl('https://example.com'), { key: 'Escape' })
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
+    expect(screen.queryByRole('textbox', { name: 'link address' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'link' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('offers unlink when a link is already active, and removes it', () => {
+    let editor: Editor | null = null
+    render(
+      <Host
+        onAsk={jest.fn()}
+        onEditor={(e) => (editor = e)}
+        content='<p>soak <a href="https://example.com">overnight</a></p>'
+      />
+    )
+
+    selectWord(screen.getByText('overnight'), 'overnight')
+    const unlink = screen.getByRole('button', { name: 'unlink' })
+    expect(unlink).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(unlink)
+
+    expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
+    expect(screen.getByRole('button', { name: 'link' })).toHaveAttribute('aria-pressed', 'false')
   })
 })
