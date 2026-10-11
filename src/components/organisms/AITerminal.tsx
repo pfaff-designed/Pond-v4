@@ -458,7 +458,16 @@ export function AITerminal() {
   // can leave two assistant messages in a row — a tool-only one, then the text —
   // and re-running on the shortened list would eat the earlier, complete answer
   // too.
+  //
+  // A failed ask again also puts the answer it was replacing back, verbatim and
+  // at its own index, as the current answer: it never left the person's thread,
+  // so it is not folded into `earlier`. The stash is cleared here, before the
+  // merge effect below can mistake the partial replacement for a finished one.
   const droppedForError = useRef<unknown>(null)
+  const pendingRegenerate = useRef<{
+    message: (typeof messages)[number]
+    messageIndex: number
+  } | null>(null)
   useEffect(() => {
     if (!error) {
       droppedForError.current = null
@@ -466,9 +475,14 @@ export function AITerminal() {
     }
     if (droppedForError.current === error) return
     droppedForError.current = error
+    const stashed = pendingRegenerate.current
+    pendingRegenerate.current = null
     setMessages((prev) => {
       const last = prev[prev.length - 1]
-      return last?.role === 'assistant' ? prev.slice(0, -1) : prev
+      const kept = last?.role === 'assistant' ? prev.slice(0, -1) : prev
+      if (!stashed || kept.some((m) => m.id === stashed.message.id)) return kept
+      const at = Math.min(stashed.messageIndex, kept.length)
+      return [...kept.slice(0, at), stashed.message, ...kept.slice(at)]
     })
   }, [error, setMessages])
   // Deep research: the only road to the web, off by default and spent per question.
@@ -1755,10 +1769,6 @@ export function AITerminal() {
   // Ask again replaces the answer under the same question instead of opening a new
   // turn. The answer being replaced is held WHOLE: regenerate() drops it from the
   // thread at once, and a failed run must be able to put it back verbatim.
-  const pendingRegenerate = useRef<{
-    message: (typeof messages)[number]
-    messageIndex: number
-  } | null>(null)
   const handleAskAgain = (messageIndex: number) => {
     if (isStreaming) return
     const message = messages[messageIndex]

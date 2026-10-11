@@ -109,6 +109,7 @@ let mockMessages: Array<{
 
 // The turn's lifecycle, under test control: 'ready' means the turn has settled.
 let mockStatus = 'ready'
+let mockError: Error | undefined
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
@@ -117,6 +118,7 @@ jest.mock('@ai-sdk/react', () => ({
     addToolOutput: mockAddToolOutput,
     setMessages: mockSetMessages,
     status: mockStatus,
+    error: mockError,
   })),
 }))
 
@@ -169,6 +171,7 @@ beforeEach(() => {
   mockListPages.mockReset().mockResolvedValue([])
   mockCommitBlocks.mockReset().mockResolvedValue(undefined)
   mockStatus = 'ready'
+  mockError = undefined
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
 })
 
@@ -372,6 +375,54 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(earlier).toHaveLength(2)
     expect(earlier[0]).toEqual(firstEarlier)
     expect(earlier[1].parts).toEqual([batch('pc2')])
+  })
+
+  it('a failed regenerate puts the replaced answer back as current, unfolded, and clears the stash', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() drops the answer and starts a replacement, which then fails.
+    mockMessages = [
+      mockMessages[0],
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'half an ans' }] },
+    ]
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    applySetMessages()
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+
+    // The stash is spent: a later settle must not fold anything onto the restored answer.
+    mockError = undefined
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    expect(mockSetMessages).not.toHaveBeenCalled()
   })
 
   it('two cards in one message offer accept all; one does not (C10)', async () => {
