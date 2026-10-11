@@ -70,7 +70,8 @@ import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
-import { parseCsv, formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
+import { parseCsv, type CsvParseOk } from '@/lib/csv/parse-csv'
+import { getInlineAttachmentDescriptor } from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
 import {
@@ -869,8 +870,8 @@ export function AITerminal() {
         setQuoteCtx(null)
       }
       if (csvAttachment) {
-        const ctx = formatCsvContext(csvAttachment.parsed, csvAttachment.filename)
-        finalText = `${finalText}\n\n${ctx}`
+        const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext(csvAttachment)
+        finalText = ctx ? `${finalText}\n\n${ctx}` : finalText
         clearCsvAttachment()
       }
 
