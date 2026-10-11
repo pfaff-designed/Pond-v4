@@ -15,6 +15,39 @@ describe('placeBarVertically', () => {
     ).toEqual({ placement: 'above', top: 256 })
   })
 
+  it('holds the bar just above the composer when the selection sits just below its top edge', () => {
+    expect(
+      placeBarVertically({
+        rect: { top: 710, bottom: 730 },
+        barHeight: BAR,
+        viewportHeight: VIEWPORT,
+        composerTop: 700,
+      })
+    ).toEqual({ placement: 'clamped', top: 656 })
+  })
+
+  it('keeps the above placement when its box ends exactly at the composer', () => {
+    expect(
+      placeBarVertically({
+        rect: { top: 704, bottom: 724 },
+        barHeight: BAR,
+        viewportHeight: VIEWPORT,
+        composerTop: 700,
+      })
+    ).toEqual({ placement: 'above', top: 660 })
+  })
+
+  it('holds the lifted bar to the top margin when the composer leaves no room above it', () => {
+    expect(
+      placeBarVertically({
+        rect: { top: 400, bottom: 420 },
+        barHeight: BAR,
+        viewportHeight: VIEWPORT,
+        composerTop: 30,
+      })
+    ).toEqual({ placement: 'clamped', top: 12 })
+  })
+
   it('flips below when above would leave the top margin', () => {
     expect(
       placeBarVertically({

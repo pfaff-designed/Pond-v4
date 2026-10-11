@@ -2,8 +2,10 @@
 
 /**
  * Where the selection bar sits vertically: above the selection, 4px off its
- * rect; below it when there is no room above; and when below would run under
- * the composer, above again, held to the viewport's top margin. Tracked across
+ * rect; just above the composer when that box would overlap it (the bar is
+ * z-5, the composer z-30); below the selection when there is no room above;
+ * and when below would run under the composer, above again, held to the
+ * viewport's top margin. Tracked across
  * scroll and resize as `useAnchoredBox` is, but re-reading the selection's
  * live rect each time, since the selection moves under a scroll.
  */
@@ -43,6 +45,11 @@ export const placeBarVertically = ({
   composerTop,
 }: PlaceBarInput): { placement: BarPlacement; top: number } => {
   const above = rect.top - SELECTION_GAP - barHeight
+  const overlapsComposer = composerTop !== null && above + barHeight > composerTop
+  if (overlapsComposer) {
+    const aboveComposer = composerTop - SELECTION_GAP - barHeight
+    return { placement: 'clamped', top: Math.max(aboveComposer, VIEWPORT_MARGIN) }
+  }
   if (above >= VIEWPORT_MARGIN) return { placement: 'above', top: above }
 
   const below = rect.bottom + SELECTION_GAP
