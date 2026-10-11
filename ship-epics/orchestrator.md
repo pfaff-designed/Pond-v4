@@ -32,7 +32,7 @@ Read `EPIC`'s description and its `## Workstream` section (`JIRA.get`).
 **Resume first.** A Workstream ticket that is not Done and already has its worktree and its loop (`/tmp/ship-epics/EPIC/ralph-<key lowercased>/PLAN.md`) was interrupted: a usage limit, or a run stopped from outside. Take it before anything new. Read the ticket's latest comments and `/tmp/ship-epics/EPIC/orchestrator.prev-run.md` if the conductor left one, but decide where you are from git, `gh` and the run files, never from a note's word. Skip steps 2 and 3 (the person's path is `PATH_STEPS` in the loop's `SPEC.md`) and go on from the first step not finished:
 
 - An item in `PLAN.md` still unticked → step 4. First stash what an interrupted pass left uncommitted (`git -C WORKTREE stash push -u -m "ralph: interrupted pass"`): unverified edits are not work to build on, and the stash keeps them recoverable. Remove the builder's old `HB` and `RESULT` and start `ralph.sh` on the same `LOOP`; it keeps its misses and numbers its passes on.
-- Every item ticked and green, no review result → step 5. Reviewed, not verified → step 7. Verified and unpushed → step 9. An open PR → step 9's CI wait.
+- Every item ticked and green, no review result → step 5. Reviewed, not verified → step 7. Verified and unpushed → step 8, then 9. An open PR → step 9's CI wait.
 
 Otherwise take the first ticket in list order that is not Done, has no `feat/<key>` branch (`git -C REPO branch --list`) and no open PR (`gh pr list --head feat/<key> --state open`), and whose every `after:` ticket is Done. The first pick must carry the `now` label. If nothing is ready, return `blocked` with what each candidate waits on.
 
