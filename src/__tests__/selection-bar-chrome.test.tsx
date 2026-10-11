@@ -48,6 +48,8 @@ describe('SelectionBar chrome', () => {
       expect(button.className).toContain('min-w-[32px]')
       expect(button.className).toContain('px-[9px]')
       expect(button.className).toContain('rounded-[10px]')
+      // The three inert items take no fill: a fill on hover would read as live.
+      if (button.hasAttribute('disabled')) continue
       expect(button.className).toContain('hover:bg-mn-text/[0.07]')
       expect(button.className).toContain('active:bg-mn-text/[0.07]')
     }

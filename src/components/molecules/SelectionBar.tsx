@@ -375,6 +375,12 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     window.getSelection()?.removeAllRanges()
   }
 
+  // The selection stays up after a copy — nothing about the text or page changes.
+  const handleCopy = () => {
+    if (!ctx) return
+    void navigator.clipboard.writeText(window.getSelection()?.toString() || ctx.text)
+  }
+
   // Resolved fresh (not from a stored ref) because the last-synced editor is
   // exactly the one `editorForSelection` already matched this selection to.
   const applyMark = (toggle: (editor: Editor) => void) => () => {
@@ -507,12 +513,20 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                           ? () => setStyleMenuOpen(true)
                           : item.id === 'link'
                             ? handleLinkClick
-                            : undefined
+                            : item.id === 'copy'
+                              ? handleCopy
+                              : undefined
               }
               // A selection button isn't where the caret belongs — stop the
               // browser from collapsing the selection onto it before `onClick` runs.
               onMouseDown={(e) => e.preventDefault()}
-              className="box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]"
+              disabled={!item.enabled}
+              aria-disabled={item.enabled ? undefined : true}
+              className={`box-border inline-flex h-[32px] min-w-[32px] items-center justify-center gap-[6px] rounded-[10px] px-[9px] ${
+                item.enabled
+                  ? 'hover:bg-mn-text/[0.07] active:bg-mn-text/[0.07]'
+                  : 'text-mn-text-secondary'
+              }`}
             >
               <Mark item={item} textStyle={styleLabel} />
             </button>
