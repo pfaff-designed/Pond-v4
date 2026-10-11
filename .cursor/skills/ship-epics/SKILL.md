@@ -55,8 +55,8 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
 
 0. **Sync the boards once.** In a worktree off `origin/main`, run `./scripts/sync-handoff.sh`. If it changed anything, land it first as its own `chore: sync design handoff` PR (CI, squash-merge) so every orchestrator builds from the same boards. Orchestrators never sync: parallel syncs would put the same board changes into every PR.
 1. **Read the queue.** `project = KAN AND labels = now AND statusCategory != Done ORDER BY rank` (cloudId `1535dfd5-6618-4e61-ac79-655c4c329842`). Group the tickets by parent epic. Read each epic's `## Workstream` section (numbered `KAN-123 · after: …` lines, `Owns:`, `Migrations:`). An epic with no Workstream section gets one written into its description before it is run.
-2. **Pick the epics.** An epic runs when its next Workstream ticket is ready: every `after:` is Done and no `feat/<key>` branch or open PR exists. At most **3** orchestrators at once — each runs jest, Storybook and a dev server.
-3. **Launch** every picked orchestrator with `LAUNCH`, all in **one message**. Each prompt is `ship-epics/orchestrator.md` + `ship-epics/failsafe.md` + `harness.md` plus its inputs (first `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>` for each):
+2. **Pick the epics.** An epic runs when it has an interrupted ticket to resume (a worktree and a loop under `/tmp/ship-epics/<EPIC>/ralph-<key>/`), or when its next Workstream ticket is ready: every `after:` is Done and no `feat/<key>` branch or open PR exists. At most **3** orchestrators at once — each runs jest, Storybook and a dev server.
+3. **Launch** every picked orchestrator with `LAUNCH`, all in **one message**. Each prompt is `ship-epics/orchestrator.md` + `ship-epics/failsafe.md` + `harness.md` plus its inputs. First, for each: an epic with an interrupted ticket keeps its directory, which is what its orchestrator resumes from — move `orchestrator.result.md` to `orchestrator.prev-run.md` and remove only `orchestrator.hb`; any other epic gets `rm -rf /tmp/ship-epics/<EPIC> && mkdir -p /tmp/ship-epics/<EPIC>`. The inputs:
    - `EPIC` — the epic key
    - `PORT` — 3101, 3102, 3103 (one each; the user's own dev server is on 3000/3001)
    - `MAX_TICKETS` — 2 unless the user says otherwise
@@ -64,12 +64,7 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
 
    Then record every handle, as `harness.md` says: the agent id each `Task` call returned.
 
-4. **Supervise** them, as `failsafe.md`'s "If you supervise" says, with one poll for all of them (`RUN 90000`):
-
-   ```sh
-   H=/Users/charlespfaff/Documents/Code/Projects/Pond-v4/ship-epics/heartbeat.sh
-   sleep 60; for f in /tmp/ship-epics/*/orchestrator.hb; do printf '%s\t' "$(basename "$(dirname "$f")")"; $H check "$f"; done
-   ```
+4. **Supervise** them, as `failsafe.md`'s "If you supervise" says, with one poll for all of them: the conductor's poll at the end of `failsafe.md`, run as `POLL`. It wakes when any orchestrator's state changes, not on a timer.
 
    An orchestrator's heartbeat follows its child's (`supervise build: <step> #<reapproaches>`), so a stall anywhere under it shows here within 10 minutes even if the orchestrator itself failed to act on it. `NUDGE` and `STOP` exactly as `failsafe.md` says. When you stop an orchestrator, also free what it held: if `/tmp/pond-browser.lock/owner` names its epic, remove the lock; `pkill -f "ralph.sh /tmp/ship-epics/<EPIC>/"`; `pkill -f "next dev -p <its PORT>"`; `pkill -f "<its worktree path>"`. An orchestrator is finished when Cursor reports its background task complete or its heartbeat reads `done`; its return is its `RESULT` file, not its reply.
 
@@ -77,7 +72,7 @@ Tested on 2026-10-09 in a scratch repo with real passes: a planning pass, two it
    - `merged` — record the PRs and each ticket's person's path. If the epic has a next ready ticket and the user asked for the run to continue, launch a fresh orchestrator for it.
    - `needs-user` — collect it. Three kinds: a migration waiting for production (ADR 0003: never push without the user's explicit "push NNNN"), a ticket that failed the reachability gate (the proposed re-split is on the ticket as a comment), and a genuine spec ambiguity.
    - `stopped` — a stall or a failure after two fix rounds. Read the reason; do not relaunch the same thing.
-   - `stopped` with `usage limit, resets <time>` — not a failure. Launch no more orchestrators until the reset; then relaunch the same epic, which resumes from its worktree, `PLAN.md` and the ticket's comment.
+   - `stopped` with `usage limit, resets <time>` — not a failure. Launch no more orchestrators until the reset; then relaunch the same epic as step 3 says for an interrupted ticket; its orchestrator resumes it (`orchestrator.md`, step 1).
 6. **Bring the user one batch**, once every orchestrator has returned: what merged and what a person can now do (the path, not the ticket title), then every `needs-user` item in one `ASK`.
 
 ## Rules every role carries

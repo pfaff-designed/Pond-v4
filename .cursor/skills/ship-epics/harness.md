@@ -33,7 +33,7 @@ comparing the line fires constantly (found in Claude Code, 2026-10-10). Leave th
 `exit`: Cursor's shell calls share one session, and `exit` ends it.
 
 ```sh
-key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}' || echo none; }
+key() { $H check HB 2>/dev/null | awk -F'\t' '{print $1, $4, $5}'; }
 prev=$(key); end=$((SECONDS + 530)); changed=
 while [ $SECONDS -lt $end ]; do
   [ "$(key)" != "$prev" ] && { changed=1; break; }

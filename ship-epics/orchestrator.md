@@ -27,7 +27,14 @@ You run one Jira epic's Workstream for Pond, ticket by ticket, through to a merg
 
 ### 1. Pick
 
-Read `EPIC`'s description and its `## Workstream` section (`JIRA.get`). Take the first ticket in list order that is not Done, has no `feat/<key>` branch (`git -C REPO branch --list`) and no open PR (`gh pr list --head feat/<key> --state open`), and whose every `after:` ticket is Done. The first pick must carry the `now` label. If nothing is ready, return `blocked` with what each candidate waits on.
+Read `EPIC`'s description and its `## Workstream` section (`JIRA.get`).
+
+**Resume first.** A Workstream ticket that is not Done and already has its worktree and its loop (`/tmp/ship-epics/EPIC/ralph-<key lowercased>/PLAN.md`) was interrupted: a usage limit, or a run stopped from outside. Take it before anything new. Read the ticket's latest comments and `/tmp/ship-epics/EPIC/orchestrator.prev-run.md` if the conductor left one, but decide where you are from git, `gh` and the run files, never from a note's word. Skip steps 2 and 3 (the person's path is `PATH_STEPS` in the loop's `SPEC.md`) and go on from the first step not finished:
+
+- An item in `PLAN.md` still unticked → step 4. First stash what an interrupted pass left uncommitted (`git -C WORKTREE stash push -u -m "ralph: interrupted pass"`): unverified edits are not work to build on, and the stash keeps them recoverable. Remove the builder's old `HB` and `RESULT` and start `ralph.sh` on the same `LOOP`; it keeps its misses and numbers its passes on.
+- Every item ticked and green, no review result → step 5. Reviewed, not verified → step 7. Verified and unpushed → step 9. An open PR → step 9's CI wait.
+
+Otherwise take the first ticket in list order that is not Done, has no `feat/<key>` branch (`git -C REPO branch --list`) and no open PR (`gh pr list --head feat/<key> --state open`), and whose every `after:` ticket is Done. The first pick must carry the `now` label. If nothing is ready, return `blocked` with what each candidate waits on.
 
 ### 2. The reachability gate
 
@@ -74,7 +81,7 @@ SHIP_DIR/ralph.sh LOOP WORKTREE HB RESULT > LOOP/ralph.out 2>&1
 - `stopped — blocked: <step> — <why>`: a pass found a step this ticket cannot build. If it is a path step another ticket owns, that is the reachability gate failing late: comment the re-split on the ticket and return `needs-user`. Otherwise judge it, and either fix the plan or return `needs-user` with the question.
 - `stopped — '<item>' missed twice`: read the attempts. One more run is allowed with a changed instruction — rewrite that item in `PLAN.md` (split it, or name the route the passes missed) and start the loop again; a second stop is `stopped`.
 - `stopped — pass budget spent`: the plan was mis-sized. `stopped`, with the plan.
-- `stopped — usage limit: <message>`: Claude Code's account is out until the time in the message. Nothing failed and nothing is re-split. Leave the worktree as it is, including any uncommitted edits, comment the reset time and the loop's state on the ticket (`JIRA.comment`), and return `stopped` with `reason: usage limit, resets <time>`. The same limit stops every other loop, so do not start the next ticket.
+- `stopped — usage limit: <message>`: Claude Code's account is out until the reset the message names. Nothing failed and nothing is re-split. Leave the worktree and `LOOP` as they are, comment the reset and the loop's state on the ticket (`JIRA.comment`), and return `stopped` with `reason: usage limit, resets <the time in the message, or unknown>`. The same limit stops every other loop, so do not start the next ticket. A relaunch picks the ticket up again (step 1, "Resume first").
 
 ### 5. Review
 
