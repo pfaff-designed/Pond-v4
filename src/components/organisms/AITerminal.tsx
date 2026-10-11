@@ -479,8 +479,11 @@ export function AITerminal() {
   }, [])
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
-  const { attachment: csvAttachment, setAttachment: setCsvAttachment } =
-    useInlineAttachment<CsvInlineAttachment>()
+  const {
+    attachment: csvAttachment,
+    setAttachment: setCsvAttachment,
+    clear: clearCsvAttachment,
+  } = useInlineAttachment<CsvInlineAttachment>()
 
   const processCsvFile = useCallback(
     (file: File) => {
@@ -868,7 +871,7 @@ export function AITerminal() {
       if (csvAttachment) {
         const ctx = formatCsvContext(csvAttachment.parsed, csvAttachment.filename)
         finalText = `${finalText}\n\n${ctx}`
-        setCsvAttachment(null)
+        clearCsvAttachment()
       }
 
       // Send the open node so the server can auto-inject its context (Track C),
@@ -910,6 +913,7 @@ export function AITerminal() {
       pondId,
       quoteCtx,
       csvAttachment,
+      clearCsvAttachment,
       fileParts,
       clearAttachments,
       research,
