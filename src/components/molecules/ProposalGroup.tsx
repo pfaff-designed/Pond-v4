@@ -44,7 +44,7 @@ interface ProposalGroupProps {
   onRequestChanges: (id: string, note: string) => void
   onRevise: (id: string) => void
   onAskAgain?: (id: string) => void
-  onPickPlace?: (id: string, destinationId: string | null) => void
+  onPickPlace?: (id: string, destinationId: string) => void
   /** Accept every card still pending. */
   onAcceptAll: () => void
   onRejectAll: () => void

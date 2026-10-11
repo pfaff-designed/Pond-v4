@@ -65,7 +65,9 @@ export interface ModuleDiffCardProps {
   parentOptions?: PlaceOption[]
   /** The pond's name, shown as the place row's top-level option. */
   pondName?: string
-  onPickPlace?: (id: string | null) => void
+  /** KAN-267: the pond root names no page to write blocks to, so the place row
+   *  never offers it here — the id is always a real page. */
+  onPickPlace?: (id: string) => void
   status?: ProposalStatus
   /** The request-changes note that went to Pond (status `changes_requested`). */
   note?: string
@@ -218,7 +220,11 @@ export function ModuleDiffCard({
                 parentId={null}
                 parentOptions={parentOptions ?? []}
                 pondName={pondName}
-                onParentChange={(id) => onPickPlace?.(id)}
+                includeRootOption={false}
+                onParentChange={(id) => {
+                  // The placeholder option is disabled — a real pick is always a page id.
+                  if (id !== null) onPickPlace?.(id)
+                }}
                 rowClassName="flex items-baseline gap-3"
                 labelClassName="w-[52px] flex-none text-mn-text-meta"
                 fieldClassName="min-w-0 flex-1 appearance-none border-0 border-b border-transparent bg-transparent p-0 font-mono text-[11px] lowercase tracking-[0.02em] text-foreground outline-none focus:border-mn-text/40"

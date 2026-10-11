@@ -38,6 +38,29 @@ describe('ModuleDiffCard — needsPlace', () => {
     expect(screen.getByRole('combobox', { name: 'under' })).toBeInTheDocument()
   })
 
+  it('offers only real pages in the under select — no option names the pond root', () => {
+    render(
+      <ModuleDiffCard
+        changes={[create]}
+        needsPlace
+        parentOptions={[
+          { id: 'cre-1', title: 'Creativity' },
+          { id: 'kit-1', title: 'Kitchen' },
+        ]}
+        pondName="life"
+        onPickPlace={jest.fn()}
+        onAccept={jest.fn()}
+        onReject={jest.fn()}
+        onRequestChanges={jest.fn()}
+      />
+    )
+
+    const options = screen.getAllByRole<HTMLOptionElement>('option')
+    expect(options.map((o) => o.value)).toEqual(['', 'cre-1', 'kit-1'])
+    expect(options.map((o) => o.textContent)).not.toContain('life')
+    expect(options[0]).toBeDisabled()
+  })
+
   it('picking a place calls onPickPlace, and the terminal flipping needsPlace enables accept', () => {
     const onPickPlace = jest.fn()
     const { rerender } = render(

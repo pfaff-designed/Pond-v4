@@ -29,6 +29,11 @@ export interface PlaceRowProps {
   parentOptions: PlaceOption[]
   /** The pond's name, shown as the top-level place. */
   pondName?: string
+  /** KAN-267: false where the pond root names no page to write to (propose_changes
+   *  has nowhere to put blocks at top level) — an unselected prompt option takes
+   *  its place instead. Defaults true, so `PageProposalCard`'s `under` row, where
+   *  the root legitimately means top level, is unchanged. */
+  includeRootOption?: boolean
   onParentChange: (parentId: string | null) => void
   rowClassName?: string
   labelClassName?: string
@@ -36,7 +41,17 @@ export interface PlaceRowProps {
 }
 
 export const PlaceRow = forwardRef<PlaceRowHandle, PlaceRowProps>(function PlaceRow(
-  { id, parentId, parentOptions, pondName = 'life', onParentChange, rowClassName, labelClassName, fieldClassName },
+  {
+    id,
+    parentId,
+    parentOptions,
+    pondName = 'life',
+    includeRootOption = true,
+    onParentChange,
+    rowClassName,
+    labelClassName,
+    fieldClassName,
+  },
   ref
 ) {
   const underRef = useRef<HTMLSelectElement>(null)
@@ -76,7 +91,13 @@ export const PlaceRow = forwardRef<PlaceRowHandle, PlaceRowProps>(function Place
         onBlur={() => setPlacing(false)}
         className={cn(fieldClassName, 'cursor-pointer', placing && 'border-mn-text/40')}
       >
-        <option value="">{pondName}</option>
+        {includeRootOption ? (
+          <option value="">{pondName}</option>
+        ) : (
+          <option value="" disabled>
+            choose a place
+          </option>
+        )}
         {parentOptions.map((p) => (
           <option key={p.id} value={p.id}>
             {p.title}

@@ -2104,9 +2104,6 @@ export function AITerminal() {
               onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
               onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
               onPickPlace={(id, destinationId) => {
-                // The pond-root option (null) names no page to write blocks to —
-                // not a valid propose_changes place, so the pick is inert.
-                if (destinationId === null) return
                 dispatch({ kind: 'pickDestination', type: 'changes', id, destinationId })
               }}
               onRequestChanges={(id, note) =>
