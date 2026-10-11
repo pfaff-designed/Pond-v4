@@ -41,13 +41,14 @@
  * block carries a display-only placeholder id until accept mints the real one.
  */
 
-import { useState, type KeyboardEvent } from 'react'
+import { useId, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { chipBaseClass } from '@/components/atoms/kicker'
 import { PondControl } from '@/components/atoms/PondControl'
 import { ChangeRows, NoteBox } from './diff-card-parts'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
+import { PlaceRow, type PlaceOption } from './place-row'
 
 export interface ModuleDiffCardProps {
   /** Every change in the batch, in emission order. */
@@ -57,6 +58,14 @@ export interface ModuleDiffCardProps {
   /** Ticket-30 review: the batch named a target page that does not exist. A
    *  notice replaces the body's promise and accepting will skip. */
   targetMissing?: boolean
+  /** KAN-267: no stamp and no page open — `resolveAcceptTarget` would return
+   *  null. Accept is withheld and the place row offered instead of a click
+   *  that provably cannot land. */
+  needsPlace?: boolean
+  parentOptions?: PlaceOption[]
+  /** The pond's name, shown as the place row's top-level option. */
+  pondName?: string
+  onPickPlace?: (id: string | null) => void
   status?: ProposalStatus
   /** The request-changes note that went to Pond (status `changes_requested`). */
   note?: string
@@ -85,6 +94,10 @@ export function ModuleDiffCard({
   changes,
   targetName,
   targetMissing = false,
+  needsPlace = false,
+  parentOptions,
+  pondName,
+  onPickPlace,
   status = 'pending',
   note,
   revised = false,
@@ -99,6 +112,7 @@ export function ModuleDiffCard({
 }: ModuleDiffCardProps) {
   const [noteOpen, setNoteOpen] = useState(false)
   const [showRejected, setShowRejected] = useState(false)
+  const placeRowId = useId()
 
   const resolved = status !== 'pending'
   const kind = revised ? 'revised edit' : 'proposed edit'
@@ -109,7 +123,7 @@ export function ModuleDiffCard({
   // ⌘↵ takes the whole diff, from anywhere on the card except a field of its own
   // (the request-changes note sends on ⌘↵ itself).
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!pending || targetMissing || e.defaultPrevented) return
+    if (!pending || targetMissing || needsPlace || e.defaultPrevented) return
     if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return
     const field = (e.target as HTMLElement).tagName
     if (field === 'TEXTAREA' || field === 'INPUT') return
@@ -184,6 +198,23 @@ export function ModuleDiffCard({
               target page not found — this proposal can’t be applied.
             </p>
           )}
+          {needsPlace && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] text-mn-text-meta">
+                these changes need a place to accept to
+              </p>
+              <PlaceRow
+                id={placeRowId}
+                parentId={null}
+                parentOptions={parentOptions ?? []}
+                pondName={pondName}
+                onParentChange={(id) => onPickPlace?.(id)}
+                rowClassName="flex items-baseline gap-3"
+                labelClassName="w-[52px] flex-none text-mn-text-meta"
+                fieldClassName="min-w-0 flex-1 appearance-none border-0 border-b border-transparent bg-transparent p-0 font-mono text-[11px] lowercase tracking-[0.02em] text-foreground outline-none focus:border-mn-text/40"
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-[3px]">
             {changes.map((change, i) => (
               <div key={i} className="flex flex-col gap-[3px]">
@@ -203,7 +234,7 @@ export function ModuleDiffCard({
                   kind="button"
                   variant="primary"
                   label="accept"
-                  disabled={targetMissing}
+                  disabled={targetMissing || needsPlace}
                   className={MOBILE_BUTTON}
                   onClick={onAccept}
                 />

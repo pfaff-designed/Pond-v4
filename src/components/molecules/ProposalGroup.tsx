@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { ModuleDiffCard } from './ModuleDiffCard'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 import type { ChangePreview } from '@/lib/modules/preview'
+import type { PlaceOption } from './place-row'
 
 export interface ProposalGroupCard {
   /** The batch's toolCallId. */
@@ -25,6 +26,11 @@ export interface ProposalGroupCard {
   status: ProposalStatus
   targetName?: string
   targetMissing?: boolean
+  /** KAN-267: no stamp and no page open — accept is withheld in favour of the place row. */
+  needsPlace?: boolean
+  parentOptions?: PlaceOption[]
+  /** The pond's name, shown as the place row's top-level option. */
+  pondName?: string
   note?: string
   revised?: boolean
   skippedCount?: number
@@ -38,6 +44,7 @@ interface ProposalGroupProps {
   onRequestChanges: (id: string, note: string) => void
   onRevise: (id: string) => void
   onAskAgain?: (id: string) => void
+  onPickPlace?: (id: string, destinationId: string | null) => void
   /** Accept every card still pending. */
   onAcceptAll: () => void
   onRejectAll: () => void
@@ -51,6 +58,7 @@ export function ProposalGroup({
   onRequestChanges,
   onRevise,
   onAskAgain,
+  onPickPlace,
   onAcceptAll,
   onRejectAll,
   className,
@@ -86,6 +94,9 @@ export function ProposalGroup({
           changes={card.changes}
           targetName={card.targetName}
           targetMissing={card.targetMissing}
+          needsPlace={card.needsPlace}
+          parentOptions={card.parentOptions}
+          pondName={card.pondName}
           status={card.status}
           note={card.note}
           revised={card.revised}
@@ -96,6 +107,7 @@ export function ProposalGroup({
           onRequestChanges={(note) => onRequestChanges(card.id, note)}
           onRevise={() => onRevise(card.id)}
           onAskAgain={onAskAgain ? () => onAskAgain(card.id) : undefined}
+          onPickPlace={onPickPlace ? (destinationId) => onPickPlace(card.id, destinationId) : undefined}
         />
       ))}
     </div>
