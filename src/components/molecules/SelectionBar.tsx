@@ -304,7 +304,14 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   useEffect(() => {
     function onSelectionChange() {
       // The link field owns focus (and so the browser's selection) while open.
-      if (disabled || linkMode) return
+      if (linkMode) return
+      // Disabled (streaming) shows nothing, and drops its state on every change
+      // so the bar cannot return at a selection that no longer exists.
+      if (disabled) {
+        dismissedKeyRef.current = null
+        hide()
+        return
+      }
 
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed || !sel.rangeCount) {

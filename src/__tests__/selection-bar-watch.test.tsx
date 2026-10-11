@@ -67,6 +67,17 @@ describe('SelectionBar selection watching', () => {
     expect(getBar()).toBeNull()
   })
 
+  it('stays absent after disabled ends when the selection collapsed meanwhile', () => {
+    const { rerender } = render(<Host onAsk={jest.fn()} />)
+    selectText(screen.getByText('inside the block'))
+    expect(getBar()).not.toBeNull()
+
+    rerender(<Host onAsk={jest.fn()} disabled />)
+    clearSelection()
+    rerender(<Host onAsk={jest.fn()} />)
+    expect(getBar()).toBeNull()
+  })
+
   it('dismisses on a pointerdown outside the bar, keeping the selection', () => {
     render(<Host onAsk={jest.fn()} />)
     selectText(screen.getByText('inside the block'))
