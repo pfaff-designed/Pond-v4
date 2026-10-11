@@ -19,11 +19,14 @@ import {
   formatThreadMoment,
   formatThreadTime,
   madeFromLabel,
+  earlierAnswers,
   mentionedPages,
   openPageProposalIds,
   parsePageProposals,
   proposalBlocks,
   readChips,
+  withEarlierAnswer,
+  type EarlierAnswer,
   type PageProposal,
 } from '@/lib/conversation/page-proposals'
 
@@ -206,6 +209,35 @@ describe('readChips — S8, every answer shows what it read', () => {
         resolvePageName: resolve,
       })
     ).toEqual(['Life', 'gone'])
+  })
+})
+
+describe('earlierAnswers / withEarlierAnswer — the ask-again stash', () => {
+  const entry = (sentAt: string): EarlierAnswer => ({
+    parts: [{ type: 'text', text: `answer at ${sentAt}` }],
+    sentAt,
+    read: ['Kitchen renovation'],
+  })
+
+  it('is empty when the metadata carries no stash', () => {
+    expect(earlierAnswers(undefined)).toEqual([])
+    expect(earlierAnswers(null)).toEqual([])
+    expect(earlierAnswers({ sentAt: '2026-09-22T07:12:00Z' })).toEqual([])
+  })
+
+  it('appends a single earlier answer onto a message with no stash yet', () => {
+    const message = { metadata: { sentAt: '2026-09-22T07:12:00Z' } }
+    const withFirst = withEarlierAnswer(message, entry('07:00'))
+    expect(earlierAnswers(withFirst.metadata)).toEqual([entry('07:00')])
+    // every other metadata field is left alone
+    expect(withFirst.metadata).toMatchObject({ sentAt: '2026-09-22T07:12:00Z' })
+  })
+
+  it('a second append preserves the first, in order', () => {
+    const message = { metadata: { sentAt: '2026-09-22T07:12:00Z' } }
+    const withFirst = withEarlierAnswer(message, entry('07:00'))
+    const withSecond = withEarlierAnswer(withFirst, entry('07:08'))
+    expect(earlierAnswers(withSecond.metadata)).toEqual([entry('07:00'), entry('07:08')])
   })
 })
 
