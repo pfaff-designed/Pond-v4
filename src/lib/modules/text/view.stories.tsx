@@ -136,6 +136,60 @@ export const EditInPlace: Story = {
   },
 }
 
+/**
+ * ProseMirror's own `mac` detection (`prosemirror-keymap`), reused here so the
+ * chord this test sends is the one the keymap is actually listening for on
+ * whatever platform runs it — CI is Linux, a laptop running this locally is not.
+ */
+const MOD_KEY = /Mac|iP(hone|[oa]d)/.test(navigator.platform) ? 'Meta' : 'Control'
+
+const pressUndo = () => userEvent.keyboard(`{${MOD_KEY}>}z{/${MOD_KEY}}`)
+const pressRedo = () => userEvent.keyboard(`{${MOD_KEY}>}{Shift>}z{/Shift}{/${MOD_KEY}}`)
+
+/**
+ * KAN-268's reproduction, as the live verifier found it: focus lands in a block
+ * that already has written content, nothing is typed, and ⌘Z fires. ProseMirror's
+ * own history is empty on a freshly mounted editor, so its `Mod-z` keymap command
+ * returns `false` and never calls `preventDefault` — the keydown reaches the
+ * browser's native contenteditable undo instead, which wipes a field it never saw
+ * typed. No typing happens in this story; that absence is the point.
+ */
+export const UndoWithNothingTypedKeepsText: Story = {
+  args: { data: sample },
+  render: (args) => <StatefulText data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = await findEditor(canvas)
+    await userEvent.click(within(field).getByText(/^Start with/, { selector: 'p' }))
+    await expect(field).toHaveFocus()
+    await pressUndo()
+    await expect(field.textContent).toContain('Start with')
+    await expect(savedOf(canvasElement)).toBe(sample.content)
+  },
+}
+
+/**
+ * The ticket's acceptance shape: typing first gives ProseMirror's own history a
+ * step to revert, so ⌘Z undoes just that step and ⌘⇧Z brings it back — the
+ * behaviour a person expects inside any text field.
+ */
+export const TypeUndoRedo: Story = {
+  args: { data: sample },
+  render: (args) => <StatefulText data={args.data} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const field = await findEditor(canvas)
+    await userEvent.click(within(field).getByText(/^Start with/, { selector: 'p' }))
+    await userEvent.type(field, ' Go.')
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
+    await pressUndo()
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(sample.content))
+    await expect(field.textContent).toContain('Start with')
+    await pressRedo()
+    await waitFor(() => expect(savedOf(canvasElement)).toBe(`${sample.content} Go.`))
+  },
+}
+
 /** A link in an editable block opens in a new tab with the opener severed. */
 export const LinkInEditableBlock: Story = {
   args: {
