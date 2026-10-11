@@ -25,8 +25,10 @@ describe('EarlierAnswerFold', () => {
       'font-mono',
       'text-[10.5px]',
       'tracking-[0.02em]',
-      'text-mn-text-meta'
+      'text-mn-text-secondary'
     )
+    expect(toggle).not.toHaveClass('text-mn-text-meta')
+    expect(toggle).not.toHaveAttribute('aria-controls')
     expect(screen.queryByText('the first answer')).toBeNull()
     expect(screen.queryByTestId('read-chips')).toBeNull()
   })
@@ -38,12 +40,16 @@ describe('EarlierAnswerFold', () => {
 
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const body = screen.getByText('the first answer').parentElement
+    expect(body?.id).toBeTruthy()
+    expect(toggle).toHaveAttribute('aria-controls', body?.id)
     expect(screen.getByText('the first answer')).toBeInTheDocument()
     const chips = screen.getByTestId('read-chips')
     expect(within(chips).getByText('budget')).toBeInTheDocument()
 
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).not.toHaveAttribute('aria-controls')
     expect(screen.queryByText('the first answer')).toBeNull()
     expect(screen.queryByTestId('read-chips')).toBeNull()
   })

@@ -155,8 +155,8 @@ export const EarlierAnswerFold = ({ time, children }: EarlierAnswerFoldProps) =>
         type="button"
         onClick={handleToggle}
         aria-expanded={open}
-        aria-controls={bodyId}
-        className="w-fit cursor-pointer text-left font-mono text-[10.5px] tracking-[0.02em] text-mn-text-meta hover:text-mn-text"
+        aria-controls={open ? bodyId : undefined}
+        className="w-fit cursor-pointer text-left font-mono text-[10.5px] tracking-[0.02em] text-mn-text-secondary hover:text-mn-text"
       >
         earlier answer{time ? ` · ${time}` : ''}
       </button>
