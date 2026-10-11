@@ -1798,7 +1798,9 @@ export function AITerminal() {
   // turn. The answer being replaced is held WHOLE: regenerate() drops it from the
   // thread at once, and a failed run must be able to put it back verbatim.
   const handleAskAgain = (messageIndex: number) => {
-    if (isStreaming) return
+    // Mid-switch the thread on screen is the previous pond's: regenerating would
+    // resend into it with the new pond's context (KAN-283).
+    if (!isReady || isStreaming) return
     const message = messages[messageIndex]
     // regenerate() acts on the LAST message, so only an answer that is the last
     // message can be re-asked (a thread ending on a user line would resend that

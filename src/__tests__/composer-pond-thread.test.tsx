@@ -40,11 +40,13 @@ jest.mock('@/lib/conversation/client', () => ({
 const mockSetMessages = jest.fn()
 const mockStop = jest.fn()
 const mockSendMessage = jest.fn()
+const mockRegenerate = jest.fn()
 let mockMessages: UIMessage[] = []
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: jest.fn(),
     setMessages: mockSetMessages,
     stop: mockStop,
@@ -199,6 +201,24 @@ describe('the composer thread follows the active pond', () => {
     screen.getByRole('button', { name: 'ask again' }).click()
 
     expect(saveTranscript).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    // Ask again regenerates the last answer in place, so it is the regenerate that
+    // must not fire into the previous pond's thread.
+    expect(mockRegenerate).not.toHaveBeenCalled()
+  })
+
+  it('ask again regenerates once the active pond’s thread is on screen', async () => {
+    mockMessages = [
+      turn('q1', 'what is blocking the renovation?'),
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'the tiler' }] },
+    ]
+    renderIn(pondContext(LIFE, false))
+    await resolveThread(LIFE)
+    await waitFor(() => expect(line()).toBeEnabled())
+
+    await act(async () => screen.getByRole('button', { name: 'ask again' }).click())
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
