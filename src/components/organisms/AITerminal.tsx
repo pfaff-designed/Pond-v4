@@ -31,11 +31,14 @@ import { ParentGoneError, makePageFromAnswer, recordPageProposal } from '@/lib/p
 import {
   DEFAULT_PAGE_KIND,
   derivePageName,
+  earlierAnswers,
   formatThreadTime,
   openPageProposalIds,
   readChips,
   readStamp,
+  withEarlierAnswer,
   withReadStamp,
+  type EarlierAnswer,
   type PageProposal,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
@@ -1769,6 +1772,36 @@ export function AITerminal() {
     void regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
     setResearch(false)
   }
+
+  // The replaced answer folds under its replacement only once the run is over:
+  // the SDK rebuilds the streaming message on every chunk, so metadata set
+  // mid-stream would be overwritten. The replacement arrives as a fresh message
+  // (new id) with no metadata.earlier of its own, so the stash it replaced
+  // carries over — a second ask again appends to the first.
+  useEffect(() => {
+    const pending = pendingRegenerate.current
+    if (!pending || isStreaming) return
+    const replacement = messages[pending.messageIndex]
+    if (replacement?.role !== 'assistant' || replacement.id === pending.message.id) return
+    pendingRegenerate.current = null
+    const replaced = pending.message
+    const replacedSentAt = (replaced.metadata as { sentAt?: unknown } | undefined)?.sentAt
+    const entries: EarlierAnswer[] = [
+      ...earlierAnswers(replaced.metadata),
+      {
+        parts: replaced.parts,
+        sentAt: typeof replacedSentAt === 'string' ? replacedSentAt : null,
+        read: readStamp(replaced.metadata) ?? [],
+      },
+    ]
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === replacement.id
+          ? entries.reduce((acc, entry) => withEarlierAnswer(acc, entry), m)
+          : m
+      )
+    )
+  }, [isStreaming, messages, setMessages])
 
   const renderMessage = (message: (typeof messages)[number], messageIndex: number) => {
     const text = message.parts

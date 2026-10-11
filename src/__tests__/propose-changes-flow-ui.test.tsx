@@ -310,6 +310,70 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
+  it('a finished regenerate folds the replaced answer into metadata.earlier; a second one appends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+        parts: [batch('pc1')],
+      },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    // The test's setMessages is a spy: fold its updaters into the mocked thread.
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    // regenerate() drops the answer, streams a replacement with a new id, then settles.
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({
+      id: 'm2',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:15:00.000Z' },
+      parts: [batch('pc2')],
+    })
+
+    const firstEarlier = {
+      parts: [batch('pc1')],
+      sentAt: '2026-10-01T07:12:00.000Z',
+      read: ['life'],
+    }
+    expect(mockMessages[1].id).toBe('m2')
+    expect(mockMessages[1].metadata?.earlier).toEqual([firstEarlier])
+
+    await user.click(await screen.findByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({ id: 'm3', role: 'assistant', parts: [batch('pc3')] })
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(2)
+    expect(mockMessages[1].id).toBe('m3')
+    const earlier = mockMessages[1].metadata?.earlier as Array<{ parts: unknown[] }>
+    expect(earlier).toHaveLength(2)
+    expect(earlier[0]).toEqual(firstEarlier)
+    expect(earlier[1].parts).toEqual([batch('pc2')])
+  })
+
   it('two cards in one message offer accept all; one does not (C10)', async () => {
     mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
     renderWithQuery(<AITerminal />)
