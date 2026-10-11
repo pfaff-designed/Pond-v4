@@ -27,6 +27,8 @@ All five role files live in REPO/ship-epics/ and name no tools; harness.md here 
 
 Pass each subagent its role file's contents plus the inputs it names; never paraphrase a role from memory. **Every** subagent prompt, at every level, also carries `ship-epics/failsafe.md` — the 10-minute stall rule and how it is enforced — and `harness.md`. The build loop enforces the rule itself.
 
+**A picture of all this:** [`ship-epics/README.md`](../../../ship-epics/README.md) draws the agent tree, the nine steps with every exit back to you, and the inside of the build loop.
+
 ## Why it is shaped like this
 
 On 2026-10-09 seven tickets merged in a day and three of them could not be used by anyone: the glyph library had no picker, the HTML reader had no way in, the change log opened only on an unlisted shortcut. Every review checked that the code was correct; none asked whether a person could reach it. Two rules here exist because of that day:
