@@ -97,6 +97,7 @@ jest.mock('@/lib/deletion/notify-bridge', () => ({
 }))
 
 const mockSendMessage = jest.fn()
+const mockRegenerate = jest.fn()
 const mockSetMessages = jest.fn()
 const mockAddToolOutput = jest.fn()
 let mockMessages: Array<{
@@ -112,6 +113,7 @@ jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: mockAddToolOutput,
     setMessages: mockSetMessages,
     status: mockStatus,
@@ -270,6 +272,42 @@ describe('AITerminal — propose_changes card (#98)', () => {
     ]
     expect(options.body.requestChanges).toMatchObject({ toolCallId: 'pc1', reason: 'outdated' })
     expect(options.body.pondId).toBe('pond-7')
+  })
+
+  it('ask again on a rejected card regenerates the answer; it does not send a new turn', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockRegenerate.mock.calls[0][0].body).toMatchObject({ pondId: 'pond-7' })
+    expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('resolutions')
+  })
+
+  it('ask again does nothing once a stream is running (double-press guard)', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    await user.click(askAgain)
+
+    expect(mockRegenerate).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 
   it('two cards in one message offer accept all; one does not (C10)', async () => {

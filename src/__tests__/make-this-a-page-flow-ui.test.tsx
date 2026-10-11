@@ -102,6 +102,7 @@ jest.mock('@/lib/conversation/client', () => ({
 }))
 
 const mockSendMessage = jest.fn()
+const mockRegenerate = jest.fn()
 const mockStop = jest.fn()
 const mockSetMessages = jest.fn()
 type MockMessage = { id: string; role: string; parts: unknown[]; metadata?: unknown }
@@ -113,6 +114,7 @@ jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: jest.fn(),
     setMessages: mockSetMessages,
     status: mockStatus,
@@ -291,14 +293,28 @@ describe('the answer in the thread (6a frames 2–3)', () => {
     expect(screen.queryByText(/keep in thread/i)).not.toBeInTheDocument()
   })
 
-  it('ask again sends the same question as a new turn; the earlier answer stays in the thread', async () => {
+  it('ask again regenerates the answer under the same question — no new turn, same request context', async () => {
     renderTerminal()
     await ready()
     fireEvent.click(screen.getByRole('button', { name: 'ask again' }))
-    expect(mockSendMessage).toHaveBeenCalledTimes(1)
-    expect(mockSendMessage.mock.calls[0][0]).toMatchObject({ text: QUESTION })
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
     expect(mockSetMessages).not.toHaveBeenCalled()
-    expect(screen.getByText(PROSE)).toBeInTheDocument()
+    // The route needs the same scoping sendText gives it.
+    expect(mockRegenerate.mock.calls[0][0].body).toMatchObject({
+      nodeId: 'kr-1',
+      resolutions: expect.any(Object),
+    })
+    expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('pondId')
+    expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('research')
+  })
+
+  it('ask again while streaming does nothing', async () => {
+    mockStatus = 'streaming'
+    renderTerminal()
+    await ready()
+    expect(screen.queryByRole('button', { name: 'ask again' })).not.toBeInTheDocument()
+    expect(mockRegenerate).not.toHaveBeenCalled()
   })
 
   it('sends with a timestamp so the thread can show when a line was said', async () => {
@@ -391,7 +407,8 @@ describe('streaming (6a frame 2)', () => {
       screen.getByText('pond couldn’t finish this answer. nothing was kept.')
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'ask again' }))
-    expect(mockSendMessage.mock.calls[0][0]).toMatchObject({ text: QUESTION })
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
   })
 })
 

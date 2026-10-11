@@ -442,7 +442,8 @@ export function AITerminal() {
   // a proposal card below) — there is no create_node tool in this path, so useChat
   // needs no onToolCall handler. The manual creation gesture is the top bar's ＋
   // (CreatePageModal, ticket-26), not this terminal.
-  const { messages, sendMessage, setMessages, status, stop, error, clearError } = useChat()
+  const { messages, sendMessage, regenerate, setMessages, status, stop, error, clearError } =
+    useChat()
   const [input, setInput] = useState('')
   // 6a frame 2: "an error keeps nothing" — a turn that failed mid-stream drops
   // its partial answer, so the thread never holds half an answer as if it were
@@ -1748,6 +1749,27 @@ export function AITerminal() {
   }
   const lastQuestion = questionBefore(messages.length)
 
+  // Ask again replaces the answer under the same question instead of opening a new
+  // turn. The answer being replaced is held WHOLE: regenerate() drops it from the
+  // thread at once, and a failed run must be able to put it back verbatim.
+  const pendingRegenerate = useRef<{
+    message: (typeof messages)[number]
+    messageIndex: number
+  } | null>(null)
+  const handleAskAgain = (messageIndex: number) => {
+    if (isStreaming) return
+    const message = messages[messageIndex]
+    pendingRegenerate.current = message?.role === 'assistant' ? { message, messageIndex } : null
+    // The question was sent (and its lifecycle advanced) on the original turn, so
+    // the phase rides along as it stands; the body is otherwise sendText's.
+    const outgoing: ConversationResolutions = isLifecycleActive(lifecycle)
+      ? { ...resolutions, lifecycle }
+      : { ...resolutions, lifecycle: undefined }
+    clearError?.()
+    void regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    setResearch(false)
+  }
+
   const renderMessage = (message: (typeof messages)[number], messageIndex: number) => {
     const text = message.parts
       .filter((p) => p.type === 'text')
@@ -1942,11 +1964,7 @@ export function AITerminal() {
                 read,
               })
             }}
-            onAskAgain={() => {
-              // Asks the same question as a NEW turn; the earlier answer stays.
-              const q = questionBefore(messageIndex).text
-              if (q && !isStreaming) sendText(q)
-            }}
+            onAskAgain={() => handleAskAgain(messageIndex)}
             onStop={stop}
           />
         )}
@@ -1965,10 +1983,7 @@ export function AITerminal() {
               onRevise={(id) =>
                 sendRequestChanges(id, allIndices(id).length, REVISE_NOTE, 'outdated')
               }
-              onAskAgain={() => {
-                const q = questionBefore(messageIndex).text
-                if (q && !isStreaming) sendText(q)
-              }}
+              onAskAgain={() => handleAskAgain(messageIndex)}
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop
@@ -2300,7 +2315,9 @@ export function AITerminal() {
                   {/* An error keeps nothing: the partial answer was dropped above. */}
                   {error && !isStreaming && (
                     <AnswerError
-                      onAskAgain={lastQuestion.text ? () => sendText(lastQuestion.text) : undefined}
+                      onAskAgain={
+                        lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
+                      }
                     />
                   )}
                 </>
