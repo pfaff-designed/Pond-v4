@@ -27,7 +27,8 @@ import {
 } from '@/lib/modules/text/format'
 
 import { GLASS, SLASH_SIZES } from './picker-chrome'
-import { useAnchoredBox, type PickerAnchorBox } from './use-anchored-box'
+import { useSelectionBarBox, type SelectionBox } from './selection-bar-position'
+import { useAnchoredBox } from './use-anchored-box'
 
 /** The text-style menu's own rows, `7g` frame 9's own list — a plain paragraph or one of the six headings. */
 const STYLE_ROWS: ReadonlyArray<{ style: TextStyle; level: Level | null }> = [
@@ -60,12 +61,7 @@ export interface SelectionBarProps {
 }
 
 /** A selection's own box, in viewport coordinates — plain fields, not a live `DOMRect`. */
-interface SelectionRect {
-  top: number
-  bottom: number
-  left: number
-  width: number
-}
+type SelectionRect = SelectionBox
 
 export type SelectionBarItemId =
   | 'text-style'
@@ -262,8 +258,8 @@ const syncEditorSelection = (editor: Editor, sel: Selection): boolean => {
 /**
  * The one selection bar: watches the document selection, resolves the block
  * it is within, and portals its glass above the selection — centred and
- * clamped inside the viewport (`useAnchoredBox`/`clampLeft`, as `GlyphPicker`
- * anchors off). Ported from `TextSelectionPopover`'s own tracking; its
+ * clamped inside the viewport, flipping or clamping vertically
+ * (`selection-bar-position.ts`). Ported from `TextSelectionPopover`'s own tracking; its
  * zero-size-rect bail is dropped — jsdom's `Range` rect is always zero
  * (`jest.setup.ts`), and `sel.isCollapsed`/`text` already prove a real one.
  */
@@ -287,6 +283,9 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
   const styleButtonRef = useRef<HTMLButtonElement>(null)
   const styleMenuRef = useRef<HTMLDivElement>(null)
   const [barWidth, setBarWidth] = useState(0)
+  const [barHeight, setBarHeight] = useState(0)
+  // The selection's range, re-measured on scroll — the stored `rect` goes stale under one.
+  const rangeRef = useRef<Range | null>(null)
   // Roving tab stop: the one item in the tab order, the rest are reached by arrows.
   const [rovingId, setRovingId] = useState<SelectionBarItemId>(FIRST_ITEM_ID)
   // Set by Esc: the bar stays down while the selection it was dismissed from stands.
@@ -342,6 +341,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
       const blockId = blockEl?.getAttribute('data-block-id') ?? undefined
 
       const r = range.getBoundingClientRect()
+      rangeRef.current = range.cloneRange()
       setCtx({ text, blockId })
       setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
 
@@ -380,22 +380,22 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
   // Measured after the items render, so centring uses the bar's real width.
   useLayoutEffect(() => {
-    if (barRef.current) setBarWidth(barRef.current.offsetWidth)
+    if (!barRef.current) return
+    setBarWidth(barRef.current.offsetWidth)
+    setBarHeight(barRef.current.offsetHeight)
   }, [ctx, rect, linkMode])
 
-  // `useAnchoredBox` anchors on the box's own left edge, so centring is
-  // folded into the anchor's own rect; its `clampLeft` then holds it in view.
-  const anchor = useMemo<PickerAnchorBox | null>(() => {
+  // Re-keyed on `rect` so a new selection re-measures; between selections the
+  // live range is read, the stored rect only a fallback for a detached one.
+  const readRect = useMemo<(() => SelectionRect) | null>(() => {
     if (!rect) return null
-    return {
-      getBoundingClientRect: () => ({
-        top: rect.top,
-        bottom: rect.bottom,
-        left: rect.left + rect.width / 2 - barWidth / 2,
-      }),
+    return () => {
+      const live = rangeRef.current?.getBoundingClientRect()
+      if (!live) return rect
+      return { top: live.top, bottom: live.bottom, left: live.left, width: live.width }
     }
-  }, [rect, barWidth])
-  const style = useAnchoredBox(anchor, 'top', barWidth)
+  }, [rect])
+  const style = useSelectionBarBox(readRect, barWidth, barHeight)
   // The style menu hangs off its own button, not the selection rect — `GlyphPicker`'s own anchor pattern.
   const menuStyle = useAnchoredBox(styleButtonRef, 'bottom', STYLE_MENU_WIDTH)
 
