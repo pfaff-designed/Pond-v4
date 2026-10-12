@@ -41,7 +41,8 @@ import {
   requestHtmlImportPicker,
   requestTerminalFocus,
 } from '@/lib/terminal-focus'
-import { isPaletteChord } from '@/lib/shell-commands'
+import { isPaletteChord, isRedoChord, isUndoChord, onApplePlatform } from '@/lib/shell-commands'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import { useCommandPath } from '@/lib/layout/command-path'
 import { useZenCommands } from '@/lib/layout/use-zen-commands'
 import { workspaceUrl } from '@/lib/pages/nav'
@@ -79,6 +80,10 @@ function readRecents(): RecentEntry[] {
     return []
   }
 }
+
+/** Where ⌘Z/⇧⌘Z belongs to the field itself (Tiptap's own undo, an input, a select). */
+const isEditable = (el: Element | null): boolean =>
+  el !== null && el.matches('input, textarea, select, [contenteditable]')
 
 function writeRecent(entry: RecentEntry) {
   try {
@@ -175,11 +180,34 @@ export function ShellCommands() {
         e.stopPropagation()
         // A held key repeats keydown; it must not flap the card open and shut.
         if (!e.repeat && !inZen) requestComposerToggle()
+        return
+      }
+      // Undo/redo belongs to an editable field first — Tiptap's own undo, an
+      // input, a select — so the shell never intercepts a keystroke they own.
+      if (
+        pondId === null ||
+        e.defaultPrevented ||
+        isEditable(e.target instanceof Element ? e.target : null) ||
+        isEditable(document.activeElement)
+      ) {
+        return
+      }
+      if (isUndoChord(e)) {
+        e.preventDefault()
+        void sessionUndo.undo(pondId)
+        return
+      }
+      if (isRedoChord(e)) {
+        // ⌘Y alone is Chrome/Safari's History on a Mac (K1–K4); redo stays
+        // ⇧⌘Z there. Off a Mac, Ctrl+Y is the redo convention and is handled.
+        if (!e.shiftKey && e.key.toLowerCase() === 'y' && onApplePlatform()) return
+        e.preventDefault()
+        void sessionUndo.redo(pondId)
       }
     }
     document.addEventListener('keydown', onKey, { capture: true })
     return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, inZen])
+  }, [templateSheetOpen, pondSheetOpen, closeTemplateSheet, closeNewPondSheet, inZen, pondId])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
