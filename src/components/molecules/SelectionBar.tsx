@@ -336,6 +336,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     function onSelectionChange() {
       // The link field owns focus (and so the browser's selection) while open.
       if (linkMode) return
+      // The style menu owns focus (and so the browser's selection) while open.
+      if (styleMenuOpen) return
       // Disabled (streaming) shows nothing, and drops its state on every change
       // so the bar cannot return at a selection that no longer exists.
       if (disabled) {
@@ -394,7 +396,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
     document.addEventListener('selectionchange', onSelectionChange)
     return () => document.removeEventListener('selectionchange', onSelectionChange)
-  }, [containerRef, disabled, hide, linkMode])
+  }, [containerRef, disabled, hide, linkMode, styleMenuOpen])
 
   useEffect(() => {
     if (linkMode) linkInputRef.current?.focus()
