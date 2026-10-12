@@ -5,7 +5,7 @@
  */
 
 import React, { useRef, useState } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
@@ -165,5 +165,58 @@ describe('BlockWidthRow', () => {
     await user.hover(twoThirds)
     await user.unhover(twoThirds)
     expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+  })
+
+  it('→ moves focus to the next cell and previews it, same as hover', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    act(() => half.focus())
+    await user.keyboard('{ArrowRight}')
+    expect(twoThirds).toHaveFocus()
+    expect(classesOf(twoThirds)).toContain('bg-mn-hover-fill')
+    expect(onPreview).toHaveBeenLastCalledWith('2/3')
+    expect(within(menu).getByText('showing ⅔ on the page · click to keep, esc to go back')).toBeInTheDocument()
+  })
+
+  it('← moves focus to the previous cell, back to the kept cell is a no-op preview', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    act(() => twoThirds.focus())
+    await user.keyboard('{ArrowLeft}')
+    expect(half).toHaveFocus()
+    expect(onPreview).toHaveBeenLastCalledWith(null)
+    expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+  })
+
+  it('← does not move past the first cell, no wrap', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const quarter = within(menu).getByRole('menuitem', { name: '¼' })
+    act(() => quarter.focus())
+    await user.keyboard('{ArrowLeft}')
+    expect(quarter).toHaveFocus()
+    expect(onPreview).not.toHaveBeenCalled()
+  })
+
+  it('→ does not move past the last cell, no wrap', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const full = within(menu).getByRole('menuitem', { name: 'full' })
+    act(() => full.focus())
+    await user.keyboard('{ArrowRight}')
+    expect(full).toHaveFocus()
+    expect(onPreview).not.toHaveBeenCalled()
   })
 })

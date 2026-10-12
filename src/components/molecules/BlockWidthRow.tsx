@@ -5,15 +5,16 @@
  * cells, ¼ ⅓ ½ ⅔ ¾ full, drawn as the menu's `width` group `content`.
  *
  * Each cell is a `Menu.Item`: Base UI's own roving focus and typeahead inside
- * the menu, no handler of our own (KAN-246 owns ← → and the hover/arrow
- * preview this row does not draw).
+ * the menu, but it has no ArrowLeft/ArrowRight handling of its own, so the
+ * row owns those keys directly, moving focus and previewing the same as
+ * hover.
  *
  * Class strings are template literals, not `cn()` — `PondMenu.tsx`'s same
  * note: tailwind-merge reads an arbitrary text size as a colour and drops one
  * of the two when the cells mix `text-[11px]` with `text-raw-paper`.
  */
 
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Menu } from '@base-ui/react/menu'
 import type { BlockWidth } from '@/lib/modules/content'
 
@@ -52,6 +53,7 @@ export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps
   const current = width ?? 'full'
   const [hovered, setHovered] = useState<BlockWidth | null>(null)
   const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
+  const cellRefs = useRef<(HTMLElement | null)[]>([])
 
   const handleHover = (value: BlockWidth) => {
     // Hovering the already-kept cell has nothing to preview.
@@ -65,15 +67,30 @@ export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps
     onPreview?.(null)
   }
 
+  const handleArrowKey = (index: number) => (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    // Clamped, no wrap: Base UI's menu has no ArrowLeft/ArrowRight handling of
+    // its own to fight here.
+    const target = index + (e.key === 'ArrowRight' ? 1 : -1)
+    if (target < 0 || target >= WIDTHS.length) return
+    e.preventDefault()
+    cellRefs.current[target]?.focus()
+    handleHover(WIDTHS[target].value)
+  }
+
   return (
     <>
       <div className={ROW} onMouseLeave={handleLeaveRow}>
-        {WIDTHS.map(({ label, value }) => (
+        {WIDTHS.map(({ label, value }, index) => (
           <Menu.Item
             key={value}
+            ref={(el) => {
+              cellRefs.current[index] = el
+            }}
             label={label}
             onClick={() => onSelect(value)}
             onMouseEnter={() => handleHover(value)}
+            onKeyDown={handleArrowKey(index)}
             className={`${CELL} ${value === 'full' ? CELL_FULL : CELL_FRACTION} ${
               value === current ? CELL_FILLED : value === hovered ? CELL_PREVIEWED : CELL_UNFILLED
             }`}
