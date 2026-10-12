@@ -5,34 +5,48 @@
  */
 
 import React, { useRef, useState } from 'react'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PondMenu, type PondMenuGroup } from '@/components/molecules/PondMenu'
 import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import type { BlockWidth } from '@/lib/modules/content'
 
-// This harness's groups hold only `content` (the width row), never a selectable
-// `action` row, so the menu's action type is uninhabited.
-type NoAction = never
+// This harness's groups hold only `content` (the width row) plus, when
+// `withExtraItem` asks for one, a single item in a group below it — a place
+// for focus to land when it leaves the row via Base UI's own ↓.
+type ExtraAction = 'extra'
 
 const Harness = ({
   width,
+  onSelect,
   onPreview,
   size,
+  withExtraItem,
 }: {
   width: BlockWidth | undefined
+  onSelect?: (width: BlockWidth) => void
   onPreview?: (width: BlockWidth | null) => void
   size?: 'desktop' | 'mobile'
+  withExtraItem?: boolean
 }) => {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
-  const groups: PondMenuGroup<NoAction>[] = [
+  const groups: PondMenuGroup<ExtraAction>[] = [
     {
       id: 'width',
       label: 'width',
       heading: true,
-      content: <BlockWidthRow width={width} onSelect={() => {}} onPreview={onPreview} size={size} />,
+      content: <BlockWidthRow width={width} onSelect={onSelect ?? (() => {})} onPreview={onPreview} size={size} />,
     },
+    ...(withExtraItem
+      ? [
+          {
+            id: 'extra',
+            label: 'extra',
+            items: [{ id: 'extra-item', label: 'extra item', action: 'extra' as const }],
+          },
+        ]
+      : []),
   ]
   return (
     <div ref={anchorRef}>
@@ -204,7 +218,11 @@ describe('BlockWidthRow', () => {
     render(<Harness width="1/2" onPreview={onPreview} />)
     const menu = await openMenu(user)
     const quarter = within(menu).getByRole('menuitem', { name: '¼' })
+    // Focusing it already previews it (onFocus) — the assertion below is about
+    // the blocked ← doing nothing further, not about onPreview never firing.
     act(() => quarter.focus())
+    expect(onPreview).toHaveBeenLastCalledWith('1/4')
+    onPreview.mockClear()
     await user.keyboard('{ArrowLeft}')
     expect(quarter).toHaveFocus()
     expect(onPreview).not.toHaveBeenCalled()
@@ -217,9 +235,65 @@ describe('BlockWidthRow', () => {
     const menu = await openMenu(user)
     const full = within(menu).getByRole('menuitem', { name: 'full' })
     act(() => full.focus())
+    expect(onPreview).toHaveBeenLastCalledWith('full')
+    onPreview.mockClear()
     await user.keyboard('{ArrowRight}')
     expect(full).toHaveFocus()
     expect(onPreview).not.toHaveBeenCalled()
+  })
+
+  it('↓ into the row previews the focused cell, not just ← → within it', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+
+    // Opening with a click never focuses a cell, so send focus to the row the
+    // way Base UI itself would: a bare DOM focus, not our own onKeyDown.
+    const quarter = within(menu).getByRole('menuitem', { name: '¼' })
+    act(() => quarter.focus())
+    expect(onPreview).toHaveBeenLastCalledWith('1/4')
+    expect(within(menu).getByText('showing ¼ on the page · click to keep, esc to go back')).toBeInTheDocument()
+
+    // Base UI's own ↓ (not our ← →) walks to the next cell.
+    const third = within(menu).getByRole('menuitem', { name: '⅓' })
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() => expect(third).toHaveFocus())
+    expect(onPreview).toHaveBeenLastCalledWith('1/3')
+    expect(within(menu).getByText('showing ⅓ on the page · click to keep, esc to go back')).toBeInTheDocument()
+  })
+
+  it('→ then ↓ out of the row clears the preview and the note', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} withExtraItem />)
+    const menu = await openMenu(user)
+    const threeQuarters = within(menu).getByRole('menuitem', { name: '¾' })
+    const full = within(menu).getByRole('menuitem', { name: 'full' })
+    const extraItem = within(menu).getByRole('menuitem', { name: 'extra item' })
+
+    // → (the row's own key) walks to `full`, the row's last cell.
+    act(() => threeQuarters.focus())
+    await user.keyboard('{ArrowRight}')
+    expect(full).toHaveFocus()
+    expect(onPreview).toHaveBeenLastCalledWith('full')
+
+    // ↓ (Base UI's own key) leaves the row for the next group below it.
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() => expect(extraItem).toHaveFocus())
+    expect(onPreview).toHaveBeenLastCalledWith(null)
+    expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+  })
+
+  it('↵ on a focused cell keeps the width', async () => {
+    const user = userEvent.setup()
+    const onSelect = jest.fn()
+    render(<Harness width="1/2" onSelect={onSelect} />)
+    const menu = await openMenu(user)
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    act(() => twoThirds.focus())
+    await user.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenCalledWith('2/3')
   })
 
   it('size="mobile": 44px cells, 12px radius, 17px fraction / 12px mono', async () => {

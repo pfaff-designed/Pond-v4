@@ -14,7 +14,7 @@
  * of the two when the cells mix `text-[11px]` with `text-raw-paper`.
  */
 
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Menu } from '@base-ui/react/menu'
 import type { BlockWidth } from '@/lib/modules/content'
 import type { PondMenuSize } from './PondMenu'
@@ -66,6 +66,7 @@ export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: 
   const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
   const noteText = size === 'mobile' ? PHONE_NOTE : hoveredLabel && `showing ${hoveredLabel} on the page · click to keep, esc to go back`
   const cellRefs = useRef<(HTMLElement | null)[]>([])
+  const rowRef = useRef<HTMLDivElement>(null)
 
   const handleHover = (value: BlockWidth) => {
     // Hovering the already-kept cell has nothing to preview.
@@ -79,6 +80,14 @@ export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: 
     onPreview?.(null)
   }
 
+  // Base UI's own roving highlight (↓/↑, Tab, typeahead) moves DOM focus
+  // directly, bypassing handleArrowKey below — onFocus is the one hook that
+  // sees every way a cell can become focused, hover included via click.
+  const handleRowBlur = (e: FocusEvent<HTMLDivElement>) => {
+    if (rowRef.current?.contains(e.relatedTarget as Node)) return
+    handleLeaveRow()
+  }
+
   const handleArrowKey = (index: number) => (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     // Clamped, no wrap: Base UI's menu has no ArrowLeft/ArrowRight handling of
@@ -87,12 +96,11 @@ export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: 
     if (target < 0 || target >= WIDTHS.length) return
     e.preventDefault()
     cellRefs.current[target]?.focus()
-    handleHover(WIDTHS[target].value)
   }
 
   return (
     <>
-      <div className={ROW} onMouseLeave={handleLeaveRow}>
+      <div ref={rowRef} className={ROW} onMouseLeave={handleLeaveRow} onBlur={handleRowBlur}>
         {WIDTHS.map(({ label, value }, index) => (
           <Menu.Item
             key={value}
@@ -102,6 +110,7 @@ export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: 
             label={label}
             onClick={() => onSelect(value)}
             onMouseEnter={() => handleHover(value)}
+            onFocus={() => handleHover(value)}
             onKeyDown={handleArrowKey(index)}
             className={`${CELL} ${CELL_SIZES[size].cell} ${
               value === 'full' ? `${CELL_FULL} ${CELL_SIZES[size].full}` : `${CELL_FRACTION} ${CELL_SIZES[size].fraction}`
