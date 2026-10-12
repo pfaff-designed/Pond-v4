@@ -51,3 +51,15 @@ export function isComposerToggleKey(e: KeyboardEvent): boolean {
   const apple = /Mac|iPhone|iPad/.test(navigator.platform)
   return apple ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
 }
+
+/**
+ * "Open the html import file chooser" (KAN-251). ⌘K's `import a page` asks;
+ * the composer owns the hidden `<input type="file">` and answers — the same
+ * decoupling as `requestTerminalFocus`, so a future door (zen's ＋, KAN-186/
+ * KAN-193) can dispatch this unchanged with no change to the composer.
+ */
+export const HTML_IMPORT_PICKER_EVENT = 'pond:html-import-picker'
+
+export function requestHtmlImportPicker() {
+  window.dispatchEvent(new CustomEvent(HTML_IMPORT_PICKER_EVENT))
+}

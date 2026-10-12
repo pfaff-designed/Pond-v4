@@ -105,7 +105,7 @@ jest.mock('@ai-sdk/react', () => ({
 // ── Import components after mocks ─────────────────────────────────────────
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
-import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { HTML_IMPORT_PICKER_EVENT, requestTerminalFocus } from '@/lib/terminal-focus'
 import { fetchPages } from '@/lib/pages/tree'
 import { AITerminal } from '@/components/organisms/AITerminal'
 
@@ -220,6 +220,24 @@ describe('ShellCommands — the palette’s `new page` action opens the New page
         expect.objectContaining({ title: 'Untitled' })
       )
     })
+  })
+})
+
+// ── ⌘K `import a page` opens the html import picker (KAN-251) ────────────
+
+describe('ShellCommands — the palette’s `import a page` action opens the html picker', () => {
+  it('dispatches the html import picker event, mirroring the `ask pond` wiring', async () => {
+    const listener = jest.fn()
+    window.addEventListener(HTML_IMPORT_PICKER_EVENT, listener)
+    renderWithQuery(<ShellCommands />)
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    const input = await screen.findByRole('combobox', { name: 'command palette' })
+    fireEvent.change(input, { target: { value: '>' } })
+    fireEvent.click(await screen.findByText('import a page'))
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener(HTML_IMPORT_PICKER_EVENT, listener)
   })
 })
 

@@ -28,8 +28,17 @@ describe('inline attachment kinds registry', () => {
     expect(descriptor?.kind).toBe('csv')
   })
 
+  it('resolves the html entry by filename, and csv still by its own', () => {
+    expect(getInlineAttachmentDescriptorForFile(makeFile('running-log.html'))?.kind).toBe('html')
+    expect(getInlineAttachmentDescriptorForFile(makeFile('running-log.csv'))?.kind).toBe('csv')
+  })
+
+  it('html sends no file context', () => {
+    expect(getInlineAttachmentDescriptor('html')?.formatContext).toBeUndefined()
+  })
+
   it('does not resolve a file of an unregistered kind', () => {
-    const descriptor = getInlineAttachmentDescriptorForFile(makeFile('board.html'))
+    const descriptor = getInlineAttachmentDescriptorForFile(makeFile('board.png'))
     expect(descriptor).toBeUndefined()
   })
 
@@ -39,7 +48,7 @@ describe('inline attachment kinds registry', () => {
     const attachment: CsvInlineAttachment = { kind: 'csv', filename: 'board.csv', parsed }
 
     const descriptor = getInlineAttachmentDescriptor('csv')
-    expect(descriptor?.formatContext(attachment)).toBe(formatCsvContext(parsed, 'board.csv'))
+    expect(descriptor?.formatContext?.(attachment)).toBe(formatCsvContext(parsed, 'board.csv'))
   })
 
   it('Pill renders the real CsvAttachmentPill with the attachment fields', () => {

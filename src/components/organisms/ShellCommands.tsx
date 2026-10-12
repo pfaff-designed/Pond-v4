@@ -38,6 +38,7 @@ import { PondCommand } from '@/components/organisms/PondCommand'
 import {
   isComposerToggleKey,
   requestComposerToggle,
+  requestHtmlImportPicker,
   requestTerminalFocus,
 } from '@/lib/terminal-focus'
 import { isPaletteChord } from '@/lib/shell-commands'
@@ -220,6 +221,10 @@ export function ShellCommands() {
       }
       if (item.action === 'ask-pond') {
         requestTerminalFocus(item.query)
+        return
+      }
+      if (item.action === 'import-a-page') {
+        requestHtmlImportPicker()
         return
       }
       if (item.kind === 'pond') {
