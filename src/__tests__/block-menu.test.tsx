@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -490,6 +490,92 @@ describe('the width row — the block menu’s `width` group', () => {
 
     expect(root.parentElement!.style.width).toBe('100%')
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATH_STEPS: the full walk — handle to kept width, then the phone variant', () => {
+  const originalMatchMedia = window.matchMedia
+
+  it('handle opens the menu with the width row between turn into and block; hover previews and reflows with a note; Esc discards; a click keeps it with an undo toast; and the same menu, sized for a phone, opens from a tap', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+
+    // Step 2: the handle opens the menu, width row between `turn into` and `block`.
+    await user.click(handleOf('b-heading'))
+    let menu = await screen.findByRole('menu', { name: /block menu/i })
+    const order = menu.textContent ?? ''
+    expect(order.indexOf('turn into')).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf('turn into')).toBeLessThan(order.indexOf('¼'))
+    expect(order.indexOf('¾')).toBeLessThan(order.indexOf('copy link to block'))
+    expect(within(menu).getByRole('menuitem', { name: 'full' }).className).toContain('bg-mn-text')
+
+    // Set the heading to ½ first, purely so the list's own preview below has a
+    // row to share — a lone fraction next to nothing else fractional never reflows.
+    await user.click(within(menu).getByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    const rootHeading = document.getElementById('block-b-heading')!
+    const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
+    expect(rootHeading.parentElement!.style.width).toBe(halfWidth)
+
+    await user.click(handleOf('b-list'))
+    menu = await screen.findByRole('menu', { name: /block menu/i })
+    const rootList = document.getElementById('block-b-list')!
+    expect(rootList.parentElement!.style.width).toBe('100%')
+
+    // Step 3: hovering ½ resizes it in place, reflows it beside the heading, and notes it.
+    await user.hover(within(menu).getByRole('menuitem', { name: '½' }))
+    expect(rootList.parentElement!.style.width).toBe(halfWidth)
+    expect(rootHeading.parentElement!.parentElement).toBe(rootList.parentElement!.parentElement)
+    expect(
+      within(menu).getByText('showing ½ on the page · click to keep, esc to go back')
+    ).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    // Step 4: Esc puts it back — nothing new was saved.
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(rootList.parentElement!.style.width).toBe('100%')
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    // Step 5: reopen, click ½ — kept, with the undo toast.
+    await user.click(handleOf('b-list'))
+    menu = await screen.findByRole('menu', { name: /block menu/i })
+    await user.click(within(menu).getByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(rootList.parentElement!.style.width).toBe(halfWidth)
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect((await screen.findAllByText(/set the block width/i)).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /undo/i }).length).toBeGreaterThan(0)
+
+    // Step 6: the phone variant — tap a block, its handle shows, the same
+    // menu opens 350px wide with 44px cells and the phone note.
+    cleanup()
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    try {
+      const phoneUser = userEvent.setup()
+      renderCanvas([heading, list])
+      const phoneRoot = document.getElementById('block-b-heading')!
+      const editable = await within(phoneRoot).findByRole('textbox', { name: 'text block' })
+      act(() => {
+        editable.focus()
+      })
+      expect(phoneRoot.contains(document.activeElement)).toBe(true)
+
+      await phoneUser.click(handleOf('b-heading'))
+      const phoneMenu = await screen.findByRole('menu', { name: /block menu/i })
+      expect(phoneMenu.className).toContain('w-[350px]')
+      expect(within(phoneMenu).getByRole('menuitem', { name: '½' }).className).toContain('h-[44px]')
+      expect(
+        within(phoneMenu).getByText('widths show on wider screens. on a phone every block is full.')
+      ).toBeInTheDocument()
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
   })
 })
 
