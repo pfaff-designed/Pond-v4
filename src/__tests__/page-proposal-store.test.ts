@@ -32,6 +32,7 @@ function proposal(over: Partial<PageProposal> = {}): PageProposal {
     parentId: 'kr-1',
     kind: 'page',
     status: 'proposed',
+    mentioned: [],
     ...over,
   }
 }
