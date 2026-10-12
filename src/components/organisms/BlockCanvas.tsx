@@ -1143,18 +1143,27 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* The handle: the only block chrome, revealed on hover and on keyboard
-          focus. Press-and-drag reorders, a click opens the block menu, which is
-          where `delete` lives. */}
+      {/* The handle: the only block chrome. Desktop (KAN-43) sits OUTSIDE the
+          card at `left -14`, revealed on hover and on keyboard focus. Phone
+          (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
+          target can't float off-card or wait on a hover that never fires — so
+          it is always visible there; PondBlock's head row reserves the 40px
+          this takes (`size="mobile"`, below). Press-and-drag reorders, a click
+          opens the block menu, which is where `delete` lives. */}
       <div
         data-part="handle"
         hidden={!chrome}
         className={cn(
-          'absolute -left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-          // A card centres the 24px handle on its head row; bare prose has no head
-          // row, so it centres on the first line (2px inset + half the 28px line).
-          !frame && block.type === 'text' ? 'top-1' : 'top-3',
-          menuOpen && 'opacity-100'
+          'absolute',
+          menuSize === 'mobile'
+            ? 'right-0.5 top-0.5'
+            : [
+                '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                // A card centres the 24px handle on its head row; bare prose has no head
+                // row, so it centres on the first line (2px inset + half the 28px line).
+                !frame && block.type === 'text' ? 'top-1' : 'top-3',
+                menuOpen && 'opacity-100',
+              ]
         )}
       >
         <PondMenu
@@ -1170,7 +1179,8 @@ function BlockEditor({
             <button
               type="button"
               className={cn(
-                'flex h-6 w-3 cursor-grab items-center justify-center rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
                 menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
               )}
               title="Block menu · drag to reorder"
@@ -1224,6 +1234,7 @@ function BlockEditor({
           onEmptyAction={onEmptyAction}
           emptyLine={emptyLine}
           emptyBox={blockEmptyBox(block)}
+          size={menuSize}
         >
           {view}
         </PondBlock>

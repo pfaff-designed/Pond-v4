@@ -214,6 +214,15 @@ describe('the block menu opens from the handle', () => {
     expect(onMoveIntoNewPage).toHaveBeenCalledWith(list)
   })
 
+  it('keeps the desktop handle outside the card, revealed only on hover/focus (KAN-259 regression)', () => {
+    renderCanvas([heading, list])
+    const root = document.getElementById('block-b-list')!
+    const handle = root.querySelector('[data-part="handle"]')!
+    expect(handle).toHaveClass('-left-3.5')
+    expect(handle.className).toMatch(/opacity-0/)
+    expect(handleOf('b-list')).toHaveClass('h-6', 'w-3', 'rounded-[6px]')
+  })
+
   it('⌥↓ on the focused handle moves the block, and opens no menu', async () => {
     const user = userEvent.setup()
     const { onChange } = renderCanvas([heading, list])
@@ -267,6 +276,17 @@ describe('phone: tapping a block reveals the handle and opens the same menu (fra
     expect(within(menu).getByText('widths show on wider screens. on a phone every block is full.'))
       .toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: '½' })).toHaveClass('h-[44px]')
+  })
+
+  it('sits inside the card at 44x44 (right 2 · top 2 · radius 14), always visible, and the header reserves 40px (KAN-259)', () => {
+    renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+    const handle = root.querySelector('[data-part="handle"]')!
+    expect(handle).toHaveClass('right-0.5', 'top-0.5')
+    expect(handle.className).not.toMatch(/opacity-0/)
+    expect(handleOf('b-table')).toHaveClass('h-11', 'w-11', 'rounded-[14px]')
+    const headRow = within(root).getByText('table').parentElement!
+    expect(headRow).toHaveClass('pr-10')
   })
 
   it('a tap landing on a card block’s body (not the root) still bubbles to the handle’s ancestor', async () => {

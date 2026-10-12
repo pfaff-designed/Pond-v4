@@ -65,6 +65,7 @@
 
 import type { ReactNode } from 'react'
 import { pageEyebrowClass } from '@/components/atoms/kicker'
+import type { PondMenuSize } from '@/components/molecules/PondMenu'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { Button } from '@/components/ui/button'
 import {
@@ -249,6 +250,13 @@ export interface PondBlockProps {
    */
   onRestore?: () => void
   onRemoveBlock?: () => void
+  /**
+   * KAN-259: on phone the handle sits INSIDE the card at `right 2 · top 2 ·
+   * 44x44`, so the head row reserves 40px on its right — otherwise the handle
+   * covers the eyebrow or headNote at 390px. Desktop (`@default`) is unaffected,
+   * since that handle sits outside the card at `left -14`.
+   */
+  size?: PondMenuSize
   children: ReactNode
   className?: string
 }
@@ -266,6 +274,7 @@ export function PondBlock({
   restoreWindow,
   onRestore,
   onRemoveBlock,
+  size = 'desktop',
   children,
   className,
 }: PondBlockProps) {
@@ -355,7 +364,7 @@ export function PondBlock({
         className
       )}
     >
-      <div className="flex items-baseline justify-between gap-mn-3">
+      <div className={cn('flex items-baseline justify-between gap-mn-3', size === 'mobile' && 'pr-10')}>
         <span className={pageEyebrowClass}>{heading}</span>
         <span className={blockHeadNoteClass}>
           {loading ? BLOCK_LOADING_NOTE : tombed ? POND_BLOCK_TOMB_NOTE : headNote}
