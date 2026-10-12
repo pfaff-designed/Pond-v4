@@ -7,13 +7,14 @@ import { GlyphPicker, type GlyphPickerProps } from './GlyphPicker'
 import { markAccent } from '@/lib/rail/glyph-library'
 
 /**
- * `PondPicker kind="glyph"` (KAN-248 3/4, chrome; 4/8, keys and search).
- * `Desktop`/`Mobile`/`AreaTarget` still check the DC's own numbers —
- * `W = mob ? 390 : 320`, `cs = mob ? 44 : 34`, `cols = mob ? 7 : 8`, the
- * cell's `borderRadius` (`mob ? 12 : 10`), and `inheritNote`. `Keyboard`
- * drives the flow itself: search narrows the grid, ← → ↑ ↓ move the active
- * cell into and out of the automatic row, ↵ picks, esc closes with nothing
- * picked.
+ * `PondPicker kind="glyph"` (KAN-248 3/4, chrome; 4/8, keys and search). The
+ * anchored glass here is desktop-only now (Rail sends every phone through
+ * `GlyphPickerSheet.tsx`'s bottom sheet instead — its `Sheet` story pins the
+ * DC's own `mob` branch numbers). `Desktop`/`AreaTarget` still check the DC's
+ * own desktop numbers — `W = 320`, `cs = 34`, `cols = 8`, the cell's
+ * `borderRadius` (`10`), and `inheritNote`. `Keyboard` drives the flow
+ * itself: search narrows the grid, ← → ↑ ↓ move the active cell into and out
+ * of the automatic row, ↵ picks, esc closes with nothing picked.
  */
 
 const px = (v: string) => parseFloat(v)
@@ -119,25 +120,22 @@ const glassOf = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-pa
  */
 const SUBPIXEL_TOLERANCE_PX = 1
 
-/** `glass` width/radius/padding, every cell's size/radius, the grid's own column count — the DC's `kind=glyph` numbers for `size`. */
-async function assertGlyphKindNumbers(
-  root: HTMLElement,
-  size: 'desktop' | 'mobile',
-  recentShown: boolean
-) {
+/**
+ * `glass` width/radius/padding, every cell's size/radius, the grid's own
+ * column count — the DC's `kind=glyph` numbers for the desktop size (the
+ * anchored glass's only size now; the `mob` branch's own numbers are pinned
+ * by `GlyphPickerSheet.stories.tsx`'s `Sheet` story).
+ */
+async function assertGlyphKindNumbers(root: HTMLElement, recentShown: boolean) {
   const glass = glassOf(root)
   await expect(glass.dataset.kind).toBe('glyph')
   const g = getComputedStyle(glass)
-  const widthPx = size === 'mobile' ? 390 : 320
-  const cellPx = size === 'mobile' ? 44 : 34
-  const cols = size === 'mobile' ? 7 : 8
-  const cellRadius = size === 'mobile' ? '12px' : '10px'
-  await expect(px(g.width)).toBe(widthPx)
-  await expect(g.borderTopLeftRadius).toBe(size === 'mobile' ? '28px' : '20px')
-  await expect(g.borderBottomLeftRadius).toBe(size === 'mobile' ? '0px' : '20px')
+  await expect(px(g.width)).toBe(320)
+  await expect(g.borderTopLeftRadius).toBe('20px')
+  await expect(g.borderBottomLeftRadius).toBe('20px')
   await expect(g.paddingTop).toBe('10px')
-  await expect(g.paddingLeft).toBe(size === 'mobile' ? '23px' : '10px')
-  await expect(g.paddingBottom).toBe(size === 'mobile' ? '34px' : '10px')
+  await expect(g.paddingLeft).toBe('10px')
+  await expect(g.paddingBottom).toBe('10px')
 
   const sections = glass.querySelectorAll<HTMLElement>('[data-part="section"]')
   const labels = [...sections].map((s) => s.querySelector('span')!.textContent)
@@ -148,20 +146,20 @@ async function assertGlyphKindNumbers(
   await expect(library.getAttribute('role')).toBe('grid')
   const rows = library.querySelectorAll<HTMLElement>('[role="row"]')
   await expect(rows.length).toBeGreaterThan(1)
-  await expect(rows[0].querySelectorAll('[role="gridcell"]')).toHaveLength(cols)
+  await expect(rows[0].querySelectorAll('[role="gridcell"]')).toHaveLength(8)
 
   const cell = library.querySelector<HTMLElement>('[role="gridcell"]')!
   const c = getComputedStyle(cell)
-  await expect(px(c.width)).toBe(cellPx)
-  await expect(px(c.height)).toBe(cellPx)
-  await expect(c.borderTopLeftRadius).toBe(cellRadius)
+  await expect(px(c.width)).toBe(34)
+  await expect(px(c.height)).toBe(34)
+  await expect(c.borderTopLeftRadius).toBe('10px')
 }
 
 export const Desktop: Story = {
   args: { recentGlyphs: ['heart', 'leaf-01'] },
   play: async ({ canvasElement }) => {
     const root = within(canvasElement)
-    await assertGlyphKindNumbers(canvasElement, 'desktop', true)
+    await assertGlyphKindNumbers(canvasElement, true)
     await expect(root.getByRole('option')).toHaveAttribute('aria-selected', 'true')
     await expect(root.getByRole('combobox', { name: 'search glyphs' })).toHaveAttribute(
       'placeholder',
@@ -178,13 +176,6 @@ export const Desktop: Story = {
     await expect(l.overflowY).toBe('auto')
     await expect(l.maxHeight).not.toBe('none')
     await expect(list.scrollHeight).toBeGreaterThan(list.clientHeight)
-  },
-}
-
-export const Mobile: Story = {
-  args: { size: 'mobile' },
-  play: async ({ canvasElement }) => {
-    await assertGlyphKindNumbers(canvasElement, 'mobile', false)
   },
 }
 

@@ -111,8 +111,6 @@ export interface GlyphPickerProps {
   side?: PickerSide
   /** Portal target; defaults to `document.body`. Stories theme it. */
   container?: HTMLElement | null
-  /** The DC's `size`: a wider glass, 44px cells and a bottom-sheet corner. @default 'desktop' */
-  size?: GlyphPickerSize
   /** ↵ on a cell, or on `automatic` (`null`). */
   onPick: (glyph: string | null) => void
   /** Esc — the host keeps what was there and returns focus to the mark. */
@@ -123,10 +121,11 @@ export interface GlyphPickerProps {
  * The kind's own glass — `PondPicker.dc.html` `kind === 'glyph'`: a near-opaque
  * gradient (not the shared `--mn-glass-bg`) over the shared border/shadow/blur,
  * following `NewPondSheet.tsx`'s `SHEET_GLASS` pattern for a kind that needs its
- * own recipe rather than the generic one.
+ * own recipe rather than the generic one. Exported so `GlyphPickerSheet.tsx`'s
+ * bottom sheet paints the same surface over its own (non-anchored) position.
  */
-const GLYPH_GLASS =
-  'motion-menu fixed z-[100] box-border flex flex-col gap-[1px] font-mono text-mn-text ' +
+export const GLYPH_GLASS_SURFACE =
+  'box-border flex flex-col gap-[1px] font-mono text-mn-text ' +
   'border border-white/90 ' +
   'bg-[linear-gradient(160deg,rgba(255,255,255,.96),rgba(255,255,255,.9))] ' +
   'shadow-[inset_0_1px_0_rgba(255,255,255,.7),0_20px_54px_rgba(40,34,24,.14)] ' +
@@ -134,13 +133,14 @@ const GLYPH_GLASS =
   'dark:border-[rgba(250,249,239,.09)] ' +
   'dark:bg-[linear-gradient(160deg,rgba(48,49,42,.97),rgba(48,49,42,.92))] ' +
   'dark:shadow-[inset_0_1px_0_rgba(250,249,239,.06),0_20px_54px_rgba(0,0,0,.42)]'
+const GLYPH_GLASS = `motion-menu fixed z-[100] ${GLYPH_GLASS_SURFACE}`
 
 /** The ring a current pick (or `automatic`, with none) draws on its row or cell. */
 const PICKED_RING = 'shadow-[inset_0_0_0_2px_var(--mn-text)]'
 /** The keyboard-active row or cell's own background — separate from `PICKED_RING`, which marks the current pick. */
 const ACTIVE_HILITE = 'bg-mn-text/[0.1]'
 
-const SIZES = {
+export const GLYPH_SIZES = {
   desktop: {
     widthPx: 320,
     width: 'w-[320px]',
@@ -216,7 +216,7 @@ const SIZES = {
  * of its chrome is needed.
  */
 export function glyphPickerChrome(target: GlyphPickerTarget, size: GlyphPickerSize): number {
-  const sizes = SIZES[size]
+  const sizes = GLYPH_SIZES[size]
   const inheritPx = target.isArea ? 0 : sizes.inheritRowPx
   return sizes.headPx + inheritPx + BOX_HEIGHT.foot + BOX_HEIGHT.glass
 }
@@ -236,7 +236,7 @@ export function glyphPickerHeight(
   recentGlyphs: readonly string[],
   viewportHeight: number
 ): number {
-  const sizes = SIZES[size]
+  const sizes = GLYPH_SIZES[size]
   const sections = glyphSections('', recentGlyphs)
   const listPx =
     sizes.cellPx +
@@ -275,7 +275,12 @@ function chunkRows<T>(items: readonly T[], size: number): T[][] {
   return rows
 }
 
-export function GlyphPicker({
+export type GlyphPickerBodyProps = Omit<GlyphPickerProps, 'anchor' | 'side' | 'container'> & {
+  /** The DC's `size`: a wider glass, 44px cells and a bottom-sheet corner. @default 'desktop' */
+  size?: GlyphPickerSize
+}
+
+export function GlyphPickerBody({
   target,
   current,
   accent,
@@ -283,14 +288,11 @@ export function GlyphPicker({
   inheritsFrom,
   role = null,
   onPickColour,
-  anchor,
-  side = 'bottom',
-  container,
   size = 'desktop',
   onPick,
   onClose,
-}: GlyphPickerProps) {
-  const sizes = SIZES[size]
+}: GlyphPickerBodyProps) {
+  const sizes = GLYPH_SIZES[size]
   const mobile = size === 'mobile'
   const auto = automaticRow(target)
   const recent = recentGlyphs ?? []
@@ -400,22 +402,12 @@ export function GlyphPicker({
     inputRef.current?.focus()
   }, [])
 
-  const glassRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    glassRef.current?.querySelector(`#${CSS.escape(`${listId}-${active}`)}`)?.scrollIntoView({
+    listRef.current?.querySelector(`#${CSS.escape(`${listId}-${active}`)}`)?.scrollIntoView({
       block: 'nearest',
     })
   }, [active, listId])
-
-  // A press outside the glass closes it — and keeps what was there, like esc
-  // (`SourcePicker`'s own pattern).
-  useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
-      if (glassRef.current && !glassRef.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('pointerdown', onPointerDown, true)
-    return () => document.removeEventListener('pointerdown', onPointerDown, true)
-  }, [onClose])
 
   // `selName`, `PondPicker.dc.html`'s `gsel === 'auto' ? 'automatic' : gsel`:
   // the foot always names the active row, cell or swatch, never the query or
@@ -427,42 +419,9 @@ export function GlyphPicker({
         ? (swatches[active - cells.length - 1]?.label ?? '')
         : (cells[active - 1]?.label ?? '')
   const foot = mobile ? [] : [selName, '←→↑↓ move', '↵ pick', 'esc close'].filter(Boolean)
-  const style = useAnchoredBox(anchor, side, sizes.widthPx)
 
-  // The room the CHOSEN side actually has, so the glass can be bounded to it
-  // directly (its own inline `maxHeight`, below) — `useAnchoredBox` positions
-  // the glass off this same anchor rect, but never caps anything, which is
-  // how a glass taller than its room ran past the fold (position: fixed, so
-  // nothing below scrolls it back into view). Read `window.innerHeight` only
-  // inside the effect, never during render — this component can still render
-  // (as `null`) on the server.
-  const [room, setRoom] = useState<number | undefined>(undefined)
-  useLayoutEffect(() => {
-    const el = anchor && 'current' in anchor ? anchor.current : anchor
-    if (!el) return
-    const update = () =>
-      setRoom(glyphPickerRoom(el.getBoundingClientRect(), side, window.innerHeight))
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [anchor, side])
-
-  if (typeof document === 'undefined') return null
-  return createPortal(
-    <div
-      ref={glassRef}
-      tabIndex={-1}
-      data-part="glass"
-      data-kind="glyph"
-      className={`${GLYPH_GLASS} ${sizes.width} ${sizes.glassPadding} ${sizes.glassRadius} ${
-        side === 'top' ? '[--motion-menu-origin:bottom_left]' : ''
-      }`}
-      style={room === undefined ? style : { ...style, maxHeight: room }}
-    >
+  return (
+    <>
       <div
         data-part="head"
         className={`${mobile ? SLASH_SIZES.mobile.head : HEAD} ${sizes.headExtra}`}
@@ -503,6 +462,7 @@ export function GlyphPicker({
       </div>
 
       <div
+        ref={listRef}
         id={listId}
         data-part="list"
         role="listbox"
@@ -659,6 +619,85 @@ export function GlyphPicker({
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+export function GlyphPicker({
+  target,
+  current,
+  accent,
+  recentGlyphs,
+  inheritsFrom,
+  role = null,
+  onPickColour,
+  anchor,
+  side = 'bottom',
+  container,
+  onPick,
+  onClose,
+}: GlyphPickerProps) {
+  const sizes = GLYPH_SIZES.desktop
+
+  const glassRef = useRef<HTMLDivElement>(null)
+
+  // A press outside the glass closes it — and keeps what was there, like esc
+  // (`SourcePicker`'s own pattern).
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (glassRef.current && !glassRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [onClose])
+
+  const style = useAnchoredBox(anchor, side, sizes.widthPx)
+
+  // The room the CHOSEN side actually has, so the glass can be bounded to it
+  // directly (its own inline `maxHeight`, below) — `useAnchoredBox` positions
+  // the glass off this same anchor rect, but never caps anything, which is
+  // how a glass taller than its room ran past the fold (position: fixed, so
+  // nothing below scrolls it back into view). Read `window.innerHeight` only
+  // inside the effect, never during render — this component can still render
+  // (as `null`) on the server.
+  const [room, setRoom] = useState<number | undefined>(undefined)
+  useLayoutEffect(() => {
+    const el = anchor && 'current' in anchor ? anchor.current : anchor
+    if (!el) return
+    const update = () =>
+      setRoom(glyphPickerRoom(el.getBoundingClientRect(), side, window.innerHeight))
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [anchor, side])
+
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div
+      ref={glassRef}
+      tabIndex={-1}
+      data-part="glass"
+      data-kind="glyph"
+      className={`${GLYPH_GLASS} ${sizes.width} ${sizes.glassPadding} ${sizes.glassRadius} ${
+        side === 'top' ? '[--motion-menu-origin:bottom_left]' : ''
+      }`}
+      style={room === undefined ? style : { ...style, maxHeight: room }}
+    >
+      <GlyphPickerBody
+        target={target}
+        current={current}
+        accent={accent}
+        recentGlyphs={recentGlyphs}
+        inheritsFrom={inheritsFrom}
+        role={role}
+        onPickColour={onPickColour}
+        onPick={onPick}
+        onClose={onClose}
+      />
     </div>,
     container ?? document.body
   )
