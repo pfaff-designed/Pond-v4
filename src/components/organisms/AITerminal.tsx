@@ -54,6 +54,7 @@ import { toParentOptions } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
   createPageFromProposal,
   defineSchemaFromProposal,
@@ -1540,7 +1541,7 @@ export function AITerminal() {
 
   const acceptChanges = useCallback(
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
-      if (indices.length === 0) return
+      if (indices.length === 0) return null
       decideChanges(toolCallId, indices, 'accepted')
       const supabase = getSupabase()
       const {
@@ -1607,6 +1608,7 @@ export function AITerminal() {
           message: `Nothing added to ${targetName} — ${blockNoun(result.skipped)} couldn’t be placed`,
         })
       }
+      return result.recordId
     },
     [
       decideChanges,
@@ -2541,7 +2543,12 @@ export function AITerminal() {
           <div className="mn-arrive">
             <ProposalGroup
               cards={diffCards}
-              onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
+              onAccept={(id) => {
+                void (async () => {
+                  const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                  if (pondId && recordId) sessionUndo.remember({ pondId, recordIds: [recordId] })
+                })()
+              }}
               onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
               onPickPlace={(id, destinationId) => {
                 dispatch({ kind: 'pickDestination', type: 'changes', id, destinationId })
@@ -2556,11 +2563,16 @@ export function AITerminal() {
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop
-                // the first batch. Also keeps the toast receipts in card order.
+                // the first batch. Also keeps the toast receipts in card order. One
+                // accept-all click is one undo step, so every card's record id is
+                // collected and remembered together after the loop, not per card.
                 void (async () => {
+                  const recordIds: string[] = []
                   for (const id of acceptablePendingDiffIds) {
-                    await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                    const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                    if (recordId) recordIds.push(recordId)
                   }
+                  if (pondId && recordIds.length > 0) sessionUndo.remember({ pondId, recordIds })
                 })()
               }}
               onRejectAll={() => {
