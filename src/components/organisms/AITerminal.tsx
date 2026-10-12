@@ -36,13 +36,13 @@ import {
   earlierAnswers,
   formatThreadTime,
   openPageProposalIds,
+  parsePlacementResponse,
   readChips,
   readStamp,
   withEarlierAnswer,
   withReadStamp,
   type EarlierAnswer,
   type PageProposal,
-  type PageProposalMention,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
 import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
@@ -384,28 +384,6 @@ function tablePromotionPreview(
 // fallback name/parent are already standing, so a slow model never blocks
 // make-this-a-page (AUDIT G1).
 const PROPOSE_PAGE_FETCH_TIMEOUT_MS = 4_000
-
-/** The propose-page route's response, checked before it is trusted — same
- *  tolerant style as `parsePageProposals`: a shape slip returns null (treated
- *  as "no better answer arrived"), it never throws. */
-function parsePlacementResponse(
-  value: unknown
-): { name: string | null; parentId: string | null; mentioned: PageProposalMention[] } | null {
-  if (typeof value !== 'object' || value === null) return null
-  const v = value as Record<string, unknown>
-  if (v.name !== null && typeof v.name !== 'string') return null
-  if (v.parentId !== null && typeof v.parentId !== 'string') return null
-  if (!Array.isArray(v.mentioned)) return null
-  const mentioned: PageProposalMention[] = []
-  for (const entry of v.mentioned) {
-    if (typeof entry !== 'object' || entry === null) continue
-    const e = entry as Record<string, unknown>
-    if (typeof e.title !== 'string' || typeof e.note !== 'string') continue
-    if (e.ref !== null && typeof e.ref !== 'string') continue
-    mentioned.push({ title: e.title, ref: (e.ref as string | null) ?? null, note: e.note })
-  }
-  return { name: v.name as string | null, parentId: v.parentId as string | null, mentioned }
-}
 
 export function AITerminal() {
   const router = useRouter()

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { listPages, type PondPage } from '@/lib/pages/client'
 import { AI_MODELS } from '@/lib/ai/models'
-import type { PageProposalMention } from '@/lib/conversation/page-proposals'
+import type { PlacementResult } from '@/lib/conversation/page-proposals'
 
 /** The propose-page request body, parsed. */
 interface ProposePageBody {
@@ -56,13 +56,6 @@ export function buildCandidatePageIds(
     if (page.parentId === null) ids.add(page.id)
   }
   return [...ids]
-}
-
-/** The route's response shape — the fallback IS a valid response (AUDIT G1). */
-export interface PlacementResult {
-  name: string | null
-  parentId: string | null
-  mentioned: PageProposalMention[]
 }
 
 const FALLBACK: PlacementResult = { name: null, parentId: null, mentioned: [] }

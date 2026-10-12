@@ -130,6 +130,35 @@ function parseMentioned(value: unknown): PageProposalMention[] {
   return out
 }
 
+/** The propose-page route's response shape (KAN-172) — the fallback
+ *  (`{ name: null, parentId: null, mentioned: [] }`) IS a valid response
+ *  (AUDIT G1), not an error case. Shared by the route (its own validated
+ *  output) and `AITerminal.tsx` (tolerant-parsing that output back out of a
+ *  `fetch` response), so the two never drift on what counts as well-formed. */
+export interface PlacementResult {
+  name: string | null
+  parentId: string | null
+  mentioned: PageProposalMention[]
+}
+
+/** Tolerant-parse a propose-page route response — same posture as
+ *  `parsePageProposals`: a shape slip returns null (treated as "no better
+ *  answer arrived"), it never throws. Reuses {@link parseMentioned} so a
+ *  mention with no title, or an empty-string `ref`, is dropped/nulled the
+ *  same way here as it is on a persisted proposal. */
+export function parsePlacementResponse(value: unknown): PlacementResult | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (v.name !== null && typeof v.name !== 'string') return null
+  if (v.parentId !== null && typeof v.parentId !== 'string') return null
+  if (!Array.isArray(v.mentioned)) return null
+  return {
+    name: v.name as string | null,
+    parentId: v.parentId as string | null,
+    mentioned: parseMentioned(v.mentioned),
+  }
+}
+
 // ── Naming ───────────────────────────────────────────────────────────────────
 
 /** Collapse whitespace and cut to `max` on a word boundary (no ellipsis — a
