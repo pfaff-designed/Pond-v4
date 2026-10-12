@@ -135,15 +135,18 @@ global.fetch = jest.fn().mockResolvedValue({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
+import { pagesKey } from '@/lib/pages/keys'
+import { changeLogKey } from '@/lib/change-log/keys'
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <ShellCommands />
       <AITerminal />
     </QueryClientProvider>
   )
+  return queryClient
 }
 
 function batch(toolCallId: string) {
@@ -244,5 +247,48 @@ describe('accept a diff, then ⌘Z/⇧⌘Z take it back and put it back (KAN-93 
 
     await waitFor(() => expect(redoStep).toHaveBeenCalledTimes(1))
     expect(redoStep).toHaveBeenCalledWith(expect.anything(), { pondId: 'pond-7', recordIds: ['rec-1'] })
+  })
+
+  it('on done invalidates the page and change-log caches; on stale it shows the notice and changes nothing else', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockGetRecordByToolCall.mockResolvedValue(fakeRecord('rec-1', 'pc1', pageB.id))
+
+    const queryClient = renderApp()
+    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries')
+    await ready()
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(1))
+
+    await user.click(document.body)
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pagesKey() }))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', pageB.id] })
+
+    invalidateQueries.mockClear()
+    jest.mocked(undoStep).mockResolvedValueOnce({ outcome: 'stale', reason: 'page-changed' })
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
+    await screen.findByText(/can't undo — the page changed since/)
+    expect(invalidateQueries).not.toHaveBeenCalled()
   })
 })
