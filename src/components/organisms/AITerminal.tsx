@@ -1,7 +1,7 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
-import { useRef, useEffect, useMemo, useState, useReducer, useCallback } from 'react'
+import { Fragment, useRef, useEffect, useMemo, useState, useReducer, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
@@ -22,8 +22,10 @@ import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import {
   FOCUS_TERMINAL_EVENT,
+  HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
   TOGGLE_COMPOSER_EVENT,
+  requestHtmlImportPicker,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
@@ -42,7 +44,7 @@ import {
   type PageProposal,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
-import { pageEyebrowClass } from '@/components/atoms/kicker'
+import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
@@ -71,6 +73,13 @@ import { FileAttachmentChip } from '@/components/molecules/FileAttachmentChip'
 import { useAttachments } from '@/lib/attachments/use-attachments'
 import { useInlineAttachment } from '@/lib/attachments/use-inline-attachment'
 import { ATTACHMENT_ACCEPT } from '@/lib/attachments/validate'
+import {
+  describeFoundCounts,
+  isHtmlSendBlockedOffline,
+  startStoppableHtmlRead,
+} from '@/lib/attachments/html'
+import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
+import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
@@ -78,6 +87,7 @@ import {
   getInlineAttachmentDescriptorForFile,
   type InlineAttachment,
   type CsvInlineAttachment,
+  type HtmlInlineAttachment,
 } from '@/lib/attachments/inline-attachment-kinds'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
 import { useComposerHeight } from '@/lib/layout/composer-height'
@@ -175,6 +185,175 @@ const restoreReplacedAnswer = <T extends { id: string }>(
   if (!stashed || thread.some((m) => m.id === stashed.message.id)) return thread
   const at = Math.min(stashed.messageIndex, thread.length)
   return [...thread.slice(0, at), stashed.message, ...thread.slice(at)]
+}
+
+/** The offer once an html read settles ok (KAN-251, 06.25 frame 1/2): typing
+ *  anything else works too, so these are chips onto the ordinary send path. */
+const HTML_IMPORT_CHIPS = ['make this a page', 'file it as it is']
+
+/** 06.25 frame 6's two unreadable-failure chips (`rg -o` on the board's own
+ *  copy: "try another file", not the ticket's shorthand "try another"). */
+const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
+
+/** 06.25 frame 6's single too-large-failure chip — there is no "try another"
+ *  here, since the file itself (not the attempt) is the problem. */
+const HTML_TOO_LARGE_CHIPS = ['keep it as a file']
+
+/** Frame 1's offer and frame 6's failure options are the same `chips` section
+ *  (board `sChips` + `chip`), so one row draws both. `chipBaseClass` is the
+ *  primitive `AnswerActions` hangs "make this a page" on — not the hairline
+ *  outlined `FollowupChips`, which is a different board's variant. */
+const HtmlChipRow = ({
+  label,
+  chips,
+  disabled,
+  onPick,
+}: {
+  label: string
+  chips: string[]
+  disabled: boolean
+  onPick: (chip: string) => void
+}) => (
+  <div
+    role="group"
+    aria-label={label}
+    className="flex flex-wrap items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em]"
+  >
+    {chips.map((chip) => (
+      // `max-md:h-11` overrides PondComposer's `chip` mob height on purpose:
+      // 06.25 frame 7's caption ("44px — chips, buttons and the reply line")
+      // and AUDIT X1 outrank the DC here. Same exception as the composer ＋
+      // in ComposerLine.tsx, which carries the ruling; don't revert this to
+      // the DC in a parity pass. The horizontal padding follows the DC's
+      // mob `chip` padding (`10px 14px`) — only the height is overridden.
+      <button
+        key={chip}
+        type="button"
+        disabled={disabled}
+        onClick={() => onPick(chip)}
+        className={`${chipBaseClass} flex max-md:h-11 max-md:px-[14px] items-center justify-center py-1.5 text-mn-text-meta hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-mn-text disabled:opacity-40 disabled:hover:text-mn-text-meta`}
+      >
+        {chip}
+      </button>
+    ))}
+  </div>
+)
+
+/** 06.25 frame 6's failure copy, read via `rg -o` from the board and filled in
+ *  with the real filename and sizes. The board's `a` strings are sentence
+ *  case with curly apostrophes — unlike the lowercase line/chip copy, this
+ *  is rendered verbatim, never through a `lowercase` className. Offline has
+ *  no case here — it isn't a `ReadHtmlError`, since the read itself can
+ *  succeed; only asking fails (see `describeHtmlOfflineNote` below). */
+function describeHtmlFailure(filename: string, error: ReadHtmlError): string {
+  if (error.kind === 'unreadable') {
+    return `I can’t read ${filename}: it’s empty, or it isn’t html. Nothing was made.`
+  }
+  return `${filename} is ${formatBytes(error.size, 'upper')}. I can read html files up to ${formatBytes(error.limit, 'upper')}. Split it, or keep it as a file.`
+}
+
+/** 06.25 frame 6's offline copy — a turn's `note`, not its `a`: asking failed
+ *  before any read ran, so there's nothing to answer. Sentence case verbatim
+ *  from the board (its own first word is lowercase "asking", a continuation
+ *  of the turn's question, not a new sentence). */
+function describeHtmlOfflineNote(filename: string): string {
+  return `asking needs a connection. ${filename} stays attached; nothing is sent until you’re back online.`
+}
+
+/** A snapshot of a settled html read, kept after its file is removed (the
+ *  pill's ×, KAN-251 10098): PROJECT_RULES says answers live in the thread,
+ *  so removing the file must not take the question/answer with it. Only a
+ *  SETTLED read (ok or failed) is ever snapshotted — Esc mid-read, a new
+ *  attach and `try another file` still clear everything, same as today,
+ *  since there's no answer yet to keep. `afterMessages` anchors it to the
+ *  ordinary thread: the number of chat `messages` that existed when the
+ *  read happened, so it renders back in that position once removed. */
+type HtmlTurnSnapshot = {
+  id: string
+  question: string
+  at: string | null
+  filename: string
+  size: number
+  result: ReadHtmlResult
+  afterMessages: number
+}
+
+/** Renders one html read turn (q → a → readRow, 06.25 frame 2/6) — shared by
+ *  the live attachment above the composer line and a kept snapshot in the
+ *  thread body once the file's been removed. A kept turn passes no
+ *  `failureChips`: the file is gone, so there's nothing left to act on. */
+function HtmlReadTurn({
+  question,
+  at,
+  filename,
+  size,
+  reading,
+  result,
+  offlineNote,
+  failureChips,
+}: {
+  question: string
+  at: string | null
+  filename: string
+  size: number
+  reading: boolean
+  result: ReadHtmlResult | null
+  offlineNote?: string
+  failureChips?: { chips: string[]; disabled: boolean; onPick: (chip: string) => void }
+}) {
+  return (
+    <Turn>
+      <YouRow text={question} time={formatThreadTime(at)} />
+      {/* AUDIT G6: the reading/answer/failure state above is otherwise
+          announced to sighted users only — a screen reader gets no word
+          that Pond started reading, finished, or refused the file. */}
+      <div role="status" aria-live="polite">
+        {/* 6z frame 2's `a` is a turn answer from the moment reading starts,
+            not just once it settles — the person spends the whole read in
+            this frame, so it can't be blank. The read chip renders after
+            it: board order is `q → a → readRow`, same as the ordinary
+            thread's own turns. */}
+        {(reading || result?.ok) && (
+          <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
+            Reading {filename}.{result?.ok && ` So far: ${describeFoundCounts(result.found)}.`}
+          </p>
+        )}
+        {/* 6z frame 2 keeps the read chip ON the turn once it settles, not
+            just while reading — every answer shows what it read
+            (PROJECT_RULES). Reuses ReadChips rather than a bespoke row
+            (AGENTS.md: duplicates go). */}
+        {(reading || result?.ok) && <ReadChips read={[`${filename} · ${formatBytes(size)}`]} />}
+        {/* 06.25 frame 6: each failure says what happened and what is still
+            possible — nothing half made. The board's `a` copy is sentence
+            case, so this paragraph drops the `lowercase` className other
+            machine-surface text here carries — only the line/chip strings
+            are lowercase. */}
+        {result && !result.ok && (
+          <>
+            <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
+              {describeHtmlFailure(filename, result.error)}
+            </p>
+            {failureChips && (
+              <HtmlChipRow
+                label="Options"
+                chips={failureChips.chips}
+                disabled={failureChips.disabled}
+                onPick={failureChips.onPick}
+              />
+            )}
+          </>
+        )}
+        {/* 06.25 frame 6 offline: a turn's `note`, not its `a` — asking
+            failed before any read ran, so there's no answer and no failure
+            chips, only the pill staying attached. The offer chips (live
+            only — a kept turn has no pill left to offer against) stay
+            beside this note (the 11 oct ruling at that gate). */}
+        {offlineNote && (
+          <p className="font-mono text-[11px] text-mn-text-secondary">{offlineNote}</p>
+        )}
+      </div>
+    </Turn>
+  )
 }
 
 /** Preview what a promote_table would produce, read from the host page's blocks:
@@ -543,6 +722,142 @@ export function AITerminal() {
     [setCsvAttachment]
   )
 
+  // ── HTML attachment (KAN-251) ─────────────────────────────────────────────
+  // Mirrors the csv attachment above: an html file keeps its own inline pill
+  // above the line rather than riding the upload path. One stoppable, timed
+  // read runs at a time; Esc while it's in flight stops it and clears every
+  // bit of html state back to nothing — no pill, no message, no record —
+  // since nothing has been made yet to undo.
+  const {
+    attachment: htmlAttachment,
+    setAttachment: setHtmlAttachment,
+    clear: clearHtmlAttachmentSlot,
+  } = useInlineAttachment<HtmlInlineAttachment>()
+  const [htmlReading, setHtmlReading] = useState(false)
+  const [htmlResult, setHtmlResult] = useState<ReadHtmlResult | null>(null)
+  // The only state in which a send is an ask about the attached file: no read
+  // running (it is already asking) and none settled (ok or failed).
+  const isHtmlAskPending = Boolean(htmlAttachment) && !htmlReading && !htmlResult
+  // Set by the offline guard: asking failed for lack of a
+  // connection, not a read error, so it isn't a `ReadHtmlResult` at all —
+  // the file stays attached and nothing is sent until it clears.
+  const [htmlOffline, setHtmlOffline] = useState(false)
+  // What the person asked (06.25 frame 2's turn `q`) — unset until they pick
+  // `make this a page` or type and send. An offline attempt also sets this,
+  // purely so the note has a `q` to render against — it must NOT double as
+  // the read-start/offer-chip gate (that's `isHtmlAskPending`, above), or one
+  // offline attempt permanently hides the offer chips and blocks every later
+  // ask for this attachment.
+  const [htmlQuestion, setHtmlQuestion] = useState<string | null>(null)
+  // When it was asked, for the turn's `q` row — every 6z turn and the
+  // ordinary thread both draw a time beside the question.
+  const [htmlQuestionAt, setHtmlQuestionAt] = useState<string | null>(null)
+  const htmlReadRef = useRef<{ stop: () => void } | null>(null)
+  // The raw `File`, kept only so the read can start later, on the ask —
+  // `htmlAttachment` carries just the name/size a render needs.
+  const htmlFileRef = useRef<File | null>(null)
+
+  const clearHtmlAttachment = useCallback(() => {
+    htmlReadRef.current?.stop()
+    htmlReadRef.current = null
+    htmlFileRef.current = null
+    clearHtmlAttachmentSlot()
+    setHtmlReading(false)
+    setHtmlResult(null)
+    setHtmlOffline(false)
+    setHtmlQuestion(null)
+    setHtmlQuestionAt(null)
+  }, [clearHtmlAttachmentSlot])
+
+  // Settled html reads kept in the thread after their file is removed (the
+  // pill's ×, KAN-251 10098) — PROJECT_RULES: answers live in the thread,
+  // so removing the file must not take the question/answer with it. Esc
+  // mid-read, `try another file` and a fresh attach still call
+  // `clearHtmlAttachment` directly and keep nothing (no answer exists yet).
+  const [keptHtmlTurns, setKeptHtmlTurns] = useState<HtmlTurnSnapshot[]>([])
+
+  // The pill's own ×, distinct from `clearHtmlAttachment`: it snapshots a
+  // SETTLED read (ok or failed) into `keptHtmlTurns` before wiping the live
+  // html state, so the turn survives the file's removal. Nothing to keep
+  // while reading (no answer yet) or for an offline-only attempt (no read
+  // ever ran) — both fall through to the ordinary clear.
+  const removeHtmlAttachment = useCallback(() => {
+    if (htmlResult && htmlQuestion && htmlAttachment) {
+      setKeptHtmlTurns((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          question: htmlQuestion,
+          at: htmlQuestionAt,
+          filename: htmlAttachment.filename,
+          size: htmlAttachment.size,
+          result: htmlResult,
+          afterMessages: messages.length,
+        },
+      ])
+    }
+    clearHtmlAttachment()
+  }, [
+    htmlResult,
+    htmlQuestion,
+    htmlQuestionAt,
+    htmlAttachment,
+    messages.length,
+    clearHtmlAttachment,
+  ])
+
+  // The one entry point every html door calls — the ＋ input, the drop
+  // handler, ⌘K's `import a page`, and (unchanged, once KAN-186/KAN-193
+  // build it) zen's own ＋. 6z frame 1 offers the two chips on attach, with
+  // no read and no turn yet — the read only starts once the person asks.
+  const handleHtmlFile = useCallback(
+    (file: File) => {
+      htmlReadRef.current?.stop()
+      htmlReadRef.current = null
+      htmlFileRef.current = file
+      setHtmlAttachment({ kind: 'html', filename: file.name, size: file.size })
+      setHtmlResult(null)
+      setHtmlReading(false)
+      setHtmlOffline(false)
+      setHtmlQuestion(null)
+      setHtmlQuestionAt(null)
+    },
+    [setHtmlAttachment]
+  )
+
+  // The read's own start signal (06.25 frame 2): `make this a page`, or
+  // typing anything else and sending, both ask the same question. `file it
+  // as it is` never calls this — it's the ordinary capture path (KAN-130/7c),
+  // not a read.
+  const startHtmlRead = useCallback((question: string) => {
+    const file = htmlFileRef.current
+    if (!file) return
+    setHtmlQuestion(question)
+    setHtmlQuestionAt(new Date().toISOString())
+    setHtmlResult(null)
+    setHtmlReading(true)
+    htmlReadRef.current = startStoppableHtmlRead(file, (result) => {
+      setHtmlReading(false)
+      setHtmlResult(result)
+    })
+  }, [])
+
+  // Offline note state, set and cleared in one place: the `htmlQuestion` /
+  // `htmlQuestionAt` pair exists only so the note has a `q` to render
+  // against, and must go with the flag.
+  // Only called while an ask is pending, so `htmlResult` is already null here.
+  const markHtmlOffline = useCallback((question: string) => {
+    setHtmlQuestion(question)
+    setHtmlQuestionAt(new Date().toISOString())
+    setHtmlOffline(true)
+  }, [])
+
+  const clearHtmlOffline = useCallback(() => {
+    setHtmlOffline(false)
+    setHtmlQuestion(null)
+    setHtmlQuestionAt(null)
+  }, [])
+
   // ── File attachments (#61) ────────────────────────────────────────────────
   // Images + documents upload to Supabase Storage and ride the outgoing message
   // as FileUIParts (so Pond can see them); a .csv keeps its dedicated inline-
@@ -563,6 +878,7 @@ export function AITerminal() {
       // Kind → parse handler: a new kind extends this map, not a new branch.
       const kindParsers: Record<InlineAttachment['kind'], (file: File) => void> = {
         csv: processCsvFile,
+        html: handleHtmlFile,
       }
       for (const file of Array.from(files ?? [])) {
         const descriptor = getInlineAttachmentDescriptorForFile(file)
@@ -570,7 +886,7 @@ export function AITerminal() {
         else void addFile(file)
       }
     },
-    [processCsvFile, addFile]
+    [handleHtmlFile, processCsvFile, addFile]
   )
 
   const handleDrop = useCallback(
@@ -582,6 +898,8 @@ export function AITerminal() {
   )
 
   const handleAttachClick = useCallback(() => attachInputRef.current?.click(), [])
+
+  const htmlImportInputRef = useRef<HTMLInputElement>(null)
 
   // ── Collapse ───────────────────────────────────────────────────────────────
   // Collapse is the session's alone: nothing is remembered, so the composer opens
@@ -607,6 +925,30 @@ export function AITerminal() {
     setIsCollapsed(true)
   }, [lastSettledAnswerId])
   const handleExpand = useCallback(() => setIsCollapsed(false), [])
+
+  // Dedicated html-only picker (KAN-251): ⌘K's `import a page` fires
+  // `HTML_IMPORT_PICKER_EVENT`; this is the one place that listens, so a
+  // later door (zen's ＋, KAN-186/KAN-193) can dispatch the same event with
+  // no change here.
+  //
+  // Robustness (ticket-24, same shape as `pendingFocus` below): a *collapsed*
+  // composer unmounts this input, so a synchronous click() while collapsed
+  // finds nothing. Uncollapse and set a pending flag; the effect near
+  // `effectiveCollapsed` clicks once the input is back in the DOM.
+  const pendingHtmlImport = useRef(false)
+  useEffect(() => {
+    function onHtmlImportPickerRequest() {
+      const el = htmlImportInputRef.current
+      if (el) {
+        el.click()
+        return
+      }
+      setIsCollapsed(false)
+      pendingHtmlImport.current = true
+    }
+    window.addEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
+    return () => window.removeEventListener(HTML_IMPORT_PICKER_EVENT, onHtmlImportPickerRequest)
+  }, [])
 
   // ⌘K (top bar icon or global hotkey) moves focus into the terminal input.
   // Robustness (ticket-24): a *collapsed* input is unmounted, so a synchronous
@@ -862,6 +1204,16 @@ export function AITerminal() {
     }
   }, [effectiveCollapsed, isReady])
 
+  // Fulfil a pending html-import click once the dedicated input is actually
+  // mounted (i.e. the composer finished uncollapsing). Same shape as the
+  // pending-focus effect above, for the same reason (ticket-24).
+  useEffect(() => {
+    if (!effectiveCollapsed && pendingHtmlImport.current) {
+      htmlImportInputRef.current?.click()
+      pendingHtmlImport.current = false
+    }
+  }, [effectiveCollapsed])
+
   // ── New thread (the thread head) ──────────────────────────────────────────
   const handleClear = useCallback(async () => {
     if (!conversationId) return
@@ -877,6 +1229,9 @@ export function AITerminal() {
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
+    // A kept html turn anchors to this conversation's `messages`; a fresh
+    // thread has none to anchor against.
+    setKeptHtmlTurns([])
   }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
@@ -916,7 +1271,9 @@ export function AITerminal() {
         setQuoteCtx(null)
       }
       if (csvAttachment) {
-        const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext(csvAttachment)
+        const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext?.(
+          csvAttachment
+        )
         finalText = ctx ? `${finalText}\n\n${ctx}` : finalText
         clearCsvAttachment()
       }
@@ -974,25 +1331,114 @@ export function AITerminal() {
     // An attachment can go out without accompanying text (#61); everything
     // else still requires a message.
     if ((!text && attachments.length === 0) || isStreaming) return
+    // KAN-283: nothing leaves the line until the thread on screen is the
+    // active pond's — the html read below bypasses `sendText`, so it is
+    // gated here as well.
+    if (!isReady) return
+    // 06.25 frame 6: a reply to an attached html file is a question Pond has
+    // to ask, which needs a connection. Offline, it leaves the file attached
+    // and sends nothing rather than failing silently — the turn's `q` is
+    // still what was asked, since the offline note is a `note` on that
+    // same turn, not a bare paragraph outside one.
+    if (isHtmlSendBlockedOffline(isHtmlAskPending, navigator.onLine)) {
+      markHtmlOffline(text)
+      return
+    }
+    // The offline note left `htmlQuestion` set to that attempt's text so the
+    // note could render as a `q` on its own turn; clear it along with the
+    // flag so coming back online doesn't leave that turn's live region empty.
+    if (htmlOffline) clearHtmlOffline()
+
+    // "typing anything else works too" (06.25): an html attachment with no
+    // read yet run (never started, or an earlier attempt only got as far as
+    // the offline note) treats any sent text as the question, same as the
+    // `make this a page` chip — the read starts, and this text never
+    // reaches the model. Gated on `isHtmlAskPending`, not `htmlQuestion` —
+    // the offline note also sets `htmlQuestion`, and that must not
+    // permanently fall through to a bare `sendText` once back online.
+    if (isHtmlAskPending) {
+      startHtmlRead(text)
+      setInput('')
+      return
+    }
 
     sendText(text)
-  }, [input, isStreaming, attachments.length, sendText])
+  }, [
+    input,
+    isStreaming,
+    isReady,
+    attachments.length,
+    sendText,
+    isHtmlAskPending,
+    htmlOffline,
+    startHtmlRead,
+    markHtmlOffline,
+    clearHtmlOffline,
+  ])
 
   // A follow-up chip / question option click sends its text as the next message
   // (ticket-39). Ignored mid-stream so a click can't interleave a turn.
   const handleChipPick = useCallback(
     (chip: string) => {
-      if (isStreaming) return
+      if (isStreaming || !isReady) return
+      if (isHtmlSendBlockedOffline(isHtmlAskPending, navigator.onLine)) {
+        markHtmlOffline(chip)
+        return
+      }
+      if (htmlOffline) clearHtmlOffline()
       sendText(chip)
     },
-    [isStreaming, sendText]
+    [
+      isStreaming,
+      isReady,
+      sendText,
+      isHtmlAskPending,
+      htmlOffline,
+      markHtmlOffline,
+      clearHtmlOffline,
+    ]
+  )
+
+  // The two offer chips (06.25 frame 1): `make this a page` starts the read
+  // locally (no model call — KAN-252/253's asking/proposal aren't built
+  // here), so it never joins `handleChipPick`'s send path. `file it as it
+  // is` is the ordinary capture path and keeps that path unchanged.
+  const handleHtmlOfferPick = useCallback(
+    (chip: string) => {
+      if (chip !== 'make this a page') {
+        handleChipPick(chip)
+        return
+      }
+      if (isStreaming || !isReady) return
+      if (isHtmlSendBlockedOffline(isHtmlAskPending, navigator.onLine)) {
+        markHtmlOffline(chip)
+        return
+      }
+      if (htmlOffline) clearHtmlOffline()
+      startHtmlRead(chip)
+    },
+    [
+      handleChipPick,
+      isStreaming,
+      isReady,
+      isHtmlAskPending,
+      htmlOffline,
+      startHtmlRead,
+      markHtmlOffline,
+      clearHtmlOffline,
+    ]
   )
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Esc stops a stream and keeps what arrived; else it leaves the field. It never
-    // clears what was typed.
+    // clears what was typed. An in-flight html read takes priority over both: it
+    // has made nothing yet, so Esc discards it outright.
     if (e.key === 'Escape') {
       e.preventDefault()
+      if (htmlReading) {
+        clearHtmlAttachment()
+        return
+      }
       if (isStreaming) stop()
       else e.currentTarget.blur()
       return
@@ -1017,6 +1463,10 @@ export function AITerminal() {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       const target = e.target as HTMLElement
       if (target.tagName === 'TEXTAREA') return
+      if (htmlReading) {
+        clearHtmlAttachment()
+        return
+      }
       if (isStreaming) {
         stop()
         return
@@ -1028,7 +1478,7 @@ export function AITerminal() {
       }
       collapseComposer()
     },
-    [isStreaming, stop, collapseComposer]
+    [isStreaming, stop, collapseComposer, htmlReading, clearHtmlAttachment]
   )
 
   // Open the thread at a message (#97): a page's made-from chip asks for the
@@ -2386,7 +2836,32 @@ export function AITerminal() {
   const shownTurns = turns.slice(foldedCount)
   const threadArea = (nodeId ? areaOf(allPages, nodeId) : null) ?? contextLabel
 
-  const messagesBody = messages.length > 0 && (
+  // Kept html turns anchor to the chat message count at the moment they were
+  // read (`afterMessages`) — grouped by the shown turn whose last message
+  // index is `afterMessages - 1`, so each renders right after the turn it
+  // followed live. `afterMessages === 0` (nothing had been sent yet) has no
+  // such turn, so it's keyed `-1` and rendered before the first one.
+  const keptHtmlTurnsByAnchor = new Map<number, HtmlTurnSnapshot[]>()
+  for (const kept of keptHtmlTurns) {
+    const anchor = kept.afterMessages - 1
+    const forAnchor = keptHtmlTurnsByAnchor.get(anchor) ?? []
+    forAnchor.push(kept)
+    keptHtmlTurnsByAnchor.set(anchor, forAnchor)
+  }
+  const renderKeptHtmlTurns = (anchor: number) =>
+    (keptHtmlTurnsByAnchor.get(anchor) ?? []).map((kept) => (
+      <HtmlReadTurn
+        key={kept.id}
+        question={kept.question}
+        at={kept.at}
+        filename={kept.filename}
+        size={kept.size}
+        reading={false}
+        result={kept.result}
+      />
+    ))
+
+  const messagesBody = (messages.length > 0 || keptHtmlTurns.length > 0) && (
     <>
       {turns.length > 1 && (
         <ThreadHead
@@ -2407,27 +2882,31 @@ export function AITerminal() {
               onExpand={() => setEarlierOpenFrom(messages[0]?.id ?? null)}
             />
           )}
+          {renderKeptHtmlTurns(-1)}
           {shownTurns.map((indices, shownIndex) => (
-            <Turn key={messages[indices[0]].id}>
-              {indices.map((index) => renderMessage(messages[index], index))}
-              {shownIndex === shownTurns.length - 1 && (
-                <>
-                  {/* Stays until the tool part settles, even once reply text is arriving: a
-                      long tool call beside growing text would otherwise look stalled. */}
-                  {isStreaming && lastAssistantHasActiveTool && (
-                    <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
-                  )}
-                  {/* An error keeps nothing: the partial answer was dropped above. */}
-                  {error && !isStreaming && (
-                    <AnswerError
-                      onAskAgain={
-                        lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
-                      }
-                    />
-                  )}
-                </>
-              )}
-            </Turn>
+            <Fragment key={messages[indices[0]].id}>
+              <Turn>
+                {indices.map((index) => renderMessage(messages[index], index))}
+                {shownIndex === shownTurns.length - 1 && (
+                  <>
+                    {/* Stays until the tool part settles, even once reply text is arriving: a
+                        long tool call beside growing text would otherwise look stalled. */}
+                    {isStreaming && lastAssistantHasActiveTool && (
+                      <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+                    )}
+                    {/* An error keeps nothing: the partial answer was dropped above. */}
+                    {error && !isStreaming && (
+                      <AnswerError
+                        onAskAgain={
+                          lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
+                        }
+                      />
+                    )}
+                  </>
+                )}
+              </Turn>
+              {renderKeptHtmlTurns(indices[indices.length - 1])}
+            </Fragment>
           ))}
           <div ref={bottomRef} />
         </div>
@@ -2442,6 +2921,24 @@ export function AITerminal() {
     ? getInlineAttachmentDescriptor(csvAttachment.kind)
     : undefined
 
+  const htmlAttachmentDescriptor = htmlAttachment
+    ? getInlineAttachmentDescriptor(htmlAttachment.kind)
+    : undefined
+
+  // 06.25's own composer line per html state: frame 1 (attached, not yet
+  // asked), frame 2 (reading), frame 6 (any of the three failures). A
+  // settled success leaves this unset — not a state the board gives a line
+  // for — and the default placeholder below takes over.
+  const htmlPlaceholder = htmlAttachment
+    ? htmlOffline || (htmlResult && !htmlResult.ok)
+      ? 'reply, or ask something else'
+      : htmlReading
+        ? 'esc to stop'
+        : !htmlResult
+          ? `ask about ${htmlAttachment.filename}`
+          : null
+    : null
+
   const inputFooter = (
     <div
       className="flex flex-col gap-[14px]"
@@ -2454,6 +2951,77 @@ export function AITerminal() {
       {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
       {csvAttachment && csvAttachmentDescriptor && (
         <csvAttachmentDescriptor.Pill attachment={csvAttachment} onRemove={clearCsvAttachment} />
+      )}
+      {/* KAN-251: the pill and the two offer chips come up together at attach
+          (06.25 frame 1) — no read, no turn yet. Picking `make this a page`
+          (or typing anything else and sending) is the ask that starts the
+          read; its answer renders as a turn (frame 2) in the sans answer
+          register, sentence case — board `sAnswer`, not the mono machine
+          surface. */}
+      {htmlAttachment && htmlAttachmentDescriptor && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-[7px]">
+            <htmlAttachmentDescriptor.Pill
+              attachment={htmlAttachment}
+              onRemove={removeHtmlAttachment}
+            />
+          </div>
+          {/* Gated on whether a read has actually run, not on `htmlQuestion`
+              — an offline attempt sets `htmlQuestion` for the note's `q`
+              but never starts a read, so these chips re-show once back
+              online instead of staying hidden for the rest of this
+              attachment's life.
+
+              Decided by the user, 11 Oct 2026: the offer stays alive across
+              a reconnect. Frame 6 offline draws no `chips` section, but that
+              frame draws a moment and is silent on what happens once the
+              connection returns — losing the offer on a blip would make the
+              person re-attach the file for nothing. This is a reading of a
+              silent board, not a deviation from a drawn one, and it is NOT
+              the row-delete `×` precedent: that was an affordance no board
+              describes at all; here the board simply declines to say. Do
+              not revert this gate back to hiding the chips on `htmlOffline`. */}
+          {isHtmlAskPending && (
+            <HtmlChipRow
+              label="Offer"
+              chips={HTML_IMPORT_CHIPS}
+              disabled={isStreaming}
+              onPick={handleHtmlOfferPick}
+            />
+          )}
+          {htmlQuestion && (
+            <HtmlReadTurn
+              question={htmlQuestion}
+              at={htmlQuestionAt}
+              filename={htmlAttachment.filename}
+              size={htmlAttachment.size}
+              reading={htmlReading}
+              result={htmlResult}
+              offlineNote={
+                htmlOffline ? describeHtmlOfflineNote(htmlAttachment.filename) : undefined
+              }
+              failureChips={
+                htmlResult && !htmlResult.ok
+                  ? {
+                      chips:
+                        htmlResult.error.kind === 'unreadable'
+                          ? HTML_UNREADABLE_CHIPS
+                          : HTML_TOO_LARGE_CHIPS,
+                      disabled: isStreaming,
+                      onPick: (chip) => {
+                        if (chip === 'try another file') {
+                          clearHtmlAttachment()
+                          requestHtmlImportPicker()
+                          return
+                        }
+                        handleChipPick(chip)
+                      },
+                    }
+                  : undefined
+              }
+            />
+          )}
+        </div>
       )}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -2471,7 +3039,8 @@ export function AITerminal() {
       <ComposerLine
         value={input}
         placeholder={
-          messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks'
+          htmlPlaceholder ??
+          (messages.length > 0 ? 'reply, or ask something else' : 'ask pond, or / for blocks')
         }
         disabled={!isReady}
         streaming={isStreaming}
@@ -2494,7 +3063,7 @@ export function AITerminal() {
             ref={attachInputRef}
             type="file"
             multiple
-            accept={`.csv,text/csv,${ATTACHMENT_ACCEPT}`}
+            accept={`.html,.htm,text/html,.csv,text/csv,${ATTACHMENT_ACCEPT}`}
             className="hidden"
             onChange={(e) => {
               handlePickedFiles(e.target.files)
@@ -2502,6 +3071,27 @@ export function AITerminal() {
             }}
           />
         }
+      />
+      {/* ⌘K's `import a page` (KAN-251) — a dedicated, html-only picker so
+          that door never touches the general attach input above. */}
+      <input
+        ref={htmlImportInputRef}
+        type="file"
+        accept=".html,.htm,text/html"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            handleHtmlFile(file)
+            // The native chooser leaves focus on BODY once it closes (the
+            // input it opened from is `hidden`, so it isn't a focus target
+            // to return to) — reuse `focusInputSoon` so the offer the pill
+            // just rendered is reachable by keyboard without tabbing in from
+            // the top of the document.
+            focusInputSoon()
+          }
+          e.target.value = ''
+        }}
       />
     </div>
   )

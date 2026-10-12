@@ -5,9 +5,11 @@
  */
 import {
   FOCUS_TERMINAL_EVENT,
+  HTML_IMPORT_PICKER_EVENT,
   TOGGLE_COMPOSER_EVENT,
   isComposerToggleKey,
   requestComposerToggle,
+  requestHtmlImportPicker,
   requestTerminalFocus,
 } from '@/lib/terminal-focus'
 
@@ -23,6 +25,16 @@ describe('terminal-focus', () => {
     requestTerminalFocus()
     expect(listener).toHaveBeenCalledTimes(1)
     window.removeEventListener(FOCUS_TERMINAL_EVENT, listener)
+  })
+})
+
+describe('the html import picker (KAN-251)', () => {
+  it('requestHtmlImportPicker dispatches the picker event on window', () => {
+    const listener = jest.fn()
+    window.addEventListener(HTML_IMPORT_PICKER_EVENT, listener)
+    requestHtmlImportPicker()
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener(HTML_IMPORT_PICKER_EVENT, listener)
   })
 })
 

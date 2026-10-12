@@ -8,11 +8,15 @@
 
 import type { ReactElement } from 'react'
 import { CsvAttachmentPill } from '@/components/molecules/CsvAttachmentPill'
+import { HtmlAttachmentPill } from '@/components/molecules/HtmlAttachmentPill'
+import { isHtmlAttachment } from '@/lib/attachments/html'
 import { formatCsvContext, type CsvParseOk } from '@/lib/csv/parse-csv'
 
 export type CsvInlineAttachment = { kind: 'csv'; filename: string; parsed: CsvParseOk }
 
-export type InlineAttachment = CsvInlineAttachment
+export type HtmlInlineAttachment = { kind: 'html'; filename: string; size: number }
+
+export type InlineAttachment = CsvInlineAttachment | HtmlInlineAttachment
 
 export interface InlineAttachmentPillProps<T extends InlineAttachment> {
   attachment: T
@@ -22,8 +26,12 @@ export interface InlineAttachmentPillProps<T extends InlineAttachment> {
 export interface InlineAttachmentDescriptor<T extends InlineAttachment> {
   kind: T['kind']
   matchesFile: (file: File) => boolean
-  formatContext: (attachment: T) => string
-  Pill: (props: InlineAttachmentPillProps<T>) => ReactElement
+  /** Absent for kinds that send no file context: html is read locally and
+   *  nothing is sent until the person asks. Method syntax, not a property:
+   *  the registry holds descriptors of different T in one array, which needs
+   *  bivariant parameters. */
+  formatContext?(attachment: T): string
+  Pill(props: InlineAttachmentPillProps<T>): ReactElement
 }
 
 const csvDescriptor: InlineAttachmentDescriptor<CsvInlineAttachment> = {
@@ -39,8 +47,17 @@ const csvDescriptor: InlineAttachmentDescriptor<CsvInlineAttachment> = {
   ),
 }
 
+const htmlDescriptor: InlineAttachmentDescriptor<HtmlInlineAttachment> = {
+  kind: 'html',
+  matchesFile: isHtmlAttachment,
+  Pill: ({ attachment, onRemove }) => (
+    <HtmlAttachmentPill filename={attachment.filename} onRemove={onRemove} />
+  ),
+}
+
 export const INLINE_ATTACHMENT_DESCRIPTORS: InlineAttachmentDescriptor<InlineAttachment>[] = [
   csvDescriptor,
+  htmlDescriptor,
 ]
 
 export function getInlineAttachmentDescriptor(

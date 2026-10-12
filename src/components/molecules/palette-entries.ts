@@ -35,7 +35,13 @@ export type PaletteKind = 'page' | 'database' | 'record' | 'action' | 'pond'
  * board `6i` frame 3: "Saving is a page action, so it lives in the command
  * palette, not the / menu."
  */
-export type PaletteAction = 'new-page' | 'new-pond' | 'ask-pond' | 'save-as-template' | ZenAction
+export type PaletteAction =
+  | 'new-page'
+  | 'new-pond'
+  | 'ask-pond'
+  | 'save-as-template'
+  | 'import-a-page'
+  | ZenAction
 
 export interface PaletteItem {
   id: string

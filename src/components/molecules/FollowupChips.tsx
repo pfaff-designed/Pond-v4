@@ -57,7 +57,10 @@ export function FollowupChips({
           className={cn(
             // Machine surface (composer follow-ups + question-card options): mono,
             // lowercase, tight tracking — a hairline pill, paper-not-frames.
-            'rounded-mn-pill border border-mn-line bg-transparent px-3 py-1 font-mono lowercase text-[0.72rem] leading-none text-mn-text-meta',
+            'flex items-center justify-center rounded-mn-pill border border-mn-line bg-transparent px-3 py-1 font-mono lowercase text-[0.72rem] leading-none text-mn-text-meta',
+            // 06.25 frame 7 (390×844): a chip is a 44px touch target below md,
+            // same idiom as ModuleDiffCard's MOBILE_BUTTON (AUDIT X1).
+            'max-md:h-11 max-md:px-5',
             'transition-colors hover:border-mn-text hover:text-mn-text',
             'focus:outline-none focus-visible:border-mn-text focus-visible:ring-1 focus-visible:ring-mn-text',
             'disabled:opacity-40 disabled:hover:border-mn-line disabled:hover:text-mn-text-meta'

@@ -376,7 +376,7 @@ export const Streaming: Story = {
   },
 }
 
-/** Below md the card is 360 wide, the line 16px, ＋ 36 and send 40. */
+/** Below md the card is 360 wide, the line 16px, ＋ and send both 44 (6z frame 7). */
 export const Mobile: Story = {
   name: 'rest · mobile',
   globals: { viewport: { value: 'mobile2', isRotated: false } },
@@ -387,7 +387,7 @@ export const Mobile: Story = {
     await expect(getComputedStyle(research).padding).toBe('11px 12px')
     await expect(getComputedStyle(line).fontSize).toBe('16px')
     await expect(getComputedStyle(line).lineHeight).toBe('24px')
-    await expect(Math.round(plus.getBoundingClientRect().width)).toBe(36)
-    await expect(Math.round(send.getBoundingClientRect().width)).toBe(40)
+    await expect(Math.round(plus.getBoundingClientRect().width)).toBe(44)
+    await expect(Math.round(send.getBoundingClientRect().width)).toBe(44)
   },
 }
