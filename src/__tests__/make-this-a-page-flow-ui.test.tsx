@@ -202,6 +202,10 @@ beforeEach(() => {
   mockError = undefined
   mockLoadedMessages = []
   mockLoadedResolutions = { changes: {}, creates: {}, skipped: {} }
+  // Every "make this a page" fires the propose-page route in the background
+  // (KAN-172). Most of these tests don't care about it, so the default
+  // rejects — the fallback name/parent it already shows must stand untouched.
+  global.fetch = jest.fn().mockRejectedValue(new Error('propose-page not mocked in this test'))
   mockGetPage.mockImplementation(
     async (_sb: unknown, id: string) => PAGES.find((p) => p.id === id) ?? null
   )
@@ -607,6 +611,64 @@ describe('make this a page → the `new page — proposed` card', () => {
     const title = (mockCreatePage.mock.calls[0][2] as { title: string }).title
     expect(title.length).toBeLessThanOrEqual(120)
     expect(long.startsWith(title)).toBe(true)
+  })
+
+  // ── KAN-172: Pond's own name and placement, asked for in the background ───
+
+  it('fills the open card’s name and parent once the propose-page route resolves', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'bud-1',
+        mentioned: [{ title: 'Budget', ref: 'bud-1', note: 'the one everything waits on' }],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    // The fallback stands the instant the card opens.
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // Pond's own name and parent replace it once the route resolves.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('bud-1')
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/chat/propose-page',
+      expect.objectContaining({ method: 'POST' })
+    )
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string)
+    expect(sent).toMatchObject({
+      question: QUESTION,
+      prose: PROSE,
+      openPageId: 'kr-1',
+      read: ['Kitchen renovation', 'Budget'],
+      pondId: null,
+    })
+  })
+
+  it('leaves the fallback name and parent exactly as before when the propose-page route rejects', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'))
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+    expect(under.value).toBe('kr-1')
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    // Give the rejected call's microtask a turn to (not) land anything.
+    await act(async () => {})
+    expect(name.value).toBe('what is actually blocking the renovation')
+    expect(under.value).toBe('kr-1')
   })
 })
 

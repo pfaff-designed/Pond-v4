@@ -42,6 +42,7 @@ import {
   withReadStamp,
   type EarlierAnswer,
   type PageProposal,
+  type PageProposalMention,
   type ReadPartLike,
 } from '@/lib/conversation/page-proposals'
 import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
@@ -377,6 +378,33 @@ function tablePromotionPreview(
     type: inferColumnType(t.rows.map((r) => r.cells[col] ?? '')),
   }))
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
+}
+
+// The route gets this long to answer before the card stops waiting on it — the
+// fallback name/parent are already standing, so a slow model never blocks
+// make-this-a-page (AUDIT G1).
+const PROPOSE_PAGE_FETCH_TIMEOUT_MS = 4_000
+
+/** The propose-page route's response, checked before it is trusted — same
+ *  tolerant style as `parsePageProposals`: a shape slip returns null (treated
+ *  as "no better answer arrived"), it never throws. */
+function parsePlacementResponse(
+  value: unknown
+): { name: string | null; parentId: string | null; mentioned: PageProposalMention[] } | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (v.name !== null && typeof v.name !== 'string') return null
+  if (v.parentId !== null && typeof v.parentId !== 'string') return null
+  if (!Array.isArray(v.mentioned)) return null
+  const mentioned: PageProposalMention[] = []
+  for (const entry of v.mentioned) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const e = entry as Record<string, unknown>
+    if (typeof e.title !== 'string' || typeof e.note !== 'string') continue
+    if (e.ref !== null && typeof e.ref !== 'string') continue
+    mentioned.push({ title: e.title, ref: (e.ref as string | null) ?? null, note: e.note })
+  }
+  return { name: v.name as string | null, parentId: v.parentId as string | null, mentioned }
 }
 
 export function AITerminal() {
@@ -2005,6 +2033,13 @@ export function AITerminal() {
   // `new page — proposed` card (one per answer — a second press is ignored by
   // the reducer); the proposal is born as a `proposed` change-log record and rides
   // the resolutions envelope with the transcript, so closing Pond leaves it pending.
+  const editPageProposal = useCallback(
+    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>) => {
+      dispatch({ kind: 'editPageProposal', id, patch })
+    },
+    []
+  )
+
   const proposePage = useCallback(
     (opts: {
       messageId: string
@@ -2051,15 +2086,46 @@ export function AITerminal() {
           proposal,
         })
       })()
+      // Pond's own name and placement, asked for in the background. The card
+      // above already stands on the heuristic fallback, so a failed, timed-out
+      // or aborted call here does nothing — make-this-a-page never blocks on it
+      // (AUDIT G1). `editPageProposal`'s reducer guard (only a still-`proposed`
+      // card accepts a patch) is what keeps a late reply from touching a card
+      // the person already settled.
+      void (async () => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), PROPOSE_PAGE_FETCH_TIMEOUT_MS)
+        try {
+          const res = await fetch('/api/chat/propose-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              question: opts.question,
+              prose: opts.prose,
+              openPageId: nodeId,
+              read: opts.read,
+              pondId,
+            }),
+          })
+          if (!res.ok) return
+          const placement = parsePlacementResponse(await res.json())
+          // A null `name` is the route's own fallback shape (the model threw,
+          // timed out, or produced something malformed) — not a real answer.
+          if (!placement || placement.name === null) return
+          editPageProposal(proposal.id, {
+            name: placement.name,
+            parentId: placement.parentId,
+            mentioned: placement.mentioned,
+          })
+        } catch {
+          // Aborted, timed out, or a network failure — the fallback stands.
+        } finally {
+          clearTimeout(timer)
+        }
+      })()
     },
-    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId]
-  )
-
-  const editPageProposal = useCallback(
-    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind'>>) => {
-      dispatch({ kind: 'editPageProposal', id, patch })
-    },
-    []
+    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId, editPageProposal]
   )
 
   // Cancel returns to the thread and makes nothing (6a); the record is rejected.
