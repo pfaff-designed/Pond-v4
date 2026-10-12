@@ -19,10 +19,11 @@
 -- loses the right to hold a role (0022's own trigger already clears it on that
 -- move). Rather than let that surface as the raw `pages_area_role_area_only`
 -- check violation, this checks `page_is_area` itself first and raises a
--- `check_violation` / `not-an-area` the client reads as `blocked` (mirrors
--- `NotAnAreaError`'s `23514` check in `src/lib/pages/mark-client.ts`; blocked,
--- not stale, because the page itself did not change — session-undo retries
--- once the obstacle clears, same as `linked-elsewhere`).
+-- `check_violation` / `not-an-area` the client reads as `stale` (mirrors
+-- `NotAnAreaError`'s `23514` check in `src/lib/pages/mark-client.ts`; stale,
+-- not blocked, because a page that stopped being an area almost never becomes
+-- one again — session-undo drops the step rather than retrying it, same as
+-- `page-changed`).
 --
 -- Down (manual): re-run 0021's `create or replace function
 --   private.change_log_undo_kind` and `private.change_log_set_back` to drop

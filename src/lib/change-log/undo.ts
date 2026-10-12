@@ -24,13 +24,19 @@ export interface HistoryStep {
   recordIds: readonly string[]
 }
 
-/** The thing moved since, so nothing was written and the step can never land. Revert from the log instead. */
-export const STALE_REASONS = ['page-changed', 'record-changed'] as const
+/**
+ * The thing moved since, so nothing was written and the step can never land. Revert
+ * from the log instead. `not-an-area` lives here, not in `BLOCKED_REASONS`: a page
+ * that stopped being an area almost never becomes one again, so retrying it (as a
+ * blocked step would) leaves it stuck on top of the stack and nothing older can ever
+ * be undone — it is dropped like `page-changed`.
+ */
+export const STALE_REASONS = ['page-changed', 'record-changed', 'not-an-area'] as const
 /**
  * Something else stands in the way — a relation pointing at the row, a sibling
  * holding its name. Nothing was written; the step lands once that is cleared.
  */
-export const BLOCKED_REASONS = ['linked-elsewhere', 'name-taken', 'not-an-area'] as const
+export const BLOCKED_REASONS = ['linked-elsewhere', 'name-taken'] as const
 /** The step cannot be taken back (or put back) at all. */
 export const REFUSED_REASONS = [
   'already-undone',
@@ -62,6 +68,9 @@ const isOneOf = <T extends string>(list: readonly T[], value: string): value is 
 /** PostgREST returns a raised exception's DETAIL as `details`. */
 const classify = (error: PostgrestError): StepResult | null => {
   const reason = error.details ?? ''
+  // `not-an-area` is raised as `23514 check_violation` (mirrors the real constraint),
+  // not `40001`, so it is checked by reason alone, same as the blocked reasons below.
+  if (reason === 'not-an-area') return { outcome: 'stale', reason }
   if (isOneOf(BLOCKED_REASONS, reason)) return { outcome: 'blocked', reason }
   if (error.code === STALE_CODE) {
     return isOneOf(STALE_REASONS, reason) ? { outcome: 'stale', reason } : null

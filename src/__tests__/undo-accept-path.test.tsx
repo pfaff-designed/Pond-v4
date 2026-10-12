@@ -330,12 +330,12 @@ describe('accept a diff, then ⌘Z/⇧⌘Z take it back and put it back (KAN-93 
     await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(1))
 
     await user.click(document.body)
-    jest.mocked(undoStep).mockResolvedValue({ outcome: 'blocked', reason: 'not-an-area' })
+    jest.mocked(undoStep).mockResolvedValue({ outcome: 'blocked', reason: 'linked-elsewhere' })
 
     await user.keyboard('{Meta>}z{/Meta}')
 
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
-    await screen.findByText(/can't undo — the page is no longer an area/)
+    await screen.findByText(/can't undo yet — something else links to it/)
 
     await user.keyboard('{Meta>}z{/Meta}')
 
