@@ -11,7 +11,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -230,6 +230,55 @@ describe('the block menu opens from the handle', () => {
     await user.click(handleOf('b-heading'))
     await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
     expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-list'])
+  })
+})
+
+describe('phone: tapping a block reveals the handle and opens the same menu (frame 6)', () => {
+  const originalMatchMedia = window.matchMedia
+  beforeEach(() => {
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+  })
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia
+  })
+
+  it('focus landing in a text block’s editable (what a tap on it does) bubbles to the handle’s ancestor', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, table])
+    const root = document.getElementById('block-b-heading')!
+    const editable = await within(root).findByRole('textbox', { name: 'text block' })
+
+    // jsdom's ProseMirror view can't resolve a pointer position (no
+    // `elementFromPoint`), so a tap is simulated the way the browser resolves
+    // it underneath — moving DOM focus onto the editable.
+    act(() => {
+      editable.focus()
+    })
+    expect(root.contains(document.activeElement)).toBe(true)
+
+    await user.click(handleOf('b-heading'))
+    const menu = await screen.findByRole('menu', { name: /block menu/i })
+    expect(within(menu).getByRole('group', { name: 'width' })).toBeInTheDocument()
+    expect(within(menu).getByText('widths show on wider screens. on a phone every block is full.'))
+      .toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: '½' })).toHaveClass('h-[44px]')
+  })
+
+  it('a tap landing on a card block’s body (not the root) still bubbles to the handle’s ancestor', async () => {
+    const user = userEvent.setup()
+    renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+
+    await user.click(within(root).getByText('Tool'))
+    expect(root.contains(document.activeElement)).toBe(true)
+
+    await user.click(handleOf('b-table'))
+    expect(await screen.findByRole('menu', { name: /block menu/i })).toBeInTheDocument()
   })
 })
 
