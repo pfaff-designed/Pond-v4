@@ -659,7 +659,9 @@ describe('make this a page → the `new page — proposed` card', () => {
       question: QUESTION,
       prose: PROSE,
       openPageId: 'kr-1',
-      read: ['Kitchen renovation', 'Budget'],
+      // Ids (the open page plus the tool-read_page call's pageId), not the
+      // chip display titles ('Kitchen renovation', 'Budget').
+      read: ['kr-1', 'bud-1'],
       pondId: null,
     })
   })

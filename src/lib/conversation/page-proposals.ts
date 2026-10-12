@@ -297,6 +297,26 @@ export function readChips(opts: {
 }
 
 /**
+ * The page ids `readChips()` resolves to titles, kept raw instead (KAN-172):
+ * the placement route matches `read` by id, never by title, since a title
+ * chip can collide with an unrelated page of the same name (two pages both
+ * titled "Untitled" is the case that broke this). Walks the same
+ * `tool-read_page` parts {@link readChips} walks.
+ */
+export function readPageIds(parts: ReadPartLike[]): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const part of parts) {
+    if (part.type !== 'tool-read_page' || part.state === 'input-streaming') continue
+    const id = part.input?.pageId
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
+}
+
+/**
  * The read chips STAMPED onto an assistant message's metadata, or null when that
  * message carries none.
  *

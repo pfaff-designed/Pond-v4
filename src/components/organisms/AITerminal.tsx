@@ -38,6 +38,7 @@ import {
   openPageProposalIds,
   parsePlacementResponse,
   readChips,
+  readPageIds,
   readStamp,
   withEarlierAnswer,
   withReadStamp,
@@ -2041,6 +2042,7 @@ export function AITerminal() {
       askedAt: string | null
       prose: string
       read: string[]
+      readIds: string[]
     }) => {
       const proposal: PageProposal = {
         id: crypto.randomUUID(),
@@ -2098,7 +2100,9 @@ export function AITerminal() {
               question: opts.question,
               prose: opts.prose,
               openPageId: nodeId,
-              read: opts.read,
+              // Ids, not the chip titles in `opts.read` — a title can collide
+              // with an unrelated page of the same name (two "Untitled"s).
+              read: opts.readIds,
               pondId,
             }),
           })
@@ -2584,12 +2588,22 @@ export function AITerminal() {
             canMakePage={!!text && !hasOpenCard}
             onMakePage={() => {
               const q = questionBefore(messageIndex)
+              // The open page plus every page the answer actually read, by id —
+              // the placement route's candidate list, never the chip titles.
+              const readIds = [
+                ...new Set(
+                  [nodeId, ...readPageIds(message.parts as ReadPartLike[])].filter(
+                    (id): id is string => !!id
+                  )
+                ),
+              ]
               proposePage({
                 messageId: message.id,
                 question: q.text,
                 askedAt: q.sentAt,
                 prose: text,
                 read,
+                readIds,
               })
             }}
             onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}

@@ -120,9 +120,8 @@ describe('POST /api/chat/propose-page', () => {
         mentioned: [{ title: 'kitchen renovation', ref: 'area-1', note: 'the one everything waits on' }],
       },
     })
-    // The real caller (AITerminal.tsx's proposePage) sends `read` as read-chip
-    // TITLES (readChips()), never page ids.
-    const res = await post({ question: 'q', prose: 'p', read: ['creativity'] })
+    // The real caller (AITerminal.tsx's proposePage) sends `read` as page ids.
+    const res = await post({ question: 'q', prose: 'p', read: ['area-1'] })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       name: 'renovation blockers',
@@ -131,19 +130,18 @@ describe('POST /api/chat/propose-page', () => {
     })
   })
 
-  it('makes a read page a valid parentId when it is given by title, not id (the real caller sends titles)', async () => {
+  it('makes a read page a valid parentId when it is given by id (the real caller sends ids)', async () => {
     const area = page({ id: 'area-1', parentId: null, title: 'creativity' })
     const readPage = page({ id: 'kr-1', parentId: 'area-1', title: 'Kitchen renovation' })
     mockListPages.mockResolvedValue([area, readPage])
     mockGenerateObject.mockResolvedValue({
       object: { name: 'renovation blockers', parentId: 'kr-1', mentioned: [] },
     })
-    // Case-insensitive, trimmed — readChips() titles aren't guaranteed exact-cased.
     const res = await post({
       question: 'q',
       prose: 'p',
       openPageId: 'area-1',
-      read: [' kitchen renovation '],
+      read: ['kr-1'],
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
@@ -203,17 +201,10 @@ describe('buildCandidatePageIds', () => {
     expect(ids).toEqual([])
   })
 
-  it('resolves a `read` entry by case-insensitive trimmed title, not just id (readChips() sends titles)', () => {
+  it('drops a `read` entry that does not resolve to a real page id (a chip title is not a valid entry)', () => {
     const area = page({ id: 'area-1', parentId: null, title: 'Creativity' })
     const readPage = page({ id: 'kr-1', parentId: 'area-1', title: 'Kitchen renovation' })
-    const ids = buildCandidatePageIds([area, readPage], [' kitchen renovation '], null)
-    expect(ids).toContain('kr-1')
-  })
-
-  it('adds every match for a title that is ambiguous across pages', () => {
-    const a = page({ id: 'a', parentId: 'area-1', title: 'Budget' })
-    const b = page({ id: 'b', parentId: 'area-1', title: 'budget' })
-    const ids = buildCandidatePageIds([a, b], ['Budget'], null)
-    expect(ids.sort()).toEqual(['a', 'b'])
+    const ids = buildCandidatePageIds([area, readPage], ['Kitchen renovation'], null)
+    expect(ids).not.toContain('kr-1')
   })
 })
