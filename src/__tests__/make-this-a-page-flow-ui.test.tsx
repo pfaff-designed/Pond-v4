@@ -453,6 +453,18 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(card.className).toMatch(/lowercase/)
   })
 
+  it('the under select shows the full ancestor path for a parent two levels deep, never the disambiguated single title', async () => {
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    // kr-1's own title is unique, so the shared, disambiguated `parentOptions`
+    // would show just "Kitchen renovation" — the proposal card's own list
+    // must show the full path regardless (6a f4).
+    expect(under.selectedOptions[0].textContent).toBe('Creativity › Kitchen renovation')
+  })
+
   it('one card per answer: while a card is open the chip steps aside, and only one card exists', async () => {
     renderTerminal()
     await ready()

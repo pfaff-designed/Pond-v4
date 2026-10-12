@@ -49,7 +49,7 @@ import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
-import { toParentOptions } from '@/lib/pages/parent-options'
+import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
@@ -624,6 +624,15 @@ export function AITerminal() {
   // Duplicate titles are disambiguated with their ancestor path (and type as a
   // tie-break) so "Woodworking" ×2 are tellable apart in the picker.
   const parentOptions: ParentOption[] = useMemo(() => toParentOptions(allPages), [allPages])
+
+  // The page-proposal card's "under" shows the board's full ancestor path
+  // ("creativity › kitchen renovation"), never the shared picker's duplicate-
+  // title disambiguation (6a f4) — a second, proposal-only list rather than
+  // reusing `parentOptions` for this one card.
+  const proposalParentOptions: ParentOption[] = useMemo(
+    () => allPages.map((p) => ({ id: p.id, title: ancestorPathLabel(allPages, p.id) })),
+    [allPages]
+  )
 
   // The add_row destination picker (#18) offers ONLY collections — pages that
   // carry a `_schema` — so a row can never be added to a page with no columns to
@@ -2560,7 +2569,7 @@ export function AITerminal() {
             name={proposal.name}
             parentId={proposal.parentId}
             kind={proposal.kind}
-            parentOptions={parentOptions}
+            parentOptions={proposalParentOptions}
             status={proposal.status}
             error={pageProposalErrors[proposal.id]}
             onNameChange={(name) => editPageProposal(proposal.id, { name })}
