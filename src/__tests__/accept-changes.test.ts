@@ -36,6 +36,8 @@ import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { emptyResolutions, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
@@ -699,8 +701,14 @@ describe('writeAcceptedChanges — the change-log record', () => {
   })
 
   it('surfaces the advanced record’s id when its action is undoable (edit)', async () => {
-    mockedLookup.mockResolvedValue(logRecord())
-    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted' }))
+    // Not mocked: `after` computed the same way propose.ts computes it, seeded by
+    // the same toolCallId — a real-shaped `after`, not a fixture, so this proves
+    // the accept write lands blocks byte-identical to it (KAN-93 fix).
+    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
+      batch: changes,
+    }).blocks
+    mockedLookup.mockResolvedValue(logRecord({ after }))
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
 
     const result = await writeAcceptedChanges({
       pondId: 'pond-1',
@@ -714,6 +722,39 @@ describe('writeAcceptedChanges — the change-log record', () => {
     })
 
     expect(result.recordId).toBe('rec-1')
+    expect(mockedAcceptRecord).toHaveBeenCalledWith(supabase, 'rec-1', after)
+  })
+
+  it('gives no recordId when the page drifted since propose (a typed edit landed in between)', async () => {
+    // `after` is the snapshot propose.ts would have computed against the page as
+    // it stood at propose time (empty). Accept time re-reads the page and finds
+    // a block someone typed in the meantime — same record, same toolCallId, but
+    // applying the identical change to the DRIFTED page yields different blocks:
+    // this is exactly the case 0021's set_back CAS would refuse, so ⌘Z must never
+    // be offered on it.
+    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
+      batch: changes,
+    }).blocks
+    mockedLookup.mockResolvedValue(logRecord({ after }))
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
+    mockedGetPage.mockResolvedValue({
+      id: 'stamped-id',
+      blocks: [{ id: 'blk-typed', type: 'text', content: 'typed by hand' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(result.recordId).toBeNull()
   })
 
   it('gives no recordId when the record’s action is not undoable (add_row)', async () => {

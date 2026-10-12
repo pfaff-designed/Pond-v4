@@ -137,6 +137,9 @@ import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { undoStep, redoStep } from '@/lib/change-log/undo'
 import { pagesKey } from '@/lib/pages/keys'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -167,8 +170,18 @@ async function ready() {
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
-/** A ChangeLogRecord whose accept makes it undoable (KAN-93). */
+/**
+ * A ChangeLogRecord whose accept makes it undoable (KAN-93). `after` is computed
+ * the same way propose.ts computes it — real `applyProposedChanges`, seeded by
+ * the SAME toolCallId — against an empty page (every test here accepts onto a
+ * page whose mocked `getPage` returns `blocks: []`), so the accept write lands
+ * blocks byte-identical to it, the way accept.ts's recordId gate now requires.
+ */
 function fakeRecord(id: string, toolCallId: string, targetPageId: string) {
+  const changes = batch(toolCallId).input.changes as ModuleChange[]
+  const after = applyProposedChanges([], changes, createDeterministicMintId(toolCallId), {
+    batch: changes,
+  }).blocks
   return {
     id,
     userId: 'user-1',
@@ -178,8 +191,8 @@ function fakeRecord(id: string, toolCallId: string, targetPageId: string) {
     actor: 'pond',
     targetPageId,
     targetBlockId: null,
-    before: null,
-    after: null,
+    before: [],
+    after,
     sourceThreadId: null,
     toolCallId,
     read: null,

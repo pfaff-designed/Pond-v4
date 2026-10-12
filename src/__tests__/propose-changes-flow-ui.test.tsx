@@ -137,6 +137,9 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -172,8 +175,18 @@ async function ready() {
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
-/** A ChangeLogRecord whose accept makes it undoable (KAN-93). */
+/**
+ * A ChangeLogRecord whose accept makes it undoable (KAN-93). `after` is computed
+ * the same way propose.ts computes it — real `applyProposedChanges`, seeded by
+ * the SAME toolCallId — against an empty page (every accept test here mocks
+ * `getPage` to `blocks: []`), so the accept write lands blocks byte-identical to
+ * it, the way accept.ts's recordId gate now requires.
+ */
 function fakeRecord(id: string, toolCallId: string, targetPageId: string) {
+  const changes = batch(toolCallId).input.changes as ModuleChange[]
+  const after = applyProposedChanges([], changes, createDeterministicMintId(toolCallId), {
+    batch: changes,
+  }).blocks
   return {
     id,
     userId: 'user-1',
@@ -183,8 +196,8 @@ function fakeRecord(id: string, toolCallId: string, targetPageId: string) {
     actor: 'pond',
     targetPageId,
     targetBlockId: null,
-    before: null,
-    after: null,
+    before: [],
+    after,
     sourceThreadId: null,
     toolCallId,
     read: null,

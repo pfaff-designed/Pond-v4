@@ -21,7 +21,9 @@ import type { Database } from '@/lib/supabase/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 import { BLOCK_ACTIONS } from '@/lib/change-log/types'
+import { jsonEqual } from '@/lib/json-equal'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
 import { commitBlocks, propagateBlockWrite } from './commit'
@@ -177,7 +179,10 @@ async function writeToTarget(
     }
   }
 
-  const result = applyProposedChanges(page.blocks, changes, () => crypto.randomUUID(), {
+  // Same ids `propose.ts` minted into `record.after` for this toolCallId (KAN-93
+  // fix) — see mint-id.ts — so a full-batch accept writes blocks byte-identical
+  // to the record's snapshot, which 0021's set_back CAS requires for ⌘Z to work.
+  const result = applyProposedChanges(page.blocks, changes, createDeterministicMintId(toolCallId), {
     batch,
     refIds: opts.refIds,
     rejectedKeys,
@@ -207,8 +212,17 @@ async function writeToTarget(
   // Only an applied edit/revert is a step `sessionUndo` can later undo — an
   // add_row or a skipped-everything accept has nothing the RPC knows how to
   // set back, so remembering it would be a step that silently no-ops on ⌘Z.
+  // Beyond that, 0021's set_back CAS undoes by setting the page's blocks back
+  // to `record.before`, which only recovers `record.after` if what was just
+  // WRITTEN is byte-identical to it — a page that drifted since propose, a
+  // partial accept of a larger batch, or keyed refIds that reserved different
+  // ids all write something else. Offering ⌘Z on one of those would just hand
+  // the CAS a step guaranteed to refuse, so the id is withheld instead.
   const recordId =
-    result.applied > 0 && proposal.record !== null && BLOCK_ACTIONS.includes(proposal.record.action)
+    result.applied > 0 &&
+    proposal.record !== null &&
+    BLOCK_ACTIONS.includes(proposal.record.action) &&
+    jsonEqual(result.blocks, proposal.record.after)
       ? proposal.record.id
       : null
   return {
