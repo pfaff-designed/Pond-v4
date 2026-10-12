@@ -402,6 +402,46 @@ describe('the width row — the block menu’s `width` group', () => {
     // out when the row gains its second block (gutted, KAN-43).
     expect(rootA.parentElement!.parentElement).toBe(rootB.parentElement!.parentElement)
   })
+
+  it('hovering ½ previews the same reflow as picking it, without persisting', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+
+    await user.click(handleOf('b-heading'))
+    await user.click(await screen.findByRole('menuitem', { name: '½' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    const rootA = document.getElementById('block-b-heading')!
+    const halfWidth = normalizedWidth(blockWidthStyle('1/2'))
+    expect(rootA.parentElement!.style.width).toBe(halfWidth)
+
+    await user.click(handleOf('b-list'))
+    await user.hover(await screen.findByRole('menuitem', { name: '½' }))
+
+    const rootB = document.getElementById('block-b-list')!
+    expect(rootB.parentElement!.style.width).toBe(halfWidth)
+    expect(rootA.parentElement!.parentElement).toBe(rootB.parentElement!.parentElement)
+
+    // Only the first pick persisted — hovering the second never writes to `blocks`.
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('PATH_STEPS: Esc after hovering ⅔ leaves the block at its kept width', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderCanvas([heading, list])
+
+    await user.click(handleOf('b-list'))
+    await user.hover(await screen.findByRole('menuitem', { name: '⅔' }))
+
+    const root = document.getElementById('block-b-list')!
+    expect(root.parentElement!.style.width).toBe(normalizedWidth(blockWidthStyle('2/3')))
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    expect(root.parentElement!.style.width).toBe('100%')
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })
 
 describe('copy link to block', () => {

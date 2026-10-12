@@ -303,6 +303,15 @@ export function BlockCanvas({
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
   useBlockLinkArrival(blocks)
 
+  // The width row's preview (6x): a page-local, transient width for whichever
+  // block's menu is open — never written to `blocks`. Cleared at every site
+  // that moves `menuOpenAt` (Esc and any other menu-close path all route
+  // through `onOpenChange` to `handleMenuOpenChange` below), so a stale
+  // preview can never survive the menu it came from.
+  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth } | null>(
+    null
+  )
+
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
   function markInserted(id: string) {
@@ -393,14 +402,17 @@ export function BlockCanvas({
     }
   }
 
-  const handleMenuOpenChange = (index: number, open: boolean) =>
+  const handleMenuOpenChange = (index: number, open: boolean) => {
+    setPreviewWidth(null)
     setMenuOpenAt((current) => {
       if (open) return index
       return current === index ? null : current
     })
+  }
 
   const handleMenuSelect = (index: number, action: BlockMenuAction) => {
     setMenuOpenAt(null)
+    setPreviewWidth(null)
     const block = blocks[index]
     if (!block) return
     runBlockMenuAction(action, {
@@ -688,8 +700,19 @@ export function BlockCanvas({
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
   // to full or less share one row, in array order — so the flattened render
   // below reproduces `blocks`' own order, and each block's position in it is
-  // its real index into `blocks`.
-  const blockRows = useMemo(() => layoutRows(blocks), [blocks])
+  // its real index into `blocks`. Packing (and the sizing below) reads the
+  // PREVIEWED width for whichever one block has it, so hovering a width
+  // reflows the row live; rendering still passes the real `blocks[i]` to
+  // `renderBlockEditor`, so the previewed block's own content and its width
+  // row's filled cell are never touched by the preview.
+  const blocksForLayout = useMemo(
+    () =>
+      previewWidth
+        ? blocks.map((b) => (b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b))
+        : blocks,
+    [blocks, previewWidth]
+  )
+  const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
 
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
@@ -742,6 +765,9 @@ export function BlockCanvas({
                   <BlockWidthRow
                     width={block.width}
                     onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                    onPreview={(width) =>
+                      setPreviewWidth(width === null ? null : { blockId: block.id, width })
+                    }
                   />
                 ),
               })
@@ -753,6 +779,7 @@ export function BlockCanvas({
         isDragging={draggingIndex === i}
         onDragStart={() => {
           setMenuOpenAt(null)
+          setPreviewWidth(null)
           setDraggingIndex(i)
         }}
         onDragEnd={() => setDraggingIndex(null)}
@@ -806,8 +833,16 @@ export function BlockCanvas({
               const width = block.width ?? 'full'
               const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
               return (
-                <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
-                  {renderBlockEditor(block, i)}
+                <div
+                  key={block.id}
+                  className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                  style={{ width: sizingWidth }}
+                >
+                  {/* `blocks[i]`, not `block`: `block` here may carry the
+                      PREVIEWED width (sizing only, see `blocksForLayout`) — the
+                      editor and its width row must still see the block's real,
+                      kept width. */}
+                  {renderBlockEditor(blocks[i], i)}
                 </div>
               )
             })}
