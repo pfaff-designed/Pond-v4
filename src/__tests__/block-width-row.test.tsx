@@ -1,7 +1,7 @@
 /**
  * `BlockWidthRow`, the block menu's `width` group content (6x): six cells in
  * order, the current width filled ink, `full` filled at rest when the block
- * has none. Rest state only — no hover/arrow preview (KAN-246).
+ * has none.
  */
 
 import React, { useRef, useState } from 'react'
@@ -15,7 +15,13 @@ import type { BlockWidth } from '@/lib/modules/content'
 // `action` row, so the menu's action type is uninhabited.
 type NoAction = never
 
-const Harness = ({ width }: { width: BlockWidth | undefined }) => {
+const Harness = ({
+  width,
+  onPreview,
+}: {
+  width: BlockWidth | undefined
+  onPreview?: (width: BlockWidth | null) => void
+}) => {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
   const groups: PondMenuGroup<NoAction>[] = [
@@ -23,7 +29,7 @@ const Harness = ({ width }: { width: BlockWidth | undefined }) => {
       id: 'width',
       label: 'width',
       heading: true,
-      content: <BlockWidthRow width={width} onSelect={() => {}} />,
+      content: <BlockWidthRow width={width} onSelect={() => {}} onPreview={onPreview} />,
     },
   ]
   return (
@@ -86,5 +92,40 @@ describe('BlockWidthRow', () => {
     for (const cls of ['bg-mn-text', 'text-raw-paper', 'dark:text-raw-ink']) {
       expect(classesOf(full)).toContain(cls)
     }
+  })
+
+  it('previews a non-kept cell on hover and calls onPreview', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    await user.hover(twoThirds)
+    expect(classesOf(twoThirds)).toContain('bg-mn-hover-fill')
+    expect(classesOf(twoThirds)).toContain('[box-shadow:inset_0_0_0_1px_var(--mn-rail-field-ring)]')
+    expect(onPreview).toHaveBeenCalledWith('2/3')
+  })
+
+  it('clears the preview on leaving the row', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    await user.hover(twoThirds)
+    await user.unhover(twoThirds)
+    expect(classesOf(twoThirds)).not.toContain('bg-mn-hover-fill')
+    expect(onPreview).toHaveBeenLastCalledWith(null)
+  })
+
+  it('is a no-op hovering the already-kept cell', async () => {
+    const user = userEvent.setup()
+    const onPreview = jest.fn()
+    render(<Harness width="1/2" onPreview={onPreview} />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    await user.hover(half)
+    expect(classesOf(half)).not.toContain('bg-mn-hover-fill')
+    expect(onPreview).toHaveBeenCalledWith(null)
   })
 })
