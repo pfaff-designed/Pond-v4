@@ -49,6 +49,16 @@ export interface PageProposal {
   status: PageProposalStatus
   /** Set once the page is made. */
   pageId?: string
+  /** What Pond's placement model found this answer mentioned — `ref` is a
+   *  candidate id, or null until it resolves to one. Absent on a proposal
+   *  made before this field existed. */
+  mentioned?: PageProposalMention[]
+}
+
+export interface PageProposalMention {
+  title: string
+  ref: string | null
+  note: string
 }
 
 /** Keyed by proposal id. */
@@ -94,7 +104,28 @@ export function parsePageProposals(value: unknown): PageProposals {
       kind: typeof r.kind === 'string' && r.kind ? r.kind : DEFAULT_PAGE_KIND,
       status: r.status as PageProposalStatus,
       ...(typeof r.pageId === 'string' && r.pageId ? { pageId: r.pageId } : {}),
+      mentioned: parseMentioned(r.mentioned),
     }
+  }
+  return out
+}
+
+/** Tolerant-parse a proposal's `mentioned` list — drops any entry missing
+ *  `title`/`note`, coerces an absent or malformed `ref` to null, coerces an
+ *  absent or malformed list itself to `[]`. Never throws. */
+function parseMentioned(value: unknown): PageProposalMention[] {
+  if (!Array.isArray(value)) return []
+  const out: PageProposalMention[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const r = raw as Record<string, unknown>
+    if (typeof r.title !== 'string' || !r.title) continue
+    if (typeof r.note !== 'string') continue
+    out.push({
+      title: r.title,
+      ref: typeof r.ref === 'string' && r.ref ? r.ref : null,
+      note: r.note,
+    })
   }
   return out
 }
