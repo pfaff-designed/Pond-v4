@@ -268,6 +268,65 @@ export const MarkOpensPickerByKeyboard: Story = {
   },
 }
 
+/**
+ * KAN-250 (4/4, 6y frame 6): below the phone breakpoint, tapping a mark opens
+ * the picker as a bottom sheet (`GlyphPickerSheet`) instead of the anchored
+ * desktop glass — same `data-kind="glyph"` glass, but with the sheet's own
+ * backdrop and no `useAnchoredBox` inline position. `useBelowMd`'s own
+ * `matchMedia` query is this story's `globals.viewport`, same as
+ * `GlyphPickerSheet.stories.tsx`'s `mobile2`.
+ */
+export const MarkOpensSheetOnPhone: Story = {
+  name: 'mark · opens the sheet on the phone',
+  globals: { viewport: { value: 'mobile2', isRotated: false } },
+  args: { selectedId: 'health' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /^Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+
+    await userEvent.click(mark)
+    await expect(mark).toHaveAttribute('aria-expanded', 'true')
+
+    const glass = document.body.querySelector<HTMLElement>('[data-part="glass"][data-kind="glyph"]')
+    await expect(glass).toBeTruthy()
+    // the anchored glass carries an inline `top`/`left` from `useAnchoredBox`;
+    // the sheet positions itself through its own fixed Tailwind classes alone.
+    await expect(glass!.style.top).toBe('')
+    await expect(glass!.style.left).toBe('')
+    await expect(document.body.querySelector('[data-part="backdrop"]')).toBeTruthy()
+
+    await userEvent.keyboard('{Escape}')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(mark).toHaveFocus()
+  },
+}
+
+/**
+ * At ≥768px the same mark still opens the anchored desktop glass, unchanged —
+ * re-asserted here (`MarkOpensPicker` above already covers it at the default
+ * viewport) to keep the phone/desktop split explicit in one place.
+ */
+export const MarkOpensPickerOnDesktop: Story = {
+  name: 'mark · keeps the anchored glass at desktop widths',
+  globals: { viewport: { value: 'desktop', isRotated: false } },
+  args: { selectedId: 'health' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('treeitem', { name: /^Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+
+    await userEvent.click(mark)
+    const glass = document.body.querySelector<HTMLElement>('[data-part="glass"][data-kind="glyph"]')
+    await expect(glass).toBeTruthy()
+    await expect(glass!.style.top).not.toBe('')
+    await expect(document.body.querySelector('[data-part="backdrop"]')).toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+  },
+}
+
 /** The real node for `id` in `tree`, so a fabricated `MarkSource` carries its true `parentId` — `isArea` reads that, not the row's own id. */
 function findNode(tree: readonly RailNode[], id: string): RailNode | undefined {
   for (const n of tree) {
@@ -308,6 +367,20 @@ function GlyphPickHarness(args: ComponentProps<typeof RailView>) {
           })
         )
         if (glyph) setRecentGlyphs((prev) => pushRecentGlyph(prev, glyph))
+      }}
+      onPickColour={(id, role) => {
+        args.onPickColour?.(id, role)
+        const node = findNode(args.tree, id)
+        setMarks((prev) => {
+          const existing = prev.get(id)
+          return new Map(prev).set(id, {
+            id,
+            parentId: node?.parentId ?? null,
+            title: node?.title ?? id,
+            ...existing,
+            areaRole: role,
+          })
+        })
       }}
     />
   )
@@ -426,6 +499,93 @@ export const RecentGlyphPersists: Story = {
       'heart',
       'leaf-01',
     ])
+  },
+}
+
+/**
+ * KAN-250 (4/4) PATH_STEPS, walked end to end on the real `RailView` at the
+ * phone breakpoint: a page mark's sheet opens and filters and picks exactly
+ * as the anchored glass does, an area mark's sheet takes a colour pick
+ * without closing, and both Escape and the backdrop return focus to the mark
+ * that opened it. `MarkOpensPickerOnDesktop` above already re-asserts
+ * PATH_STEPS 6 (the anchored glass, unchanged at ≥768px); this story stays
+ * at `mobile2` throughout, since a Storybook `play` function cannot change
+ * `globals.viewport` mid-run. Drag-down itself is Base UI's own tested
+ * gesture (`GlyphPickerSheet.stories.tsx`'s own doc comment) — not
+ * simulable in jsdom, so Escape stands in here, flagged for the live
+ * verifier.
+ */
+export const PathWalksTheSheetOnThePhone: Story = {
+  name: 'path · the sheet on the phone (glyph, colour, close)',
+  globals: { viewport: { value: 'mobile2', isRotated: false } },
+  args: { expanded: new Set(['health']), selectedId: 'sleep' },
+  render: (args) => <GlyphPickHarness {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const sleepRow = canvas.getByRole('treeitem', { name: /Sleep/ })
+    const sleepMark = within(sleepRow).getByRole('button', { name: 'change icon for Sleep' })
+    const iconOf = (row: HTMLElement) =>
+      row.querySelector('[data-area-mark] [data-icon]')?.getAttribute('data-icon')
+
+    // 1. tap the page mark → sheet, not the anchored glass; search focusable;
+    // 7 cells/row at 44px.
+    await userEvent.click(sleepMark)
+    await expect(sleepMark).toHaveAttribute('aria-expanded', 'true')
+    const glass = document.body.querySelector<HTMLElement>('[data-part="glass"][data-kind="glyph"]')!
+    await expect(glass.style.top).toBe('')
+    await expect(document.body.querySelector('[data-part="backdrop"]')).toBeTruthy()
+    const input = within(document.body).getByRole('combobox', { name: 'search glyphs' })
+    await expect(input).toHaveFocus()
+    const library = [...glass.querySelectorAll<HTMLElement>('[data-part="section"]')].find(
+      (s) => s.querySelector('span')!.textContent === 'library'
+    )!.lastElementChild as HTMLElement
+    const firstRow = library.querySelectorAll<HTMLElement>('[role="row"]')[0]
+    await expect(firstRow.querySelectorAll('[role="gridcell"]')).toHaveLength(7)
+    const firstCell = getComputedStyle(firstRow.querySelectorAll('[role="gridcell"]')[0])
+    await expect(parseFloat(firstCell.width)).toBe(44)
+    await expect(parseFloat(firstCell.height)).toBe(44)
+
+    // 2. type `fl` → the grid filters exactly as on desktop (`Keyboard` story,
+    // `GlyphPicker.stories.tsx`): one `matches` section, `fat-flake` first.
+    await userEvent.type(input, 'fl')
+    const sections = glass.querySelectorAll<HTMLElement>('[data-part="section"]')
+    await expect([...sections].map((s) => s.querySelector('span')!.textContent)).toEqual([
+      'matches',
+    ])
+    const hit = sections[0].querySelector<HTMLElement>('[role="gridcell"]')!
+    await expect(hit).toHaveAttribute('aria-label', 'fat-flake')
+
+    // 3. tap the glyph cell → sheet closes, the mark shows it, focus returns.
+    await userEvent.click(hit)
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(sleepMark).toHaveAttribute('aria-expanded', 'false')
+    await expect(sleepMark).toHaveFocus()
+    await expect(iconOf(sleepRow)).toBe('fat-flake')
+
+    // 4. tap the area mark → sheet opens with the colour row.
+    const healthRow = canvas.getByRole('treeitem', { name: /^Health/ })
+    const healthMark = within(healthRow).getByRole('button', { name: 'change icon for Health' })
+    await userEvent.click(healthMark)
+    const sageSwatch = within(document.body).getByRole('gridcell', { name: 'sage' })
+
+    // 5. tap sage → the mark turns sage, the sheet stays open.
+    await userEvent.click(sageSwatch)
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeTruthy()
+    await expect(getComputedStyle(healthRow.querySelector('[data-area-mark]')!).color).toBe(
+      AREA.light['area-a']
+    )
+
+    // 6. Escape (standing in for drag-down) → closes, focus returns.
+    await userEvent.keyboard('{Escape}')
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(healthMark).toHaveFocus()
+
+    // 7. reopen, tap the backdrop → closes, focus returns.
+    await userEvent.click(healthMark)
+    const backdrop = document.body.querySelector<HTMLElement>('[data-part="backdrop"]')!
+    await userEvent.click(backdrop)
+    await expect(document.body.querySelector('[data-part="glass"]')).toBeNull()
+    await expect(healthMark).toHaveFocus()
   },
 }
 
