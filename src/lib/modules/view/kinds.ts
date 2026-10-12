@@ -25,6 +25,15 @@ import { ICON, type SlashIcon } from '@/components/molecules/slash-entries'
  */
 export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
 
+/**
+ * The calendar kind's empty line — `PondCalendar.dc.html`'s `emptyLine` verbatim
+ * (#262 1/3), shown for every span once a collection has no date property at all;
+ * the month span never reaches a "nothing dated" state the way gantt does, since an
+ * undated collection fails at `pickDateDef`, not at having zero dated rows.
+ */
+export const CALENDAR_EMPTY_LINE =
+  'nothing in this view has a date. records show here once they have one.'
+
 export interface ViewKind {
   /**
    * Pond's word for the kind, lowercase, as a person reads it — the `/` row and the
