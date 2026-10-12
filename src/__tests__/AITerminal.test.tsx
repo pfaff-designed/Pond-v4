@@ -693,7 +693,7 @@ describe('AITerminal — html import path (KAN-251)', () => {
     expect(screen.getByPlaceholderText('reply, or ask something else')).toBeInTheDocument()
   })
 
-  // KAN-251 10091: removing the pill (not Esc, not "try another file") must
+  // KAN-251 10098: removing the pill (not Esc, not "try another file") must
   // not take the question/answer with it — PROJECT_RULES says answers live
   // in the thread. Only a settled read (ok or failed) has anything to keep.
   it('removing the pill after a settled read keeps the question and answer in the thread', async () => {

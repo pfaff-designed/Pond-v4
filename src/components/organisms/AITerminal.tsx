@@ -261,7 +261,7 @@ function describeHtmlOfflineNote(filename: string): string {
 }
 
 /** A snapshot of a settled html read, kept after its file is removed (the
- *  pill's ×, KAN-251 10091): PROJECT_RULES says answers live in the thread,
+ *  pill's ×, KAN-251 10098): PROJECT_RULES says answers live in the thread,
  *  so removing the file must not take the question/answer with it. Only a
  *  SETTLED read (ok or failed) is ever snapshotted — Esc mid-read, a new
  *  attach and `try another file` still clear everything, same as today,
@@ -770,7 +770,7 @@ export function AITerminal() {
   }, [clearHtmlAttachmentSlot])
 
   // Settled html reads kept in the thread after their file is removed (the
-  // pill's ×, KAN-251 10091) — PROJECT_RULES: answers live in the thread,
+  // pill's ×, KAN-251 10098) — PROJECT_RULES: answers live in the thread,
   // so removing the file must not take the question/answer with it. Esc
   // mid-read, `try another file` and a fresh attach still call
   // `clearHtmlAttachment` directly and keep nothing (no answer exists yet).
