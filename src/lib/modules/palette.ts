@@ -28,38 +28,54 @@ import type { Block } from '@/lib/documents/types'
 import { viewModeSchema, type ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 
-/** Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback. */
+/**
+ * Per-type chrome for a descriptor's OWN row. Anything absent takes the fallback.
+ * `label` overrides the descriptor's own word when the row needs a different one —
+ * `table` the static block's row, so `/table` stays the database view (ADR 0009)
+ * and the hand-typed grid reads as `grid`, never alike.
+ */
 const ROW_CHROME: Partial<
-  Record<DescriptorType, { group: SlashGroup; icon: SlashIcon; key?: string; alias?: string }>
+  Record<
+    DescriptorType,
+    { group: SlashGroup; icon: SlashIcon; key?: string; alias?: string; label?: string }
+  >
 > = {
   text: { group: 'text', icon: ICON.text },
   highlight: { group: 'text', icon: ICON.quote, key: '"' },
   image: { group: 'text', icon: ICON.file },
   todo: { group: 'blocks', icon: ICON.check, key: '[]', alias: 'todo' },
-  table: { group: 'blocks', icon: ICON.table },
+  table: { group: 'blocks', icon: ICON.table, label: 'grid' },
   entries: { group: 'blocks', icon: ICON.log, alias: 'dated table' },
 }
 
 /**
  * A `view` row is one view KIND (ADR 0009): its id IS the `ViewMode` it opens in
  * (`mintPreset` parses it with `viewModeSchema`), so a row that names no mode does
- * not compile, and its label and mark are the kind's own (`VIEW_KINDS`).
- *
- * `table` and `list` have no view row here: `/table` is the static table's row,
- * which opens the source picker, and `list` is the bulleted list's.
+ * not compile. Its mark is always the kind's own (`VIEW_KINDS`); its label is too,
+ * unless overridden — `list`'s view row takes `'list view'` so `/list` never reads
+ * alike the bulleted list (whose own row is `bulleted-list`, label `list`). `table`
+ * keeps its view row's label as the kind's own word: `/table` is the database table
+ * view (ADR 0009), and the static table block moved to its own `grid` row
+ * (`ROW_CHROME.table`) so the two never read alike.
  */
-const viewRow = (mode: ViewMode, alias?: string): SlashRow & { id: ViewMode } => ({
+const viewRow = (
+  mode: ViewMode,
+  alias?: string,
+  label?: string,
+): SlashRow & { id: ViewMode } => ({
   id: mode,
   type: 'view',
   group: 'blocks',
-  label: VIEW_KINDS[mode].label,
+  label: label ?? VIEW_KINDS[mode].label,
   ...(alias ? { alias } : {}),
   icon: VIEW_KINDS[mode].icon,
 })
 
 const VIEW_ROWS = [
+  viewRow('table'),
   viewRow('board', 'kanban'),
   viewRow('calendar'),
+  viewRow('list', undefined, 'list view'),
   viewRow('gallery'),
   viewRow('gantt', 'gantt'),
   viewRow('chart', 'graph'),
@@ -95,7 +111,7 @@ const VARIANT_ROWS: Partial<Record<DescriptorType, readonly SlashRow[]>> = {
   ],
   todo: [
     {
-      id: 'list',
+      id: 'bulleted-list',
       type: 'todo',
       group: 'blocks',
       label: 'list',
@@ -128,11 +144,13 @@ export const BOARD_ORDER: readonly string[] = [
   'heading',
   'highlight',
   'embed-file',
-  'list',
+  'bulleted-list',
   'checklist',
   'table',
+  'grid',
   'board',
   'calendar',
+  'list',
   'gallery',
   'gantt',
   'chart',
@@ -155,11 +173,12 @@ const ownRows: SlashRow[] = Object.values(moduleDescriptors)
   .filter((d) => !(d.type in WITHHELD))
   .map((d) => {
     const chrome = ROW_CHROME[d.type as DescriptorType] ?? { group: 'blocks', icon: TPL_ICON }
+    const label = chrome.label ?? d.label
     return {
-      id: slug(d.label),
+      id: slug(label),
       type: d.type,
       group: chrome.group,
-      label: d.label,
+      label,
       alias: chrome.alias,
       key: chrome.key,
       icon: chrome.icon,
@@ -256,7 +275,7 @@ export function mintPreset(rowId: string): Block | null {
   const block = emptyBlockForType(row.type)
   if (!block) return null
   if (block.type === 'text' && rowId === 'heading') return { ...block, content: HEADING_PREFIX }
-  if (block.type === 'todo' && rowId === 'list') return { ...block, marker: 'dot' }
+  if (block.type === 'todo' && rowId === 'bulleted-list') return { ...block, marker: 'dot' }
   if (block.type === 'view') {
     const mode = viewModeSchema.safeParse(rowId)
     return mode.success ? { ...block, mode: mode.data } : block
