@@ -72,6 +72,25 @@ describe('proposal store — page proposals', () => {
     expect(after).toBe(s)
   })
 
+  it('edits mentioned in place while pending, and not after', () => {
+    const mentioned = [{ title: 'cabinet quote', ref: null, note: 'the one everything waits on' }]
+    let s = proposalReducer(initialProposalState(), { kind: 'proposePage', proposal: proposal() })
+    s = proposalReducer(s, { kind: 'editPageProposal', id: 'pp-1', patch: { mentioned } })
+    expect(s.pageProposals['pp-1']).toMatchObject({ mentioned })
+    s = proposalReducer(s, {
+      kind: 'settlePageProposal',
+      id: 'pp-1',
+      status: 'accepted',
+      pageId: 'p9',
+    })
+    const after = proposalReducer(s, {
+      kind: 'editPageProposal',
+      id: 'pp-1',
+      patch: { mentioned: [] },
+    })
+    expect(after).toBe(s)
+  })
+
   it('make page settles the card once with the made page id; a second make page is a no-op (G9)', () => {
     let s = proposalReducer(initialProposalState(), { kind: 'proposePage', proposal: proposal() })
     s = proposalReducer(s, {
