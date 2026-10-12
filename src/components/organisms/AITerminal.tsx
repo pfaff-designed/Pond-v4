@@ -2570,11 +2570,19 @@ export function AITerminal() {
                 // collected and remembered together after the loop, not per card.
                 void (async () => {
                   const recordIds: string[] = []
-                  for (const id of acceptablePendingDiffIds) {
-                    const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
-                    if (recordId) recordIds.push(recordId)
+                  try {
+                    for (const id of acceptablePendingDiffIds) {
+                      const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                      if (recordId) recordIds.push(recordId)
+                    }
+                  } catch (err) {
+                    // Fire-and-forget (see the pageProposals IIFE above): a card's
+                    // accept throwing partway must not leak an unhandled rejection —
+                    // the cards that already landed are still remembered below.
+                    console.error('[accept-all] a card’s accept failed partway', err)
+                  } finally {
+                    if (pondId && recordIds.length > 0) sessionUndo.remember({ pondId, recordIds })
                   }
-                  if (pondId && recordIds.length > 0) sessionUndo.remember({ pondId, recordIds })
                 })()
               }}
               onRejectAll={() => {

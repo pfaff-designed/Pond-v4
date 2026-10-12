@@ -870,4 +870,47 @@ describe('AITerminal — accept hands its record to sessionUndo (KAN-93)', () =>
       recordIds: ['rec-pc1', 'rec-pc2'],
     })
   })
+
+  it('accept all still remembers the cards that already landed when a later card throws partway', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
+    mockListPages.mockResolvedValue([pageB])
+    const pageBDoc = {
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }
+    // The first card's accept reads the target page and lands; the second card's
+    // read throws, so its write never happens — proving the first card's id is
+    // still remembered rather than lost with the batch.
+    mockGetPage.mockResolvedValueOnce(pageBDoc).mockRejectedValueOnce(new Error('read failed'))
+    mockGetRecordByToolCall.mockImplementation(
+      async (_supabase: unknown, opts: { toolCallId: string }) =>
+        fakeRecord(`rec-${opts.toolCallId}`, opts.toolCallId, pageB.id)
+    )
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'under' })).toHaveLength(2))
+    for (const box of screen.getAllByRole('combobox', { name: 'under' })) {
+      await waitFor(() => expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument())
+      await user.selectOptions(box, pageB.id)
+    }
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled()
+    )
+
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    await user.click(screen.getByRole('button', { name: 'accept all' }))
+
+    await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-7', recordIds: ['rec-pc1'] })
+    expect(mockAcceptRecord).toHaveBeenCalledTimes(1)
+    consoleError.mockRestore()
+  })
 })
