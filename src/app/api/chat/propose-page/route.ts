@@ -30,10 +30,14 @@ function parseProposePageBody(body: unknown): ProposePageBody | null {
 }
 
 /**
- * The ids the placement model may pick from: every `read` id that resolves to a
- * real page in this pond, the open page if it resolves, and every top-level page
- * (an area) — deduped. `pages` is already pond-confined (`listPages`, #312), so a
- * page from another pond is never a candidate even if `read` names its id.
+ * The ids the placement model may pick from: every `read` entry resolved to a
+ * real page in this pond — by id OR by case-insensitive trimmed title, since
+ * the real caller (`AITerminal.tsx`'s `proposePage`) sends `read` as the
+ * read-chip TITLES (`readChips()`, which resolves `read_page` ids to names) —
+ * the open page if it resolves, and every top-level page (an area) — deduped.
+ * An ambiguous title (matching more than one page) adds every match rather
+ * than guessing. `pages` is already pond-confined (`listPages`, #312), so a
+ * page from another pond is never a candidate even if `read` names it.
  */
 export function buildCandidatePageIds(
   pages: PondPage[],
@@ -41,8 +45,11 @@ export function buildCandidatePageIds(
   openPageId: string | null
 ): string[] {
   const ids = new Set<string>()
-  for (const id of read) {
-    if (pages.some((p) => p.id === id)) ids.add(id)
+  for (const entry of read) {
+    const key = entry.trim().toLowerCase()
+    for (const page of pages) {
+      if (page.id === entry || page.title.trim().toLowerCase() === key) ids.add(page.id)
+    }
   }
   if (openPageId && pages.some((p) => p.id === openPageId)) ids.add(openPageId)
   for (const page of pages) {
