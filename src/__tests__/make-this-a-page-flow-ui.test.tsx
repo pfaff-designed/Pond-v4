@@ -698,6 +698,60 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(mockCreatePage).toHaveBeenCalledTimes(1)
   })
 
+  it('a name typed before the route resolves survives the reply', async () => {
+    let resolveFetch!: (value: { ok: true; json: () => Promise<unknown> }) => void
+    global.fetch = jest.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      })
+    )
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // The person types their own name while the route is still in flight.
+    fireEvent.change(name, { target: { value: 'my own name' } })
+
+    resolveFetch({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'kr-1',
+        mentioned: [],
+      }),
+    })
+    await act(async () => {})
+    // The typed name must stand — a late reply never overwrites an edit.
+    expect(name.value).toBe('my own name')
+  })
+
+  it('a route reply with parentId null leaves the fallback parent', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: null,
+        mentioned: [],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('kr-1')
+
+    // The name still lands — only parentId is withheld for a null reply.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    expect(under.value).toBe('kr-1')
+  })
+
   it('leaves the fallback name and parent exactly as before when the propose-page route rejects', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('network down'))
     renderTerminal()

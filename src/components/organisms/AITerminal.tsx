@@ -537,6 +537,13 @@ export function AITerminal() {
     changeNotes,
     revisions,
   } = proposals
+  // The propose-page route's background fill (below) reads this at reply time,
+  // not at call time — `pageProposals` itself is a value closed over once when
+  // that async function is created, and a reply can land renders later.
+  const pageProposalsRef = useRef(pageProposals)
+  useEffect(() => {
+    pageProposalsRef.current = pageProposals
+  }, [pageProposals])
 
   // The persistable projection of the decision maps (ticket-19): saved with the
   // transcript so cards stay resolved across reloads, and sent with each chat
@@ -2122,11 +2129,24 @@ export function AITerminal() {
           // A null `name` is the route's own fallback shape (the model threw,
           // timed out, or produced something malformed) — not a real answer.
           if (!placement || placement.name === null) return
-          editPageProposal(proposal.id, {
-            name: placement.name,
-            parentId: placement.parentId,
+          // Read the card as it stands right now, not as it stood when this
+          // call was fired: the person may have typed their own name or picked
+          // their own parent while the route was still in flight. Only patch a
+          // field the person has not touched since — never overwrite an edit
+          // with a reply that is now stale. A null `parentId` from the route
+          // (no pick, or a hallucinated id the route already nulled) must
+          // never bump the card back to top level, so it only patches when
+          // non-null.
+          const live = pageProposalsRef.current[proposal.id]
+          if (!live) return
+          const patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'mentioned'>> = {
             mentioned: placement.mentioned,
-          })
+          }
+          if (live.name === proposal.name) patch.name = placement.name
+          if (placement.parentId !== null && live.parentId === proposal.parentId) {
+            patch.parentId = placement.parentId
+          }
+          editPageProposal(proposal.id, patch)
         } catch {
           // Aborted, timed out, or a network failure — the fallback stands.
         } finally {
