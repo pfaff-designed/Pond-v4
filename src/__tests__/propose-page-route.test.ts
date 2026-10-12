@@ -79,11 +79,15 @@ describe('POST /api/chat/propose-page', () => {
     expect((await post({ question: 'q', prose: ['nope'] })).status).toBe(400)
   })
 
-  it('returns the fallback shape when the model call throws', async () => {
+  it('returns the fallback shape when the model call throws, and logs once', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     mockGenerateObject.mockRejectedValue(new Error('model unavailable'))
     const res = await post({ question: 'q', prose: 'p' })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ name: null, parentId: null, mentioned: [] })
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
+    expect(consoleErrorSpy).toHaveBeenCalledWith('propose-page: placement model failed', 'model unavailable')
+    consoleErrorSpy.mockRestore()
   })
 
   it('returns the fallback shape on malformed model output', async () => {

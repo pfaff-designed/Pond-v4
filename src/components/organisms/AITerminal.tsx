@@ -383,7 +383,7 @@ function tablePromotionPreview(
 // The route gets this long to answer before the card stops waiting on it — the
 // fallback name/parent are already standing, so a slow model never blocks
 // make-this-a-page (AUDIT G1).
-const PROPOSE_PAGE_FETCH_TIMEOUT_MS = 4_000
+const PROPOSE_PAGE_FETCH_TIMEOUT_MS = 10_000
 
 export function AITerminal() {
   const router = useRouter()

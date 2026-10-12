@@ -74,7 +74,7 @@ const PlacementSchema = z.object({
   ),
 })
 
-const MODEL_TIMEOUT_MS = 8000
+const MODEL_TIMEOUT_MS = 9000
 
 /** `{id, title}` for every candidate, in the order the model should see them. */
 function describeCandidates(
@@ -137,7 +137,10 @@ export function validatePlacement(
  * candidate id. A thrown, timed-out, or schema-invalid model call — and a
  * validated response otherwise — both return a 200; this route never 500s on
  * the model, so make-this-a-page never blocks (AUDIT G1). `AITerminal.tsx`'s
- * `proposePage` keeps its own fallback standing until this resolves.
+ * `proposePage` keeps its own fallback standing until this resolves. A model
+ * failure is logged (message only, never the prompt/prose) so a silent
+ * fallback is diagnosable; the model call also aborts if the incoming
+ * request itself is aborted (the client gave up first).
  */
 export async function POST(req: Request) {
   let rawBody: unknown
@@ -165,6 +168,9 @@ export async function POST(req: Request) {
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS)
+  const onReqAbort = () => controller.abort()
+  if (req.signal.aborted) controller.abort()
+  else req.signal.addEventListener('abort', onReqAbort)
   try {
     const { object } = await generateObject({
       model: anthropic(AI_MODELS.quick),
@@ -179,9 +185,11 @@ export async function POST(req: Request) {
       }),
     })
     return Response.json(validatePlacement(object, candidateIds))
-  } catch {
+  } catch (err) {
+    console.error('propose-page: placement model failed', err instanceof Error ? err.message : err)
     return Response.json(FALLBACK)
   } finally {
     clearTimeout(timeout)
+    req.signal.removeEventListener('abort', onReqAbort)
   }
 }
