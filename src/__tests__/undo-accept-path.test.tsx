@@ -8,7 +8,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -290,5 +290,88 @@ describe('accept a diff, then ⌘Z/⇧⌘Z take it back and put it back (KAN-93 
     await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
     await screen.findByText(/can't undo — the page changed since/)
     expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('a blocked outcome shows its own notice line, and a second ⌘Z retries the same step', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockGetRecordByToolCall.mockResolvedValue(fakeRecord('rec-1', 'pc1', pageB.id))
+
+    renderApp()
+    await ready()
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(1))
+
+    await user.click(document.body)
+    jest.mocked(undoStep).mockResolvedValue({ outcome: 'blocked', reason: 'not-an-area' })
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(1))
+    await screen.findByText(/can't undo — the page is no longer an area/)
+
+    await user.keyboard('{Meta>}z{/Meta}')
+
+    await waitFor(() => expect(undoStep).toHaveBeenCalledTimes(2))
+    expect(undoStep).toHaveBeenNthCalledWith(1, expect.anything(), {
+      pondId: 'pond-7',
+      recordIds: ['rec-1'],
+    })
+    expect(undoStep).toHaveBeenNthCalledWith(2, expect.anything(), {
+      pondId: 'pond-7',
+      recordIds: ['rec-1'],
+    })
+  })
+
+  it('an editable keeps its own ⌘Z — the composer input, then any contenteditable', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockGetRecordByToolCall.mockResolvedValue(fakeRecord('rec-1', 'pc1', pageB.id))
+
+    renderApp()
+    await ready()
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(1))
+
+    const input = screen.getByRole('textbox', { name: 'Message Pond' })
+    await user.click(input)
+    await user.keyboard('{Meta>}z{/Meta}')
+    expect(undoStep).not.toHaveBeenCalled()
+
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    document.body.appendChild(editable)
+    fireEvent.keyDown(editable, { key: 'z', metaKey: true })
+    expect(undoStep).not.toHaveBeenCalled()
+
+    document.body.removeChild(editable)
   })
 })
