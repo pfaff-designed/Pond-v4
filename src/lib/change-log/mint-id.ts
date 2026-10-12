@@ -7,6 +7,9 @@
  * `set_back` compare-and-swap (which requires `pages.blocks` to equal the record's
  * snapshot) refuses every undo of a create. Seeding both calls from the same
  * `toolCallId` makes them mint identical ids for an identical batch.
+ *
+ * Assumes toolCallIds are unique per pond — two different tool calls in the
+ * same pond seeding the same ids would mint colliding blocks.
  */
 function fnv1a(input: string): number {
   let hash = 0x811c9dc5

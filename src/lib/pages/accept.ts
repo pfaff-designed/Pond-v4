@@ -228,7 +228,11 @@ async function writeToTarget(
     proposal.record !== null &&
     proposal.record.targetPageId === target &&
     BLOCK_ACTIONS.includes(proposal.record.action) &&
-    jsonEqual(result.blocks, proposal.record.after)
+    // `result.blocks` can carry an own `width: undefined` key (edits.ts preserves
+    // the target's width unconditionally); jsonb strips undefined-valued keys on
+    // write, so `proposal.record.after` never has it. Round-trip through JSON
+    // first so the comparison sees what commitBlocks/the RPC actually store.
+    jsonEqual(JSON.parse(JSON.stringify(result.blocks)), proposal.record.after)
       ? proposal.record.id
       : null
   return {

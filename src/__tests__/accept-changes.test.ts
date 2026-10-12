@@ -700,30 +700,61 @@ describe('writeAcceptedChanges — the change-log record', () => {
     spy.mockRestore()
   })
 
-  it('surfaces the advanced record’s id when its action is undoable (edit)', async () => {
-    // Not mocked: `after` computed the same way propose.ts computes it, seeded by
-    // the same toolCallId — a real-shaped `after`, not a fixture, so this proves
-    // the accept write lands blocks byte-identical to it (KAN-93 fix).
-    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
-      batch: changes,
-    }).blocks
-    mockedLookup.mockResolvedValue(logRecord({ after }))
-    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
+  const recordIdCases: Array<[string, ModuleChange[], Block[]]> = [
+    ['create', changes, []],
+    [
+      // edits.ts's edit branch builds `{ ...hydrated, width: target.width }`
+      // unconditionally — a block with no width gives the written blocks an own
+      // `width: undefined` key that jsonb never stores, so this is the case
+      // `jsonEqual`'s key-count check used to miss (KAN-93 fix).
+      'edit',
+      [{ op: 'edit', blockId: 'blk-1', data: { type: 'text', content: 'new' } }] as ModuleChange[],
+      [{ id: 'blk-1', type: 'text', content: 'old' }] as Block[],
+    ],
+    [
+      'remove',
+      [{ op: 'remove', blockId: 'blk-1' }] as ModuleChange[],
+      [{ id: 'blk-1', type: 'text', content: 'old' }] as Block[],
+    ],
+  ]
 
-    const result = await writeAcceptedChanges({
-      pondId: 'pond-1',
-      supabase,
-      queryClient,
-      userId: USER,
-      resolutions: stamped('pc1', 'stamped-id'),
-      toolCallId: 'pc1',
-      openNodeId: null,
-      changes,
-    })
+  it.each(recordIdCases)(
+    'surfaces the advanced record’s id when its action is undoable (%s)',
+    async (_op, opChanges, pageBlocks) => {
+      // Not mocked: `after` computed the same way propose.ts computes it, seeded by
+      // the same toolCallId, then round-tripped through JSON the way jsonb storage
+      // does (dropping undefined-valued keys) — a real-shaped `after`, not a
+      // fixture, so this proves the accept write lands blocks that are what
+      // commitBlocks/the RPC actually store, byte-identical to it (KAN-93 fix).
+      const after = JSON.parse(
+        JSON.stringify(
+          applyProposedChanges(pageBlocks, opChanges, createDeterministicMintId('pc1'), {
+            batch: opChanges,
+          }).blocks
+        )
+      )
+      mockedLookup.mockResolvedValue(logRecord({ after }))
+      mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
+      mockedGetPage.mockResolvedValue({
+        id: 'stamped-id',
+        blocks: pageBlocks,
+      } as unknown as Awaited<ReturnType<typeof getPage>>)
 
-    expect(result.recordId).toBe('rec-1')
-    expect(mockedAcceptRecord).toHaveBeenCalledWith(supabase, 'rec-1', after)
-  })
+      const result = await writeAcceptedChanges({
+        pondId: 'pond-1',
+        supabase,
+        queryClient,
+        userId: USER,
+        resolutions: stamped('pc1', 'stamped-id'),
+        toolCallId: 'pc1',
+        openNodeId: null,
+        changes: opChanges,
+      })
+
+      expect(result.recordId).toBe('rec-1')
+      expect(mockedAcceptRecord).toHaveBeenCalledWith(supabase, 'rec-1', after)
+    }
+  )
 
   it('gives no recordId when the page drifted since propose (a typed edit landed in between)', async () => {
     // `after` is the snapshot propose.ts would have computed against the page as
