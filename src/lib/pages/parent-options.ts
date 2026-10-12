@@ -68,3 +68,16 @@ export function toParentOptions(pages: ParentPageRow[]): ParentOptionLabel[] {
     title: (labelCounts.get(label) ?? 0) > 1 ? `${label} · ${page.type}` : label,
   }))
 }
+
+/** Full root-first ancestor path PLUS the page's own title, joined " › "
+ *  ("Creativity › Renovation › Kitchen renovation"). A top-level page
+ *  returns just its own title. An id absent from `pages` returns "" —
+ *  never throws. A dangling or cyclic parentId degrades via `ancestorPath`
+ *  to whatever ancestors were reachable. */
+export function ancestorPathLabel(pages: ParentPageRow[], id: string): string {
+  const byId = new Map(pages.map((p) => [p.id, p]))
+  const page = byId.get(id)
+  if (!page) return ''
+  const path = ancestorPath(page, byId)
+  return [...path, page.title].join(' › ')
+}

@@ -10,7 +10,7 @@
  * Pure function — the AITerminal feeds it the listPages rows.
  */
 
-import { toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
+import { ancestorPathLabel, toParentOptions, type ParentPageRow } from '@/lib/pages/parent-options'
 import type { NodeType } from '@/lib/supabase/types'
 
 function row(
@@ -105,5 +105,26 @@ describe('toParentOptions', () => {
     ])
     expect(options.find((o) => o.id === 'a')?.title).toBe('Woodworking (Shop)')
     expect(options.find((o) => o.id === 'c')?.title).toBe('Woodworking (top level)')
+  })
+})
+
+describe('ancestorPathLabel', () => {
+  it('joins a 3-level chain root-first, ending in the page itself', () => {
+    const pages = [
+      row('creativity', 'creativity'),
+      row('renovation', 'renovation', 'creativity'),
+      row('kitchen', 'kitchen renovation', 'renovation'),
+    ]
+    expect(ancestorPathLabel(pages, 'kitchen')).toBe('creativity › renovation › kitchen renovation')
+  })
+
+  it('returns just the title for a top-level page', () => {
+    const pages = [row('creativity', 'creativity')]
+    expect(ancestorPathLabel(pages, 'creativity')).toBe('creativity')
+  })
+
+  it('returns "" for an id not in the list', () => {
+    const pages = [row('creativity', 'creativity')]
+    expect(ancestorPathLabel(pages, 'missing')).toBe('')
   })
 })

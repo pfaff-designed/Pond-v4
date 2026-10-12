@@ -196,11 +196,13 @@ export type ProposalAction =
    *  answer: a second proposal for a message that already has a PENDING one is
    *  ignored (a double press opens one card, never two). */
   | { kind: 'proposePage'; proposal: PageProposal }
-  /** Edit the card's name / under / kind in place (pending cards only). */
+  /** Edit the card's name / under / kind / mentioned in place (pending cards
+   *  only) — the propose-page route's fill uses this same guarded dispatch
+   *  rather than a second action kind. */
   | {
       kind: 'editPageProposal'
       id: string
-      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind'>>
+      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>
     }
   /** make page → accepted (with the made page's id); cancel → rejected. Only a
    *  pending card settles — a second make page on a settled card is a no-op
