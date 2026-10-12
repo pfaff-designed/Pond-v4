@@ -799,6 +799,41 @@ describe('writeAcceptedChanges — the change-log record', () => {
     expect(result.recordId).toBeNull()
   })
 
+  it('gives no recordId when the accept was retargeted to a page the record never named', async () => {
+    // Same shape as "writes the page the person chose, not the one the record
+    // froze" above, but this time the retargeted write still lands blocks
+    // byte-identical to `after` — the one condition that would otherwise pass
+    // every other recordId guard. set_back's CAS is scoped to the RECORD's
+    // frozen target_page_id (0021), so an id surfaced here would have ⌘Z read
+    // the retargeted page, find it never matched, and refuse forever with
+    // "page changed" — a step that can never be undone must never be offered.
+    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
+      batch: changes,
+    }).blocks
+    mockedLookup.mockResolvedValue(logRecord({ targetPageId: 'a-page-they-redirected-from', after }))
+    mockedAdvance.mockResolvedValue(logRecord({ status: 'accepted', after }))
+    mockedGetPage.mockResolvedValue({
+      id: 'retargeted-id',
+      blocks: [],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'retargeted-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(mockedAcceptRecord).not.toHaveBeenCalled()
+    expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rec-1', 'accepted', 'you')
+    expect(result.recordId).toBeNull()
+  })
+
   it('gives no recordId when there is no change-log record at all', async () => {
     mockedLookup.mockResolvedValue(null)
 

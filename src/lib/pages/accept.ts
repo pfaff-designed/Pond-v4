@@ -217,10 +217,16 @@ async function writeToTarget(
   // WRITTEN is byte-identical to it — a page that drifted since propose, a
   // partial accept of a larger batch, or keyed refIds that reserved different
   // ids all write something else. Offering ⌘Z on one of those would just hand
-  // the CAS a step guaranteed to refuse, so the id is withheld instead.
+  // the CAS a step guaranteed to refuse, so the id is withheld instead. A
+  // retargeted accept (ticket-30: committed to the page the person chose, not
+  // the record's frozen `target_page_id`) writes blocks to a page the CAS was
+  // never scoped to either — set_back always targets `record.target_page_id`,
+  // so offering this id would have ⌘Z refuse with a misleading "page changed"
+  // forever instead of a clean "can't undo this one".
   const recordId =
     result.applied > 0 &&
     proposal.record !== null &&
+    proposal.record.targetPageId === target &&
     BLOCK_ACTIONS.includes(proposal.record.action) &&
     jsonEqual(result.blocks, proposal.record.after)
       ? proposal.record.id
