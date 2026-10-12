@@ -21,6 +21,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { resolveAcceptTarget, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import { commitAcceptedEdit, readProposalForAccept } from '@/lib/change-log/resolve'
+import { BLOCK_ACTIONS } from '@/lib/change-log/types'
 import { applyProposedChanges } from './edits'
 import { getPage } from './client'
 import { commitBlocks, propagateBlockWrite } from './commit'
@@ -34,6 +35,10 @@ export interface AcceptWriteResult {
   skippedReasons: string[]
   /** The page id the batch committed to, or null when nothing was written. */
   targetId: string | null
+  /** The change-log record this accept advanced, when it is one `sessionUndo`
+   *  can later undo ({@link BLOCK_ACTIONS}) — null when nothing applied, there
+   *  was no record, or the record's action is not undoable (e.g. an add_row). */
+  recordId: string | null
 }
 
 export async function writeAcceptedChanges(opts: {
@@ -59,7 +64,9 @@ export async function writeAcceptedChanges(opts: {
   refIds?: Record<string, string>
 }): Promise<AcceptWriteResult> {
   const { resolutions, toolCallId, openNodeId, changes } = opts
-  if (changes.length === 0) return { applied: 0, skipped: 0, skippedReasons: [], targetId: null }
+  if (changes.length === 0) {
+    return { applied: 0, skipped: 0, skippedReasons: [], targetId: null, recordId: null }
+  }
 
   const target = resolveAcceptTarget(resolutions, toolCallId, openNodeId)
   if (!target) {
@@ -68,6 +75,7 @@ export async function writeAcceptedChanges(opts: {
       skipped: changes.length,
       skippedReasons: changes.map(() => 'no target page to write to'),
       targetId: null,
+      recordId: null,
     }
   }
 
@@ -130,6 +138,7 @@ async function writeToTarget(
       skipped: changes.length,
       skippedReasons: changes.map(() => 'the target page no longer exists'),
       targetId: null,
+      recordId: null,
     }
   }
 
@@ -164,6 +173,7 @@ async function writeToTarget(
       skipped: changes.length,
       skippedReasons: changes.map(() => reason),
       targetId: null,
+      recordId: null,
     }
   }
 
@@ -194,10 +204,18 @@ async function writeToTarget(
   // blocks (commitBlocks leaves that cache alone precisely so this stays the
   // caller's decision).
   await queryClient.invalidateQueries({ queryKey: ['page', target] })
+  // Only an applied edit/revert is a step `sessionUndo` can later undo — an
+  // add_row or a skipped-everything accept has nothing the RPC knows how to
+  // set back, so remembering it would be a step that silently no-ops on ⌘Z.
+  const recordId =
+    result.applied > 0 && proposal.record !== null && BLOCK_ACTIONS.includes(proposal.record.action)
+      ? proposal.record.id
+      : null
   return {
     applied: result.applied,
     skipped: result.skipped,
     skippedReasons: result.skippedReasons,
     targetId: target,
+    recordId,
   }
 }

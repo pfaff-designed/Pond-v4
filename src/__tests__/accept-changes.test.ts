@@ -698,6 +698,84 @@ describe('writeAcceptedChanges — the change-log record', () => {
     spy.mockRestore()
   })
 
+  it('surfaces the advanced record’s id when its action is undoable (edit)', async () => {
+    mockedLookup.mockResolvedValue(logRecord())
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted' }))
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.recordId).toBe('rec-1')
+  })
+
+  it('gives no recordId when the record’s action is not undoable (add_row)', async () => {
+    mockedLookup.mockResolvedValue(logRecord({ action: 'add_row' }))
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', action: 'add_row' }))
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when nothing actually applied', async () => {
+    mockedLookup.mockResolvedValue(logRecord({ targetPageId: 'ceramics-id' }))
+    mockedGetPage.mockResolvedValue({
+      id: 'ceramics-id',
+      blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id',
+      changes: [
+        { op: 'edit', blockId: 'blk-open', data: { type: 'text', content: 'x' } },
+      ] as ModuleChange[],
+    })
+
+    expect(result.applied).toBe(0)
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when there is no change-log record at all', async () => {
+    mockedLookup.mockResolvedValue(null)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(result.recordId).toBeNull()
+  })
+
   it.each(['outdated', 'withdrawn', 'undone', 'reverted', 'changes_requested'] as const)(
     'refuses to write a proposal the log has moved past: %s',
     async (status) => {
