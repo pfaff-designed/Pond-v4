@@ -128,4 +128,42 @@ describe('BlockWidthRow', () => {
     expect(classesOf(half)).not.toContain('bg-mn-hover-fill')
     expect(onPreview).toHaveBeenCalledWith(null)
   })
+
+  it('shows the note while previewing a different width', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" />)
+    const menu = await openMenu(user)
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    await user.hover(twoThirds)
+    expect(within(menu).getByText('showing ⅔ on the page · click to keep, esc to go back')).toBeInTheDocument()
+  })
+
+  it('shows the note for full', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" />)
+    const menu = await openMenu(user)
+    const full = within(menu).getByRole('menuitem', { name: 'full' })
+    await user.hover(full)
+    expect(within(menu).getByText('showing full on the page · click to keep, esc to go back')).toBeInTheDocument()
+  })
+
+  it('has no note at rest or hovering the kept cell', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" />)
+    const menu = await openMenu(user)
+    expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    await user.hover(half)
+    expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+  })
+
+  it('clears the note on leaving the row', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" />)
+    const menu = await openMenu(user)
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    await user.hover(twoThirds)
+    await user.unhover(twoThirds)
+    expect(within(menu).queryByText(/showing/)).not.toBeInTheDocument()
+  })
 })

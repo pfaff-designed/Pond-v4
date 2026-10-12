@@ -46,9 +46,12 @@ const CELL_UNFILLED = 'text-mn-text'
 const CELL_FILLED = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 const CELL_PREVIEWED = 'bg-mn-hover-fill text-mn-text [box-shadow:inset_0_0_0_1px_var(--mn-rail-field-ring)]'
 
+const NOTE = 'px-[10px] pt-[8px] pb-[4px] font-mono text-[11px] leading-[1.5] text-mn-text-secondary'
+
 export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps) => {
   const current = width ?? 'full'
   const [hovered, setHovered] = useState<BlockWidth | null>(null)
+  const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
 
   const handleHover = (value: BlockWidth) => {
     // Hovering the already-kept cell has nothing to preview.
@@ -63,20 +66,23 @@ export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps
   }
 
   return (
-    <div className={ROW} onMouseLeave={handleLeaveRow}>
-      {WIDTHS.map(({ label, value }) => (
-        <Menu.Item
-          key={value}
-          label={label}
-          onClick={() => onSelect(value)}
-          onMouseEnter={() => handleHover(value)}
-          className={`${CELL} ${value === 'full' ? CELL_FULL : CELL_FRACTION} ${
-            value === current ? CELL_FILLED : value === hovered ? CELL_PREVIEWED : CELL_UNFILLED
-          }`}
-        >
-          {label}
-        </Menu.Item>
-      ))}
-    </div>
+    <>
+      <div className={ROW} onMouseLeave={handleLeaveRow}>
+        {WIDTHS.map(({ label, value }) => (
+          <Menu.Item
+            key={value}
+            label={label}
+            onClick={() => onSelect(value)}
+            onMouseEnter={() => handleHover(value)}
+            className={`${CELL} ${value === 'full' ? CELL_FULL : CELL_FRACTION} ${
+              value === current ? CELL_FILLED : value === hovered ? CELL_PREVIEWED : CELL_UNFILLED
+            }`}
+          >
+            {label}
+          </Menu.Item>
+        ))}
+      </div>
+      {hoveredLabel && <div className={NOTE}>{`showing ${hoveredLabel} on the page · click to keep, esc to go back`}</div>}
+    </>
   )
 }
