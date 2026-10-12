@@ -50,7 +50,9 @@ describe('view kinds', () => {
   })
 
   it('a `/` view row is labelled and marked by its kind, never a second copy', () => {
-    const viewRows = slashRows.filter((row) => row.type === 'view')
+    // `list`'s view row deliberately differs from the kind's own word ('list')
+    // so it never reads alike the bulleted list's row (`bulleted-list`, label `list`).
+    const viewRows = slashRows.filter((row) => row.type === 'view' && row.id !== 'list')
     expect(viewRows.length).toBeGreaterThan(0)
     for (const row of viewRows) {
       const kind = viewKind({ mode: row.id as ViewBlock['mode'] })
@@ -59,10 +61,12 @@ describe('view kinds', () => {
     }
   })
 
-  it('board, calendar and timeline open the source picker, like table, gallery and chart', () => {
-    for (const mode of ['board', 'calendar', 'gantt'] as const) {
+  it('every view kind opens the source picker before landing', () => {
+    for (const mode of VIEW_MODES) {
       expect(SOURCE_BLOCKS).toContain(mode)
       expect(sourceBlockOf(mode)).toBe(mode)
     }
+    // the static freeform table block bypasses the picker — it is not a view mode.
+    expect(sourceBlockOf('grid')).toBeNull()
   })
 })

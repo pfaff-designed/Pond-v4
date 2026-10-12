@@ -118,6 +118,38 @@ const persisted = (): Block[] => (db._pages.get('page-1')!.blocks as Block[]) ??
 /** Every non-record page in the fake, which is what the rail's tree is built from. */
 const tree = () => mockFetchPages.mock.results.at(-1)?.value as Promise<{ title: string }[]>
 
+/** A databases root plus one database, seeded for the tests that pick an existing source. */
+const databaseSeed = (id: string, title: string): Row[] => [
+  {
+    id: 'root',
+    user_id: 'user-1',
+    pond_id: null,
+    parent_id: null,
+    type: 'page',
+    title: DATABASES_ROOT_TITLE,
+    blocks: [],
+    props: {},
+    order: 0,
+  },
+  {
+    id,
+    user_id: 'user-1',
+    pond_id: null,
+    parent_id: 'root',
+    type: 'database',
+    title,
+    blocks: [],
+    props: {},
+    order: 0,
+  },
+]
+
+/** An option by its exact label, across the `pre` / `hit` / `post` split a query leaves it in. */
+const rowNamed = (menu: HTMLElement, name: string) =>
+  within(menu)
+    .getAllByRole('option')
+    .find((o) => o.querySelector('[data-part="label"]')?.textContent === name)
+
 function mount(blocks: Block[], seed: Row[] = []) {
   db = makeFakeSupabase([hostPage(blocks), ...seed])
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -210,7 +242,6 @@ describe('Return after the table, then / inserts a block mid-page (06.07)', () =
     ['checklist', { type: 'todo', items: [{ label: '', checked: false }] }],
     ['list', { type: 'todo', marker: 'dot' }],
     ['heading', { type: 'text', content: '## ' }],
-    ['big number', { type: 'view', mode: 'big-number' }],
     ['entry log', { type: 'entries', entries: [] }],
   ])('↵ %s lands its preset BETWEEN the two blocks and persists there', async (label, shape) => {
     mount([tools, note])
@@ -270,6 +301,87 @@ describe('the / menu inserts a block', () => {
     // The `/` line is saved as typed; nothing table-shaped reaches the page.
     await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalled(), { timeout: 3000 })
     expect(persisted()).toEqual([note, { id: 'b-empty', type: 'text', content: '/' }])
+  })
+
+  // The static freeform table's own row (KAN-240), never read alike `/table`'s
+  // database view: picking it lands the grid directly, with no source picker.
+  it('`/grid` mints the freeform table block directly — no source picker', async () => {
+    mount([note, { id: 'b-empty', type: 'text', content: '' }])
+    const typing = await waitFor(() => {
+      const el = queryAllTextBlocks().find((field) => field.textContent === '')
+      if (!el) throw new Error('no empty text block to type into')
+      return el
+    })
+    writeInTextBlock(typing, '/')
+    fireEvent.click(
+      within(await screen.findByRole('listbox', { name: 'blocks' })).getByText('grid')
+    )
+
+    await waitFor(() => expect(persisted()[1]?.type).toBe('table'), { timeout: 3000 })
+    expect(persisted()[1]).toMatchObject({ type: 'table', columns: ['Column 1', 'Column 2'] })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  // `/list`'s view row (KAN-240) collides in word with the bulleted list: both
+  // must survive the query, labelled distinctly, and the view row still routes
+  // through the source picker like every other view kind.
+  it('`/list` is the list view, labelled distinctly from the bulleted list', async () => {
+    mount([note, { id: 'b-empty', type: 'text', content: '' }], databaseSeed('db-recipes', 'recipes'))
+    const typing = await waitFor(() => {
+      const el = queryAllTextBlocks().find((field) => field.textContent === '')
+      if (!el) throw new Error('no empty text block to type into')
+      return el
+    })
+    writeInTextBlock(typing, '/')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    writeInTextBlock(typing, '/list')
+
+    await waitFor(() => {
+      expect(rowNamed(menu, 'list')).toBeDefined()
+      expect(rowNamed(menu, 'list view')).toBeDefined()
+    })
+    fireEvent.click(rowNamed(menu, 'list view')!)
+
+    const picker = await screen.findByRole('listbox', { name: '/list' })
+    fireEvent.click(await within(picker).findByRole('option', { name: /recipes/ }))
+
+    await waitFor(
+      () =>
+        expect(persisted()[1]).toMatchObject({
+          type: 'view',
+          mode: 'list',
+          collectionId: 'db-recipes',
+        }),
+      { timeout: 3000 }
+    )
+  })
+
+  // #big-number's acceptance bug (KAN-240): a view with no source is not a view,
+  // so `/big number` now opens the source picker like every other view kind.
+  it('`/big number` opens the source picker before landing a view', async () => {
+    mount([note, { id: 'b-empty', type: 'text', content: '' }], databaseSeed('db-recipes', 'recipes'))
+    const typing = await waitFor(() => {
+      const el = queryAllTextBlocks().find((field) => field.textContent === '')
+      if (!el) throw new Error('no empty text block to type into')
+      return el
+    })
+    writeInTextBlock(typing, '/')
+    fireEvent.click(
+      within(await screen.findByRole('listbox', { name: 'blocks' })).getByText('big number')
+    )
+
+    const picker = await screen.findByRole('listbox', { name: '/big number' })
+    fireEvent.click(await within(picker).findByRole('option', { name: /recipes/ }))
+
+    await waitFor(
+      () =>
+        expect(persisted()[1]).toMatchObject({
+          type: 'view',
+          mode: 'big-number',
+          collectionId: 'db-recipes',
+        }),
+      { timeout: 3000 }
+    )
   })
 })
 
