@@ -536,8 +536,8 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
     }
   }
 
-  // A focused menu row can move the DOM selection off the editor, so the choice falls
-  // back to the editor the bar was last drawn for.
+  // While the menu is open it owns focus and selectionchange is ignored, so the
+  // pick acts on the editor the bar was drawn for.
   const chooseStyle = (level: Level | null) => () => {
     const sel = window.getSelection()
     const selectedEditor = sel && editorForSelection(sel)

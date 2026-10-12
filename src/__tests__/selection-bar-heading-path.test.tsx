@@ -1,10 +1,10 @@
 /**
- * KAN-285 repro: picking a heading from the selection bar's text-style menu on a
- * real page block does not stick — the block reverts to a paragraph, and/or the
- * save that lands is not the heading markdown. Same harness as
- * `selection-bar-path.test.tsx` (real `DocumentPanel` + a live Tiptap text block
- * + the page's own debounced save, `SelectionBar` mounted beside it, `commitBlocks`
- * mocked), but choosing a heading row instead of clicking bold.
+ * KAN-285: picking h1/h2/h4 from the selection bar's text-style menu on a real
+ * page block makes it that heading in the DOM and in the saved markdown, and
+ * the bar stays. Same harness as `selection-bar-path.test.tsx` (real
+ * `DocumentPanel` + a live Tiptap text block + the page's own debounced save,
+ * `SelectionBar` mounted beside it, `commitBlocks` mocked), but choosing a
+ * heading row instead of clicking bold.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react'
