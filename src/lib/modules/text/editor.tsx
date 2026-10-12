@@ -7,6 +7,7 @@ import { redo, undo } from '@tiptap/pm/history'
 import type { EditorView } from '@tiptap/pm/view'
 import { isRedoChord, isUndoChord } from '@/lib/shell-commands'
 import type { ModuleViewProps } from '../types'
+import { registerTextEditor } from './active-editor'
 import { proseExtensions } from './extensions'
 import { parseMarkdown, serializeMarkdown } from './markdown'
 import { TEXT_PROSE_CLASS, textPlaceholderFor } from './prose'
@@ -31,6 +32,30 @@ const extensions = [
   Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
 ]
 
+/** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
+const isTabIntoSelectionBar = (view: EditorView, event: KeyboardEvent): boolean =>
+  event.key === 'Tab' &&
+  !event.shiftKey &&
+  !event.altKey &&
+  !event.ctrlKey &&
+  !event.metaKey &&
+  !view.state.selection.empty
+
+/**
+ * Moves focus into the selection bar's first enabled item. With no bar up the key
+ * is left alone: in a paragraph that is the browser's own focus move, in a list
+ * item the list's Tab (indent). Handled here, ahead of the extensions' keymaps,
+ * so while the bar is up a selected list item's Tab reaches the bar instead.
+ */
+const focusSelectionBar = (): boolean => {
+  const first = document.querySelector<HTMLButtonElement>(
+    '[data-part="selection-bar"] button:not(:disabled)'
+  )
+  if (!first) return false
+  first.focus()
+  return true
+}
+
 /**
  * ProseMirror's own `Mod-z`/`Mod-Shift-z` keymap command no-ops (returns `false`,
  * never calling `preventDefault`) when its history has nothing to undo/redo —
@@ -43,9 +68,11 @@ const extensions = [
  */
 const handleKeyDown = (view: EditorView, event: KeyboardEvent): boolean => {
   if (event.key === 'Escape') {
-    view.dom.blur()
+    // The selection bar claims an Esc pressed while it is up (it is dismissed, the editor keeps focus).
+    if (!event.defaultPrevented) view.dom.blur()
     return true
   }
+  if (isTabIntoSelectionBar(view, event)) return focusSelectionBar()
   if (isUndoChord(event)) {
     undo(view.state, (tr) => view.dispatch(tr))
     return true
@@ -171,6 +198,11 @@ const TextEditor = ({
       .setContent(parseMarkdown(data.content).toJSON(), { emitUpdate: false })
       .run()
   }, [editor, data.content])
+
+  useEffect(() => {
+    if (!editor) return
+    return registerTextEditor(editor)
+  }, [editor])
 
   useEffect(() => {
     const at = pressRef.current
