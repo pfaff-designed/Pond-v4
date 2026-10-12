@@ -66,7 +66,11 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
-import { requestComposerToggle, requestHtmlImportPicker } from '@/lib/terminal-focus'
+import {
+  requestComposerNotice,
+  requestComposerToggle,
+  requestHtmlImportPicker,
+} from '@/lib/terminal-focus'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -752,5 +756,22 @@ describe('AITerminal — html import path (KAN-251)', () => {
     expect(screen.queryByTestId('read-chip')).not.toBeInTheDocument()
     expect(screen.queryByText('make this a page')).not.toBeInTheDocument()
     expect(container.querySelector('[data-part="you-row"]')).not.toBeInTheDocument()
+  })
+})
+
+describe('AITerminal — the composer notice bridge (KAN-93)', () => {
+  it('dispatching the notice event shows its text in the composer, mono and lowercase', async () => {
+    renderTerminal()
+    await waitReady()
+
+    act(() => {
+      requestComposerNotice("can't undo — the page changed since. revert it from the change log.")
+    })
+
+    const notice = await screen.findByText(
+      "can't undo — the page changed since. revert it from the change log."
+    )
+    expect(notice.className).toContain('font-mono')
+    expect(notice.className).toContain('lowercase')
   })
 })

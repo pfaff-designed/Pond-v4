@@ -4,10 +4,13 @@
  * the string ensures they stay in sync across merges.
  */
 import {
+  COMPOSER_NOTICE_EVENT,
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   TOGGLE_COMPOSER_EVENT,
+  type ComposerNoticeDetail,
   isComposerToggleKey,
+  requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
   requestTerminalFocus,
@@ -35,6 +38,20 @@ describe('the html import picker (KAN-251)', () => {
     requestHtmlImportPicker()
     expect(listener).toHaveBeenCalledTimes(1)
     window.removeEventListener(HTML_IMPORT_PICKER_EVENT, listener)
+  })
+})
+
+describe('the composer notice bridge (KAN-93)', () => {
+  it('requestComposerNotice dispatches the notice event on window with the text in its detail', () => {
+    const listener = jest.fn()
+    window.addEventListener(COMPOSER_NOTICE_EVENT, listener)
+    requestComposerNotice("can't undo — the page changed since. revert it from the change log.")
+    expect(listener).toHaveBeenCalledTimes(1)
+    const event = listener.mock.calls[0][0] as CustomEvent<ComposerNoticeDetail>
+    expect(event.detail.text).toBe(
+      "can't undo — the page changed since. revert it from the change log."
+    )
+    window.removeEventListener(COMPOSER_NOTICE_EVENT, listener)
   })
 })
 

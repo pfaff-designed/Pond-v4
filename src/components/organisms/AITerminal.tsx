@@ -21,11 +21,13 @@ import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import {
+  COMPOSER_NOTICE_EVENT,
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
   TOGGLE_COMPOSER_EVENT,
   requestHtmlImportPicker,
+  type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
@@ -986,6 +988,18 @@ export function AITerminal() {
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
+
+  // A stale/blocked/refused ⌘Z or ⇧⌘Z (ShellCommands) says why in this one
+  // line — the composer's only notice line, machine register. Replaces
+  // rather than queues: only the latest chord's outcome is worth showing.
+  const [composerNotice, setComposerNotice] = useState<string | null>(null)
+  useEffect(() => {
+    function onComposerNotice(e: Event) {
+      setComposerNotice((e as CustomEvent<ComposerNoticeDetail>).detail.text)
+    }
+    window.addEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
+    return () => window.removeEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
+  }, [])
 
   // ── Load or create active conversation on mount ───────────────────────────
   // `initialMessageIds` records what was re-seeded from the saved transcript:
@@ -3035,6 +3049,11 @@ export function AITerminal() {
             />
           ))}
         </div>
+      )}
+      {composerNotice && (
+        <p className="font-mono text-[11px] lowercase text-mn-text-secondary" role="status">
+          {composerNotice}
+        </p>
       )}
       <ComposerLine
         value={input}
