@@ -113,6 +113,7 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
 
   it('an own edit lands, then the page’s pending block diffs go outdated', async () => {
     await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], {
+      pondId: 'pond-1',
       ownEdit: true,
       before: [],
     })
@@ -143,13 +144,18 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
       },
     } as unknown as SupabaseClient<Database>
 
-    await commitBlocks(slowSupabase, queryClient, 'page-1', [], { ownEdit: true, before: [] })
+    await commitBlocks(slowSupabase, queryClient, 'page-1', [], {
+      pondId: 'pond-1',
+      ownEdit: true,
+      before: [],
+    })
     // No flush: this is the moment the caller's reconcile fires.
     expect(mockedMarkOutdated).toHaveBeenCalledTimes(1)
   })
 
   it('sweeps BEFORE anything downstream is told the page moved', async () => {
     await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', [], {
+      pondId: 'pond-1',
       ownEdit: true,
       before: [],
     })
@@ -160,6 +166,7 @@ describe('commitBlocks — the editor’s save sweeps, the accept path does not'
   it('passes the blocks it just wrote, so a title-only save sweeps nothing', async () => {
     const blocks = [{ id: 'b1', type: 'text', content: 'unchanged' }] as unknown as Block[]
     await commitBlocks(supabaseWithUser('user-1'), queryClient, 'page-1', blocks, {
+      pondId: 'pond-1',
       ownEdit: true,
       before: blocks,
     })

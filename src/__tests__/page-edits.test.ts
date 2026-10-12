@@ -88,6 +88,39 @@ describe('applyProposedChanges (t16 multi-op Accept path)', () => {
     })
   })
 
+  it('edits: keeps the block\'s existing width (KAN-43) — the AI\'s data never carries one', () => {
+    const withWidth: Block[] = [{ id: 'b', type: 'text', content: 'second', width: '1/2' }]
+    const change: ModuleChange = {
+      op: 'edit',
+      blockId: 'b',
+      data: { type: 'text', content: 'rewritten' },
+    }
+    const { blocks } = applyProposedChanges(withWidth, [change], counter())
+    expect(blocks.find((b) => b.id === 'b')).toEqual({
+      id: 'b',
+      type: 'text',
+      content: 'rewritten',
+      width: '1/2',
+    })
+  })
+
+  it("edits: a hydrated replacement's own width never overrides the target's kept (absent) width (KAN-43)", () => {
+    const noWidth: Block[] = [{ id: 'b', type: 'text', content: 'second' }]
+    // `data` is typed against moduleDataSchema, which never carries a `width` — this
+    // simulates a hydrated replacement that has one anyway (blockSchema permits it).
+    const change = {
+      op: 'edit',
+      blockId: 'b',
+      data: { type: 'text', content: 'rewritten', width: '1/2' },
+    } as unknown as ModuleChange
+    const { blocks } = applyProposedChanges(noWidth, [change], counter())
+    expect(blocks.find((b) => b.id === 'b')).toEqual({
+      id: 'b',
+      type: 'text',
+      content: 'rewritten',
+    })
+  })
+
   it('edits: may type-morph a block, keeping its id', () => {
     const change: ModuleChange = {
       op: 'edit',

@@ -22,17 +22,26 @@ import { CHART_KINDS, type ChartKind } from '@/lib/modules/view/aggregate'
 import { CHART_TYPE_TAG } from '@/lib/modules/chart/chrome'
 import { plural } from '@/lib/modules/block-frame'
 import type { ViewMode } from '@/lib/modules/view/schema'
+import { VIEW_KINDS } from '@/lib/modules/view/kinds'
 import type { PropertyType } from '@/lib/properties/schema'
 
 import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
 
 /**
- * The three `/` rows that open this picker (`Pond 02` 2e: "table, gallery and
- * chart all open the same picker") — each is the `ViewMode` it makes, and each is
- * the `slashRows` id of its row (`lib/modules/palette.ts`), so the host routes a
- * pick here by id with no second table.
+ * The `/` rows that open this picker (`Pond 02` 2e: "table, gallery and chart all
+ * open the same picker"; ADR 0009 gives board, calendar and timeline the same
+ * route) — each is the `ViewMode` it makes, and each is the `slashRows` id of its
+ * row (`lib/modules/palette.ts`), so the host routes a pick here by id with no
+ * second table.
  */
-export const SOURCE_BLOCKS = ['table', 'gallery', 'chart'] as const satisfies readonly ViewMode[]
+export const SOURCE_BLOCKS = [
+  'table',
+  'board',
+  'calendar',
+  'gallery',
+  'gantt',
+  'chart',
+] as const satisfies readonly ViewMode[]
 export type SourceBlock = (typeof SOURCE_BLOCKS)[number]
 
 /** The picker a `/` row opens, or null for a row that inserts its block directly. */
@@ -285,7 +294,8 @@ export function headFor(
   ctx: { block: SourceBlock; pageTitle: string; source?: string }
 ): string {
   if (step === 'new') return `new database — ${ctx.pageTitle}`
-  return ctx.source ? `/${ctx.block} › ${ctx.source}` : `/${ctx.block}`
+  const command = `/${VIEW_KINDS[ctx.block].label}`
+  return ctx.source ? `${command} › ${ctx.source}` : command
 }
 
 /**
@@ -300,5 +310,5 @@ export function footFor(
 ): string[] {
   if (step === 'source') return ctx.newSelected ? ['named after this page', '↵ create'] : ['↵ view']
   if (step === 'type') return ['suggested from the source’s fields']
-  return ['filed in databases', `this page gets a ${ctx.block} view`]
+  return ['filed in databases', `this page gets a ${VIEW_KINDS[ctx.block].label} view`]
 }

@@ -39,6 +39,18 @@ export const ASK_POND_ACTION: PaletteItem = {
 }
 
 /**
+ * 6z's fourth door into the composer's html attach — board `Pond 06.25 Import
+ * a page.dc.html` frame 1. Stands beside the shell's other two actions
+ * unconditionally; the host opens the file chooser filtered to `.html`/`.htm`.
+ */
+export const IMPORT_A_PAGE_ACTION: PaletteItem = {
+  id: 'action:import-a-page',
+  label: 'import a page',
+  kind: 'action',
+  action: 'import-a-page',
+}
+
+/**
  * Board `6i` frame 3: "Saving is a page action, so it lives in the command
  * palette, not the / menu." A page action, so it lists only when there is a page
  * to save — `paletteItems` appends it on `openPageId` alone.
@@ -82,6 +94,7 @@ export function paletteItems(
   return [
     ...recent.map((r) => ({ ...item(r), recent: true })),
     ...all.filter((r) => !recentSet.has(r.id)).map(item),
+    IMPORT_A_PAGE_ACTION,
     NEW_PAGE_ACTION,
     ASK_POND_ACTION,
     ...(openPageId ? [SAVE_AS_TEMPLATE_ACTION] : []),

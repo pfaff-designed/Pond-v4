@@ -117,3 +117,19 @@ export const areaRoleColor = (role: AreaRole): string => `var(--mn-${role})`
 /** The colour a mark paints, or undefined for ink — the default, and no colour. */
 export const markAccent = (role: AreaRole | null): string | undefined =>
   role === null ? undefined : areaRoleColor(role)
+
+/** One choice in the picker's colour row. */
+export interface AreaColourSwatch {
+  /** The role to store, or null for ink — the default, and no colour. */
+  role: AreaRole | null
+  /** The DC's label for the cell: `ink`, `sage`, `mist`, `navy`. */
+  label: string
+}
+
+/** The picker's four colour choices, in the DC's order (`PondPicker.dc.html` line 142). */
+export const AREA_COLOUR_SWATCHES: readonly AreaColourSwatch[] = [
+  { role: null, label: 'ink' },
+  { role: 'area-a', label: 'sage' },
+  { role: 'area-b', label: 'mist' },
+  { role: 'area-c', label: 'navy' },
+]

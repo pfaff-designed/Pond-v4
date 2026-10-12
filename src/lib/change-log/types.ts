@@ -68,6 +68,14 @@ export type ChangeLogAction =
   | 'revert'
   | 'undo'
   | 'redo'
+  /** A person's own pick in the glyph picker (KAN-248); before/after are a
+   *  glyph id or null (`automatic`) — never a `Block[]`, so this stays out of
+   *  {@link BLOCK_ACTIONS}. */
+  | 'edit_glyph'
+  /** A person's own colour pick on an area (KAN-249); before/after are an
+   *  {@link AreaRole} or null (ink) — never a `Block[]`, so this stays out of
+   *  {@link BLOCK_ACTIONS}. */
+  | 'edit_area_role'
 
 /**
  * The actions whose before/after IS a page's `Block[]` — the ones a block write

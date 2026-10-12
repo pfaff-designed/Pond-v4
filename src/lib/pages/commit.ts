@@ -42,9 +42,9 @@ export async function commitBlocks(
          *  adopted from another write. The record's `before`. */
         before: Block[]
         /** The pond the sweep and the record are scoped to. */
-        pondId?: string | null
+        pondId: string | null
       }
-    | { ownEdit?: false; pondId?: string | null } = {}
+    | { ownEdit?: false } = {}
 ): Promise<void> {
   await saveBlocks(supabase, pageId, blocks)
   // The sweep is a side-record of the save (it never throws) — but it is

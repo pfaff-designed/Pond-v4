@@ -13,7 +13,15 @@
  * `document-panel-blocks.test.tsx`.
  */
 
-import { createPageTool } from '@/app/api/chat/tools'
+import { z } from 'zod'
+import {
+  createPageTool,
+  defineSchemaTool,
+  addRowTool,
+  promoteTableTool,
+  configureViewTool,
+  linkRecordsTool,
+} from '@/app/api/chat/tools'
 import { SYSTEM_PROMPT } from '@/app/api/chat/prompt'
 
 const parse = (input: unknown) => createPageTool.inputSchema.safeParse(input)
@@ -62,5 +70,22 @@ describe('the model is re-coached that area-ness is emergent', () => {
 
   it('the system prompt forbids reaching for an area type', () => {
     expect(SYSTEM_PROMPT).toContain("There is NO 'area' type")
+  })
+})
+
+describe('KAN-249 — never Pond: area colour is never a tool-settable shape', () => {
+  const tools = {
+    create_page: createPageTool,
+    define_schema: defineSchemaTool,
+    add_row: addRowTool,
+    promote_table: promoteTableTool,
+    configure_view: configureViewTool,
+    link_records: linkRecordsTool,
+  }
+
+  it.each(Object.entries(tools))('%s carries no area_role and no settable glyph', (_name, tool) => {
+    const json = JSON.stringify(z.toJSONSchema(tool.inputSchema))
+    expect(json).not.toContain('area_role')
+    expect(json).not.toContain('glyph')
   })
 })

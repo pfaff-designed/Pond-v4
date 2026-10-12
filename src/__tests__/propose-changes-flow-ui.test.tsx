@@ -18,10 +18,14 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
 }))
 
-jest.mock('@/lib/pond/context', () => ({
-  ...jest.requireActual('@/lib/pond/context'),
-  usePondId: () => 'pond-7',
-}))
+jest.mock('@/lib/pond/context', () => {
+  const active = { pond: { id: 'pond-7' }, ponds: [], loading: false, reload: () => {}, addPond: () => {} }
+  return {
+    ...jest.requireActual('@/lib/pond/context'),
+    usePond: () => active,
+    usePondId: () => active.pond.id,
+  }
+})
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -40,9 +44,11 @@ jest.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
+const mockGetPage = jest.fn().mockResolvedValue(null)
+const mockListPages = jest.fn().mockResolvedValue([])
 jest.mock('@/lib/pages/client', () => ({
-  getPage: jest.fn().mockResolvedValue(null),
-  listPages: jest.fn().mockResolvedValue([]),
+  getPage: (...args: unknown[]) => mockGetPage(...args),
+  listPages: (...args: unknown[]) => mockListPages(...args),
 }))
 jest.mock('@/lib/pages/create-page', () => ({
   createPageFromProposal: jest.fn(),
@@ -53,6 +59,13 @@ jest.mock('@/lib/pages/create-page', () => ({
 jest.mock('@/lib/pages/tree', () => ({
   fetchPages: jest.fn().mockResolvedValue([]),
   insertPageOptimistic: jest.fn(),
+}))
+// KAN-267: the write path an accept lands through — the place picker needs a
+// real target page to resolve the accept against.
+const mockCommitBlocks = jest.fn().mockResolvedValue(undefined)
+jest.mock('@/lib/pages/commit', () => ({
+  commitBlocks: (...args: unknown[]) => mockCommitBlocks(...args),
+  propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
 }))
 
 let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
@@ -76,7 +89,15 @@ jest.mock('@/lib/change-log/store', () => ({
   markOutdated: jest.fn(),
 }))
 
+// KAN-267: the receipt toast fires through the notify bridge (the terminal
+// mounts outside DeletionUndoProvider), so it has to be mocked to be read.
+const mockRequestNotify = jest.fn()
+jest.mock('@/lib/deletion/notify-bridge', () => ({
+  requestNotify: (...args: unknown[]) => mockRequestNotify(...args),
+}))
+
 const mockSendMessage = jest.fn()
+const mockRegenerate = jest.fn()
 const mockSetMessages = jest.fn()
 const mockAddToolOutput = jest.fn()
 let mockMessages: Array<{
@@ -88,13 +109,16 @@ let mockMessages: Array<{
 
 // The turn's lifecycle, under test control: 'ready' means the turn has settled.
 let mockStatus = 'ready'
+let mockError: Error | undefined
 jest.mock('@ai-sdk/react', () => ({
   useChat: jest.fn(() => ({
     messages: mockMessages,
     sendMessage: mockSendMessage,
+    regenerate: mockRegenerate,
     addToolOutput: mockAddToolOutput,
     setMessages: mockSetMessages,
     status: mockStatus,
+    error: mockError,
   })),
 }))
 
@@ -143,7 +167,11 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  mockGetPage.mockReset().mockResolvedValue(null)
+  mockListPages.mockReset().mockResolvedValue([])
+  mockCommitBlocks.mockReset().mockResolvedValue(undefined)
   mockStatus = 'ready'
+  mockError = undefined
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1')] }]
 })
 
@@ -249,6 +277,317 @@ describe('AITerminal — propose_changes card (#98)', () => {
     expect(options.body.pondId).toBe('pond-7')
   })
 
+  it('ask again on a rejected card regenerates the answer; it does not send a new turn', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockRegenerate.mock.calls[0][0].body).toMatchObject({ pondId: 'pond-7' })
+    expect(mockRegenerate.mock.calls[0][0].body).toHaveProperty('resolutions')
+  })
+
+  it('ask again is offered only on the last answer: an older turn has none, its rejected card included', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'older answer' }, batch('pc1')],
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+      {
+        id: 'm2',
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'newer answer' }, batch('pc2')],
+      },
+    ]
+    renderWithQuery(<AITerminal />)
+    await ready()
+    for (const reject of screen.getAllByRole('button', { name: 'reject' })) {
+      await user.click(reject)
+    }
+
+    const newerAnswer = await screen.findByText('newer answer')
+    const askAgains = await screen.findAllByRole('button', { name: 'ask again' })
+    for (const askAgain of askAgains) {
+      expect(newerAnswer.compareDocumentPosition(askAgain)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    }
+
+    await user.click(askAgains[0])
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  it('a thread ending on a user line offers no ask again on the answer above it; the error row still resends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'first question' }] },
+      { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'the first answer' }] },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'second question' }] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByText(/1 earlier turn/))
+
+    expect(await screen.findByText('the first answer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'make this a page' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'ask again' })).not.toBeInTheDocument()
+
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(1)
+  })
+
+  it('ask again does nothing once a stream is running (double-press guard)', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      { id: 'm1', role: 'assistant', parts: [batch('pc1')] },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    const askAgain = await screen.findByRole('button', { name: 'ask again' })
+
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    await user.click(askAgain)
+
+    expect(mockRegenerate).not.toHaveBeenCalled()
+    expect(mockSendMessage).not.toHaveBeenCalled()
+  })
+
+  it('a finished regenerate folds the replaced answer into metadata.earlier; a second one appends', async () => {
+    const user = userEvent.setup()
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      {
+        id: 'm1',
+        role: 'assistant',
+        metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+        parts: [batch('pc1')],
+      },
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    // The test's setMessages is a spy: fold its updaters into the mocked thread.
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    // regenerate() drops the answer, streams a replacement with a new id, then settles.
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({
+      id: 'm2',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:15:00.000Z' },
+      parts: [batch('pc2')],
+    })
+
+    const firstEarlier = {
+      parts: [batch('pc1')],
+      sentAt: '2026-10-01T07:12:00.000Z',
+      read: ['life'],
+    }
+    expect(mockMessages[1].id).toBe('m2')
+    expect(mockMessages[1].metadata?.earlier).toEqual([firstEarlier])
+
+    await user.click(await screen.findByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto({ id: 'm3', role: 'assistant', parts: [batch('pc3')] })
+
+    expect(mockRegenerate).toHaveBeenCalledTimes(2)
+    expect(mockMessages[1].id).toBe('m3')
+    const earlier = mockMessages[1].metadata?.earlier as Array<{ parts: unknown[] }>
+    expect(earlier).toHaveLength(2)
+    expect(earlier[0]).toEqual(firstEarlier)
+    expect(earlier[1].parts).toEqual([batch('pc2')])
+  })
+
+  it('a failed regenerate puts the replaced answer back as current, unfolded, and clears the stash', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() drops the answer and starts a replacement, which then fails.
+    mockMessages = [
+      mockMessages[0],
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'half an ans' }] },
+    ]
+    mockStatus = 'error'
+    mockError = new Error('boom')
+    rerender(<AITerminal />)
+    applySetMessages()
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+
+    // The stash is spent: a later settle must not fold anything onto the restored answer.
+    mockError = undefined
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  it('stopping an ask again before its first chunk puts the replaced answer back, unfolded', async () => {
+    const user = userEvent.setup()
+    const stashed = {
+      id: 'm1',
+      role: 'assistant',
+      metadata: { sentAt: '2026-10-01T07:12:00.000Z', read: ['life'] },
+      parts: [batch('pc1')],
+    }
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      stashed,
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'reject' }))
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+
+    // regenerate() slices the answer out and submits; stop lands before any chunk.
+    mockMessages = mockMessages.slice(0, 1)
+    mockStatus = 'submitted'
+    rerender(<AITerminal />)
+    mockStatus = 'ready'
+    rerender(<AITerminal />)
+    applySetMessages()
+    rerender(<AITerminal />)
+
+    expect(mockMessages.map((m) => m.id)).toEqual(['u1', 'm1'])
+    expect(mockMessages[1]).toBe(stashed)
+    expect(mockMessages[1].metadata?.earlier).toBeUndefined()
+    expect(screen.queryByRole('button', { name: /^earlier answer/ })).not.toBeInTheDocument()
+    expect(mockSetMessages).not.toHaveBeenCalled()
+  })
+
+  it('two ask agains leave two fold lines, newest nearest the answer, each opening on its own', async () => {
+    const user = userEvent.setup()
+    // Like the real route: an answer arrives with no metadata, so the terminal stamps its time.
+    const answer = (id: string, text: string) => ({
+      id,
+      role: 'assistant',
+      parts: [{ type: 'text', text }],
+    })
+    mockMessages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'tidy this page' }] },
+      answer('m1', 'first answer'),
+    ]
+    const { rerender } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const applySetMessages = () => {
+      type Thread = typeof mockMessages
+      for (const [update] of mockSetMessages.mock.calls as [Thread | ((prev: Thread) => Thread)][]) {
+        if (typeof update !== 'function') continue
+        mockMessages = update(mockMessages)
+      }
+      mockSetMessages.mockClear()
+    }
+    const regenerateInto = (replacement: (typeof mockMessages)[number]) => {
+      mockMessages = mockMessages.slice(0, 1)
+      mockStatus = 'streaming'
+      rerender(<AITerminal />)
+      mockMessages = [...mockMessages, replacement]
+      mockStatus = 'ready'
+      rerender(<AITerminal />)
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    // setMessages is a spy here, so the stamp an answer gets on landing is folded in by hand.
+    const landStamps = () => {
+      applySetMessages()
+      rerender(<AITerminal />)
+    }
+
+    landStamps()
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m2', 'second answer'))
+    landStamps()
+    await user.click(await screen.findByRole('button', { name: 'ask again' }))
+    regenerateInto(answer('m3', 'third answer'))
+
+    const folds = await screen.findAllByRole('button', { name: /^earlier answer/ })
+    expect(folds).toHaveLength(2)
+    for (const fold of folds) expect(fold).toHaveTextContent(/^earlier answer · \d{2}:\d{2}$/)
+    expect(screen.getByText('third answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+    expect(screen.queryByText('first answer')).not.toBeInTheDocument()
+
+    await user.click(folds[1])
+    expect(folds[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(folds[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('first answer')).toBeInTheDocument()
+    expect(screen.queryByText('second answer')).not.toBeInTheDocument()
+
+    await user.click(folds[0])
+    expect(screen.getByText('second answer')).toBeInTheDocument()
+    expect(screen.getByText('first answer')).toBeInTheDocument()
+  })
+
   it('two cards in one message offer accept all; one does not (C10)', async () => {
     mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
     renderWithQuery(<AITerminal />)
@@ -309,5 +648,107 @@ describe('AITerminal — propose_changes card (#98)', () => {
     const stamped = groups.find((g) => within(g).queryByText('first line of pc9'))
     expect(stamped).toHaveAttribute('aria-label', expect.stringContaining('proposed edit'))
     expect(screen.queryByRole('group', { name: /revised edit/ })).not.toBeInTheDocument()
+  })
+
+  // KAN-267 — a card that needsPlace and has nothing picked yet has no target:
+  // it must not claim the pond ("life") as its target while also saying it
+  // needs a place. Once a place is picked, the target names that page instead.
+  it('with needsPlace and nothing picked, the card names no target — not the pond', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }))
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    const card = screen.getByRole('group', { name: 'proposed edit' })
+    expect(within(card).queryByText('life')).not.toBeInTheDocument()
+    expect(within(card).queryByText(/— life/)).not.toBeInTheDocument()
+
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+
+    expect(await within(card).findByText('Page B')).toBeInTheDocument()
+  })
+
+  // KAN-267 — PATH_STEPS 1-5: no page open, an unstamped batch offers no live
+  // accept; picking a page in the place row offers one, and accepting writes to
+  // the chosen page, naming it in the receipt.
+  it('with no page open, picking a place in the card offers accept and writes there (KAN-267)', async () => {
+    const user = userEvent.setup()
+    const pageA = { id: 'page-a', parentId: null, type: 'page', title: 'Page A' }
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageA, pageB])
+    mockGetPage.mockImplementation(async (_supabase: unknown, id: string) => ({
+      id,
+      parentId: null,
+      type: 'page',
+      title: id === pageB.id ? pageB.title : pageA.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }))
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    // Nothing is stamped and no page is open: accept cannot land, so the card
+    // says so before any click, and offers a place instead.
+    expect(screen.getByText('these changes need a place to accept to')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'accept' })).toBeDisabled()
+
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalledTimes(1))
+    const [, , committedTargetId, committedBlocks] = mockCommitBlocks.mock.calls[0] as [
+      unknown,
+      unknown,
+      string,
+      Array<{ content?: string }>,
+    ]
+    expect(committedTargetId).toBe(pageB.id)
+    expect(committedBlocks.map((b) => b.content)).toEqual(
+      expect.arrayContaining(['first line of pc1', 'second line of pc1'])
+    )
+
+    await waitFor(() =>
+      expect(mockRequestNotify).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining(pageB.title) })
+      )
+    )
+  })
+
+  // KAN-267 — "accept all" must never reproduce the defect through the group
+  // bar: with no page open and nothing stamped, neither pending card can land,
+  // so accept all is withheld rather than silently writing nothing.
+  it('two unstamped cards with no page open: accept all is withheld, not a silent no-op write', async () => {
+    const user = userEvent.setup()
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    expect(screen.getAllByText('these changes need a place to accept to')).toHaveLength(2)
+    const acceptAll = screen.getByRole('button', { name: 'accept all' })
+    expect(acceptAll).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'reject all' })).toBeEnabled()
+
+    await user.click(acceptAll)
+
+    expect(mockCommitBlocks).not.toHaveBeenCalled()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 })

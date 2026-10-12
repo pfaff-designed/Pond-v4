@@ -250,7 +250,7 @@ describe('list — selection and the record peek', () => {
 })
 
 describe('list — in the view', () => {
-  it('the head reads `grouped by due` and the switcher lights list as the fifth segment', () => {
+  it('the head reads `grouped by due` and offers no switch to another kind (KAN-44)', () => {
     render(
       <CollectionView
         config={config}
@@ -263,19 +263,13 @@ describe('list — in the view', () => {
     )
     expect(screen.getByText('tasks')).toBeInTheDocument()
     expect(screen.getByText('grouped by due')).toBeInTheDocument()
-    const segments = [...document.querySelectorAll('[data-part="view-segment"]')]
-    expect(segments.map((s) => s.textContent)).toEqual([
-      'board',
-      'timeline',
-      'table',
-      'calendar',
-      'list',
-    ])
-    expect(screen.getByRole('button', { name: 'list' })).toHaveAttribute('aria-pressed', 'true')
+    for (const kind of ['board', 'timeline', 'table', 'calendar']) {
+      expect(screen.queryByRole('button', { name: kind })).toBeNull()
+    }
   })
 
   it.each(['board', 'list'] as const)(
-    'switching from a date-grouped calendar to %s keeps the lanes and groups',
+    'a %s grouped by a date property draws its lanes and groups',
     (mode) => {
       render(
         <CollectionView
@@ -304,21 +298,5 @@ describe('list — in the view', () => {
       />
     )
     expect(screen.queryByRole('button', { name: /add property|add field/i })).toBeNull()
-  })
-
-  it('the switcher writes `list` into the block config', () => {
-    const onConfigChange = jest.fn()
-    render(
-      <CollectionView
-        config={{ ...config, mode: 'board', groupBy: 's' }}
-        schema={schema}
-        rows={rows}
-        collectionName="tasks"
-        editable
-        onConfigChange={onConfigChange}
-      />
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'list' }))
-    expect(onConfigChange).toHaveBeenCalledWith({ mode: 'list' })
   })
 })

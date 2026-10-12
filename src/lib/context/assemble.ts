@@ -20,6 +20,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import { getChildPages } from '@/lib/pages/client'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import { resolveDescriptor } from '@/lib/modules/registry'
 import type { Block } from '@/lib/documents/types'
 import { ROW_TYPE, readSchema, readValues } from '@/lib/properties/schema'
@@ -377,16 +378,17 @@ export async function fetchPageSummaries(
    * #312: `Pond 06.13` `s6m5` — "the composer reads only this pond". This is the
    * outline the model is given, so without the pond it was handed EVERY pond's
    * page titles: a new pond's chat could name, mention and propose against pages
-   * that pond cannot see.
+   * that pond cannot see. Already resolved — see `buildChatContext`.
    */
-  pondId?: string | null
+  pond: string | null
 ): Promise<PageSummary[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = (sb as any).from('pages').select('id, parent_id, type, title').eq('user_id', userId)
+  const q: any = (sb as any)
+    .from('pages')
+    .select('id, parent_id, type, title')
+    .eq('user_id', userId)
 
-  if (pondId) q = q.eq('pond_id', pondId)
-
-  const { data } = await q.order('order', { ascending: true })
+  const { data } = await inPond(q, pond).order('order', { ascending: true })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return ((data ?? []) as any[]).map((r) => ({
@@ -397,19 +399,21 @@ export async function fetchPageSummaries(
   }))
 }
 
-/** Find a page whose title matches (case-insensitive) — single table now. */
+/**
+ * Find this pond's page whose title matches (case-insensitive). A title is unique
+ * only among siblings in one pond, so the same name in another pond is a different
+ * page — and never one this pond's composer may read.
+ */
 export async function resolveMention(
   sb: Sb,
   userId: string,
-  name: string
+  name: string,
+  /** Already resolved — see `buildChatContext`. */
+  pond: string | null
 ): Promise<MentionRef | null> {
-  const { data } = await sb
-    .from('pages')
-    .select('id, type')
-    .eq('user_id', userId)
-    .ilike('title', name)
-    .limit(1)
-    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q: any = (sb as any).from('pages').select('id, type').eq('user_id', userId)
+  const { data } = await inPond(q, pond).ilike('title', name).limit(1).maybeSingle()
 
   if (!data) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -424,7 +428,7 @@ export interface BuildChatContextOptions {
   nodeType?: NodeType | null
   latestUserText?: string
   /** #312: the pond whose pages the model may see. See `fetchPageSummaries`. */
-  pondId?: string | null
+  pondId: string | null
 }
 
 /**
@@ -439,6 +443,7 @@ export async function buildChatContext(
   opts: BuildChatContextOptions
 ): Promise<string> {
   const blocks: string[] = []
+  const pond = await resolvePond(sb, userId, opts.pondId)
 
   if (opts.nodeId) {
     const data = await fetchNodeContext(sb, userId, opts.nodeId)
@@ -448,14 +453,14 @@ export async function buildChatContext(
 
   if (opts.latestUserText) {
     for (const name of parseMentions(opts.latestUserText)) {
-      const ref = await resolveMention(sb, userId, name)
+      const ref = await resolveMention(sb, userId, name, pond)
       if (!ref) continue
       const data = await fetchNodeContext(sb, userId, ref.nodeId)
       if (data) blocks.push(formatNodeContext(data, { label: `Referenced: @${ref.name}` }))
     }
   }
 
-  const outline = formatWorkspaceOutline(await fetchPageSummaries(sb, userId, opts.pondId))
+  const outline = formatWorkspaceOutline(await fetchPageSummaries(sb, userId, pond))
   if (outline) blocks.push(outline)
 
   return blocks.join('\n\n')

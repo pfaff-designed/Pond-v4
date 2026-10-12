@@ -10,10 +10,11 @@
 
 import type { QueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
-import { firstPondId } from '@/lib/pond/first'
+import { inPond, resolvePond } from '@/lib/pond/scope'
 import { pagesKey } from './keys'
 import { HOME_TYPE } from '@/lib/pages/home'
 import { ROW_TYPE } from '@/lib/properties/schema'
+import type { AreaRole } from '@/lib/rail/glyph-library'
 
 export interface PageRow {
   id: string
@@ -33,7 +34,7 @@ export interface PageRow {
   area_role?: string | null
 }
 
-export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
+export async function fetchPages(pondId: string | null): Promise<PageRow[]> {
   const supabase = createClient()
   const {
     data: { user },
@@ -45,9 +46,9 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // PondProvider — fall back to the person's first, which is also what `?pond=`
   // resolves to on a cold load. Never return every pond's pages: that is how a
   // new pond would show the first pond's tree.
-  const scope = pondId ?? (await firstPondId(supabase, user.id))
+  const pond = await resolvePond(supabase, user.id, pondId)
 
-  let q = supabase
+  const q = supabase
     .from('pages')
     // #134: glyph + area_role ride along, so the ONE pagesKey() cache
     // the rail, breadcrumb and page surface already share is enough to resolve every
@@ -71,9 +72,7 @@ export async function fetchPages(pondId?: string | null): Promise<PageRow[]> {
   // Filters before `.order()`: a PostgREST builder is chainable either way, but
   // ordering last keeps the shape readable and means a test double does not have
   // to return a chainable from `order`.
-  if (scope) q = q.eq('pond_id', scope)
-
-  const { data, error } = await q.order('order')
+  const { data, error } = await inPond(q, pond).order('order')
   if (error) throw error
   return (data ?? []) as PageRow[]
 }
@@ -128,6 +127,38 @@ export function applyRenameOptimistic(
 ): void {
   queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
     rows?.map((r) => (r.id === rename.id ? { ...r, title: rename.title } : r))
+  )
+}
+
+/**
+ * Optimistically set ONE row's glyph (KAN-248 6/8) in the pagesKey() cache —
+ * null restores the automatic mark — so the rail redraws through `resolveMark`
+ * before `setPageGlyph`'s write lands. Mirrors `applyRenameOptimistic`: touches
+ * only the picked row, so rolling back is the same call with the previous glyph.
+ */
+export function applyGlyphOptimistic(
+  queryClient: QueryClient,
+  pick: { id: string; glyph: string | null },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === pick.id ? { ...r, glyph: pick.glyph } : r))
+  )
+}
+
+/**
+ * Optimistically set ONE area's colour (KAN-249 1/7) in the pagesKey() cache —
+ * null restores ink — so the rail and breadcrumb redraw through resolveMark
+ * before setAreaRole's write lands. Mirrors applyGlyphOptimistic: touches only
+ * the picked row, so rolling back is the same call with the previous role.
+ */
+export function applyAreaRoleOptimistic(
+  queryClient: QueryClient,
+  pick: { id: string; role: AreaRole | null },
+  pondId: string | null
+): void {
+  queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) =>
+    rows?.map((r) => (r.id === pick.id ? { ...r, area_role: pick.role } : r))
   )
 }
 

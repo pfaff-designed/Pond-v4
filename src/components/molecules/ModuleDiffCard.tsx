@@ -41,13 +41,20 @@
  * block carries a display-only placeholder id until accept mints the real one.
  */
 
-import { useState, type KeyboardEvent } from 'react'
+import { useId, useState, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { ChangePreview } from '@/lib/modules/preview'
 import { chipBaseClass } from '@/components/atoms/kicker'
 import { PondControl } from '@/components/atoms/PondControl'
 import { ChangeRows, NoteBox } from './diff-card-parts'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
+import {
+  PlaceRow,
+  type PlaceOption,
+  placeRowClass,
+  placeLabelClass,
+  placeFieldClass,
+} from './place-row'
 
 export interface ModuleDiffCardProps {
   /** Every change in the batch, in emission order. */
@@ -57,6 +64,16 @@ export interface ModuleDiffCardProps {
   /** Ticket-30 review: the batch named a target page that does not exist. A
    *  notice replaces the body's promise and accepting will skip. */
   targetMissing?: boolean
+  /** KAN-267: no stamp and no page open — `resolveAcceptTarget` would return
+   *  null. Accept is withheld and the place row offered instead of a click
+   *  that provably cannot land. */
+  needsPlace?: boolean
+  parentOptions?: PlaceOption[]
+  /** The pond's name, shown as the place row's top-level option. */
+  pondName?: string
+  /** KAN-267: the pond root names no page to write blocks to, so the place row
+   *  never offers it here — the id is always a real page. */
+  onPickPlace?: (id: string) => void
   status?: ProposalStatus
   /** The request-changes note that went to Pond (status `changes_requested`). */
   note?: string
@@ -81,10 +98,24 @@ export interface ModuleDiffCardProps {
  *  button (14px type, 20px sides), so the card says so in classes. */
 const MOBILE_BUTTON = 'max-md:h-11 max-md:px-5 max-md:text-[14px]'
 
+/** KAN-267 build point 3: N identical reasons render as one line with a count,
+ *  in first-occurrence order. */
+function countByReason(reasons: string[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const reason of reasons) {
+    counts.set(reason, (counts.get(reason) ?? 0) + 1)
+  }
+  return counts
+}
+
 export function ModuleDiffCard({
   changes,
   targetName,
   targetMissing = false,
+  needsPlace = false,
+  parentOptions,
+  pondName,
+  onPickPlace,
   status = 'pending',
   note,
   revised = false,
@@ -99,6 +130,7 @@ export function ModuleDiffCard({
 }: ModuleDiffCardProps) {
   const [noteOpen, setNoteOpen] = useState(false)
   const [showRejected, setShowRejected] = useState(false)
+  const placeRowId = useId()
 
   const resolved = status !== 'pending'
   const kind = revised ? 'revised edit' : 'proposed edit'
@@ -109,7 +141,7 @@ export function ModuleDiffCard({
   // ⌘↵ takes the whole diff, from anywhere on the card except a field of its own
   // (the request-changes note sends on ⌘↵ itself).
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!pending || targetMissing || e.defaultPrevented) return
+    if (!pending || targetMissing || needsPlace || e.defaultPrevented) return
     if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return
     const field = (e.target as HTMLElement).tagName
     if (field === 'TEXTAREA' || field === 'INPUT') return
@@ -184,6 +216,27 @@ export function ModuleDiffCard({
               target page not found — this proposal can’t be applied.
             </p>
           )}
+          {pending && needsPlace && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] text-mn-text-meta">
+                these changes need a place to accept to
+              </p>
+              <PlaceRow
+                id={placeRowId}
+                parentId={null}
+                parentOptions={parentOptions ?? []}
+                pondName={pondName}
+                includeRootOption={false}
+                onParentChange={(id) => {
+                  // The placeholder option is disabled — a real pick is always a page id.
+                  if (id !== null) onPickPlace?.(id)
+                }}
+                rowClassName={placeRowClass}
+                labelClassName={placeLabelClass}
+                fieldClassName={placeFieldClass}
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-[3px]">
             {changes.map((change, i) => (
               <div key={i} className="flex flex-col gap-[3px]">
@@ -203,7 +256,7 @@ export function ModuleDiffCard({
                   kind="button"
                   variant="primary"
                   label="accept"
-                  disabled={targetMissing}
+                  disabled={targetMissing || needsPlace}
                   className={MOBILE_BUTTON}
                   onClick={onAccept}
                 />
@@ -295,7 +348,12 @@ export function ModuleDiffCard({
           {skippedCount > 0 && (
             <div role="note" className="space-y-0.5 text-[10.5px] text-mn-text-meta">
               {skippedReasons.length > 0 ? (
-                skippedReasons.map((reason, i) => <p key={i}>couldn’t place — {reason}</p>)
+                Array.from(countByReason(skippedReasons)).map(([reason, reasonCount]) => (
+                  <p key={reason}>
+                    {reasonCount} change{reasonCount > 1 ? 's' : ''} couldn’t be placed —{' '}
+                    {reason}
+                  </p>
+                ))
               ) : (
                 <p>
                   {skippedCount} change{skippedCount > 1 ? 's' : ''} couldn’t be placed and{' '}

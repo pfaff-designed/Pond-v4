@@ -23,7 +23,8 @@ export const moduleDescriptors = {
   todo: todoDescriptor,
   table: tableDescriptor,
   page: pageDescriptor,
-  // #19: an inline view of a collection's rows (table/board/calendar/gallery).
+  // #19: an inline view of a collection's rows. One carrier for every view kind;
+  // each kind's name, card and empty state is `view/kinds.ts` (KAN-44, ADR 0009).
   view: viewDescriptor,
   // #61: an uploaded image / file attachment, referenced by storage URL.
   image: imageDescriptor,

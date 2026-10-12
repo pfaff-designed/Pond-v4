@@ -277,6 +277,7 @@ function renderRail(over: Partial<React.ComponentProps<typeof RailView>> = {}) {
       onAddChild={jest.fn()}
       onDelete={jest.fn()}
       onRename={jest.fn()}
+      onPickGlyph={jest.fn()}
       onLife={jest.fn()}
       onToggleLife={jest.fn()}
       onOpenDatabases={jest.fn()}
@@ -377,6 +378,28 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
       'no pages yet. ＋ new page, or ask pond to start one.'
     )
   })
+
+  it('empty: the root still makes the first page — its ＋ on hover, and + from the keyboard', () => {
+    const onAddChild = jest.fn()
+    renderRail({ tree: [], isEmpty: true, onAddChild })
+    const root = screen.getByRole('treeitem', { name: /Life/ })
+    expect(root).toHaveAttribute('aria-selected', 'false')
+
+    fireEvent.mouseEnter(root)
+    fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to Life' }))
+    expect(onAddChild).toHaveBeenCalledWith('__life__')
+
+    onAddChild.mockClear()
+    root.focus()
+    fireEvent.keyDown(root, { key: '+' })
+    expect(onAddChild).toHaveBeenCalledWith('__life__')
+  })
+
+  it('empty: the root has no × — a pond is not deleted from the rail', () => {
+    renderRail({ tree: [], isEmpty: true })
+    fireEvent.mouseEnter(screen.getByRole('treeitem', { name: /Life/ }))
+    expect(screen.queryByRole('button', { name: /^Delete/ })).toBeNull()
+  })
 })
 
 // ── AC2: the path `PondCommand` shows at rest ─────────────────────────────────
@@ -401,6 +424,7 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
   it('at the root: the root page alone, under the pond’s own mark', () => {
     expect(commandPath(ROWS, null, opts('ignored'))).toEqual({
       glyph: LIFE_GLYPH,
+      role: null,
       trail: [],
       current: 'life',
     })
@@ -412,8 +436,13 @@ describe('commandPath — the root, the ancestors, then the page; led by its are
     expect(healthMark).not.toBeNull()
     const area = commandPath(ROWS, 'health', opts('Health'))
     const child = commandPath(ROWS, 'sleep', opts('Sleep'))
-    expect(area).toEqual({ glyph: healthMark, trail: ['life'], current: 'Health' })
-    expect(child).toEqual({ glyph: healthMark, trail: ['life', 'Health'], current: 'Sleep' })
+    expect(area).toEqual({ glyph: healthMark, role: null, trail: ['life'], current: 'Health' })
+    expect(child).toEqual({
+      glyph: healthMark,
+      role: null,
+      trail: ['life', 'Health'],
+      current: 'Sleep',
+    })
   })
 
   // #101 review: every segment is the page title verbatim — the root reads

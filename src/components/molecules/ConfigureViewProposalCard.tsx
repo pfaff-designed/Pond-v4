@@ -25,6 +25,7 @@ import { kickerClass } from '@/components/atoms/kicker'
 import { ProposalActions, type ProposalStatus } from '@/components/molecules/ProposalActions'
 import { TOP_LEVEL_VALUE, type ParentOption } from './CreatePageProposalCard'
 import type { ViewMode, ViewSort, FilterOp } from '@/lib/modules/view/schema'
+import { viewKind } from '@/lib/modules/view/kinds'
 
 /** The proposed sort clause, keyed by property NAME (previewed read-only). */
 export interface ConfigureViewSort {
@@ -98,17 +99,10 @@ interface ConfigureViewProposalCardProps {
   className?: string
 }
 
-/** Title-case a mode for the display-serif line (table → Table, etc.). */
-const MODE_LABEL: Record<ViewMode, string> = {
-  table: 'Table',
-  board: 'Board',
-  calendar: 'Calendar',
-  list: 'List',
-  gallery: 'Gallery',
-  gantt: 'Gantt',
-  // #111: a chart and a big number are modes of the database, not blocks of their own.
-  chart: 'Chart',
-  'big-number': 'Big number',
+/** The kind's own word, title-cased for the display-serif line (table → Table, gantt → Timeline). */
+const modeLabel = (mode: ViewMode) => {
+  const { label } = viewKind({ mode })
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 /** A short human phrase for a filter operator, for the read-only preview. */
@@ -198,11 +192,11 @@ export function ConfigureViewProposalCard({
     >
       {/* Header — "New view" kicker + the chosen mode */}
       <div className="flex items-center justify-between border-b border-mn-hair px-3 py-1.5">
-        <span className={kickerClass}>New view · {MODE_LABEL[mode]}</span>
+        <span className={kickerClass}>New view · {modeLabel(mode)}</span>
       </div>
 
       {/* The mode, set as the display-serif line. */}
-      <p className="px-3 pt-2.5 font-serif text-sm text-mn-text-meta">{MODE_LABEL[mode]}</p>
+      <p className="px-3 pt-2.5 font-serif text-sm text-mn-text-meta">{modeLabel(mode)}</p>
 
       {reason && <p className="px-3 pt-1.5 font-serif text-xs italic text-mn-text-secondary">{reason}</p>}
 

@@ -102,6 +102,7 @@ beforeEach(() => {
 describe('writeAcceptedChanges', () => {
   it('commits to the stamped target, not the open node', async () => {
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -127,6 +128,7 @@ describe('writeAcceptedChanges', () => {
 
   it('falls back to the open node for an unstamped (legacy) card', async () => {
     await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -141,8 +143,9 @@ describe('writeAcceptedChanges', () => {
     ])
   })
 
-  it('no stamp and no open node → every change skipped, nothing written', async () => {
+  it('no stamp and no open node → every change skipped (defence only — the card guard above must never let accept reach this)', async () => {
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -163,6 +166,7 @@ describe('writeAcceptedChanges', () => {
   it('deleted target page → every change skipped, nothing written', async () => {
     mockedGetPage.mockResolvedValue(null)
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -199,6 +203,7 @@ describe('writeAcceptedChanges', () => {
     ] as ModuleChange[]
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -228,6 +233,7 @@ describe('writeAcceptedChanges', () => {
     } as unknown as Awaited<ReturnType<typeof getPage>>)
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -251,6 +257,7 @@ describe('writeAcceptedChanges', () => {
       { op: 'create', data: { type: 'todo', items: 'not-an-array' } },
     ] as unknown as ModuleChange[]
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -275,6 +282,7 @@ describe('writeAcceptedChanges', () => {
     // anyway, but a CREATE has no gate — without the missing stamp it would
     // silently append to whatever page is open.
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -299,6 +307,7 @@ describe('writeAcceptedChanges', () => {
 
   it('an empty accepted batch is a no-op', async () => {
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -324,6 +333,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted' }))
 
     await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -352,6 +362,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedAdvance.mockResolvedValue(logRecord({ status: 'accepted' }))
 
     await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -383,6 +394,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
 
     await expect(
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -441,6 +453,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
 
     await expect(
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -463,6 +476,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
 
     await expect(
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -484,6 +498,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     // is. No session means no pond to scope a record to — and the write below
     // fails on its own merits, exactly as it did before the log existed.
     await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: null,
@@ -510,6 +525,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     } as unknown as Awaited<ReturnType<typeof getPage>>)
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -536,6 +552,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedLookup.mockResolvedValue(logRecord({ status: 'outdated' }))
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -562,6 +579,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedLookup.mockResolvedValue(logRecord({ status: 'accepted' }))
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -585,6 +603,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedAcceptRecord.mockRejectedValue(new Error('record is outdated'))
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -611,6 +630,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
 
     await expect(
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -635,6 +655,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedLookup.mockResolvedValue(logRecord({ status: 'rejected' }))
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -661,6 +682,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
     mockedPropagate.mockRejectedValue(new Error('invalidate failed'))
 
     const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -686,6 +708,7 @@ describe('writeAcceptedChanges — the change-log record', () => {
       mockedLookup.mockResolvedValue(logRecord({ status }))
 
       const result = await writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -752,6 +775,7 @@ describe('concurrent accepts on the same page', () => {
     }
     const accept = (toolCallId: string, content: string) =>
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -784,6 +808,7 @@ describe('concurrent accepts on the same page', () => {
     }
     mockedGetPage.mockRejectedValueOnce(new Error('network'))
     const failing = writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -793,6 +818,7 @@ describe('concurrent accepts on the same page', () => {
       changes: [textChange('lost')],
     })
     const following = writeAcceptedChanges({
+      pondId: 'pond-1',
       supabase,
       queryClient,
       userId: USER,
@@ -826,6 +852,7 @@ describe('concurrent accepts on the same page', () => {
 
     await Promise.all([
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,
@@ -835,6 +862,7 @@ describe('concurrent accepts on the same page', () => {
         changes: [textChange('a')],
       }),
       writeAcceptedChanges({
+        pondId: 'pond-1',
         supabase,
         queryClient,
         userId: USER,

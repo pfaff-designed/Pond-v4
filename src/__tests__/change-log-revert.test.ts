@@ -77,7 +77,7 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
 function fakeSupabase(result: { data?: unknown; error?: unknown }) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const q: any = {}
-  for (const method of ['from', 'select', 'eq', 'in', 'order', 'limit']) {
+  for (const method of ['from', 'select', 'eq', 'is', 'in', 'order', 'limit']) {
     q[method] = jest.fn(() => q)
   }
   q.then = (onOk: any, onErr: any) => Promise.resolve(result).then(onOk, onErr)
@@ -500,6 +500,7 @@ describe('proposeRevert', () => {
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record(),
       current: [text('a', 'one'), text('b', 'TWO'), text('z', 'unrelated')],
@@ -515,6 +516,7 @@ describe('proposeRevert', () => {
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record({ before: [], after: [text('provisional', 'from pond')] }),
       current: [text('minted', 'from pond'), text('keep', 'mine')],
@@ -529,6 +531,7 @@ describe('proposeRevert', () => {
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record(),
       current: [text('a', 'one'), text('b', 'MOVED ON')],
@@ -570,7 +573,7 @@ describe('proposeRevert', () => {
     })
 
     await expect(
-      proposeRevert(supabase, { userId: USER, record: record(), current: [] })
+      proposeRevert(supabase, { pondId: 'pond-1', userId: USER, record: record(), current: [] })
     ).rejects.toThrow(/already has a revert waiting/)
     expect(mockedAppend).not.toHaveBeenCalled()
   })
@@ -603,6 +606,7 @@ describe('proposeRevert', () => {
     mockedAppend.mockResolvedValue(record({ id: 'rev-2', action: 'revert' }))
 
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record(),
       current: [text('a', 'one'), text('b', 'TWO')],
@@ -620,6 +624,7 @@ describe('proposeRevert', () => {
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record(),
       current: [text('a', 'one'), text('b', 'MOVED ON')],
@@ -658,6 +663,7 @@ describe('proposeRevert', () => {
 
     await expect(
       proposeRevert(supabase, {
+        pondId: 'pond-1',
         userId: USER,
         record: record(),
         current: [text('a', 'one'), text('b', 'MOVED ON')],
@@ -668,6 +674,7 @@ describe('proposeRevert', () => {
     // But once the page moves, a fresh attempt can give a different answer.
     mockedAppend.mockResolvedValue(record({ id: 'rev-2', action: 'revert' }))
     await proposeRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       record: record(),
       current: [text('a', 'one'), text('b', 'TWO')],
@@ -678,7 +685,12 @@ describe('proposeRevert', () => {
   it('refuses outright when the record offers no revert', async () => {
     const supabase = fakeSupabase({ data: [], error: null })
     await expect(
-      proposeRevert(supabase, { userId: USER, record: record({ action: 'add_row' }), current: [] })
+      proposeRevert(supabase, {
+        pondId: 'pond-1',
+        userId: USER,
+        record: record({ action: 'add_row' }),
+        current: [],
+      })
     ).rejects.toThrow(/cannot be reverted/)
   })
 })
@@ -688,7 +700,9 @@ describe('listRevertsOf', () => {
     // Swallowing this would let a second revert be raised over one already
     // waiting, and would blank the record page's `reverted by` field silently.
     const supabase = fakeSupabase({ data: null, error: { message: 'boom' } })
-    await expect(listRevertsOf(supabase, { userId: USER, recordId: 'rec-1' })).rejects.toBeTruthy()
+    await expect(
+      listRevertsOf(supabase, { pondId: 'pond-1', userId: USER, recordId: 'rec-1' })
+    ).rejects.toBeTruthy()
   })
 })
 
@@ -717,6 +731,7 @@ describe('acceptRevert', () => {
       .mockResolvedValue({ data: { ...toRow(revert), status: 'accepted' }, error: null })
 
     const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       revert,
       current: PAGE_AT_PROPOSE,
@@ -740,6 +755,7 @@ describe('acceptRevert', () => {
     mockedAdvance.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       revert,
       current: [...PAGE_AT_PROPOSE, text('c', 'typed since')],
@@ -763,7 +779,12 @@ describe('acceptRevert', () => {
       { type: 'text', content: 'TWO', id: 'b' },
     ] as unknown as typeof PAGE_AT_PROPOSE
 
-    const out = await acceptRevert(supabase, { userId: USER, revert, current: reordered })
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: reordered,
+    })
 
     expect(out.kind).toBe('accepted')
   })
@@ -774,6 +795,7 @@ describe('acceptRevert', () => {
     mockedAdvance.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       revert: record({ ...revert, before: 'not blocks' }),
       current: PAGE_AT_PROPOSE,
@@ -792,6 +814,7 @@ describe('acceptRevert', () => {
     supabase.rpc = jest.fn()
 
     const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
       userId: USER,
       revert: record({ ...revert, status: 'outdated' }),
       current: PAGE_AT_PROPOSE,
@@ -808,7 +831,12 @@ describe('acceptRevert', () => {
       .fn()
       .mockResolvedValue({ data: { ...toRow(revert), status: 'accepted' }, error: null })
 
-    await acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
+    await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
 
     expect(mockedSweep).toHaveBeenCalledWith(
       supabase,
@@ -831,7 +859,12 @@ describe('acceptRevert', () => {
     mockedSweep.mockRejectedValue(new Error('sweep down'))
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    const out = await acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
 
     expect(out.kind).toBe('accepted')
     quiet.mockRestore()
@@ -842,7 +875,7 @@ describe('acceptRevert', () => {
     supabase.rpc = jest.fn().mockResolvedValue({ data: null, error: { message: 'conflict' } })
 
     await expect(
-      acceptRevert(supabase, { userId: USER, revert, current: PAGE_AT_PROPOSE })
+      acceptRevert(supabase, { pondId: 'pond-1', userId: USER, revert, current: PAGE_AT_PROPOSE })
     ).rejects.toBeTruthy()
     expect(mockedSweep).not.toHaveBeenCalled()
   })

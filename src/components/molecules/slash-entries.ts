@@ -77,6 +77,8 @@ export type SlashPane = 'rows' | 'templates'
  * lead a row with, on the board's 14 × 14 grid, stroked at 1.4. ONE owner (#280):
  * the `/` menu's rows (`lib/modules/palette.ts`), the palette's `db` mark
  * (`palette-row.tsx`) and the source picker (`source-entries.ts`) all read it here.
+ * `board`, `calendar` and `timeline` are not on the board, which draws no row for
+ * those kinds (ADR 0009 gives each its own); they follow its grid and stroke.
  */
 export const ICON = {
   text: { d: 'M3 3.5h8M7 3.5v7.5' },
@@ -94,6 +96,11 @@ export const ICON = {
     d: 'M3.2 2.5h7.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 10.3V3.7a1.2 1.2 0 0 1 1.2-1.2zM2 6h10M6 2.5v9',
   },
   gallery: { d: 'M2 2.5h4.2v4.2H2zM7.8 2.5H12v4.2H7.8zM2 8h4.2v4.2H2zM7.8 8H12v4.2H7.8z' },
+  board: { d: 'M2.2 2.5h2.6v9H2.2zM5.7 2.5h2.6v6.2H5.7zM9.2 2.5h2.6v4H9.2z' },
+  calendar: {
+    d: 'M3.7 3h6.6a1.2 1.2 0 0 1 1.2 1.2v6.6a1.2 1.2 0 0 1-1.2 1.2H3.7a1.2 1.2 0 0 1-1.2-1.2V4.2A1.2 1.2 0 0 1 3.7 3zM2.5 6.2h9M5.2 1.8v2.4M8.8 1.8v2.4',
+  },
+  timeline: { d: 'M2.5 3.5h5M5 7h6.5M3.8 10.5h4.4' },
   chart: { d: 'M2.5 11.5h9M4.2 11.5V7.5M7 11.5V3.5M9.8 11.5V8.8' },
   log: { d: 'M2 7a5 5 0 1 0 10 0a5 5 0 1 0-10 0M7 4.4V7l1.9 1.2' },
   tpl: { d: 'M2 2h10v3H2zM2 6.5h10v2H2zM2 10h6v2H2z' },

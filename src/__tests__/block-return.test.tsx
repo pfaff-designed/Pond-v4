@@ -248,6 +248,13 @@ describe('the handle is the only block chrome (07.05)', () => {
     expect(dots).toEqual(['3 3 1.1', '7 3 1.1', '3 7 1.1', '7 7 1.1', '3 11 1.1', '7 11 1.1'])
   })
 
+  it('centres on a text block’s first line, which has no card head row to align with', () => {
+    renderCanvas([note])
+    const box = handleOf('b-note').closest('[data-part="handle"]')!
+    expect(box).toHaveClass('absolute', '-left-3.5', 'top-1')
+    expect(box).not.toHaveClass('top-3')
+  })
+
   it('is hidden at rest and shows on block hover or keyboard focus', () => {
     renderCanvas([table])
     const box = handleOf('b-table').closest('[data-part="handle"]')!

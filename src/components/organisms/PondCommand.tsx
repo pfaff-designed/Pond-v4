@@ -13,7 +13,8 @@
  *           light recipe; dark through the same class) · w restW → 560, where
  *           restW = the path layer + 124 · below `md` it opens to `PondPicker`'s
  *           `mob` 360, never closer than 12px to the viewport's edges
- *   glyph   12 × 12 at 14, 14 · the area's mark, in ink · never moves
+ *   glyph   12 × 12 at 14, 14 · the area's mark, in its role's colour (ink when
+ *           none) · never moves
  *   path    left 36 · h 38 · gap 10 · 11 · .04em · ancestors ink .68 · › ink .8 ·
  *           the page full ink 500 · then a 1 × 14 rule at ink .09
  *   mode    22 × 22 at right 56, top 9 · a 13px half-disc at 1.4 · ink .68
@@ -53,6 +54,7 @@ import {
 } from '@/components/molecules/palette-entries'
 import { PaletteRow, type PaletteRowEntry } from '@/components/molecules/palette-row'
 import type { CommandPath } from '@/lib/pages/command-path'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { useMorph } from '@/lib/motion/use-morph'
 import { useMode } from '@/lib/theme/mode'
 
@@ -175,6 +177,7 @@ export function PondCommand({
   const { half, atRest } = useMorph(boxRef, open, at)
   const live = open || !atRest
   const { mode, toggleMode } = useMode()
+  const markCol = markAccent(path.role)
 
   const [query, setQuery] = useState(defaultQuery)
   const [scope, setScope] = useState(initialScope)
@@ -351,7 +354,10 @@ export function PondCommand({
         <span
           aria-hidden
           data-part="glyph"
-          className="pointer-events-none absolute top-[14px] left-[14px] flex text-mn-text"
+          className={`pointer-events-none absolute top-[14px] left-[14px] flex ${
+            markCol ? '' : 'text-mn-text'
+          }`}
+          style={markCol ? { color: markCol } : undefined}
         >
           <Icon name={path.glyph} size={12} />
         </span>

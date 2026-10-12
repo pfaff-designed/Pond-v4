@@ -92,14 +92,14 @@ describe('listTemplates', () => {
   it('returns [] on a fresh pond without throwing (premade are code constants, not rows)', async () => {
     const chain = makeChain({ order: jest.fn().mockResolvedValue({ data: null, error: null }) })
     const sb = makeSupabase(chain)
-    await expect(listTemplates(sb as never, 'user-1')).resolves.toEqual([])
+    await expect(listTemplates(sb as never, 'user-1', 'pond-1')).resolves.toEqual([])
   })
 
   it('coerces a non-array blocks column to []', async () => {
     const chain = makeChain({
       order: jest.fn().mockResolvedValue({ data: [templateRow({ blocks: null })], error: null }),
     })
-    const out = await listTemplates(makeSupabase(chain) as never, 'user-1')
+    const out = await listTemplates(makeSupabase(chain) as never, 'user-1', 'pond-1')
     expect(out[0].blocks).toEqual([])
   })
 
@@ -107,14 +107,18 @@ describe('listTemplates', () => {
     const chain = makeChain({
       order: jest.fn().mockResolvedValue({ data: null, error: { message: 'read boom' } }),
     })
-    await expect(listTemplates(makeSupabase(chain) as never, 'user-1')).rejects.toThrow(/read boom/)
+    await expect(listTemplates(makeSupabase(chain) as never, 'user-1', 'pond-1')).rejects.toThrow(
+      /read boom/
+    )
   })
 
   it('refuses a row whose kind is outside the vocabulary (the DB CHECK makes this a future-migration row)', async () => {
     const chain = makeChain({
       order: jest.fn().mockResolvedValue({ data: [templateRow({ kind: 'recipe' })], error: null }),
     })
-    await expect(listTemplates(makeSupabase(chain) as never, 'user-1')).rejects.toThrow(/recipe/)
+    await expect(listTemplates(makeSupabase(chain) as never, 'user-1', 'pond-1')).rejects.toThrow(
+      /recipe/
+    )
   })
 })
 
@@ -176,7 +180,11 @@ describe('createTemplate — the pond is always stamped (KAN-10)', () => {
       from: jest.fn((table: string) => (table === 'ponds' ? ponds : templates)),
     }
 
-    await createTemplate(sb as never, 'user-1', { name: 'Weekly review', kind: 'page' })
+    await createTemplate(sb as never, 'user-1', {
+      pondId: null,
+      name: 'Weekly review',
+      kind: 'page',
+    })
 
     expect(templates.insert.mock.calls[0][0]).toMatchObject({ pond_id: 'pond-first' })
   })
@@ -210,7 +218,11 @@ describe('createTemplate — the pond is always stamped (KAN-10)', () => {
     })
     const sb = makeSupabase(chain)
 
-    await createTemplate(sb as never, 'user-1', { name: 'Weekly review', kind: 'page' })
+    await createTemplate(sb as never, 'user-1', {
+      pondId: null,
+      name: 'Weekly review',
+      kind: 'page',
+    })
 
     expect(chain.insert.mock.calls[0][0]).not.toHaveProperty('pond_id')
   })
@@ -224,6 +236,7 @@ describe('createTemplate', () => {
     const sb = makeSupabase(chain)
 
     const out = await createTemplate(sb as never, 'user-1', {
+      pondId: 'pond-1',
       name: 'Weekly review',
       kind: 'meeting notes',
       blocks: sampleBlocks,
@@ -233,6 +246,7 @@ describe('createTemplate', () => {
     expect(sb.from).toHaveBeenCalledWith('templates')
     expect(chain.insert.mock.calls[0][0]).toEqual({
       user_id: 'user-1',
+      pond_id: 'pond-1',
       name: 'Weekly review',
       kind: 'meeting notes',
       blocks: sampleBlocks,
@@ -247,7 +261,11 @@ describe('createTemplate', () => {
     const chain = makeChain({
       single: jest.fn().mockResolvedValue({ data: templateRow(), error: null }),
     })
-    await createTemplate(makeSupabase(chain) as never, 'user-1', { name: 'Habit', kind: 'habit' })
+    await createTemplate(makeSupabase(chain) as never, 'user-1', {
+      pondId: 'pond-1',
+      name: 'Habit',
+      kind: 'habit',
+    })
     expect(chain.insert.mock.calls[0][0]).toMatchObject({
       blocks: [],
       origin: 'yours',
@@ -262,7 +280,11 @@ describe('createTemplate', () => {
     })
     const sb = makeSupabase(chain)
 
-    const attempt = createTemplate(sb as never, 'user-1', { name: 'Weekly review', kind: 'notes' })
+    const attempt = createTemplate(sb as never, 'user-1', {
+      pondId: 'pond-1',
+      name: 'Weekly review',
+      kind: 'notes',
+    })
 
     await expect(attempt).rejects.toBeInstanceOf(DuplicateTemplateNameError)
     await expect(attempt).rejects.toMatchObject({ templateName: 'Weekly review' })
@@ -276,14 +298,22 @@ describe('createTemplate', () => {
       single: jest.fn().mockResolvedValue({ data: null, error: { message: 'insert boom' } }),
     })
     await expect(
-      createTemplate(makeSupabase(chain) as never, 'user-1', { name: 'X', kind: 'page' })
+      createTemplate(makeSupabase(chain) as never, 'user-1', {
+        pondId: 'pond-1',
+        name: 'X',
+        kind: 'page',
+      })
     ).rejects.toThrow(/insert boom/)
   })
 
   it('throws when the insert returns neither a row nor an error', async () => {
     const chain = makeChain({ single: jest.fn().mockResolvedValue({ data: null, error: null }) })
     await expect(
-      createTemplate(makeSupabase(chain) as never, 'user-1', { name: 'X', kind: 'page' })
+      createTemplate(makeSupabase(chain) as never, 'user-1', {
+        pondId: 'pond-1',
+        name: 'X',
+        kind: 'page',
+      })
     ).rejects.toThrow()
   })
 })

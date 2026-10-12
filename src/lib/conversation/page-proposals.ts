@@ -20,6 +20,7 @@
  * pending decision, not a model re-proposal, so a reload must bring it back.
  */
 
+import type { UIMessage } from 'ai'
 import type { Block } from '@/lib/documents/types'
 
 // ── The record ───────────────────────────────────────────────────────────────
@@ -259,6 +260,47 @@ export function withReadStamp<T extends { metadata?: unknown }>(message: T, read
   const base =
     typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}
   return { ...message, metadata: { ...base, read } }
+}
+
+// ── Earlier answers (6a frame 3: ask again replaces in place, the old one folds) ──
+
+/** An answer ask-again replaced — its parts verbatim, plus the stamps the
+ *  message already carried (`sentAt`, the S8 read stamp). */
+export interface EarlierAnswer {
+  parts: UIMessage['parts']
+  sentAt: string | null
+  read: string[]
+}
+
+function isEarlierAnswer(value: unknown): value is EarlierAnswer {
+  if (typeof value !== 'object' || value === null) return false
+  const e = value as Record<string, unknown>
+  return (
+    Array.isArray(e.parts) &&
+    (e.sentAt === null || typeof e.sentAt === 'string') &&
+    Array.isArray(e.read)
+  )
+}
+
+/** The answers folded under the current one, oldest first — `[]` once none have
+ *  been replaced yet. */
+export function earlierAnswers(metadata: unknown): EarlierAnswer[] {
+  if (typeof metadata !== 'object' || metadata === null) return []
+  const earlier = (metadata as { earlier?: unknown }).earlier
+  if (!Array.isArray(earlier)) return []
+  return earlier.filter(isEarlierAnswer)
+}
+
+/** Append a replaced answer onto a message's stash, leaving every other
+ *  metadata field alone. A second ask-again appends, so every earlier answer
+ *  survives in the order it was replaced. */
+export function withEarlierAnswer<T extends { metadata?: unknown }>(
+  message: T,
+  entry: EarlierAnswer
+): T {
+  const base =
+    typeof message.metadata === 'object' && message.metadata !== null ? message.metadata : {}
+  return { ...message, metadata: { ...base, earlier: [...earlierAnswers(message.metadata), entry] } }
 }
 
 // ── Labels ───────────────────────────────────────────────────────────────────

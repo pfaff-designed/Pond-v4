@@ -93,13 +93,20 @@ export const ComposerLine = ({
       </div>
       <div className="flex items-center gap-2 text-[11px] tracking-[0.02em]">
         {attachInput}
+        {/*
+          `PondComposer.dc.html` sets `small = mob ? 36 : 28`, but 6z frame 7's
+          caption and AUDIT X1 both put every mobile control at 44px — two
+          sources against the DC's one, and it's the documented minimum.
+          Deliberate exception to ADR 0011 (DC over storyboard) pending a
+          design-side correction to the DC.
+        */}
         <button
           type="button"
           aria-label="Attach a file"
-          title="Attach a file — images, pdf, txt, md, csv · up to 10MB"
+          title="Attach a file — images, pdf, txt, md, csv · up to 10MB · html up to 20MB"
           onClick={onAttach}
           disabled={attachDisabled}
-          className="flex size-9 flex-none items-center justify-center rounded-mn-pill bg-mn-hover-fill text-mn-text-meta transition-colors hover:text-mn-text disabled:opacity-40 md:size-7"
+          className="flex size-11 flex-none items-center justify-center rounded-mn-pill bg-mn-hover-fill text-mn-text-meta transition-colors hover:text-mn-text disabled:opacity-40 md:size-7"
         >
           <svg
             width="12"
@@ -146,7 +153,7 @@ export const ComposerLine = ({
           onClick={handleSendClick}
           disabled={!sendOn}
           className={cn(
-            'ml-auto flex size-10 flex-none items-center justify-center rounded-mn-pill md:size-8',
+            'ml-auto flex size-11 flex-none items-center justify-center rounded-mn-pill md:size-8',
             sendOn
               ? 'bg-mn-text text-raw-paper shadow-[0_4px_12px_rgba(27,29,20,0.22)] dark:text-raw-ink dark:shadow-none'
               : 'bg-[rgba(27,29,20,0.12)] text-mn-text-meta dark:bg-[rgba(250,249,239,0.12)]'

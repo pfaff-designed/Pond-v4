@@ -57,7 +57,8 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, resolutions, requestChanges, pondId, research } = parsed
+  const { messages, nodeId, nodeType, resolutions, requestChanges, research } = parsed
+  const pondId = parsed.pondId ?? null
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
   const userText = latestUserText(messages)
@@ -181,7 +182,7 @@ export async function POST(req: Request) {
       ...fetchContextTool,
       execute: async ({ query }) => {
         if (!user) return 'No user session; cannot retrieve workspace context.'
-        const pages = await retrievePages(supabase, user.id, query, { matchCount: 5 })
+        const pages = await retrievePages(supabase, user.id, pondId, query, { matchCount: 5 })
         return formatRetrievedPages(pages)
       },
     }),

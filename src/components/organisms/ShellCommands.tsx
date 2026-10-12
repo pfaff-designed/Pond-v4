@@ -38,6 +38,7 @@ import { PondCommand } from '@/components/organisms/PondCommand'
 import {
   isComposerToggleKey,
   requestComposerToggle,
+  requestHtmlImportPicker,
   requestTerminalFocus,
 } from '@/lib/terminal-focus'
 import { isPaletteChord } from '@/lib/shell-commands'
@@ -112,7 +113,12 @@ export function ShellCommands() {
   const records = usePaletteRecords(normalizeQuery(query))
 
   // Before the open page has published its path, the pill reads the pond's root.
-  const path = published ?? { glyph: pond?.glyph ?? LIFE_GLYPH, trail: [], current: pondName }
+  const path = published ?? {
+    glyph: pond?.glyph ?? LIFE_GLYPH,
+    trail: [],
+    current: pondName,
+    role: null,
+  }
 
   const closePalette = useCallback(() => setPaletteOpen(false), [])
   const templateSheet = useSaveAsTemplateSheet({ pondId, onOpen: closePalette })
@@ -215,6 +221,10 @@ export function ShellCommands() {
       }
       if (item.action === 'ask-pond') {
         requestTerminalFocus(item.query)
+        return
+      }
+      if (item.action === 'import-a-page') {
+        requestHtmlImportPicker()
         return
       }
       if (item.kind === 'pond') {

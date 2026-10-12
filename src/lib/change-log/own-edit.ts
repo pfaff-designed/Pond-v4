@@ -76,7 +76,7 @@ export async function recordOwnEdit(
   supabase: SupabaseClient<Database>,
   opts: {
     /** The pond whose log is swept and written. */
-    pondId?: string | null
+    pondId: string | null
     pageId: string
     /** The blocks as they stood before this pause — what the page last saved. */
     before: Block[]
@@ -123,7 +123,7 @@ export async function recordOwnEdit(
 export async function recordOwnRowEdit(
   supabase: SupabaseClient<Database>,
   opts: {
-    pondId?: string | null
+    pondId: string | null
     collectionId: string
     before: RowSnapshot | null
     after: RowSnapshot

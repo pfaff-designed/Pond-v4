@@ -14,12 +14,15 @@
 #              "- [!] item — reason" is a blocker: the loop stops and reports it.
 #   GATES      optional executable, run from WORKTREE once every item is ticked. Red appends a
 #              gates item and the loop goes on.
-#   passes/    one log per pass
+#   passes/    one log per pass, numbered on across runs: PLAN.md's attempts cite them by name
+#   misses     items that have missed once and not landed since. Kept across runs, so a loop
+#              started again on the same LOOP (a fix round, a resume) keeps the two-attempt count.
 #
 # Progress is measured, never taken from the pass's word: a pass progressed if HEAD moved or the
 # plan grew (a planning pass, or an item split into smaller ones). A pass that misses gets a
 # reapproach line in HB and a note in PLAN.md, so the next fresh pass knows what failed and takes
-# another route; a second miss on the same item stops the loop (AGENTS.md: two attempts).
+# another route; a second miss on the same item stops the loop (AGENTS.md: two attempts). A pass
+# ended by Claude Code's usage limit is not a miss: the loop stops at once with `usage limit:`.
 #
 # Every pass runs under `timeout` (GNU, which kills the pass's whole process group), so no pass
 # outlives the failsafe's 10 minutes, and HB is beaten before each one: a supervisor polling HB sees
@@ -34,7 +37,7 @@
 # Passes run on Sonnet 5, pinned by full name so an alias moving to a new model cannot change the
 # builder under a run. Orchestration and review run on Opus 5.5 (SKILL.md, "Models").
 #
-# Env: RALPH_PASS_SECONDS (600), RALPH_MAX_PASSES (30), RALPH_MODEL (claude-sonnet-5).
+# Env: RALPH_PASS_SECONDS (600), RALPH_MAX_PASSES (30 per run), RALPH_MODEL (claude-sonnet-5).
 # Exit codes: 0 green, 2 stopped, 64 usage.
 set -euo pipefail
 
@@ -71,8 +74,8 @@ model=${RALPH_MODEL:-claude-sonnet-5}
 plan="$loop/PLAN.md"
 misses="$loop/misses"
 mkdir -p "$loop/passes"
-touch "$plan"
-: >"$misses"
+touch "$plan" "$misses"
+first=$(find "$loop/passes" -maxdepth 1 -name '[0-9]*.log' | wc -l | tr -d ' ')
 
 ALLOWED=(
   Read Edit Write Grep Glob
@@ -109,7 +112,7 @@ finish() {
   {
     echo "status:  $status"
     [ -n "$reason" ] && echo "reason:  $reason"
-    echo "passes:  $pass, on $model"
+    echo "passes:  $((pass - first)) this run, $pass on this LOOP, on $model"
     echo "commits:"
     git -C "$worktree" log --oneline "$base"..HEAD | sed 's/^/  /'
     echo
@@ -139,7 +142,7 @@ Do this item and nothing else, then stop. If PLAN.md's attempts section names th
   {
     cat "$loop/PROMPT.md"
     printf '\n## This pass\n\nLoop state: %s (SPEC.md, PLAN.md, passes/). Worktree: %s — your shell starts in it.\nPass %s of at most %s, %s seconds.\n%s\n' \
-      "$loop" "$worktree" "$pass" "$max_passes" "$pass_seconds" "$brief"
+      "$loop" "$worktree" "$((pass - first))" "$max_passes" "$pass_seconds" "$brief"
   } >"$prompt"
   # timeout puts itself at the head of a new process group; killing that group after the pass
   # also takes whatever the pass left running (a jest worker, a stray watcher).
@@ -151,8 +154,16 @@ Do this item and nothing else, then stop. If PLAN.md's attempts section names th
   local pid=$!
   echo "$pid" >"$loop/pass.pid"
   cd - >/dev/null
+  # `timeout` has been seen not to fire: on 2026-10-10 a pass was alive at 19:44 with no SIGTERM at
+  # 600s and no SIGKILL at 630s, which hung the loop past the failsafe and — because an unkilled pass
+  # never returns — silently skipped the miss accounting the two-attempt rule depends on. It is
+  # intermittent (four passes in the same run were killed correctly), so the limit cannot rest on it.
+  # This watchdog kills the pass's process group itself, a minute after timeout should already have.
+  ( sleep $((pass_seconds + 60)); kill -KILL -- -"$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  local watchdog=$!
   local code=0
   wait "$pid" || code=$?
+  kill "$watchdog" 2>/dev/null || true
   if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
     echo "ralph: pass killed at its ${pass_seconds}s limit" >>"$log"
   elif [ "$code" -ne 0 ]; then
@@ -172,7 +183,16 @@ record_miss() {
   echo "$item" >>"$misses"
 }
 
-pass=0
+# Claude Code's account limit ends a pass with no commit, which reads exactly like a miss. It is not
+# one: the item was never attempted, and counting it twice stops the loop on a false "missed twice"
+# (2026-10-11). Waiting it out is no better: the reset is hours away, and a loop asleep that long
+# reads as stalled. Only Claude Code's own line counts, anchored, so a pass quoting the words or a
+# brief API 429 (an ordinary miss) cannot halt every loop until a reset that is not coming.
+usage_limit() {
+  tail -5 "$1" | rg -m1 "^(You've hit your (session|usage|weekly) limit|Claude AI usage limit reached)"
+}
+
+pass=$first
 while :; do
   blocker=$(sed -n 's/^- \[!\] //p' "$plan" | head -1)
   [ -n "$blocker" ] && finish stopped "blocked: $blocker"
@@ -191,7 +211,7 @@ while :; do
   fi
 
   pass=$((pass + 1))
-  [ "$pass" -gt "$max_passes" ] && { pass=$max_passes; finish stopped "pass budget ($max_passes) spent with items left"; }
+  [ $((pass - first)) -gt "$max_passes" ] && { pass=$((pass - 1)); finish stopped "pass budget ($max_passes) spent with items left"; }
 
   step=${item:-planning}
   "$H" beat "$hb" "ralph: ${step:0:100}" $((pass_seconds + 120))
@@ -207,6 +227,9 @@ while :; do
     grep -vxF -- "$step" "$misses" >"$misses.tmp" || true
     mv "$misses.tmp" "$misses"
     continue
+  fi
+  if limit=$(usage_limit "$log"); then
+    finish stopped "usage limit: $limit — not a miss; once it resets, resume on the same LOOP (the worktree may hold this pass's uncommitted edits)"
   fi
   rg -qxF -- "$step" "$misses" && finish stopped "'$step' missed twice — see the attempts in PLAN.md"
   record_miss "$step" "$log"

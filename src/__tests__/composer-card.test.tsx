@@ -284,12 +284,14 @@ describe('the composer card — collapse is the session’s, and ⌘J is its key
     mockMessages = askedOnce
     mockStatus = 'streaming'
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const tree = (
+    // A fresh element each time: the same one is a bail-out, and nothing would read
+    // the mocked chat's new status.
+    const tree = () => (
       <QueryClientProvider client={client}>
         <AITerminal />
       </QueryClientProvider>
     )
-    const { rerender } = render(tree)
+    const { rerender } = render(tree())
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeTruthy())
 
     act(() => requestComposerToggle())
@@ -297,7 +299,7 @@ describe('the composer card — collapse is the session’s, and ⌘J is its key
 
     mockMessages = thread(1)
     mockStatus = 'ready'
-    rerender(tree)
+    rerender(tree())
     expect(await screen.findByText('pond answered')).toBeInTheDocument()
 
     // Opening it reads the answer; closing it again has nothing new to report.

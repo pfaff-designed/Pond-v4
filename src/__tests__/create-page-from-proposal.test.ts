@@ -167,8 +167,9 @@ describe('createPageFromProposal', () => {
       sb as never,
       { type: 'page', kind: 'note', title: 'Reading goals', parentRef: 'Personal', blocks: [] },
       mint,
-      null
+      'pond-life'
     )
+    expect(chain.eq).toHaveBeenCalledWith('pond_id', 'pond-life')
     expect(chain.ilike).toHaveBeenCalledWith('title', 'Personal')
     const insert = chain.insert.mock.calls[0][0]
     expect(insert.parent_id).toBe(resolvedUuid)

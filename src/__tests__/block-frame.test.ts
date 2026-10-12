@@ -166,9 +166,14 @@ const FRAMES: ReadonlyArray<[string, Block, BlockFrame | null]> = [
     { kind: 'table', heading: 'calendar', headNote: '' },
   ],
   [
-    'view gantt → the table card (the block board has no gantt kind)',
+    'view gantt → the table card (the block board has no gantt kind), named timeline (7j)',
     { id: 'v', type: 'view', mode: 'gantt' },
-    { kind: 'table', heading: 'gantt', headNote: '' },
+    { kind: 'table', heading: 'timeline', headNote: '' },
+  ],
+  [
+    'a stored mode no longer registered reads as the table it renders as',
+    { id: 'v', type: 'view', mode: 'kanban' } as unknown as Block,
+    { kind: 'table', heading: 'table', headNote: '' },
   ],
   [
     'a labelled board still takes no block card',

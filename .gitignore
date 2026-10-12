@@ -41,7 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 # Claude Code local worktrees & session data
-.claude/
+.claude/*
+!.claude/skills/
 .claude-worktrees/
 
 # Playwright MCP session artifacts + local verification screenshots

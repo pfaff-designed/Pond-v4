@@ -124,16 +124,24 @@ export function applyProposedChanges(
     }
 
     // edit — preserve identity (reuse blockId); optionally type-morph and reorder.
-    if (!next.some((b) => b.id === change.blockId)) {
+    const target = next.find((b) => b.id === change.blockId)
+    if (!target) {
       skip('the block to edit no longer exists on the page')
       continue
     }
     // An edit may also introduce a bound metric that refs a same-batch create.
-    const block = hydrateBlock(resolveSourceRef(change.data, refs), change.blockId, mintId)
-    if (!block) {
+    const hydrated = hydrateBlock(resolveSourceRef(change.data, refs), change.blockId, mintId)
+    if (!hydrated) {
       skip(`the edited ${change.data?.type ?? 'block'} failed validation`)
       continue
     }
+    // The AI's `data` never carries a `width` (KAN-43: Pond never authors layout),
+    // so an edit must keep the block's own width across the swap, or accepting a
+    // Pond diff would silently reset the person's layout choice to full. `hydrated`
+    // can still carry a width of its own (blockSchema permits one; only
+    // moduleDataSchema strips it) — override it unconditionally with `target.width`
+    // (including `undefined`), or a hydrated replacement's width would win.
+    const block = { ...hydrated, width: target.width }
     if (change.after) {
       next = insertAfter(
         next.filter((b) => b.id !== change.blockId),

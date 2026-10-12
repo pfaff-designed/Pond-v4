@@ -35,6 +35,7 @@ const databases = node('root-db', 'databases', [], null, 9)
 function setup(tree: RailNode[] = [creativity, scratch, databases], isEmpty = false) {
   const handlers = {
     onRename: jest.fn(),
+    onPickGlyph: jest.fn(),
     onDelete: jest.fn(),
     onAddChild: jest.fn(),
     onSelect: jest.fn(),
@@ -222,7 +223,7 @@ describe('rail — row tools and capabilities', () => {
     expect(screen.getAllByRole('treeitem').filter((r) => r.tabIndex === 0)).toHaveLength(1)
   })
 
-  it('+ on the root adds a top-level page — unless the pond is empty', () => {
+  it('+ on the root adds a top-level page — the first one too, when the pond is empty', () => {
     const populated = setup()
     fireEvent.keyDown(row('life'), { key: '+' })
     expect(populated.onAddChild).toHaveBeenCalledWith('__life__')
@@ -230,7 +231,7 @@ describe('rail — row tools and capabilities', () => {
 
     const empty = setup([], true)
     fireEvent.keyDown(row('life'), { key: '+' })
-    expect(empty.onAddChild).not.toHaveBeenCalled()
+    expect(empty.onAddChild).toHaveBeenCalledWith('__life__')
   })
 
   it('the databases row takes none of +, Delete or F2', () => {
