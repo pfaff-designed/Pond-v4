@@ -158,7 +158,7 @@ describe('ShellCommands — a landed step redraws the page, rail and change log'
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'page-1'] })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'page-2'] })
-    expect(requestComposerNotice).not.toHaveBeenCalled()
+    expect(requestComposerNotice).toHaveBeenCalledWith('')
   })
 
   it('on stale/blocked/refused, shows one notice line and invalidates nothing', async () => {
@@ -191,14 +191,34 @@ describe('ShellCommands — a landed step redraws the page, rail and change log'
     )
   })
 
-  it('on empty, shows no notice and invalidates nothing', async () => {
+  it('on empty, clears any notice and invalidates nothing', async () => {
     onPlatform('MacIntel')
     const invalidateQueries = renderWithClient()
 
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
-    await waitFor(() => expect(sessionUndo.undo).toHaveBeenCalled())
+    await waitFor(() => expect(requestComposerNotice).toHaveBeenCalledWith(''))
 
-    expect(requestComposerNotice).not.toHaveBeenCalled()
     expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('a stale notice does not survive a later done — the line is cleared, not left reading backwards', async () => {
+    onPlatform('MacIntel')
+    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
+      outcome: 'stale',
+      reason: 'page-changed',
+    } as never)
+    renderWithClient()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() =>
+      expect(requestComposerNotice).toHaveBeenCalledWith(
+        "can't undo — the page changed since. revert it from the change log."
+      )
+    )
+
+    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({ outcome: 'done', records: [] } as never)
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+
+    await waitFor(() => expect(requestComposerNotice).toHaveBeenLastCalledWith(''))
   })
 })

@@ -774,4 +774,24 @@ describe('AITerminal — the composer notice bridge (KAN-93)', () => {
     expect(notice.className).toContain('font-mono')
     expect(notice.className).toContain('lowercase')
   })
+
+  it('a later empty text clears a stale notice — a done ⌘Z does not keep saying it refused', async () => {
+    renderTerminal()
+    await waitReady()
+
+    act(() => {
+      requestComposerNotice("can't undo — the page changed since. revert it from the change log.")
+    })
+    await screen.findByText(
+      "can't undo — the page changed since. revert it from the change log."
+    )
+
+    act(() => {
+      requestComposerNotice('')
+    })
+
+    expect(
+      screen.queryByText("can't undo — the page changed since. revert it from the change log.")
+    ).not.toBeInTheDocument()
+  })
 })

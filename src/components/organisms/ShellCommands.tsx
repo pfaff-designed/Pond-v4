@@ -164,8 +164,15 @@ export function ShellCommands() {
       const step = direction === 'undo' ? sessionUndo.undo(pondId) : sessionUndo.redo(pondId)
       step
         .then((result) => {
-          if (result.outcome === 'empty') return
+          // A done/empty step changes nothing to complain about — clear a
+          // notice an earlier stale/blocked chord left up, or it keeps
+          // reading backwards on every ⌘Z/⇧⌘Z after that one.
+          if (result.outcome === 'empty') {
+            requestComposerNotice('')
+            return
+          }
           if (result.outcome === 'done') {
+            requestComposerNotice('')
             void queryClient.invalidateQueries({ queryKey: pagesKey() })
             void queryClient.invalidateQueries({ queryKey: changeLogKey() })
             const pageIds = new Set(

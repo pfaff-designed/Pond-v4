@@ -996,7 +996,9 @@ export function AITerminal() {
   const [composerNotice, setComposerNotice] = useState<string | null>(null)
   useEffect(() => {
     function onComposerNotice(e: Event) {
-      setComposerNotice((e as CustomEvent<ComposerNoticeDetail>).detail.text)
+      // An empty text clears the line: a done/empty chord has nothing to say,
+      // and leaving the last stale/blocked wording up would read backwards.
+      setComposerNotice((e as CustomEvent<ComposerNoticeDetail>).detail.text || null)
     }
     window.addEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
     return () => window.removeEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
