@@ -666,7 +666,7 @@ describe('make this a page → the `new page — proposed` card', () => {
     })
   })
 
-  it('fills in Pond\'s chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)', async () => {
+  it("fills in Pond's chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -830,8 +830,10 @@ describe('the eyebrow splits by medium, not by author', () => {
   // author" — the machine surface (composer, palette, @-picker, diff cards,
   // provenance chips) is PP Neue Montreal MONO; anything living on a page is the
   // SANS. Board 6a measures all four of its eyebrows at 10.5px / 500 / .1em /
-  // uppercase / ink .68, differing in that one thing: `pond` and `new page —
-  // proposed` are mono (composer), `made from` and `mentioned` sans (page).
+  // uppercase / ink .68, differing in that one thing: `PondComposer.dc.html`'s
+  // own `card` head is sans by default (its `headSt` only forces mono for a head
+  // starting `pond — ` or an explicit `label: 'mono'`), so `pond` and `new page —
+  // proposed` are sans (composer) same as `made from` and `mentioned` (page).
   //
   // One shared eyebrow constant therefore sets two registers, and the wrong family
   // on half of them — a correct-LOOKING constant applied across both registers.
@@ -857,7 +859,7 @@ describe('the eyebrow splits by medium, not by author', () => {
       expect(machineEyebrowClass).toContain(value)
   })
 
-  it('sets the card head in the mono and the pond attribution in the sans, over the answer', async () => {
+  it('sets both the card head and the pond attribution in the sans, over the answer', async () => {
     renderTerminal()
     await ready()
     const answer = screen.getByText(PROSE).closest('[data-part="answer"]')!
@@ -865,7 +867,7 @@ describe('the eyebrow splits by medium, not by author', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
     const card = await screen.findByRole('group', { name: /new page — proposed/i })
-    expect(within(card).getByText('new page — proposed').className).toBe(machineEyebrowClass)
+    expect(within(card).getByText('new page — proposed').className).toBe(pageEyebrowClass)
   })
 })
 
