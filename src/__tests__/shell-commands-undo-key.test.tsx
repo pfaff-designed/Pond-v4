@@ -7,7 +7,7 @@
  */
 
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 jest.mock('next/navigation', () => ({
@@ -25,11 +25,21 @@ jest.mock('@/lib/pond/context', () => ({
   usePondId: () => 'pond-1',
 }))
 jest.mock('@/lib/change-log/session-undo', () => ({
-  sessionUndo: { undo: jest.fn(), redo: jest.fn() },
+  sessionUndo: {
+    undo: jest.fn().mockResolvedValue({ outcome: 'empty' }),
+    redo: jest.fn().mockResolvedValue({ outcome: 'empty' }),
+  },
+}))
+jest.mock('@/lib/terminal-focus', () => ({
+  ...jest.requireActual('@/lib/terminal-focus'),
+  requestComposerNotice: jest.fn(),
 }))
 
 import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { sessionUndo } from '@/lib/change-log/session-undo'
+import { requestComposerNotice } from '@/lib/terminal-focus'
+import { changeLogKey } from '@/lib/change-log/keys'
+import { pagesKey } from '@/lib/pages/keys'
 
 const renderShell = () =>
   render(
@@ -119,5 +129,76 @@ describe('ShellCommands — an editable keeps its own ⌘Z', () => {
 
     expect(sessionUndo.undo).not.toHaveBeenCalled()
     expect(prevented).toBe(true)
+  })
+})
+
+describe('ShellCommands — a landed step redraws the page, rail and change log', () => {
+  const renderWithClient = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = jest.spyOn(client, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={client}>
+        <ShellCommands />
+      </QueryClientProvider>
+    )
+    return invalidateQueries
+  }
+
+  it('on done, invalidates the page tree, the change log and each touched page', async () => {
+    onPlatform('MacIntel')
+    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
+      outcome: 'done',
+      records: [{ targetPageId: 'page-1' }, { targetPageId: 'page-2' }, { targetPageId: null }],
+    } as never)
+    const invalidateQueries = renderWithClient()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: pagesKey() }))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: changeLogKey() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'page-1'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['page', 'page-2'] })
+    expect(requestComposerNotice).not.toHaveBeenCalled()
+  })
+
+  it('on stale/blocked/refused, shows one notice line and invalidates nothing', async () => {
+    onPlatform('MacIntel')
+    jest.mocked(sessionUndo.undo).mockResolvedValueOnce({
+      outcome: 'stale',
+      reason: 'page-changed',
+    } as never)
+    const invalidateQueries = renderWithClient()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+
+    await waitFor(() =>
+      expect(requestComposerNotice).toHaveBeenCalledWith(
+        "can't undo — the page changed since. revert it from the change log."
+      )
+    )
+    expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('on a thrown (network) error, shows one notice line in the chord’s own direction', async () => {
+    onPlatform('MacIntel')
+    jest.mocked(sessionUndo.redo).mockRejectedValueOnce(new Error('offline'))
+    renderWithClient()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+
+    await waitFor(() =>
+      expect(requestComposerNotice).toHaveBeenCalledWith("can't redo — try again.")
+    )
+  })
+
+  it('on empty, shows no notice and invalidates nothing', async () => {
+    onPlatform('MacIntel')
+    const invalidateQueries = renderWithClient()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(sessionUndo.undo).toHaveBeenCalled())
+
+    expect(requestComposerNotice).not.toHaveBeenCalled()
+    expect(invalidateQueries).not.toHaveBeenCalled()
   })
 })
