@@ -43,6 +43,11 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
+const mockRemember = jest.fn()
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+}))
+
 const AT = '2026-01-01T00:00:00Z'
 const ROWS: PageRow[] = [
   {
@@ -92,6 +97,7 @@ beforeEach(() => {
   mockSetPageGlyph.mockClear()
   mockAppendOwnEdit.mockClear()
   mockPushRecentGlyphToPond.mockClear()
+  mockRemember.mockClear()
 })
 
 describe('handlePickGlyph — a failed recent-glyph push', () => {
@@ -182,5 +188,19 @@ describe('handlePickGlyph — the change-log record', () => {
 
     await waitFor(() => expect(mockSetPageGlyph).toHaveBeenCalledWith(expect.anything(), 'health', 'heart'))
     expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+
+  it('remembers the pick as one undo step once the record lands', async () => {
+    mockAppendOwnEdit.mockResolvedValueOnce({ id: 'record-1' })
+    mount()
+    const row = screen.getByRole('treeitem', { name: /Health/ })
+    const mark = within(row).getByRole('button', { name: 'change icon for Health' })
+
+    await userEvent.click(mark)
+    const automatic = await within(document.body).findByText('automatic')
+    await userEvent.click(automatic)
+
+    await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
   })
 })

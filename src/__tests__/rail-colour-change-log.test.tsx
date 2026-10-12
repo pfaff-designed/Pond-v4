@@ -42,6 +42,11 @@ jest.mock('@/lib/change-log/store', () => ({
   appendOwnEdit: (...args: unknown[]) => mockAppendOwnEdit(...args),
 }))
 
+const mockRemember = jest.fn()
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
+}))
+
 const AT = '2026-01-01T00:00:00Z'
 const ROWS: PageRow[] = [
   { id: 'health', parent_id: null, type: 'page', title: 'Health', order: 0, updated_at: AT },
@@ -101,6 +106,7 @@ function colourCell(label: string) {
 beforeEach(() => {
   mockSetAreaRole.mockClear()
   mockAppendOwnEdit.mockClear()
+  mockRemember.mockClear()
 })
 
 describe('handlePickColour — the write and the change-log record', () => {
@@ -156,6 +162,18 @@ describe('handlePickColour — the write and the change-log record', () => {
     const row = screen.getByRole('treeitem', { name: /Health/ })
     const mark = within(row).getByRole('button', { name: 'change icon for Health' })
     expect(mark.querySelector('[data-area-mark]')).toHaveStyle({ color: 'var(--mn-text)' })
+  })
+
+  it('remembers the pick as one undo step once the record lands', async () => {
+    mockAppendOwnEdit.mockResolvedValueOnce({ id: 'record-1' })
+    mount()
+    await openHealthPicker()
+    const sage = colourCell('sage')
+
+    await userEvent.click(sage)
+
+    await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-1', recordIds: ['record-1'] })
   })
 })
 
