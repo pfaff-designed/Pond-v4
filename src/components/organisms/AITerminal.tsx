@@ -1,7 +1,7 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
-import { useRef, useEffect, useMemo, useState, useReducer, useCallback } from 'react'
+import { Fragment, useRef, useEffect, useMemo, useState, useReducer, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query'
@@ -258,6 +258,102 @@ function describeHtmlFailure(filename: string, error: ReadHtmlError): string {
  *  of the turn's question, not a new sentence). */
 function describeHtmlOfflineNote(filename: string): string {
   return `asking needs a connection. ${filename} stays attached; nothing is sent until you’re back online.`
+}
+
+/** A snapshot of a settled html read, kept after its file is removed (the
+ *  pill's ×, KAN-251 10091): PROJECT_RULES says answers live in the thread,
+ *  so removing the file must not take the question/answer with it. Only a
+ *  SETTLED read (ok or failed) is ever snapshotted — Esc mid-read, a new
+ *  attach and `try another file` still clear everything, same as today,
+ *  since there's no answer yet to keep. `afterMessages` anchors it to the
+ *  ordinary thread: the number of chat `messages` that existed when the
+ *  read happened, so it renders back in that position once removed. */
+type HtmlTurnSnapshot = {
+  id: string
+  question: string
+  at: string | null
+  filename: string
+  size: number
+  result: ReadHtmlResult
+  afterMessages: number
+}
+
+/** Renders one html read turn (q → a → readRow, 06.25 frame 2/6) — shared by
+ *  the live attachment above the composer line and a kept snapshot in the
+ *  thread body once the file's been removed. A kept turn passes no
+ *  `failureChips`: the file is gone, so there's nothing left to act on. */
+function HtmlReadTurn({
+  question,
+  at,
+  filename,
+  size,
+  reading,
+  result,
+  offlineNote,
+  failureChips,
+}: {
+  question: string
+  at: string | null
+  filename: string
+  size: number
+  reading: boolean
+  result: ReadHtmlResult | null
+  offlineNote?: string
+  failureChips?: { chips: string[]; disabled: boolean; onPick: (chip: string) => void }
+}) {
+  return (
+    <Turn>
+      <YouRow text={question} time={formatThreadTime(at)} />
+      {/* AUDIT G6: the reading/answer/failure state above is otherwise
+          announced to sighted users only — a screen reader gets no word
+          that Pond started reading, finished, or refused the file. */}
+      <div role="status" aria-live="polite">
+        {/* 6z frame 2's `a` is a turn answer from the moment reading starts,
+            not just once it settles — the person spends the whole read in
+            this frame, so it can't be blank. The read chip renders after
+            it: board order is `q → a → readRow`, same as the ordinary
+            thread's own turns. */}
+        {(reading || result?.ok) && (
+          <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
+            Reading {filename}.{result?.ok && ` So far: ${describeFoundCounts(result.found)}.`}
+          </p>
+        )}
+        {/* 6z frame 2 keeps the read chip ON the turn once it settles, not
+            just while reading — every answer shows what it read
+            (PROJECT_RULES). Reuses ReadChips rather than a bespoke row
+            (AGENTS.md: duplicates go). */}
+        {(reading || result?.ok) && <ReadChips read={[`${filename} · ${formatBytes(size)}`]} />}
+        {/* 06.25 frame 6: each failure says what happened and what is still
+            possible — nothing half made. The board's `a` copy is sentence
+            case, so this paragraph drops the `lowercase` className other
+            machine-surface text here carries — only the line/chip strings
+            are lowercase. */}
+        {result && !result.ok && (
+          <>
+            <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
+              {describeHtmlFailure(filename, result.error)}
+            </p>
+            {failureChips && (
+              <HtmlChipRow
+                label="Options"
+                chips={failureChips.chips}
+                disabled={failureChips.disabled}
+                onPick={failureChips.onPick}
+              />
+            )}
+          </>
+        )}
+        {/* 06.25 frame 6 offline: a turn's `note`, not its `a` — asking
+            failed before any read ran, so there's no answer and no failure
+            chips, only the pill staying attached. The offer chips (live
+            only — a kept turn has no pill left to offer against) stay
+            beside this note (the 11 oct ruling at that gate). */}
+        {offlineNote && (
+          <p className="font-mono text-[11px] text-mn-text-secondary">{offlineNote}</p>
+        )}
+      </div>
+    </Turn>
+  )
 }
 
 /** Preview what a promote_table would produce, read from the host page's blocks:
@@ -672,6 +768,43 @@ export function AITerminal() {
     setHtmlQuestion(null)
     setHtmlQuestionAt(null)
   }, [clearHtmlAttachmentSlot])
+
+  // Settled html reads kept in the thread after their file is removed (the
+  // pill's ×, KAN-251 10091) — PROJECT_RULES: answers live in the thread,
+  // so removing the file must not take the question/answer with it. Esc
+  // mid-read, `try another file` and a fresh attach still call
+  // `clearHtmlAttachment` directly and keep nothing (no answer exists yet).
+  const [keptHtmlTurns, setKeptHtmlTurns] = useState<HtmlTurnSnapshot[]>([])
+
+  // The pill's own ×, distinct from `clearHtmlAttachment`: it snapshots a
+  // SETTLED read (ok or failed) into `keptHtmlTurns` before wiping the live
+  // html state, so the turn survives the file's removal. Nothing to keep
+  // while reading (no answer yet) or for an offline-only attempt (no read
+  // ever ran) — both fall through to the ordinary clear.
+  const removeHtmlAttachment = useCallback(() => {
+    if (htmlResult && htmlQuestion && htmlAttachment) {
+      setKeptHtmlTurns((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          question: htmlQuestion,
+          at: htmlQuestionAt,
+          filename: htmlAttachment.filename,
+          size: htmlAttachment.size,
+          result: htmlResult,
+          afterMessages: messages.length,
+        },
+      ])
+    }
+    clearHtmlAttachment()
+  }, [
+    htmlResult,
+    htmlQuestion,
+    htmlQuestionAt,
+    htmlAttachment,
+    messages.length,
+    clearHtmlAttachment,
+  ])
 
   // The one entry point every html door calls — the ＋ input, the drop
   // handler, ⌘K's `import a page`, and (unchanged, once KAN-186/KAN-193
@@ -1096,6 +1229,9 @@ export function AITerminal() {
     setMessages([])
     // Stale decisions must not leak into the fresh conversation's transcript.
     resetResolutions()
+    // A kept html turn anchors to this conversation's `messages`; a fresh
+    // thread has none to anchor against.
+    setKeptHtmlTurns([])
   }, [conversationId, setMessages, resetResolutions, getSupabase, pondId])
 
   // ── Lifecycle advancement (ticket-39) ─────────────────────────────────────
@@ -2700,7 +2836,32 @@ export function AITerminal() {
   const shownTurns = turns.slice(foldedCount)
   const threadArea = (nodeId ? areaOf(allPages, nodeId) : null) ?? contextLabel
 
-  const messagesBody = messages.length > 0 && (
+  // Kept html turns anchor to the chat message count at the moment they were
+  // read (`afterMessages`) — grouped by the shown turn whose last message
+  // index is `afterMessages - 1`, so each renders right after the turn it
+  // followed live. `afterMessages === 0` (nothing had been sent yet) has no
+  // such turn, so it's keyed `-1` and rendered before the first one.
+  const keptHtmlTurnsByAnchor = new Map<number, HtmlTurnSnapshot[]>()
+  for (const kept of keptHtmlTurns) {
+    const anchor = kept.afterMessages - 1
+    const forAnchor = keptHtmlTurnsByAnchor.get(anchor) ?? []
+    forAnchor.push(kept)
+    keptHtmlTurnsByAnchor.set(anchor, forAnchor)
+  }
+  const renderKeptHtmlTurns = (anchor: number) =>
+    (keptHtmlTurnsByAnchor.get(anchor) ?? []).map((kept) => (
+      <HtmlReadTurn
+        key={kept.id}
+        question={kept.question}
+        at={kept.at}
+        filename={kept.filename}
+        size={kept.size}
+        reading={false}
+        result={kept.result}
+      />
+    ))
+
+  const messagesBody = (messages.length > 0 || keptHtmlTurns.length > 0) && (
     <>
       {turns.length > 1 && (
         <ThreadHead
@@ -2721,27 +2882,31 @@ export function AITerminal() {
               onExpand={() => setEarlierOpenFrom(messages[0]?.id ?? null)}
             />
           )}
+          {renderKeptHtmlTurns(-1)}
           {shownTurns.map((indices, shownIndex) => (
-            <Turn key={messages[indices[0]].id}>
-              {indices.map((index) => renderMessage(messages[index], index))}
-              {shownIndex === shownTurns.length - 1 && (
-                <>
-                  {/* Stays until the tool part settles, even once reply text is arriving: a
-                      long tool call beside growing text would otherwise look stalled. */}
-                  {isStreaming && lastAssistantHasActiveTool && (
-                    <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
-                  )}
-                  {/* An error keeps nothing: the partial answer was dropped above. */}
-                  {error && !isStreaming && (
-                    <AnswerError
-                      onAskAgain={
-                        lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
-                      }
-                    />
-                  )}
-                </>
-              )}
-            </Turn>
+            <Fragment key={messages[indices[0]].id}>
+              <Turn>
+                {indices.map((index) => renderMessage(messages[index], index))}
+                {shownIndex === shownTurns.length - 1 && (
+                  <>
+                    {/* Stays until the tool part settles, even once reply text is arriving: a
+                        long tool call beside growing text would otherwise look stalled. */}
+                    {isStreaming && lastAssistantHasActiveTool && (
+                      <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
+                    )}
+                    {/* An error keeps nothing: the partial answer was dropped above. */}
+                    {error && !isStreaming && (
+                      <AnswerError
+                        onAskAgain={
+                          lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
+                        }
+                      />
+                    )}
+                  </>
+                )}
+              </Turn>
+              {renderKeptHtmlTurns(indices[indices.length - 1])}
+            </Fragment>
           ))}
           <div ref={bottomRef} />
         </div>
@@ -2798,7 +2963,7 @@ export function AITerminal() {
           <div className="flex flex-wrap gap-[7px]">
             <htmlAttachmentDescriptor.Pill
               attachment={htmlAttachment}
-              onRemove={clearHtmlAttachment}
+              onRemove={removeHtmlAttachment}
             />
           </div>
           {/* Gated on whether a read has actually run, not on `htmlQuestion`
@@ -2825,76 +2990,36 @@ export function AITerminal() {
             />
           )}
           {htmlQuestion && (
-            <Turn>
-              <YouRow text={htmlQuestion} time={formatThreadTime(htmlQuestionAt)} />
-              {/* AUDIT G6: the reading/answer/failure state above is otherwise
-                  announced to sighted users only — a screen reader gets no
-                  word that Pond started reading, finished, or refused the
-                  file. */}
-              <div role="status" aria-live="polite">
-                {/* 6z frame 2's `a` is a turn answer from the moment reading
-                    starts, not just once it settles — the person spends the
-                    whole read in this frame, so it can't be blank. The read
-                    chip renders after it: board order is `q → a → readRow`,
-                    same as the ordinary thread's own turns. */}
-                {(htmlReading || htmlResult?.ok) && (
-                  <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
-                    Reading {htmlAttachment.filename}.
-                    {htmlResult?.ok && ` So far: ${describeFoundCounts(htmlResult.found)}.`}
-                  </p>
-                )}
-                {/* 6z frame 2 keeps the read chip ON the turn once it settles,
-                    not just while reading — every answer shows what it read
-                    (PROJECT_RULES). Reuses ReadChips rather than a bespoke row
-                    (AGENTS.md: duplicates go). */}
-                {(htmlReading || htmlResult?.ok) && (
-                  <ReadChips
-                    read={[`${htmlAttachment.filename} · ${formatBytes(htmlAttachment.size)}`]}
-                  />
-                )}
-                {/* 06.25 frame 6: each failure says what happened and what is
-                    still possible — nothing half made, so neither case touches
-                    the pill. The board's `a` copy is sentence case, so this
-                    paragraph drops the `lowercase` className other machine-
-                    surface text here carries — only the line/chip strings are
-                    lowercase. */}
-                {htmlResult && !htmlResult.ok && (
-                  <>
-                    <p className="font-sans text-[13.5px] max-md:text-[15px] leading-[1.55] text-mn-text">
-                      {describeHtmlFailure(htmlAttachment.filename, htmlResult.error)}
-                    </p>
-                    <HtmlChipRow
-                      label="Options"
-                      chips={
+            <HtmlReadTurn
+              question={htmlQuestion}
+              at={htmlQuestionAt}
+              filename={htmlAttachment.filename}
+              size={htmlAttachment.size}
+              reading={htmlReading}
+              result={htmlResult}
+              offlineNote={
+                htmlOffline ? describeHtmlOfflineNote(htmlAttachment.filename) : undefined
+              }
+              failureChips={
+                htmlResult && !htmlResult.ok
+                  ? {
+                      chips:
                         htmlResult.error.kind === 'unreadable'
                           ? HTML_UNREADABLE_CHIPS
-                          : HTML_TOO_LARGE_CHIPS
-                      }
-                      disabled={isStreaming}
-                      onPick={(chip) => {
+                          : HTML_TOO_LARGE_CHIPS,
+                      disabled: isStreaming,
+                      onPick: (chip) => {
                         if (chip === 'try another file') {
                           clearHtmlAttachment()
                           requestHtmlImportPicker()
                           return
                         }
                         handleChipPick(chip)
-                      }}
-                    />
-                  </>
-                )}
-                {/* 06.25 frame 6 offline: a turn's `note`, not its `a` — asking
-                    failed before any read ran, so there's no answer and no
-                    failure chips, only the pill staying attached. The offer
-                    chips above stay beside this note (the 11 oct ruling at
-                    that gate). Sentence case, same reason as the failure
-                    paragraph above. */}
-                {htmlOffline && (
-                  <p className="font-mono text-[11px] text-mn-text-secondary">
-                    {describeHtmlOfflineNote(htmlAttachment.filename)}
-                  </p>
-                )}
-              </div>
-            </Turn>
+                      },
+                    }
+                  : undefined
+              }
+            />
           )}
         </div>
       )}

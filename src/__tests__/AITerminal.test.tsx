@@ -692,4 +692,65 @@ describe('AITerminal — html import path (KAN-251)', () => {
     )
     expect(screen.getByPlaceholderText('reply, or ask something else')).toBeInTheDocument()
   })
+
+  // KAN-251 10091: removing the pill (not Esc, not "try another file") must
+  // not take the question/answer with it — PROJECT_RULES says answers live
+  // in the thread. Only a settled read (ok or failed) has anything to keep.
+  it('removing the pill after a settled read keeps the question and answer in the thread', async () => {
+    const { container } = renderTerminal()
+    await waitReady()
+
+    fireEvent.change(attachInput(container), { target: { files: [smallHtmlFile()] } })
+    fireEvent.click(screen.getByText('make this a page'))
+    await screen.findByText(/So far:/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove running-log.html' }))
+
+    expect(screen.queryByText('running-log.html')).not.toBeInTheDocument()
+    expect(screen.getByText('make this a page')).toBeInTheDocument()
+    expect(screen.getByText(/So far:/)).toBeInTheDocument()
+    expect(screen.getByTestId('read-chip')).toHaveTextContent('running-log.html · 49 b')
+  })
+
+  it('removing the pill after a too-large failure keeps the failure sentence but drops its chip', async () => {
+    const { container } = renderTerminal()
+    await waitReady()
+
+    const size = Math.round(21.4 * 1024 * 1024)
+    const hugeFile = { name: 'huge.html', type: 'text/html', size } as unknown as File
+    fireEvent.change(attachInput(container), { target: { files: [hugeFile] } })
+    fireEvent.click(screen.getByText('make this a page'))
+
+    await screen.findByText(
+      /is 21\.4 MB\. I can read html files up to 20 MB\. Split it, or keep it as a file\./
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove huge.html' }))
+
+    expect(
+      screen.getByText(
+        /is 21\.4 MB\. I can read html files up to 20 MB\. Split it, or keep it as a file\./
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText('keep it as a file')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove huge.html' })).not.toBeInTheDocument()
+  })
+
+  it('removing the pill mid-read keeps nothing, same as Esc — there is no answer yet', async () => {
+    const readSpy = jest.spyOn(FileReader.prototype, 'readAsText').mockImplementation(() => {})
+    const { container } = renderTerminal()
+    await waitReady()
+
+    fireEvent.change(attachInput(container), { target: { files: [smallHtmlFile()] } })
+    fireEvent.click(screen.getByText('make this a page'))
+    expect(screen.getByTestId('read-chip')).toHaveTextContent('running-log.html')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove running-log.html' }))
+    readSpy.mockRestore()
+
+    expect(screen.queryByText('running-log.html')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('read-chip')).not.toBeInTheDocument()
+    expect(screen.queryByText('make this a page')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="you-row"]')).not.toBeInTheDocument()
+  })
 })
