@@ -1,10 +1,11 @@
 /**
  * @jest-environment node
  *
- * KAN-172 scaffold: POST /api/chat/propose-page authenticates like
- * /api/chat, 400s on a malformed body, and confines its candidate list to the
- * caller's pond. No model call yet — mocking server-only deps so the route
- * imports without a live server/session.
+ * KAN-172: POST /api/chat/propose-page authenticates like /api/chat, 400s on
+ * a malformed body, confines its candidate list to the caller's pond, and
+ * wraps the placement model call so a throw/timeout/malformed-output/
+ * out-of-candidate response never 500s or escapes validation (AUDIT G1).
+ * The model call is mocked — no network in tests.
  */
 
 let mockUser: { id: string } | null = { id: 'user-1' }
@@ -19,7 +20,15 @@ jest.mock('@/lib/pages/client', () => ({
   listPages: (...args: unknown[]) => mockListPages(...args),
 }))
 
-import { POST, buildCandidatePageIds } from '@/app/api/chat/propose-page/route'
+jest.mock('@ai-sdk/anthropic', () => ({ anthropic: () => ({}) }))
+const mockGenerateObject = jest.fn()
+jest.mock('ai', () => ({ generateObject: (...args: unknown[]) => mockGenerateObject(...args) }))
+
+import {
+  POST,
+  buildCandidatePageIds,
+  validatePlacement,
+} from '@/app/api/chat/propose-page/route'
 import type { PondPage } from '@/lib/pages/client'
 
 function page(overrides: Partial<PondPage>): PondPage {
@@ -49,6 +58,7 @@ beforeEach(() => {
   mockUser = { id: 'user-1' }
   mockListPages.mockReset()
   mockListPages.mockResolvedValue([])
+  mockGenerateObject.mockReset()
 })
 
 describe('POST /api/chat/propose-page', () => {
@@ -69,10 +79,77 @@ describe('POST /api/chat/propose-page', () => {
     expect((await post({ question: 'q', prose: ['nope'] })).status).toBe(400)
   })
 
-  it('returns the fallback shape for a well-formed request', async () => {
+  it('returns the fallback shape when the model call throws', async () => {
+    mockGenerateObject.mockRejectedValue(new Error('model unavailable'))
     const res = await post({ question: 'q', prose: 'p' })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ name: null, parentId: null, mentioned: [] })
+  })
+
+  it('returns the fallback shape on malformed model output', async () => {
+    mockGenerateObject.mockRejectedValue(new Error('response did not match schema'))
+    const res = await post({ question: 'q', prose: 'p' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ name: null, parentId: null, mentioned: [] })
+  })
+
+  it('nulls a hallucinated parentId outside the candidates', async () => {
+    mockListPages.mockResolvedValue([page({ id: 'area-1', parentId: null, title: 'creativity' })])
+    mockGenerateObject.mockResolvedValue({
+      object: { name: 'renovation blockers', parentId: 'made-up-id', mentioned: [] },
+    })
+    const res = await post({ question: 'q', prose: 'p' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      name: 'renovation blockers',
+      parentId: null,
+      mentioned: [],
+    })
+  })
+
+  it('passes through a well-formed, validated response', async () => {
+    mockListPages.mockResolvedValue([page({ id: 'area-1', parentId: null, title: 'creativity' })])
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        name: 'renovation blockers',
+        parentId: 'area-1',
+        mentioned: [{ title: 'kitchen renovation', ref: 'area-1', note: 'the one everything waits on' }],
+      },
+    })
+    const res = await post({ question: 'q', prose: 'p', read: ['area-1'] })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      name: 'renovation blockers',
+      parentId: 'area-1',
+      mentioned: [{ title: 'kitchen renovation', ref: 'area-1', note: 'the one everything waits on' }],
+    })
+  })
+})
+
+describe('validatePlacement', () => {
+  it('nulls a parentId not in the candidate list', () => {
+    const result = validatePlacement(
+      { name: 'n', parentId: 'outside', mentioned: [] },
+      ['area-1']
+    )
+    expect(result.parentId).toBeNull()
+  })
+
+  it('nulls a mentioned ref not in the candidate list while keeping title/note', () => {
+    const result = validatePlacement(
+      { name: 'n', parentId: null, mentioned: [{ title: 't', ref: 'outside', note: 'note' }] },
+      ['area-1']
+    )
+    expect(result.mentioned).toEqual([{ title: 't', ref: null, note: 'note' }])
+  })
+
+  it('passes through a parentId and ref that are in the candidate list', () => {
+    const result = validatePlacement(
+      { name: 'n', parentId: 'area-1', mentioned: [{ title: 't', ref: 'area-1', note: 'note' }] },
+      ['area-1']
+    )
+    expect(result.parentId).toBe('area-1')
+    expect(result.mentioned).toEqual([{ title: 't', ref: 'area-1', note: 'note' }])
   })
 })
 

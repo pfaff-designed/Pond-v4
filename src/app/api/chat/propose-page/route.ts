@@ -1,5 +1,10 @@
+import { anthropic } from '@ai-sdk/anthropic'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { listPages, type PondPage } from '@/lib/pages/client'
+import { AI_MODELS } from '@/lib/ai/models'
+import type { PageProposalMention } from '@/lib/conversation/page-proposals'
 
 /** The propose-page request body, parsed. */
 interface ProposePageBody {
@@ -46,12 +51,93 @@ export function buildCandidatePageIds(
   return [...ids]
 }
 
+/** The route's response shape — the fallback IS a valid response (AUDIT G1). */
+export interface PlacementResult {
+  name: string | null
+  parentId: string | null
+  mentioned: PageProposalMention[]
+}
+
+const FALLBACK: PlacementResult = { name: null, parentId: null, mentioned: [] }
+
+/** The model's raw (unvalidated) output — `parentId`/`mentioned[].ref` may name
+ *  an id outside the candidate list; {@link validatePlacement} is the gate. */
+const PlacementSchema = z.object({
+  name: z.string(),
+  parentId: z.string().nullable(),
+  mentioned: z.array(
+    z.object({
+      title: z.string(),
+      ref: z.string().nullable(),
+      note: z.string(),
+    })
+  ),
+})
+
+const MODEL_TIMEOUT_MS = 8000
+
+/** `{id, title}` for every candidate, in the order the model should see them. */
+function describeCandidates(
+  pages: PondPage[],
+  ids: string[]
+): { id: string; title: string }[] {
+  const byId = new Map(pages.map((p) => [p.id, p.title]))
+  return ids.map((id) => ({ id, title: byId.get(id) ?? id }))
+}
+
+const PLACEMENT_RULE =
+  'Placement rule, in order: the page the answer was about (the read page the answer leans on most, falling back to the open page if it was read), else the area the answer fits best, else top level.'
+
+/** The prompt handed to the placement model — states the rule verbatim and
+ *  lists candidates by id so the model picks an id, never free text. */
+function buildPlacementPrompt(opts: {
+  question: string
+  prose: string
+  openPageId: string | null
+  read: string[]
+  candidates: { id: string; title: string }[]
+}): string {
+  const candidateLines = opts.candidates.map((c) => `- ${c.id}: "${c.title}"`).join('\n')
+  return [
+    'You are Pond, naming and placing a page proposed from an answer in a conversation.',
+    PLACEMENT_RULE,
+    'Pick parentId from one of these candidate page ids, or null for top level. Never invent an id.',
+    candidateLines || '(no candidates — use null)',
+    `The open page id (if any): ${opts.openPageId ?? 'none'}`,
+    `The pages read while answering (if any): ${opts.read.join(', ') || 'none'}`,
+    `Question: ${opts.question}`,
+    `Answer: ${opts.prose}`,
+    'Name the page the way Pond would: short, specific, not the question repeated verbatim.',
+    'List what the answer mentioned as `mentioned`: for each, a `title`, a `ref` that is one of the candidate ids above if it resolves to one of them (otherwise null), and a short lowercase `note`.',
+  ].join('\n')
+}
+
+/** Clamps the model's raw output to the candidate list: a `parentId` or
+ *  `mentioned[].ref` naming an id outside `candidateIds` becomes null rather
+ *  than trusting the model's free-text guess. */
+export function validatePlacement(
+  result: z.infer<typeof PlacementSchema>,
+  candidateIds: string[]
+): PlacementResult {
+  const candidateSet = new Set(candidateIds)
+  return {
+    name: result.name,
+    parentId: result.parentId !== null && candidateSet.has(result.parentId) ? result.parentId : null,
+    mentioned: result.mentioned.map((m) => ({
+      title: m.title,
+      ref: m.ref !== null && candidateSet.has(m.ref) ? m.ref : null,
+      note: m.note,
+    })),
+  }
+}
+
 /**
- * Pond's name and parent for a proposed page (KAN-172). Scaffold: authenticates
- * and builds the candidate list the model will pick from, but makes no model
- * call yet — always the fallback shape, which `AITerminal.tsx`'s `proposePage`
- * uses exactly as its current heuristic result (AUDIT G1: make-this-a-page never
- * blocks on this route).
+ * Pond's name and parent for a proposed page (KAN-172): authenticates, builds
+ * the candidate list, then asks the placement model to pick a name and a
+ * candidate id. A thrown, timed-out, or schema-invalid model call — and a
+ * validated response otherwise — both return a 200; this route never 500s on
+ * the model, so make-this-a-page never blocks (AUDIT G1). `AITerminal.tsx`'s
+ * `proposePage` keeps its own fallback standing until this resolves.
  */
 export async function POST(req: Request) {
   let rawBody: unknown
@@ -75,9 +161,27 @@ export async function POST(req: Request) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const pages = await listPages(supabase, user.id, parsed.pondId)
-  // Wired into the model prompt by the next item; computed here so this item's
-  // own candidate-membership rules (and their tests) land before the model call does.
-  buildCandidatePageIds(pages, parsed.read, parsed.openPageId)
+  const candidateIds = buildCandidatePageIds(pages, parsed.read, parsed.openPageId)
 
-  return Response.json({ name: null, parentId: null, mentioned: [] })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS)
+  try {
+    const { object } = await generateObject({
+      model: anthropic(AI_MODELS.quick),
+      schema: PlacementSchema,
+      abortSignal: controller.signal,
+      prompt: buildPlacementPrompt({
+        question: parsed.question,
+        prose: parsed.prose,
+        openPageId: parsed.openPageId,
+        read: parsed.read,
+        candidates: describeCandidates(pages, candidateIds),
+      }),
+    })
+    return Response.json(validatePlacement(object, candidateIds))
+  } catch {
+    return Response.json(FALLBACK)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
