@@ -664,6 +664,40 @@ describe('make this a page → the `new page — proposed` card', () => {
     })
   })
 
+  it('fills in Pond\'s chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'kr-1',
+        mentioned: [],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    // The card stands at once with the fallback fields.
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // Pond's own name lands once the route resolves — never the question cut short.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('kr-1')
+    // `under` shows the full ancestor path, not a bare title (6a f4).
+    expect(under.selectedOptions[0].textContent).toBe('Creativity › Kitchen renovation')
+
+    // G9 regression: a double click on make page still makes exactly one page.
+    const make = within(card).getByRole('button', { name: 'make page' })
+    fireEvent.click(make)
+    fireEvent.click(make)
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await act(async () => {})
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves the fallback name and parent exactly as before when the propose-page route rejects', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('network down'))
     renderTerminal()
