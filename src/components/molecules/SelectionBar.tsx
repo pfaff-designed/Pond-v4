@@ -12,7 +12,7 @@ import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/react'
 import type { Level } from '@tiptap/extension-heading'
 import { isActive } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import { AllSelection, TextSelection, type Selection as PMSelection } from '@tiptap/pm/state'
 import { editorForSelection } from '@/lib/modules/text/active-editor'
 import {
   activeMarks,
@@ -251,12 +251,23 @@ const selectionKey = (sel: Selection): string => {
   return `${anchor}-${head}`
 }
 
-/** The editor selection that `sel` lays out, in the editor's own positions. */
-const selectionInEditor = (editor: Editor, sel: Selection): TextSelection | null => {
+/**
+ * The editor selection that `sel` lays out, in the editor's own positions. A
+ * select-all DOM range has both endpoints on the editor root (`view.dom`),
+ * which `posAtDOM` maps to `0` and `doc.content.size` — `TextSelection.create`
+ * on those raw positions builds an invalid selection ProseMirror then
+ * collapses, so that exact pair becomes an `AllSelection` instead, and every
+ * other pair is snapped to the nearest inline position with `between`.
+ */
+const selectionInEditor = (editor: Editor, sel: Selection): PMSelection | null => {
   if (!sel.anchorNode || !sel.focusNode) return null
+  const { doc } = editor.state
   const anchor = editor.view.posAtDOM(sel.anchorNode, sel.anchorOffset)
   const head = editor.view.posAtDOM(sel.focusNode, sel.focusOffset)
-  return TextSelection.create(editor.state.doc, anchor, head)
+  if ((anchor === 0 && head === doc.content.size) || (anchor === doc.content.size && head === 0)) {
+    return new AllSelection(doc)
+  }
+  return TextSelection.between(doc.resolve(anchor), doc.resolve(head))
 }
 
 /**

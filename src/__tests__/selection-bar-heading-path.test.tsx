@@ -14,7 +14,7 @@ import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { SelectionBar } from '@/components/molecules/SelectionBar'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
-import { clearSelection, selectWord } from './helpers/selection'
+import { clearSelection, selectAll, selectWord } from './helpers/selection'
 import { findTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
@@ -53,8 +53,8 @@ jest.mock('@/lib/pages/commit', () => ({
 const SENTENCE = 'Notes on the workbench build'
 const WORD = 'workbench'
 
-const renderPage = () => {
-  const blocks: Block[] = [{ id: 'b-text', type: 'text', content: SENTENCE }]
+const renderPage = (content: string = SENTENCE) => {
+  const blocks: Block[] = [{ id: 'b-text', type: 'text', content }]
   mockGetPage.mockResolvedValue({ id: 'page-1', title: 'Workshop', blocks })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -121,5 +121,52 @@ describe.each([
 
     // (c) the toolbar is still mounted.
     expect(toolbar.isConnected).toBe(true)
+  })
+})
+
+describe('choosing a style after ⌘A select-all over multiple lines', () => {
+  const LINES = ['First line', 'Second line', 'Third line']
+  const CONTENT = LINES.join('\n\n')
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockCommitBlocks.mockResolvedValue(undefined)
+  })
+  afterEach(() => clearSelection())
+
+  it('converts every line to h2 and keeps the selection and the bar up', async () => {
+    const user = userEvent.setup()
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    renderPage(CONTENT)
+
+    const field = await findTextBlock()
+    // A real select-all's Range has both endpoints on the editable root
+    // itself, not on a text node inside it — unlike `selectWord`'s range.
+    selectAll(field)
+
+    const toolbar = await screen.findByRole('toolbar', { name: 'selection' })
+    await user.click(within(toolbar).getByRole('button', { name: 'text' }))
+    const menu = await screen.findByRole('menu', { name: 'text style' })
+    await user.click(within(menu).getByRole('menuitem', { name: 'h2' }))
+
+    await waitFor(() => expect(mockCommitBlocks).toHaveBeenCalled(), { timeout: 2000 })
+
+    await waitFor(() => {
+      expect(field.querySelectorAll('h2')).toHaveLength(LINES.length)
+      expect(field.querySelector('p')).toBeNull()
+    })
+
+    const [, , , savedBlocks] = mockCommitBlocks.mock.calls[mockCommitBlocks.mock.calls.length - 1]
+    expect((savedBlocks as Block[]).find((b) => b.id === 'b-text')).toEqual({
+      id: 'b-text',
+      type: 'text',
+      content: LINES.map((line) => `## ${line}`).join('\n\n'),
+    })
+
+    expect(toolbar.isConnected).toBe(true)
+    expect(window.getSelection()?.isCollapsed).toBe(false)
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('TextSelection endpoint'))
+
+    warnSpy.mockRestore()
   })
 })

@@ -23,6 +23,24 @@ export function selectText(el: HTMLElement): void {
   })
 }
 
+/**
+ * Selects `el`'s entire contents the way a real ⌘A does — both endpoints on
+ * `el` itself (offsets `0` and `el.childNodes.length`), not on a text node
+ * inside it — then fires `selectionchange`.
+ */
+export function selectAll(el: HTMLElement): void {
+  focusEditableAround(el)
+  const range = document.createRange()
+  range.setStart(el, 0)
+  range.setEnd(el, el.childNodes.length)
+  const sel = window.getSelection()
+  sel?.removeAllRanges()
+  sel?.addRange(range)
+  act(() => {
+    document.dispatchEvent(new Event('selectionchange'))
+  })
+}
+
 /** Collapses the selection and fires `selectionchange`, as clicking away or arrowing off a selection would. */
 export function clearSelection(): void {
   window.getSelection()?.removeAllRanges()
