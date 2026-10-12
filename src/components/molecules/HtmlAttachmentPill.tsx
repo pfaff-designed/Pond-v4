@@ -52,9 +52,9 @@ export function HtmlAttachmentPill({
         // no 'truncate' here: it would clip the remove button's max-md:before
         // hit area to the pill's box, shrinking the 44px mobile target.
         'inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-mn-pill bg-mn-text/[0.07]',
-        // leading-normal: board sRef is 23px tall; without it the pill inherits
-        // preflight's html line-height and measures 26.5px (11px × 1.5).
-        'px-[10px] py-[5px] font-mono lowercase text-[11px] leading-normal text-mn-text',
+        // leading-[normal]: board sRef is 23px tall. Not leading-normal, which
+        // globals.css sets to 1.5 and measures 26.5px (11px × 1.5).
+        'px-[10px] py-[5px] font-mono lowercase text-[11px] leading-[normal] text-mn-text',
         className
       )}
     >
