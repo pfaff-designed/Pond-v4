@@ -764,6 +764,7 @@ export function BlockCanvas({
                 width: (
                   <BlockWidthRow
                     width={block.width}
+                    size={slashSize}
                     onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
                     onPreview={(width) =>
                       setPreviewWidth(width === null ? null : { blockId: block.id, width })

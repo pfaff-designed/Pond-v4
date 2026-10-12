@@ -18,9 +18,11 @@ type NoAction = never
 const Harness = ({
   width,
   onPreview,
+  size,
 }: {
   width: BlockWidth | undefined
   onPreview?: (width: BlockWidth | null) => void
+  size?: 'desktop' | 'mobile'
 }) => {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -29,7 +31,7 @@ const Harness = ({
       id: 'width',
       label: 'width',
       heading: true,
-      content: <BlockWidthRow width={width} onSelect={() => {}} onPreview={onPreview} />,
+      content: <BlockWidthRow width={width} onSelect={() => {}} onPreview={onPreview} size={size} />,
     },
   ]
   return (
@@ -218,5 +220,31 @@ describe('BlockWidthRow', () => {
     await user.keyboard('{ArrowRight}')
     expect(full).toHaveFocus()
     expect(onPreview).not.toHaveBeenCalled()
+  })
+
+  it('size="mobile": 44px cells, 12px radius, 17px fraction / 12px mono', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" size="mobile" />)
+    const menu = await openMenu(user)
+    const half = within(menu).getByRole('menuitem', { name: '½' })
+    for (const cls of ['h-[44px]', 'rounded-[12px]', 'text-[17px]']) {
+      expect(classesOf(half)).toContain(cls)
+    }
+    const full = within(menu).getByRole('menuitem', { name: 'full' })
+    for (const cls of ['h-[44px]', 'rounded-[12px]', 'text-[12px]']) {
+      expect(classesOf(full)).toContain(cls)
+    }
+  })
+
+  it('size="mobile": the note is always the phone note, regardless of preview', async () => {
+    const user = userEvent.setup()
+    render(<Harness width="1/2" size="mobile" />)
+    const menu = await openMenu(user)
+    const phoneNote = 'widths show on wider screens. on a phone every block is full.'
+    expect(within(menu).getByText(phoneNote)).toBeInTheDocument()
+    const twoThirds = within(menu).getByRole('menuitem', { name: '⅔' })
+    await user.hover(twoThirds)
+    expect(within(menu).getByText(phoneNote)).toBeInTheDocument()
+    expect(within(menu).queryByText(/showing ⅔/)).not.toBeInTheDocument()
   })
 })

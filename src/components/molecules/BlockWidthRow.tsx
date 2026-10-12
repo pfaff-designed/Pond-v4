@@ -17,6 +17,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { Menu } from '@base-ui/react/menu'
 import type { BlockWidth } from '@/lib/modules/content'
+import type { PondMenuSize } from './PondMenu'
 
 export interface BlockWidthRowProps {
   /** Absent reads as `full` — a block with no width. */
@@ -24,6 +25,8 @@ export interface BlockWidthRowProps {
   onSelect: (width: BlockWidth) => void
   /** Hovering a non-kept cell previews it; leaving the row clears the preview with `null`. */
   onPreview?: (width: BlockWidth | null) => void
+  /** @default 'desktop' */
+  size?: PondMenuSize
 }
 
 const WIDTHS: { label: string; value: BlockWidth }[] = [
@@ -38,21 +41,30 @@ const WIDTHS: { label: string; value: BlockWidth }[] = [
 const ROW = 'flex gap-[2px] px-[4px] pt-[2px] pb-[4px]'
 
 const CELL =
-  'flex h-[30px] min-w-0 cursor-default items-center justify-center rounded-[8px] font-medium ' +
+  'flex min-w-0 cursor-default items-center justify-center font-medium ' +
   'outline-none transition-[background] duration-[var(--motion-quick)] ease-[var(--ease-mn)]'
 
-const CELL_FULL = 'flex-[1.4] font-mono text-[11px]'
-const CELL_FRACTION = 'flex-1 font-sans text-[14px]'
+const CELL_SIZES: Record<PondMenuSize, { cell: string; full: string; fraction: string }> = {
+  desktop: { cell: 'h-[30px] rounded-[8px]', full: 'text-[11px]', fraction: 'text-[14px]' },
+  mobile: { cell: 'h-[44px] rounded-[12px]', full: 'text-[12px]', fraction: 'text-[17px]' },
+}
+
+const CELL_FULL = 'flex-[1.4] font-mono'
+const CELL_FRACTION = 'flex-1 font-sans'
 const CELL_UNFILLED = 'text-mn-text'
 const CELL_FILLED = 'bg-mn-text text-raw-paper dark:text-raw-ink'
 const CELL_PREVIEWED = 'bg-mn-hover-fill text-mn-text [box-shadow:inset_0_0_0_1px_var(--mn-rail-field-ring)]'
 
 const NOTE = 'px-[10px] pt-[8px] pb-[4px] font-mono text-[11px] leading-[1.5] text-mn-text-secondary'
 
-export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps) => {
+/** 6x frame 6: on a phone the note never reflects a preview — there is none to show. */
+const PHONE_NOTE = 'widths show on wider screens. on a phone every block is full.'
+
+export const BlockWidthRow = ({ width, onSelect, onPreview, size = 'desktop' }: BlockWidthRowProps) => {
   const current = width ?? 'full'
   const [hovered, setHovered] = useState<BlockWidth | null>(null)
   const hoveredLabel = WIDTHS.find(({ value }) => value === hovered)?.label
+  const noteText = size === 'mobile' ? PHONE_NOTE : hoveredLabel && `showing ${hoveredLabel} on the page · click to keep, esc to go back`
   const cellRefs = useRef<(HTMLElement | null)[]>([])
 
   const handleHover = (value: BlockWidth) => {
@@ -91,15 +103,15 @@ export const BlockWidthRow = ({ width, onSelect, onPreview }: BlockWidthRowProps
             onClick={() => onSelect(value)}
             onMouseEnter={() => handleHover(value)}
             onKeyDown={handleArrowKey(index)}
-            className={`${CELL} ${value === 'full' ? CELL_FULL : CELL_FRACTION} ${
-              value === current ? CELL_FILLED : value === hovered ? CELL_PREVIEWED : CELL_UNFILLED
-            }`}
+            className={`${CELL} ${CELL_SIZES[size].cell} ${
+              value === 'full' ? `${CELL_FULL} ${CELL_SIZES[size].full}` : `${CELL_FRACTION} ${CELL_SIZES[size].fraction}`
+            } ${value === current ? CELL_FILLED : value === hovered ? CELL_PREVIEWED : CELL_UNFILLED}`}
           >
             {label}
           </Menu.Item>
         ))}
       </div>
-      {hoveredLabel && <div className={NOTE}>{`showing ${hoveredLabel} on the page · click to keep, esc to go back`}</div>}
+      {noteText && <div className={NOTE}>{noteText}</div>}
     </>
   )
 }
