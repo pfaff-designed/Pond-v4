@@ -1,4 +1,4 @@
--- ─── Undo and redo of a mark pick (glyph) ────────────────────────────────────
+-- ─── Undo and redo of a mark pick (glyph, area colour) ───────────────────────
 --
 -- KAN-248's glyph picker logs a person's pick as their own, accepted
 -- `edit_glyph` record (`Rail.tsx`'s `handlePickGlyph`; before/after are a
@@ -12,12 +12,22 @@
 -- never stamp `updated_at` (`src/lib/pages/mark-client.ts`), so neither does
 -- this.
 --
--- `edit_area_role` (colour, `pages.area_role`) is KAN-93's next step, in a
--- following migration.
+-- `handlePickColour`'s `edit_area_role` record gets the same treatment against
+-- `pages.area_role`. The one difference from `glyph`: an area role can only be
+-- set back onto a page `public.page_is_area` (0022) still calls an area — a
+-- page nested, renamed to `databases`, or retyped to `home` since the pick
+-- loses the right to hold a role (0022's own trigger already clears it on that
+-- move). Rather than let that surface as the raw `pages_area_role_area_only`
+-- check violation, this checks `page_is_area` itself first and raises a
+-- `check_violation` / `not-an-area` the client reads as `blocked` (mirrors
+-- `NotAnAreaError`'s `23514` check in `src/lib/pages/mark-client.ts`; blocked,
+-- not stale, because the page itself did not change — session-undo retries
+-- once the obstacle clears, same as `linked-elsewhere`).
 --
 -- Down (manual): re-run 0021's `create or replace function
 --   private.change_log_undo_kind` and `private.change_log_set_back` to drop
---   the `edit_glyph` case and the `glyph` branch below.
+--   the `edit_glyph` / `edit_area_role` cases and the `glyph` / `area_role`
+--   branches below.
 
 begin;
 
@@ -52,6 +62,7 @@ begin
     when 'add_row' then 'row'
     when 'edit_row' then 'row'
     when 'edit_glyph' then 'glyph'
+    when 'edit_area_role' then 'area_role'
   end;
 end;
 $$;
@@ -74,7 +85,42 @@ declare
   v_row public.pages;
   v_row_id uuid;
   v_glyph text;
+  v_area_role text;
+  v_parent_id uuid;
+  v_type text;
+  v_title text;
 begin
+  if p_kind = 'area_role' then
+    -- `null` (ink) is a legitimate before/after, never `not-undoable`; only a
+    -- shape neither a role nor ink refuses.
+    if not (
+      (p_from is null or jsonb_typeof(p_from) in ('string', 'null'))
+      and (p_to is null or jsonb_typeof(p_to) in ('string', 'null'))
+    ) then
+      raise exception 'change_log record % carries no colour to set back', p_record.id
+        using errcode = 'feature_not_supported', detail = 'not-undoable';
+    end if;
+    select area_role, parent_id, type, title into v_area_role, v_parent_id, v_type, v_title
+      from public.pages
+      where id = p_record.target_page_id
+        and user_id = p_record.user_id
+        and pond_id is not distinct from p_record.pond_id;
+    if not found then
+      raise exception 'change_log record %: the page it changed is gone', p_record.id
+        using errcode = 'no_data_found', detail = 'page-gone';
+    end if;
+    if not public.page_is_area(v_parent_id, v_type, v_title) then
+      raise exception 'page % is no longer an area; it cannot hold a colour', p_record.target_page_id
+        using errcode = 'check_violation', detail = 'not-an-area';
+    end if;
+    if v_area_role is distinct from (p_from #>> '{}') then
+      raise exception 'page % changed since change_log record %', p_record.target_page_id, p_record.id
+        using errcode = 'serialization_failure', detail = 'page-changed';
+    end if;
+    update public.pages set area_role = (p_to #>> '{}') where id = p_record.target_page_id;
+    return null;
+  end if;
+
   if p_kind = 'glyph' then
     -- `null` (automatic) is a legitimate before/after, never `not-undoable`;
     -- only a shape neither a glyph id nor automatic refuses.

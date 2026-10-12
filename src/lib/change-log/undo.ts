@@ -30,7 +30,7 @@ export const STALE_REASONS = ['page-changed', 'record-changed'] as const
  * Something else stands in the way — a relation pointing at the row, a sibling
  * holding its name. Nothing was written; the step lands once that is cleared.
  */
-export const BLOCKED_REASONS = ['linked-elsewhere', 'name-taken'] as const
+export const BLOCKED_REASONS = ['linked-elsewhere', 'name-taken', 'not-an-area'] as const
 /** The step cannot be taken back (or put back) at all. */
 export const REFUSED_REASONS = [
   'already-undone',

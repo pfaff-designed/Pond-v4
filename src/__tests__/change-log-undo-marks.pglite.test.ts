@@ -33,6 +33,19 @@ const addPage = async (
   return res.rows[0].id
 }
 
+const addArea = async (
+  db: PGlite,
+  opts: { areaRole?: string | null; pondId?: string; title?: string } = {}
+): Promise<string> => {
+  const pondId = opts.pondId ?? (await pondOf(db))
+  const res = await db.query<{ id: string }>(
+    `insert into public.pages (user_id, pond_id, parent_id, type, title, area_role)
+     values ($1, $2, null, 'page', $3, $4) returning id`,
+    [USER, pondId, opts.title ?? 'Area', opts.areaRole ?? null]
+  )
+  return res.rows[0].id
+}
+
 const addRecord = async (
   db: PGlite,
   opts: {
@@ -72,6 +85,18 @@ const glyphOf = async (db: PGlite, pageId: string): Promise<string | null> => {
     [pageId]
   )
   return res.rows[0]?.glyph ?? null
+}
+
+const areaRoleOf = async (db: PGlite, pageId: string): Promise<string | null> => {
+  const res = await db.query<{ area_role: string | null }>(
+    'select area_role from public.pages where id = $1',
+    [pageId]
+  )
+  return res.rows[0]?.area_role ?? null
+}
+
+const nestUnder = async (db: PGlite, pageId: string, parentId: string): Promise<void> => {
+  await db.query('update public.pages set parent_id = $1 where id = $2', [parentId, pageId])
 }
 
 const statusOf = async (db: PGlite, id: string): Promise<string> => {
@@ -171,6 +196,144 @@ describe('undo_change_log_record — an edit_glyph record sets the pick back', (
       await db.query<{ updated_at: Date }>('select updated_at from public.pages where id = $1', [pageId])
     ).rows[0].updated_at
     const pick = await addRecord(db, { pageId, before: 'flask', after: 'beaker' })
+
+    await undo(db, [pick], pondId)
+
+    const after = (
+      await db.query<{ updated_at: Date }>('select updated_at from public.pages where id = $1', [pageId])
+    ).rows[0].updated_at
+    expect(new Date(after).getTime()).toBe(new Date(before).getTime())
+    await db.close()
+  })
+})
+
+describe('undo_change_log_record — an edit_area_role record sets the colour back', () => {
+  it('puts the previous colour back, writes an undo record, and marks the pick undone', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addArea(db, { areaRole: 'area-a' })
+    const pick = await addRecord(db, {
+      pageId,
+      action: 'edit_area_role',
+      before: 'area-b',
+      after: 'area-a',
+    })
+
+    const res = await undo(db, [pick], pondId)
+
+    expect(await areaRoleOf(db, pageId)).toBe('area-b')
+    expect(await statusOf(db, pick)).toBe('undone')
+    expect(res.rows[0]).toMatchObject({
+      action: 'undo',
+      before: 'area-a',
+      after: 'area-b',
+      links: { undo_of: pick },
+    })
+    await db.close()
+  })
+
+  it('treats a pick of ink (null) as a real before/after, not a missing one', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addArea(db, { areaRole: 'area-a' })
+    const pick = await addRecord(db, {
+      pageId,
+      action: 'edit_area_role',
+      before: null,
+      after: 'area-a',
+    })
+
+    await undo(db, [pick], pondId)
+
+    expect(await areaRoleOf(db, pageId)).toBeNull()
+    await db.close()
+  })
+
+  it('refuses when the colour changed since, says so in a code, and writes nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addArea(db, { areaRole: 'area-c' })
+    const pick = await addRecord(db, {
+      pageId,
+      action: 'edit_area_role',
+      before: 'area-b',
+      after: 'area-a',
+    })
+
+    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
+
+    expect(await areaRoleOf(db, pageId)).toBe('area-c')
+    expect(await statusOf(db, pick)).toBe('accepted')
+    await db.close()
+  })
+
+  it('refuses cleanly when the page is no longer an area, never a raw constraint error', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const parentId = await addPage(db, { pondId })
+    const pageId = await addArea(db, { areaRole: 'area-a', pondId })
+    const pick = await addRecord(db, {
+      pageId,
+      pondId,
+      action: 'edit_area_role',
+      before: 'area-b',
+      after: 'area-a',
+    })
+    await nestUnder(db, pageId, parentId)
+    expect(await areaRoleOf(db, pageId)).toBeNull()
+
+    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('23514', 'not-an-area'))
+
+    expect(await areaRoleOf(db, pageId)).toBeNull()
+    expect(await statusOf(db, pick)).toBe('accepted')
+    await db.close()
+  })
+
+  it('redoes the pick, putting the colour back and marking the undo undone', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addArea(db, { areaRole: 'area-a' })
+    const pick = await addRecord(db, {
+      pageId,
+      action: 'edit_area_role',
+      before: 'area-b',
+      after: 'area-a',
+    })
+    const undone = (await undo(db, [pick], pondId)).rows[0]
+
+    const res = await redo(db, [pick], pondId)
+
+    expect(await areaRoleOf(db, pageId)).toBe('area-a')
+    expect(res.rows[0]).toMatchObject({
+      action: 'redo',
+      before: 'area-b',
+      after: 'area-a',
+      links: { redo_of: pick },
+    })
+    expect(await statusOf(db, undone.id)).toBe('undone')
+    expect(await statusOf(db, pick)).toBe('undone')
+    await db.close()
+  })
+
+  it('does not stamp updated_at — a mark write never does', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const pondId = await pondOf(db)
+    const pageId = await addArea(db, { areaRole: 'area-a' })
+    const before = (
+      await db.query<{ updated_at: Date }>('select updated_at from public.pages where id = $1', [pageId])
+    ).rows[0].updated_at
+    const pick = await addRecord(db, {
+      pageId,
+      action: 'edit_area_role',
+      before: 'area-b',
+      after: 'area-a',
+    })
 
     await undo(db, [pick], pondId)
 
