@@ -72,8 +72,10 @@ import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pa
 import { markAccent, pushRecentGlyph, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
 import { GlyphPicker, glyphPickerHeight } from '@/components/molecules/GlyphPicker'
+import { GlyphPickerSheet } from '@/components/molecules/GlyphPickerSheet'
 import type { PickerSide } from '@/components/molecules/use-anchored-box'
 import { sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
+import { useBelowMd } from '@/lib/layout/use-below-md'
 import { usePondGlyph } from '@/lib/pond/glyph'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import {
@@ -766,6 +768,9 @@ export function RailView({
   // that opened it — captured off the click event itself (never read from a
   // ref during render).
   const [picker, setPicker] = useState<OpenGlyphPicker | null>(null)
+  // Below the phone breakpoint the picker opens as a bottom sheet instead of
+  // the anchored glass (KAN-250 4/4, 6y frame 6) — same handlers either way.
+  const belowMd = useBelowMd()
   const closePicker = useCallback(() => {
     picker?.anchor.focus()
     setPicker(null)
@@ -1244,26 +1249,30 @@ export function RailView({
           </div>
         </div>
       </aside>
-      {picker && (
-        <GlyphPicker
-          target={{ isArea: picker.isArea, title: picker.title }}
-          current={picker.current}
-          // Live off `markMap`, not frozen at open time: a colour pick redraws
-          // the open glass's own cells and ring without closing it.
-          accent={markAccent(pickerRole)}
-          role={pickerRole}
-          recentGlyphs={recentGlyphs}
-          inheritsFrom={picker.inheritsFrom}
-          anchor={picker.anchor}
-          side={picker.side}
-          onPick={(glyph) => {
-            onPickGlyph(picker.id, glyph)
-            closePicker()
-          }}
-          onPickColour={(role) => onPickColour(picker.id, role)}
-          onClose={closePicker}
-        />
-      )}
+      {picker &&
+        (() => {
+          const sharedPickerProps = {
+            target: { isArea: picker.isArea, title: picker.title },
+            current: picker.current,
+            // Live off `markMap`, not frozen at open time: a colour pick redraws
+            // the open glass's own cells and ring without closing it.
+            accent: markAccent(pickerRole),
+            role: pickerRole,
+            recentGlyphs,
+            inheritsFrom: picker.inheritsFrom,
+            onPick: (glyph: string | null) => {
+              onPickGlyph(picker.id, glyph)
+              closePicker()
+            },
+            onPickColour: (role: AreaRole | null) => onPickColour(picker.id, role),
+            onClose: closePicker,
+          }
+          return belowMd ? (
+            <GlyphPickerSheet open {...sharedPickerProps} />
+          ) : (
+            <GlyphPicker anchor={picker.anchor} side={picker.side} {...sharedPickerProps} />
+          )
+        })()}
     </>
   )
 }
