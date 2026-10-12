@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { SelectionBar, type SelectionContext } from '@/components/molecules/SelectionBar'
 import { registerTextEditor } from '@/lib/modules/text/active-editor'
@@ -125,6 +126,25 @@ describe('SelectionBar text style', () => {
 
     expect(serializeMarkdown(editor!.state.doc)).toBe('soak overnight')
     expect(screen.getByRole('button', { name: 'text' })).toBeInTheDocument()
+  })
+
+  it('a second real click on the text ▾ button closes the menu it opened', async () => {
+    const user = userEvent.setup()
+    render(<Host onAsk={jest.fn()} onEditor={jest.fn()} />)
+
+    selectWord(screen.getByText('soak overnight'), 'overnight')
+    const button = screen.getByRole('button', { name: 'text' })
+
+    // A real click fires pointerdown before click; the document's pointerdown
+    // listener must not fight the button's own open/close toggle.
+    await user.click(button)
+    expect(screen.getByRole('menu', { name: 'text style' })).toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(button)
+    expect(screen.queryByRole('menu', { name: 'text style' })).not.toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('toolbar', { name: 'selection' })).toBeInTheDocument()
   })
 
   it('hangs the menu 4px under the style button once it opens', () => {

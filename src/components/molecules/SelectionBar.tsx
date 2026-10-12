@@ -415,11 +415,16 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
   // The style menu portals as the bar's sibling, not its child, so it needs its
   // own containment check: a press on the bar outside the menu only closes the
-  // menu, and a press outside both dismisses the bar.
+  // menu, and a press outside both dismisses the bar. The style button itself is
+  // excluded: pointerdown fires before its own click, so closing here would just
+  // have that click's toggle reopen it — the button owns its own open/close.
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node
-      if (styleMenuRef.current && !styleMenuRef.current.contains(target)) setStyleMenuOpen(false)
+      const onStyleButton = Boolean(styleButtonRef.current?.contains(target))
+      if (styleMenuRef.current && !styleMenuRef.current.contains(target) && !onStyleButton) {
+        setStyleMenuOpen(false)
+      }
       if (barRef.current && barRef.current.contains(target)) return
       if (styleMenuRef.current && styleMenuRef.current.contains(target)) return
       hide()
@@ -717,7 +722,7 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
                       : item.id === 'list'
                         ? applyMark(toggleBulletList)
                         : item.id === 'text-style'
-                          ? () => setStyleMenuOpen(true)
+                          ? () => setStyleMenuOpen((open) => !open)
                           : item.id === 'link'
                             ? handleLinkClick
                             : item.id === 'copy'
