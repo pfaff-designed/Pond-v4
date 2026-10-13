@@ -557,6 +557,26 @@
   }
 }
 
+/* The cover's ASCII pond (`Pond 05 Shell` 5a, `Pond 06.04` 6d f1) — each line
+   drifts sideways and breathes opacity on its own loop, offset per line.
+   `AsciiPondBackground` composes these per-line from the board's values. */
+@keyframes pondDrift {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(14px);
+  }
+}
+@keyframes pondBreathe {
+  from {
+    opacity: 0.22;
+  }
+  to {
+    opacity: 0.5;
+  }
+}
+
 /* ── ticket-41 micro-interaction keyframes ──────────────────────────────────
    Each one is a single confirming gesture; timing/easing come from the motion
    tokens at the call site (the animation shorthand references the var). */

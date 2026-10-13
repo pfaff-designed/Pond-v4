@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { AsciiPondBackground } from '@/components/molecules/AsciiPondBackground'
 import { formatCoverClock, timezoneCity } from '@/lib/first-run/cover-clock'
 
 const headerLabelClass =
@@ -11,11 +12,9 @@ const headerLabelClass =
 /**
  * The cover — `Pond 05 Shell` 5a / `Pond 06.04` 6d frame 1. Paper (or ink,
  * dark) with nothing on it but a place, the wordmark, a live clock, one
- * field and the way in. The ASCII drift and the field's own wiring (⌘K,
- * ↵, the carry into the composer) land in later passes; this is the
- * static frame. `enter` (empty field, button or ↵) opens the shell bare;
- * typed text carries across as `?ask=` for `DocumentPanel` to pick up —
- * never sent here.
+ * field, the drifting ASCII pond behind it all, and the way in. `enter`
+ * (empty field, button or ↵) opens the shell bare; typed text carries
+ * across as `?ask=` for `DocumentPanel` to pick up — never sent here.
  */
 export function Cover() {
   const [clock, setClock] = useState(() => formatCoverClock(new Date()))
@@ -40,6 +39,8 @@ export function Cover() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-mn-surface text-mn-text">
+      <AsciiPondBackground />
+
       <div className="absolute inset-x-0 top-0 grid grid-cols-[1fr_auto_1fr] items-center px-6 pt-4">
         <span className={headerLabelClass}>{place}</span>
         <h1 className="m-0 text-center font-serif text-[20px] font-extralight italic leading-none tracking-[-0.035em] text-mn-text">
