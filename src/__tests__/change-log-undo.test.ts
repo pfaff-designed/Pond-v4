@@ -83,15 +83,30 @@ describe('undoStep', () => {
   })
 
   it.each([['page-changed'], ['record-changed']])(
-    'reports a 40001 %s as stale, with no text from the database',
+    'reports a P0001 %s as stale, with no text from the database',
     async (reason) => {
       const { client } = fakeSupabase({
-        error: { code: '40001', details: reason, message: 'page 9f… changed since record 3a…' },
+        error: { code: 'P0001', details: reason, message: 'page 9f… changed since record 3a…' },
       })
 
       await expect(undoStep(client, STEP)).resolves.toEqual({ outcome: 'stale', reason })
     }
   )
+
+  it('reports a 40001 stale reason as stale too, for a database before migration 0024', async () => {
+    const { client } = fakeSupabase({
+      error: {
+        code: '40001',
+        details: 'page-changed',
+        message: 'page 9f… changed since record 3a…',
+      },
+    })
+
+    await expect(undoStep(client, STEP)).resolves.toEqual({
+      outcome: 'stale',
+      reason: 'page-changed',
+    })
+  })
 
   it.each([
     ['22023', 'already-undone'],
@@ -119,12 +134,6 @@ describe('undoStep', () => {
     const { client } = fakeSupabase({ error: { code: '40001', details: 'something-new' } })
 
     await expect(undoStep(client, STEP)).rejects.toMatchObject({ details: 'something-new' })
-  })
-
-  it('throws a stale reason under the wrong code', async () => {
-    const { client } = fakeSupabase({ error: { code: '22023', details: 'page-changed' } })
-
-    await expect(undoStep(client, STEP)).rejects.toMatchObject({ code: '22023' })
   })
 
   it('throws what has no code, so the step can be tried again', async () => {

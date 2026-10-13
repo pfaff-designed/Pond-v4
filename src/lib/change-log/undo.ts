@@ -4,9 +4,12 @@
  * Each step is one RPC (migration 0021): it compares what the records changed
  * against how they left it, writes, logs the undo/redo records, advances the
  * originals and outdates the pending diffs it made stale — all or nothing. A
- * refusal comes back as a reason code read off the SQL DETAIL, never as raw text:
- * the code is what a surface turns into copy. Only a failure with no code — the
- * network, most likely — is thrown, because that step may still succeed.
+ * refusal comes back as a reason read off the SQL DETAIL, never as raw text, and
+ * never off the SQLSTATE — a not-yet-migrated database still raises stale refusals
+ * as `40001`, a migrated one as `P0001` (0024); DETAIL is the contract either way.
+ * The code is what a surface turns into copy. Only a failure with no DETAIL, or
+ * one this module doesn't recognize — the network, most likely — is thrown,
+ * because that step may still succeed.
  *
  * Which step is next lives in `session-undo.ts`.
  *
@@ -58,23 +61,20 @@ export type StepResult =
   | { outcome: 'blocked'; reason: BlockedReason }
   | { outcome: 'refused'; reason: RefusedReason }
 
-const STALE_CODE = '40001'
-
 type StepRpc = 'undo_change_log_record' | 'redo_change_log_record'
 
 const isOneOf = <T extends string>(list: readonly T[], value: string): value is T =>
   (list as readonly string[]).includes(value)
 
-/** PostgREST returns a raised exception's DETAIL as `details`. */
+/**
+ * PostgREST returns a raised exception's DETAIL as `details`. Classified by DETAIL
+ * alone, whatever the SQLSTATE — `40001` and `P0001` both reach here and read the
+ * same way; the code tells PostgREST whether to retry, not what the reason means.
+ */
 const classify = (error: PostgrestError): StepResult | null => {
   const reason = error.details ?? ''
-  // `not-an-area` is raised as `23514 check_violation` (mirrors the real constraint),
-  // not `40001`, so it is checked by reason alone, same as the blocked reasons below.
-  if (reason === 'not-an-area') return { outcome: 'stale', reason }
+  if (isOneOf(STALE_REASONS, reason)) return { outcome: 'stale', reason }
   if (isOneOf(BLOCKED_REASONS, reason)) return { outcome: 'blocked', reason }
-  if (error.code === STALE_CODE) {
-    return isOneOf(STALE_REASONS, reason) ? { outcome: 'stale', reason } : null
-  }
   return isOneOf(REFUSED_REASONS, reason) ? { outcome: 'refused', reason } : null
 }
 
