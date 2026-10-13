@@ -56,6 +56,7 @@ import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo } from '@/lib/change-log/session-undo'
@@ -150,6 +151,7 @@ import {
   isPromoteTablePart,
   isAskQuestionPart,
   isSuggestFollowupsPart,
+  isOpenChangeLogPart,
   type CreatePagePart,
   type DefineSchemaPart,
   type AddRowPart,
@@ -439,6 +441,8 @@ export function AITerminal() {
   // `writeAcceptedChanges` has to commit the page and advance the record in a
   // single transaction (spec #110 criterion 3), so it owns that advance.
   const loggedDecisions = useRef<Set<string>>(new Set())
+  // Dedupes the open_change_log navigation effect (below) by toolCallId.
+  const openedChangeLogRef = useRef<Set<string>>(new Set())
   const logDecision = useCallback(
     (toolCallId: string, decision: ProposalDecision) => {
       // A batch reject dispatches once per change index; the record advances once.
@@ -569,11 +573,12 @@ export function AITerminal() {
 
   // Current page blocks — the source of the "before" text in a diff card, and
   // the array we rewrite when a proposal is accepted. Shares the ['page', nodeId]
-  // cache with DocumentPanel.
+  // cache with DocumentPanel. The virtual change-log node has no `pages` row
+  // (DocumentPanel's own `isChangeLogNode` guard), so it takes none of this path.
   const { data: currentPage } = useQuery({
     queryKey: ['page', nodeId],
     queryFn: () => (nodeId ? getPage(getSupabase(), nodeId) : Promise.resolve(null)),
-    enabled: !!nodeId,
+    enabled: !!nodeId && nodeId !== CHANGE_LOG_NODE_ID,
   })
 
   // The user's pages, used to populate the create_page destination picker, to
@@ -614,7 +619,9 @@ export function AITerminal() {
   const crossPageTargetIds = useMemo(() => {
     const ids = new Set<string>()
     for (const t of Object.values(changeTargets ?? {})) {
-      if (t.nodeId && !t.missing && t.nodeId !== nodeId) ids.add(t.nodeId)
+      if (t.nodeId && !t.missing && t.nodeId !== nodeId && t.nodeId !== CHANGE_LOG_NODE_ID) {
+        ids.add(t.nodeId)
+      }
     }
     return [...ids]
   }, [changeTargets, nodeId])
@@ -1191,6 +1198,27 @@ export function AITerminal() {
   useEffect(() => {
     if (status === 'ready') pendingRevisionOf.current = null
   }, [status])
+
+  // ── open_change_log navigates the moment it streams in (KAN-94) ───────────
+  // Unlike the proposal tools above, this one carries no user decision — the
+  // call itself IS the gesture, so it pushes the same workspace URL the rail's
+  // change-log row pushes rather than waiting on a card. Keyed by toolCallId
+  // so a re-render never re-fires the push for a call already acted on THIS
+  // session — but the dedupe ref starts empty on every mount, so a call
+  // re-seeded from a saved transcript (its message id in `initialMessageIds`)
+  // is skipped outright, or anyone who once asked "open the change log" would
+  // be pushed there again on every reload/pond switch.
+  useEffect(() => {
+    for (const m of messages as Array<{ id: string; parts: Array<{ type: string }> }>) {
+      if (initialMessageIds.has(m.id)) continue
+      for (const call of m.parts.filter(isOpenChangeLogPart)) {
+        if (call.state !== 'input-available' || openedChangeLogRef.current.has(call.toolCallId))
+          continue
+        openedChangeLogRef.current.add(call.toolCallId)
+        router.push(workspaceHref({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+      }
+    }
+  }, [messages, router, initialMessageIds])
 
   // ── Scroll to bottom on new messages ─────────────────────────────────────
   useEffect(() => {

@@ -84,6 +84,7 @@ import {
   isDatabasesRoot,
 } from '@/lib/pages/databases-root'
 import { usePondName } from '@/lib/pond/name'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { RAIL_WIDTH_PX } from '@/lib/layout/rail-width'
 import {
   LIFE_ID,
@@ -154,6 +155,25 @@ const DATABASES_PLACEHOLDER_ROW: FlatRow = {
   setSize: 1,
 }
 
+/** The databases root's first child, reserved (KAN-94): no row, no migration,
+ *  same virtual shape as `DATABASES_PLACEHOLDER_ROW` — only shown once the root
+ *  itself is expanded, exactly like a real child. */
+const changeLogRow = (rootId: string): FlatRow => ({
+  id: CHANGE_LOG_NODE_ID,
+  node: {
+    id: CHANGE_LOG_NODE_ID,
+    parentId: rootId,
+    type: 'page',
+    title: 'change log',
+    order: -1,
+    children: [],
+  },
+  depth: 1,
+  isFolder: false,
+  posInSet: 1,
+  setSize: 1,
+})
+
 /** Px of extra left-pad per depth level — the guides land on these gridlines. */
 /** What the rail lets a row do, derived once per row so no site re-derives it. */
 interface RowCapabilities {
@@ -185,7 +205,7 @@ const NO_CAPABILITIES: RowCapabilities = {
  */
 const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
   if (id === LIFE_ID) return { ...NO_CAPABILITIES, droppable: true, addable: true }
-  if (id === DATABASES_PLACEHOLDER_ID) return NO_CAPABILITIES
+  if (id === DATABASES_PLACEHOLDER_ID || id === CHANGE_LOG_NODE_ID) return NO_CAPABILITIES
   if (isDatabasesRoot(node)) return { ...NO_CAPABILITIES, draggable: true, droppable: true }
   return { draggable: true, droppable: true, addable: true, deletable: true, renameable: true }
 }
@@ -663,6 +683,18 @@ const rowMark = (node: RailNode, marks: ReadonlyMap<string, MarkSource>): PageMa
 /** The mark button's accessible name — a page and an area read the same (6y frame 1). */
 const changeIconLabel = (title: string) => `change icon for ${title || 'Untitled'}`
 
+/** The glyph or dot a row's mark draws, shared by the interactive button and the
+ *  reserved rows' static (non-interactive) leading mark. */
+const markGlyph = (mark: PageMark, accent: string | undefined, isSelected: boolean): ReactNode =>
+  mark.glyph ? (
+    <AreaMark glyph={mark.glyph} color={accent} />
+  ) : (
+    <KindDot
+      accent={accent}
+      className={!accent ? (isSelected ? 'bg-mn-text' : 'bg-mn-text/50') : undefined}
+    />
+  )
+
 /**
  * A row's mark, as a real control (KAN-248 2/4, wired to the glyph picker in
  * 5/8). Draws the glyph in its area's colour when the page has one, else the
@@ -702,14 +734,7 @@ const markButton = (
       onToggle(e.currentTarget)
     }}
   >
-    {mark.glyph ? (
-      <AreaMark glyph={mark.glyph} color={accent} />
-    ) : (
-      <KindDot
-        accent={accent}
-        className={!accent ? (isSelected ? 'bg-mn-text' : 'bg-mn-text/50') : undefined}
-      />
-    )}
+    {markGlyph(mark, accent, isSelected)}
   </button>
 )
 
@@ -809,16 +834,18 @@ export function RailView({
     () => (databasesRoot ? tree.filter((n) => n !== databasesRoot) : tree),
     [tree, databasesRoot]
   )
-  const databasesFlat = useMemo(
-    () =>
-      (databasesRoot
-        ? flattenVisible([databasesRoot], expanded, true)
-            .slice(1) // drop the synthetic Life row flattenVisible always leads with
-            .map((f) => ({ ...f, depth: f.depth - 1 }))
-        : [DATABASES_PLACEHOLDER_ROW]
-      ).filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
-    [databasesRoot, expanded]
-  )
+  const databasesFlat = useMemo(() => {
+    if (!databasesRoot) return [DATABASES_PLACEHOLDER_ROW]
+    const [root, ...rest] = flattenVisible([databasesRoot], expanded, true)
+      .slice(1) // drop the synthetic Life row flattenVisible always leads with
+      .map((f) => ({ ...f, depth: f.depth - 1 }))
+    // KAN-94: the change log is the root's first child — shown only once the
+    // root itself is expanded, like any other child.
+    const rows = expanded.has(databasesRoot.id)
+      ? [root, changeLogRow(databasesRoot.id), ...rest]
+      : [root, ...rest]
+    return rows.filter((f) => !isStaged(f.id)) // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
+  }, [databasesRoot, expanded])
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
 
   // The ONE flattened list — Life first, the databases root last — driving
@@ -1078,17 +1105,25 @@ export function RailView({
         // Everywhere else the dot is ink until the person colours its area.
         accent={isDatabasesRoot(node) ? undefined : markAccent(mark.role)}
         leading={
-          isDatabasesRoot(node)
-            ? DATABASES_MARK
-            : markButton(
-                mark,
-                node.title,
-                markAccent(mark.role),
-                id === selectedId,
-                picker?.id === id,
-                rovingId === id,
-                (el) => toggleMarkPicker(id, node, mark, el)
-              )
+          isDatabasesRoot(node) ? (
+            DATABASES_MARK
+          ) : id === CHANGE_LOG_NODE_ID ? (
+            // Reserved virtual row: no page behind it to write a mark to, so the
+            // glyph picker never opens here (KAN-94).
+            <span className="inline-flex flex-none items-center" aria-hidden>
+              {markGlyph(mark, markAccent(mark.role), id === selectedId)}
+            </span>
+          ) : (
+            markButton(
+              mark,
+              node.title,
+              markAccent(mark.role),
+              id === selectedId,
+              picker?.id === id,
+              rovingId === id,
+              (el) => toggleMarkPicker(id, node, mark, el)
+            )
+          )
         }
         // A row revealed on expand (any non-top-level row) settles in rather than
         // popping. Keyed by id, so only newly-mounted rows animate.
@@ -1452,7 +1487,10 @@ export function Rail() {
     openingDatabases.current = true
     try {
       const root = await withUser((sb, uid) => getOrCreateDatabasesRoot(sb, uid, pondId))
-      if (root) navigateTo({ id: root.id, type: 'page', title: DATABASES_ROOT_TITLE })
+      if (root) {
+        setExpanded((prev) => new Set(prev).add(root.id))
+        navigateTo({ id: root.id, type: 'page', title: DATABASES_ROOT_TITLE })
+      }
     } catch {
       notify("Couldn't open databases")
     } finally {
@@ -1702,6 +1740,12 @@ export function Rail() {
    *  it), so clicking it must also expand it here or its children are never
    *  reachable by mouse. */
   function handleSelect(id: string) {
+    // The change log is a reserved virtual page — no `pages` row, so its own
+    // URL is built by hand rather than through `nodeById`/`navigateTo`.
+    if (id === CHANGE_LOG_NODE_ID) {
+      router.push(workspaceUrl({ id: CHANGE_LOG_NODE_ID, type: 'page', title: 'change log' }))
+      return
+    }
     const node = nodeById.get(id)
     if (!node) return
     if (isDatabasesRoot(node)) setExpanded((prev) => new Set(prev).add(id))

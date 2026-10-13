@@ -20,6 +20,7 @@ import {
   readPageTool,
   askQuestionTool,
   suggestFollowupsTool,
+  openChangeLogTool,
 } from './tools'
 import { stepBudgetForPhase } from './step-budget'
 import { scopingContextNote } from './scoping'
@@ -188,6 +189,7 @@ export async function POST(req: Request) {
     }),
     ask_question: tool(askQuestionTool),
     suggest_followups: tool(suggestFollowupsTool),
+    open_change_log: tool(openChangeLogTool),
   }
 
   const result = streamText({
