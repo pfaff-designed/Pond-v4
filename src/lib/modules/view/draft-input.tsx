@@ -24,6 +24,15 @@ export function DraftInput({
   // onBlur handler synchronously, before React re-renders with the reverted draft.
   const draftRef = useRef(draft)
   const canceled = useRef(false)
+  // Latest value/onCommit for the unmount commit below, which runs outside any
+  // render and can't close over render-time props.
+  const valueRef = useRef(value)
+  const onCommitRef = useRef(onCommit)
+
+  useEffect(() => {
+    valueRef.current = value
+    onCommitRef.current = onCommit
+  })
 
   useEffect(() => {
     if (!focused.current) {
@@ -31,6 +40,16 @@ export function DraftInput({
       draftRef.current = value
     }
   }, [value])
+
+  // React fires no blur for a focused input that unmounts (keyboard navigation
+  // away, the row removed by a refetch): commit the draft here so it isn't lost.
+  useEffect(() => {
+    return () => {
+      if (focused.current && !canceled.current && draftRef.current !== valueRef.current) {
+        onCommitRef.current(draftRef.current)
+      }
+    }
+  }, [])
 
   return (
     <input

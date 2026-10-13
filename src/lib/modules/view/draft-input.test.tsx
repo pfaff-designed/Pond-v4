@@ -105,4 +105,31 @@ describe('DraftInput', () => {
 
     expect(onCommit).not.toHaveBeenCalled()
   })
+
+  it('commits the draft once on unmount without a blur (KAN-299)', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    const { unmount } = render(<Host value="" onCommit={onCommit} />)
+
+    await user.click(screen.getByLabelText('draft'))
+    await user.keyboard('typed')
+    unmount()
+
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('typed')
+  })
+
+  it('does not double-commit on unmount after a blur already committed', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    const { unmount } = render(<Host value="" onCommit={onCommit} />)
+
+    await user.click(screen.getByLabelText('draft'))
+    await user.keyboard('typed')
+    await user.tab()
+    expect(onCommit).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(onCommit).toHaveBeenCalledTimes(1)
+  })
 })
