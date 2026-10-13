@@ -485,6 +485,42 @@ function seedEditRecord(toolCallId: string): ChangeLogRecord {
   return record
 }
 
+/** Pond proposes adding one new text block — a create-diff batch. */
+function createBatch(toolCallId: string) {
+  return {
+    type: 'tool-propose_changes',
+    toolCallId,
+    state: 'input-available',
+    input: {
+      changes: [{ op: 'create', data: { type: 'text', content: 'the new block' } }],
+    },
+  }
+}
+
+/** Same shape as `seedEditRecord`, for `createBatch`'s add. */
+function seedCreateRecord(toolCallId: string): ChangeLogRecord {
+  const changes = createBatch(toolCallId).input.changes as ModuleChange[]
+  const before = fakePage.blocks.map((b) => ({ ...b }))
+  const after = JSON.parse(
+    JSON.stringify(
+      applyProposedChanges(fakePage.blocks, changes, createDeterministicMintId(toolCallId), {
+        batch: changes,
+      }).blocks
+    )
+  )
+  const record = makeRecord({
+    status: 'proposed',
+    action: 'edit',
+    actor: 'pond',
+    before,
+    after,
+    toolCallId,
+    targetPageId: fakePage.id,
+  })
+  fakeChangeLog.push(record)
+  return record
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   resetFakes()
@@ -671,5 +707,46 @@ describe('KAN-302 path test harness', () => {
     // And nothing on screen (the card, included) still calls it undone.
     expect(within(card).queryByText('undone')).not.toBeInTheDocument()
     expect(screen.queryByText(/undone/i)).not.toBeInTheDocument()
+  })
+
+  // Path test part 4 (PATH_STEPS bullet 5, "one ⇧⌘Z redraws within ~1s"): a
+  // create diff, accepted, then ⌘Z (the block leaves the page) and ONE ⇧⌘Z —
+  // inside a single `waitFor`, the block must be back on the page AND the
+  // already-open ⌥⌘H panel must show the redo row, with no second keypress.
+  it('one ⇧⌘Z puts a ⌘Z-removed created block back on the page and in the ⌥⌘H panel (KAN-302 item 6)', async () => {
+    const user = userEvent.setup()
+    const platform = jest
+      .spyOn(window.navigator, 'platform', 'get')
+      .mockReturnValue('MacIntel')
+    fakePage.blocks = []
+    seedCreateRecord('pc1')
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [createBatch('pc1')] }]
+
+    renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    await user.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+
+    const pageColumn = within(screen.getByTestId('page-column'))
+    await waitFor(() => expect(pageColumn.getByText('the new block')).toBeInTheDocument())
+
+    // Open the ⌥⌘H panel BEFORE the undo/redo sequence, as
+    // `undo-redraw-within-1s.test.tsx` does, so it is already mounted to redraw.
+    fireEvent.keyDown(document.body, { key: 'h', altKey: true, metaKey: true, code: 'KeyH' })
+    const panel = screen.getByRole('region', { name: 'Changes to this page' })
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(pageColumn.queryByText('the new block')).not.toBeInTheDocument())
+
+    // ONE ⇧⌘Z — both the page and the panel must redraw inside this one waitFor.
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => {
+      expect(pageColumn.getByText('the new block')).toBeInTheDocument()
+      expect(within(panel).getByText(/redo/)).toBeInTheDocument()
+    })
+
+    platform.mockRestore()
   })
 })
