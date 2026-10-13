@@ -17,6 +17,9 @@ const USER = '11111111-1111-1111-1111-111111111111'
 const BEFORE = [{ id: 'a', type: 'text', content: 'one' }]
 const AFTER = [{ id: 'a', type: 'text', content: 'ONE' }]
 
+/** A refusal: its SQLSTATE and the reason code the client reads off DETAIL. */
+const refusal = (code: string, detail: string) => ({ code, detail })
+
 /** The pond `handle_new_user` makes for a seeded person (0018). */
 async function lifePond(db: PGlite, userId: string = USER): Promise<string> {
   const res = await db.query<{ id: string }>(
@@ -302,7 +305,7 @@ describe('accept_revert_record — the page compare-and-swap', () => {
       pageId,
     ])
 
-    await expect(accept(db, revert)).rejects.toThrow(/changed underneath the revert/)
+    await expect(accept(db, revert)).rejects.toMatchObject(refusal('P0001', 'page-changed'))
 
     expect(await blocksOf(db, pageId)).toEqual(typed)
     expect(await statusOf(db, revert)).toBe('proposed')
