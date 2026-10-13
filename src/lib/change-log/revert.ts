@@ -22,7 +22,7 @@ import {
   markOutdated,
   RecordChangedError,
 } from './store'
-import { isOpen } from './status'
+import { IllegalTransitionError, isOpen } from './status'
 import { jsonEqual } from '@/lib/json-equal'
 import { planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
@@ -132,10 +132,14 @@ export type AcceptRevertResult =
   | { kind: 'outdated'; revert: ChangeLogRecord }
 
 /**
- * Advance a revert to `outdated`, folding the one race `advanceStatus` can
+ * Advance a revert to `outdated`, folding the two races `advanceStatus` can
  * still lose: the record settled elsewhere (another tab, another accept) in
- * the gap between the caller's own check and this call. Either way the
- * revert is outdated — only which copy of it we have to report differs.
+ * the gap between the caller's own check and this call, caught either as the
+ * compare-and-swap's own `RecordChangedError` or — when the settle landed
+ * before `advanceStatus` even issued the RPC — as the state machine refusing
+ * the now-stale edge (`IllegalTransitionError`, e.g. `accepted → outdated`).
+ * Either way the revert is outdated — only which copy of it we have to report
+ * differs.
  */
 async function markRevertOutdated(
   supabase: SupabaseClient<Database>,
@@ -146,7 +150,9 @@ async function markRevertOutdated(
     const advanced = await advanceStatus(supabase, revert.id, 'outdated', actor)
     return { kind: 'outdated', revert: advanced }
   } catch (err) {
-    if (err instanceof RecordChangedError) return { kind: 'outdated', revert }
+    if (err instanceof RecordChangedError || err instanceof IllegalTransitionError) {
+      return { kind: 'outdated', revert }
+    }
     throw err
   }
 }

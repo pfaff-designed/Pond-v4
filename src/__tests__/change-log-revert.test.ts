@@ -81,6 +81,7 @@ function fakeSupabase(result: { data?: unknown; error?: unknown }) {
     q[method] = jest.fn(() => q)
   }
   q.then = (onOk: any, onErr: any) => Promise.resolve(result).then(onOk, onErr)
+  q.maybeSingle = jest.fn(() => Promise.resolve(result))
   q.rpc = jest.fn()
   return q as any
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -774,6 +775,31 @@ describe('acceptRevert', () => {
     const supabase = fakeSupabase({})
     supabase.rpc = jest.fn()
     mockedAdvance.mockRejectedValue(new RecordChangedError())
+
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: [...PAGE_AT_PROPOSE, text('c', 'typed since')],
+    })
+
+    expect(out).toEqual({ kind: 'outdated', revert })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('folds an illegal-transition race into outdated too — settled before advanceStatus even reads it', async () => {
+    // The exact race in KAN-303: tab A accepts this revert. Tab B's in-process
+    // mismatch check (above) already decided to outdate it, but by the time ITS
+    // OWN advanceStatus call runs, the record reads back `accepted` — and
+    // `accepted -> outdated` is not a legal edge (only `undone`, `reverted` are),
+    // so the REAL advanceStatus throws IllegalTransitionError before it ever
+    // issues the compare-and-swap RPC. That is still "outdated", not a crash
+    // bearing raw `change log: …` text.
+    const realStore = jest.requireActual('@/lib/change-log/store')
+    mockedAdvance.mockImplementation((sb, id, to, actor) => realStore.advanceStatus(sb, id, to, actor))
+
+    const supabase = fakeSupabase({ data: { ...toRow(revert), status: 'accepted' }, error: null })
+    supabase.rpc = jest.fn()
 
     const out = await acceptRevert(supabase, {
       pondId: 'pond-1',
