@@ -98,12 +98,12 @@ export function Cell({
       )
     case 'date':
       return (
-        <input
+        <DraftInput
           type="date"
           className={cellInput}
           aria-label={label}
           value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+          onCommit={(draft) => onChange(draft === '' ? null : draft)}
         />
       )
     case 'checkbox':
