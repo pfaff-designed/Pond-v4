@@ -74,6 +74,44 @@ describe('PageChangesSection — an undo/redo step', () => {
     expect(screen.getByText('undone')).toBeInTheDocument()
   })
 
+  it('resolves to the original label through a redo-then-undo cycle, never nesting a second undo·/redo·', () => {
+    const original = record({ action: 'edit_glyph', after: 'flower-02', status: 'undone' })
+    const undo = record({
+      id: 'undo-1',
+      action: 'undo',
+      status: 'undone',
+      links: { undoOf: 'rec-1' },
+      createdAt: '2026-09-30T09:32:00.000Z',
+      statusAt: '2026-09-30T09:32:00.000Z',
+    })
+    const redo = record({
+      id: 'redo-1',
+      action: 'redo',
+      status: 'undone',
+      links: { redoOf: 'rec-1' },
+      createdAt: '2026-09-30T09:33:00.000Z',
+      statusAt: '2026-09-30T09:33:00.000Z',
+    })
+    const undoOfRedo = record({
+      id: 'undo-2',
+      action: 'undo',
+      status: 'accepted',
+      links: { undoOf: 'redo-1' },
+      createdAt: '2026-09-30T09:34:00.000Z',
+      statusAt: '2026-09-30T09:34:00.000Z',
+    })
+
+    const rows = buildPageChanges([undoOfRedo, redo, undo, original])
+
+    render(
+      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+    )
+
+    expect(screen.getByText('mark → flower-02')).toBeInTheDocument()
+    expect(screen.getAllByText('undo · mark → flower-02')).toHaveLength(2)
+    expect(screen.getByText('redo · mark → flower-02')).toBeInTheDocument()
+  })
+
   it('falls back to the plain word when the undone/redone record is off this page', () => {
     const undo = record({
       id: 'undo-1',

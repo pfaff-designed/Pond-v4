@@ -52,6 +52,29 @@ const areaRoleName = (role: unknown): string =>
   AREA_COLOUR_SWATCHES.find((s) => s.role === (isAreaRole(role) ? role : null))?.label ?? 'ink'
 
 /**
+ * Chase an `undo`/`redo` record's link through as many more `undo`/`redo`
+ * records as a session stack can pile on (⌘Z, ⇧⌘Z, ⌘Z, …) to the original
+ * record being laid back, so a row never nests a second `undo ·`/`redo ·`
+ * onto another — matching `change_log_undo_kind`'s own loop (0023). `undefined`
+ * when a link is missing or points off this page.
+ */
+const resolveUndoRedoTarget = (
+  record: ChangeLogRecord,
+  byId: Map<string, ChangeLogRecord>
+): ChangeLogRecord | undefined => {
+  let current: ChangeLogRecord | undefined = record
+  const seen = new Set<string>()
+  while (current !== undefined && (current.action === 'undo' || current.action === 'redo')) {
+    if (seen.has(current.id)) return undefined
+    seen.add(current.id)
+    const link: string | undefined =
+      current.action === 'undo' ? current.links.undoOf : current.links.redoOf
+    current = link === undefined ? undefined : byId.get(link)
+  }
+  return current
+}
+
+/**
  * A short label for a record.
  *
  * An edit reads as what its diff did ("wrote 3 paragraphs", `summary.ts`); a
@@ -105,12 +128,12 @@ export function describeChange(
     case 'move':
       return 'moved'
     case 'undo': {
-      const undone = byId.get(record.links.undoOf ?? '')
-      return undone === undefined ? 'undo' : `undo · ${describeChange(undone, null, byId)}`
+      const original = resolveUndoRedoTarget(record, byId)
+      return original === undefined ? 'undo' : `undo · ${describeChange(original, null, byId)}`
     }
     case 'redo': {
-      const redone = byId.get(record.links.redoOf ?? '')
-      return redone === undefined ? 'redo' : `redo · ${describeChange(redone, null, byId)}`
+      const original = resolveUndoRedoTarget(record, byId)
+      return original === undefined ? 'redo' : `redo · ${describeChange(original, null, byId)}`
     }
     default:
       // Reachable, despite the union looking exhaustive: 0011 gives `action` NO
