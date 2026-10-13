@@ -15,6 +15,7 @@
  * no React, no formatting decisions beyond a short human label.
  */
 
+import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
 import { canRevertRecord } from './revert-plan'
 import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit } from './summary'
 import type { ChangeLogRecord } from './types'
@@ -38,6 +39,17 @@ const clockTime = (record: ChangeLogRecord): string =>
     minute: '2-digit',
     hourCycle: 'h23',
   })
+
+/** `flower 02`, `161`, or `automatic` for null — the library's label, hyphens as spaces. */
+const glyphName = (glyph: string | null): string => {
+  if (glyph === null) return 'automatic'
+  const entry = GLYPH_LIBRARY.find((g) => g.glyph === glyph)
+  return (entry?.label ?? glyph).replace(/-/g, ' ')
+}
+
+/** `sage`, `mist`, `navy`, or `ink` for null — the colour picker's own labels. */
+const areaRoleName = (role: unknown): string =>
+  AREA_COLOUR_SWATCHES.find((s) => s.role === (isAreaRole(role) ? role : null))?.label ?? 'ink'
 
 /**
  * A short label for a record.
@@ -68,6 +80,10 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
       return 'linked records'
     case 'memory_note':
       return 'recorded a memory note'
+    case 'edit_glyph':
+      return `mark → ${glyphName(typeof record.after === 'string' ? record.after : null)}`
+    case 'edit_area_role':
+      return `colour → ${areaRoleName(record.after)}`
     case 'delete':
       return 'deleted'
     case 'move':
