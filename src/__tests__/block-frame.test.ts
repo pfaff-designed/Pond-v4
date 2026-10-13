@@ -18,6 +18,7 @@ import {
   blockIsEmpty,
   blockRowState,
   viewCollectionId,
+  viewFrameState,
   POND_BLOCK_EMPTY_ACTION_WIRED,
   POND_BLOCK_KINDS,
   POND_BLOCK_STATES,
@@ -25,13 +26,16 @@ import {
   type PondBlockKind,
   type PondBlockState,
 } from '@/lib/modules/block-frame'
+import { GANTT_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import { addTodoItem } from '@/lib/modules/todo/view'
 import { addTableRow } from '@/lib/modules/table/view'
 import { addEntry } from '@/lib/modules/entries/view'
 import type { Block } from '@/lib/modules/content'
+import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { TodoBlock } from '@/lib/modules/todo/schema'
 import type { TableBlock } from '@/lib/modules/table/schema'
 import type { EntriesBlock } from '@/lib/modules/entries/schema'
+import type { PropertySchema } from '@/lib/properties/schema'
 
 // ── Which card a block gets ──────────────────────────────────────────────────────
 
@@ -368,6 +372,41 @@ describe('viewCollectionId — the one resolution the canvas and the view share'
     expect(viewCollectionId({ id: 'v', type: 'view', mode: 'table', collectionId }, pageId)).toBe(
       expected
     )
+  })
+})
+
+// ── The view frame steps aside for a missing date field (KAN-292) ────────────────
+
+const dateSchema: PropertySchema = [{ id: 'p-due', name: 'Due', type: 'date' }]
+const textOnlySchema: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
+
+describe('viewFrameState — a dateless list/gantt steps aside so the view’s own remedy shows', () => {
+  it('a dateless list with zero rows yields to the view (rest)', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
+    expect(viewFrameState(block, [], [], null, textOnlySchema)).toEqual({ state: 'rest' })
+  })
+
+  it('a dateless gantt with zero rows yields to the view (rest)', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'gantt' }
+    expect(viewFrameState(block, [], [], null, textOnlySchema)).toEqual({ state: 'rest' })
+  })
+
+  it('a list with a date property and zero rows is unchanged: the frame offers add a row', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
+    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({ state: 'empty', addRow: true })
+  })
+
+  it('a gantt with a date property and zero rows is unchanged: the void line', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'gantt' }
+    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({
+      state: 'empty',
+      line: GANTT_EMPTY_LINE,
+    })
+  })
+
+  it('no schema at all (the default) behaves as dateless', () => {
+    const block: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
+    expect(viewFrameState(block, [], [], null)).toEqual({ state: 'rest' })
   })
 })
 

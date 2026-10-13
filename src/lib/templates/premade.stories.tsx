@@ -122,9 +122,10 @@ function TemplatePage({
  */
 function storyViewState(
   block: ViewBlock,
-  rows: CollectionRow[]
+  rows: CollectionRow[],
+  schema: PropertySchema | undefined
 ): { state: PondBlockState; emptyLine?: string } {
-  const verdict = viewFrameState(block, rows, rows, blockFrame(block))
+  const verdict = viewFrameState(block, rows, rows, blockFrame(block), schema ?? [])
   if (verdict.state === 'rest') return { state: 'rest' }
   return { state: 'empty', emptyLine: verdict.chartLine ? CHART_EMPTY_LINE : verdict.line }
 }
@@ -149,7 +150,7 @@ function TemplateBlockView({
   // card; a block that is its OWN card (the chart card, #227) as it is.
   if (!frame) return block.type === 'text' ? <div className="px-1 py-0.5">{view}</div> : view
   const { state, emptyLine } =
-    block.type === 'view' ? storyViewState(block, rows) : { state: 'rest' as const }
+    block.type === 'view' ? storyViewState(block, rows, schema) : { state: 'rest' as const }
   return (
     <PondBlock {...frame} state={state} emptyLine={emptyLine} emptyBox={blockEmptyBox(block)}>
       {view}
