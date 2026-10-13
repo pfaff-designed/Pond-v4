@@ -27,6 +27,7 @@ import {
   defineSchema,
 } from '@/lib/pages/client'
 import { DuplicateTitleError } from '@/lib/pages/dedupe-title'
+import { registerStagedFlush } from '@/lib/deletion/staged-ids'
 import type { Block } from '@/lib/documents/types'
 import { SCHEMA_KEY, type PropertySchema } from '@/lib/properties/schema'
 
@@ -300,6 +301,30 @@ describe('createPage', () => {
     expect(chain.insert.mock.calls[0][0].title).toBe('')
     expect(chain.select).not.toHaveBeenCalledWith('id, title')
     expect(result.title).toBe('')
+  })
+
+  it('awaits a registered staged-deletion flush before the insert (KAN-273)', async () => {
+    const order: string[] = []
+    const chain = makeChain({
+      single: jest.fn().mockImplementation(async () => {
+        order.push('insert')
+        return { data: { id: 'page-new' }, error: null }
+      }),
+    })
+    const sb = makeSupabase(chain)
+
+    const unregister = registerStagedFlush(async () => {
+      order.push('flush-start')
+      await Promise.resolve()
+      order.push('flush-end')
+    })
+    try {
+      await createPage(sb as never, 'user-1', { pondId: null })
+    } finally {
+      unregister()
+    }
+
+    expect(order).toEqual(['flush-start', 'flush-end', 'insert'])
   })
 })
 

@@ -21,6 +21,12 @@
  *  - `flushScope` — commit-and-clear every pending toast staged with a given
  *    `scope`. The editor uses this on page change so a block toast can never
  *    survive navigation and "undo" a block into the wrong page.
+ *  - `flushStagedDeletes` — commit-and-clear every pending *tree deletion*
+ *    toast (one staged via `stageDeletion` with a backstop `id`), regardless
+ *    of scope, and await the commits (KAN-273). A tree write that reads
+ *    sibling state (create, move, rename) calls this first so it never sees a
+ *    row that is mid-delete. A `stageUndo` toast (no backstop id — a block
+ *    edit, not a tree delete) is left alone.
  *
  * See the crash-window caveat in deferred-commit.ts: deferral is client-side,
  * not durable soft-delete. On provider unmount all pending deletes are flushed
@@ -34,7 +40,7 @@ import {
   type DeferredCommit,
   GRACE_WINDOW_MS,
 } from '@/lib/deletion/deferred-commit'
-import { stageId, unstageId } from '@/lib/deletion/staged-ids'
+import { stageId, unstageId, registerStagedFlush } from '@/lib/deletion/staged-ids'
 import { UndoToast, UndoToastViewport } from '@/components/molecules/UndoToast'
 
 export interface StageDeletionInput {
@@ -94,6 +100,12 @@ interface DeletionUndoContextValue {
   notify: (message: string, action?: () => void, actionLabel?: string) => void
   /** Commit-and-clear every pending toast staged with this scope. */
   flushScope: (scope: string) => void
+  /**
+   * Commit-and-clear every pending staged deletion (any scope), and await
+   * every commit. Unlike `flushScope`, a toast staged via `stageUndo` (no
+   * backstop id) is untouched — only real tree deletions are forced.
+   */
+  flushStagedDeletes: () => Promise<void>
 }
 
 const DeletionUndoContext = createContext<DeletionUndoContextValue | null>(null)
@@ -205,6 +217,24 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
     [remove]
   )
 
+  const flushStagedDeletes = useCallback(() => {
+    const pending = toastsRef.current.filter((toast) => toast.backstopId)
+    // allSettled, not all: one commit rejecting (a failed delete) must not
+    // reject the flush itself and block the write that triggered it.
+    return Promise.allSettled(
+      pending.map((toast) => {
+        remove(toast.id)
+        return Promise.resolve(toast.controller.flush())
+      })
+    ).then(() => undefined)
+  }, [remove])
+
+  // Registered with the shared, React-free layer (KAN-273) so a page-tree
+  // write anywhere (src/lib/pages/client.ts) can commit every staged deletion
+  // first, without importing this hook — only one `DeletionUndoProvider` is
+  // ever mounted, so there is exactly one flusher to register/unregister.
+  useEffect(() => registerStagedFlush(flushStagedDeletes), [flushStagedDeletes])
+
   // Flush every pending toast's commit without waiting for the grace window —
   // shared by the unmount cleanup and the `pagehide` listener below. A pending
   // item was already removed from the UI, so flushing honors the user's action
@@ -227,8 +257,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
   }, [flushAll])
 
   const value = useMemo(
-    () => ({ stageDeletion, stageUndo, notify, flushScope }),
-    [stageDeletion, stageUndo, notify, flushScope]
+    () => ({ stageDeletion, stageUndo, notify, flushScope, flushStagedDeletes }),
+    [stageDeletion, stageUndo, notify, flushScope, flushStagedDeletes]
   )
 
   return (

@@ -76,3 +76,48 @@ describe('staged-ids', () => {
     expect(priorLifeIds()).toEqual([])
   })
 })
+
+describe('staged-flush registry (KAN-273)', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    jest.resetModules()
+  })
+
+  it('flushStagedDeletes is a no-op when nothing is registered', async () => {
+    const { flushStagedDeletes } = await import('@/lib/deletion/staged-ids')
+    await expect(flushStagedDeletes()).resolves.toBeUndefined()
+  })
+
+  it('flushStagedDeletes calls the registered flusher and awaits it', async () => {
+    const { registerStagedFlush, flushStagedDeletes } = await import('@/lib/deletion/staged-ids')
+    const fn = jest.fn().mockResolvedValue(undefined)
+    registerStagedFlush(fn)
+
+    await flushStagedDeletes()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('unregister drops the flusher — a later flush is a no-op again', async () => {
+    const { registerStagedFlush, flushStagedDeletes } = await import('@/lib/deletion/staged-ids')
+    const fn = jest.fn().mockResolvedValue(undefined)
+    const unregister = registerStagedFlush(fn)
+    unregister()
+
+    await flushStagedDeletes()
+    expect(fn).not.toHaveBeenCalled()
+  })
+
+  it('registering a second flusher replaces the first; unregistering the FIRST (now stale) does not drop the second', async () => {
+    const { registerStagedFlush, flushStagedDeletes } = await import('@/lib/deletion/staged-ids')
+    const first = jest.fn().mockResolvedValue(undefined)
+    const second = jest.fn().mockResolvedValue(undefined)
+    const unregisterFirst = registerStagedFlush(first)
+    registerStagedFlush(second)
+
+    unregisterFirst()
+    await flushStagedDeletes()
+
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+})

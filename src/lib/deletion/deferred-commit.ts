@@ -35,8 +35,13 @@ export interface DeferredCommitOptions {
 export interface DeferredCommit {
   /** Cancel the pending write — the deletion is undone, nothing is persisted. */
   undo: () => void
-  /** Commit now, ahead of the window (e.g. the toast was dismissed). Idempotent. */
-  flush: () => void | Promise<void>
+  /**
+   * Commit now, ahead of the window (e.g. the toast was dismissed). Idempotent:
+   * a call after the commit has already started returns the SAME in-flight
+   * promise rather than `undefined`, so a concurrent flush (KAN-273: a tree
+   * write racing the grace-timer commit) still waits for the real write.
+   */
+  flush: () => Promise<void>
   /** True once the write has run (via window elapse or flush). */
   readonly isSettled: boolean
   /** True if undo ran before the write — the deletion was reverted. */
@@ -72,15 +77,21 @@ export function scheduleDeferredCommit(options: DeferredCommitOptions): Deferred
   let settled = false
   let undone = false
   let handle: ReturnType<typeof setTimeout> | null = null
+  // The commit's own promise, kept so a `flush()` that lands after the commit
+  // has already started (but before it finishes) can return the SAME
+  // in-flight promise instead of `undefined` — see the `flush` doc above.
+  let commitPromise: Promise<void> | null = null
 
-  function runCommit(): void | Promise<void> {
-    if (settled || undone) return
+  function runCommit(): Promise<void> {
+    if (undone) return Promise.resolve()
+    if (settled) return commitPromise ?? Promise.resolve()
     settled = true
     if (handle !== null) {
       clearTimer(handle)
       handle = null
     }
-    return options.commit()
+    commitPromise = Promise.resolve(options.commit())
+    return commitPromise
   }
 
   handle = setTimer(() => {
