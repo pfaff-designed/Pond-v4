@@ -40,6 +40,7 @@ import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord, ChangeLogStatus } from '@/lib/change-log/types'
+import { pagesKey } from '@/lib/pages/keys'
 
 // ── Shared fakes: one page, one change log ──────────────────────────────────
 
@@ -108,8 +109,13 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   // The open page: every PATH_STEPS frame works against this one id, so
   // AITerminal's `currentPage` query (keyed off ?nodeId=) and DocumentPanel's
-  // page query share the same cache entry.
-  useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? PAGE_ID : null) }),
+  // page query share the same cache entry. `nodeName` is the breadcrumb's own
+  // URL param (not the page query) — it is what `resolveStampTarget` uses to
+  // name an UNSTAMPED same-page batch's target at the moment it streams in, so
+  // it must read the page's title live, same as the real breadcrumb would.
+  useSearchParams: () => ({
+    get: (key: string) => (key === 'nodeId' ? PAGE_ID : key === 'nodeName' ? fakePage.title : null),
+  }),
 }))
 
 jest.mock('@/lib/pond/context', () => ({
@@ -489,5 +495,34 @@ describe('KAN-302 path test harness', () => {
 
     expect(within(card).getByText('Hello world')).toBeInTheDocument()
     expect(within(card).queryByText('Hello moon xyz')).not.toBeInTheDocument()
+  })
+
+  // Path test part 1b (PATH_STEPS bullet 2, "header follows rename"): from an
+  // accepted card, the person renames the page at the fake-server boundary —
+  // the SAME card's header must follow the live title, not the name stamped
+  // at proposal time.
+  it("an accepted card's header follows a rename of its target page (KAN-302 item 2)", async () => {
+    const user = userEvent.setup()
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
+
+    const { queryClient } = renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    expect(within(card).getByText(/— Untitled/)).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+
+    // The person's own rename, simulated at the fake-server boundary — exactly
+    // what the title input's save path does: mutate the row, invalidate the
+    // page query AND the pages list the header's live title is read from.
+    fakePage.title = 'Plans'
+    await queryClient.invalidateQueries({ queryKey: ['page', PAGE_ID] })
+    await queryClient.invalidateQueries({ queryKey: [...pagesKey(POND_ID), 'full'] })
+
+    await waitFor(() => expect(within(card).getByText(/— Plans/)).toBeInTheDocument())
+    expect(within(card).queryByText(/— Untitled/)).not.toBeInTheDocument()
   })
 })
