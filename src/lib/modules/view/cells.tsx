@@ -87,13 +87,13 @@ export function Cell({
   switch (def.type) {
     case 'number':
       return (
-        <input
+        <DraftInput
           type="number"
           className={cellInput}
           aria-label={label}
-          value={typeof value === 'number' ? value : ''}
+          value={typeof value === 'number' ? String(value) : ''}
           placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          onCommit={(draft) => onChange(draft === '' ? null : Number(draft))}
         />
       )
     case 'date':
