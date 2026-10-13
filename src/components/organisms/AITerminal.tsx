@@ -1005,6 +1005,9 @@ export function AITerminal() {
       // The palette's `ask pond about “q”` (#279) arrives with the question typed —
       // into an EMPTY composer only. A draft in progress is the person's and is
       // never overwritten (there is no undo for it); the question still gets focus.
+      // A live listener handles the event directly, so the pending slot (KAN-195's
+      // late-mount replay path) must not keep this text around for a future mount.
+      takePendingTerminalText()
       const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
       if (text) setInput((prev) => (prev.trim() ? prev : text))
       setIsCollapsed(false)
