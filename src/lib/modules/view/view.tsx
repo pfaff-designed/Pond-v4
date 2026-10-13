@@ -295,6 +295,7 @@ export function CollectionView({
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onAddDateField={onAddDateField}
         />
       ) : config.mode === 'calendar' ? (
         <CollectionCalendar

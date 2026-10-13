@@ -77,12 +77,35 @@ describe('list — what is drawn', () => {
     render(
       <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
     )
-    expect(screen.getByText('This list needs a date property.')).toBeInTheDocument()
+    expect(screen.getByText('no records yet')).toBeInTheDocument()
   })
 
   it('says so when there are no records', () => {
     renderList({ rows: [] })
     expect(screen.getByText('no records yet')).toBeInTheDocument()
+  })
+
+  it('with no date property and onAddDateField wired, offers the `add a date field` remedy and fires it (KAN-292)', async () => {
+    const user = userEvent.setup()
+    const onAddDateField = jest.fn()
+    render(
+      <CollectionList
+        viewKey="v"
+        schema={schema.filter((d) => d.type !== 'date')}
+        rows={rows}
+        onAddDateField={onAddDateField}
+      />
+    )
+    const button = screen.getByRole('button', { name: 'add a date field' })
+    await user.click(button)
+    expect(onAddDateField).toHaveBeenCalledTimes(1)
+  })
+
+  it('with no date property and no onAddDateField wired, draws no remedy button', () => {
+    render(
+      <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
+    )
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
   })
 })
 

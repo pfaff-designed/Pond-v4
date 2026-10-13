@@ -1,8 +1,9 @@
 /**
- * KAN-292 — the path test: the calendar's `add a date field` remedy, wired from the
- * real `ViewView`/`CollectionView` host (not `CollectionCalendar` alone). `ViewView`
- * builds the handler over `useCollectionRows().updateSchema` + `useDeletionUndo`'s
- * `stageUndo`, gated on `editable`, and threads it into `CollectionCalendar`.
+ * KAN-292 — the path test: the calendar's and list's `add a date field` remedy,
+ * wired from the real `ViewView`/`CollectionView` host (not `CollectionCalendar` or
+ * `CollectionList` alone). `ViewView` builds the handler over
+ * `useCollectionRows().updateSchema` + `useDeletionUndo`'s `stageUndo`, gated on
+ * `editable`, and threads the SAME handler into both.
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -37,14 +38,15 @@ jest.mock('./use-collection-rows', () => ({
 }))
 
 const calendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
+const list: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
 
-function renderCalendarView() {
+function renderView(data: ViewBlock) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <ViewView data={calendar} editable onChange={jest.fn()} />
+          <ViewView data={data} editable onChange={jest.fn()} />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
@@ -54,7 +56,23 @@ function renderCalendarView() {
 describe('ViewView — the calendar’s "add a date field" remedy reaches the page (KAN-292)', () => {
   it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
     const user = userEvent.setup()
-    renderCalendarView()
+    renderView(calendar)
+
+    const button = screen.getByRole('button', { name: 'add a date field' })
+    await user.click(button)
+
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the list’s "add a date field" remedy reaches the page (KAN-292)', () => {
+  it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
+    const user = userEvent.setup()
+    renderView(list)
 
     const button = screen.getByRole('button', { name: 'add a date field' })
     await user.click(button)
