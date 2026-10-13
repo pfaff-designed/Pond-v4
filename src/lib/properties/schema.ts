@@ -249,6 +249,22 @@ export function optionForValue(def: PropertyDef, value: PropertyValue): Property
   )
 }
 
+/**
+ * Append a `date`-typed property to `schema` (KAN-292: the remedy a dateless view
+ * offers from its own empty state). Named `date`, or `date 2` if `date` already
+ * names another field — a single fallback, not an open-ended counter (unlike the
+ * picker's own `field`/`field 2`: a second collision is new scope). `mintId`
+ * follows the injected convention used across the codebase (`hydratePropertySchema`,
+ * `instantiate.ts`) so callers can supply a deterministic id in tests.
+ */
+export function addDateField(
+  schema: PropertySchema,
+  mintId: () => string = () => crypto.randomUUID()
+): PropertySchema {
+  const name = schema.some((d) => d.name === 'date') ? 'date 2' : 'date'
+  return [...schema, { id: mintId(), name, type: 'date' }]
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>
