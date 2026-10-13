@@ -879,6 +879,28 @@ describe('acceptRevert', () => {
     ).rejects.toBeTruthy()
     expect(mockedSweep).not.toHaveBeenCalled()
   })
+
+  it('goes outdated at once when the RPC loses the same race under its row lock', async () => {
+    // The in-process check above already compared the page and found it
+    // matched — this is the RPC repeating that comparison under its lock and
+    // losing: a page write landed between the check and the transaction.
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest
+      .fn()
+      .mockResolvedValue({ data: null, error: { code: 'P0001', details: 'page-changed' } })
+    const advanced = record({ id: 'rev-1', action: 'revert', status: 'outdated' })
+    mockedAdvance.mockResolvedValue(advanced)
+
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
+
+    expect(out).toEqual({ kind: 'outdated', revert: advanced })
+    expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rev-1', 'outdated', 'you')
+  })
 })
 
 /** The record → row shape the RPC returns. */
