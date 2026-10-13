@@ -163,7 +163,7 @@ describe('undo_change_log_record — an edit_glyph record sets the pick back', (
     const pageId = await addPage(db, { glyph: 'retort' })
     const pick = await addRecord(db, { pageId, before: 'flask', after: 'beaker' })
 
-    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
+    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('P0001', 'page-changed'))
 
     expect(await glyphOf(db, pageId)).toBe('retort')
     expect(await statusOf(db, pick)).toBe('accepted')
@@ -263,7 +263,7 @@ describe('undo_change_log_record — an edit_area_role record sets the colour ba
       after: 'area-a',
     })
 
-    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
+    await expect(undo(db, [pick], pondId)).rejects.toMatchObject(refusal('P0001', 'page-changed'))
 
     expect(await areaRoleOf(db, pageId)).toBe('area-c')
     expect(await statusOf(db, pick)).toBe('accepted')

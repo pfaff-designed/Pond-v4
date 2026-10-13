@@ -244,7 +244,7 @@ describe('undo_change_log_record — a stale undo fails cleanly', () => {
     const { pondId, pageId, edit } = await scene(db)
     await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(C), pageId])
 
-    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
+    await expect(undo(db, [edit], pondId)).rejects.toMatchObject(refusal('P0001', 'page-changed'))
 
     expect(await blocksOf(db, pageId)).toEqual(C)
     expect((await record(db, edit)).status).toBe('accepted')
@@ -478,7 +478,7 @@ describe('undo_change_log_record — one step, several records', () => {
     const stale = await addRecord(db, { pageId: otherPage, before: A, after: B })
 
     await expect(undo(db, [fine, stale], pondId)).rejects.toMatchObject(
-      refusal('40001', 'page-changed')
+      refusal('P0001', 'page-changed')
     )
 
     expect(await blocksOf(db, pageId)).toEqual(B)
@@ -533,7 +533,7 @@ describe('redo_change_log_record — redo is a record too', () => {
     await undo(db, [edit], pondId)
     await db.query('update public.pages set blocks = $1 where id = $2', [JSON.stringify(C), pageId])
 
-    await expect(redo(db, [edit], pondId)).rejects.toMatchObject(refusal('40001', 'page-changed'))
+    await expect(redo(db, [edit], pondId)).rejects.toMatchObject(refusal('P0001', 'page-changed'))
 
     expect(await blocksOf(db, pageId)).toEqual(C)
     expect(await logSize(db)).toBe(2)
@@ -609,7 +609,7 @@ describe('the outdated sweep runs inside the step', () => {
     const otherPage = await addPage(db, { blocks: C, title: 'Other' })
     const stale = await addRecord(db, { pageId: otherPage, before: A, after: B })
 
-    await expect(undo(db, [edit, stale], pondId)).rejects.toMatchObject({ code: '40001' })
+    await expect(undo(db, [edit, stale], pondId)).rejects.toMatchObject({ code: 'P0001' })
 
     expect((await record(db, pending)).status).toBe('proposed')
     await db.close()
@@ -698,7 +698,7 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     })
 
     await expect(undo(db, [added], pondId)).rejects.toMatchObject(
-      refusal('40001', 'record-changed')
+      refusal('P0001', 'record-changed')
     )
     expect(await rowOf(db, rowId)).not.toBeNull()
     await db.close()
@@ -724,7 +724,7 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     const sunday = await addRow(db, menus, { title: 'sunday', props: { dishes: [rowId] } })
 
     await expect(undo(db, [added], pondId)).rejects.toMatchObject(
-      refusal('40001', 'linked-elsewhere')
+      refusal('P0001', 'linked-elsewhere')
     )
     expect(await rowOf(db, rowId)).not.toBeNull()
     expect((await record(db, added)).status).toBe('accepted')
@@ -844,7 +844,7 @@ describe('undo and redo of a record edit (add_row / edit_row)', () => {
     })
 
     await expect(undo(db, [edited], pondId)).rejects.toMatchObject(
-      refusal('40001', 'record-changed')
+      refusal('P0001', 'record-changed')
     )
     expect(await rowOf(db, rowId)).toEqual({ title: 'dal, weeknight', props: { f1: 'soups' } })
     await db.close()
@@ -965,6 +965,27 @@ describe('undo_change_log_record — another person’s record is out of reach',
     await db.exec('reset role;')
     expect(await blocksOf(db, pageId)).toEqual(B)
     expect((await record(db, edit)).status).toBe('accepted')
+    await db.close()
+  })
+})
+
+// ── 0024: no path back to the retryable errcode ──────────────────────────────
+
+describe('0024 undo refusals are not retryable', () => {
+  it('has no serialization_failure or 40001 left in the undo/redo call path', async () => {
+    const db = await makeDb()
+
+    const res = await db.query<{ prosrc: string }>(
+      `select prosrc from pg_proc
+        where (proname = 'change_log_set_back' and pronamespace = 'private'::regnamespace)
+           or (proname in ('undo_change_log_record', 'redo_change_log_record')
+               and pronamespace = 'public'::regnamespace)`
+    )
+    expect(res.rows.length).toBe(3)
+    for (const { prosrc } of res.rows) {
+      expect(prosrc).not.toMatch(/serialization_failure/)
+      expect(prosrc).not.toMatch(/40001/)
+    }
     await db.close()
   })
 })
