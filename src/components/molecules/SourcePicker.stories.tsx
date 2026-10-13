@@ -5,7 +5,7 @@ import { expect, fireEvent, fn, userEvent, waitFor, within } from 'storybook/tes
 import { SourcePicker, type SourcePickerProps } from './SourcePicker'
 import type { SourceDatabase, SourceField } from './source-entries'
 import { CHART_KINDS } from '@/lib/modules/view/aggregate'
-import { CHART_LABEL } from './source-entries'
+import { CHART_LABEL, FIELD_WORD } from './source-entries'
 
 /**
  * The source picker — `PondPicker kind="source"` (#280): its three states, both
@@ -469,9 +469,12 @@ export const Keys: Story = {
     await userEvent.keyboard('{Escape}')
     await expect(args.onClose).toHaveBeenCalled()
     await expect((field as HTMLTextAreaElement).value).toBe('/table')
-    // Into the new step, down to `field`, ↵ adds one; ↵ on a field creates.
+    // Into the new step, down to `field`, ↵ opens the type chooser; ↵ on `text`
+    // adds a text field; ↵ on a field creates.
     await userEvent.keyboard('{ArrowUp}{Enter}')
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('field-type')
+    await userEvent.keyboard('{Enter}')
     await expect(labels(canvasElement)).toEqual(['title', 'field', 'field'])
     await userEvent.keyboard('{ArrowUp}{Enter}')
     await expect(args.onPick).toHaveBeenLastCalledWith({
@@ -583,8 +586,9 @@ export const RowsOnlyRidesThePick: Story = {
   },
 }
 
-/** ↵ on `field` adds a text field each time, named `field` then `field 2` — and
- *  both ride the pick. A second row called `field` would collide in the schema. */
+/** ↵ on `field` opens the type chooser; ↵ on `text` there adds a text field each
+ *  time, named `field` then `field 2` — and both ride the pick. A second row
+ *  called `field` would collide in the schema. */
 export const FieldsAddUpAndAreNamed: Story = {
   tags: ['!dev'],
   args: { onPick: fn() },
@@ -592,8 +596,12 @@ export const FieldsAddUpAndAreNamed: Story = {
     within(canvasElement).getByLabelText('page').focus()
     await userEvent.keyboard('{Enter}')
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('field-type')
+    await userEvent.keyboard('{Enter}')
     await expect(labels(canvasElement)).toEqual(['title', 'field', 'field'])
-    await userEvent.keyboard('{ArrowDown}{Enter}')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('field-type')
+    await userEvent.keyboard('{Enter}')
     await expect(labels(canvasElement)).toEqual(['title', 'field', 'field 2', 'field'])
     await userEvent.keyboard('{ArrowUp}{Enter}')
     await expect(args.onPick).toHaveBeenLastCalledWith({
@@ -607,6 +615,33 @@ export const FieldsAddUpAndAreNamed: Story = {
       mode: 'table',
       chart: undefined,
     })
+  },
+}
+
+/** `+ field` opens the type chooser instead of adding a text field outright; picking
+ *  `date` there appends a date-typed field and returns to `new` with it in the list. */
+export const FieldTypeStepAddsATypedField: Story = {
+  tags: ['!dev'],
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByLabelText('page').focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    await expect(glassOf(canvasElement).dataset.step).toBe('field-type')
+    await expect(labels(canvasElement)).toEqual([
+      'text',
+      'number',
+      'date',
+      'select',
+      'status',
+      'checkbox',
+    ])
+    await userEvent.click(rowsOf(canvasElement)[2])
+    await expect(glassOf(canvasElement).dataset.step).toBe('new')
+    // `title` · the new `date` field · the perpetual faint `field` add-row.
+    await expect(labels(canvasElement)).toEqual(['title', 'field', 'field'])
+    await expect(rowsOf(canvasElement)[1].querySelector('[data-part="hint"]')!.textContent).toBe(
+      FIELD_WORD.date
+    )
   },
 }
 
