@@ -2496,6 +2496,13 @@ export function AITerminal() {
       const placeName = changePlace[part.toolCallId]
         ? allPages.find((p) => p.id === changePlace[part.toolCallId])?.title
         : undefined
+      // KAN-302: `target.nodeName` is a write-once stamp from proposal time —
+      // a later rename of the target page must still show in the header, so
+      // read the live title off `allPages` and only fall back to the stamp
+      // when the page is gone (deleted since the stamp).
+      const liveTargetName = target
+        ? allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName
+        : undefined
       const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
       const cachedChanges = frozenChanges[part.toolCallId]
       const changes = cachedChanges ?? rawChanges.map((c) => previewForChange(c, targetBlocks))
@@ -2516,7 +2523,7 @@ export function AITerminal() {
         // falling to contextLabel here would claim the pond itself as the
         // target while the card, in the same breath, says it needs a place.
         targetName:
-          needsPlace && !placeName ? undefined : target?.nodeName || placeName || contextLabel,
+          needsPlace && !placeName ? undefined : liveTargetName || placeName || contextLabel,
         targetMissing,
         needsPlace,
         parentOptions,

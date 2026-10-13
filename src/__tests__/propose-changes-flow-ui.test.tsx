@@ -139,6 +139,7 @@ global.fetch = jest.fn().mockResolvedValue({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import { pagesKey } from '@/lib/pages/keys'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -147,15 +148,20 @@ function renderWithQuery(ui: React.ReactElement) {
     <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
   )
   const result = render(wrap(ui))
-  return { ...result, rerender: (node: React.ReactElement) => result.rerender(wrap(node)) }
+  return {
+    ...result,
+    queryClient,
+    rerender: (node: React.ReactElement) => result.rerender(wrap(node)),
+  }
 }
 
-function batch(toolCallId: string) {
+function batch(toolCallId: string, targetPageId?: string) {
   return {
     type: 'tool-propose_changes',
     toolCallId,
     state: 'input-available',
     input: {
+      targetPageId,
       changes: [
         { op: 'create', data: { type: 'text', content: `first line of ${toolCallId}` } },
         { op: 'create', data: { type: 'text', content: `second line of ${toolCallId}` } },
@@ -797,6 +803,37 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     expect(mockCommitBlocks).not.toHaveBeenCalled()
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  // KAN-302 — a card's header must read the target page's CURRENT title, not
+  // the name frozen in `changeTargets[toolCallId]?.nodeName` at proposal time.
+  it("a card header follows the target page's title after a rename (KAN-302)", async () => {
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1', pageB.id)] }]
+
+    const { queryClient } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const head = () => document.querySelector('[data-part="head"]')
+    await waitFor(() => expect(head()?.textContent).toContain('Page B'))
+
+    queryClient.setQueryData(
+      [...pagesKey('pond-7'), 'full'],
+      [{ ...pageB, title: 'Renamed Page' }]
+    )
+
+    await waitFor(() => expect(head()?.textContent).toContain('Renamed Page'))
+    expect(head()?.textContent).not.toContain('Page B')
   })
 })
 
