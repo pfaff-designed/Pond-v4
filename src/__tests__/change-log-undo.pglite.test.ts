@@ -972,16 +972,19 @@ describe('undo_change_log_record — another person’s record is out of reach',
 // ── 0024: no path back to the retryable errcode ──────────────────────────────
 
 describe('0024 undo refusals are not retryable', () => {
-  it('has no serialization_failure or 40001 left in the undo/redo call path', async () => {
+  it('has no serialization_failure or 40001 left anywhere in public/private', async () => {
     const db = await makeDb()
 
-    const res = await db.query<{ prosrc: string }>(
-      `select prosrc from pg_proc
-        where (proname = 'change_log_set_back' and pronamespace = 'private'::regnamespace)
-           or (proname in ('undo_change_log_record', 'redo_change_log_record')
-               and pronamespace = 'public'::regnamespace)`
+    const res = await db.query<{ proname: string; prosrc: string }>(
+      `select proname, prosrc from pg_proc
+        where pronamespace in ('public'::regnamespace, 'private'::regnamespace)`
     )
-    expect(res.rows.length).toBe(3)
+
+    const named = res.rows.filter(({ proname }) =>
+      ['change_log_set_back', 'undo_change_log_record', 'redo_change_log_record'].includes(proname)
+    )
+    expect(named.length).toBe(3)
+
     for (const { prosrc } of res.rows) {
       expect(prosrc).not.toMatch(/serialization_failure/)
       expect(prosrc).not.toMatch(/40001/)
