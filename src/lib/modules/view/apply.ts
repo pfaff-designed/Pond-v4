@@ -246,13 +246,6 @@ export function pickRepeatDef(schema: PropertySchema): PropertyDef | undefined {
   )
 }
 
-/** One calendar lane: the rows sharing a date (`iso`), or the trailing unset bucket. */
-export interface DateBucket {
-  /** The `YYYY-MM-DD` day this lane collects, or null for the undated bucket. */
-  iso: string | null
-  rows: CollectionRow[]
-}
-
 /**
  * Which date property a calendar places rows by. Prefers the one the view names in
  * `groupBy` (the board reuses the same field, decision 15) when it's a `date`
@@ -269,43 +262,6 @@ export function pickDateDef(
     if (named?.type === 'date') return named
   }
   return schema.find((d) => d.type === 'date')
-}
-
-/**
- * Bucket rows into calendar lanes by a date property (the agenda layout). One lane
- * per distinct `YYYY-MM-DD` value, chronological ascending, plus a trailing undated
- * bucket (iso null) for rows with no/blank date — so every row lands exactly once.
- * A datetime value buckets by its date part (first 10 chars). Returns null when
- * `dateById` doesn't name a `date` property (mirrors `groupRows`' guard).
- */
-export function groupRowsByDate(
-  rows: readonly CollectionRow[],
-  schema: PropertySchema,
-  dateById: string | undefined
-): { def: PropertyDef; buckets: DateBucket[] } | null {
-  if (!dateById) return null
-  const def = defById(schema, dateById)
-  if (!def || def.type !== 'date') return null
-
-  const byDate = new Map<string, CollectionRow[]>()
-  const undated: CollectionRow[] = []
-  for (const row of rows) {
-    const value = coerceValue(def, row.values[dateById])
-    const iso = typeof value === 'string' && value ? value.slice(0, 10) : null
-    if (iso) {
-      const lane = byDate.get(iso)
-      if (lane) lane.push(row)
-      else byDate.set(iso, [row])
-    } else {
-      undated.push(row)
-    }
-  }
-
-  const buckets: DateBucket[] = [...byDate.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-    .map(([iso, laneRows]) => ({ iso, rows: laneRows }))
-  if (undated.length) buckets.push({ iso: null, rows: undated })
-  return { def, buckets }
 }
 
 // ── Gantt (#27) ─────────────────────────────────────────────────────────────
