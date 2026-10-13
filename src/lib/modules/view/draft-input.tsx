@@ -53,6 +53,7 @@ export function DraftInput({
           e.currentTarget.blur()
         } else if (e.key === 'Escape') {
           canceled.current = true
+          draftRef.current = value
           setDraft(value)
           e.currentTarget.blur()
         }

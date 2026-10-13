@@ -66,6 +66,21 @@ describe('DraftInput', () => {
     expect(onCommit).toHaveBeenCalledWith('typing')
   })
 
+  it('fires no onCommit on a later blur with no typing after an Escape (KAN-299)', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    render(<Host value="kept" onCommit={onCommit} />)
+
+    const input = screen.getByLabelText<HTMLInputElement>('draft')
+    await user.click(input)
+    await user.keyboard(' extra{Escape}')
+    expect(onCommit).not.toHaveBeenCalled()
+
+    await user.click(input)
+    await user.tab()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
   it('fires no onCommit on blur when the draft is unchanged from value', async () => {
     const user = userEvent.setup()
     const onCommit = jest.fn()
