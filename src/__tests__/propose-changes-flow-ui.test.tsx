@@ -84,8 +84,11 @@ const mockListByCalls = jest.fn()
 // KAN-93: controllable per test, so an accept can be given a record to remember.
 const mockGetRecordByToolCall = jest.fn().mockResolvedValue(null)
 const mockAcceptRecord = jest.fn().mockResolvedValue(undefined)
+// KAN-302: the chain's tip status, separate from the record's own frozen `status`.
+const mockResolveChainStatus = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
+  resolveChainStatus: (...args: unknown[]) => mockResolveChainStatus(...args),
   getRecordByToolCall: (...args: unknown[]) => mockGetRecordByToolCall(...args),
   advanceStatus: jest.fn(),
   acceptRecord: (...args: unknown[]) => mockAcceptRecord(...args),
@@ -218,6 +221,11 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  // Default: the chain's tip is just the record's own status — only a test
+  // that cares about a redo moving the tip past it overrides this.
+  mockResolveChainStatus
+    .mockReset()
+    .mockImplementation((_sb: unknown, opts: { status: string }) => Promise.resolve(opts.status))
   mockGetRecordByToolCall.mockReset().mockResolvedValue(null)
   mockAcceptRecord.mockReset().mockResolvedValue(undefined)
   mockGetPage.mockReset().mockResolvedValue(null)
@@ -328,6 +336,29 @@ describe('AITerminal — propose_changes card (#98)', () => {
     ]
     expect(options.body.requestChanges).toMatchObject({ toolCallId: 'pc1', reason: 'outdated' })
     expect(options.body.pondId).toBe('pond-7')
+  })
+
+  // KAN-302 — a redo never flips the record's own `status` back from `undone`
+  // (0021 inserts a new `redo` row instead); the card must follow the chain's
+  // tip, not the row, so it reads `accepted` again once the redo lands.
+  it('an undone card adopts accepted again once the chain redo lands (KAN-302)', async () => {
+    mockResolutions = {
+      changes: { 'pc1:0': 'undone', 'pc1:1': 'undone' },
+      creates: {},
+      skipped: {},
+    }
+    mockListByCalls.mockResolvedValue([
+      { id: 'rec-1', toolCallId: 'pc1', status: 'undone', action: 'edit' },
+    ])
+    mockResolveChainStatus.mockResolvedValue('accepted')
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    await waitFor(() => expect(screen.getByText('accepted')).toBeInTheDocument())
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    expect(card).toHaveAttribute('data-status', 'accepted')
+    expect(screen.queryByText('undone')).not.toBeInTheDocument()
   })
 
   it('ask again on a rejected card regenerates the answer; it does not send a new turn', async () => {

@@ -171,7 +171,7 @@ import {
   type ProposalType,
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import { listRecordsByToolCalls } from '@/lib/change-log/store'
+import { listRecordsByToolCalls, resolveChainStatus } from '@/lib/change-log/store'
 import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -1726,7 +1726,12 @@ export function AITerminal() {
         if (!isProposeChangesPart(p) || p.state !== 'input-available') continue
         const count = p.input?.changes?.length ?? 0
         const status = batchStatus(changeDecisions, p.toolCallId, count)
-        if (status === 'pending' || status === 'accepted') counts.set(p.toolCallId, count)
+        // `undone` stays watched too — a redo lands on the chain's tip, never on
+        // this row's own `status`, so dropping the card here would never let it
+        // catch a later redo (KAN-302).
+        if (status === 'pending' || status === 'accepted' || status === 'undone') {
+          counts.set(p.toolCallId, count)
+        }
       }
     }
     return counts
@@ -1750,7 +1755,16 @@ export function AITerminal() {
         const id = record.toolCallId
         if (!id) continue
         const count = liveDiffCards.get(id) ?? 0
-        const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), record.status)
+        // The record's own `status` only ever moves forward into `undone`; a
+        // redo lands on the chain's tip instead (KAN-302), so the card must
+        // follow the chain, not the row.
+        const tip = await resolveChainStatus(supabase, {
+          userId: user.id,
+          pondId,
+          recordId: record.id,
+          status: record.status,
+        })
+        const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), tip)
         if (!adopt) continue
         for (let i = 0; i < count; i++) {
           dispatch({ kind: 'resolve', type: 'changes', id, index: i, decision: adopt })

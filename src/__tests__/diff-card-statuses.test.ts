@@ -95,6 +95,13 @@ describe('reconcileCardStatus — the log knows more than the session', () => {
     expect(reconcileCardStatus('accepted', 'outdated')).toBeNull()
   })
 
+  it('an undone card follows the chain back to accepted once a redo lands (KAN-302)', () => {
+    expect(reconcileCardStatus('undone', 'accepted')).toBe('accepted')
+    // Still held in the session until the chain says otherwise.
+    expect(reconcileCardStatus('undone', 'proposed')).toBeNull()
+    expect(reconcileCardStatus('undone', 'undone')).toBeNull()
+  })
+
   it('every other settled card is left alone', () => {
     expect(reconcileCardStatus('rejected', 'outdated')).toBeNull()
     expect(reconcileCardStatus('changes_requested', 'outdated')).toBeNull()

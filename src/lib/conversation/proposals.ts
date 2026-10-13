@@ -53,11 +53,16 @@ export function batchStatus<T extends string>(
 
 /**
  * What a card adopts when the change log knows more than the session (#98,
- * G2). The log is the durable record; the session's maps are a UI cache.
+ * G2, KAN-302). The log is the durable record; the session's maps are a UI
+ * cache. `remote` is the chain's CURRENT TIP (store.ts's `resolveChainStatus`),
+ * not necessarily the record's own `status` column — a redo never un-undoes
+ * the original row, it stands beside it.
  *   - a PENDING card takes whatever settled status the log holds — most often
  *     `outdated`, swept when the target page was edited after the proposal;
  *   - an ACCEPTED card follows the log into `undone` / `reverted`, the two edges
  *     the state machine allows out of accepted;
+ *   - an UNDONE card follows the chain back into `accepted` once a redo lands
+ *     on its tip — the one edge back out of `undone`;
  *   - anything else is settled in the session and left alone.
  * Returns null when nothing should change.
  */
@@ -68,6 +73,7 @@ export function reconcileCardStatus<T extends string>(
   if (remote === 'proposed') return null
   if (local === 'pending') return remote as T
   if (local === 'accepted' && (remote === 'undone' || remote === 'reverted')) return remote as T
+  if (local === 'undone' && remote === 'accepted') return remote as T
   return null
 }
 

@@ -322,6 +322,51 @@ export async function listRecordsByToolCalls(
 }
 
 /**
+ * A record's status at the CURRENT tip of its undo/redo chain, not the status
+ * frozen on its own row. `change_log_step` (0021) never flips the original
+ * record back from `undone` on a redo — it inserts a new `redo` row linked via
+ * `links.redoOf` to whichever id it just redid, and leaves the original
+ * `undone`. The next undo/redo cycle keys off that NEW row's id in turn (a
+ * second ⌘Z targets the redo, not the original), so walking the chain means
+ * following whichever of `undoOf`/`redoOf` most recently targeted the current
+ * id, one hop at a time, rather than reading one row's `status` column once
+ * anything has ever undone it. `redoOf` can only exist once an `undoOf` of the
+ * same id does, and always lands later, so a redo always wins the hop. Depth
+ * capped like `change_log_undo_kind` (0021) guards its own walk — a real chain
+ * never runs long, but neither should this.
+ */
+export async function resolveChainStatus(
+  supabase: SupabaseClient<Database>,
+  opts: { userId: string; pondId: string | null; recordId: string; status: ChangeLogStatus }
+): Promise<ChangeLogStatus> {
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
+  let current = opts.recordId
+  let status = opts.status
+  for (let depth = 0; depth < 1000; depth++) {
+    const [{ data: redoData, error: redoError }, { data: undoData, error: undoError }] =
+      await Promise.all([
+        readScoped(supabase, opts.userId, pond)
+          .eq('links->>redo_of', current)
+          .order('created_at', { ascending: false })
+          .limit(1),
+        readScoped(supabase, opts.userId, pond)
+          .eq('links->>undo_of', current)
+          .order('created_at', { ascending: false })
+          .limit(1),
+      ])
+    if (redoError) throw redoError
+    if (undoError) throw undoError
+    const redoRow = (redoData ?? [])[0] as ChangeLogRow | undefined
+    const undoRow = (undoData ?? [])[0] as ChangeLogRow | undefined
+    const next = redoRow ?? undoRow
+    if (!next) break
+    current = next.id
+    status = redoRow ? 'accepted' : 'undone'
+  }
+  return status
+}
+
+/**
  * Advance one record's status. The ONLY mutation this module performs, and it
  * touches exactly three columns: `status`, `status_at`, and one APPENDED entry
  * on `transitions`. The edge is asserted against the state machine first, so an
