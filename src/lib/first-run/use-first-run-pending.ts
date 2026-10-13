@@ -12,6 +12,7 @@
  * runs with `staleTime: 0` and exposes `refetch`, so the caller (`DocumentPanel`,
  * on the root being re-entered) reads the flag fresh rather than the cache.
  */
+import { useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 
@@ -19,7 +20,7 @@ export const FIRST_RUN_QUERY_KEY = ['first-run-done-at'] as const
 
 export function useFirstRunPending(): { pending: boolean; refetch: () => void } {
   const getSupabase = useLazySupabase()
-  const { data, refetch } = useQuery({
+  const { data, isFetching, refetch } = useQuery({
     queryKey: FIRST_RUN_QUERY_KEY,
     staleTime: 0,
     queryFn: async () => {
@@ -39,7 +40,10 @@ export function useFirstRunPending(): { pending: boolean; refetch: () => void } 
       return row?.first_run_done_at ?? null
     },
   })
+  const stableRefetch = useCallback(() => void refetch(), [refetch])
   // Unresolved (`undefined` — still loading, signed-out, or errored) reads as
-  // "not pending" — the hints only ever appear once the flag is confirmed null.
-  return { pending: data === null, refetch: () => void refetch() }
+  // "not pending", and so does a stale cached `null` while a fresh read is in
+  // flight — the hints only ever appear once the flag is confirmed null by a
+  // SETTLED fetch, never off a cached value a refetch might be about to flip.
+  return { pending: data === null && !isFetching, refetch: stableRefetch }
 }

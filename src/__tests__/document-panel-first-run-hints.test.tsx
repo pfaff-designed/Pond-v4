@@ -6,7 +6,7 @@
  */
 
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
@@ -19,16 +19,21 @@ jest.mock('next/navigation', () => ({
 
 let firstRunDoneAt: string | null = null
 let firstRunReadError: { message: string } | null = null
+// Gates a `single()` read so a test can hold it mid-flight — proving the
+// cached value is never read as settled while a refetch is still pending.
+let singleReadGate: Promise<void> | null = null
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
     from: () => ({
       select: () => ({
         eq: () => ({
-          single: async () =>
-            firstRunReadError
+          single: async () => {
+            if (singleReadGate) await singleReadGate
+            return firstRunReadError
               ? { data: null, error: firstRunReadError }
-              : { data: { first_run_done_at: firstRunDoneAt }, error: null },
+              : { data: { first_run_done_at: firstRunDoneAt }, error: null }
+          },
         }),
       }),
     }),
@@ -60,6 +65,7 @@ function renderPanel() {
 beforeEach(() => {
   firstRunDoneAt = null
   firstRunReadError = null
+  singleReadGate = null
   mockSearchParams.delete('nodeId')
 })
 
@@ -116,6 +122,54 @@ describe('DocumentPanel — the empty-shell hints', () => {
     rerender(tree())
 
     expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
+    expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
+  })
+
+  it('a cached null never reads as pending while the confirming refetch is in flight', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const tree = () => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <DocumentPanel />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+
+    expect(await screen.findByText('What are you thinking about?')).toBeInTheDocument()
+
+    // made a page elsewhere — the flag flips, but the next read of it is
+    // held open so the test can observe the in-flight window.
+    let releaseGate: () => void = () => {}
+    singleReadGate = new Promise<void>((resolve) => {
+      releaseGate = resolve
+    })
+    firstRunDoneAt = '2026-10-13T00:00:00.000Z'
+
+    mockSearchParams.set('nodeId', 'page-1')
+    rerender(tree())
+    expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
+
+    // re-entering the root fires the refetch — gated, so it never settles here.
+    mockSearchParams.delete('nodeId')
+    rerender(tree())
+
+    // The refetch's `isFetching` flip lands via a microtask, one tick after
+    // the effect calls it — wait for that, then hold here across the whole
+    // gated window to prove the hints stay hidden the entire time, not just
+    // once settled.
+    await waitFor(() => {
+      expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
+
+    releaseGate()
+    singleReadGate = null
+
+    await waitFor(() => expect(screen.getByLabelText('Page title')).toBeInTheDocument())
     expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
   })
 })
