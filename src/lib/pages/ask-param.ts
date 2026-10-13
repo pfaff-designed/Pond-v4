@@ -1,9 +1,3 @@
-/**
- * The `?ask=` param carries the cover field's typed text across the navigation
- * to `/workspace` (orchestrator's notes: read once on mount, then stripped so a
- * refresh doesn't replay it into the composer).
- */
-
 /** The carried text, or null when there is no `ask` param. */
 export function readAskParam(params: URLSearchParams): string | null {
   return params.get('ask')

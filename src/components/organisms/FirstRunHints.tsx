@@ -2,10 +2,12 @@
 
 /**
  * FirstRunHints (`Pond 06.04` 6d frame 2) — the empty shell's heading, line and
- * three suggestion cards. Mounting it on the workspace root only while
- * `first_run_done_at` is null, and clearing it once the flag is set, is a later
- * plan item; this component only draws the frame and wires a card's own copy
- * into the composer.
+ * three suggestion cards, over the frame's own 4-line ASCII pond (`opacity`
+ * `.14`, `AsciiPondBackground`'s shared timings), filling and centered within
+ * `DocumentPanel`'s content pane with the frame's own `56px 0 150px` padding —
+ * the same box the ASCII layer and the centered content both draw against in
+ * 6d f2. This component draws the frame and wires a card's own copy into the
+ * composer; `DocumentPanel` only owns the mount condition (root, flag null).
  *
  * Values read straight off the frame: heading `PP Editorial New` italic 200,
  * 54px/1.12, `-.03em` tracking, `max-width:20ch`; line 15px/1.6 ink .68,
@@ -23,6 +25,7 @@
  */
 
 import { Icon } from '@/components/atoms/Icon'
+import { AsciiPondBackground } from '@/components/molecules/AsciiPondBackground'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { cn } from '@/lib/utils'
 
@@ -36,6 +39,14 @@ const FIRST_RUN_CARDS: readonly FirstRunCard[] = [
   { title: 'a project', line: 'something with a finish line', glyph: 'star-01' },
   { title: 'a collection', line: 'a list that keeps growing', glyph: 'ring' },
   { title: 'a journal', line: 'one entry at a time', glyph: 'house' },
+]
+
+/** The empty shell's own 4-line ASCII block (6d f2) — shorter than the cover's 5. */
+const EMPTY_SHELL_ASCII_LINES: readonly string[] = [
+  ' ·≈∾-···  ···~≈∾·                  ··~≈∾-·   ····~·  ',
+  '~≈∾··  ··∿··~·                  ·∿··~≈·   ·—·∿··   ··',
+  '  ·—·∿···   ··~≈∾·                 ····~≈∾-·  ·∿··~·  ',
+  '·∿··~≈·   ·—·∿···                  ·—·∿···   ·≈∾-··  ',
 ]
 
 export const FIRST_RUN_HEADING = 'What are you thinking about?'
@@ -54,8 +65,12 @@ export function FirstRunHints({ className }: FirstRunHintsProps) {
   return (
     <div
       data-part="first-run-hints"
-      className={cn('flex flex-col items-center justify-center gap-[30px] text-center', className)}
+      className={cn(
+        'absolute inset-0 flex flex-col items-center justify-center gap-[30px] pb-[150px] pt-[56px] text-center',
+        className
+      )}
     >
+      <AsciiPondBackground lines={EMPTY_SHELL_ASCII_LINES} opacity={0.14} className="-z-10" />
       <h1 className="m-0 max-w-[20ch] font-serif text-[54px] font-extralight italic leading-[1.12] tracking-[-0.03em] text-mn-text">
         {FIRST_RUN_HEADING}
       </h1>

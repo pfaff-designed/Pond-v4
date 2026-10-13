@@ -225,7 +225,7 @@ export function DocumentPanel() {
 
   if (!nodeId && firstRunPending) {
     return (
-      <PageCanvas className="flex h-full items-center justify-center overflow-y-auto">
+      <PageCanvas className="h-full overflow-y-auto">
         <FirstRunHints />
       </PageCanvas>
     )
