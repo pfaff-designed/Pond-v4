@@ -53,6 +53,24 @@ export function isComposerToggleKey(e: KeyboardEvent): boolean {
 }
 
 /**
+ * "Show one notice line in the composer" (KAN-93). The shell's ⌘Z/⇧⌘Z
+ * handler knows a chord was stale/blocked/refused and the composer owns the
+ * only notice line to show it in — same decoupling as `requestTerminalFocus`,
+ * so neither organism imports the other.
+ */
+export const COMPOSER_NOTICE_EVENT = 'pond:composer-notice'
+
+export interface ComposerNoticeDetail {
+  text: string
+}
+
+export function requestComposerNotice(text: string) {
+  window.dispatchEvent(
+    new CustomEvent<ComposerNoticeDetail>(COMPOSER_NOTICE_EVENT, { detail: { text } })
+  )
+}
+
+/**
  * "Open the html import file chooser" (KAN-251). ⌘K's `import a page` asks;
  * the composer owns the hidden `<input type="file">` and answers — the same
  * decoupling as `requestTerminalFocus`, so a future door (zen's ＋, KAN-186/

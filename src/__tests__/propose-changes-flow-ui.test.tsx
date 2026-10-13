@@ -81,12 +81,21 @@ jest.mock('@/lib/conversation/client', () => ({
 
 // The change log, under test control: what the sync reads back per card.
 const mockListByCalls = jest.fn()
+// KAN-93: controllable per test, so an accept can be given a record to remember.
+const mockGetRecordByToolCall = jest.fn().mockResolvedValue(null)
+const mockAcceptRecord = jest.fn().mockResolvedValue(undefined)
 jest.mock('@/lib/change-log/store', () => ({
   listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
-  getRecordByToolCall: jest.fn().mockResolvedValue(null),
+  getRecordByToolCall: (...args: unknown[]) => mockGetRecordByToolCall(...args),
   advanceStatus: jest.fn(),
-  acceptRecord: jest.fn(),
+  acceptRecord: (...args: unknown[]) => mockAcceptRecord(...args),
   markOutdated: jest.fn(),
+}))
+
+// KAN-93: the session-undo stack an accept's record id is handed to.
+const mockRemember = jest.fn()
+jest.mock('@/lib/change-log/session-undo', () => ({
+  sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
 }))
 
 // KAN-267: the receipt toast fires through the notify bridge (the terminal
@@ -128,6 +137,9 @@ global.fetch = jest.fn().mockResolvedValue({
 } as Response)
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -163,10 +175,45 @@ async function ready() {
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
+/**
+ * A ChangeLogRecord whose accept makes it undoable (KAN-93). `after` is computed
+ * the same way propose.ts computes it — real `applyProposedChanges`, seeded by
+ * the SAME toolCallId — against an empty page (every accept test here mocks
+ * `getPage` to `blocks: []`), so the accept write lands blocks byte-identical to
+ * it, the way accept.ts's recordId gate now requires.
+ */
+function fakeRecord(id: string, toolCallId: string, targetPageId: string) {
+  const changes = batch(toolCallId).input.changes as ModuleChange[]
+  const after = applyProposedChanges([], changes, createDeterministicMintId(toolCallId), {
+    batch: changes,
+  }).blocks
+  return {
+    id,
+    userId: 'user-1',
+    pondId: 'pond-7',
+    status: 'proposed' as const,
+    action: 'edit' as const,
+    actor: 'pond',
+    targetPageId,
+    targetBlockId: null,
+    before: [],
+    after,
+    sourceThreadId: null,
+    toolCallId,
+    read: null,
+    links: {},
+    transitions: [],
+    createdAt: '2026-10-01T00:00:00.000Z',
+    statusAt: '2026-10-01T00:00:00.000Z',
+  }
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  mockGetRecordByToolCall.mockReset().mockResolvedValue(null)
+  mockAcceptRecord.mockReset().mockResolvedValue(undefined)
   mockGetPage.mockReset().mockResolvedValue(null)
   mockListPages.mockReset().mockResolvedValue([])
   mockCommitBlocks.mockReset().mockResolvedValue(undefined)
@@ -750,5 +797,120 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     expect(mockCommitBlocks).not.toHaveBeenCalled()
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+})
+
+// KAN-93 — a single card's accept remembers one step; accept-all remembers the
+// whole batch as ONE step after its loop, never one `remember` call per card.
+describe('AITerminal — accept hands its record to sessionUndo (KAN-93)', () => {
+  it('a single accept remembers one step with that one record id', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockGetRecordByToolCall.mockResolvedValue(fakeRecord('rec-1', 'pc1', pageB.id))
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await screen.findByRole('option', { name: 'Page B' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'under' }), pageB.id)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'accept' })).toBeEnabled())
+
+    await user.click(screen.getByRole('button', { name: 'accept' }))
+
+    await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-7', recordIds: ['rec-1'] })
+  })
+
+  it('accept all remembers every card together, once, never per card', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockGetRecordByToolCall.mockImplementation(
+      async (_supabase: unknown, opts: { toolCallId: string }) =>
+        fakeRecord(`rec-${opts.toolCallId}`, opts.toolCallId, pageB.id)
+    )
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'under' })).toHaveLength(2))
+    for (const box of screen.getAllByRole('combobox', { name: 'under' })) {
+      await waitFor(() => expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument())
+      await user.selectOptions(box, pageB.id)
+    }
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled()
+    )
+
+    await user.click(screen.getByRole('button', { name: 'accept all' }))
+
+    await waitFor(() => expect(mockAcceptRecord).toHaveBeenCalledTimes(2))
+    expect(mockRemember).toHaveBeenCalledTimes(1)
+    expect(mockRemember).toHaveBeenCalledWith({
+      pondId: 'pond-7',
+      recordIds: ['rec-pc1', 'rec-pc2'],
+    })
+  })
+
+  it('accept all still remembers the cards that already landed when a later card throws partway', async () => {
+    const user = userEvent.setup()
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1'), batch('pc2')] }]
+    mockListPages.mockResolvedValue([pageB])
+    const pageBDoc = {
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    }
+    // The first card's accept reads the target page and lands; the second card's
+    // read throws, so its write never happens — proving the first card's id is
+    // still remembered rather than lost with the batch.
+    mockGetPage.mockResolvedValueOnce(pageBDoc).mockRejectedValueOnce(new Error('read failed'))
+    mockGetRecordByToolCall.mockImplementation(
+      async (_supabase: unknown, opts: { toolCallId: string }) =>
+        fakeRecord(`rec-${opts.toolCallId}`, opts.toolCallId, pageB.id)
+    )
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+    await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'under' })).toHaveLength(2))
+    for (const box of screen.getAllByRole('combobox', { name: 'under' })) {
+      await waitFor(() => expect(within(box).getByRole('option', { name: 'Page B' })).toBeInTheDocument())
+      await user.selectOptions(box, pageB.id)
+    }
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'accept all' })).toBeEnabled()
+    )
+
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    await user.click(screen.getByRole('button', { name: 'accept all' }))
+
+    await waitFor(() => expect(mockRemember).toHaveBeenCalledTimes(1))
+    expect(mockRemember).toHaveBeenCalledWith({ pondId: 'pond-7', recordIds: ['rec-pc1'] })
+    expect(mockAcceptRecord).toHaveBeenCalledTimes(1)
+    consoleError.mockRestore()
   })
 })

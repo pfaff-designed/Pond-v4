@@ -38,6 +38,7 @@ import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from './mint-id'
 import { advanceStatus, appendProposal, getRecordByToolCall, reviseRecord } from './store'
 import { canRevise, isOpen } from './status'
 import { ACTOR_YOU, type ChangeLogAction, type ChangeLogRecord } from './types'
@@ -178,7 +179,9 @@ export async function recordProposedToolCalls(
         if (blocks === null) continue
         const changes = (asRecord(call.input).changes ?? []) as ModuleChange[]
         before = blocks
-        after = applyProposedChanges(blocks, changes, () => crypto.randomUUID(), {
+        // Same ids `accept.ts` will mint for this exact toolCallId (KAN-93 fix) —
+        // see mint-id.ts — so the accept's written blocks can equal this snapshot.
+        after = applyProposedChanges(blocks, changes, createDeterministicMintId(call.toolCallId), {
           batch: changes,
         }).blocks
       }

@@ -36,6 +36,8 @@ import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { emptyResolutions, type ConversationResolutions } from '@/lib/conversation/resolutions'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
 
 const mockedGetPage = getPage as jest.MockedFunction<typeof getPage>
 const mockedCommitBlocks = commitBlocks as jest.MockedFunction<typeof commitBlocks>
@@ -696,6 +698,189 @@ describe('writeAcceptedChanges — the change-log record', () => {
     expect(mockedCommitBlocks).not.toHaveBeenCalled()
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
+  })
+
+  const recordIdCases: Array<[string, ModuleChange[], Block[]]> = [
+    ['create', changes, []],
+    [
+      // edits.ts's edit branch builds `{ ...hydrated, width: target.width }`
+      // unconditionally — a block with no width gives the written blocks an own
+      // `width: undefined` key that jsonb never stores, so this is the case
+      // `jsonEqual`'s key-count check used to miss (KAN-93 fix).
+      'edit',
+      [{ op: 'edit', blockId: 'blk-1', data: { type: 'text', content: 'new' } }] as ModuleChange[],
+      [{ id: 'blk-1', type: 'text', content: 'old' }] as Block[],
+    ],
+    [
+      'remove',
+      [{ op: 'remove', blockId: 'blk-1' }] as ModuleChange[],
+      [{ id: 'blk-1', type: 'text', content: 'old' }] as Block[],
+    ],
+  ]
+
+  it.each(recordIdCases)(
+    'surfaces the advanced record’s id when its action is undoable (%s)',
+    async (_op, opChanges, pageBlocks) => {
+      // Not mocked: `after` computed the same way propose.ts computes it, seeded by
+      // the same toolCallId, then round-tripped through JSON the way jsonb storage
+      // does (dropping undefined-valued keys) — a real-shaped `after`, not a
+      // fixture, so this proves the accept write lands blocks that are what
+      // commitBlocks/the RPC actually store, byte-identical to it (KAN-93 fix).
+      const after = JSON.parse(
+        JSON.stringify(
+          applyProposedChanges(pageBlocks, opChanges, createDeterministicMintId('pc1'), {
+            batch: opChanges,
+          }).blocks
+        )
+      )
+      mockedLookup.mockResolvedValue(logRecord({ after }))
+      mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
+      mockedGetPage.mockResolvedValue({
+        id: 'stamped-id',
+        blocks: pageBlocks,
+      } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+      const result = await writeAcceptedChanges({
+        pondId: 'pond-1',
+        supabase,
+        queryClient,
+        userId: USER,
+        resolutions: stamped('pc1', 'stamped-id'),
+        toolCallId: 'pc1',
+        openNodeId: null,
+        changes: opChanges,
+      })
+
+      expect(result.recordId).toBe('rec-1')
+      expect(mockedAcceptRecord).toHaveBeenCalledWith(supabase, 'rec-1', after)
+    }
+  )
+
+  it('gives no recordId when the page drifted since propose (a typed edit landed in between)', async () => {
+    // `after` is the snapshot propose.ts would have computed against the page as
+    // it stood at propose time (empty). Accept time re-reads the page and finds
+    // a block someone typed in the meantime — same record, same toolCallId, but
+    // applying the identical change to the DRIFTED page yields different blocks:
+    // this is exactly the case 0021's set_back CAS would refuse, so ⌘Z must never
+    // be offered on it.
+    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
+      batch: changes,
+    }).blocks
+    mockedLookup.mockResolvedValue(logRecord({ after }))
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', after }))
+    mockedGetPage.mockResolvedValue({
+      id: 'stamped-id',
+      blocks: [{ id: 'blk-typed', type: 'text', content: 'typed by hand' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when the record’s action is not undoable (add_row)', async () => {
+    mockedLookup.mockResolvedValue(logRecord({ action: 'add_row' }))
+    mockedAcceptRecord.mockResolvedValue(logRecord({ status: 'accepted', action: 'add_row' }))
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when nothing actually applied', async () => {
+    mockedLookup.mockResolvedValue(logRecord({ targetPageId: 'ceramics-id' }))
+    mockedGetPage.mockResolvedValue({
+      id: 'ceramics-id',
+      blocks: [{ id: 'blk-target', type: 'text', content: 'plan' }],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'ceramics-id'),
+      toolCallId: 'pc1',
+      openNodeId: 'open-id',
+      changes: [
+        { op: 'edit', blockId: 'blk-open', data: { type: 'text', content: 'x' } },
+      ] as ModuleChange[],
+    })
+
+    expect(result.applied).toBe(0)
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when the accept was retargeted to a page the record never named', async () => {
+    // Same shape as "writes the page the person chose, not the one the record
+    // froze" above, but this time the retargeted write still lands blocks
+    // byte-identical to `after` — the one condition that would otherwise pass
+    // every other recordId guard. set_back's CAS is scoped to the RECORD's
+    // frozen target_page_id (0021), so an id surfaced here would have ⌘Z read
+    // the retargeted page, find it never matched, and refuse forever with
+    // "page changed" — a step that can never be undone must never be offered.
+    const after = applyProposedChanges([], changes, createDeterministicMintId('pc1'), {
+      batch: changes,
+    }).blocks
+    mockedLookup.mockResolvedValue(logRecord({ targetPageId: 'a-page-they-redirected-from', after }))
+    mockedAdvance.mockResolvedValue(logRecord({ status: 'accepted', after }))
+    mockedGetPage.mockResolvedValue({
+      id: 'retargeted-id',
+      blocks: [],
+    } as unknown as Awaited<ReturnType<typeof getPage>>)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'retargeted-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(mockedAcceptRecord).not.toHaveBeenCalled()
+    expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rec-1', 'accepted', 'you')
+    expect(result.recordId).toBeNull()
+  })
+
+  it('gives no recordId when there is no change-log record at all', async () => {
+    mockedLookup.mockResolvedValue(null)
+
+    const result = await writeAcceptedChanges({
+      pondId: 'pond-1',
+      supabase,
+      queryClient,
+      userId: USER,
+      resolutions: stamped('pc1', 'stamped-id'),
+      toolCallId: 'pc1',
+      openNodeId: null,
+      changes,
+    })
+
+    expect(result.applied).toBe(changes.length)
+    expect(result.recordId).toBeNull()
   })
 
   it.each(['outdated', 'withdrawn', 'undone', 'reverted', 'changes_requested'] as const)(

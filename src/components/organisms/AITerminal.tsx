@@ -21,11 +21,13 @@ import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
 import {
+  COMPOSER_NOTICE_EVENT,
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
   OPEN_THREAD_MESSAGE_EVENT,
   TOGGLE_COMPOSER_EVENT,
   requestHtmlImportPicker,
+  type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
 } from '@/lib/terminal-focus'
@@ -54,6 +56,7 @@ import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
   createPageFromProposal,
   defineSchemaFromProposal,
@@ -1010,6 +1013,20 @@ export function AITerminal() {
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
 
+  // A stale/blocked/refused ⌘Z or ⇧⌘Z (ShellCommands) says why in this one
+  // line — the composer's only notice line, machine register. Replaces
+  // rather than queues: only the latest chord's outcome is worth showing.
+  const [composerNotice, setComposerNotice] = useState<string | null>(null)
+  useEffect(() => {
+    function onComposerNotice(e: Event) {
+      // An empty text clears the line: a done/empty chord has nothing to say,
+      // and leaving the last stale/blocked wording up would read backwards.
+      setComposerNotice((e as CustomEvent<ComposerNoticeDetail>).detail.text || null)
+    }
+    window.addEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
+    return () => window.removeEventListener(COMPOSER_NOTICE_EVENT, onComposerNotice)
+  }, [])
+
   // ── Load or create active conversation on mount ───────────────────────────
   // `initialMessageIds` records what was re-seeded from the saved transcript:
   // pending decisions are never persisted (ticket-19), so a prior session's
@@ -1549,7 +1566,7 @@ export function AITerminal() {
 
   const acceptChanges = useCallback(
     async (toolCallId: string, allChanges: ModuleChange[], indices: number[]) => {
-      if (indices.length === 0) return
+      if (indices.length === 0) return null
       decideChanges(toolCallId, indices, 'accepted')
       const supabase = getSupabase()
       const {
@@ -1616,6 +1633,7 @@ export function AITerminal() {
           message: `Nothing added to ${targetName} — ${blockNoun(result.skipped)} couldn’t be placed`,
         })
       }
+      return result.recordId
     },
     [
       decideChanges,
@@ -2614,7 +2632,12 @@ export function AITerminal() {
           <div className="mn-arrive">
             <ProposalGroup
               cards={diffCards}
-              onAccept={(id) => acceptChanges(id, batchById.get(id) ?? [], allIndices(id))}
+              onAccept={(id) => {
+                void (async () => {
+                  const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                  if (pondId && recordId) sessionUndo.remember({ pondId, recordIds: [recordId] })
+                })()
+              }}
               onReject={(id) => decideChanges(id, allIndices(id), 'rejected')}
               onPickPlace={(id, destinationId) => {
                 dispatch({ kind: 'pickDestination', type: 'changes', id, destinationId })
@@ -2629,10 +2652,23 @@ export function AITerminal() {
               onAcceptAll={() => {
                 // Sequential: each accept rewrites its target page's whole block array,
                 // and two cards can name the same page, so parallel accepts would drop
-                // the first batch. Also keeps the toast receipts in card order.
+                // the first batch. Also keeps the toast receipts in card order. One
+                // accept-all click is one undo step, so every card's record id is
+                // collected and remembered together after the loop, not per card.
                 void (async () => {
-                  for (const id of acceptablePendingDiffIds) {
-                    await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                  const recordIds: string[] = []
+                  try {
+                    for (const id of acceptablePendingDiffIds) {
+                      const recordId = await acceptChanges(id, batchById.get(id) ?? [], allIndices(id))
+                      if (recordId) recordIds.push(recordId)
+                    }
+                  } catch (err) {
+                    // Fire-and-forget (see the pageProposals IIFE above): a card's
+                    // accept throwing partway must not leak an unhandled rejection —
+                    // the cards that already landed are still remembered below.
+                    console.error('[accept-all] a card’s accept failed partway', err)
+                  } finally {
+                    if (pondId && recordIds.length > 0) sessionUndo.remember({ pondId, recordIds })
                   }
                 })()
               }}
@@ -3122,6 +3158,11 @@ export function AITerminal() {
             />
           ))}
         </div>
+      )}
+      {composerNotice && (
+        <p className="font-mono text-[11px] lowercase text-mn-text-secondary" role="status">
+          {composerNotice}
+        </p>
       )}
       <ComposerLine
         value={input}

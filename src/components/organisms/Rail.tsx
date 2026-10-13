@@ -61,6 +61,7 @@ import {
 } from '@/lib/pages/tree'
 import { setPageGlyph, setAreaRole } from '@/lib/pages/mark-client'
 import { appendOwnEdit } from '@/lib/change-log/store'
+import { sessionUndo } from '@/lib/change-log/session-undo'
 import { jsonEqual } from '@/lib/json-equal'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondId, usePond } from '@/lib/pond/context'
@@ -1579,7 +1580,7 @@ export function Rail() {
         await setPageGlyph(sb, id, glyph)
         if (jsonEqual(previous, glyph)) return
         try {
-          await appendOwnEdit(sb, {
+          const record = await appendOwnEdit(sb, {
             userId: uid,
             pondId,
             action: 'edit_glyph',
@@ -1587,6 +1588,7 @@ export function Rail() {
             before: previous,
             after: glyph,
           })
+          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
         } catch (err) {
           console.error('[change-log] glyph pick not logged', id, err)
         }
@@ -1616,7 +1618,7 @@ export function Rail() {
         await setAreaRole(sb, id, role)
         if (jsonEqual(previous, role)) return
         try {
-          await appendOwnEdit(sb, {
+          const record = await appendOwnEdit(sb, {
             userId: uid,
             pondId,
             action: 'edit_area_role',
@@ -1624,6 +1626,7 @@ export function Rail() {
             before: previous,
             after: role,
           })
+          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
         } catch (err) {
           console.error('[change-log] colour pick not logged', id, err)
         }
