@@ -11,6 +11,13 @@
 -- first timestamp on every later call, so a double-send of the make-page
 -- proposal (or a retried RPC) never moves it.
 --
+-- Backfill: every existing account's flag starts null, which would replace an
+-- established person's Life page with the empty-shell hints on deploy. A
+-- person who already owns any page other than their reserved home row
+-- (`type = 'home' and parent_id is null`, one per pond — see lib/pages/home.ts)
+-- has clearly been through first run already, so they're backfilled done. A
+-- person with only the auto-made home row(s) stays null and sees first run.
+--
 -- Down (manual, if ever needed):
 --   revoke all on function public.mark_first_run_done() from authenticated;
 --   drop function if exists public.mark_first_run_done();
@@ -20,6 +27,15 @@ begin;
 
 alter table public.users
   add column if not exists first_run_done_at timestamptz null;
+
+update public.users u
+set first_run_done_at = now()
+where u.first_run_done_at is null
+  and exists (
+    select 1 from public.pages p
+    where p.user_id = u.id
+      and not (p.type = 'home' and p.parent_id is null)
+  );
 
 create or replace function public.mark_first_run_done()
 returns void

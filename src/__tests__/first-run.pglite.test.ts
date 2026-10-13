@@ -6,9 +6,11 @@
 // the flag once and a second call never moves the timestamp.
 
 import type { PGlite } from '@electric-sql/pglite'
-import { makeDb, seedUser } from './helpers/pglite-harness'
+import { applyMigration, makeDb, seedUser } from './helpers/pglite-harness'
 
 const USER = '11111111-1111-1111-1111-111111111111'
+const BEFORE = '0025_accept_refusals_not_retryable.sql'
+const MIGRATION = '0026_first_run_done_at.sql'
 
 /** Supabase's grants and auth.uid(), which the harness's owner connection lacks. */
 const actAs = async (db: PGlite, userId: string) => {
@@ -31,6 +33,48 @@ describe('0026_first_run_done_at — the column', () => {
       [USER]
     )
     expect(res.rows).toEqual([{ first_run_done_at: null }])
+    await db.close()
+  })
+})
+
+describe('0026_first_run_done_at — backfill on deploy', () => {
+  it('marks a person with a child page already done, so their Life page stays put', async () => {
+    const db = await makeDb({ through: BEFORE })
+    await seedUser(db, USER)
+    await db.query(
+      `insert into public.pages (user_id, parent_id, type, title) values ($1, null, 'home', 'life')`,
+      [USER]
+    )
+    await db.query(
+      `insert into public.pages (user_id, parent_id, type, title) values ($1, null, 'page', 'a garden plan')`,
+      [USER]
+    )
+
+    await applyMigration(db, MIGRATION)
+
+    const res = await db.query<{ first_run_done_at: string | null }>(
+      'select first_run_done_at from public.users where id = $1',
+      [USER]
+    )
+    expect(res.rows[0].first_run_done_at).not.toBeNull()
+    await db.close()
+  })
+
+  it('leaves a person with only the auto-made home row at null (first run)', async () => {
+    const db = await makeDb({ through: BEFORE })
+    await seedUser(db, USER)
+    await db.query(
+      `insert into public.pages (user_id, parent_id, type, title) values ($1, null, 'home', 'life')`,
+      [USER]
+    )
+
+    await applyMigration(db, MIGRATION)
+
+    const res = await db.query<{ first_run_done_at: string | null }>(
+      'select first_run_done_at from public.users where id = $1',
+      [USER]
+    )
+    expect(res.rows[0].first_run_done_at).toBeNull()
     await db.close()
   })
 })
