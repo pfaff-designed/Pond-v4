@@ -314,6 +314,7 @@ export function CollectionView({
           endId={config.endDate}
           editable={editable}
           onEdit={onEdit}
+          onAddDateField={onAddDateField}
         />
       ) : config.mode === 'chart' ? (
         // #259: the chart's PRESENTATION — the compact inline mark (the board's
@@ -841,6 +842,7 @@ function CollectionGantt({
   endId,
   editable,
   onEdit,
+  onAddDateField,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
@@ -848,6 +850,7 @@ function CollectionGantt({
   endId?: string
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddDateField?: () => void
 }) {
   const defs = useMemo(() => pickGanttDefs(schema, startId, endId), [schema, startId, endId])
   const layout = useMemo(
@@ -889,7 +892,17 @@ function CollectionGantt({
   }, [])
 
   if (!defs) {
-    return <ViewNotice>This timeline needs a date property.</ViewNotice>
+    // No date property at all: the void box has no action slot, so the remedy
+    // uses the board's `box` emptyBox instead — same line, same action as the
+    // other kinds' no-date case.
+    return (
+      <PondBlockEmpty
+        box="box"
+        line={GANTT_EMPTY_LINE}
+        action="add a date field"
+        onAction={onAddDateField}
+      />
+    )
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
     // Nothing dated: the shared voidBox with the template's own line — true whether the

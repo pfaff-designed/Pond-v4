@@ -351,9 +351,14 @@ describe('CollectionGantt — PondTemplate.dc.html’s gHead / gRow / gTrack / b
     expect(box.querySelector('button')).toBeNull()
   })
 
-  it('a collection with no date property keeps its own notice — a configuration problem, not an empty state', () => {
-    renderView(gantt, taskSchema.slice(0, 1), taskRows)
-    expect(screen.getByText('This timeline needs a date property.')).toBeInTheDocument()
+  it('a collection with no date property draws the box emptyBox with the add-a-date-field remedy (KAN-292)', () => {
+    const { container } = renderView(gantt, taskSchema.slice(0, 1), taskRows)
+    const box = container.querySelector<HTMLElement>('[data-part="empty"]')!
+    expect(box.dataset.emptyBox).toBe('box')
+    expect(box.textContent).toContain(GANTT_EMPTY_LINE)
+    // No `onAddDateField` wired at this level → no button, same as every other
+    // mode's remedy when the handler is absent.
+    expect(box.querySelector('button')).toBeNull()
   })
 })
 

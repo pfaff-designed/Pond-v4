@@ -1,9 +1,10 @@
 /**
- * KAN-292 — the path test: the calendar's and list's `add a date field` remedy,
- * wired from the real `ViewView`/`CollectionView` host (not `CollectionCalendar` or
- * `CollectionList` alone). `ViewView` builds the handler over
- * `useCollectionRows().updateSchema` + `useDeletionUndo`'s `stageUndo`, gated on
- * `editable`, and threads the SAME handler into both.
+ * KAN-292 — the path test: the calendar's, list's and timeline's `add a date field`
+ * remedy, wired from the real `ViewView`/`CollectionView` host (not
+ * `CollectionCalendar`, `CollectionList` or `CollectionGantt` alone). `ViewView`
+ * builds the handler over `useCollectionRows().updateSchema` +
+ * `useDeletionUndo`'s `stageUndo`, gated on `editable`, and threads the SAME
+ * handler into all three.
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -39,6 +40,7 @@ jest.mock('./use-collection-rows', () => ({
 
 const calendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
 const list: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
+const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 
 function renderView(data: ViewBlock) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -73,6 +75,22 @@ describe('ViewView — the list’s "add a date field" remedy reaches the page (
   it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
     const user = userEvent.setup()
     renderView(list)
+
+    const button = screen.getByRole('button', { name: 'add a date field' })
+    await user.click(button)
+
+    expect(updateSchema).toHaveBeenCalledWith([
+      ...dateless,
+      expect.objectContaining({ name: 'date', type: 'date' }),
+    ])
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ViewView — the timeline’s "add a date field" remedy reaches the page (KAN-292)', () => {
+  it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
+    const user = userEvent.setup()
+    renderView(gantt)
 
     const button = screen.getByRole('button', { name: 'add a date field' })
     await user.click(button)
