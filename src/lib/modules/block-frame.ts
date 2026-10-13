@@ -200,6 +200,9 @@ export function viewFrameState(
   const mark = compactChartMark(block)
   const markEmpty = mark === null ? null : COMPACT_MARK_EMPTY[mark]
   if (markEmpty === 'grid') return { state: 'rest' }
+  // KAN-262: the calendar draws its own empty state too — chrome, grid and its
+  // `emptyLine` — so the frame's `no rows yet` never replaces it.
+  if (viewKind(block).empty.own) return { state: 'rest' }
   if (rows.length > 0) {
     return processed.length === 0
       ? { state: 'empty', line: POND_BLOCK_FILTERED_EMPTY_LINE }

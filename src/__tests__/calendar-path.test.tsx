@@ -57,6 +57,14 @@ const databaseRows = [
     order: 1,
     updated_at: '',
   },
+  {
+    id: 'db-fresh',
+    parent_id: 'root',
+    type: 'database',
+    title: 'fresh',
+    order: 2,
+    updated_at: '',
+  },
 ]
 
 const schemaWithDate: PropertySchema = [
@@ -81,6 +89,16 @@ const PAGES: Record<string, PondPage> = {
     parentId: 'root',
     type: 'page',
     title: 'notes',
+    blocks: [],
+    order: 0,
+    props: withSchema({}, schemaNoDate),
+  },
+  // What `/calendar → new database` makes: a title field and no records at all.
+  'db-fresh': {
+    id: 'db-fresh',
+    parentId: 'root',
+    type: 'page',
+    title: 'fresh',
     blocks: [],
     order: 0,
     props: withSchema({}, schemaNoDate),
@@ -210,5 +228,25 @@ describe('`/calendar` path (KAN-262)', () => {
 
     expect(await screen.findByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('a database with no records draws the calendar’s own chrome and emptyLine, not the frame’s `no rows yet` (decision a)', async () => {
+    renderCanvas([])
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a block' }))
+    const editor = await findTextBlock()
+    writeInTextBlock(editor, '/')
+    await screen.findByRole('listbox', { name: 'page from template' })
+    writeInTextBlock(editor, '/calendar')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    fireEvent.click(within(menu).getByText('calendar'))
+
+    const picker = await screen.findByRole('listbox', { name: '/calendar' })
+    fireEvent.click(await within(picker).findByRole('option', { name: /fresh/ }))
+
+    expect(await screen.findByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByText('september 2026')).toBeInTheDocument()
+    expect(screen.getByLabelText('Next month')).toBeInTheDocument()
+    expect(screen.queryByText('no rows yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('add a row')).not.toBeInTheDocument()
   })
 })

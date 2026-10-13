@@ -279,7 +279,7 @@ export function CollectionCalendar({
           </button>
         </div>
       </div>
-      {!dateDef && (
+      {(!dateDef || rows.length === 0) && (
         <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
       )}
       <div className="hidden md:flex md:flex-col">

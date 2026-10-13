@@ -30,6 +30,14 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
     expect(screen.getAllByText('mon').length).toBeGreaterThan(0)
   })
 
+  it('a view with no records draws the emptyLine inside the chrome — the DC’s `empty` state (KAN-262 decision a)', () => {
+    render(<CollectionCalendar schema={schemaWithDate} rows={[]} />)
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    expect(screen.getByLabelText('Previous month')).toBeInTheDocument()
+    expect(screen.getByText('today')).toBeInTheDocument()
+    expect(screen.getAllByText('mon').length).toBeGreaterThan(0)
+  })
+
   it('a collection with a date property draws the chrome, not the empty line', () => {
     render(<CollectionCalendar schema={schemaWithDate} rows={rows} />)
     expect(screen.queryByText(CALENDAR_EMPTY_LINE)).not.toBeInTheDocument()
