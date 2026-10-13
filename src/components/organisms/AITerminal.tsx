@@ -27,6 +27,7 @@ import {
   OPEN_THREAD_MESSAGE_EVENT,
   TOGGLE_COMPOSER_EVENT,
   requestHtmlImportPicker,
+  takePendingTerminalText,
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
@@ -1010,6 +1011,12 @@ export function AITerminal() {
       focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+    // A request dispatched before this listener attached (e.g. the cover's
+    // `?ask=` carry, which fires from an effect that runs earlier in tree
+    // order) is still waiting in the pending slot — claim it exactly like an
+    // incoming event (KAN-195).
+    const pending = takePendingTerminalText()
+    if (pending) onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
 
