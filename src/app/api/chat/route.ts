@@ -32,6 +32,7 @@ import { fetchNodeContext, formatNodeContext } from '@/lib/context/assemble'
 import { recordProposedToolCalls } from '@/lib/change-log/propose'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { requestChangesContextNote } from './request-changes'
+import { referencesContextNote } from './references'
 import { parseChatBody } from './body'
 
 /** Plain text of the most recent user message, for @mention parsing. */
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   if (!parsed) {
     return Response.json({ error: 'Request body must include a messages array' }, { status: 400 })
   }
-  const { messages, nodeId, nodeType, resolutions, requestChanges, research } = parsed
+  const { messages, nodeId, nodeType, resolutions, requestChanges, research, references } = parsed
   const pondId = parsed.pondId ?? null
 
   // Assemble node context (current node + @mentions) to inject into the prompt.
@@ -88,6 +89,28 @@ export async function POST(req: Request) {
       pondId,
     })
     if (context) contextBlocks.push(context)
+
+    // Highlight-to-ask references (#98, board 6e): resolve each distinct
+    // referenced page's current title (a rename since the chip was made must
+    // still read right) and quote the passage back labelled with title +
+    // block id — never interpolated into the prompt as instructions (KAN-309).
+    if (references.length > 0) {
+      const titles = new Map<string, string>()
+      await Promise.all(
+        [...new Set(references.map((r) => r.pageId))].map(async (pageId) => {
+          const data = await fetchNodeContext(supabase, user.id, pageId)
+          if (data) titles.set(pageId, data.title)
+        })
+      )
+      const note = referencesContextNote(
+        references.map((r) => ({
+          pageTitle: titles.get(r.pageId) ?? r.pageId,
+          blockId: r.blockId,
+          quotedText: r.quotedText,
+        }))
+      )
+      if (note) contextBlocks.push(note)
+    }
 
     // Request changes (#98, 6c frame 3): the note is the person's decision on
     // the original card, so the record leaves `proposed` here — the browser

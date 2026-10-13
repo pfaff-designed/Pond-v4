@@ -60,6 +60,8 @@ describe('parseChatBody', () => {
       pondId: undefined,
       // Deep research is off unless the person turned it on for this question.
       research: false,
+      // #98: no reference highlighted yet.
+      references: [],
       // ticket-39: the envelope now also carries question-card answers.
       // #17 slice 5: and define_schema decisions (`schemas`).
       resolutions: {
