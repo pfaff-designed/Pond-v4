@@ -73,15 +73,26 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
   }
 }
 
-/** A chainable PostgREST stand-in whose terminal await yields `result`. */
-function fakeSupabase(result: { data?: unknown; error?: unknown }) {
+/**
+ * A chainable PostgREST stand-in whose terminal await yields `result`.
+ *
+ * `single` is a separate payload for `.maybeSingle()` — `getRecord`'s own
+ * terminal call, used by `proposeRevert`'s fresh re-read and `advanceStatus`'s
+ * compare-and-swap. It defaults to `result.data` (the one shape that already
+ * matches, for every test that reads a lone row) rather than aliasing it
+ * outright, because several `proposeRevert` tests hand `.then()` an ARRAY —
+ * `listRevertsOf`'s rows — which `maybeSingle` must never see.
+ */
+function fakeSupabase(result: { data?: unknown; error?: unknown }, single?: unknown) {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const q: any = {}
   for (const method of ['from', 'select', 'eq', 'is', 'in', 'order', 'limit']) {
     q[method] = jest.fn(() => q)
   }
   q.then = (onOk: any, onErr: any) => Promise.resolve(result).then(onOk, onErr)
-  q.maybeSingle = jest.fn(() => Promise.resolve(result))
+  q.maybeSingle = jest.fn(() =>
+    Promise.resolve({ data: single === undefined ? result.data : single, error: result.error ?? null })
+  )
   q.rpc = jest.fn()
   return q as any
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -459,8 +470,8 @@ describe('reverting a revert', () => {
 
 describe('proposeRevert', () => {
   it('appends ONE new record, linked back, and never touches the original', async () => {
-    const supabase = fakeSupabase({ data: [], error: null })
     const original = record()
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(original))
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'proposed' }))
 
     await proposeRevert(supabase, {
@@ -497,7 +508,7 @@ describe('proposeRevert', () => {
     // `after` is frozen by 0011, so the record must describe a page that really
     // will exist. It does because accept writes this array verbatim — it does not
     // re-plan. Unrelated blocks are carried through untouched; only `b` goes back.
-    const supabase = fakeSupabase({ data: [], error: null })
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(record()))
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
@@ -513,13 +524,14 @@ describe('proposeRevert', () => {
   })
 
   it('records the removal of a created block under the id it landed as', async () => {
-    const supabase = fakeSupabase({ data: [], error: null })
+    const original = record({ before: [], after: [text('provisional', 'from pond')] })
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(original))
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert' }))
 
     await proposeRevert(supabase, {
       pondId: 'pond-1',
       userId: USER,
-      record: record({ before: [], after: [text('provisional', 'from pond')] }),
+      record: original,
       current: [text('minted', 'from pond'), text('keep', 'mine')],
     })
 
@@ -528,7 +540,7 @@ describe('proposeRevert', () => {
   })
 
   it('is born outdated when the block has already moved on', async () => {
-    const supabase = fakeSupabase({ data: [], error: null })
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(record()))
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     await proposeRevert(supabase, {
@@ -571,7 +583,7 @@ describe('proposeRevert', () => {
         },
       ],
       error: null,
-    })
+    }, toRow(record()))
 
     await expect(
       proposeRevert(supabase, { pondId: 'pond-1', userId: USER, record: record(), current: [] })
@@ -603,7 +615,7 @@ describe('proposeRevert', () => {
         },
       ],
       error: null,
-    })
+    }, toRow(record()))
     mockedAppend.mockResolvedValue(record({ id: 'rev-2', action: 'revert' }))
 
     await proposeRevert(supabase, {
@@ -621,7 +633,7 @@ describe('proposeRevert', () => {
     // speculative — and a plan built over a block that moved on can mark an
     // unrelated block for deletion. 0011 freezes `after` and #147 renders it, so
     // the person would be shown a diff deleting a block of theirs forever.
-    const supabase = fakeSupabase({ data: [], error: null })
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(record()))
     mockedAppend.mockResolvedValue(record({ id: 'rev-1', action: 'revert', status: 'outdated' }))
 
     await proposeRevert(supabase, {
@@ -660,7 +672,7 @@ describe('proposeRevert', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       status_at: '2026-01-01T00:00:00.000Z',
     }
-    const supabase = fakeSupabase({ data: [stale], error: null })
+    const supabase = fakeSupabase({ data: [stale], error: null }, toRow(record()))
 
     await expect(
       proposeRevert(supabase, {
@@ -684,15 +696,36 @@ describe('proposeRevert', () => {
   })
 
   it('refuses outright when the record offers no revert', async () => {
-    const supabase = fakeSupabase({ data: [], error: null })
+    const stale = record({ action: 'add_row' })
+    const supabase = fakeSupabase({ data: [], error: null }, toRow(stale))
     await expect(
       proposeRevert(supabase, {
         pondId: 'pond-1',
         userId: USER,
-        record: record({ action: 'add_row' }),
+        record: stale,
         current: [],
       })
     ).rejects.toThrow(/cannot be reverted/)
+  })
+
+  it('judges revertability on a FRESH read, not the caller’s stale copy', async () => {
+    // The exact race in KAN-303: tab A already raised AND accepted a revert of
+    // this record, so it now reads `reverted` in the store — but tab B's own
+    // copy, held since before that happened, still says `accepted`. Trusting
+    // the caller's copy would append a second, permanent revert with no
+    // refusal shown anywhere.
+    const settled = record({ status: 'reverted' })
+    const supabase = fakeSupabase({ data: toRow(settled), error: null })
+
+    await expect(
+      proposeRevert(supabase, {
+        pondId: 'pond-1',
+        userId: USER,
+        record: record({ status: 'accepted' }),
+        current: [text('a', 'one'), text('b', 'TWO')],
+      })
+    ).rejects.toThrow(/cannot be reverted/)
+    expect(mockedAppend).not.toHaveBeenCalled()
   })
 })
 

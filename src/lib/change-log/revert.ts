@@ -17,6 +17,7 @@ import type { Block } from '@/lib/documents/types'
 import {
   advanceStatus,
   appendRecord,
+  getRecord,
   listRevertsOf,
   mapChangeLogRow,
   markOutdated,
@@ -60,13 +61,20 @@ export interface ProposeRevertInput {
  * would advance the original twice — the state machine calls the second illegal,
  * so the person would meet a failure at accept time rather than at the click that
  * caused it.
+ *
+ * The revertability check is judged on a FRESH read of the record, not the
+ * caller's copy — a stale `accepted` copy held in one tab, after another tab
+ * already raised AND accepted a revert of it, would otherwise sail past
+ * `revertRefusal` and append a second, permanent revert of an already-`reverted`
+ * change with no refusal shown anywhere.
  */
 export async function proposeRevert(
   supabase: SupabaseClient<Database>,
   input: ProposeRevertInput
 ): Promise<ChangeLogRecord> {
   const { userId, record, current } = input
-  const refusal = revertRefusal(record)
+  const fresh = await getRecord(supabase, record.id)
+  const refusal = fresh === null ? 'not-accepted' : revertRefusal(fresh)
   if (refusal !== null) {
     throw new RevertRefusedError(
       'not-revertable',
