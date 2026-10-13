@@ -73,18 +73,24 @@ jest.mock('@/lib/pages/commit', () => ({
   propagateBlockWrite: jest.fn().mockResolvedValue(undefined),
 }))
 
+let mockResolutions: Record<string, unknown> = { changes: {}, creates: {}, skipped: {} }
 jest.mock('@/lib/conversation/client', () => ({
   getOrCreateConversation: jest.fn(async () => ({
     id: 'conv-1',
     messages: [],
-    resolutions: { changes: {}, creates: {}, skipped: {} },
+    resolutions: mockResolutions,
   })),
   saveTranscript: jest.fn().mockResolvedValue(undefined),
   dissolveConversation: jest.fn().mockResolvedValue(undefined),
 }))
 
+const mockListByCalls = jest.fn().mockResolvedValue([])
+const mockResolveChainStatus = jest
+  .fn()
+  .mockImplementation((_sb: unknown, opts: { status: string }) => Promise.resolve(opts.status))
 jest.mock('@/lib/change-log/store', () => ({
-  listRecordsByToolCalls: jest.fn().mockResolvedValue([]),
+  listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
+  resolveChainStatus: (...args: unknown[]) => mockResolveChainStatus(...args),
   getRecordByToolCall: jest.fn().mockResolvedValue(null),
   advanceStatus: jest.fn(),
   acceptRecord: jest.fn().mockResolvedValue(undefined),
@@ -168,9 +174,14 @@ async function ready() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockGetPage.mockResolvedValue(pageDoc('Hello world'))
   mockListPages.mockResolvedValue([])
   mockCommitBlocks.mockResolvedValue(undefined)
+  mockListByCalls.mockReset().mockResolvedValue([])
+  mockResolveChainStatus
+    .mockReset()
+    .mockImplementation((_sb: unknown, opts: { status: string }) => Promise.resolve(opts.status))
   mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
 })
 
@@ -205,5 +216,41 @@ describe('KAN-302 — an accepted card freezes its diff text', () => {
       expect(screen.getByText('Hello moon')).toBeInTheDocument()
       expect(screen.queryByText('Hello world xyz')).not.toBeInTheDocument()
     })
+  })
+})
+
+// The in-session freeze above (component state) does not survive a RELOAD: a
+// fresh mount re-seeds the card straight to `accepted` with an empty cache, so
+// without this fix it would recompute against the LIVE page and freeze
+// "Hello moon xyz" (the further edit) as if it were the original "before".
+describe('KAN-302 — a settled card reads its "before" off the change-log record', () => {
+  it('a fresh mount of an already-accepted card shows the record\'s before, not the further-edited live page', async () => {
+    mockResolutions = { changes: { 'pc1:0': 'accepted' }, creates: {}, skipped: {} }
+    // The live page has moved on since the edit was accepted (someone typed
+    // " xyz" after it landed) — this must NOT be what the "−" line shows.
+    mockGetPage.mockResolvedValue(pageDoc('Hello moon xyz'))
+    mockListByCalls.mockResolvedValue([
+      {
+        id: 'rec-1',
+        toolCallId: 'pc1',
+        status: 'accepted',
+        action: 'edit',
+        before: [{ id: 'b1', type: 'text', content: 'Hello world' }],
+        after: [{ id: 'b1', type: 'text', content: 'Hello moon' }],
+      },
+    ])
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    await waitFor(() =>
+      expect(screen.getByRole('group', { name: /proposed edit/ })).toHaveAttribute(
+        'data-status',
+        'accepted'
+      )
+    )
+    await waitFor(() => expect(screen.getByText('Hello world')).toBeInTheDocument())
+    expect(screen.getByText('Hello moon')).toBeInTheDocument()
+    expect(screen.queryByText('Hello moon xyz')).not.toBeInTheDocument()
   })
 })

@@ -172,6 +172,7 @@ import {
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { listRecordsByToolCalls, resolveChainStatus } from '@/lib/change-log/store'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
@@ -493,8 +494,18 @@ export function AITerminal() {
   const pendingRevisionOf = useRef<string | null>(null)
   // KAN-302 — a settled card's "−"/"+" text must not keep tracking the live
   // page: once a batch's status leaves `pending`, its preview is frozen here
-  // so a later edit doesn't rewrite an already-accepted card's diff.
+  // so a later edit doesn't rewrite an already-accepted card's diff. This is
+  // only the BRIDGE until the record below arrives (or for a settled batch
+  // with no backing record at all, e.g. rejected-with-nothing-applied) — it
+  // does not survive a reload, since it is component state.
   const [frozenChanges, setFrozenChanges] = useState<Record<string, ChangePreview[]>>({})
+  // KAN-302 — the change-log record behind each settled batch, keyed by
+  // toolCallId (filled by the reconcile effect below). `record.before` is the
+  // target page's blocks exactly as they stood at PROPOSE time (propose.ts),
+  // so it is the durable source for a settled card's "before" text — it
+  // survives a reload and never drifts with a later edit, unlike the live
+  // page the in-session freeze above would otherwise have cached.
+  const [toolCallRecords, setToolCallRecords] = useState<Record<string, ChangeLogRecord>>({})
   const {
     changes: changeDecisions,
     creates: createDecisions,
@@ -1751,6 +1762,19 @@ export function AITerminal() {
         toolCallIds: [...liveDiffCards.keys()],
       })
       if (cancelled) return
+      // KAN-302: keep the records themselves, not just their derived status —
+      // a settled card's "−"/"+" text reads `record.before` (the diffCards
+      // loop below), which survives a reload unlike the in-session freeze.
+      setToolCallRecords((prev) => {
+        let next = prev
+        for (const record of records) {
+          const id = record.toolCallId
+          if (!id || prev[id] === record) continue
+          if (next === prev) next = { ...prev }
+          next[id] = record
+        }
+        return next
+      })
       for (const record of records) {
         const id = record.toolCallId
         if (!id) continue
@@ -2536,16 +2560,44 @@ export function AITerminal() {
         ? allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName
         : undefined
       const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
+      // KAN-302: `record.before` is the target page's blocks exactly as they
+      // stood at propose time (propose.ts) — the durable "before" source for a
+      // settled card. Unlike the in-session freeze below, it is read fresh
+      // from the record every render (not cached): it never changes once the
+      // record exists, so there is nothing to protect it from, and reading it
+      // this way means a RELOAD (empty `frozenChanges`, a card reseeded
+      // straight to `accepted`) still shows the real "before" instead of
+      // recomputing against the live, further-edited page.
+      const record = toolCallRecords[part.toolCallId]
+      const recordBlocks = Array.isArray(record?.before) ? (record.before as Block[]) : null
+      const targetBlocksReady = crossPage
+        ? blocksForTarget.get(crossPage.nodeId) !== undefined
+        : currentPage !== undefined
       const cachedChanges = frozenChanges[part.toolCallId]
-      const changes = cachedChanges ?? rawChanges.map((c) => previewForChange(c, targetBlocks))
-      // KAN-302: the render where a batch's status first leaves `pending`
-      // freezes its diff text here — an "adjust state while rendering"
-      // update (react.dev), not an effect, so a later edit to the open page
-      // never rewrites an already-settled card's "−"/"+" lines.
-      if (!cachedChanges && status !== 'pending') {
-        setFrozenChanges((prev) =>
-          prev[part.toolCallId] ? prev : { ...prev, [part.toolCallId]: changes }
-        )
+      let changes: ChangePreview[]
+      if (status === 'pending') {
+        // A still-open card tracks the live page: the person may keep typing
+        // before deciding.
+        changes = rawChanges.map((c) => previewForChange(c, targetBlocks))
+      } else if (recordBlocks) {
+        changes = rawChanges.map((c) => previewForChange(c, recordBlocks))
+      } else if (cachedChanges) {
+        // The bridge: the record hasn't arrived yet (or this settled batch
+        // never got one, e.g. nothing applied), but an earlier render already
+        // froze what the live page showed right after it settled.
+        changes = cachedChanges
+      } else {
+        changes = rawChanges.map((c) => previewForChange(c, targetBlocks))
+        // KAN-302: never freeze while `targetBlocks` is still loading — a
+        // fresh mount whose page query hasn't resolved yet would otherwise
+        // cache an empty/wrong "before" forever. An "adjust state while
+        // rendering" update (react.dev), not an effect, so this lands the
+        // same render the status first leaves `pending`.
+        if (targetBlocksReady) {
+          setFrozenChanges((prev) =>
+            prev[part.toolCallId] ? prev : { ...prev, [part.toolCallId]: changes }
+          )
+        }
       }
       diffCards.push({
         id: part.toolCallId,
