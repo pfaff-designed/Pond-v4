@@ -41,7 +41,7 @@ import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
 import { changeLogKey } from '@/lib/change-log/keys'
-import { IllegalTransitionError } from '@/lib/change-log/status'
+import { personFacingMessage } from '@/lib/change-log/errors'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -49,23 +49,6 @@ export interface PageChangesPanelProps {
   /** The open page. Undefined disables the query entirely. */
   pageId: string | undefined
   className?: string
-}
-
-/**
- * `57014` is Postgres's own SQLSTATE for `query_canceled` — raised for both a
- * statement timeout and a lock-wait timeout, never by `advance_change_log_record`
- * itself (that RPC raises `record-changed` on its DETAIL, not a bare SQLSTATE).
- * It reaches here as a `PostgrestError`-shaped object, not an `Error`, which is
- * why `err instanceof Error` missed it — same sibling check as
- * `templates/client.ts`'s `isUniqueViolation`.
- */
-function isLockTimeout(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === '57014'
-  )
 }
 
 /** The query key for one page's log. Exported so a write path can invalidate it. */
@@ -140,20 +123,11 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
       } catch (err) {
         // Surfaced, not swallowed: unlike the log writes that ride along with an
         // accepted proposal, every write here IS what the person just asked for.
+        // The raw error (which may carry developer text, e.g. `change log: …`)
+        // goes to the console only — `personFacingMessage` is the one mapping
+        // to what the person sees.
         console.error('[change-log] page changes panel', err)
-        // `IllegalTransitionError` carries developer text (`change log: …`) —
-        // the two-tab race already has a person-facing line, same as
-        // `RecordChangedError`'s own message. A lock-wait timeout is bounded
-        // (~8s), not a hang, and gets a line that says so.
-        setError(
-          err instanceof IllegalTransitionError
-            ? 'this change was already answered'
-            : isLockTimeout(err)
-              ? 'this page is busy — try again in a moment'
-              : err instanceof Error
-                ? err.message
-                : 'that did not work'
-        )
+        setError(personFacingMessage(err))
       } finally {
         setBusyId(null)
         await refresh()

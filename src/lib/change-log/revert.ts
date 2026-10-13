@@ -23,6 +23,7 @@ import {
   RecordChangedError,
 } from './store'
 import { IllegalTransitionError, isOpen } from './status'
+import { RevertRefusedError } from './errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
@@ -67,7 +68,10 @@ export async function proposeRevert(
   const { userId, record, current } = input
   const refusal = revertRefusal(record)
   if (refusal !== null) {
-    throw new Error(`change log: record ${record.id} cannot be reverted — ${refusal}`)
+    throw new RevertRefusedError(
+      'not-revertable',
+      `change log: record ${record.id} cannot be reverted — ${refusal}`
+    )
   }
 
   const existing = await listRevertsOf(supabase, {
@@ -76,7 +80,10 @@ export async function proposeRevert(
     recordId: record.id,
   })
   if (existing.some((r) => r.status === 'proposed')) {
-    throw new Error(`change log: record ${record.id} already has a revert waiting on you`)
+    throw new RevertRefusedError(
+      'waiting',
+      `change log: record ${record.id} already has a revert waiting on you`
+    )
   }
   // An `outdated` revert raised against this very page state would be raised
   // again, identically, for as long as the person keeps clicking — and the log
@@ -85,7 +92,10 @@ export async function proposeRevert(
   if (
     existing.some((r) => r.status === 'outdated' && jsonEqual(readBlockSnapshot(r.before), current))
   ) {
-    throw new Error(`change log: this change could not be set back against the page as it stands`)
+    throw new RevertRefusedError(
+      'outdated-same-page',
+      `change log: this change could not be set back against the page as it stands`
+    )
   }
 
   const plan = planRevert(record, current)
