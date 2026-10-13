@@ -166,21 +166,28 @@ describe('record peek — editing and navigation', () => {
     expect(peek()).not.toBeNull()
   })
 
-  it('a field edit goes through onEdit with the row, field and value', () => {
+  it('a field edit goes through onEdit with the row, field and value, once on blur', () => {
     const onEdit = jest.fn()
     renderBoard({ editable: true, onEdit, onRenameRow: jest.fn() })
     fireEvent.click(card('Wedge stoneware'))
-    fireEvent.change(within(peek()!).getByLabelText('notes value'), { target: { value: 'wet' } })
+    const notes = within(peek()!).getByLabelText('notes value')
+    fireEvent.change(notes, { target: { value: 'wet' } })
+    expect(onEdit).not.toHaveBeenCalled()
+    fireEvent.blur(notes)
     expect(onEdit).toHaveBeenCalledWith('row-2', 'p-notes', 'wet')
   })
 
-  it('a title edit in the peek renames the row', () => {
+  it('typing a title in the peek key by key commits once on blur, not per keystroke', async () => {
+    const user = userEvent.setup()
     const onRenameRow = jest.fn()
     renderBoard({ editable: true, onRenameRow })
     fireEvent.click(card('Wedge stoneware'))
-    fireEvent.change(within(peek()!).getByLabelText('Record title'), {
-      target: { value: 'Wedge clay' },
-    })
+    const title = within(peek()!).getByLabelText('Record title')
+    await user.clear(title)
+    await user.type(title, 'Wedge clay')
+    expect(onRenameRow).not.toHaveBeenCalled()
+    fireEvent.blur(title)
+    expect(onRenameRow).toHaveBeenCalledTimes(1)
     expect(onRenameRow).toHaveBeenCalledWith('row-2', 'Wedge clay')
   })
 
