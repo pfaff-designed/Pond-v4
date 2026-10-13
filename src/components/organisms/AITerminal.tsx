@@ -400,7 +400,6 @@ export function AITerminal() {
   // At the root the context is the pond itself — its name, never an assumed one
   // (AUDIT W9: copy says "this pond", not "life").
   const pondName = usePondName()
-  const contextLabel = nodeName ?? pondName
 
   const queryClient = useQueryClient()
   // Lazily created on first use, not at render — so an envless mount (Storybook,
@@ -599,6 +598,12 @@ export function AITerminal() {
       return user ? listPages(supabase, user.id, pondId) : []
     },
   })
+  // KAN-302: the open page's label everywhere `contextLabel` stands in for it
+  // (a new answer's "read" chip, a same-page proposal card with no stamped
+  // target) — `nodeName` is the breadcrumb's URL param, never updated by a
+  // rename, so it is read only while the live title hasn't loaded yet.
+  const contextLabel =
+    currentPage?.title ?? allPages.find((p) => p.id === nodeId)?.title ?? nodeName ?? pondName
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
   // diff against THAT page's blocks, not the open page's. Fetch each distinct
   // stamped target id that isn't the open page, on the shared ['page', id] cache
@@ -1152,7 +1157,10 @@ export function AITerminal() {
         pages: allPages,
         pagesLoaded,
         openNodeId: nodeId,
-        openNodeName: nodeName,
+        // KAN-302: the live label, not the stale `nodeName` URL param — same
+        // fix as `contextLabel` above, since this write-once stamp's name IS
+        // contextLabel's stand-in for the open page at stamp time.
+        openNodeName: contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
       // unstamped (no safe target; accept skips). The reducer's stampTarget is
@@ -1160,7 +1168,7 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null)
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-  }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded, revisions])
+  }, [messages, nodeId, contextLabel, changeTargets, allPages, pagesLoaded, revisions])
 
   // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
   // `pendingRevisionOf` was set on send and cleared only when a propose_changes
