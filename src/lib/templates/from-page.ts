@@ -104,11 +104,24 @@ function emptied(block: Block, mintId: () => string): Block {
     case 'image':
       return { ...block, id, url: '' }
 
-    case 'todo':
+    case 'todo': {
       // The marker survives: `check`, `dot` and plain are three different shapes,
       // not three decorations. One empty row, matching `emptyBlockForType`, so the
-      // placeholder row is drawn rather than the block's empty state.
-      return { ...block, id, items: [{ id: mintId(), label: '', checked: false }] }
+      // placeholder row is drawn rather than the block's empty state. The kept
+      // row's own `placeholder` carries forward too — it is per-item, so the
+      // rebuild below must restate it rather than inherit it from a spread.
+      // Conditionally spread rather than writing the key: an explicit
+      // `placeholder: undefined` is still an own key, and `moduleDataSchema`'s
+      // round-trip (and anything that does `JSON.stringify` on this block) should
+      // see no key at all when there is no placeholder, matching every other
+      // optional field on this block.
+      const p = block.items[0]?.placeholder
+      return {
+        ...block,
+        id,
+        items: [{ id: mintId(), label: '', checked: false, ...(p && { placeholder: p }) }],
+      }
+    }
 
     case 'table':
       // Columns are the shape; rows are the content. Two empty rows is the same
@@ -123,9 +136,16 @@ function emptied(block: Block, mintId: () => string): Block {
       }
 
     case 'entries':
-      // `serif` is what makes a journal a journal, so it stays. No entries, so the
-      // block draws its own empty line.
-      return { ...block, id, entries: [] }
+      // `serif` is what makes a journal a journal, so it stays. A block carrying a
+      // `placeholder` keeps one blank entry — the same shape `instantiateTemplate`
+      // gives a fresh premade entry (`{ date: 'today', text: '' }`) — so `EntriesView`
+      // draws that placeholder instead of its frame's "no entries yet" empty state.
+      // No placeholder means no promised copy to show, so `entries: []` stands.
+      return {
+        ...block,
+        id,
+        entries: block.placeholder ? [{ id: mintId(), date: 'today', text: '' }] : [],
+      }
 
     case 'view': {
       // `collectionId` is a tie to one database, not a shape — see the header.

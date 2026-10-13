@@ -1,8 +1,11 @@
 import { POND_ATOM_EMPTY } from '@/components/atoms/PondAtom'
 
-/** What a blank text block's line reads: the empty copy of the atom that line is. */
-export const textPlaceholderFor = (lineType: string): string =>
-  lineType === 'heading' ? POND_ATOM_EMPTY.heading : POND_ATOM_EMPTY.prose
+/**
+ * What a blank text block's line reads: the block's own `placeholder`, or — when
+ * it carries none — the empty copy of the atom that line is.
+ */
+export const textPlaceholderFor = (lineType: string, placeholder?: string | null): string =>
+  placeholder ?? (lineType === 'heading' ? POND_ATOM_EMPTY.heading : POND_ATOM_EMPTY.prose)
 
 /**
  * Structure every reading of a text block shares, whatever type it is set in.

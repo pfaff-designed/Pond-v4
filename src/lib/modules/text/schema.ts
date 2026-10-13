@@ -15,6 +15,12 @@ export const textSchema = z
     id: z.string(),
     type: z.literal('text'),
     content: z.string(), // markdown
+    placeholder: z
+      .string()
+      .optional()
+      .describe(
+        'Optional invitation shown at ink .68 while the block has no content — e.g. "write your notes here". Omit to use the generic empty-state copy.'
+      ), // drawn at ink .68 while empty; never written to `content`
   })
   .extend(labelledBlockFields)
 

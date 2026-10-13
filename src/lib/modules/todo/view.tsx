@@ -120,6 +120,7 @@ export function TodoView({ data, editable, onChange }: ModuleViewProps<TodoBlock
         const row = {
           state: rowState(item),
           title: item.label,
+          placeholder: item.placeholder,
           meta: item.meta ?? '',
           className: 'max-w-full',
           onTitleChange: editable ? (label: string) => patchItem(j, { label }) : undefined,

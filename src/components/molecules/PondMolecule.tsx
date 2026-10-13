@@ -89,6 +89,13 @@ export interface PondMoleculeProps {
   size?: 'desktop' | 'mobile'
   /** The main line; each kind falls back to its mockup fixture. */
   title?: string
+  /**
+   * list-row / check-row — a template's own invitation for this row (KAN-103),
+   * drawn empty-state only, in place of the kind's generic `EMPTY_TITLE[kind]`
+   * copy ("add an item" / "add a step"). Threaded onto the row's text field as
+   * `placeholder=` too, so it reads the same under edit and at rest.
+   */
+  placeholder?: string
   /** The quiet mono meta (a date, a context line). `''` suppresses it. */
   meta?: string
   /** table-row numeral / field-row value / task-card steps caption. */
@@ -136,8 +143,8 @@ export interface PondMoleculeProps {
    * presentational: no state, no hook. The host owns the value and the row's
    * `state` (hover / editing); this only swaps the title span for an `<input>`
    * wearing the SAME classes, so a block never restates the row's geometry to
-   * edit it. `title` is the field's value; the kind's empty copy is its
-   * placeholder.
+   * edit it. `title` is the field's value; the `placeholder` prop (or, absent
+   * that, the kind's generic empty copy) is its placeholder.
    */
   onTitleChange?: (next: string) => void
   /**
@@ -207,6 +214,7 @@ export function PondMolecule({
   state = 'rest',
   size = 'desktop',
   title,
+  placeholder,
   meta,
   value,
   label,
@@ -244,9 +252,9 @@ export function PondMolecule({
   const disabled = state === 'disabled'
 
   const [fixtureTitle, fixtureMeta] = DEFAULTS[kind]
-  const displayTitle = empty
-    ? (EMPTY_TITLE[kind] ?? title ?? fixtureTitle)
-    : (title ?? fixtureTitle)
+  /** A template's own invitation (KAN-103) outranks the kind's generic empty copy. */
+  const emptyCopy = placeholder ?? EMPTY_TITLE[kind]
+  const displayTitle = empty ? (emptyCopy ?? title ?? fixtureTitle) : (title ?? fixtureTitle)
   const displayMeta = meta ?? fixtureMeta
 
   /** The atom state the composed value atoms inherit (mockup `atomState`). */
@@ -300,7 +308,8 @@ export function PondMolecule({
    * The row kinds' title (issue 219): a span, or — when a host wires `onTitleChange` —
    * a text field wearing the identical classes (done strike, empty .68, the list's
    * truncate), so the row looks the same at rest and under edit. The placeholder
-   * is the kind's own empty copy (`add a step` / `add an item`); the colour and
+   * is a host-supplied invitation (KAN-103), falling back to the kind's own
+   * generic empty copy (`add a step` / `add an item`); the colour and
    * `placeholder:` classes are colour tokens only, so `cn` cannot drop a size here.
    */
   const rowTitle = (rowClass: string) => {
@@ -318,7 +327,7 @@ export function PondMolecule({
         aria-label={kind === 'check-row' ? 'Step' : 'Item'}
         className={cn(rowClass, 'bg-transparent outline-none placeholder:text-mn-text-secondary')}
         value={title ?? ''}
-        placeholder={EMPTY_TITLE[kind]}
+        placeholder={emptyCopy}
         onChange={(e) => onTitleChange(e.target.value)}
       />
     )
@@ -388,7 +397,7 @@ export function PondMolecule({
   if (kind === 'check-row') {
     const done = on || selected
     const box = <PondAtom kind="checkbox" on={done} size={size} />
-    const boxLabel = title?.trim() ? title : EMPTY_TITLE[kind]
+    const boxLabel = title?.trim() ? title : emptyCopy
     return (
       <div
         data-kind={kind}

@@ -131,6 +131,17 @@ describe('todo schema — two optional additions, no migration', () => {
     ).toThrow()
   })
 
+  it('an item’s own `placeholder` is optional, a string, and never written to `label`', () => {
+    const withPlaceholder: TodoBlock = {
+      ...legacy,
+      items: [{ ...legacy.items[0], label: '', placeholder: 'first item' }, legacy.items[1]],
+    }
+    expect(blockSchema.parse(withPlaceholder)).toEqual(withPlaceholder)
+    expect(() =>
+      todoSchema.parse({ ...legacy, items: [{ ...legacy.items[0], placeholder: 3 }] })
+    ).toThrow()
+  })
+
   it('is not a new block type: `list` is the `todo` type under a marker', () => {
     expect(blockSchema.safeParse({ id: 'x', type: 'list', items: [] }).success).toBe(false)
   })
@@ -185,6 +196,15 @@ describe('todo in moduleDataSchema — Pond can emit a plain list (ADR 0006)', (
     expect(parsed.type === 'todo' && parsed.marker).toBe('dot')
     expect(parsed.type === 'todo' && parsed.items[0].meta).toBe('today')
     expect(parsed.type === 'todo' && 'id' in parsed.items[0]).toBe(false)
+  })
+
+  it('an item’s `placeholder` rides the emit union untouched, id-less, like `meta`', () => {
+    const withoutId = {
+      type: 'todo' as const,
+      marker: 'dot' as const,
+      items: [{ label: '', checked: false, placeholder: 'first item' }],
+    }
+    expect(moduleDataSchema.parse(withoutId)).toEqual(withoutId)
   })
 
   it('rejects a marker the board does not draw', () => {
@@ -325,6 +345,20 @@ describe('TodoView — read-only', () => {
     has(titleOf(row), 'text-mn-text-secondary')
   })
 
+  it('an item’s own placeholder outranks the board’s generic `add an item` copy, at ink .68', () => {
+    const withPlaceholder: TodoBlock = {
+      id: 'e',
+      type: 'todo',
+      marker: 'dot',
+      items: [{ id: '1', label: '', checked: false, placeholder: 'first item' }],
+    }
+    const { container } = render(<TodoView data={withPlaceholder} editable={false} />)
+    const [row] = rowsOf(container)
+    expect(row.dataset.state).toBe('empty')
+    expect(titleOf(row).textContent).toBe('first item')
+    has(titleOf(row), 'text-mn-text-secondary')
+  })
+
   it('`dot`: `list-row` with the ink-.5 dot, weight 400, and `add an item` when blank', () => {
     const blank = {
       ...groceries,
@@ -455,6 +489,18 @@ describe('TodoView — editable (the molecule’s rows, made live by the host)',
     expect(a.querySelector<HTMLInputElement>('input[type="text"]')!.placeholder).toBe('add a step')
     const { container: b } = render(<Stateful data={blankList} />)
     expect(b.querySelector<HTMLInputElement>('input[type="text"]')!.placeholder).toBe('add an item')
+  })
+
+  it('an item’s own placeholder is the field’s placeholder attribute, not the generic copy', () => {
+    const withPlaceholder: TodoBlock = {
+      id: 'e',
+      type: 'todo',
+      items: [{ id: '1', label: '', checked: false, placeholder: 'first item' }],
+    }
+    const { container } = render(<Stateful data={withPlaceholder} />)
+    expect(container.querySelector<HTMLInputElement>('input[type="text"]')!.placeholder).toBe(
+      'first item'
+    )
   })
 
   it('a list (`dot` / `none`) has no checkbox control, but its labels are still editable', () => {

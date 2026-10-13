@@ -6,6 +6,7 @@ import {
   findTextBlock as findField,
   textEditorOf as editorOf,
 } from '@/__tests__/helpers/text-block'
+import { moduleDataSchema } from '@/lib/modules/ai-composition'
 import type { TextBlock } from './schema'
 import { TextView } from './view'
 import TextEditor from './editor'
@@ -266,6 +267,26 @@ describe('TextView — the text block edits in place as rendered prose', () => {
     expect(line).toHaveAttribute('data-placeholder', 'write something')
   })
 
+  it('an empty block with its own placeholder draws that, not the generic line', async () => {
+    const data: TextBlock = {
+      id: 't',
+      type: 'text',
+      content: '',
+      placeholder: 'anything, in any order',
+    }
+    const { container } = render(<TextView data={data} editable onChange={() => {}} />)
+    const standIn = container.querySelector('p')!
+    expect(standIn).toHaveAttribute('data-placeholder', 'anything, in any order')
+    const field = await findField()
+    await waitFor(() => expect(field).toHaveFocus())
+    const line = field.querySelector('p')!
+    expect(line).toHaveClass('is-editor-empty')
+    expect(line).toHaveAttribute('data-placeholder', 'anything, in any order')
+    const { id, ...withoutId } = data
+    void id
+    expect(moduleDataSchema.parse(withoutId)).toEqual(withoutId)
+  })
+
   it('an empty heading reads `untitled`, the same before the editor loads and after', async () => {
     const { container } = render(
       <TextView data={{ id: 't', type: 'text', content: HEADING_PREFIX }} editable />
@@ -295,7 +316,7 @@ describe('TextView — the text block edits in place as rendered prose', () => {
   it('the stand-in records where it was pressed', () => {
     const handleMouseDown = jest.fn()
     const { container } = render(
-      <StaticProse content={sample.content} placeholder onMouseDown={handleMouseDown} />
+      <StaticProse content={sample.content} showPlaceholder onMouseDown={handleMouseDown} />
     )
     fireEvent.mouseDown(container.querySelector('p')!, { clientX: 40, clientY: 60 })
     expect(handleMouseDown).toHaveBeenCalledWith(

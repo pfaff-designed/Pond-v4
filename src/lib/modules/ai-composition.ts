@@ -45,7 +45,8 @@ import { isMarkdownPipeTable, PIPE_TABLE_IN_TEXT_MESSAGE } from './authoring-lin
  * todo / view / entries) rides through every omit-chain untouched — it is the
  * block's own eyebrow, not an id — so Pond can emit a labelled block (ADR 0006: a
  * block Pond cannot label is a template Pond cannot write). `block-label.test.ts`
- * pins it on both unions.
+ * pins it on both unions. The text block's optional `placeholder` rides through the
+ * same way — Pond can emit a block's placeholder copy, never its content.
  */
 /**
  * Text data with the ticket-21 emit-time lint attached: reject a body that is

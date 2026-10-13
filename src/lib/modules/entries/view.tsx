@@ -3,6 +3,9 @@
 import type { ModuleViewProps } from '../types'
 import { ENTRIES_EMPTY_LINE, type Entry, type EntriesBlock } from './schema'
 
+/** The block's own placeholder wins over the board's generic empty line. */
+const blankLine = (data: EntriesBlock) => data.placeholder ?? ENTRIES_EMPTY_LINE
+
 /**
  * Entries view (#250) — dated prose, measured off `PondTemplate.dc.html`'s
  * `renderVals()` (`k === 'entries'`):
@@ -104,7 +107,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
               className={`${medium(data.serif)} w-full resize-none bg-transparent text-mn-text outline-none placeholder:text-mn-text-secondary`}
               value={entry.text}
               rows={Math.max(1, entry.text.split('\n').length)}
-              placeholder={ENTRIES_EMPTY_LINE}
+              placeholder={blankLine(data)}
               onChange={(e) => patchEntry(i, { text: e.target.value })}
             />
           </div>
@@ -135,7 +138,7 @@ export function EntriesView({ data, editable, onChange }: ModuleViewProps<Entrie
                 data-empty=""
                 className={`${medium(data.serif)} text-mn-text-secondary`}
               >
-                {ENTRIES_EMPTY_LINE}
+                {blankLine(data)}
               </p>
             )}
           </div>
