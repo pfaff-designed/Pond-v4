@@ -40,11 +40,11 @@ const clockTime = (record: ChangeLogRecord): string =>
     hourCycle: 'h23',
   })
 
-/** `flower 02`, `161`, or `automatic` for null — the library's label, hyphens as spaces. */
+/** `flower-02`, `161`, or `automatic` for null — the library's label, unchanged. */
 const glyphName = (glyph: string | null): string => {
   if (glyph === null) return 'automatic'
   const entry = GLYPH_LIBRARY.find((g) => g.glyph === glyph)
-  return (entry?.label ?? glyph).replace(/-/g, ' ')
+  return entry?.label ?? glyph
 }
 
 /** `sage`, `mist`, `navy`, or `ink` for null — the colour picker's own labels. */

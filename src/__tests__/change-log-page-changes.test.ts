@@ -124,7 +124,7 @@ describe('describeChange', () => {
   it('names a glyph pick as a mark change, in Pond\'s words', () => {
     expect(
       describeChange(record({ action: 'edit_glyph', before: null, after: 'flower-02' }), null)
-    ).toBe('mark → flower 02')
+    ).toBe('mark → flower-02')
     expect(
       describeChange(record({ action: 'edit_glyph', before: null, after: 'asset-161' }), null)
     ).toBe('mark → 161')
