@@ -265,6 +265,16 @@ export function addDateField(
   return [...schema, { id: mintId(), name, type: 'date' }]
 }
 
+/**
+ * Remove one property by id (KAN-292: `addDateField`'s undo). Undoing must drop
+ * only the field it added, read fresh off the CURRENT schema at undo time — not
+ * restore the whole schema captured at click, which would also wipe any other
+ * schema edit made while the undo toast was open.
+ */
+export function removeField(schema: PropertySchema, id: string): PropertySchema {
+  return schema.filter((d) => d.id !== id)
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>

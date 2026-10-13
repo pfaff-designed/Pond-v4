@@ -18,7 +18,7 @@
  * module, `collection-calendar.tsx` (#262).
  */
 
-import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -67,6 +67,7 @@ import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
 import {
   addDateField,
   coerceValue,
+  removeField,
   ROW_TYPE,
   type PropertySchema,
   type PropertyValue,
@@ -106,15 +107,24 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // provider lookup is the non-throwing variant: a diff/proposal preview and
   // Storybook mount `ViewView` with no `DeletionUndoProvider` ancestor at all.
   const deletionUndo = useOptionalDeletionUndo()
+  // Undo must drop only the field it added, off whatever the schema has become by
+  // the time the toast is actioned — restoring the schema captured at click would
+  // also wipe any other schema edit made while the toast was open. `schemaRef`
+  // tracks the latest schema so undo (an async closure) reads it fresh.
+  const schemaRef = useRef(schema)
+  useEffect(() => {
+    schemaRef.current = schema
+  }, [schema])
   const handleAddDateField =
     editable && schema && deletionUndo
       ? () => {
-          const previous = schema
-          updateSchema(addDateField(previous))
+          const next = addDateField(schema)
+          const addedId = next[next.length - 1].id
+          updateSchema(next)
           deletionUndo.stageUndo({
             message: 'Added a date field',
             scope: 'block',
-            undo: () => updateSchema(previous),
+            undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
           })
         }
       : undefined
