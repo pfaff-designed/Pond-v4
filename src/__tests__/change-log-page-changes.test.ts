@@ -147,4 +147,10 @@ describe('describeChange', () => {
       describeChange(record({ action: 'edit_area_role', before: 'area-a', after: null }), null)
     ).toBe('colour → ink')
   })
+
+  it('names an unknown area role generically rather than misnaming it ink', () => {
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: null, after: 'area-unknown' }), null)
+    ).toBe('changed the colour')
+  })
 })

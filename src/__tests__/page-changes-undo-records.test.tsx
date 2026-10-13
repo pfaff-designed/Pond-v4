@@ -49,10 +49,7 @@ describe('PageChangesSection — an undo/redo step', () => {
       createdAt: '2026-09-30T09:32:00.000Z',
       statusAt: '2026-09-30T09:32:00.000Z',
     })
-    // `redo_of` names the record redo puts back DIRECTLY — migration 0021 inserts
-    // it as the id passed to `redo_change_log_record`, the same original id
-    // `undo_of` named (verified against change-log-undo.pglite.test.ts: "links:
-    // { redo_of: edit }"), never the standing undo record.
+    // redoOf names the redone record directly (0021).
     const redo = record({
       id: 'redo-1',
       action: 'redo',

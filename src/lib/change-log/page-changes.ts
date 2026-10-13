@@ -47,9 +47,18 @@ const glyphName = (glyph: string | null): string => {
   return entry?.label ?? glyph
 }
 
-/** `sage`, `mist`, `navy`, or `ink` for null — the colour picker's own labels. */
-const areaRoleName = (role: unknown): string =>
-  AREA_COLOUR_SWATCHES.find((s) => s.role === (isAreaRole(role) ? role : null))?.label ?? 'ink'
+/**
+ * `colour → sage` / `colour → mist` / `colour → navy` / `colour → ink` for
+ * null — the colour picker's own labels. A non-null value that names no
+ * known role falls back to a generic phrase rather than naming a colour the
+ * page doesn't have.
+ */
+const areaRoleChange = (role: unknown): string => {
+  if (role === null) return 'colour → ink'
+  if (!isAreaRole(role)) return 'changed the colour'
+  const label = AREA_COLOUR_SWATCHES.find((s) => s.role === role)?.label
+  return label === undefined ? 'changed the colour' : `colour → ${label}`
+}
 
 /**
  * Chase an `undo`/`redo` record's link through as many more `undo`/`redo`
@@ -83,11 +92,8 @@ const resolveUndoRedoTarget = (
  *
  * `byId` resolves an undo/redo row's own label from the record it undid or
  * redid (board 6o f5: "undo · added chickpeas, harissa"). `links.redoOf` names
- * the record that was put back directly — migration 0021 inserts it as the id
- * passed to `redo_change_log_record`, the same original id `undo_of` named, not
- * the standing undo record — verified against `change-log-undo.pglite.test.ts`
- * ("links: { redo_of: edit }"), not the ticket's own guess. A record missing
- * from `byId` (a different page, or paged out) falls back to the plain word.
+ * the redone record directly (0021). A record missing from `byId` (a
+ * different page, or paged out) falls back to the plain word.
  */
 export function describeChange(
   record: ChangeLogRecord,
@@ -122,7 +128,7 @@ export function describeChange(
     case 'edit_glyph':
       return `mark → ${glyphName(typeof record.after === 'string' ? record.after : null)}`
     case 'edit_area_role':
-      return `colour → ${areaRoleName(record.after)}`
+      return areaRoleChange(record.after)
     case 'delete':
       return 'deleted'
     case 'move':

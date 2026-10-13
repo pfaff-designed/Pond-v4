@@ -16,14 +16,12 @@ import { descriptorFor } from '@/lib/modules/registry'
 import { blockLabel } from '@/lib/modules/types'
 import type { TableBlock } from '@/lib/modules/table/schema'
 import { jsonEqual } from '@/lib/json-equal'
+import { OPENS_ON_A_HEADING } from '@/lib/templates/summary'
 import { readBlockSnapshot } from './revert-plan'
 import type { RowSnapshot } from './types'
 
 const count = (n: number, one: string, many: string = `${one}s`): string =>
   `${n} ${n === 1 ? one : many}`
-
-/** A markdown heading at any level, matching `templates/summary.ts`'s `OPENS_ON_A_HEADING`. */
-const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
 
 /** Every line of prose on a page, split into headings and plain paragraphs — the two are counted apart. */
 const paragraphsOf = (blocks: Block[]): { headings: string[]; paragraphs: string[] } => {
