@@ -282,7 +282,7 @@ describe('phone: tapping a block reveals the handle and opens the same menu (fra
     renderCanvas([heading, table])
     const root = document.getElementById('block-b-table')!
     const handle = root.querySelector('[data-part="handle"]')!
-    expect(handle).toHaveClass('right-0.5', 'top-0.5')
+    expect(handle).toHaveClass('right-0.5', 'top-0.5', 'z-[1]')
     expect(handle.className).not.toMatch(/opacity-0/)
     expect(handleOf('b-table')).toHaveClass('h-11', 'w-11', 'rounded-[14px]')
     const headRow = within(root).getByText('table').parentElement!

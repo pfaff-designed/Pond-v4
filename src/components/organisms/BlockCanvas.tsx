@@ -1149,14 +1149,17 @@ function BlockEditor({
           target can't float off-card or wait on a hover that never fires — so
           it is always visible there; PondBlock's head row reserves the 40px
           this takes (`size="mobile"`, below). Press-and-drag reorders, a click
-          opens the block menu, which is where `delete` lives. */}
+          opens the block menu, which is where `delete` lives. Inside the card
+          it must stack ABOVE the body that follows it in the DOM (the card's
+          paper, a text block's editor) or taps land on the body: `z-[1]`, the
+          lowest lift that does it, under every floating surface (z ≥ 4). */}
       <div
         data-part="handle"
         hidden={!chrome}
         className={cn(
           'absolute',
           menuSize === 'mobile'
-            ? 'right-0.5 top-0.5'
+            ? 'right-0.5 top-0.5 z-[1]'
             : [
                 '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
                 // A card centres the 24px handle on its head row; bare prose has no head
