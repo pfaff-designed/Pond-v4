@@ -351,13 +351,13 @@ describe('CollectionGantt — PondTemplate.dc.html’s gHead / gRow / gTrack / b
     expect(box.querySelector('button')).toBeNull()
   })
 
-  it('a collection with no date property draws the box emptyBox with the add-a-date-field remedy (KAN-292)', () => {
+  it('a collection with no date property, read-only (no onAddDateField), keeps the bare voidBox (KAN-292)', () => {
     const { container } = renderView(gantt, taskSchema.slice(0, 1), taskRows)
     const box = container.querySelector<HTMLElement>('[data-part="empty"]')!
-    expect(box.dataset.emptyBox).toBe('box')
-    expect(box.textContent).toContain(GANTT_EMPTY_LINE)
-    // No `onAddDateField` wired at this level → no button, same as every other
-    // mode's remedy when the handler is absent.
+    // No `onAddDateField` wired at this level → the tinted box+button never draws;
+    // the bare voidBox stands in, same as the "nothing dated" case below.
+    expect(box.dataset.emptyBox).toBe('void')
+    expect(box.textContent).toBe(GANTT_EMPTY_LINE)
     expect(box.querySelector('button')).toBeNull()
   })
 })

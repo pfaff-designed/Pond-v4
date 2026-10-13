@@ -11,9 +11,10 @@
  * edit — it writes the record's `done` status through `onEdit`.
  *
  * No date property on the collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in
- * `PondBlockEmpty`'s emptyBox, with the `add a date field` remedy when
- * `onAddDateField` is wired — the board's own line, true whether or not the
- * collection already holds records (unlike `LIST_EMPTY_LINE`, which means zero rows).
+ * `PondBlockEmpty`'s emptyBox with the `add a date field` remedy, but only when
+ * `onAddDateField` is wired — a read-only render keeps the bare line instead, no
+ * button to offer. True whether or not the collection already holds records
+ * (unlike `LIST_EMPTY_LINE`, which means zero rows).
  */
 
 import { useMemo, useState } from 'react'
@@ -82,8 +83,10 @@ export function CollectionList({
   )
 
   if (!grouped) {
-    return (
+    return onAddDateField ? (
       <PondBlockEmpty line={CALENDAR_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
+    ) : (
+      <span className="text-[14px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
     )
   }
   const { buckets } = grouped

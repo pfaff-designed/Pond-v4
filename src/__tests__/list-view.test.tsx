@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 
 import { CollectionView } from '@/lib/modules/view/view'
 import { CollectionList } from '@/lib/modules/view/list'
+import { CALENDAR_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -103,11 +104,13 @@ describe('list — what is drawn', () => {
     expect(onAddDateField).toHaveBeenCalledTimes(1)
   })
 
-  it('with no date property and no onAddDateField wired, draws no remedy button', () => {
-    render(
+  it('with no date property and no onAddDateField wired, draws the bare line, no box', () => {
+    const { container } = render(
       <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
     )
     expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="empty"]')).toBeNull()
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
   })
 })
 

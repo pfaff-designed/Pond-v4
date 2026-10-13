@@ -7,9 +7,10 @@
  * `mob && span === 'month'`) is built in the sibling items of this ticket. The DC's
  * `isMonthD`/`isMonthM` don't depend on `isEmpty` (`empty` only zeroes `recs`), so
  * chrome and grid stay drawn under either empty case. No date property on the
- * collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in `PondBlockEmpty`'s emptyBox,
- * with the `add a date field` remedy when `onAddDateField` is wired; a date property
- * with zero rows keeps the bare line — there is nothing to add.
+ * collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in `PondBlockEmpty`'s emptyBox
+ * with the `add a date field` remedy, but only when `onAddDateField` is wired — a
+ * read-only render (no handler, same as a date property with zero rows) keeps the
+ * board's bare `emptyLine` span instead; there is no button to offer.
  */
 
 import { useMemo, useState } from 'react'
@@ -284,11 +285,15 @@ export function CollectionCalendar({
         </div>
       </div>
       {!dateDef ? (
-        <PondBlockEmpty
-          line={CALENDAR_EMPTY_LINE}
-          action="add a date field"
-          onAction={onAddDateField}
-        />
+        onAddDateField ? (
+          <PondBlockEmpty
+            line={CALENDAR_EMPTY_LINE}
+            action="add a date field"
+            onAction={onAddDateField}
+          />
+        ) : (
+          <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
+        )
       ) : (
         rows.length === 0 && (
           <span className="px-0.5 text-[13px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>

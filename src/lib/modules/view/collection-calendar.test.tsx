@@ -33,15 +33,20 @@ describe('CollectionCalendar — month span chrome and empty state (#262 1/3)', 
   it('with no date property and onAddDateField wired, offers the `add a date field` remedy and fires it (KAN-292)', async () => {
     const user = userEvent.setup()
     const onAddDateField = jest.fn()
-    render(<CollectionCalendar schema={schemaNoDate} rows={rows} onAddDateField={onAddDateField} />)
+    const { container } = render(
+      <CollectionCalendar schema={schemaNoDate} rows={rows} onAddDateField={onAddDateField} />
+    )
+    expect(container.querySelector('[data-part="empty"][data-empty-box="box"]')).not.toBeNull()
     const button = screen.getByRole('button', { name: 'add a date field' })
     await user.click(button)
     expect(onAddDateField).toHaveBeenCalledTimes(1)
   })
 
-  it('with no date property and no onAddDateField wired, draws no remedy button', () => {
-    render(<CollectionCalendar schema={schemaNoDate} rows={rows} />)
+  it('with no date property and no onAddDateField wired, draws the bare emptyLine span, no box', () => {
+    const { container } = render(<CollectionCalendar schema={schemaNoDate} rows={rows} />)
     expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="empty"]')).toBeNull()
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
   })
 
   it('with a date property, never offers the remedy — even with zero rows', () => {

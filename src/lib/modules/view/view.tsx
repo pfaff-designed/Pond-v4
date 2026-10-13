@@ -904,14 +904,17 @@ function CollectionGantt({
   if (!defs) {
     // No date property at all: the void box has no action slot, so the remedy
     // uses the board's `box` emptyBox instead — same line, same action as the
-    // other kinds' no-date case.
-    return (
+    // other kinds' no-date case. A read-only render (no handler) has no button to
+    // offer, so it keeps the bare voidBox, same as the "nothing dated" case below.
+    return onAddDateField ? (
       <PondBlockEmpty
         box="box"
         line={GANTT_EMPTY_LINE}
         action="add a date field"
         onAction={onAddDateField}
       />
+    ) : (
+      <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
     )
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
