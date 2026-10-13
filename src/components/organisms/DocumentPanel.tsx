@@ -143,8 +143,16 @@ export function DocumentPanel() {
 
   // The empty-shell hints (6d f2): shown at the root only, and only until the
   // first page is ever made through the make-this-a-page card — after that
-  // `first_run_done_at` is set and they never return (KAN-195).
-  const firstRunPending = useFirstRunPending()
+  // `first_run_done_at` is set and they never return (KAN-195). The panel
+  // never unmounts across a ?nodeId change, so re-entering the root after
+  // visiting a page needs its own refetch — the query's 0 staleTime alone
+  // only covers a fresh mount.
+  const { pending: firstRunPending, refetch: refetchFirstRunPending } = useFirstRunPending()
+  const wasAtPage = useRef(!!nodeId)
+  useEffect(() => {
+    if (!nodeId && wasAtPage.current) refetchFirstRunPending()
+    wasAtPage.current = !!nodeId
+  }, [nodeId, refetchFirstRunPending])
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],

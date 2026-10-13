@@ -18,13 +18,17 @@ jest.mock('next/navigation', () => ({
 }))
 
 let firstRunDoneAt: string | null = null
+let firstRunReadError: { message: string } | null = null
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) },
     from: () => ({
       select: () => ({
         eq: () => ({
-          single: async () => ({ data: { first_run_done_at: firstRunDoneAt }, error: null }),
+          single: async () =>
+            firstRunReadError
+              ? { data: null, error: firstRunReadError }
+              : { data: { first_run_done_at: firstRunDoneAt }, error: null },
         }),
       }),
     }),
@@ -55,6 +59,8 @@ function renderPanel() {
 
 beforeEach(() => {
   firstRunDoneAt = null
+  firstRunReadError = null
+  mockSearchParams.delete('nodeId')
 })
 
 describe('DocumentPanel — the empty-shell hints', () => {
@@ -69,6 +75,45 @@ describe('DocumentPanel — the empty-shell hints', () => {
   it('do not render once first_run_done_at is set', async () => {
     firstRunDoneAt = '2026-10-13T00:00:00.000Z'
     renderPanel()
+
+    expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
+    expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
+  })
+
+  it('a read error does not render the hints', async () => {
+    firstRunReadError = { message: 'boom' }
+    renderPanel()
+
+    expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
+    expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
+  })
+
+  it('the flag set while away from the root is read fresh on return', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // A fresh element each render — reusing one JSX object across `rerender`
+    // calls lets React bail out of the subtree entirely (same props reference),
+    // which would never re-invoke DocumentPanel for the nodeId change below.
+    const tree = () => (
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <DocumentPanel />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+    const { rerender } = render(tree())
+
+    expect(await screen.findByText('What are you thinking about?')).toBeInTheDocument()
+
+    // made a page elsewhere in the session — the flag flips, but the root's
+    // own query is still holding the earlier null read.
+    firstRunDoneAt = '2026-10-13T00:00:00.000Z'
+
+    mockSearchParams.set('nodeId', 'page-1')
+    rerender(tree())
+    expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
+
+    mockSearchParams.delete('nodeId')
+    rerender(tree())
 
     expect(await screen.findByLabelText('Page title')).toBeInTheDocument()
     expect(screen.queryByText('What are you thinking about?')).not.toBeInTheDocument()
