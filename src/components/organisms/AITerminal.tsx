@@ -171,7 +171,7 @@ import {
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
 import { listRecordsByToolCalls } from '@/lib/change-log/store'
-import { previewForChange } from '@/lib/modules/preview'
+import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
@@ -490,6 +490,10 @@ export function AITerminal() {
   // the next propose_changes to stream in is Pond's revision of it. It lives for
   // exactly ONE turn; the effect below clears it when that turn settles.
   const pendingRevisionOf = useRef<string | null>(null)
+  // KAN-302 — a settled card's "−"/"+" text must not keep tracking the live
+  // page: once a batch's status leaves `pending`, its preview is frozen here
+  // so a later edit doesn't rewrite an already-accepted card's diff.
+  const [frozenChanges, setFrozenChanges] = useState<Record<string, ChangePreview[]>>({})
   const {
     changes: changeDecisions,
     creates: createDecisions,
@@ -2492,10 +2496,22 @@ export function AITerminal() {
       const placeName = changePlace[part.toolCallId]
         ? allPages.find((p) => p.id === changePlace[part.toolCallId])?.title
         : undefined
+      const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
+      const cachedChanges = frozenChanges[part.toolCallId]
+      const changes = cachedChanges ?? rawChanges.map((c) => previewForChange(c, targetBlocks))
+      // KAN-302: the render where a batch's status first leaves `pending`
+      // freezes its diff text here — an "adjust state while rendering"
+      // update (react.dev), not an effect, so a later edit to the open page
+      // never rewrites an already-settled card's "−"/"+" lines.
+      if (!cachedChanges && status !== 'pending') {
+        setFrozenChanges((prev) =>
+          prev[part.toolCallId] ? prev : { ...prev, [part.toolCallId]: changes }
+        )
+      }
       diffCards.push({
         id: part.toolCallId,
-        changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
-        status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
+        changes,
+        status,
         // KAN-267: needsPlace with nothing picked yet means there IS no target —
         // falling to contextLabel here would claim the pond itself as the
         // target while the card, in the same breath, says it needs a place.
