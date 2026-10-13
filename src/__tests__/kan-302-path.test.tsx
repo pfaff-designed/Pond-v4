@@ -597,4 +597,79 @@ describe('KAN-302 path test harness', () => {
 
     platform.mockRestore()
   })
+
+  // Path test part 3 (PATH_STEPS bullet 3, "Pond's next read is fresh", and
+  // bullet 6, "never says was undone"): continuing from an accept → ⌘Z → ⇧⌘Z
+  // (part 2), the person's own further edit + rename land at the fake-server
+  // boundary, then they ask Pond a new question.
+  //
+  // `sendText`'s request body (`AITerminal.tsx` ~1336) is `{ nodeId, nodeType,
+  // pondId, resolutions, research }` — it never carries page blocks/title
+  // directly. A real `fetchNodeContext` (src/lib/context/assemble.ts) instead
+  // reads the page row LIVE from the DB, keyed only by `nodeId`, on every
+  // request (item 3's own finding) — so this client-only harness (whose
+  // `sendMessage` is a bare mock, never reaching the real `/api/chat` route)
+  // cannot observe page text IN the body. What it CAN prove, honestly: the
+  // fake "DB" (`fakePage`) a real `fetchNodeContext` would read for this same
+  // `nodeId` already holds the fresh blocks/title at send time, not the stale
+  // pre-edit/pre-rename ones — and `body.resolutions.changes`, which the body
+  // genuinely does carry, reads `accepted` (not `undone`) for the redone
+  // record, which is what `OTHER_STATUS_NOTES` keys its "was undone" wording
+  // off (item 5).
+  it("Pond's next request sees fresh page state and never calls the redone change undone (KAN-302 item 3)", async () => {
+    const user = userEvent.setup()
+    const platform = jest
+      .spyOn(window.navigator, 'platform', 'get')
+      .mockReturnValue('MacIntel')
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
+    seedEditRecord('pc1')
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
+
+    const { queryClient } = renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    await user.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'undone'))
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+    platform.mockRestore()
+
+    // The person's own edit + rename, simulated at the fake-server boundary —
+    // the same mutate-then-invalidate shape parts 1a/1b used.
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello moon xyz' }]
+    fakePage.title = 'Plans'
+    await queryClient.invalidateQueries({ queryKey: ['page', PAGE_ID] })
+    await queryClient.invalidateQueries({ queryKey: [...pagesKey(POND_ID), 'full'] })
+    await waitFor(() => expect(screen.getByText('Hello moon xyz')).toBeInTheDocument())
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'change xyz to plum')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+
+    const [message, options] = mockSendMessage.mock.calls[0] as [
+      { text: string },
+      { body: { nodeId: string; resolutions: { changes: Record<string, string> } } },
+    ]
+    expect(message.text).toBe('change xyz to plum')
+    expect(options.body.nodeId).toBe(PAGE_ID)
+
+    // What a real `fetchNodeContext` would read for this `nodeId` right now —
+    // the fresh edit and rename, never the record's frozen `before` ("Hello
+    // world") or the pre-rename title ("Untitled").
+    expect(fakePage.blocks).toEqual([{ id: 'b0', type: 'text', content: 'Hello moon xyz' }])
+    expect(fakePage.title).toBe('Plans')
+
+    // Bullet 6: the redo landed before this turn, so the body's own resolutions
+    // (what the server's `OTHER_STATUS_NOTES` reads) must already say `accepted`.
+    expect(options.body.resolutions.changes['pc1:0']).toBe('accepted')
+    expect(options.body.resolutions.changes['pc1:0']).not.toBe('undone')
+
+    // And nothing on screen (the card, included) still calls it undone.
+    expect(within(card).queryByText('undone')).not.toBeInTheDocument()
+    expect(screen.queryByText(/undone/i)).not.toBeInTheDocument()
+  })
 })
