@@ -89,6 +89,7 @@ import {
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
+import type { PageReference } from '@/lib/references/reference'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -744,13 +745,23 @@ export function AITerminal() {
   const composerRef = useRef<HTMLDivElement>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
 
-  // ── Highlight-to-ask quote context (ticket-40 F20) ────────────────────────
-  const [quoteCtx, setQuoteCtx] = useState<SelectionContext | null>(null)
+  // ── Highlight-to-ask references (#98, board 6e) ───────────────────────────
+  const [references, setReferences] = useState<PageReference[]>([])
 
-  const handleAskFromSelection = useCallback((ctx: SelectionContext) => {
-    setQuoteCtx(ctx)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
+  const handleAskFromSelection = useCallback(
+    (ctx: SelectionContext) => {
+      // A selection outside any block (no `data-block-id` ancestor) has no page
+      // to anchor a reference to — nothing is appended, but the composer still
+      // focuses so typing a question works either way.
+      const { blockId } = ctx
+      if (nodeId && blockId) {
+        const range = ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
+        setReferences((prev) => [...prev, { pageId: nodeId, blockId, range, quotedText: ctx.text }])
+      }
+      requestAnimationFrame(() => inputRef.current?.focus())
+    },
+    [nodeId]
+  )
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
   const {
@@ -1367,10 +1378,10 @@ export function AITerminal() {
 
       // Build the final message text, injecting quote + CSV context single-turn.
       let finalText = text
-      if (quoteCtx) {
-        const blockNote = quoteCtx.blockId ? ` [block:${quoteCtx.blockId}]` : ''
-        finalText = `> "${quoteCtx.text}"${blockNote}\n\n${text}`
-        setQuoteCtx(null)
+      const [firstReference] = references
+      if (firstReference) {
+        finalText = `> "${firstReference.quotedText}" [block:${firstReference.blockId}]\n\n${text}`
+        setReferences([])
       }
       if (csvAttachment) {
         const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext?.(
@@ -1429,7 +1440,7 @@ export function AITerminal() {
       nodeId,
       nodeType,
       pondId,
-      quoteCtx,
+      references,
       csvAttachment,
       clearCsvAttachment,
       fileParts,
@@ -3224,7 +3235,6 @@ export function AITerminal() {
       }}
       onDrop={handleDrop}
     >
-      {quoteCtx && <QuoteChip text={quoteCtx.text} onRemove={() => setQuoteCtx(null)} />}
       {csvAttachment && csvAttachmentDescriptor && (
         <csvAttachmentDescriptor.Pill attachment={csvAttachment} onRemove={clearCsvAttachment} />
       )}
