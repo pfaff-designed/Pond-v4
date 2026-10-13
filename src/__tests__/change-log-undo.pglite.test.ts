@@ -989,3 +989,28 @@ describe('0024 undo refusals are not retryable', () => {
     await db.close()
   })
 })
+
+// ── 0025: accept/reject's own CAS stops being retryable too ──────────────────
+
+describe('0025 accept refusals are not retryable', () => {
+  it('refuses a stale advance_change_log_record call and writes nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db, { status: 'proposed' })
+
+    await db.query(`select public.advance_change_log_record($1,'proposed','accepted','you')`, [id])
+
+    await expect(
+      db.query(`select public.advance_change_log_record($1,'proposed','rejected','you')`, [id])
+    ).rejects.toMatchObject(refusal('P0001', 'record-changed'))
+
+    const res = await db.query<{ n: number; status: string }>(
+      `select jsonb_array_length(transitions)::int as n, status
+       from public.change_log where id = $1`,
+      [id]
+    )
+    expect(res.rows[0].status).toBe('accepted')
+    expect(res.rows[0].n).toBe(2)
+    await db.close()
+  })
+})
