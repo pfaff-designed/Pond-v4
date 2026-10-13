@@ -255,6 +255,22 @@ describe('advanceStatus', () => {
     await expect(store.advanceStatus(sb as never, 'rec-1', 'rejected')).rejects.toThrow(/no longer/)
   })
 
+  it('throws RecordChangedError when the RPC refuses with the record-changed DETAIL', async () => {
+    const sb = makeSupabase({
+      maybeSingle: row({ status: 'proposed' }),
+      rpcError: { code: 'P0001', details: 'record-changed' },
+    })
+    await expect(store.advanceStatus(sb as never, 'rec-1', 'rejected')).rejects.toBeInstanceOf(
+      store.RecordChangedError
+    )
+  })
+
+  it('rethrows an unrelated RPC error unchanged', async () => {
+    const err = { code: 'P0002', message: 'some other refusal' }
+    const sb = makeSupabase({ maybeSingle: row({ status: 'proposed' }), rpcError: err })
+    await expect(store.advanceStatus(sb as never, 'rec-1', 'rejected')).rejects.toBe(err)
+  })
+
   it('exposes the three settle verbs on top of it', async () => {
     for (const [fn, expected] of [
       [store.rejectRecord, 'rejected'],

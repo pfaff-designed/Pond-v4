@@ -14,7 +14,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
-import { advanceStatus, appendRecord, listRevertsOf, mapChangeLogRow, markOutdated } from './store'
+import {
+  advanceStatus,
+  appendRecord,
+  listRevertsOf,
+  mapChangeLogRow,
+  markOutdated,
+  RecordChangedError,
+} from './store'
 import { isOpen } from './status'
 import { jsonEqual } from '@/lib/json-equal'
 import { planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
@@ -124,6 +131,26 @@ export type AcceptRevertResult =
    *  it re-plans against the page as it now stands. */
   | { kind: 'outdated'; revert: ChangeLogRecord }
 
+/**
+ * Advance a revert to `outdated`, folding the one race `advanceStatus` can
+ * still lose: the record settled elsewhere (another tab, another accept) in
+ * the gap between the caller's own check and this call. Either way the
+ * revert is outdated — only which copy of it we have to report differs.
+ */
+async function markRevertOutdated(
+  supabase: SupabaseClient<Database>,
+  revert: ChangeLogRecord,
+  actor: string
+): Promise<{ kind: 'outdated'; revert: ChangeLogRecord }> {
+  try {
+    const advanced = await advanceStatus(supabase, revert.id, 'outdated', actor)
+    return { kind: 'outdated', revert: advanced }
+  } catch (err) {
+    if (err instanceof RecordChangedError) return { kind: 'outdated', revert }
+    throw err
+  }
+}
+
 export interface AcceptRevertInput {
   userId: string
   /**
@@ -180,8 +207,7 @@ export async function acceptRevert(
 
   const planned = readBlockSnapshot(revert.before)
   if (planned === null || !jsonEqual(current, planned)) {
-    const advanced = await advanceStatus(supabase, revert.id, 'outdated', actor)
-    return { kind: 'outdated', revert: advanced }
+    return markRevertOutdated(supabase, revert, actor)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,7 +217,15 @@ export async function acceptRevert(
     p_expected: revert.before,
     p_actor: actor,
   })
-  if (error) throw error
+  if (error) {
+    // The RPC re-ran the same page comparison under its row lock and lost the
+    // race this function already checked once above — same outcome, caught a
+    // moment later. Advance to `outdated` exactly as the earlier check does; if
+    // that advance itself refuses as already-settled, the revert is outdated
+    // either way, so report it with what we were handed.
+    if (error.details === 'page-changed') return markRevertOutdated(supabase, revert, actor)
+    throw error
+  }
   const row = Array.isArray(data) ? data[0] : data
   if (!row) throw new Error(`change log: accept of revert ${revert.id} returned no record`)
   const accepted = mapChangeLogRow(row as ChangeLogRow)

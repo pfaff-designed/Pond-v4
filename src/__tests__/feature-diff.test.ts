@@ -85,6 +85,7 @@ function sameJson(a: unknown, b: unknown): boolean {
 interface PgError {
   code: string
   message: string
+  details?: string
 }
 
 interface Builder {
@@ -222,7 +223,10 @@ function makeWorld() {
     return builder
   }
 
-  const fail = (code: string, message: string) => ({ data: null, error: { code, message } })
+  const fail = (code: string, message: string, details?: string) => ({
+    data: null,
+    error: { code, message, details },
+  })
   const record = (id: unknown) => tables.change_log.find((r) => r.id === id)
   const page = (id: unknown, userId: unknown) =>
     tables.pages.find((p) => p.id === id && p.user_id === userId)
@@ -243,8 +247,9 @@ function makeWorld() {
       if (!row) return fail('no_data_found', 'record not found')
       if (row.status !== args.p_from)
         return fail(
-          'serialization_failure',
-          `record is ${String(row.status)}, not ${String(args.p_from)}`
+          'P0001',
+          `record is ${String(row.status)}, not ${String(args.p_from)}`,
+          'record-changed'
         )
       advance(row, args.p_to as ChangeLogStatus, args.p_actor)
       return { data: jsonb(row), error: null }
@@ -284,7 +289,7 @@ function makeWorld() {
       if (!target) return fail('no_data_found', 'target page no longer exists')
       // The page compare-and-swap: a page that moved underneath the plan raises.
       if (!sameJson(target.blocks, args.p_expected))
-        return fail('serialization_failure', 'page changed underneath the revert')
+        return fail('P0001', 'page changed underneath the revert', 'page-changed')
       target.blocks = jsonb(args.p_blocks)
       advance(row, 'accepted', args.p_actor)
       advance(original, 'reverted', args.p_actor)

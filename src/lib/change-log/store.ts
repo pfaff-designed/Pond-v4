@@ -39,6 +39,15 @@ import {
   type ChangeLogTransition,
 } from './types'
 
+/** The compare-and-swap RPC refused because the record moved underneath this
+ *  advance — migration 0025's `record-changed` DETAIL on `advance_change_log_record`. */
+export class RecordChangedError extends Error {
+  constructor() {
+    super('this change was already answered')
+    this.name = 'RecordChangedError'
+  }
+}
+
 const TABLE = 'change_log'
 
 const COLUMNS =
@@ -351,7 +360,10 @@ export async function advanceStatus(
     p_to: to,
     p_actor: actor,
   })
-  if (error) throw error
+  if (error) {
+    if (error.details === 'record-changed') throw new RecordChangedError()
+    throw error
+  }
   return mapChangeLogRow(data as ChangeLogRow)
 }
 

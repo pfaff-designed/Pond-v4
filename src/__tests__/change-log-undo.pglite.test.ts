@@ -972,20 +972,48 @@ describe('undo_change_log_record — another person’s record is out of reach',
 // ── 0024: no path back to the retryable errcode ──────────────────────────────
 
 describe('0024 undo refusals are not retryable', () => {
-  it('has no serialization_failure or 40001 left in the undo/redo call path', async () => {
+  it('has no serialization_failure or 40001 left anywhere in public/private', async () => {
     const db = await makeDb()
 
-    const res = await db.query<{ prosrc: string }>(
-      `select prosrc from pg_proc
-        where (proname = 'change_log_set_back' and pronamespace = 'private'::regnamespace)
-           or (proname in ('undo_change_log_record', 'redo_change_log_record')
-               and pronamespace = 'public'::regnamespace)`
+    const res = await db.query<{ proname: string; prosrc: string }>(
+      `select proname, prosrc from pg_proc
+        where pronamespace in ('public'::regnamespace, 'private'::regnamespace)`
     )
-    expect(res.rows.length).toBe(3)
+
+    const named = res.rows.filter(({ proname }) =>
+      ['change_log_set_back', 'undo_change_log_record', 'redo_change_log_record'].includes(proname)
+    )
+    expect(named.length).toBe(3)
+
     for (const { prosrc } of res.rows) {
       expect(prosrc).not.toMatch(/serialization_failure/)
       expect(prosrc).not.toMatch(/40001/)
     }
+    await db.close()
+  })
+})
+
+// ── 0025: accept/reject's own CAS stops being retryable too ──────────────────
+
+describe('0025 accept refusals are not retryable', () => {
+  it('refuses a stale advance_change_log_record call and writes nothing', async () => {
+    const db = await makeDb()
+    await seedUser(db, USER)
+    const id = await addRecord(db, { status: 'proposed' })
+
+    await db.query(`select public.advance_change_log_record($1,'proposed','accepted','you')`, [id])
+
+    await expect(
+      db.query(`select public.advance_change_log_record($1,'proposed','rejected','you')`, [id])
+    ).rejects.toMatchObject(refusal('P0001', 'record-changed'))
+
+    const res = await db.query<{ n: number; status: string }>(
+      `select jsonb_array_length(transitions)::int as n, status
+       from public.change_log where id = $1`,
+      [id]
+    )
+    expect(res.rows[0].status).toBe('accepted')
+    expect(res.rows[0].n).toBe(2)
     await db.close()
   })
 })

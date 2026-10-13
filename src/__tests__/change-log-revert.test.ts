@@ -25,7 +25,7 @@ jest.mock('@/lib/change-log/store', () => ({
 }))
 
 import type { Block } from '@/lib/documents/types'
-import { appendRecord, advanceStatus, markOutdated } from '@/lib/change-log/store'
+import { appendRecord, advanceStatus, markOutdated, RecordChangedError } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { listRevertsOf } from '@/lib/change-log/store'
 import { jsonEqual } from '@/lib/json-equal'
@@ -766,6 +766,26 @@ describe('acceptRevert', () => {
     expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rev-1', 'outdated', 'you')
   })
 
+  it('reports outdated with the revert it was given when the advance races to settled first', async () => {
+    // The in-process mismatch check found the page had moved — but by the time
+    // this function's own advanceStatus call lands, the revert was swept
+    // outdated elsewhere (another tab's accept, or the outdated sweep). That
+    // is still "outdated", not a crash.
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest.fn()
+    mockedAdvance.mockRejectedValue(new RecordChangedError())
+
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: [...PAGE_AT_PROPOSE, text('c', 'typed since')],
+    })
+
+    expect(out).toEqual({ kind: 'outdated', revert })
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
   it('is not fooled by JSONB key order when comparing the page', async () => {
     // pages.blocks round-trips through JSONB, which does not preserve key order.
     // A stringify comparison would call every accept outdated.
@@ -878,6 +898,48 @@ describe('acceptRevert', () => {
       acceptRevert(supabase, { pondId: 'pond-1', userId: USER, revert, current: PAGE_AT_PROPOSE })
     ).rejects.toBeTruthy()
     expect(mockedSweep).not.toHaveBeenCalled()
+  })
+
+  it('goes outdated at once when the RPC loses the same race under its row lock', async () => {
+    // The in-process check above already compared the page and found it
+    // matched — this is the RPC repeating that comparison under its lock and
+    // losing: a page write landed between the check and the transaction.
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest
+      .fn()
+      .mockResolvedValue({ data: null, error: { code: 'P0001', details: 'page-changed' } })
+    const advanced = record({ id: 'rev-1', action: 'revert', status: 'outdated' })
+    mockedAdvance.mockResolvedValue(advanced)
+
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
+
+    expect(out).toEqual({ kind: 'outdated', revert: advanced })
+    expect(mockedAdvance).toHaveBeenCalledWith(supabase, 'rev-1', 'outdated', 'you')
+  })
+
+  it('reports outdated with the revert it was given when the RPC’s own advance races to settled first', async () => {
+    // Same race as above, caught one step later: the RPC's page-changed
+    // refusal lands, and THIS function's own advance to outdated then loses
+    // to a settle that happened in between.
+    const supabase = fakeSupabase({})
+    supabase.rpc = jest
+      .fn()
+      .mockResolvedValue({ data: null, error: { code: 'P0001', details: 'page-changed' } })
+    mockedAdvance.mockRejectedValue(new RecordChangedError())
+
+    const out = await acceptRevert(supabase, {
+      pondId: 'pond-1',
+      userId: USER,
+      revert,
+      current: PAGE_AT_PROPOSE,
+    })
+
+    expect(out).toEqual({ kind: 'outdated', revert })
   })
 })
 
