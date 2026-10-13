@@ -43,7 +43,8 @@ import {
  *  advance — migration 0025's `record-changed` DETAIL on `advance_change_log_record`. */
 export class RecordChangedError extends Error {
   constructor() {
-    super('this change was already answered — it moved on in another tab')
+    super('this change was already answered')
+    this.name = 'RecordChangedError'
   }
 }
 
