@@ -88,7 +88,6 @@ import {
 } from '@/lib/attachments/html'
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
-import { QuoteChip } from '@/components/atoms/QuoteChip'
 import type { PageReference } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
@@ -1422,13 +1421,8 @@ export function AITerminal() {
         ? { ...resolutions, lifecycle: advanced }
         : { ...resolutions, lifecycle: undefined }
 
-      // Build the final message text, injecting quote + CSV context single-turn.
+      // Build the final message text, injecting CSV context single-turn.
       let finalText = text
-      const [firstReference] = references
-      if (firstReference) {
-        finalText = `> "${firstReference.quotedText}" [block:${firstReference.blockId}]\n\n${text}`
-        setReferences([])
-      }
       if (csvAttachment) {
         const ctx = getInlineAttachmentDescriptor(csvAttachment.kind)?.formatContext?.(
           csvAttachment
@@ -1486,7 +1480,6 @@ export function AITerminal() {
       nodeId,
       nodeType,
       pondId,
-      references,
       csvAttachment,
       clearCsvAttachment,
       fileParts,
