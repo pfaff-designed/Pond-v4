@@ -79,6 +79,7 @@ import { DueMark } from './due-mark'
 import { useDoneToggle } from './use-done-toggle'
 import { useOrangeToday } from '../page-canvas'
 import { Cell, RepeatMark } from './cells'
+import { DraftInput } from './draft-input'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
 import { CollectionCalendar } from './collection-calendar'
@@ -464,11 +465,11 @@ function CollectionTable({
             <tr key={row.id} className="border-b border-mn-line last:border-b-0 align-top">
               <td className="py-1.5 pr-3 font-medium text-mn-text">
                 {editable && onRenameRow ? (
-                  <input
+                  <DraftInput
                     aria-label="Row title"
                     value={row.title}
                     placeholder="Untitled"
-                    onChange={(e) => onRenameRow(row.id, e.target.value)}
+                    onCommit={(title) => onRenameRow(row.id, title)}
                     className="w-full border-0 bg-transparent p-0 font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
                   />
                 ) : (

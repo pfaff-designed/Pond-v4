@@ -15,24 +15,34 @@ import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
 import { ViewView } from './view'
 import type { ViewBlock } from './schema'
 import type { PropertySchema } from '@/lib/properties/schema'
+import type { CollectionRow } from './apply'
 
 const dateless: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
 
+// Set by a describe block before `renderView` to seed the mocked hook's rows —
+// a fresh `useState` reads it on every render, so tests outside the table
+// describe never see it change their own `rows: []` default.
+let initialRows: CollectionRow[] = []
+
 const updateSchema = jest.fn()
+const renameRow = jest.fn()
+const updateRows = jest.fn()
 jest.mock('./use-collection-rows', () => ({
   useCollectionRows: () => {
     const [schema, setSchema] = useState<PropertySchema>(dateless)
+    const [rows, setRows] = useState<CollectionRow[]>(initialRows)
     updateSchema.mockImplementation((next: PropertySchema) => setSchema(next))
+    updateRows.mockImplementation((next: CollectionRow[]) => setRows(next))
     return {
       schema,
-      rows: [],
+      rows,
       collectionName: 'Trips',
       isLoading: false,
       isError: false,
       setValue: jest.fn(),
       addRow: jest.fn(),
       removeRow: jest.fn(),
-      renameRow: jest.fn(),
+      renameRow,
       updateSchema,
     }
   },
@@ -41,6 +51,7 @@ jest.mock('./use-collection-rows', () => ({
 const calendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
 const list: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
 const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
+const table: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
 
 function renderView(data: ViewBlock, editable = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -57,6 +68,9 @@ function renderView(data: ViewBlock, editable = true) {
 
 beforeEach(() => {
   updateSchema.mockClear()
+  renameRow.mockClear()
+  updateRows.mockClear()
+  initialRows = []
 })
 
 describe('ViewView — the "add a date field" remedy reaches the page (KAN-292)', () => {
@@ -109,5 +123,44 @@ describe('ViewView — undo removes only the field it added (KAN-292)', () => {
     const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
     expect(afterUndo).toEqual([...dateless, otherField])
     expect(afterUndo.find((d) => d.id === addedField.id)).toBeUndefined()
+  })
+})
+
+describe('CollectionTable — the row-title input commits once, not per keystroke (KAN-299)', () => {
+  beforeEach(() => {
+    initialRows = [{ id: 'r1', title: '', values: {} }]
+  })
+
+  it('calls renameRow zero times until blur, then once with the full string', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    const input = screen.getByRole('textbox', { name: 'Row title' })
+    await user.click(input)
+    await user.type(input, 'kan299')
+    expect(renameRow).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledWith('r1', 'kan299')
+  })
+
+  it('does not revert what has been typed when a rows update lands mid-typing', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    const input = screen.getByRole('textbox', { name: 'Row title' })
+    await user.click(input)
+    await user.type(input, 'kan')
+
+    act(() => {
+      updateRows([{ id: 'r1', title: '', values: { other: 'written elsewhere' } }])
+    })
+    expect(input).toHaveValue('kan')
+
+    await user.type(input, '299')
+    await user.tab()
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledWith('r1', 'kan299')
   })
 })
