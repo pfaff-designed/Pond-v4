@@ -12,10 +12,24 @@ export interface FocusTerminalDetail {
   text?: string
 }
 
+// A request can beat AITerminal's own listener to mount — the cover's `?ask=`
+// carry fires from DocumentPanel's effect, which runs before AITerminal's in
+// tree order (KAN-195). The dispatch still fires for an already-mounted
+// listener; a request with text also waits here for a late listener to claim.
+let pendingText: string | undefined
+
 export function requestTerminalFocus(text?: string) {
+  if (text) pendingText = text
   window.dispatchEvent(
     new CustomEvent<FocusTerminalDetail>(FOCUS_TERMINAL_EVENT, { detail: text ? { text } : {} })
   )
+}
+
+/** Claim and clear the last request's text, for a listener that attaches after the dispatch. */
+export function takePendingTerminalText(): string | undefined {
+  const text = pendingText
+  pendingText = undefined
+  return text
 }
 
 /**

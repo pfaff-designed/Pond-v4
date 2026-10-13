@@ -103,6 +103,17 @@ export async function makePageFromAnswer(
     props,
     pondId: input.pondId,
   })
+
+  // The empty-shell hints stop once the first page exists (6d f5). A failed
+  // flag set is not a failed page make — log it and let the hints linger
+  // rather than lose the page the person just made.
+  try {
+    const { error } = await supabase.rpc('mark_first_run_done')
+    if (error) console.error('[first-run] failed to mark first run done', error)
+  } catch (err) {
+    console.error('[first-run] failed to mark first run done', err)
+  }
+
   return { id: page.id, title: page.title }
 }
 

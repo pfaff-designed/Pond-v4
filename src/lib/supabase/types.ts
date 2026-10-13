@@ -35,9 +35,20 @@ export interface Database {
   public: {
     Tables: {
       users: {
-        Row: { id: string; email: string; created_at: string }
-        Insert: { id: string; email: string; created_at?: string }
-        Update: { email?: string }
+        Row: {
+          id: string
+          email: string
+          created_at: string
+          /** Null until the make-page proposal card makes the first page (KAN-195). */
+          first_run_done_at: string | null
+        }
+        Insert: {
+          id: string
+          email: string
+          created_at?: string
+          first_run_done_at?: string | null
+        }
+        Update: { email?: string; first_run_done_at?: string | null }
         Relationships: []
       }
       // A pond is an instance of the shell (#312, migration 0018). One person may
@@ -271,6 +282,10 @@ export interface Database {
       redo_change_log_record: {
         Args: { p_record_ids: string[]; p_pond_id: string; p_actor?: string }
         Returns: Database['public']['Tables']['change_log']['Row'][]
+      }
+      mark_first_run_done: {
+        Args: Record<string, never>
+        Returns: void
       }
     }
   }
