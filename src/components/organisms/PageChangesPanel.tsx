@@ -83,6 +83,11 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const { data, isLoading } = useQuery({
     queryKey: pageChangesKey(pondId, pageId),
     enabled: pageId !== undefined,
+    // The panel unmounts on close (`usePageChangesPanel`), not merely hides, so
+    // the app-wide 30s `staleTime` (`providers.tsx`) otherwise skips the refetch
+    // a reopen needs — a second tab's accept/revert would sit unseen until a
+    // full page reload.
+    refetchOnMount: 'always',
     queryFn: async (): Promise<ChangeLogRecord[]> => {
       const supabase = getSupabase()
       const {
