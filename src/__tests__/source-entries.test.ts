@@ -12,6 +12,7 @@ import {
   chartSuggestions,
   CHART_LABEL,
   FIELD_WORD,
+  fieldTypeEntries,
   footFor,
   headFor,
   newEntries,
@@ -227,6 +228,24 @@ describe('new — define a new database', () => {
   })
 })
 
+// ── field-type ─────────────────────────────────────────────────────────────────
+
+describe('field-type — the ＋ field row’s own step', () => {
+  it('lists the six storable types, in PROPERTY_TYPES order, with relation and rollup absent', () => {
+    expect(shape(fieldTypeEntries())).toEqual([
+      'text',
+      'number',
+      'date',
+      'select',
+      'status',
+      'checkbox',
+    ])
+    const ids = fieldTypeEntries().flatMap((e) => (e.kind === 'row' ? [e.id] : []))
+    expect(ids).not.toContain('relation')
+    expect(ids).not.toContain('rollup')
+  })
+})
+
 // ── head and foot ──────────────────────────────────────────────────────────────
 
 describe('head and foot — the board’s copy, per step', () => {
@@ -250,6 +269,15 @@ describe('head and foot — the board’s copy, per step', () => {
     expect(footFor('new', { block: 'gallery', newSelected: false })).toEqual([
       'filed in databases',
       'this page gets a gallery view',
+    ])
+  })
+
+  it('the field-type step heads off the new database it returns to, and feet say what picking does', () => {
+    expect(headFor('field-type', { block: 'table', pageTitle: 'recipes' })).toBe(
+      'new database — recipes › field'
+    )
+    expect(footFor('field-type', { block: 'table', newSelected: false })).toEqual([
+      'added to the new database',
     ])
   })
 })
