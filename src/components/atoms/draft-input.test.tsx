@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DraftInput } from './draft-input'
+import { DraftInput } from '@/components/atoms/draft-input'
 
 function Host({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
   return <DraftInput aria-label="draft" value={value} onCommit={onCommit} />
@@ -64,6 +64,36 @@ describe('DraftInput', () => {
     await user.tab()
     expect(onCommit).toHaveBeenCalledTimes(1)
     expect(onCommit).toHaveBeenCalledWith('typing')
+  })
+
+  it('tracks an incoming value while focused but untouched, and commits nothing on blur (KAN-290)', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    const { rerender } = render(<Host value="heuristic name" onCommit={onCommit} />)
+
+    const input = screen.getByLabelText<HTMLInputElement>('draft')
+    await user.click(input)
+    rerender(<Host value="placement reply name" onCommit={onCommit} />)
+    await user.tab()
+
+    expect(input).toHaveValue('placement reply name')
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('still commits what was typed after an unrelated value changes mid-edit (KAN-290)', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    const { rerender } = render(<Host value="heuristic name" onCommit={onCommit} />)
+
+    const input = screen.getByLabelText<HTMLInputElement>('draft')
+    await user.click(input)
+    await user.keyboard(' typed')
+    rerender(<Host value="placement reply name" onCommit={onCommit} />)
+    await user.tab()
+
+    expect(input).toHaveValue('heuristic name typed')
+    expect(onCommit).toHaveBeenCalledTimes(1)
+    expect(onCommit).toHaveBeenCalledWith('heuristic name typed')
   })
 
   it('fires no onCommit on a later blur with no typing after an Escape (KAN-299)', async () => {

@@ -557,6 +557,26 @@
   }
 }
 
+/* The cover's ASCII pond (`Pond 05 Shell` 5a, `Pond 06.04` 6d f1) — each line
+   drifts sideways and breathes opacity on its own loop, offset per line.
+   `AsciiPondBackground` composes these per-line from the board's values. */
+@keyframes pondDrift {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(14px);
+  }
+}
+@keyframes pondBreathe {
+  from {
+    opacity: 0.22;
+  }
+  to {
+    opacity: 0.5;
+  }
+}
+
 /* ── ticket-41 micro-interaction keyframes ──────────────────────────────────
    Each one is a single confirming gesture; timing/easing come from the motion
    tokens at the call site (the animation shorthand references the var). */
@@ -675,6 +695,25 @@
     backdrop-filter: blur(24px) saturate(1.3);
     border: var(--mn-glass-border);
     box-shadow: var(--mn-glass-shadow);
+  }
+
+  /* The cover's field only (#195, `Pond 05 Shell` 5a / d5a): light matches
+     --mn-glass-* exactly, but d5a's ink frame tints the field differently from
+     every other floating object's shared dark recipe, so it keeps its own
+     class rather than retinting .mn-glass for the rest of the app. */
+  .mn-cover-glass {
+    background: var(--mn-glass-bg);
+    backdrop-filter: blur(24px) saturate(1.3);
+    border: var(--mn-glass-border);
+    box-shadow: var(--mn-glass-shadow);
+  }
+
+  .dark .mn-cover-glass {
+    background: linear-gradient(160deg, rgba(72, 73, 64, 0.86), rgba(48, 49, 42, 0.66));
+    border: 1px solid rgba(250, 249, 239, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgba(250, 249, 239, 0.12),
+      0 20px 54px rgba(0, 0, 0, 0.44);
   }
 
   /* The `new page — proposed` card inside the composer (#97): a pane on the

@@ -41,6 +41,16 @@ export const isZenChord = (e: KeyboardEvent) => {
 }
 
 /**
+ * ⌘⌫ on a Mac, Ctrl+⌫ everywhere else: delete the focused block (`Pond 08 Edges` 8e).
+ * Inside a text block with text before the caret, the editor's own delete-to-line-start
+ * wins instead (AUDIT K1–K4) — that collision is decided at the call site, not here.
+ */
+export const isDeleteBlockChord = (e: KeyboardEvent) => {
+  if (e.altKey || e.shiftKey || e.key !== 'Backspace') return false
+  return isCommandOnly(e)
+}
+
+/**
  * ⌘Z on a Mac, Ctrl+Z everywhere else: undo. Also matches `я`, the Cyrillic-layout
  * key sharing `z`'s QWERTY position, so a non-Latin layout binds the same chord
  * (KAN-268). Unlike `isZenChord`, this is never refused for `isComposing`: an

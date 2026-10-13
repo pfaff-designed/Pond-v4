@@ -280,6 +280,27 @@ describe('createPage', () => {
     expect(chain.insert).toHaveBeenCalledTimes(2)
     expect(result.title).toBe('Personal 2')
   })
+
+  it('preferFreeTitle skips the sibling read for a blank title (#84 exemption)', async () => {
+    // A blank title never collides (#84 exempts it from the unique index), so
+    // the pre-read must not run — it would otherwise rename an untitled page's
+    // database to "Untitled" for no reason.
+    const chain = makeChain({
+      single: jest.fn().mockResolvedValue({ data: { id: 'page-blank' }, error: null }),
+    })
+    const sb = makeSupabase(chain)
+
+    const result = await createPage(sb as never, 'user-1', {
+      parentId: 'parent-1',
+      preferFreeTitle: true,
+      pondId: null,
+    })
+
+    expect(chain.insert).toHaveBeenCalledTimes(1)
+    expect(chain.insert.mock.calls[0][0].title).toBe('')
+    expect(chain.select).not.toHaveBeenCalledWith('id, title')
+    expect(result.title).toBe('')
+  })
 })
 
 // ── saveBlocks / updateTitle ─────────────────────────────────────────────────

@@ -46,13 +46,20 @@ type Row = Record<string, unknown>
 
 /** A supabase double: `pages` reads answer from `existing`; inserts and updates
  *  are captured per table. */
-function makeSupabase(opts: { existing?: Record<string, Row>; user?: boolean } = {}) {
+function makeSupabase(
+  opts: { existing?: Record<string, Row>; user?: boolean; rpc?: (fn: string) => unknown } = {}
+) {
   const existing = opts.existing ?? {}
   const inserts: { table: string; row: Row }[] = []
   const updates: { table: string; row: Row; id?: string }[] = []
+  const rpcCalls: string[] = []
   const api = {
     auth: {
       getUser: async () => ({ data: { user: opts.user === false ? null : { id: 'user-1' } } }),
+    },
+    rpc: async (fn: string) => {
+      rpcCalls.push(fn)
+      return opts.rpc ? opts.rpc(fn) : { data: null, error: null }
     },
     from(table: string) {
       let wantedId: string | undefined
@@ -81,7 +88,7 @@ function makeSupabase(opts: { existing?: Record<string, Row>; user?: boolean } =
     },
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { supabase: api as any, inserts, updates }
+  return { supabase: api as any, inserts, updates, rpcCalls }
 }
 
 const mint = () => {
@@ -220,6 +227,31 @@ describe('makePageFromAnswer', () => {
         mint()
       )
     ).rejects.toThrow(/not authenticated/i)
+  })
+
+  it('marks first run done once the page is made', async () => {
+    const { supabase, rpcCalls } = makeSupabase({ existing: {} })
+    await makePageFromAnswer(
+      supabase,
+      { proposal: proposal({ parentId: null }), threadId: null, pages: [], pondId: null },
+      mint()
+    )
+    expect(rpcCalls).toEqual(['mark_first_run_done'])
+  })
+
+  it('still returns the made page when marking first run done fails', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const { supabase } = makeSupabase({
+      existing: {},
+      rpc: () => ({ data: null, error: new Error('down') }),
+    })
+    const made = await makePageFromAnswer(
+      supabase,
+      { proposal: proposal({ parentId: null }), threadId: null, pages: [], pondId: null },
+      mint()
+    )
+    expect(made.id).toBe('pages-new')
+    spy.mockRestore()
   })
 })
 

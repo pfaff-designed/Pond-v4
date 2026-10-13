@@ -28,7 +28,7 @@ import React, {
   type CSSProperties,
 } from 'react'
 import { SiblingBlocksProvider } from '@/lib/modules/sibling-context'
-import { blockDomId, scrollToBlock } from '@/lib/modules/block-dom'
+import { blockDomId, focusPageTitle, scrollToBlock } from '@/lib/modules/block-dom'
 import { blockLinkUrl, useBlockLinkArrival } from '@/lib/modules/block-link'
 import { ModuleView } from '@/lib/modules/renderers'
 import {
@@ -53,7 +53,6 @@ import {
   type TemplatePick,
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
-import type { SlashPane } from '@/components/molecules/slash-entries'
 import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import type { SourceBlock } from '@/components/molecules/source-entries'
@@ -68,7 +67,7 @@ import { BlockWidthRow } from '@/components/molecules/BlockWidthRow'
 import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/modules/layout-rows'
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
-import { focusTextBlock } from '@/lib/modules/text/focus'
+import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
 import {
   landAtSlash,
   undoLanding,
@@ -82,7 +81,7 @@ import {
   type BlockMenuAction,
 } from '@/components/organisms/block-menu'
 import type { ConversionTarget, LineConversion, TableConversion } from '@/lib/modules/conversions'
-import { isBlockMenuChord } from '@/lib/shell-commands'
+import { isBlockMenuChord, isDeleteBlockChord } from '@/lib/shell-commands'
 import { slashRows, emptyBlockForType } from '@/lib/modules/palette'
 import { descriptorFor } from '@/lib/modules/registry'
 import { useBelowMd } from '@/lib/layout/use-below-md'
@@ -150,6 +149,30 @@ function canvasListStyle(listStyle: CSSProperties | undefined): CSSProperties {
     columnGap: BLOCK_ROW_GAP_PX,
     rowGap: listStyle?.rowGap ?? BLOCK_ROW_GAP_PX,
   }
+}
+
+/**
+ * Focus the neighbour of a removed block — the one before, else the one
+ * after — the same way across every delete path. With no neighbour left (the
+ * page's only block was removed), focus falls to the page title.
+ *
+ * Deferred a tick: a handle-menu delete removes the trigger along with its
+ * block, and the open menu's own close-focus (Base UI, back to the trigger)
+ * only runs after this event handler returns, via a microtask — so a
+ * same-tick `.focus()` here would be the one it then overrides. A macrotask
+ * runs after any microtask, settling this one last.
+ */
+function focusBlockNeighbour(blocks: Block[], index: number) {
+  const neighbour = blocks[index - 1] ?? blocks[index + 1]
+  setTimeout(() => {
+    if (!neighbour) {
+      focusPageTitle()
+      return
+    }
+    const element = document.getElementById(blockDomId(neighbour.id))
+    if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
+    if (element instanceof HTMLElement) element.focus()
+  }, 0)
 }
 
 export interface BlockCanvasProps {
@@ -438,6 +461,7 @@ export function BlockCanvas({
     const removed = blocks[index]
     if (!removed) return
     onChange(blocks.filter((_, i) => i !== index))
+    focusBlockNeighbour(blocks, index)
     stageDeletion({
       message: `Deleted ${removed.type} block`,
       // The removal already persists via the caller's debounced save; undo
@@ -463,11 +487,12 @@ export function BlockCanvas({
     const line = blocks[index]
     const neighbour = blocks[index - 1] ?? blocks[index + 1]
     if (!line || !neighbour) return
-    if (line.type === 'text' && !line.label) onChange(blocks.filter((_, i) => i !== index))
-    else removeBlockAt(index)
-    const element = document.getElementById(blockDomId(neighbour.id))
-    if (neighbour.type === 'text' && focusTextBlock(element, index === 0 ? 'start' : 'end')) return
-    if (element instanceof HTMLElement) element.focus()
+    if (line.type === 'text' && !line.label) {
+      onChange(blocks.filter((_, i) => i !== index))
+      focusBlockNeighbour(blocks, index)
+    } else {
+      removeBlockAt(index)
+    }
   }
 
   // Return on a focused block opens an empty text block after it; its editor
@@ -743,12 +768,13 @@ export function BlockCanvas({
         chrome={chrome}
         onChange={(next) => setBlockAt(i, next)}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
+        onDeleteBlock={() => removeBlockAt(i)}
         onReturn={() => insertLineAfter(i)}
         onMoveUp={() => moveBlockAt(i, 'up')}
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
-        slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+        blank={isBlankBesides(i)}
         slashSize={slashSize}
         yourTemplates={yourTemplates}
         onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
@@ -992,13 +1018,14 @@ function BlockEditor({
   chrome = true,
   onChange,
   onRemoveEmpty,
+  onDeleteBlock,
   onReturn,
   onMoveUp,
   onMoveDown,
   onSlashKey,
   onSlashPickTemplate,
   slashMenuOpen,
-  slashPane = 'rows',
+  blank = false,
   slashSize = 'desktop',
   yourTemplates,
   onSlashSelect,
@@ -1021,13 +1048,16 @@ function BlockEditor({
   onChange: (next: Block) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
+  /** ⌘⌫ / Ctrl+⌫ on the focused block. */
+  onDeleteBlock: () => void
   /** Return on a focused block that is not text. */
   onReturn: () => void
   onMoveUp?: () => void
   onMoveDown?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
-  slashPane?: SlashPane
+  /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
+  blank?: boolean
   slashSize?: PickerSize
   yourTemplates?: readonly YourTemplate[]
   /** `at` is the `/` line the menu opened on inside the block, if it did. */
@@ -1053,6 +1083,8 @@ function BlockEditor({
     rootRef,
     open: slashMenuOpen ?? false,
     size: slashSize,
+    leadWithTemplates: blank,
+    yourTemplates,
     onOpen: onSlashKey,
     onClose: onSlashClose,
   })
@@ -1071,6 +1103,30 @@ function BlockEditor({
       />
     </SlashLineContext.Provider>
   )
+
+  // ⌘⌫ deletes the focused block (`Pond 08 Edges` 8e) — on the CAPTURE phase,
+  // because tiptap's own Mod-Backspace keymap listens directly on the editor's
+  // contenteditable DOM node, and a capture listener on this row (its ancestor)
+  // always runs before a listener on the node itself. Catching it on bubble (as
+  // `handleKeyDown` below does for every other chord) is too late: tiptap has
+  // already handled or ignored the key by then.
+  // Only fires when the block ROW itself is focused, or (text blocks only) the
+  // caret is in that block's own tiptap editor with no text before it — the
+  // editor's own delete-to-line-start wins otherwise (AUDIT K1–K4). A chord
+  // typed into a table cell, a todo item's label, or any other field the block
+  // hosts is left alone so that field's own native ⌘⌫ runs.
+  function handleKeyDownCapture(e: React.KeyboardEvent) {
+    if (!isDeleteBlockChord(e.nativeEvent)) return
+    const rowFocused = e.target === e.currentTarget
+    const inOwnEditor =
+      block.type === 'text' &&
+      e.target instanceof Element &&
+      e.target.closest('[role="textbox"][contenteditable]') != null
+    if (!rowFocused && !(inOwnEditor && !hasTextBeforeCaret(rootRef.current))) return
+    e.preventDefault()
+    e.stopPropagation()
+    onDeleteBlock()
+  }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (isBlockMenuChord(e.nativeEvent)) {
@@ -1141,6 +1197,7 @@ function BlockEditor({
       }}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
     >
       {/* The handle: the only block chrome. Desktop (KAN-43) sits OUTSIDE the
@@ -1217,7 +1274,7 @@ function BlockEditor({
           onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, slash.line))}
           yourTemplates={yourTemplates}
           // A `/` line has text around it, so the page is not blank.
-          defaultPane={slash.line ? 'rows' : slashPane}
+          leadWithTemplates={slash.line ? false : blank}
           onClose={onSlashClose ?? (() => {})}
         />
       )}

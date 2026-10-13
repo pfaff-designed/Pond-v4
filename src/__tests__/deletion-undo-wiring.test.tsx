@@ -23,6 +23,7 @@ import {
   GRACE_WINDOW_MS,
 } from '@/lib/deletion/deferred-commit'
 import { DeletionUndoProvider, useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { isStaged, stagedIds, unstageId } from '@/lib/deletion/staged-ids'
 import { NotifyBridge, requestNotify } from '@/lib/deletion/notify-bridge'
 
 // ── 1. Surgical restore: two overlapping deletes ────────────────────────────
@@ -239,6 +240,96 @@ describe('stageUndo', () => {
     fireEvent.click(screen.getByText('flush-block'))
     expect(screen.queryByText('Turned into a list')).not.toBeInTheDocument()
     expect(undo).not.toHaveBeenCalled()
+  })
+})
+
+// ── 3c. Backstop id threading + pagehide flush (KAN-300) ────────────────────
+
+function BackstopHarness({
+  id,
+  commit,
+  undo,
+}: {
+  id: string
+  commit: () => void | Promise<void>
+  undo?: () => void
+}) {
+  const { stageDeletion } = useDeletionUndo()
+  return (
+    <button onClick={() => stageDeletion({ message: 'Deleted "X"', commit, undo, id })}>stage</button>
+  )
+}
+
+describe('backstop id threading (KAN-300)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    // staged-ids is a module-level singleton; clear leftovers from any prior test.
+    for (const id of stagedIds()) unstageId(id)
+    sessionStorage.clear()
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it('staging with an id marks it staged', () => {
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={jest.fn()} />
+      </DeletionUndoProvider>
+    )
+    expect(isStaged('page-1')).toBe(false)
+    fireEvent.click(screen.getByText('stage'))
+    expect(isStaged('page-1')).toBe(true)
+  })
+
+  it('commit clears the backstop id', async () => {
+    const commit = jest.fn()
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={commit} />
+      </DeletionUndoProvider>
+    )
+    fireEvent.click(screen.getByText('stage'))
+    // unstageId now waits on the commit's own promise settling (KAN-300) —
+    // let that microtask flush before asserting.
+    await act(async () => {
+      jest.advanceTimersByTime(GRACE_WINDOW_MS)
+    })
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(isStaged('page-1')).toBe(false)
+  })
+
+  it('undo clears the backstop id', () => {
+    const undo = jest.fn()
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={jest.fn()} undo={undo} />
+      </DeletionUndoProvider>
+    )
+    fireEvent.click(screen.getByText('stage'))
+    expect(isStaged('page-1')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(undo).toHaveBeenCalledTimes(1)
+    expect(isStaged('page-1')).toBe(false)
+  })
+
+  it('dispatching pagehide flushes a pending toast without waiting for the grace window', () => {
+    // The commit's request never settles here (mirrors a reload cancelling
+    // it mid-flight) — the backstop id must stay staged until it does, so
+    // the reload sweep can still finish the delete.
+    const commit = jest.fn(() => new Promise<void>(() => {}))
+    render(
+      <DeletionUndoProvider>
+        <BackstopHarness id="page-1" commit={commit} />
+      </DeletionUndoProvider>
+    )
+    fireEvent.click(screen.getByText('stage'))
+    expect(commit).not.toHaveBeenCalled()
+
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(isStaged('page-1')).toBe(true)
   })
 })
 

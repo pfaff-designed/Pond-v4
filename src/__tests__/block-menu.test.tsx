@@ -18,6 +18,7 @@ import { BlockCanvas } from '@/components/organisms/BlockCanvas'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import { blockWidthStyle } from '@/lib/modules/layout-rows'
+import { textEditorOf } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -630,5 +631,105 @@ describe('copy link to block', () => {
     window.history.replaceState(null, '', '/#block-b-heading')
     fireEvent(window, new HashChangeEvent('hashchange'))
     await waitFor(() => expect(document.getElementById('block-b-heading')).toHaveFocus())
+  })
+})
+
+describe('⌘⌫ deletes the focused block (`Pond 08 Edges` 8e)', () => {
+  const platform = Object.getOwnPropertyDescriptor(window.navigator, 'platform')
+  afterEach(() => {
+    if (platform) Object.defineProperty(window.navigator, 'platform', platform)
+    else delete (window.navigator as { platform?: string }).platform
+  })
+
+  const setPlatform = (value: string) =>
+    Object.defineProperty(window.navigator, 'platform', { value, configurable: true })
+
+  const textFieldOf = (blockId: string) =>
+    within(document.getElementById(`block-${blockId}`)!).findByRole('textbox', {
+      name: 'text block',
+    })
+
+  it('on a focused non-text block, deletes it with the undo toast', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+    root.focus()
+    fireEvent.keyDown(root, { key: 'Backspace', metaKey: true })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+    expect(await screen.findByText('Deleted table block')).toBeInTheDocument()
+  })
+
+  it('Ctrl+⌫ off a Mac does the same', async () => {
+    setPlatform('Linux x86_64')
+    const { onChange } = renderCanvas([heading, table])
+    const root = document.getElementById('block-b-table')!
+    root.focus()
+    fireEvent.keyDown(root, { key: 'Backspace', ctrlKey: true })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+  })
+
+  it('with the caret at the start of a text block, deletes it too', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, list])
+    const field = await textFieldOf('b-list')
+    act(() => textEditorOf(field).commands.focus('start'))
+    fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+  })
+
+  it('fired on the ProseMirror node itself — ahead of tiptap’s own Mod-Backspace keymap, which listens on that same node — still deletes the block and shows the undo toast', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, list])
+    const field = await textFieldOf('b-list')
+    act(() => textEditorOf(field).commands.focus('start'))
+    fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+
+    expect(lastBlocks(onChange).map((b) => b.id)).toEqual(['b-heading'])
+    expect(await screen.findByText('Deleted text block')).toBeInTheDocument()
+  })
+
+  it('with text before the caret in a text block, leaves the block for the editor’s own delete-to-line-start', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, list])
+    const field = await textFieldOf('b-list')
+    act(() => textEditorOf(field).commands.focus('end'))
+    fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('select-all then ⌘⌫ in a non-empty text block leaves the block count unchanged', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, list])
+    const field = await textFieldOf('b-list')
+    act(() => textEditorOf(field).commands.selectAll())
+    fireEvent.keyDown(field, { key: 'Backspace', metaKey: true })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('fired from a table cell input leaves the block count unchanged', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, table])
+    const cell = within(document.getElementById('block-b-table')!).getByRole('textbox', {
+      name: 'Tool, row 1',
+    })
+    fireEvent.keyDown(cell, { key: 'Backspace', metaKey: true })
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('fired from a todo item input leaves the block count unchanged', async () => {
+    setPlatform('MacIntel')
+    const { onChange } = renderCanvas([heading, shopping])
+    const item = within(document.getElementById('block-b-shop')!).getAllByRole('textbox', {
+      name: 'Item',
+    })[0]
+    fireEvent.keyDown(item, { key: 'Backspace', metaKey: true })
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

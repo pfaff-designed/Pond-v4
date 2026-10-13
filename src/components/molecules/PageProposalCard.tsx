@@ -10,7 +10,8 @@
  *
  * Purely presentational, like its sibling proposal cards: the terminal owns the
  * proposal record, the write path and the change-log advance; this component
- * renders and raises intents.
+ * renders and raises intents. Name and kind commit on blur/Enter, never per
+ * keystroke (KAN-290) — both are `DraftInput`.
  *
  * A machine surface (PROJECT_RULES § Design language): mono, lowercase, tight
  * tracking for the body. Values read inline from the frame (and `PondComposer`'s
@@ -28,6 +29,7 @@
  */
 
 import { useId, useRef } from 'react'
+import { DraftInput } from '@/components/atoms/draft-input'
 import { PondControl } from '@/components/atoms/PondControl'
 import { chipBaseClass, pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
@@ -139,12 +141,12 @@ export function PageProposalCard({
           <label htmlFor={`${ids}-name`} className={labelClass}>
             name
           </label>
-          <input
+          <DraftInput
             id={`${ids}-name`}
             aria-label="name"
             value={name}
             maxLength={PAGE_NAME_MAX}
-            onChange={(e) => onNameChange(e.target.value)}
+            onCommit={onNameChange}
             className={fieldClass}
           />
         </div>
@@ -163,12 +165,12 @@ export function PageProposalCard({
           <label htmlFor={`${ids}-kind`} className={labelClass}>
             kind
           </label>
-          <input
+          <DraftInput
             id={`${ids}-kind`}
             aria-label="kind"
             value={kind}
             maxLength={40}
-            onChange={(e) => onKindChange(e.target.value)}
+            onCommit={onKindChange}
             className={fieldClass}
           />
         </div>

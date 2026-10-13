@@ -28,6 +28,7 @@ import {
   OPEN_THREAD_MESSAGE_EVENT,
   TOGGLE_COMPOSER_EVENT,
   requestHtmlImportPicker,
+  takePendingTerminalText,
   type ComposerNoticeDetail,
   type FocusTerminalDetail,
   type OpenThreadMessageDetail,
@@ -1025,12 +1026,21 @@ export function AITerminal() {
       // The palette's `ask pond about “q”` (#279) arrives with the question typed —
       // into an EMPTY composer only. A draft in progress is the person's and is
       // never overwritten (there is no undo for it); the question still gets focus.
+      // A live listener handles the event directly, so the pending slot (KAN-195's
+      // late-mount replay path) must not keep this text around for a future mount.
+      takePendingTerminalText()
       const text = (e as CustomEvent<FocusTerminalDetail>).detail?.text
       if (text) setInput((prev) => (prev.trim() ? prev : text))
       setIsCollapsed(false)
       focusInputSoon()
     }
     window.addEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
+    // A request dispatched before this listener attached (e.g. the cover's
+    // `?ask=` carry, which fires from an effect that runs earlier in tree
+    // order) is still waiting in the pending slot — claim it exactly like an
+    // incoming event (KAN-195).
+    const pending = takePendingTerminalText()
+    if (pending) onFocusRequest(new CustomEvent(FOCUS_TERMINAL_EVENT, { detail: { text: pending } }))
     return () => window.removeEventListener(FOCUS_TERMINAL_EVENT, onFocusRequest)
   }, [focusInputSoon])
 

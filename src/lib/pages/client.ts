@@ -71,6 +71,13 @@ export interface CreatePageInput {
   title?: string
   blocks?: Block[]
   props?: Record<string, unknown>
+  /**
+   * Read the siblings and de-duplicate `title` BEFORE the first insert, so a
+   * caller that expects a name collision (e.g. a database named after its host
+   * page) never logs a 23505. The retry loop stays as the backstop for a race
+   * that lands between this read and the insert.
+   */
+  preferFreeTitle?: boolean
 }
 
 /** A page returned by semantic search, with its cosine similarity to the query. */
@@ -222,6 +229,21 @@ async function siblingRows(
   return (data ?? []) as { id: string; title: string }[]
 }
 
+/** Reads `parentId`'s siblings and returns `desired` deduped against them (#84). */
+async function dedupedTitle(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  parentId: string | null,
+  pond: string | null,
+  desired: string
+): Promise<string> {
+  const siblings = await siblingRows(supabase, userId, parentId, pond)
+  return nextAvailableTitle(
+    desired || 'Untitled',
+    siblings.map((s) => s.title)
+  )
+}
+
 /** Create a page under a parent (or top-level when parentId is null/omitted). */
 export async function createPage(
   supabase: SupabaseClient<Database>,
@@ -246,12 +268,22 @@ export async function createPage(
     props: input.props ?? {},
   }
 
+  // `preferFreeTitle` callers expect a collision (e.g. a database named after
+  // its host page), so they read the siblings and de-duplicate up front —
+  // the happy path below still stays a single write. A blank title is exempt
+  // from the unique index (#84), so it never collides — skip the pre-read and
+  // insert it as-is, or a database made from an untitled page would be
+  // renamed to "Untitled" for no reason.
+  if (input.preferFreeTitle && desired !== '') {
+    insert.title = await dedupedTitle(supabase, userId, parentId, pondId, desired)
+  }
+
   // Insert first with the caller's title — the common case has no collision, so
   // the happy path stays a single write (blank/placeholder titles are exempt
   // from the unique index entirely, #84). ONLY on a sibling-name violation
-  // (23505) do we read the siblings and auto-suffix (" 2", " 3", …) and retry,
-  // so programmatic creators (manual add, AI create_page, seeds) never fail on a
-  // duplicate name.
+  // (23505) do we read the siblings and auto-suffix (" 2", " 3", …) and retry —
+  // the race backstop for everyone, and the only path for a caller that did not
+  // ask `preferFreeTitle` to pre-check.
   for (let attempt = 0; attempt < 2; attempt++) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
@@ -275,11 +307,7 @@ export async function createPage(
     if ((error as any)?.code !== '23505' || attempt === 1) {
       throw new Error(error?.message ?? 'Failed to create page')
     }
-    const siblings = await siblingRows(supabase, userId, parentId, pondId)
-    insert.title = nextAvailableTitle(
-      desired || 'Untitled',
-      siblings.map((s) => s.title)
-    )
+    insert.title = await dedupedTitle(supabase, userId, parentId, pondId, desired)
   }
   /* c8 ignore next */
   throw new Error('Failed to create page')

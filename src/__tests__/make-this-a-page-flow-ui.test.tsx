@@ -18,6 +18,7 @@ import React from 'react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ── Module mocks ──────────────────────────────────────────────────────────
@@ -499,12 +500,13 @@ describe('make this a page → the `new page — proposed` card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
     const card = await screen.findByRole('group', { name: /new page — proposed/i })
 
-    fireEvent.change(within(card).getByRole('textbox', { name: 'name' }), {
-      target: { value: 'renovation blockers' },
-    })
-    fireEvent.change(within(card).getByRole('textbox', { name: 'kind' }), {
-      target: { value: 'project' },
-    })
+    const nameField = within(card).getByRole('textbox', { name: 'name' })
+    fireEvent.change(nameField, { target: { value: 'renovation blockers' } })
+    // DraftInput commits on blur, not per keystroke (KAN-290).
+    fireEvent.blur(nameField)
+    const kindField = within(card).getByRole('textbox', { name: 'kind' })
+    fireEvent.change(kindField, { target: { value: 'project' } })
+    fireEvent.blur(kindField)
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
 
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
@@ -541,6 +543,23 @@ describe('make this a page → the `new page — proposed` card', () => {
     // The card settles: no second make page is possible.
     expect(screen.queryByRole('button', { name: 'make page' })).not.toBeInTheDocument()
     expect(screen.getByText('page made')).toBeInTheDocument()
+  })
+
+  it('make page clicked straight after an edit, with no manual blur, uses the latest typed name (PATH step 5)', async () => {
+    const user = userEvent.setup()
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const nameField = within(card).getByRole('textbox', { name: 'name' })
+    await user.clear(nameField)
+    await user.type(nameField, 'kan290 throwaway')
+    await user.click(within(card).getByRole('button', { name: 'make page' }))
+
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    const input = mockCreatePage.mock.calls[0][2] as { title: string }
+    expect(input.title).toBe('kan290 throwaway')
   })
 
   it('a double ↵ on make page makes ONE page (G9)', async () => {
@@ -615,9 +634,10 @@ describe('make this a page → the `new page — proposed` card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
     const card = await screen.findByRole('group', { name: /new page — proposed/i })
     const long = Array.from({ length: 80 }, (_, i) => `word${i}`).join(' ')
-    fireEvent.change(within(card).getByRole('textbox', { name: 'name' }), {
-      target: { value: long },
-    })
+    const nameField = within(card).getByRole('textbox', { name: 'name' })
+    fireEvent.change(nameField, { target: { value: long } })
+    // DraftInput commits on blur, not per keystroke (KAN-290).
+    fireEvent.blur(nameField)
     fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
     await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
     const title = (mockCreatePage.mock.calls[0][2] as { title: string }).title
@@ -716,6 +736,8 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(name.value).toBe('what is actually blocking the renovation')
 
     // The person types their own name while the route is still in flight.
+    // Once typed into, DraftInput holds its draft against an incoming `value`.
+    name.focus()
     fireEvent.change(name, { target: { value: 'my own name' } })
 
     resolveFetch({
@@ -729,6 +751,37 @@ describe('make this a page → the `new page — proposed` card', () => {
     await act(async () => {})
     // The typed name must stand — a late reply never overwrites an edit.
     expect(name.value).toBe('my own name')
+  })
+
+  it('a name field merely focused, never typed into, still takes Pond’s placement name, and make page uses it (KAN-290)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'kr-1',
+        mentioned: [],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // The person clicks into the field but never types before the route resolves.
+    name.focus()
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+
+    fireEvent.blur(name)
+    // The placement name must stand — a stale, untyped draft must not revert it.
+    expect(name.value).toBe('renovation blockers')
+
+    fireEvent.click(within(card).getByRole('button', { name: 'make page' }))
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    const input = mockCreatePage.mock.calls[0][2] as { title: string }
+    expect(input.title).toBe('renovation blockers')
   })
 
   it('a route reply with parentId null leaves the fallback parent', async () => {

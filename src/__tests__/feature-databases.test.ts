@@ -47,7 +47,7 @@ import {
   type PropertyType,
   type PropertyValue,
 } from '@/lib/properties/schema'
-import { makeFakeSupabase, type Row } from './helpers/fake-supabase'
+import { existingRoot, makeFakeSupabase, type Row } from './helpers/fake-supabase'
 
 const POND = 'pond-1'
 const USER = 'user-1'
@@ -508,8 +508,13 @@ it('the source picker lists the pond’s existing databases with their record co
 })
 
 it('making a new database files a collection under databases and hands the host page a view of it', async () => {
-  // The shared fake, with no databases root yet: this is the first database.
-  const sb = makeFakeSupabase([])
+  // A root already holding a sibling named "calories" — the picker names a new
+  // database after its host page, so this is the collision KAN-300 removes: the
+  // free title is picked before the first insert, not after a 409.
+  const sb = makeFakeSupabase([
+    { ...existingRoot, pond_id: POND },
+    page({ id: 'db-calories', parent_id: 'root-db', title: 'calories' }),
+  ])
   const schema: PropertySchema = [
     { id: 'f-day', name: 'day', type: 'date' },
     { id: 'f-kcal', name: 'kcal', type: 'number' },
@@ -527,13 +532,16 @@ it('making a new database files a collection under databases and hands the host 
     mint()
   )
 
-  // Filed under the databases root, which this call created.
+  // Filed under the existing databases root — this call did not create one.
   const root = sb._pages.get(made.databasesRootId)!
   expect(isDatabasesRoot({ parentId: root.parent_id, title: root.title })).toBe(true)
-  expect(made.rootCreated).toBe(true)
+  expect(made.rootCreated).toBe(false)
+  // Exactly one insert: the free title was picked before writing, not after a
+  // 23505 round trip.
+  expect(sb._inserts).toBe(1)
   const database = sb._pages.get(made.databaseId)!
   expect(database.parent_id).toBe(made.databasesRootId)
-  expect(database.title).toBe('calories')
+  expect(database.title).toBe('calories 2')
   expect(readSchema(database.props)).toEqual(schema)
   // Empty until the person adds a record.
   expect([...sb._pages.values()].filter((p) => p.parent_id === made.databaseId)).toEqual([])

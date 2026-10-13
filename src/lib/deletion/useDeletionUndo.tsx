@@ -34,6 +34,7 @@ import {
   type DeferredCommit,
   GRACE_WINDOW_MS,
 } from '@/lib/deletion/deferred-commit'
+import { stageId, unstageId } from '@/lib/deletion/staged-ids'
 import { UndoToast, UndoToastViewport } from '@/components/molecules/UndoToast'
 
 export interface StageDeletionInput {
@@ -49,6 +50,12 @@ export interface StageDeletionInput {
   actionLabel?: string
   /** Group tag for {@link DeletionUndoContextValue.flushScope}. */
   scope?: string
+  /**
+   * Backstop id (KAN-300): staged via `stageId` on stage, cleared via
+   * `unstageId` once the write commits or is undone, so a reload left with
+   * no in-flight toast can still finish the delete (see staged-ids.ts).
+   */
+  id?: string
 }
 
 export interface StageUndoInput {
@@ -71,6 +78,8 @@ interface ActiveToast {
   action?: () => void
   actionLabel?: string
   scope?: string
+  /** Backstop id to unstage once this toast settles (commit or undo). */
+  backstopId?: string
 }
 
 interface DeletionUndoContextValue {
@@ -110,10 +119,22 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random()}`
 
+      if (input.id) stageId(input.id)
+
       const controller = scheduleDeferredCommit({
         commit: () => {
           remove(id)
-          return input.commit?.()
+          const result = input.commit?.()
+          const backstopId = input.id
+          if (!backstopId) return result
+          // Unstage only once the write settles (not before it starts) — a
+          // pagehide that flushes this ahead of a reload must leave the
+          // backstop id in place until the request actually lands, so a
+          // cancelled request still has the id for the reload sweep to
+          // retry. Unstage on failure too: the caller's own restore path
+          // (e.g. Rail's commitDelete) puts the row back, and a still-staged
+          // id would keep filtering a row that is visible again.
+          return Promise.resolve(result).finally(() => unstageId(backstopId))
         },
         graceMs: GRACE_WINDOW_MS,
       })
@@ -128,6 +149,7 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
           scope: input.scope,
           action: input.action,
           actionLabel: input.actionLabel,
+          backstopId: input.id,
         },
       ])
     },
@@ -155,7 +177,8 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
       if (!toast?.restore) return
       // performUndo restores ONLY if the undo beat the commit timer — if the
       // write already fired, restoring would race the in-flight delete.
-      performUndo(toast.controller, toast.restore)
+      const restored = performUndo(toast.controller, toast.restore)
+      if (restored && toast.backstopId) unstageId(toast.backstopId)
     },
     [remove]
   )
@@ -182,16 +205,26 @@ export function DeletionUndoProvider({ children }: { children: React.ReactNode }
     [remove]
   )
 
-  // On unmount (leaving the workspace), flush any still-pending deletions so
-  // they aren't silently dropped. A pending item was already removed from the
-  // UI, so flushing honors the user's action rather than resurrecting it.
-  useEffect(() => {
-    return () => {
-      for (const toast of toastsRef.current) {
-        void toast.controller.flush()
-      }
+  // Flush every pending toast's commit without waiting for the grace window —
+  // shared by the unmount cleanup and the `pagehide` listener below. A pending
+  // item was already removed from the UI, so flushing honors the user's action
+  // rather than resurrecting it.
+  const flushAll = useCallback(() => {
+    for (const toast of toastsRef.current) {
+      void toast.controller.flush()
     }
   }, [])
+
+  // On unmount (leaving the workspace) and on `pagehide` (reload/close before
+  // unmount would otherwise run — KAN-300), flush any still-pending deletions
+  // so a navigation or reload can't resurrect a staged delete.
+  useEffect(() => {
+    window.addEventListener('pagehide', flushAll)
+    return () => {
+      window.removeEventListener('pagehide', flushAll)
+      flushAll()
+    }
+  }, [flushAll])
 
   const value = useMemo(
     () => ({ stageDeletion, stageUndo, notify, flushScope }),

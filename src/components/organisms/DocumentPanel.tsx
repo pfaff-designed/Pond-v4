@@ -23,7 +23,7 @@
  * debounced save, and the children grid; BlockCanvas owns the blocks.
  */
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -60,6 +60,10 @@ import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
+import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
+import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { FirstRunHints } from '@/components/organisms/FirstRunHints'
+import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -121,6 +125,34 @@ export function DocumentPanel() {
       flushScope('block')
     }
   }, [pageId, flushScope])
+
+  // The cover's `?ask=` carries typed text into the root's composer (KAN-195):
+  // read once on mount, fire the same focus signal the palette uses, then strip
+  // the param so a reload never replays it. `askCarried` guards the one-shot —
+  // without it a dev-mode double-invoke or a later re-render would refire it.
+  const askCarried = useRef(false)
+  useEffect(() => {
+    if (nodeId || askCarried.current) return
+    const ask = readAskParam(searchParams)
+    if (ask === null) return
+    askCarried.current = true
+    requestTerminalFocus(ask)
+    router.replace(urlWithoutAsk('/workspace', searchParams))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once for the carried `?ask=` on mount; re-running on nodeId/searchParams/router churn would replay it
+  }, [])
+
+  // The empty-shell hints (6d f2): shown at the root only, and only until the
+  // first page is ever made through the make-this-a-page card — after that
+  // `first_run_done_at` is set and they never return (KAN-195). The panel
+  // never unmounts across a ?nodeId change, so re-entering the root after
+  // visiting a page needs its own refetch — the query's 0 staleTime alone
+  // only covers a fresh mount.
+  const { pending: firstRunPending, refetch: refetchFirstRunPending } = useFirstRunPending()
+  const wasAtPage = useRef(!!nodeId)
+  useEffect(() => {
+    if (!nodeId && wasAtPage.current) refetchFirstRunPending()
+    wasAtPage.current = !!nodeId
+  }, [nodeId, refetchFirstRunPending])
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
@@ -191,6 +223,14 @@ export function DocumentPanel() {
     )
   }
 
+  if (!nodeId && firstRunPending) {
+    return (
+      <PageCanvas className="h-full overflow-y-auto">
+        <FirstRunHints />
+      </PageCanvas>
+    )
+  }
+
   // ── The page (+ children grid when it has nested pages) ───────────────────────
   // "Everything is a page": a page may hold BOTH its own blocks AND children, and
   // nothing here reads a type tag — a page with pages inside it is simply a page
@@ -234,6 +274,7 @@ export function DocumentPanel() {
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
+            data-pond-page-title
           />
           <span
             data-part="title-eyebrow"
