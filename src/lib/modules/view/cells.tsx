@@ -16,7 +16,7 @@ import {
   type PropertyValue,
 } from '@/lib/properties/schema'
 import { displayValue } from './apply'
-import { DraftInput } from './draft-input'
+import { DraftInput } from '@/components/atoms/draft-input'
 
 /** One table cell — an inline editor when editable, a resolved read display otherwise. */
 export function Cell({
