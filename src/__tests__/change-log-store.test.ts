@@ -61,6 +61,7 @@ function makeSupabase(
     eq: jest.fn(() => chain),
     is: jest.fn(() => chain),
     in: jest.fn(() => chain),
+    lt: jest.fn(() => chain),
     order: jest.fn(() => chain),
     limit: jest.fn(() => chain),
     insert: jest.fn(() => chain),
@@ -506,6 +507,36 @@ describe('listRecords', () => {
     })
     expect(sb._chain.in).toHaveBeenCalledWith('status', ['accepted', 'reverted'])
   })
+
+  it('pages with `before` as a keyset cursor, each page newest-first and disjoint from the last', async () => {
+    const page1 = [
+      row({ id: 'r3', created_at: '2026-01-03T00:00:00.000Z' }),
+      row({ id: 'r2', created_at: '2026-01-02T00:00:00.000Z' }),
+    ]
+    const sb1 = makeSupabase({ list: page1 })
+    const firstPage = await store.listRecords(sb1 as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      limit: 2,
+    })
+    expect(firstPage.map((r) => r.id)).toEqual(['r3', 'r2'])
+    expect(sb1._chain.lt).not.toHaveBeenCalled()
+
+    const oldest = firstPage[firstPage.length - 1].createdAt
+    const page2 = [row({ id: 'r1', created_at: '2026-01-01T00:00:00.000Z' })]
+    const sb2 = makeSupabase({ list: page2 })
+    const secondPage = await store.listRecords(sb2 as never, {
+      pondId: 'pond-1',
+      userId: USER,
+      limit: 2,
+      before: oldest,
+    })
+
+    expect(sb2._chain.lt).toHaveBeenCalledWith('created_at', oldest)
+    expect(secondPage.map((r) => r.id)).toEqual(['r1'])
+    // Disjoint: nothing from the first page reappears in the second.
+    expect(secondPage.map((r) => r.id)).not.toEqual(expect.arrayContaining(['r3', 'r2']))
+  })
 })
 
 describe('countProposed', () => {
@@ -519,6 +550,22 @@ describe('countProposed', () => {
   it('reads zero when the pond has nothing waiting', async () => {
     const sb = makeSupabase({ count: undefined })
     expect(await store.countProposed(sb as never, USER, 'pond-1')).toBe(0)
+  })
+})
+
+describe('countWaiting', () => {
+  it('counts proposed and outdated records, excluding every other status', async () => {
+    const sb = makeSupabase({ count: 5 })
+    expect(await store.countWaiting(sb as never, USER, 'pond-1')).toBe(5)
+    expect(sb._chain.in.mock.calls).toContainEqual(['status', ['proposed', 'outdated']])
+    expect(sb._chain.eq.mock.calls).not.toContainEqual(['status', 'accepted'])
+    expect(sb._chain.eq.mock.calls).not.toContainEqual(['status', 'rejected'])
+    expect(sb._chain.select).toHaveBeenCalledWith('id', { count: 'exact', head: true })
+  })
+
+  it('reads zero when the pond has nothing waiting', async () => {
+    const sb = makeSupabase({ count: undefined })
+    expect(await store.countWaiting(sb as never, USER, 'pond-1')).toBe(0)
   })
 })
 

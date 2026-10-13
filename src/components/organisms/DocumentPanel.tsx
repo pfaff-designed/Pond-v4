@@ -51,6 +51,9 @@ import {
 import { usePublishCommandPath } from '@/lib/layout/command-path'
 import { commandPath } from '@/lib/pages/command-path'
 import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
+import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
@@ -72,6 +75,10 @@ export function DocumentPanel() {
   const pondId = pond?.id ?? null
   const pondName = pond?.name ?? null
   const nodeId = searchParams.get('nodeId')
+  // The reserved change-log page (KAN-94): a virtual node with no `pages` row, so
+  // it takes none of the getPage/rows-driven path below — rendered by
+  // `ChangeLogPage` instead, further down.
+  const isChangeLogNode = nodeId === CHANGE_LOG_NODE_ID
   // Lazily created on first use, not at render — so an envless mount (Storybook,
   // CI) never constructs a real client and throws (#38); the page query and the
   // save/property paths below construct it only when they actually run.
@@ -157,7 +164,7 @@ export function DocumentPanel() {
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
-    enabled: !!pageId,
+    enabled: !!pageId && !isChangeLogNode,
   })
 
   // The flat page tree — the same cache the rail reads — so this page's own
@@ -208,12 +215,26 @@ export function DocumentPanel() {
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
   usePublishCommandPath(
-    commandPath(rows, nodeId, {
-      rootTitle: home?.title || pondName || 'life',
-      current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
-      pondGlyph: pond?.glyph ?? LIFE_GLYPH,
-    })
+    isChangeLogNode
+      ? {
+          glyph: pond?.glyph ?? LIFE_GLYPH,
+          trail: [home?.title || pondName || 'life', DATABASES_ROOT_TITLE],
+          current: 'change log',
+          role: null,
+        }
+      : commandPath(rows, nodeId, {
+          rootTitle: home?.title || pondName || 'life',
+          current: viewTitle || rows.find((r) => r.id === nodeId)?.title || 'Untitled',
+          pondGlyph: pond?.glyph ?? LIFE_GLYPH,
+        })
   )
+
+  // The virtual change-log page: the breadcrumb above has already taken effect;
+  // `ChangeLogPage` owns its own table/view-bar and data fetching — this surface
+  // takes none of the `getPage`/rows path below.
+  if (isChangeLogNode) {
+    return <ChangeLogPage />
+  }
 
   if ((!nodeId && homePending) || isLoading || rowsPending || !page) {
     return (

@@ -32,8 +32,9 @@ export interface PageChangeRow {
   reverts: ChangeLogRecord | null
 }
 
-/** `09:31` — how a revert names the change it sets back. */
-const clockTime = (record: ChangeLogRecord): string =>
+/** `09:31` — how a revert names the change it sets back; also the log table's
+ *  "time" column, so there is one clock-formatting path, not two. */
+export const clockTime = (record: ChangeLogRecord): string =>
   new Date(record.createdAt).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',

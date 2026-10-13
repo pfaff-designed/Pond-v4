@@ -196,3 +196,22 @@ export interface SuggestFollowupsPart {
 export function isSuggestFollowupsPart(part: { type: string }): part is SuggestFollowupsPart {
   return part.type === SUGGEST_FOLLOWUPS_TYPE
 }
+
+/** The open_change_log tool's own part type (KAN-94) — not a proposal (it lives
+ *  outside proposals.ts's TYPE list), so it never counts toward the unresolved-
+ *  proposal derivations those types drive. */
+export const OPEN_CHANGE_LOG_TYPE = 'tool-open_change_log'
+
+/** An open_change_log tool part — carries no decision, just a navigation
+ *  gesture. Client-resolved (no execute); AITerminal pushes the change log's
+ *  workspace URL the moment the call streams in. */
+export interface OpenChangeLogPart {
+  type: typeof OPEN_CHANGE_LOG_TYPE
+  toolCallId: string
+  state: string
+  input?: Record<string, never>
+}
+
+export function isOpenChangeLogPart(part: { type: string }): part is OpenChangeLogPart {
+  return part.type === OPEN_CHANGE_LOG_TYPE
+}

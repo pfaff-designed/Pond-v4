@@ -191,6 +191,11 @@ describe('POST /api/chat toolset (ticket-30 cross-page edits)', () => {
     )
   })
 
+  it('offers open_change_log so the composer can navigate there (KAN-94)', async () => {
+    await post({ messages: [] })
+    expect(Object.keys(lastStreamTextArgs().tools)).toContain('open_change_log')
+  })
+
   it('still offers propose_changes and read_page when NO node is open (cross-page path)', async () => {
     await post({ messages: [] })
     const { tools } = lastStreamTextArgs()

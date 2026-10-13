@@ -548,3 +548,16 @@ export const suggestFollowupsTool = {
     'Offer up to four short follow-up chips under your reply — answers to your own question or sensible next moves the user can click to send. Use them especially while grilling or wayfinding to keep the thinking moving; keep them quiet and few. Client-resolved (no execute).',
   inputSchema: suggestFollowupsSchema,
 } as const
+
+/**
+ * open_change_log (KAN-94) — navigate to the change log page, the reserved
+ * database under the rail's databases root. Carries no user decision (it is
+ * not a proposal) and no arguments: client-resolved (no execute), the call
+ * itself is the whole gesture. AITerminal resolves it by pushing the same
+ * workspace URL the rail's change-log row pushes.
+ */
+export const openChangeLogTool = {
+  description:
+    'Open the change log — the page listing every proposed, accepted, rejected and reverted change across the pond, newest first. Use this when the user asks to see, open or go to the change log, their changes, recent edits, or what is waiting on them. Carries no arguments. Client-resolved (no execute): calling it navigates the user there immediately.',
+  inputSchema: z.object({}),
+} as const

@@ -24,7 +24,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
-import { assertTransition, canRevise } from './status'
+import { assertTransition, canRevise, WAITING_STATUSES } from './status'
 import { RecordChangedError } from './errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { inPond, resolvePond } from '@/lib/pond/scope'
@@ -632,6 +632,9 @@ export interface ListRecordsOptions {
   action?: ChangeLogAction | ChangeLogAction[]
   sourceThreadId?: string
   limit?: number
+  /** Keyset pagination: the next page is everything older than the last page's
+   *  oldest `createdAt` — a "load more" cursor, not an offset. */
+  before?: string
 }
 
 /**
@@ -654,6 +657,7 @@ export async function listRecords(
   }
   if (opts.targetPageId !== undefined) q = q.eq('target_page_id', opts.targetPageId)
   if (opts.sourceThreadId !== undefined) q = q.eq('source_thread_id', opts.sourceThreadId)
+  if (opts.before !== undefined) q = q.lt('created_at', opts.before)
   q = q.order('created_at', { ascending: false })
   if (opts.limit !== undefined) q = q.limit(opts.limit)
 
@@ -677,6 +681,26 @@ export async function countProposed(
     count: 'exact',
     head: true,
   }).eq('status', 'proposed')
+  return count ?? 0
+}
+
+/**
+ * The change log page's lead figure: "N proposed, waiting on you." Wider than
+ * {@link countProposed} — the board's proposed view lists `outdated` records
+ * too (a proposal whose target moved on still needs a person's decision:
+ * accept is gone, but revise is offered), so both statuses count as waiting.
+ */
+export async function countWaiting(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  /** #312: the pond whose waiting records to count. Omitted, the person's first. */
+  pondId: string | null
+): Promise<number> {
+  const pond = await resolvePond(supabase, userId, pondId)
+  const { count } = await readScoped(supabase, userId, pond, 'id', {
+    count: 'exact',
+    head: true,
+  }).in('status', WAITING_STATUSES)
   return count ?? 0
 }
 

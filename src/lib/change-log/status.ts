@@ -41,11 +41,19 @@ export const TERMINAL_STATUSES: readonly ChangeLogStatus[] = CHANGE_LOG_STATUSES
   (s) => LEGAL_TRANSITIONS[s].length === 0
 )
 
-/** `proposed` is the only status still waiting on a person — the one the
- *  "N proposed, waiting on you" figure counts. */
+/** `proposed` is the only status still waiting on a person's *first* decision —
+ *  the set `listRecords({status:'proposed'})` returns. The change log page's
+ *  own "N proposed, waiting on you" figure counts the wider {@link WAITING_STATUSES}
+ *  set instead, since an `outdated` record still needs a decision (revise). */
 export function isOpen(status: ChangeLogStatus): boolean {
   return status === 'proposed'
 }
+
+/** Both statuses still waiting on a person's decision — the set `countWaiting`
+ *  counts and a change-log row's pill/plain status split reads. `outdated`
+ *  keeps an accept withdrawn but a revise offered, so it still counts as
+ *  waiting (KAN-94). */
+export const WAITING_STATUSES: readonly ChangeLogStatus[] = ['proposed', 'outdated']
 
 /** Settled = decided, one way or another. The complement of {@link isOpen}. */
 export function isSettled(status: ChangeLogStatus): boolean {
