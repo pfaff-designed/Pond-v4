@@ -112,6 +112,17 @@ describe('rail — the databases root', () => {
     fireEvent.click(within(foot).getByRole('treeitem', { name: /databases/ }))
     expect(onOpenDatabases).toHaveBeenCalledTimes(1)
   })
+
+  // KAN-300: a mouse user, not only a keyboard user, must be able to reach a
+  // database row's delete control — hovering it must show × the same way
+  // focusing it already does.
+  it('shows a database row’s delete control on hover, not only on focus', () => {
+    renderRail([health, databases], new Set(['root-db']))
+    const foot = screen.getByRole('tree', { name: 'Databases' })
+    const row = within(foot).getByRole('treeitem', { name: 'ingredients' })
+    fireEvent.mouseEnter(row)
+    expect(within(foot).getByRole('button', { name: 'Delete ingredients' })).toBeInTheDocument()
+  })
 })
 
 // ── The path on a databases page (ADR 0003) ──────────────────────────────────

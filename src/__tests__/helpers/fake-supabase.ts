@@ -9,7 +9,8 @@
  * `getPage` / `saveBlocks` for a composition check. Assert end-state via
  * `_pages`. `failInsertAt` makes the Nth insert (1-based) fail, which is how a
  * partial-failure rollback is exercised. `tables` seeds any other table — `ponds`,
- * say — for reads only.
+ * say — for reads only. `_inserts` counts every insert `.single()` has settled,
+ * for a caller asserting it never retried.
  */
 
 export type Row = {
@@ -128,6 +129,9 @@ export function makeFakeSupabase(
     auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
     from: jest.fn(from),
     _pages: pages,
+    get _inserts() {
+      return inserts
+    },
   }
 }
 

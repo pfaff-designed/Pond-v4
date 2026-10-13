@@ -107,6 +107,7 @@ import {
 } from '@/lib/deletion/blast-radius'
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
+import { isStaged, priorLifeIds, unstageId } from '@/lib/deletion/staged-ids'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
@@ -811,11 +812,12 @@ export function RailView({
   )
   const databasesFlat = useMemo(
     () =>
-      databasesRoot
+      (databasesRoot
         ? flattenVisible([databasesRoot], expanded, true)
             .slice(1) // drop the synthetic Life row flattenVisible always leads with
             .map((f) => ({ ...f, depth: f.depth - 1 }))
-        : [DATABASES_PLACEHOLDER_ROW],
+        : [DATABASES_PLACEHOLDER_ROW]
+      ).filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
     [databasesRoot, expanded]
   )
   const databasesIds = useMemo(() => new Set(databasesFlat.map((f) => f.id)), [databasesFlat])
@@ -825,12 +827,13 @@ export function RailView({
   // lib/rail/tree.ts). Rendered as two trees below but ONE keyboard order, so
   // ↑/↓ walk from the last Life row into databases.
   const flat = useMemo(
-    () => [
-      // #312/#320: the root row is named for the pond you are in, not the literal
-      // 'life' that `LIFE_NODE` carries.
-      ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
-      ...databasesFlat,
-    ],
+    () =>
+      [
+        // #312/#320: the root row is named for the pond you are in, not the literal
+        // 'life' that `LIFE_NODE` carries.
+        ...flattenVisible(lifeTree, expanded, lifeExpanded, pondName),
+        ...databasesFlat,
+      ].filter((f) => !isStaged(f.id)), // KAN-300: a refetch mid-undo-toast can't resurrect a staged row
     [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
@@ -1402,6 +1405,41 @@ export function Rail() {
     return result
   }
 
+  // The reload backstop (KAN-300): a reload can cancel the in-flight request
+  // `pagehide`'s flush started, leaving a commit unfinished. Only ids left
+  // over from BEFORE this script ran (`priorLifeIds`) are swept — an id
+  // staged during this very script execution still has a live toast/undo
+  // path somewhere, and an unrelated Rail remount must not hard-delete it out
+  // from under that. `withUser` is deliberately not reused here: its `T` is
+  // `void` for `deletePage`, so a successful delete and "no signed-in user"
+  // are both indistinguishable `undefined` returns, and it has no per-call
+  // try/catch — both would silently mis-clear the backstop id.
+  useEffect(() => {
+    const leftover = priorLifeIds()
+    if (leftover.length === 0) return
+    void (async () => {
+      for (const id of leftover) {
+        try {
+          const supabase = createClient()
+          const {
+            data: { user },
+          } = await supabase.auth.getUser()
+          if (!user) continue // no signed-in user — leave staged, retry on a later mount
+          await deletePage(supabase, id)
+          unstageId(id)
+          queryClient.setQueryData<PageRow[]>(pagesKey(pondId), (rows) => removeRow(rows ?? [], id))
+          queryClient.invalidateQueries({ queryKey: pagesKey() })
+        } catch {
+          // leave this id staged; a later mount retries it
+        }
+      }
+    })()
+    // Runs once per mount against the snapshot captured at this script's
+    // first load; priorLifeIds() never grows, so a later remount with
+    // nothing left over is a no-op.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const openingDatabases = useRef(false)
 
   /** The databases row with no root behind it: create the root through the one
@@ -1501,6 +1539,7 @@ export function Rail() {
     stageDeletion({
       message: `Deleted "${node.title || 'Untitled'}"`,
       scope: 'rail',
+      id: node.id,
       commit: () => commitDelete(node, removedRow),
       undo: () => restoreDeletedRow(removedRow),
     })
@@ -1656,10 +1695,15 @@ export function Rail() {
     })
   }
 
-  /** Open a page — strictly navigation; expansion belongs to the caret alone. */
+  /** Open a page — strictly navigation; expansion belongs to the caret alone.
+   *  The databases root is the one row with no caret (PondRail draws none for
+   *  it), so clicking it must also expand it here or its children are never
+   *  reachable by mouse. */
   function handleSelect(id: string) {
     const node = nodeById.get(id)
-    if (node) navigateTo(node)
+    if (!node) return
+    if (isDatabasesRoot(node)) setExpanded((prev) => new Set(prev).add(id))
+    navigateTo(node)
   }
 
   // ── Drag-to-reparent / reorder (F25) ────────────────────────────────────────

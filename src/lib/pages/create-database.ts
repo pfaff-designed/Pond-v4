@@ -97,6 +97,10 @@ export async function createDatabase(
       title: input.title,
       props: withSchema({}, input.schema),
       pondId: input.pondId,
+      // The picker names the database after the page it started on, so it
+      // collides with an earlier database from the same page every time —
+      // de-dupe before the first insert instead of eating a 23505.
+      preferFreeTitle: true,
     })
     const view: ViewBlock = {
       id: mintId(),
