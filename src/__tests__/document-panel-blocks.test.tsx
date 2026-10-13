@@ -227,7 +227,7 @@ describe('every page is the one page surface (ticket-22, #108, #234): blocks and
     const editor = await findTextBlock()
     writeInTextBlock(editor, '/')
     // An empty page leads with its templates; typing a block's name returns to the blocks.
-    await screen.findByRole('listbox', { name: 'page from template' })
+    await screen.findByRole('listbox', { name: 'blocks' })
     // #278: the query is the text typed on the page after the `/`.
     writeInTextBlock(editor, '/check')
     // The matched label is split pre / hit / post, so find the row by its whole text.
@@ -275,12 +275,16 @@ describe('the / menu on an empty page makes pages', () => {
 
   const pick = async (editor: HTMLElement, query: string, name: string) => {
     // An empty page opens on its templates; typing a name returns to the blocks.
-    await screen.findByRole('listbox', { name: 'page from template' })
+    await screen.findByRole('listbox', { name: 'blocks' })
     writeInTextBlock(editor, `/${query}`)
     const menu = await screen.findByRole('listbox', { name: 'blocks' })
-    // The matched part of a label is its own span, so match the row by its whole text.
+    // The matched part of a label is its own span, so match the row by its whole
+    // text — LAST match: a blank page's list leads with the premade templates
+    // (KAN-276), so a label like `page` also names a template row earlier in the
+    // list; the ordinary `pages`-group row this helper means is the one after it.
     const row = within(menu)
       .getAllByRole('option')
+      .reverse()
       .find((o) => o.querySelector('[data-part="label"]')?.textContent === name)!
     fireEvent.click(row)
   }

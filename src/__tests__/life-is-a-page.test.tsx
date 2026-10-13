@@ -203,7 +203,7 @@ describe('Life is a page (#234)', () => {
       const editor = await findTextBlock()
       writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
-      await screen.findByRole('listbox', { name: 'page from template' })
+      await screen.findByRole('listbox', { name: 'blocks' })
       writeInTextBlock(editor, `/${c.name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(c.name))
@@ -241,7 +241,7 @@ describe('Life is a page (#234)', () => {
       const editor = await findTextBlock()
       writeInTextBlock(editor, '/')
       // An empty page leads with its templates; typing a block's name returns to the blocks.
-      await screen.findByRole('listbox', { name: 'page from template' })
+      await screen.findByRole('listbox', { name: 'blocks' })
       writeInTextBlock(editor, `/${name}`)
       const menu = await screen.findByRole('listbox', { name: 'blocks' })
       fireEvent.click(within(menu).getByText(name))

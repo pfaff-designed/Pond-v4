@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type RefObject } from 'react'
 import type { PickerSize } from '@/components/molecules/picker-chrome'
-import { slashMenuHeight } from '@/components/molecules/slash-entries'
+import { slashMenuHeight, type YourTemplate } from '@/components/molecules/slash-entries'
 import type { PickerAnchorBox, PickerSide } from '@/components/molecules/use-anchored-box'
 import type { Block } from '@/lib/documents/types'
 import { caretRect, sideTowardFreeSpace } from '@/lib/layout/caret-anchor'
@@ -15,6 +15,9 @@ interface SlashLineOptions {
   rootRef: RefObject<HTMLElement | null>
   open: boolean
   size: PickerSize
+  /** A page with nothing on it yet besides this block (6f): the glass sizes off the blank list. */
+  leadWithTemplates?: boolean
+  yourTemplates?: readonly YourTemplate[]
   onOpen?: () => void
   onClose?: () => void
 }
@@ -26,7 +29,16 @@ interface SlashLineOptions {
  * and the slash stays as text, so esc keeps it. Deleting the slash, or leaving
  * the line, closes it. The menu hangs off the caret, not the block.
  */
-export const useSlashLine = ({ block, rootRef, open, size, onOpen, onClose }: SlashLineOptions) => {
+export const useSlashLine = ({
+  block,
+  rootRef,
+  open,
+  size,
+  leadWithTemplates,
+  yourTemplates,
+  onOpen,
+  onClose,
+}: SlashLineOptions) => {
   const [side, setSide] = useState<PickerSide>('bottom')
   const anchor = useMemo<PickerAnchorBox>(
     () => ({
@@ -44,7 +56,15 @@ export const useSlashLine = ({ block, rootRef, open, size, onOpen, onClose }: Sl
   const openAt = (at: SlashLineAt | null) => {
     setReported(at)
     if (rootRef.current) {
-      const height = slashMenuHeight(slashRows, size, window.innerHeight)
+      // A `/` line has text around it, so the page is not blank — same override
+      // the menu itself applies to `leadWithTemplates` at render.
+      const height = slashMenuHeight(
+        slashRows,
+        size,
+        window.innerHeight,
+        at ? false : leadWithTemplates,
+        yourTemplates
+      )
       setSide(sideTowardFreeSpace(caretRect(rootRef.current), window.innerHeight, height))
     }
     onOpen?.()
