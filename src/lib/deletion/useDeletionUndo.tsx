@@ -223,3 +223,13 @@ export function useDeletionUndo(): DeletionUndoContextValue {
   if (!ctx) throw new Error('useDeletionUndo must be used within a DeletionUndoProvider')
   return ctx
 }
+
+/**
+ * Non-throwing variant for a module view (KAN-292's `ViewView`) that may render
+ * BELOW the provider (`BlockCanvas`) or ABOVE it (a diff/proposal preview, a
+ * Storybook story) — mirrors the notify-bridge's reason for existing: not every
+ * host that mounts a module is inside `DeletionUndoProvider`.
+ */
+export function useOptionalDeletionUndo(): DeletionUndoContextValue | null {
+  return useContext(DeletionUndoContext)
+}

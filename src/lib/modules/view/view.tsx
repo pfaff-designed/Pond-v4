@@ -64,7 +64,14 @@ import {
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
-import { coerceValue, ROW_TYPE, type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
+import {
+  addDateField,
+  coerceValue,
+  ROW_TYPE,
+  type PropertySchema,
+  type PropertyValue,
+} from '@/lib/properties/schema'
+import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
@@ -86,10 +93,31 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow } =
+  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
+
+  // KAN-292: the shared "add a date field" remedy a dateless calendar/list/gantt
+  // offers from its own empty state — an own edit, applied at once, with an undo
+  // toast (the same `stageUndo` seam `BlockCanvas` uses for every other block-scoped
+  // change). Gated on `editable`, like every other view insert: a diff card or a
+  // create-page proposal must never write to the collection it's rendering. The
+  // provider lookup is the non-throwing variant: a diff/proposal preview and
+  // Storybook mount `ViewView` with no `DeletionUndoProvider` ancestor at all.
+  const deletionUndo = useOptionalDeletionUndo()
+  const handleAddDateField =
+    editable && schema && deletionUndo
+      ? () => {
+          const previous = schema
+          updateSchema(addDateField(previous))
+          deletionUndo.stageUndo({
+            message: 'Added a date field',
+            scope: 'block',
+            undo: () => updateSchema(previous),
+          })
+        }
+      : undefined
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
@@ -125,6 +153,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onConfigChange={onConfigChange}
       onOpenRow={handleOpenRow}
       chartProvenance={chartProvenance}
+      onAddDateField={handleAddDateField}
     />
   )
 }
@@ -158,6 +187,10 @@ export interface CollectionViewProps {
   onOpenRow?: (rowId: string) => void
   /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
   chartProvenance?: ChartProvenance
+  /** KAN-292: mint a `date` field onto this collection's schema, offered by a
+   *  calendar/list/gantt view whose kind needs one and doesn't have it. Absent when
+   *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
+  onAddDateField?: () => void
 }
 
 export function CollectionView({
@@ -175,6 +208,7 @@ export function CollectionView({
   onConfigChange,
   onOpenRow,
   chartProvenance,
+  onAddDateField,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -263,7 +297,12 @@ export function CollectionView({
           onOpenRow={onOpenRow}
         />
       ) : config.mode === 'calendar' ? (
-        <CollectionCalendar schema={schema} rows={processed} groupBy={config.groupBy} />
+        <CollectionCalendar
+          schema={schema}
+          rows={processed}
+          groupBy={config.groupBy}
+          onAddDateField={onAddDateField}
+        />
       ) : config.mode === 'gallery' ? (
         <CollectionGallery schema={schema} rows={processed} />
       ) : config.mode === 'gantt' ? (
