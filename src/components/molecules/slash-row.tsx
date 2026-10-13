@@ -64,6 +64,7 @@ export function Row({
       data-part="row"
       className={`${SLASH_SIZES[size].row} ${ink} ${selected ? 'bg-mn-text/[0.07]' : 'bg-transparent'}`}
       onMouseEnter={onHover}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onPick}
     >
       {entry.icon && (

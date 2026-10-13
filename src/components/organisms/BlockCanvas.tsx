@@ -53,7 +53,6 @@ import {
   type TemplatePick,
   type YourTemplate,
 } from '@/components/molecules/SlashMenu'
-import type { SlashPane } from '@/components/molecules/slash-entries'
 import type { PickerSize } from '@/components/molecules/picker-chrome'
 import { SourcePicker, type SourcePick } from '@/components/molecules/SourcePicker'
 import type { SourceBlock } from '@/components/molecules/source-entries'
@@ -775,7 +774,7 @@ export function BlockCanvas({
         onMoveDown={() => moveBlockAt(i, 'down')}
         onSlashKey={() => openSlashMenuAt(i)}
         slashMenuOpen={slashMenuOpenAt === i}
-        slashPane={isBlankBesides(i) ? 'templates' : 'rows'}
+        blank={isBlankBesides(i)}
         slashSize={slashSize}
         yourTemplates={yourTemplates}
         onSlashSelect={(row, at) => handleSlashSelect(i, row, at)}
@@ -1026,7 +1025,7 @@ function BlockEditor({
   onSlashKey,
   onSlashPickTemplate,
   slashMenuOpen,
-  slashPane = 'rows',
+  blank = false,
   slashSize = 'desktop',
   yourTemplates,
   onSlashSelect,
@@ -1057,7 +1056,8 @@ function BlockEditor({
   onMoveDown?: () => void
   onSlashKey?: () => void
   slashMenuOpen?: boolean
-  slashPane?: SlashPane
+  /** A page with nothing on it yet besides this block (6f): `/` leads with templates. */
+  blank?: boolean
   slashSize?: PickerSize
   yourTemplates?: readonly YourTemplate[]
   /** `at` is the `/` line the menu opened on inside the block, if it did. */
@@ -1083,6 +1083,8 @@ function BlockEditor({
     rootRef,
     open: slashMenuOpen ?? false,
     size: slashSize,
+    leadWithTemplates: blank,
+    yourTemplates,
     onOpen: onSlashKey,
     onClose: onSlashClose,
   })
@@ -1272,7 +1274,7 @@ function BlockEditor({
           onPickTemplate={onSlashPickTemplate && ((pick) => onSlashPickTemplate(pick, slash.line))}
           yourTemplates={yourTemplates}
           // A `/` line has text around it, so the page is not blank.
-          defaultPane={slash.line ? 'rows' : slashPane}
+          leadWithTemplates={slash.line ? false : blank}
           onClose={onSlashClose ?? (() => {})}
         />
       )}
