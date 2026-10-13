@@ -41,6 +41,7 @@ import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { IllegalTransitionError } from '@/lib/change-log/status'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -118,7 +119,16 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         // Surfaced, not swallowed: unlike the log writes that ride along with an
         // accepted proposal, every write here IS what the person just asked for.
         console.error('[change-log] page changes panel', err)
-        setError(err instanceof Error ? err.message : 'that did not work')
+        // `IllegalTransitionError` carries developer text (`change log: …`) —
+        // the two-tab race already has a person-facing line, same as
+        // `RecordChangedError`'s own message.
+        setError(
+          err instanceof IllegalTransitionError
+            ? 'this change was already answered'
+            : err instanceof Error
+              ? err.message
+              : 'that did not work'
+        )
       } finally {
         setBusyId(null)
         await refresh()
