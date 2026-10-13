@@ -62,6 +62,8 @@ import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
+import { FirstRunHints } from '@/components/organisms/FirstRunHints'
+import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -139,6 +141,11 @@ export function DocumentPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once for the carried `?ask=` on mount; re-running on nodeId/searchParams/router churn would replay it
   }, [])
 
+  // The empty-shell hints (6d f2): shown at the root only, and only until the
+  // first page is ever made through the make-this-a-page card — after that
+  // `first_run_done_at` is set and they never return (KAN-195).
+  const firstRunPending = useFirstRunPending()
+
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
     queryFn: () => (pageId ? getPage(getSupabase(), pageId) : Promise.resolve(null)),
@@ -205,6 +212,14 @@ export function DocumentPanel() {
       <div className="h-full flex items-center justify-center text-mn-13 text-mn-text-secondary">
         Loading…
       </div>
+    )
+  }
+
+  if (!nodeId && firstRunPending) {
+    return (
+      <PageCanvas className="flex h-full items-center justify-center overflow-y-auto">
+        <FirstRunHints />
+      </PageCanvas>
     )
   }
 
