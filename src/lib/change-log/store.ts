@@ -321,49 +321,107 @@ export async function listRecordsByToolCalls(
   return ((data ?? []) as ChangeLogRow[]).map(mapChangeLogRow)
 }
 
+/** The fields `resolveChainStatuses` needs off a hop row — never the full
+ *  {@link ChangeLogRecord} shape, since a hop fetch runs once per depth over
+ *  every chain still walking and only ever reads its own status and link. */
+const CHAIN_HOP_COLUMNS = 'id, status, links, created_at'
+
 /**
- * A record's status at the CURRENT tip of its undo/redo chain, not the status
- * frozen on its own row. `change_log_step` (0021) never flips the original
- * record back from `undone` on a redo — it inserts a new `redo` row linked via
- * `links.redoOf` to whichever id it just redid, and leaves the original
- * `undone`. The next undo/redo cycle keys off that NEW row's id in turn (a
- * second ⌘Z targets the redo, not the original), so walking the chain means
- * following whichever of `undoOf`/`redoOf` most recently targeted the current
- * id, one hop at a time, rather than reading one row's `status` column once
- * anything has ever undone it. `redoOf` can only exist once an `undoOf` of the
- * same id does, and always lands later, so a redo always wins the hop. Depth
- * capped like `change_log_undo_kind` (0021) guards its own walk — a real chain
- * never runs long, but neither should this.
+ * One hop, for every chain still walking at once: the newest row (if any)
+ * whose `links->>{linkKey}` names each of `parentIds`, keyed by that parent id.
+ * `order(created_at desc)` then "first write wins" per parent reproduces the
+ * single-chain walk's own `.limit(1)` tie-break without needing a query per
+ * parent — rows for unrelated parents never compete for the same slot.
  */
-export async function resolveChainStatus(
+async function fetchChainHop(
   supabase: SupabaseClient<Database>,
-  opts: { userId: string; pondId: string | null; recordId: string; status: ChangeLogStatus }
-): Promise<ChangeLogStatus> {
-  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
-  let current = opts.recordId
-  let status = opts.status
-  for (let depth = 0; depth < 1000; depth++) {
-    const [{ data: redoData, error: redoError }, { data: undoData, error: undoError }] =
-      await Promise.all([
-        readScoped(supabase, opts.userId, pond)
-          .eq('links->>redo_of', current)
-          .order('created_at', { ascending: false })
-          .limit(1),
-        readScoped(supabase, opts.userId, pond)
-          .eq('links->>undo_of', current)
-          .order('created_at', { ascending: false })
-          .limit(1),
-      ])
-    if (redoError) throw redoError
-    if (undoError) throw undoError
-    const redoRow = (redoData ?? [])[0] as ChangeLogRow | undefined
-    const undoRow = (undoData ?? [])[0] as ChangeLogRow | undefined
-    const next = redoRow ?? undoRow
-    if (!next) break
-    current = next.id
-    status = redoRow ? 'accepted' : 'undone'
+  userId: string,
+  pond: string | null,
+  linkKey: 'redo_of' | 'undo_of',
+  parentIds: readonly string[]
+): Promise<Map<string, { id: string; status: ChangeLogStatus }>> {
+  const out = new Map<string, { id: string; status: ChangeLogStatus }>()
+  if (parentIds.length === 0) return out
+  const { data, error } = await readScoped(supabase, userId, pond, CHAIN_HOP_COLUMNS)
+    .in(`links->>${linkKey}`, [...parentIds])
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  for (const row of (data ?? []) as Array<{ id: string; status: unknown; links: unknown }>) {
+    const links = readLinks(row.links)
+    const parent = linkKey === 'redo_of' ? links.redoOf : links.undoOf
+    if (!parent || out.has(parent) || !isChangeLogStatus(row.status)) continue
+    out.set(parent, { id: row.id, status: row.status })
   }
-  return status
+  return out
+}
+
+/**
+ * Every given record's status at the CURRENT tip of its own undo/redo chain,
+ * not the status frozen on its row — the batched form of what used to be
+ * `resolveChainStatus`, called once per reconcile run over every card still
+ * on screen instead of once per card. `change_log_step` (0021) never flips the
+ * original record back from `undone` on a redo — it inserts a new `redo` row
+ * linked via `links.redoOf` to whichever id it just redid, and leaves the
+ * original `undone`. The next undo/redo cycle keys off that NEW row's id in
+ * turn (a second ⌘Z targets the redo, not the original), so walking the chain
+ * means following whichever of `undoOf`/`redoOf` most recently targeted the
+ * current id, one hop at a time.
+ *
+ * Every chain walks together: one hop is one `in(...)` query per link kind
+ * (`redo_of`, `undo_of`) over every id still walking, not a query per chain —
+ * a run over N records costs O(hops) queries total, not O(N × hops). `redoOf`
+ * can only exist once an `undoOf` of the same id does, and always lands
+ * later, so a redo always wins a tie at the same hop. The hop's implied
+ * status (redo -> accepted, undo -> undone) only holds while the hop row's
+ * OWN status is still `accepted` — a redo row that has since been reverted
+ * directly (`accept_revert_record`, 0021, which flips a row's status in
+ * place with no new `redo_of`/`undo_of` link to walk to) reports that row's
+ * actual status (`reverted`) instead of the `accepted` its birth would
+ * otherwise have implied. Depth capped like `change_log_undo_kind` (0021)
+ * guards its own walk — a real chain never runs long, but neither should
+ * this.
+ */
+export async function resolveChainStatuses(
+  supabase: SupabaseClient<Database>,
+  opts: {
+    userId: string
+    pondId: string | null
+    records: ReadonlyArray<{ id: string; status: ChangeLogStatus }>
+  }
+): Promise<Map<string, ChangeLogStatus>> {
+  const pond = await resolvePond(supabase, opts.userId, opts.pondId)
+  const result = new Map<string, ChangeLogStatus>()
+  // original record id -> the id it currently stands in for in the chain.
+  let frontier = new Map<string, string>()
+  for (const record of opts.records) {
+    result.set(record.id, record.status)
+    frontier.set(record.id, record.id)
+  }
+  for (let depth = 0; depth < 1000 && frontier.size > 0; depth++) {
+    const currentIds = [...new Set(frontier.values())]
+    const [redoHop, undoHop] = await Promise.all([
+      fetchChainHop(supabase, opts.userId, pond, 'redo_of', currentIds),
+      fetchChainHop(supabase, opts.userId, pond, 'undo_of', currentIds),
+    ])
+    const next = new Map<string, string>()
+    for (const [originalId, current] of frontier) {
+      const redo = redoHop.get(current)
+      const hop = redo ?? undoHop.get(current)
+      if (!hop) continue
+      // The hop row's own `status` is 'accepted' for an ordinary undo/redo —
+      // that column records that the undo/redo ACTION succeeded, not what it
+      // implies for the chain (redo found -> the chain reads accepted again,
+      // undo found -> undone). Only a status OTHER than 'accepted' — e.g.
+      // `reverted`, from a direct revert of the hop row itself — overrides
+      // that implied reading, since nothing walks further from a terminal
+      // status like that.
+      const implied = redo ? 'accepted' : 'undone'
+      result.set(originalId, hop.status === 'accepted' ? implied : hop.status)
+      next.set(originalId, hop.id)
+    }
+    frontier = next
+  }
+  return result
 }
 
 /**

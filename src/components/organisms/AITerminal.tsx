@@ -171,7 +171,7 @@ import {
   type ProposalType,
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import { listRecordsByToolCalls, resolveChainStatus } from '@/lib/change-log/store'
+import { listRecordsByToolCalls, resolveChainStatuses } from '@/lib/change-log/store'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
@@ -1775,19 +1775,19 @@ export function AITerminal() {
         }
         return next
       })
+      // The record's own `status` only ever moves forward into `undone`; a
+      // redo lands on the chain's tip instead (KAN-302), so every card must
+      // follow its chain, not its row — walked for every record in one go.
+      const tips = await resolveChainStatuses(supabase, {
+        userId: user.id,
+        pondId,
+        records: records.map((record) => ({ id: record.id, status: record.status })),
+      })
       for (const record of records) {
         const id = record.toolCallId
         if (!id) continue
         const count = liveDiffCards.get(id) ?? 0
-        // The record's own `status` only ever moves forward into `undone`; a
-        // redo lands on the chain's tip instead (KAN-302), so the card must
-        // follow the chain, not the row.
-        const tip = await resolveChainStatus(supabase, {
-          userId: user.id,
-          pondId,
-          recordId: record.id,
-          status: record.status,
-        })
+        const tip = tips.get(record.id) ?? record.status
         const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), tip)
         if (!adopt) continue
         for (let i = 0; i < count; i++) {

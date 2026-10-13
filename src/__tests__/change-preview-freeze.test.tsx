@@ -85,12 +85,31 @@ jest.mock('@/lib/conversation/client', () => ({
 }))
 
 const mockListByCalls = jest.fn().mockResolvedValue([])
+// KAN-302: `resolveChainStatuses` (the production call site now) walks this
+// same per-record mock over the batch and collects it into a Map.
 const mockResolveChainStatus = jest
   .fn()
   .mockImplementation((_sb: unknown, opts: { status: string }) => Promise.resolve(opts.status))
 jest.mock('@/lib/change-log/store', () => ({
   listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
-  resolveChainStatus: (...args: unknown[]) => mockResolveChainStatus(...args),
+  resolveChainStatuses: async (
+    supabase: unknown,
+    opts: { userId: string; pondId: string | null; records: Array<{ id: string; status: string }> }
+  ) => {
+    const tips = new Map<string, string>()
+    for (const record of opts.records) {
+      tips.set(
+        record.id,
+        await mockResolveChainStatus(supabase, {
+          userId: opts.userId,
+          pondId: opts.pondId,
+          recordId: record.id,
+          status: record.status,
+        })
+      )
+    }
+    return tips
+  },
   getRecordByToolCall: jest.fn().mockResolvedValue(null),
   advanceStatus: jest.fn(),
   acceptRecord: jest.fn().mockResolvedValue(undefined),

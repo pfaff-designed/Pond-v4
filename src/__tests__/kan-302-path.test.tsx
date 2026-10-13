@@ -297,19 +297,29 @@ jest.mock('@/lib/change-log/store', () => {
     getRecordByToolCall: jest.fn(async (_supabase: unknown, opts: { toolCallId: string }) =>
       fakeChangeLog.find((r) => r.toolCallId === opts.toolCallId) ?? null
     ),
-    resolveChainStatus: jest.fn(
-      async (_supabase: unknown, opts: { recordId: string; status: string }) => {
-        let current = opts.recordId
-        let status = opts.status
-        for (let depth = 0; depth < 1000; depth++) {
-          const redo = fakeChangeLog.find((r) => r.links.redoOf === current)
-          const undo = fakeChangeLog.find((r) => r.links.undoOf === current)
-          const next = redo ?? undo
-          if (!next) break
-          current = next.id
-          status = redo ? 'accepted' : 'undone'
+    // KAN-302: batched over every record a reconcile run is watching, walking
+    // the SAME `fakeChangeLog` links the single-chain predecessor walked.
+    resolveChainStatuses: jest.fn(
+      async (
+        _supabase: unknown,
+        opts: { records: Array<{ id: string; status: ChangeLogStatus }> }
+      ) => {
+        const tips = new Map<string, ChangeLogStatus>()
+        for (const record of opts.records) {
+          let current = record.id
+          let status = record.status
+          for (let depth = 0; depth < 1000; depth++) {
+            const redo = fakeChangeLog.find((r) => r.links.redoOf === current)
+            const undo = redo ? undefined : fakeChangeLog.find((r) => r.links.undoOf === current)
+            const next = redo ?? undo
+            if (!next) break
+            current = next.id
+            const implied = redo ? 'accepted' : 'undone'
+            status = next.status === 'accepted' ? implied : next.status
+          }
+          tips.set(record.id, status)
         }
-        return status
+        return tips
       }
     ),
     advanceStatus: jest.fn(async (_supabase: unknown, id: string, to: ChangeLogStatus, actor = 'you') => {
@@ -607,7 +617,7 @@ describe('KAN-302 path test harness', () => {
   // Path test part 2 (PATH_STEPS bullet 4, "card follows the chain's tip"): from
   // an accepted card, a real ⌘Z/⇧⌘Z — the `ShellCommands` chord, the real
   // `sessionUndo`, the real change-log fake's undo/redo RPCs — must drive the
-  // card's status, never a mocked `resolveChainStatus`.
+  // card's status, never a mocked `resolveChainStatuses`.
   it('an accepted card reads "undone" after ⌘Z and "accepted" again after ⇧⌘Z (KAN-302 item 4)', async () => {
     const user = userEvent.setup()
     const platform = jest

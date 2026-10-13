@@ -85,10 +85,30 @@ const mockListByCalls = jest.fn()
 const mockGetRecordByToolCall = jest.fn().mockResolvedValue(null)
 const mockAcceptRecord = jest.fn().mockResolvedValue(undefined)
 // KAN-302: the chain's tip status, separate from the record's own frozen `status`.
+// Kept per-record so every test's existing mockResolveChainStatus setup still
+// drives it; `resolveChainStatuses` (the production call site now) is just
+// that same per-record mock walked over the batch and collected into a Map.
 const mockResolveChainStatus = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
-  resolveChainStatus: (...args: unknown[]) => mockResolveChainStatus(...args),
+  resolveChainStatuses: async (
+    supabase: unknown,
+    opts: { userId: string; pondId: string | null; records: Array<{ id: string; status: string }> }
+  ) => {
+    const tips = new Map<string, string>()
+    for (const record of opts.records) {
+      tips.set(
+        record.id,
+        await mockResolveChainStatus(supabase, {
+          userId: opts.userId,
+          pondId: opts.pondId,
+          recordId: record.id,
+          status: record.status,
+        })
+      )
+    }
+    return tips
+  },
   getRecordByToolCall: (...args: unknown[]) => mockGetRecordByToolCall(...args),
   advanceStatus: jest.fn(),
   acceptRecord: (...args: unknown[]) => mockAcceptRecord(...args),

@@ -54,7 +54,7 @@ export function batchStatus<T extends string>(
 /**
  * What a card adopts when the change log knows more than the session (#98,
  * G2, KAN-302). The log is the durable record; the session's maps are a UI
- * cache. `remote` is the chain's CURRENT TIP (store.ts's `resolveChainStatus`),
+ * cache. `remote` is the chain's CURRENT TIP (store.ts's `resolveChainStatuses`),
  * not necessarily the record's own `status` column — a redo never un-undoes
  * the original row, it stands beside it.
  *   - a PENDING card takes whatever settled status the log holds — most often
