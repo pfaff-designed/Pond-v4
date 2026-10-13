@@ -13,7 +13,6 @@ import {
   epochDay,
   filterRows,
   groupRows,
-  groupRowsByDate,
   layoutBars,
   layoutGanttBars,
   pickDateDef,
@@ -231,38 +230,6 @@ describe('pickDateDef', () => {
   it('returns undefined when the collection has no date property', () => {
     const noDates: PropertySchema = schema.filter((d) => d.type !== 'date')
     expect(pickDateDef(noDates, undefined)).toBeUndefined()
-  })
-})
-
-describe('groupRowsByDate', () => {
-  it('buckets rows into chronological date lanes with a trailing undated bucket', () => {
-    const grouped = groupRowsByDate(rows, schema, 'p-due')
-    expect(grouped).not.toBeNull()
-    const { buckets } = grouped!
-    // r2 (09-01), r1 (09-10), r3 (09-20), then the undated r4.
-    expect(buckets.map((b) => b.iso)).toEqual(['2026-09-01', '2026-09-10', '2026-09-20', null])
-    expect(buckets[0].rows.map((r) => r.id)).toEqual(['r2'])
-    expect(buckets.find((b) => b.iso === null)!.rows.map((r) => r.id)).toEqual(['r4'])
-  })
-
-  it('buckets a datetime value by its date part', () => {
-    const dt: CollectionRow[] = [
-      { id: 'rd', title: 'Timed', values: { 'p-due': '2026-09-01T14:30:00' } },
-    ]
-    const { buckets } = groupRowsByDate(dt, schema, 'p-due')!
-    expect(buckets.map((b) => b.iso)).toEqual(['2026-09-01'])
-  })
-
-  it('omits the undated bucket when every row has a date', () => {
-    const dated = rows.filter((r) => r.id !== 'r4')
-    const { buckets } = groupRowsByDate(dated, schema, 'p-due')!
-    expect(buckets.every((b) => b.iso !== null)).toBe(true)
-  })
-
-  it('returns null when the property is not a date', () => {
-    expect(groupRowsByDate(rows, schema, 'p-priority')).toBeNull()
-    expect(groupRowsByDate(rows, schema, undefined)).toBeNull()
-    expect(groupRowsByDate(rows, schema, 'p-nope')).toBeNull()
   })
 })
 

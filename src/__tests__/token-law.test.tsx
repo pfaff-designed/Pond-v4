@@ -538,6 +538,20 @@ describe('type sites that were on the fourth tier land on the board’s 68', () 
     expect(line.className).toMatch(/text-\[13\.5px\]/)
     expect(line.className).not.toMatch(/mn-text-faint/)
   })
+
+  it('emptyBox (#239) keeps desktop sizes at md+ but drops to mobile below it (KAN-292)', () => {
+    render(<PondBlockEmpty kind="table" action="add a date field" onAction={() => {}} />)
+    const line = screen.getByText('no rows yet')
+    expect(line.className).toMatch(/text-\[15px\]/)
+    expect(line.className).toMatch(/md:text-\[13\.5px\]/)
+    const button = screen.getByRole('button', { name: 'add a date field' })
+    expect(button.className).toMatch(/\bh-11\b/)
+    expect(button.className).toMatch(/\bpx-5\b/)
+    expect(button.className).toMatch(/text-\[14px\]/)
+    expect(button.className).toMatch(/md:h-8\b/)
+    expect(button.className).toMatch(/md:px-\[14px\]/)
+    expect(button.className).toMatch(/md:text-\[12px\]/)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════

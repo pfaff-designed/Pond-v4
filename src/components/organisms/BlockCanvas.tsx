@@ -303,6 +303,15 @@ export function BlockCanvas({
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
   useBlockLinkArrival(blocks)
 
+  // The width row's preview (6x): a page-local, transient width for whichever
+  // block's menu is open — never written to `blocks`. Cleared at every site
+  // that moves `menuOpenAt` (Esc and any other menu-close path all route
+  // through `onOpenChange` to `handleMenuOpenChange` below), so a stale
+  // preview can never survive the menu it came from.
+  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth } | null>(
+    null
+  )
+
   // Mark a freshly-inserted block on the PARENT-owned insertedIds Set (see the
   // prop doc): BlockCanvas doesn't own it, it just records into it.
   function markInserted(id: string) {
@@ -393,14 +402,17 @@ export function BlockCanvas({
     }
   }
 
-  const handleMenuOpenChange = (index: number, open: boolean) =>
+  const handleMenuOpenChange = (index: number, open: boolean) => {
+    setPreviewWidth(null)
     setMenuOpenAt((current) => {
       if (open) return index
       return current === index ? null : current
     })
+  }
 
   const handleMenuSelect = (index: number, action: BlockMenuAction) => {
     setMenuOpenAt(null)
+    setPreviewWidth(null)
     const block = blocks[index]
     if (!block) return
     runBlockMenuAction(action, {
@@ -688,8 +700,19 @@ export function BlockCanvas({
   // Rows are derived, never stored (6x): consecutive blocks whose widths add up
   // to full or less share one row, in array order — so the flattened render
   // below reproduces `blocks`' own order, and each block's position in it is
-  // its real index into `blocks`.
-  const blockRows = useMemo(() => layoutRows(blocks), [blocks])
+  // its real index into `blocks`. Packing (and the sizing below) reads the
+  // PREVIEWED width for whichever one block has it, so hovering a width
+  // reflows the row live; rendering still passes the real `blocks[i]` to
+  // `renderBlockEditor`, so the previewed block's own content and its width
+  // row's filled cell are never touched by the preview.
+  const blocksForLayout = useMemo(
+    () =>
+      previewWidth
+        ? blocks.map((b) => (b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b))
+        : blocks,
+    [blocks, previewWidth]
+  )
+  const blockRows = useMemo(() => layoutRows(blocksForLayout), [blocksForLayout])
 
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
   // canvas), not the viewport, so the side panel and window-narrowing both
@@ -741,7 +764,11 @@ export function BlockCanvas({
                 width: (
                   <BlockWidthRow
                     width={block.width}
+                    size={slashSize}
                     onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
+                    onPreview={(width) =>
+                      setPreviewWidth(width === null ? null : { blockId: block.id, width })
+                    }
                   />
                 ),
               })
@@ -753,6 +780,7 @@ export function BlockCanvas({
         isDragging={draggingIndex === i}
         onDragStart={() => {
           setMenuOpenAt(null)
+          setPreviewWidth(null)
           setDraggingIndex(i)
         }}
         onDragEnd={() => setDraggingIndex(null)}
@@ -806,8 +834,16 @@ export function BlockCanvas({
               const width = block.width ?? 'full'
               const sizingWidth = stacks || width === 'full' ? '100%' : blockWidthStyle(width)
               return (
-                <div key={block.id} className="min-w-0" style={{ width: sizingWidth }}>
-                  {renderBlockEditor(block, i)}
+                <div
+                  key={block.id}
+                  className="min-w-0 transition-[width] duration-[var(--motion-settle)] ease-[var(--ease-mn)] motion-reduce:transition-none"
+                  style={{ width: sizingWidth }}
+                >
+                  {/* `blocks[i]`, not `block`: `block` here may carry the
+                      PREVIEWED width (sizing only, see `blocksForLayout`) — the
+                      editor and its width row must still see the block's real,
+                      kept width. */}
+                  {renderBlockEditor(blocks[i], i)}
                 </div>
               )
             })}
@@ -917,7 +953,7 @@ function useBlockEmptyState(
       // template story so the story asserts what the product runs (#261 review).
       // This host adds the two things a pure rule cannot carry: the chart mark's
       // copy, which lives in a React module, and the write action.
-      const verdict = viewFrameState(block, rows, processed, frame)
+      const verdict = viewFrameState(block, rows, processed, frame, schema)
       if (verdict.state === 'rest') return { state: 'rest' }
       if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
       if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }
@@ -1107,18 +1143,30 @@ function BlockEditor({
       onDrop={onDrop}
       onKeyDown={handleKeyDown}
     >
-      {/* The handle: the only block chrome, revealed on hover and on keyboard
-          focus. Press-and-drag reorders, a click opens the block menu, which is
-          where `delete` lives. */}
+      {/* The handle: the only block chrome. Desktop (KAN-43) sits OUTSIDE the
+          card at `left -14`, revealed on hover and on keyboard focus. Phone
+          (KAN-259) sits INSIDE the card at `right 2 · top 2 · 44x44` — a touch
+          target can't float off-card or wait on a hover that never fires — so
+          it is always visible there; PondBlock's head row reserves the 40px
+          this takes (`size="mobile"`, below). Press-and-drag reorders, a click
+          opens the block menu, which is where `delete` lives. Inside the card
+          it must stack ABOVE the body that follows it in the DOM (the card's
+          paper, a text block's editor) or taps land on the body: `z-[1]`, the
+          lowest lift that does it, under every floating surface (z ≥ 4). */}
       <div
         data-part="handle"
         hidden={!chrome}
         className={cn(
-          'absolute -left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-          // A card centres the 24px handle on its head row; bare prose has no head
-          // row, so it centres on the first line (2px inset + half the 28px line).
-          !frame && block.type === 'text' ? 'top-1' : 'top-3',
-          menuOpen && 'opacity-100'
+          'absolute',
+          menuSize === 'mobile'
+            ? 'right-0.5 top-0.5 z-[1]'
+            : [
+                '-left-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                // A card centres the 24px handle on its head row; bare prose has no head
+                // row, so it centres on the first line (2px inset + half the 28px line).
+                !frame && block.type === 'text' ? 'top-1' : 'top-3',
+                menuOpen && 'opacity-100',
+              ]
         )}
       >
         <PondMenu
@@ -1134,7 +1182,8 @@ function BlockEditor({
             <button
               type="button"
               className={cn(
-                'flex h-6 w-3 cursor-grab items-center justify-center rounded-[6px] outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                'flex cursor-grab items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-mn-text',
+                menuSize === 'mobile' ? 'h-11 w-11 rounded-[14px]' : 'h-6 w-3 rounded-[6px]',
                 menuOpen ? 'bg-mn-hover-fill text-mn-text' : 'text-mn-text-secondary'
               )}
               title="Block menu · drag to reorder"
@@ -1188,6 +1237,7 @@ function BlockEditor({
           onEmptyAction={onEmptyAction}
           emptyLine={emptyLine}
           emptyBox={blockEmptyBox(block)}
+          size={menuSize}
         >
           {view}
         </PondBlock>

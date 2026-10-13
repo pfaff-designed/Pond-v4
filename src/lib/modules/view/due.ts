@@ -12,12 +12,18 @@ export type DueAtom = { kind: 'today' } | { kind: 'date'; label: string }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
+/** `now` as its own local calendar date — never UTC's, which drifts a day either side
+ *  of midnight for anyone off UTC (evenings west of it, mornings east). */
+export function localDateIso(now: Date): string {
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 /** A stored `YYYY-MM-DD` (or datetime) value as the atom; null when it is not a date. */
 export function dueAtom(value: string, now: Date): DueAtom | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
   if (!m) return null
   const iso = `${m[1]}-${m[2]}-${m[3]}`
-  if (iso === `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`) {
+  if (iso === localDateIso(now)) {
     return { kind: 'today' }
   }
   // Local midnight, so the weekday never drifts a day with the timezone.

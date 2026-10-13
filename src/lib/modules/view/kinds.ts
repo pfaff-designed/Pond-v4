@@ -25,6 +25,16 @@ import { ICON, type SlashIcon } from '@/components/molecules/slash-entries'
  */
 export const GANTT_EMPTY_LINE = 'tasks with a start and a due date draw here'
 
+/**
+ * The calendar kind's empty line — `PondCalendar.dc.html`'s `emptyLine` verbatim
+ * (#262 1/3), shown for every span when nothing in the view can be dated: the
+ * collection has no date property, or the view has no records at all (the DC's
+ * `empty` state). The calendar draws it inside its own chrome; the block frame's
+ * `no rows yet` never stands in for it (`own` below).
+ */
+export const CALENDAR_EMPTY_LINE =
+  'nothing in this view has a date. records show here once they have one.'
+
 export interface ViewKind {
   /**
    * Pond's word for the kind, lowercase, as a person reads it — the `/` row and the
@@ -56,14 +66,25 @@ export interface ViewKind {
    * as the voidBox, the card is not — so it reads `'per-mark'` and `blockEmptyBox()`
    * asks `compactChartMark`. It carries no `line` because its copy,
    * `CHART_EMPTY_LINE`, lives in the React module `chart/card.tsx`.
+   *
+   * `own` marks a kind that DRAWS its own empty state, so the frame never takes it
+   * over: the calendar's component DC draws its chrome, its grid and its `emptyLine`
+   * for zero records (`PondCalendar.dc.html` `state: 'empty'` → `recs = []`), and
+   * where it and `PondBlock`'s `no rows yet` disagree the calendar wins (KAN-262,
+   * decided 13 oct 2026).
    */
-  empty: { box: BlockEmptyBox | 'per-mark'; line?: string }
+  empty: { box: BlockEmptyBox | 'per-mark'; line?: string; own?: true }
 }
 
 export const VIEW_KINDS: Record<ViewMode, ViewKind> = {
   table: { label: 'table', icon: ICON.table, frame: 'table', empty: { box: 'box' } },
   board: { label: 'board', icon: ICON.board, frame: null, empty: { box: 'box' } },
-  calendar: { label: 'calendar', icon: ICON.calendar, frame: 'table', empty: { box: 'box' } },
+  calendar: {
+    label: 'calendar',
+    icon: ICON.calendar,
+    frame: 'table',
+    empty: { box: 'box', own: true },
+  },
   list: { label: 'list', icon: ICON.list, frame: null, empty: { box: 'box' } },
   gallery: { label: 'gallery', icon: ICON.gallery, frame: 'gallery', empty: { box: 'box' } },
   gantt: {

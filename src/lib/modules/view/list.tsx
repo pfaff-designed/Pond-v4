@@ -9,9 +9,16 @@
  * A row's title is its tab stop: click, Enter or Space selects the record and opens
  * its peek (6u.2), exactly as a board card does. The checkbox is the person's own
  * edit — it writes the record's `done` status through `onEdit`.
+ *
+ * No date property on the collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in
+ * `PondBlockEmpty`'s emptyBox with the `add a date field` remedy, but only when
+ * `onAddDateField` is wired — a read-only render keeps the bare line instead, no
+ * button to offer. True whether or not the collection already holds records
+ * (unlike `LIST_EMPTY_LINE`, which means zero rows).
  */
 
 import { useMemo, useState } from 'react'
+import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { useOrangeToday } from '../page-canvas'
 import { displayValue, pickRepeatDef, type CollectionRow } from './apply'
@@ -19,7 +26,7 @@ import { RepeatMark } from './cells'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
 import { groupRowsByDue } from './due-buckets'
-import { ViewNotice } from './notice'
+import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordCheck } from './record-check'
 import { RecordPeek } from './record-peek'
 import { useDoneToggle } from './use-done-toggle'
@@ -36,6 +43,7 @@ export function CollectionList({
   onEdit,
   onRenameRow,
   onOpenRow,
+  onAddDateField,
   today,
 }: {
   /** The view block's id — what the page canvas keys its one peek and one orange pill by. */
@@ -47,6 +55,9 @@ export function CollectionList({
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
   onRenameRow?: (rowId: string, title: string) => void
   onOpenRow?: (rowId: string) => void
+  /** KAN-292: mint a `date` field onto this collection's schema, offered when it
+   *  has none to group by. Absent when not editable — no undrawn affordance. */
+  onAddDateField?: () => void
   /** The day the groups are measured from; read once per mount from the clock when absent. */
   today?: Date
 }) {
@@ -71,7 +82,13 @@ export function CollectionList({
     )
   )
 
-  if (!grouped) return <ViewNotice>This list needs a date property.</ViewNotice>
+  if (!grouped) {
+    return onAddDateField ? (
+      <PondBlockEmpty line={CALENDAR_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
+    ) : (
+      <span className="text-[14px] text-mn-text-secondary">{CALENDAR_EMPTY_LINE}</span>
+    )
+  }
   const { buckets } = grouped
   const repeatDef = pickRepeatDef(schema)
 
