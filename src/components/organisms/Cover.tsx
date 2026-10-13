@@ -1,0 +1,100 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+
+import { formatCoverClock, timezoneCity } from '@/lib/first-run/cover-clock'
+
+const headerLabelClass =
+  'whitespace-nowrap text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text-meta'
+
+/**
+ * The cover — `Pond 05 Shell` 5a / `Pond 06.04` 6d frame 1. Paper (or ink,
+ * dark) with nothing on it but a place, the wordmark, a live clock, one
+ * field and the way in. The ASCII drift and the field's own wiring (⌘K,
+ * ↵, the carry into the composer) land in later passes; this is the
+ * static frame.
+ */
+export function Cover() {
+  const [clock, setClock] = useState(() => formatCoverClock(new Date()))
+
+  useEffect(() => {
+    const id = setInterval(() => setClock(formatCoverClock(new Date())), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const place = timezoneCity(Intl.DateTimeFormat().resolvedOptions().timeZone)
+
+  return (
+    <div className="relative h-dvh w-full overflow-hidden bg-mn-surface text-mn-text">
+      <div className="absolute inset-x-0 top-0 grid grid-cols-[1fr_auto_1fr] items-center px-6 pt-4">
+        <span className={headerLabelClass}>{place}</span>
+        <h1 className="m-0 text-center font-serif text-[20px] font-extralight italic leading-none tracking-[-0.035em] text-mn-text">
+          pond
+        </h1>
+        <div className="flex items-center justify-end gap-2.5">
+          <span className="text-[9.5px] text-[rgba(27,29,20,.42)] dark:text-[rgba(250,249,239,.45)]">
+            ·
+          </span>
+          <span className={headerLabelClass}>
+            {clock.weekday} {clock.dateLabel}
+          </span>
+          <span className={headerLabelClass}>{clock.time}</span>
+        </div>
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="mn-glass flex w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
+          ask pond
+          <span className="h-[13px] w-[1.5px] translate-y-px bg-mn-text" />
+          <div className="flex-1" />
+          <span className="rounded-full bg-mn-hover-fill px-[11px] py-1.5 text-[11px] text-mn-text-meta">
+            ⌘K
+          </span>
+          <button
+            type="button"
+            aria-label="send"
+            className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-mn-text text-mn-surface"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M6 9.6V2.4" />
+              <path d="M2.9 5.5 6 2.4l3.1 3.1" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-4 px-6 pb-5">
+        <span className={headerLabelClass}>a make noise production</span>
+        <button
+          type="button"
+          className="flex flex-none items-center gap-2 rounded-full border border-mn-text px-4 py-2 text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text"
+        >
+          enter
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="opacity-80"
+          >
+            <path d="M2.2 7h9.6" />
+            <path d="M8.4 3.6 11.8 7l-3.4 3.4" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}

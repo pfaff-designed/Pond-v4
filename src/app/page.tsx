@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation'
+import { Cover } from '@/components/organisms/Cover'
 
-// Root redirects to the app workspace.
-// The middleware handles auth-gating; this just ensures / → /workspace.
+// `/` is the cover (`Pond 05 Shell` 5a). `src/proxy.ts` sends a signed-out
+// request to /sign-in before this ever renders.
 export default function RootPage() {
-  redirect('/workspace')
+  return <Cover />
 }
