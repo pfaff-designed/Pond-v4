@@ -90,6 +90,8 @@ import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import type { PageReference } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
+import { editorForBlock } from '@/lib/modules/text/active-editor'
+import { onReferenceRangeDropped, type ReferenceHighlightEntry } from '@/lib/modules/text/reference-highlight'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { parseCsv } from '@/lib/csv/parse-csv'
@@ -807,6 +809,36 @@ export function AITerminal() {
   const handleRemoveReference = useCallback((key: string) => {
     setReferences((prev) => prev.filter((_, i) => String(i) !== key))
   }, [])
+
+  // The passage a reference points at stays highlighted on the page while
+  // referenced (#98, board 6e). Each block that currently owns a highlight
+  // is tracked so a reference removed from `references` (sent, or its ×
+  // clicked) clears that block's decoration too, not just the new set's.
+  const highlightedBlocksRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const byBlock = new Map<string, ReferenceHighlightEntry[]>()
+    references.forEach((ref, index) => {
+      if (!ref.range) return
+      const entries = byBlock.get(ref.blockId) ?? []
+      entries.push({ key: String(index), range: ref.range })
+      byBlock.set(ref.blockId, entries)
+    })
+    for (const blockId of new Set([...highlightedBlocksRef.current, ...byBlock.keys()])) {
+      editorForBlock(blockId)?.commands.setReferenceHighlights(byBlock.get(blockId) ?? [])
+    }
+    highlightedBlocksRef.current = new Set(byBlock.keys())
+  }, [references])
+
+  // An edit that destroys a reference's anchored text drops it — the
+  // extension only knows positions, so it reports here by key (array index)
+  // for removal from `references` itself.
+  useEffect(
+    () =>
+      onReferenceRangeDropped((_blockId, keys) => {
+        setReferences((prev) => prev.filter((_, i) => !keys.includes(String(i))))
+      }),
+    []
+  )
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
   const {

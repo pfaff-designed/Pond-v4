@@ -723,6 +723,15 @@
     border: var(--mn-proposal-border);
     box-shadow: var(--mn-proposal-shadow);
   }
+
+  /* The passage a live composer reference points at, drawn on the page itself
+     (#98, board 6e: "the passage stays highlighted while referenced") — the
+     third legitimate owner of the wheat signal, alongside the inline
+     highlight atom and the highlight block (token-law.test.tsx). */
+  .mn-reference-highlight {
+    background: var(--mn-signal-highlight);
+    color: var(--mn-signal-highlight-ink);
+  }
 }
 
 @layer base {
