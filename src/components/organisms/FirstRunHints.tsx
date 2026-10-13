@@ -66,7 +66,7 @@ export function FirstRunHints({ className }: FirstRunHintsProps) {
     <div
       data-part="first-run-hints"
       className={cn(
-        'absolute inset-0 flex flex-col items-center justify-center gap-[30px] pb-[150px] pt-[56px] text-center',
+        'absolute inset-0 isolate flex flex-col items-center justify-center gap-[30px] pb-[150px] pt-[56px] text-center',
         className
       )}
     >

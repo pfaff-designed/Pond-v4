@@ -56,4 +56,11 @@ describe('FirstRunHints', () => {
     expect(row).not.toBeNull()
     expect((row?.getAttribute('class') ?? '').split(' ')).toContain('flex-wrap')
   })
+
+  it('isolates its own stacking context so the ASCII layer cannot paint beneath the shell ground', () => {
+    const { container } = render(<FirstRunHints />)
+    const outer = container.querySelector('[data-part="first-run-hints"]')
+    expect(outer).not.toBeNull()
+    expect((outer?.getAttribute('class') ?? '').split(' ')).toContain('isolate')
+  })
 })
