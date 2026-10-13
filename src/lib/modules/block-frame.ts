@@ -197,7 +197,7 @@ export function viewFrameState(
   rows: readonly unknown[],
   processed: readonly unknown[],
   frame: BlockFrame | null,
-  schema: PropertySchema = []
+  schema: PropertySchema
 ): ViewFrameState {
   // #259: the heat grid DRAWS its own empty state — 84 cells at ink .07 — so the
   // frame never takes it over, filtered or not. The bar strip is empty as the

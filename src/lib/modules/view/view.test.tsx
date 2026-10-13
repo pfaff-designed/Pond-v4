@@ -42,31 +42,47 @@ const calendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
 const list: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
 const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 
-function renderView(data: ViewBlock) {
+function renderView(data: ViewBlock, editable = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
         <SiblingBlocksProvider value={{ blocks: [], pageId: 'page-1' }}>
-          <ViewView data={data} editable onChange={jest.fn()} />
+          <ViewView data={data} editable={editable} onChange={jest.fn()} />
         </SiblingBlocksProvider>
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
 }
 
-describe('ViewView — the calendar’s "add a date field" remedy reaches the page (KAN-292)', () => {
-  it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
-    const user = userEvent.setup()
-    renderView(calendar)
+beforeEach(() => {
+  updateSchema.mockClear()
+})
 
-    const button = screen.getByRole('button', { name: 'add a date field' })
-    await user.click(button)
+describe('ViewView — the "add a date field" remedy reaches the page (KAN-292)', () => {
+  it.each([
+    ['calendar', calendar],
+    ['list', list],
+    ['gantt', gantt],
+  ])(
+    '%s: clicking the remedy mints a date field onto the schema, and the button goes on rerender',
+    async (_name, data) => {
+      const user = userEvent.setup()
+      renderView(data)
 
-    expect(updateSchema).toHaveBeenCalledWith([
-      ...dateless,
-      expect.objectContaining({ name: 'date', type: 'date' }),
-    ])
+      const button = screen.getByRole('button', { name: 'add a date field' })
+      await user.click(button)
+
+      expect(updateSchema).toHaveBeenCalledWith([
+        ...dateless,
+        expect.objectContaining({ name: 'date', type: 'date' }),
+      ])
+      expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    }
+  )
+
+  it('read-only (editable=false) draws no "add a date field" button', () => {
+    renderView(calendar, false)
     expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
   })
 })
@@ -93,37 +109,5 @@ describe('ViewView — undo removes only the field it added (KAN-292)', () => {
     const afterUndo = updateSchema.mock.calls.at(-1)![0] as PropertySchema
     expect(afterUndo).toEqual([...dateless, otherField])
     expect(afterUndo.find((d) => d.id === addedField.id)).toBeUndefined()
-  })
-})
-
-describe('ViewView — the list’s "add a date field" remedy reaches the page (KAN-292)', () => {
-  it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
-    const user = userEvent.setup()
-    renderView(list)
-
-    const button = screen.getByRole('button', { name: 'add a date field' })
-    await user.click(button)
-
-    expect(updateSchema).toHaveBeenCalledWith([
-      ...dateless,
-      expect.objectContaining({ name: 'date', type: 'date' }),
-    ])
-    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
-  })
-})
-
-describe('ViewView — the timeline’s "add a date field" remedy reaches the page (KAN-292)', () => {
-  it('clicking the remedy mints a date field onto the schema, and the button goes on rerender', async () => {
-    const user = userEvent.setup()
-    renderView(gantt)
-
-    const button = screen.getByRole('button', { name: 'add a date field' })
-    await user.click(button)
-
-    expect(updateSchema).toHaveBeenCalledWith([
-      ...dateless,
-      expect.objectContaining({ name: 'date', type: 'date' }),
-    ])
-    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
   })
 })

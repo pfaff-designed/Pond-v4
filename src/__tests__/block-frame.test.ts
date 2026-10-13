@@ -393,7 +393,10 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
 
   it('a list with a date property and zero rows is unchanged: the frame offers add a row', () => {
     const block: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
-    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({ state: 'empty', addRow: true })
+    expect(viewFrameState(block, [], [], null, dateSchema)).toEqual({
+      state: 'empty',
+      addRow: true,
+    })
   })
 
   it('a gantt with a date property and zero rows is unchanged: the void line', () => {
@@ -402,11 +405,6 @@ describe('viewFrameState — a dateless list/gantt steps aside so the view’s o
       state: 'empty',
       line: GANTT_EMPTY_LINE,
     })
-  })
-
-  it('no schema at all (the default) behaves as dateless', () => {
-    const block: ViewBlock = { id: 'v', type: 'view', mode: 'list' }
-    expect(viewFrameState(block, [], [], null)).toEqual({ state: 'rest' })
   })
 })
 
