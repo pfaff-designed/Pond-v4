@@ -80,7 +80,8 @@ export function AsciiPondBackground() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 flex flex-col justify-center overflow-hidden whitespace-pre text-center font-mono text-[15px] leading-[2.6] tracking-[0.22em] text-mn-text"
+      className="pointer-events-none absolute inset-0 flex flex-col justify-center overflow-hidden whitespace-pre text-center text-[15px] leading-[2.6] text-mn-text"
+      style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.22em' }}
     >
       {LINES.map((line, index) => (
         <div
