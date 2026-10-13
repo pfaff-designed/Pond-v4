@@ -1211,6 +1211,7 @@ function BlockEditor({
         menuOpen && 'rounded-[20px] [box-shadow:0_0_0_2px_rgb(from_var(--mn-text)_r_g_b/0.18)]'
       )}
       id={blockDomId(block.id)}
+      data-block-id={block.id}
       // Focusable so a copied link to the block can land on it, and a tab stop
       // when it is not text so Return can reach it; a text block's focus is its editor.
       tabIndex={block.type === 'text' ? -1 : 0}

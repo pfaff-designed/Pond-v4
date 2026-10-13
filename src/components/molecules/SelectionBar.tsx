@@ -51,6 +51,9 @@ export interface SelectionContext {
   text: string
   /** The id of the block the selection is within, if determinable. */
   blockId?: string
+  /** The selection's range in the owning editor's own positions, if determinable. */
+  from?: number
+  to?: number
 }
 
 export interface SelectionBarProps {
@@ -392,10 +395,12 @@ export function SelectionBar({ containerRef, onAsk, disabled }: SelectionBarProp
 
       const r = range.getBoundingClientRect()
       rangeRef.current = range.cloneRange()
-      setCtx({ text, blockId })
-      setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
 
       const editor = editorForSelection(sel)
+      const editorSelection = editor ? selectionInEditor(editor, sel) : null
+      setCtx({ text, blockId, from: editorSelection?.from, to: editorSelection?.to })
+      setRect({ top: r.top, bottom: r.bottom, left: r.left, width: r.width })
+
       shownSelectionRef.current = { key, editor }
       setEditorOwnsSelection(Boolean(editor))
       const reader = editor ? formatReaderAt(editor, sel) : null
