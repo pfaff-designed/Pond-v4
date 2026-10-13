@@ -137,53 +137,57 @@ describe("each template's block list matches the board's `T` table, in order", (
   })
 })
 
-describe("placeholder copy is the board's `e:` value, held as the block's own data", () => {
+describe('placeholder copy (KAN-103) lives in the `placeholder` field, never in content/label/text', () => {
   const blocksOf = (kind: TemplateKind) => PREMADE_TEMPLATES[kind].blocks
 
-  it('bare text — `page` and `notes` carry no label and the board line as content', () => {
+  it('bare text — `page` and `notes` carry no label, empty content, and the board line as `placeholder`', () => {
     expect(blocksOf('page')).toEqual([
-      { type: 'text', content: 'type, or / for blocks and templates' },
+      { type: 'text', content: '', placeholder: 'type, or / for blocks and templates' },
     ])
-    expect(blocksOf('notes')).toEqual([{ type: 'text', content: 'anything, in any order' }])
+    expect(blocksOf('notes')).toEqual([
+      { type: 'text', content: '', placeholder: 'anything, in any order' },
+    ])
   })
 
-  it('labelled text — `project › goal` and `meeting › notes` are cards (#258)', () => {
+  it('labelled text — `project › goal` and `meeting › notes` are cards (#258), content empty with a `placeholder`', () => {
     expect(blocksOf('project')[0]).toEqual({
       type: 'text',
       label: 'goal',
-      content: 'what done looks like',
+      content: '',
+      placeholder: 'what done looks like',
     })
     expect(blocksOf('meeting notes')[0]).toEqual({
       type: 'text',
       label: 'notes',
-      content: 'what was said',
+      content: '',
+      placeholder: 'what was said',
     })
   })
 
-  it("todo rows — the board's `[label, meta?, done?]` tuples; an empty `b` omits meta", () => {
+  it("todo rows — the board's `[label, meta?, done?]` tuples; an empty `b` omits meta, an empty `label` carries the row's own `placeholder`", () => {
     expect(blocksOf('list')[0]).toEqual({
       type: 'todo',
       marker: 'dot',
       label: 'items',
-      items: [{ label: 'first item', checked: false }],
+      items: [{ label: '', checked: false, placeholder: 'first item' }],
     })
     expect(blocksOf('dashboard')[2]).toEqual({
       type: 'todo',
       marker: 'none',
       label: 'pages',
-      items: [{ label: 'link a page', checked: false }],
+      items: [{ label: '', checked: false, placeholder: 'link a page' }],
     })
     expect(blocksOf('meeting notes')[1]).toEqual({
       type: 'todo',
       marker: 'check',
       label: 'actions',
-      items: [{ label: 'first action', checked: false }],
+      items: [{ label: '', checked: false, placeholder: 'first action' }],
     })
     expect(blocksOf('habit')[2]).toEqual({
       type: 'todo',
       marker: 'check',
       label: 'today',
-      items: [{ label: 'done today', checked: false }],
+      items: [{ label: '', checked: false, placeholder: 'done today' }],
     })
   })
 
@@ -208,11 +212,12 @@ describe("placeholder copy is the board's `e:` value, held as the block's own da
     })
   })
 
-  it("entries — `project › updates` is template copy; the journal's first entry is the block's OWN empty line, so it stays blank", () => {
+  it("entries — `project › updates` carries a block-level `placeholder` with its entry text empty; the journal's first entry is the block's OWN empty line, so it stays blank with no `placeholder`", () => {
     expect(blocksOf('project')[3]).toEqual({
       type: 'entries',
       label: 'updates',
-      entries: [{ date: 'today', text: 'first update' }],
+      entries: [{ date: 'today', text: '' }],
+      placeholder: 'first update',
     })
     // `write the first entry` is `ENTRIES_EMPTY_LINE`: the view already draws it for a
     // blank entry, at placeholder ink. Writing it as content would paint it as prose.

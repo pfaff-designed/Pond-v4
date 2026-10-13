@@ -491,12 +491,16 @@ async function assertBlocks(root: HTMLElement, page: Pick<TemplatePageProps, 'bl
   for (const block of page.blocks) {
     switch (block.type) {
       case 'text': {
+        // Read-only draws no placeholder for blank content (pre-existing,
+        // outside this ticket) — framing for an empty block is already proven
+        // by the cards/eyebrows check above.
+        if (!block.content) break
         const el = canvas.getAllByText(block.content)[0]
         await expect(el.closest('[data-block-kind]') === null).toBe(!block.label)
         break
       }
       case 'todo':
-        for (const item of block.items) await present(item.label)
+        for (const item of block.items) await present(item.label || item.placeholder || '')
         break
       case 'table':
         for (const r of block.rows) for (const c of r.cells) await present(c)
@@ -504,7 +508,7 @@ async function assertBlocks(root: HTMLElement, page: Pick<TemplatePageProps, 'bl
       case 'entries':
         for (const e of block.entries) {
           await present(e.date)
-          await present(e.text || ENTRIES_EMPTY_LINE)
+          await present(e.text || block.placeholder || ENTRIES_EMPTY_LINE)
         }
         break
       case 'highlight':

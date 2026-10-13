@@ -27,9 +27,12 @@ export interface Press {
  */
 const isUnwritten = (content: string): boolean => content.replace(/^#{1,6}\s*/, '').trim() === ''
 
-const extensions = [
+/** The block's own placeholder, fixed at mount — it is never typed over. */
+const buildExtensions = (placeholder: string | undefined) => [
   ...proseExtensions,
-  Placeholder.configure({ placeholder: ({ node }) => textPlaceholderFor(node.type.name) }),
+  Placeholder.configure({
+    placeholder: ({ node }) => textPlaceholderFor(node.type.name, placeholder),
+  }),
 ]
 
 /** A bare Tab over a selection — Shift-Tab and chorded Tab keep their meaning. */
@@ -145,6 +148,7 @@ const TextEditor = ({
   const [opening] = useState(() => ({
     content: parseMarkdown(data.content).toJSON(),
     autofocus: isUnwritten(data.content) ? ('end' as const) : false,
+    extensions: buildExtensions(data.placeholder),
   }))
   const written = useRef(data.content)
   // What this editor wrote that the page hasn't rendered back yet. The page can
@@ -158,7 +162,7 @@ const TextEditor = ({
   })
 
   const editor = useEditor({
-    extensions,
+    extensions: opening.extensions,
     content: opening.content,
     immediatelyRender: false,
     autofocus: opening.autofocus,

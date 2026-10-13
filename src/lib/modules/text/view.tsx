@@ -26,7 +26,12 @@ export const TextView = ({ data, editable = false, onChange }: ModuleViewProps<T
     pressRef.current = { left: event.clientX, top: event.clientY }
   }
   const standIn = (
-    <StaticProse content={data.content} placeholder onMouseDown={handleStandInMouseDown} />
+    <StaticProse
+      content={data.content}
+      showPlaceholder
+      placeholder={data.placeholder}
+      onMouseDown={handleStandInMouseDown}
+    />
   )
   return (
     <Suspense fallback={standIn}>

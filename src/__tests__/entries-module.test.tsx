@@ -169,6 +169,11 @@ describe('entries in moduleDataSchema (the AI emit union)', () => {
     expect(r.type === 'entries' && r.serif).toBe(true)
   })
 
+  it('carries the block-level placeholder through the emit union untouched', () => {
+    const r = moduleDataSchema.parse({ type: 'entries', placeholder: 'first update', entries: [] })
+    expect(r.type === 'entries' && r.placeholder).toBe('first update')
+  })
+
   it('a page can be created WITH an entries block', () => {
     expect(
       createPageBlockSchema.safeParse({
@@ -313,6 +318,22 @@ describe('EntriesView — read-only', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('a blank entry draws the block’s own `placeholder` over the board’s generic empty line', () => {
+    const blank: EntriesBlock = {
+      ...updates,
+      placeholder: 'first update',
+      entries: [{ id: 'b', date: 'today', text: '' }],
+    }
+    const { container } = render(<EntriesView data={blank} />)
+    expect(textsOf(container)[0].textContent).toBe('first update')
+  })
+
+  it('a block with no `placeholder` still falls back to ENTRIES_EMPTY_LINE', () => {
+    const blank: EntriesBlock = { ...updates, entries: [{ id: 'b', date: 'today', text: '' }] }
+    const { container } = render(<EntriesView data={blank} />)
+    expect(textsOf(container)[0].textContent).toBe(ENTRIES_EMPTY_LINE)
+  })
+
   it('a blank entry on a SANS block stays sans at .68', () => {
     const blank: EntriesBlock = {
       ...updates,
@@ -364,6 +385,13 @@ describe('EntriesView — editable (every row is a date field + a prose field)',
     for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
       has(t, ...SANS, 'text-mn-text')
       lacks(t, 'font-serif')
+    }
+  })
+
+  it('the editable textarea prefers the block’s `placeholder` over ENTRIES_EMPTY_LINE', () => {
+    render(<Stateful data={{ ...updates, placeholder: 'first update' }} />)
+    for (const t of screen.getAllByRole('textbox', { name: 'Entry text' })) {
+      expect((t as HTMLTextAreaElement).placeholder).toBe('first update')
     }
   })
 

@@ -48,6 +48,13 @@ export const entriesSchema = z
      * sans. See the module doc-comment for why it lives here.
      */
     serif: z.boolean().optional(),
+    /** Block-level fallback for a blank entry's text, drawn at ink .68; never written to an entry's `text`. */
+    placeholder: z
+      .string()
+      .optional()
+      .describe(
+        'Optional invitation shown at ink .68 for a blank entry — e.g. "write the first entry". Omit to use the generic empty-state copy.'
+      ),
   })
   .extend(labelledBlockFields)
 

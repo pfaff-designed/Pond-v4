@@ -20,15 +20,20 @@
  * authored with property NAMES, the way `configure_view` proposes one, and
  * `resolveViewConfig` swaps them for the schema's minted ids.
  *
- * Placeholder copy is the block's OWN content where the block has no placeholder of
- * its own (`first item`, `what done looks like`, `first update`, `first record`);
- * where the block already draws the board's exact line for an empty value
+ * Placeholder copy (KAN-103) lives in the block's OWN `placeholder` field — text's,
+ * entries' (block-level) and a todo item's — never in `content` / `label` / `text`,
+ * which stay empty so the block draws the invitation at ink .68 until a person types
+ * (`type, or / for blocks and templates`, `anything, in any order`, `first item`,
+ * `what done looks like`, `first update`, `link a page`, `what was said`, `first
+ * action`, `done today`). `first record` (database) is a table row fixture, not a placeholder —
+ * `table` has no placeholder field, so it stays as content. Where a block already
+ * draws the board's exact line for an empty value with no authored copy of its own
  * (`highlight` → `a line worth keeping`, an `entries` row → `write the first entry`)
- * the value stays empty, so the line renders at placeholder ink and no wheat is
- * painted. Seven placeholders the board draws cannot be expressed by a `view` block,
- * which holds no data (#111) — those blocks render their current empty state and are
- * filed as #274, marked `TODO(#274)` below. No head note is persisted anywhere: notes
- * are derived in `blockFrame()`.
+ * the value stays empty and no `placeholder` is set, so the block's own generic
+ * fallback does the work. Seven placeholders the board draws cannot be expressed by a
+ * `view` block, which holds no data (#111) — those blocks render their current empty
+ * state and are filed as #274, marked `TODO(#274)` below. No head note is persisted
+ * anywhere: notes are derived in `blockFrame()`.
  *
  * Code constants, never rows (migration 0016's own comment). `PondTemplate` in
  * `types.ts` is the ROW interface; this is a different type on purpose.
@@ -87,13 +92,13 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
   page: {
     kind: 'page',
     title: 'untitled',
-    blocks: [{ type: 'text', content: 'type, or / for blocks and templates' }],
+    blocks: [{ type: 'text', content: '', placeholder: 'type, or / for blocks and templates' }],
   },
 
   notes: {
     kind: 'notes',
     title: 'notes',
-    blocks: [{ type: 'text', content: 'anything, in any order' }],
+    blocks: [{ type: 'text', content: '', placeholder: 'anything, in any order' }],
   },
 
   list: {
@@ -104,7 +109,7 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
         type: 'todo',
         marker: 'dot',
         label: 'items',
-        items: [{ label: 'first item', checked: false }],
+        items: [{ label: '', checked: false, placeholder: 'first item' }],
       },
     ],
   },
@@ -125,14 +130,19 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
       { name: 'due', type: 'date' },
     ],
     blocks: [
-      { type: 'text', label: 'goal', content: 'what done looks like' },
+      { type: 'text', label: 'goal', content: '', placeholder: 'what done looks like' },
       // TODO(#274): the board draws a `first task` card in `to do` — a record, which
       // a view cannot carry. Renders the frame's empty state until #246 / #274 rule.
       { type: 'view', mode: 'board', label: 'tasks — board', groupBy: 'status' },
       // Start / end dates are inferred (1st date → start, 2nd → end); the voidBox line
       // is the mode's own (`GANTT_EMPTY_LINE`), so nothing is configured here.
       { type: 'view', mode: 'gantt', label: 'tasks — timeline' },
-      { type: 'entries', label: 'updates', entries: [{ date: 'today', text: 'first update' }] },
+      {
+        type: 'entries',
+        label: 'updates',
+        entries: [{ date: 'today', text: '' }],
+        placeholder: 'first update',
+      },
     ],
   },
 
@@ -204,7 +214,7 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
         type: 'todo',
         marker: 'none',
         label: 'pages',
-        items: [{ label: 'link a page', checked: false }],
+        items: [{ label: '', checked: false, placeholder: 'link a page' }],
       },
     ],
   },
@@ -217,12 +227,12 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
       { name: 'with', type: 'text' },
     ],
     blocks: [
-      { type: 'text', label: 'notes', content: 'what was said' },
+      { type: 'text', label: 'notes', content: '', placeholder: 'what was said' },
       {
         type: 'todo',
         marker: 'check',
         label: 'actions',
-        items: [{ label: 'first action', checked: false }],
+        items: [{ label: '', checked: false, placeholder: 'first action' }],
       },
     ],
   },
@@ -268,7 +278,7 @@ export const PREMADE_TEMPLATES: Record<TemplateKind, PremadeTemplate> = {
         type: 'todo',
         marker: 'check',
         label: 'today',
-        items: [{ label: 'done today', checked: false }],
+        items: [{ label: '', checked: false, placeholder: 'done today' }],
       },
     ],
   },

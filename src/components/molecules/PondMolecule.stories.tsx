@@ -389,6 +389,30 @@ export const EmptyInvitations: Story = {
   },
 }
 
+/**
+ * A template's own invitation (KAN-103) outranks the kind's generic empty copy,
+ * on both the row kinds that carry one.
+ */
+export const PlaceholderOutranksGenericEmptyCopy: Story = {
+  render: () => (
+    <div className="flex max-w-[480px] flex-col items-start gap-mn-3 p-mn-4">
+      <PondMolecule kind="list-row" state="empty" placeholder="first item" />
+      <PondMolecule kind="check-row" state="empty" placeholder="first step" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('first item')).toBeInTheDocument()
+    await expect(canvas.getByText('first step')).toBeInTheDocument()
+    await expect(canvas.queryByText('add an item')).not.toBeInTheDocument()
+    await expect(canvas.queryByText('add a step')).not.toBeInTheDocument()
+    for (const kind of ['list-row', 'check-row']) {
+      const title = part(moleculeRoot(canvasElement, kind), 'title')
+      await expectColour(getComputedStyle(title).color, INK_SECONDARY)
+    }
+  },
+}
+
 // ── AC1/geometry: the board's list-row, read back off the element ───────────
 
 /**

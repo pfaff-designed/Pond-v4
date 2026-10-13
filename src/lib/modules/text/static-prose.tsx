@@ -126,30 +126,34 @@ const isBlank = (node: ProseNode): boolean =>
  * The editor marks the line its caret is on, and a blank block opens with the
  * caret in its first line — when that is a line, not a list or a quote.
  */
-const placeholderOf = (doc: ProseNode): string | null => {
+const placeholderOf = (doc: ProseNode, placeholder?: string | null): string | null => {
   const line = doc.firstChild
   if (!line?.isTextblock || !isBlank(doc)) return null
-  return textPlaceholderFor(line.type.name)
+  return textPlaceholderFor(line.type.name, placeholder)
 }
 
 /**
  * A text block's markdown, drawn from the same parsed document the editor edits,
- * with no editor: it renders on the server and paints at once. `placeholder` draws
- * a blank block's line the way the editor's placeholder does.
+ * with no editor: it renders on the server and paints at once. `showPlaceholder`
+ * draws a blank block's line the way the editor's placeholder does — `placeholder`
+ * is the block's own copy, falling back to the line's generic empty copy when the
+ * block carries none.
  */
 export const StaticProse = ({
   content,
   className = TEXT_PROSE_CLASS,
-  placeholder = false,
+  showPlaceholder = false,
+  placeholder,
   onMouseDown,
 }: {
   content: string
   className?: string
-  placeholder?: boolean
+  showPlaceholder?: boolean
+  placeholder?: string | null
   onMouseDown?: MouseEventHandler
 }) => {
   const doc = parseMarkdown(content)
-  const firstLine = placeholder ? placeholderOf(doc) : null
+  const firstLine = showPlaceholder ? placeholderOf(doc, placeholder) : null
   return (
     <div className="w-full" onMouseDown={onMouseDown}>
       <div data-text-prose className={className}>

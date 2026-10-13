@@ -10,8 +10,13 @@
  * `it`s would say it seven times.
  */
 
+import React from 'react'
+import { render, screen } from '@testing-library/react'
+
 import { templateBlocksFrom } from '@/lib/templates/from-page'
 import type { Block } from '@/lib/modules/content'
+import { EntriesView } from '@/lib/modules/entries/view'
+import type { EntriesBlock } from '@/lib/modules/entries/schema'
 
 /** Deterministic ids, so the table can assert exact output. */
 function counter() {
@@ -166,6 +171,66 @@ describe('templateBlocksFrom — structure and labels by default', () => {
 
   it('an empty page saves as an empty template rather than throwing', () => {
     expect(templateBlocksFrom([], counter())).toEqual([])
+  })
+
+  // ── A block's own placeholder (KAN-103) survives being emptied ─────────────
+
+  it('todo carries its first item’s placeholder forward onto the rebuilt row', () => {
+    const block = {
+      id: 'b8',
+      type: 'todo',
+      marker: 'check',
+      items: [
+        { id: 'i1', label: 'chickpeas', checked: true, placeholder: 'first item' },
+        { id: 'i2', label: 'harissa', checked: false },
+      ],
+    } as Block
+    const [out] = templateBlocksFrom([block], counter())
+    expect(out).toMatchObject({ items: [{ label: '', checked: false, placeholder: 'first item' }] })
+  })
+
+  it('todo with no item placeholder omits the key entirely, rather than writing it as undefined', () => {
+    const [out] = templateBlocksFrom([TODO], counter())
+    const items = (out as { items: Array<Record<string, unknown>> }).items
+    expect(Object.hasOwn(items[0], 'placeholder')).toBe(false)
+  })
+
+  it('text keeps its block-level placeholder for free, via the spread', () => {
+    const block = {
+      id: 'b9',
+      type: 'text',
+      content: 'simmer 25 min',
+      placeholder: 'anything, in any order',
+    } as Block
+    const [out] = templateBlocksFrom([block], counter())
+    expect(out).toMatchObject({ content: '', placeholder: 'anything, in any order' })
+  })
+
+  it('entries with a placeholder keeps ONE blank entry, so the placeholder actually draws', () => {
+    const block = {
+      id: 'b10',
+      type: 'entries',
+      entries: [{ id: 'e1', date: '2026-10-04', text: 'went well' }],
+      placeholder: 'first update',
+    } as Block
+    const [out] = templateBlocksFrom([block], counter())
+    expect(out).toMatchObject({
+      entries: [{ date: 'today', text: '' }],
+      placeholder: 'first update',
+    })
+
+    render(React.createElement(EntriesView, { data: out as EntriesBlock, editable: false }))
+    expect(screen.getByText('first update')).toBeInTheDocument()
+  })
+
+  it('entries with NO placeholder still empties to no entries at all', () => {
+    const block = {
+      id: 'b11',
+      type: 'entries',
+      entries: [{ id: 'e1', date: '2026-10-04', text: 'went well' }],
+    } as Block
+    const [out] = templateBlocksFrom([block], counter())
+    expect(out).toMatchObject({ entries: [] })
   })
 })
 

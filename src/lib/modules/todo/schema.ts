@@ -43,6 +43,18 @@ export const todoItemSchema = z.object({
     .describe(
       'Optional short note shown quietly at the right of the item — a due date like "27 oct" or "today", or a one-line summary. Omit when there is nothing to say.'
     ),
+  /**
+   * A template's own invitation for this row (KAN-103) — drawn in place of
+   * `PondMolecule`'s generic `EMPTY_TITLE[kind]` copy (`add an item` / `add a
+   * step`) only while the item is blank; the first keystroke replaces it like
+   * any placeholder, and it is never written to `label`.
+   */
+  placeholder: z
+    .string()
+    .optional()
+    .describe(
+      'Optional invitation shown at ink .68 while the item has no label — e.g. "first item". Omit to use the generic empty-state copy.'
+    ),
 })
 
 /**
