@@ -202,6 +202,10 @@ beforeEach(() => {
   mockError = undefined
   mockLoadedMessages = []
   mockLoadedResolutions = { changes: {}, creates: {}, skipped: {} }
+  // Every "make this a page" fires the propose-page route in the background
+  // (KAN-172). Most of these tests don't care about it, so the default
+  // rejects — the fallback name/parent it already shows must stand untouched.
+  global.fetch = jest.fn().mockRejectedValue(new Error('propose-page not mocked in this test'))
   mockGetPage.mockImplementation(
     async (_sb: unknown, id: string) => PAGES.find((p) => p.id === id) ?? null
   )
@@ -449,6 +453,18 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(card.className).toMatch(/lowercase/)
   })
 
+  it('the under select shows the full ancestor path for a parent two levels deep, never the disambiguated single title', async () => {
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    // kr-1's own title is unique, so the shared, disambiguated `parentOptions`
+    // would show just "Kitchen renovation" — the proposal card's own list
+    // must show the full path regardless (6a f4).
+    expect(under.selectedOptions[0].textContent).toBe('Creativity › Kitchen renovation')
+  })
+
   it('one card per answer: while a card is open the chip steps aside, and only one card exists', async () => {
     renderTerminal()
     await ready()
@@ -608,6 +624,154 @@ describe('make this a page → the `new page — proposed` card', () => {
     expect(title.length).toBeLessThanOrEqual(120)
     expect(long.startsWith(title)).toBe(true)
   })
+
+  // ── KAN-172: Pond's own name and placement, asked for in the background ───
+
+  it('fills the open card’s name and parent once the propose-page route resolves', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'bud-1',
+        mentioned: [{ title: 'Budget', ref: 'bud-1', note: 'the one everything waits on' }],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    // The fallback stands the instant the card opens.
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // Pond's own name and parent replace it once the route resolves.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('bud-1')
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/chat/propose-page',
+      expect.objectContaining({ method: 'POST' })
+    )
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body as string)
+    expect(sent).toMatchObject({
+      question: QUESTION,
+      prose: PROSE,
+      openPageId: 'kr-1',
+      // Ids (the open page plus the tool-read_page call's pageId), not the
+      // chip display titles ('Kitchen renovation', 'Budget').
+      read: ['kr-1', 'bud-1'],
+      pondId: null,
+    })
+  })
+
+  it("fills in Pond's chosen name and the full ancestor path once resolved, and a double click still makes one page (path test)", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'kr-1',
+        mentioned: [],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    // The card stands at once with the fallback fields.
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // Pond's own name lands once the route resolves — never the question cut short.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('kr-1')
+    // `under` shows the full ancestor path, not a bare title (6a f4).
+    expect(under.selectedOptions[0].textContent).toBe('Creativity › Kitchen renovation')
+
+    // G9 regression: a double click on make page still makes exactly one page.
+    const make = within(card).getByRole('button', { name: 'make page' })
+    fireEvent.click(make)
+    fireEvent.click(make)
+    await waitFor(() => expect(mockCreatePage).toHaveBeenCalledTimes(1))
+    await act(async () => {})
+    expect(mockCreatePage).toHaveBeenCalledTimes(1)
+  })
+
+  it('a name typed before the route resolves survives the reply', async () => {
+    let resolveFetch!: (value: { ok: true; json: () => Promise<unknown> }) => void
+    global.fetch = jest.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      })
+    )
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+
+    // The person types their own name while the route is still in flight.
+    fireEvent.change(name, { target: { value: 'my own name' } })
+
+    resolveFetch({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: 'kr-1',
+        mentioned: [],
+      }),
+    })
+    await act(async () => {})
+    // The typed name must stand — a late reply never overwrites an edit.
+    expect(name.value).toBe('my own name')
+  })
+
+  it('a route reply with parentId null leaves the fallback parent', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'renovation blockers',
+        parentId: null,
+        mentioned: [],
+      }),
+    })
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(under.value).toBe('kr-1')
+
+    // The name still lands — only parentId is withheld for a null reply.
+    await waitFor(() => expect(name.value).toBe('renovation blockers'))
+    expect(under.value).toBe('kr-1')
+  })
+
+  it('leaves the fallback name and parent exactly as before when the propose-page route rejects', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'))
+    renderTerminal()
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
+    const card = await screen.findByRole('group', { name: /new page — proposed/i })
+
+    const name = within(card).getByRole('textbox', { name: 'name' }) as HTMLInputElement
+    const under = within(card).getByRole('combobox', { name: 'under' }) as HTMLSelectElement
+    expect(name.value).toBe('what is actually blocking the renovation')
+    expect(under.value).toBe('kr-1')
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled())
+    // Give the rejected call's microtask a turn to (not) land anything.
+    await act(async () => {})
+    expect(name.value).toBe('what is actually blocking the renovation')
+    expect(under.value).toBe('kr-1')
+  })
 })
 
 // ── 6d closing: a pending proposal survives a reload ─────────────────────────
@@ -666,8 +830,10 @@ describe('the eyebrow splits by medium, not by author', () => {
   // author" — the machine surface (composer, palette, @-picker, diff cards,
   // provenance chips) is PP Neue Montreal MONO; anything living on a page is the
   // SANS. Board 6a measures all four of its eyebrows at 10.5px / 500 / .1em /
-  // uppercase / ink .68, differing in that one thing: `pond` and `new page —
-  // proposed` are mono (composer), `made from` and `mentioned` sans (page).
+  // uppercase / ink .68, differing in that one thing: `PondComposer.dc.html`'s
+  // own `card` head is sans by default (its `headSt` only forces mono for a head
+  // starting `pond — ` or an explicit `label: 'mono'`), so `pond` and `new page —
+  // proposed` are sans (composer) same as `made from` and `mentioned` (page).
   //
   // One shared eyebrow constant therefore sets two registers, and the wrong family
   // on half of them — a correct-LOOKING constant applied across both registers.
@@ -693,7 +859,7 @@ describe('the eyebrow splits by medium, not by author', () => {
       expect(machineEyebrowClass).toContain(value)
   })
 
-  it('sets the card head in the mono and the pond attribution in the sans, over the answer', async () => {
+  it('sets both the card head and the pond attribution in the sans, over the answer', async () => {
     renderTerminal()
     await ready()
     const answer = screen.getByText(PROSE).closest('[data-part="answer"]')!
@@ -701,7 +867,7 @@ describe('the eyebrow splits by medium, not by author', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'make this a page' }))
     const card = await screen.findByRole('group', { name: /new page — proposed/i })
-    expect(within(card).getByText('new page — proposed').className).toBe(machineEyebrowClass)
+    expect(within(card).getByText('new page — proposed').className).toBe(pageEyebrowClass)
   })
 })
 

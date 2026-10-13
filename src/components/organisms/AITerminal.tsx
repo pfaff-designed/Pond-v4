@@ -38,7 +38,9 @@ import {
   earlierAnswers,
   formatThreadTime,
   openPageProposalIds,
+  parsePlacementResponse,
   readChips,
+  readPageIds,
   readStamp,
   withEarlierAnswer,
   withReadStamp,
@@ -50,7 +52,7 @@ import { pageEyebrowClass, chipBaseClass } from '@/components/atoms/kicker'
 import { ReadChips } from '@/components/molecules/ReadChips'
 import { AnswerActions } from '@/components/molecules/AnswerActions'
 import { PageProposalCard } from '@/components/molecules/PageProposalCard'
-import { toParentOptions } from '@/lib/pages/parent-options'
+import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { insertPageOptimistic } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
@@ -382,6 +384,11 @@ function tablePromotionPreview(
   return { columns, rowCount: t.rows.length, tableTitle: t.title }
 }
 
+// The route gets this long to answer before the card stops waiting on it — the
+// fallback name/parent are already standing, so a slow model never blocks
+// make-this-a-page (AUDIT G1).
+const PROPOSE_PAGE_FETCH_TIMEOUT_MS = 10_000
+
 export function AITerminal() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -512,6 +519,13 @@ export function AITerminal() {
     changeNotes,
     revisions,
   } = proposals
+  // The propose-page route's background fill (below) reads this at reply time,
+  // not at call time — `pageProposals` itself is a value closed over once when
+  // that async function is created, and a reply can land renders later.
+  const pageProposalsRef = useRef(pageProposals)
+  useEffect(() => {
+    pageProposalsRef.current = pageProposals
+  }, [pageProposals])
 
   // The persistable projection of the decision maps (ticket-19): saved with the
   // transcript so cards stay resolved across reloads, and sent with each chat
@@ -599,6 +613,15 @@ export function AITerminal() {
   // Duplicate titles are disambiguated with their ancestor path (and type as a
   // tie-break) so "Woodworking" ×2 are tellable apart in the picker.
   const parentOptions: ParentOption[] = useMemo(() => toParentOptions(allPages), [allPages])
+
+  // The page-proposal card's "under" shows the board's full ancestor path
+  // ("creativity › kitchen renovation"), never the shared picker's duplicate-
+  // title disambiguation (6a f4) — a second, proposal-only list rather than
+  // reusing `parentOptions` for this one card.
+  const proposalParentOptions: ParentOption[] = useMemo(
+    () => allPages.map((p) => ({ id: p.id, title: ancestorPathLabel(allPages, p.id) })),
+    [allPages]
+  )
 
   // The add_row destination picker (#18) offers ONLY collections — pages that
   // carry a `_schema` — so a row can never be added to a page with no columns to
@@ -2023,6 +2046,13 @@ export function AITerminal() {
   // `new page — proposed` card (one per answer — a second press is ignored by
   // the reducer); the proposal is born as a `proposed` change-log record and rides
   // the resolutions envelope with the transcript, so closing Pond leaves it pending.
+  const editPageProposal = useCallback(
+    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>) => {
+      dispatch({ kind: 'editPageProposal', id, patch })
+    },
+    []
+  )
+
   const proposePage = useCallback(
     (opts: {
       messageId: string
@@ -2030,6 +2060,7 @@ export function AITerminal() {
       askedAt: string | null
       prose: string
       read: string[]
+      readIds: string[]
     }) => {
       const proposal: PageProposal = {
         id: crypto.randomUUID(),
@@ -2069,15 +2100,61 @@ export function AITerminal() {
           proposal,
         })
       })()
+      // Pond's own name and placement, asked for in the background. The card
+      // above already stands on the heuristic fallback, so a failed, timed-out
+      // or aborted call here does nothing — make-this-a-page never blocks on it
+      // (AUDIT G1). `editPageProposal`'s reducer guard (only a still-`proposed`
+      // card accepts a patch) is what keeps a late reply from touching a card
+      // the person already settled.
+      void (async () => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), PROPOSE_PAGE_FETCH_TIMEOUT_MS)
+        try {
+          const res = await fetch('/api/chat/propose-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              question: opts.question,
+              prose: opts.prose,
+              openPageId: nodeId,
+              // Ids, not the chip titles in `opts.read` — a title can collide
+              // with an unrelated page of the same name (two "Untitled"s).
+              read: opts.readIds,
+              pondId,
+            }),
+          })
+          if (!res.ok) return
+          const placement = parsePlacementResponse(await res.json())
+          // A null `name` is the route's own fallback shape (the model threw,
+          // timed out, or produced something malformed) — not a real answer.
+          if (!placement || placement.name === null) return
+          // Read the card as it stands right now, not as it stood when this
+          // call was fired: the person may have typed their own name or picked
+          // their own parent while the route was still in flight. Only patch a
+          // field the person has not touched since — never overwrite an edit
+          // with a reply that is now stale. A null `parentId` from the route
+          // (no pick, or a hallucinated id the route already nulled) must
+          // never bump the card back to top level, so it only patches when
+          // non-null.
+          const live = pageProposalsRef.current[proposal.id]
+          if (!live) return
+          const patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'mentioned'>> = {
+            mentioned: placement.mentioned,
+          }
+          if (live.name === proposal.name) patch.name = placement.name
+          if (placement.parentId !== null && live.parentId === proposal.parentId) {
+            patch.parentId = placement.parentId
+          }
+          editPageProposal(proposal.id, patch)
+        } catch {
+          // Aborted, timed out, or a network failure — the fallback stands.
+        } finally {
+          clearTimeout(timer)
+        }
+      })()
     },
-    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId]
-  )
-
-  const editPageProposal = useCallback(
-    (id: string, patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind'>>) => {
-      dispatch({ kind: 'editPageProposal', id, patch })
-    },
-    []
+    [nodeId, allPages, pageProposals, getSupabase, pondId, conversationId, editPageProposal]
   )
 
   // Cancel returns to the thread and makes nothing (6a); the record is rejected.
@@ -2512,7 +2589,7 @@ export function AITerminal() {
             name={proposal.name}
             parentId={proposal.parentId}
             kind={proposal.kind}
-            parentOptions={parentOptions}
+            parentOptions={proposalParentOptions}
             status={proposal.status}
             error={pageProposalErrors[proposal.id]}
             onNameChange={(name) => editPageProposal(proposal.id, { name })}
@@ -2529,12 +2606,22 @@ export function AITerminal() {
             canMakePage={!!text && !hasOpenCard}
             onMakePage={() => {
               const q = questionBefore(messageIndex)
+              // The open page plus every page the answer actually read, by id —
+              // the placement route's candidate list, never the chip titles.
+              const readIds = [
+                ...new Set(
+                  [nodeId, ...readPageIds(message.parts as ReadPartLike[])].filter(
+                    (id): id is string => !!id
+                  )
+                ),
+              ]
               proposePage({
                 messageId: message.id,
                 question: q.text,
                 askedAt: q.sentAt,
                 prose: text,
                 read,
+                readIds,
               })
             }}
             onAskAgain={canAskAgain ? () => handleAskAgain(messageIndex) : undefined}

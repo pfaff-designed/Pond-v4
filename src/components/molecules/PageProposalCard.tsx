@@ -13,18 +13,23 @@
  * renders and raises intents.
  *
  * A machine surface (PROJECT_RULES § Design language): mono, lowercase, tight
- * tracking. Values read inline from the frame: the pane is white .72 over the
- * glass with a white .9 border, radius 14, padding 12px 13px, gap 10; the head
- * is the MONO eyebrow (500 · 10.5px · .1em · uppercase · ink .68 — a composer
- * surface, so the mono register) with "3
- * fields" at 10.5px ink .8; rows are 11px / 1.75 with a 52px label at ink .8;
- * make page is ink on paper, the other two ink .07 fills, all 500 · 11px with
- * 7px 13px padding, pill. Dark takes PondComposer's `diffCard` ink values via
- * the `.mn-proposal` roles.
+ * tracking for the body. Values read inline from the frame (and `PondComposer`'s
+ * own `card` renderer, its child DC): the pane is white .72 over the glass with
+ * a white .9 border, radius 14, padding 12px 13px, gap 10; the head is the SANS
+ * eyebrow (500 · 10.5px · .1em · uppercase · ink .68 — the DC's `headSt` is sans
+ * for any head that isn't `label: 'mono'` or `/^pond — /`, and this card's head
+ * is neither) with "3 fields" at 10.5px ink .8; rows are 11px / 1.75 with a 52px
+ * label at ink .8; the three controls are `PondControl kind="button"` at the
+ * board's own `desktop` size (h 32, px 14, 500 12px sans) — make page `primary`
+ * (ink fill, paper text), change place/cancel `ghost` (transparent, 1px ink .2
+ * inset ring, full ink text) — the DC's `btns()` makes the first button primary
+ * and the rest ghost. Dark takes PondComposer's `diffCard` ink values via the
+ * `.mn-proposal` roles.
  */
 
 import { useId, useRef } from 'react'
-import { chipBaseClass, machineEyebrowClass } from '@/components/atoms/kicker'
+import { PondControl } from '@/components/atoms/PondControl'
+import { chipBaseClass, pageEyebrowClass } from '@/components/atoms/kicker'
 import { cn } from '@/lib/utils'
 import { PAGE_NAME_MAX, type PageProposalStatus } from '@/lib/conversation/page-proposals'
 import {
@@ -64,8 +69,6 @@ export interface PageProposalCardProps {
 const rowClass = cn(placeRowClass, 'px-2 py-0.5')
 const labelClass = placeLabelClass
 const fieldClass = placeFieldClass
-const controlClass =
-  'rounded-mn-pill px-[13px] py-[7px] text-[11px] font-medium leading-none transition-colors disabled:opacity-50'
 
 export function PageProposalCard({
   name,
@@ -127,7 +130,7 @@ export function PageProposalCard({
       )}
     >
       <div className="flex items-center justify-between">
-        <span className={machineEyebrowClass}>new page — proposed</span>
+        <span className={pageEyebrowClass}>new page — proposed</span>
         <span className="text-[10.5px] text-mn-text-meta">3 fields</span>
       </div>
 
@@ -178,30 +181,27 @@ export function PageProposalCard({
       )}
 
       <div className="flex flex-wrap gap-[7px] pt-0.5">
-        <button
-          type="button"
+        <PondControl
+          kind="button"
+          variant="primary"
+          label="make page"
           disabled={busy}
           onClick={onMakePage}
-          className={cn(controlClass, 'bg-mn-text text-mn-surface hover:bg-mn-text/90')}
-        >
-          make page
-        </button>
-        <button
-          type="button"
+        />
+        <PondControl
+          kind="button"
+          variant="ghost"
+          label="change place"
           disabled={busy}
           onClick={changePlace}
-          className={cn(controlClass, 'bg-mn-text/[0.07] text-mn-text-meta hover:text-foreground')}
-        >
-          change place
-        </button>
-        <button
-          type="button"
+        />
+        <PondControl
+          kind="button"
+          variant="ghost"
+          label="cancel"
           disabled={busy}
           onClick={onCancel}
-          className={cn(controlClass, 'bg-mn-text/[0.07] text-mn-text-meta hover:text-foreground')}
-        >
-          cancel
-        </button>
+        />
       </div>
     </div>
   )

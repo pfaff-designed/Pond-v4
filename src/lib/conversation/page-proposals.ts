@@ -49,6 +49,16 @@ export interface PageProposal {
   status: PageProposalStatus
   /** Set once the page is made. */
   pageId?: string
+  /** What Pond's placement model found this answer mentioned — `ref` is a
+   *  candidate id, or null until it resolves to one. Absent on a proposal
+   *  made before this field existed. */
+  mentioned?: PageProposalMention[]
+}
+
+export interface PageProposalMention {
+  title: string
+  ref: string | null
+  note: string
 }
 
 /** Keyed by proposal id. */
@@ -94,9 +104,59 @@ export function parsePageProposals(value: unknown): PageProposals {
       kind: typeof r.kind === 'string' && r.kind ? r.kind : DEFAULT_PAGE_KIND,
       status: r.status as PageProposalStatus,
       ...(typeof r.pageId === 'string' && r.pageId ? { pageId: r.pageId } : {}),
+      mentioned: parseMentioned(r.mentioned),
     }
   }
   return out
+}
+
+/** Tolerant-parse a proposal's `mentioned` list — drops any entry missing
+ *  `title`/`note`, coerces an absent or malformed `ref` to null, coerces an
+ *  absent or malformed list itself to `[]`. Never throws. */
+function parseMentioned(value: unknown): PageProposalMention[] {
+  if (!Array.isArray(value)) return []
+  const out: PageProposalMention[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const r = raw as Record<string, unknown>
+    if (typeof r.title !== 'string' || !r.title) continue
+    if (typeof r.note !== 'string') continue
+    out.push({
+      title: r.title,
+      ref: typeof r.ref === 'string' && r.ref ? r.ref : null,
+      note: r.note,
+    })
+  }
+  return out
+}
+
+/** The propose-page route's response shape (KAN-172) — the fallback
+ *  (`{ name: null, parentId: null, mentioned: [] }`) IS a valid response
+ *  (AUDIT G1), not an error case. Shared by the route (its own validated
+ *  output) and `AITerminal.tsx` (tolerant-parsing that output back out of a
+ *  `fetch` response), so the two never drift on what counts as well-formed. */
+export interface PlacementResult {
+  name: string | null
+  parentId: string | null
+  mentioned: PageProposalMention[]
+}
+
+/** Tolerant-parse a propose-page route response — same posture as
+ *  `parsePageProposals`: a shape slip returns null (treated as "no better
+ *  answer arrived"), it never throws. Reuses {@link parseMentioned} so a
+ *  mention with no title, or an empty-string `ref`, is dropped/nulled the
+ *  same way here as it is on a persisted proposal. */
+export function parsePlacementResponse(value: unknown): PlacementResult | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (v.name !== null && typeof v.name !== 'string') return null
+  if (v.parentId !== null && typeof v.parentId !== 'string') return null
+  if (!Array.isArray(v.mentioned)) return null
+  return {
+    name: v.name as string | null,
+    parentId: v.parentId as string | null,
+    mentioned: parseMentioned(v.mentioned),
+  }
 }
 
 // ── Naming ───────────────────────────────────────────────────────────────────
@@ -234,6 +294,26 @@ export function readChips(opts: {
     push(opts.resolvePageName(id) ?? id)
   }
   return out
+}
+
+/**
+ * The page ids `readChips()` resolves to titles, kept raw instead (KAN-172):
+ * the placement route matches `read` by id, never by title, since a title
+ * chip can collide with an unrelated page of the same name (two pages both
+ * titled "Untitled" is the case that broke this). Walks the same
+ * `tool-read_page` parts {@link readChips} walks.
+ */
+export function readPageIds(parts: ReadPartLike[]): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const part of parts) {
+    if (part.type !== 'tool-read_page' || part.state === 'input-streaming') continue
+    const id = part.input?.pageId
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
 }
 
 /**

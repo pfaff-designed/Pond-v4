@@ -32,15 +32,19 @@ import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
  * open the same picker"; ADR 0009 gives board, calendar and timeline the same
  * route) — each is the `ViewMode` it makes, and each is the `slashRows` id of its
  * row (`lib/modules/palette.ts`), so the host routes a pick here by id with no
- * second table.
+ * second table. Every `VIEW_MODES` entry is here: a view with no source is not a
+ * view, so `list` and `big-number` route here too (KAN-240, the acceptance bug
+ * that let `big-number` insert with none).
  */
 export const SOURCE_BLOCKS = [
   'table',
   'board',
   'calendar',
+  'list',
   'gallery',
   'gantt',
   'chart',
+  'big-number',
 ] as const satisfies readonly ViewMode[]
 export type SourceBlock = (typeof SOURCE_BLOCKS)[number]
 

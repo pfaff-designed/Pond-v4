@@ -45,6 +45,7 @@ function proposal(over: Partial<PageProposal> = {}): PageProposal {
     parentId: 'kitchen-renovation',
     kind: 'page',
     status: 'proposed',
+    mentioned: [],
     ...over,
   }
 }
@@ -89,6 +90,38 @@ describe('parsePageProposals — the envelope record', () => {
     expect(parsed.p.parentId).toBeNull()
     expect(parsed.p.kind).toBe(DEFAULT_PAGE_KIND)
     expect(parsed.p.read).toEqual([])
+  })
+
+  it('round-trips valid mentioned entries, ref included', () => {
+    const mentioned = [
+      { title: 'Kitchen renovation', ref: 'kr-1', note: 'the one everything waits on' },
+      { title: 'Cabinet quote', ref: null, note: 'not booked yet' },
+    ]
+    const parsed = parsePageProposals({ m: proposal({ id: 'm', mentioned }) })
+    expect(parsed.m.mentioned).toEqual(mentioned)
+  })
+
+  it('drops a malformed mentioned entry while keeping the rest', () => {
+    const parsed = parsePageProposals({
+      m: proposal({
+        id: 'm',
+        mentioned: [
+          { title: 'Kitchen renovation', ref: 'kr-1', note: 'the one everything waits on' },
+          { title: 'Cabinet quote' }, // missing note
+          { ref: 'budget', note: 'untitled' }, // missing title
+        ] as PageProposal['mentioned'],
+      }),
+    })
+    expect(parsed.m.mentioned).toEqual([
+      { title: 'Kitchen renovation', ref: 'kr-1', note: 'the one everything waits on' },
+    ])
+  })
+
+  it('defaults to [] on a legacy record with no mentioned key at all', () => {
+    const legacy: Record<string, unknown> = { ...proposal({ id: 'legacy' }) }
+    delete legacy.mentioned
+    const parsed = parsePageProposals({ legacy })
+    expect(parsed.legacy.mentioned).toEqual([])
   })
 })
 

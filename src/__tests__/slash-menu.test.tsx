@@ -50,6 +50,12 @@ const ALLOWED = new Set([
   ...boardSlashWords(),
   ...TEMPLATE_KINDS,
   ...VIEW_KIND_WORDS,
+  // KAN-240: an undrawn row — the board draws no frame for the static table block
+  // now that `/table` is the database view (ADR 0009); delegated to this ticket.
+  'grid',
+  // KAN-240: an undrawn row — the list view's own row, labelled distinctly from
+  // the bulleted list's `list` so `/list` never reads as a second copy.
+  'list view',
 ])
 
 function renderMenu(overrides: Partial<React.ComponentProps<typeof SlashMenu>> = {}) {
@@ -149,7 +155,8 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
   })
 
   it('one type contributes several rows: list and checklist are both `todo`; gallery, chart and big number are all `view`', () => {
-    expect(mintPreset('list')).toMatchObject({ type: 'todo', marker: 'dot' })
+    expect(mintPreset('bulleted-list')).toMatchObject({ type: 'todo', marker: 'dot' })
+    expect(mintPreset('list')).toMatchObject({ type: 'view', mode: 'list' })
     expect(mintPreset('checklist')).toMatchObject({ type: 'todo' })
     expect(mintPreset('gallery')).toMatchObject({ type: 'view', mode: 'gallery' })
     expect(mintPreset('chart')).toMatchObject({ type: 'view', mode: 'chart' })
@@ -202,6 +209,24 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
     expect(slashRows.find((r) => r.id === 'gantt')?.alias).toBe('gantt')
   })
 
+  it('`/table` is the database table view, and the static table block moved to its own `grid` row (ADR 0009)', () => {
+    const tableRows = slashRows.filter((r) => r.id === 'table')
+    expect(tableRows).toHaveLength(1)
+    expect(tableRows[0]).toMatchObject({ type: 'view', label: 'table' })
+    const gridRows = slashRows.filter((r) => r.id === 'grid')
+    expect(gridRows).toHaveLength(1)
+    expect(gridRows[0]).toMatchObject({ type: 'table', label: 'grid' })
+    expect(mintPreset('table')).toMatchObject({ type: 'view', mode: 'table' })
+    expect(mintPreset('grid')).toMatchObject({ type: 'table' })
+  })
+
+  it('`/list` is the list view, labelled distinctly from the bulleted list', () => {
+    const listRows = slashRows.filter((r) => r.id === 'list')
+    expect(listRows).toHaveLength(1)
+    expect(listRows[0]).toMatchObject({ type: 'view', label: 'list view' })
+    expect(mintPreset('list')).toMatchObject({ type: 'view', mode: 'list' })
+  })
+
   it('rows follow the board’s order within the board’s groups', () => {
     expect(slashRows.map((r) => `${r.group}/${r.label}`)).toEqual([
       'text/text',
@@ -211,8 +236,10 @@ describe('a row is a preset, and every registered type reaches the menu', () => 
       'blocks/list',
       'blocks/checklist',
       'blocks/table',
+      'blocks/grid',
       'blocks/board',
       'blocks/calendar',
+      'blocks/list view',
       'blocks/gallery',
       'blocks/timeline',
       'blocks/chart',
@@ -370,10 +397,13 @@ describe('mobile', () => {
     const { unmount } = renderMenu()
     expect(glass()).toHaveClass('w-[300px]')
     expect(options()[0]).toHaveClass('py-[7px]', 'text-[12.5px]')
+    expect(options()[0]).not.toHaveClass('min-h-[44px]')
     unmount()
     renderMenu({ size: 'mobile' })
     expect(glass()).toHaveClass('w-[340px]')
-    for (const o of options()) expect(o).toHaveClass('py-[11px]', 'px-[10px]', 'text-[14px]')
+    for (const o of options()) {
+      expect(o).toHaveClass('py-[11px]', 'px-[10px]', 'text-[14px]', 'min-h-[44px]')
+    }
   })
 
   it('stops the open list at 12 entries, counting the group heads', () => {
@@ -388,7 +418,7 @@ describe('mobile', () => {
       options()
         .map((o) => labelOf(o as HTMLElement))
         .at(-1)
-    ).toBe('gallery')
+    ).toBe('calendar')
   })
 
   it('does not cap a query', () => {
@@ -596,5 +626,12 @@ describe('the component’s own source', () => {
     expect(source).toMatch(/tracking-\[\.04em\]/)
     expect(source).toMatch(/tracking-\[\.01em\]/)
     expect(source).not.toMatch(/uppercase/)
+  })
+
+  it('sets the row’s line-height to CSS normal, not the page’s inherited 1.5', () => {
+    // KAN-240: the board's row sets its type with the font shorthand and no
+    // line-height (= `normal`); `leading-normal` is Tailwind's 1.5, the bug this guards.
+    expect(source).toMatch(/leading-\[normal\]/)
+    expect(source).not.toMatch(/\bleading-normal\b/)
   })
 })

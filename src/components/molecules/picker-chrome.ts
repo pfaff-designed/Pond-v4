@@ -47,13 +47,21 @@ export const RULE = 'mx-[10px] mt-[4px] h-[4px] border-t border-mn-text/[0.09]'
 const NOTE_BASE =
   'px-[10px] py-[10px] font-mono leading-[1.55] text-mn-text-meta [text-wrap:pretty]'
 export const NOTE = `${NOTE_BASE} text-[12px]`
+/**
+ * The board's row sets its type with the CSS font shorthand and no explicit
+ * line-height, i.e. `line-height: normal` — not the page's inherited 1.5
+ * (Tailwind's "leading" + "normal" utility, unbracketed, means 1.5 instead;
+ * the bracketed form below is the literal CSS keyword).
+ */
 const ROW_BASE =
-  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] font-mono tracking-[.01em]'
+  'flex cursor-default items-center gap-[10px] rounded-[10px] px-[10px] font-mono leading-[normal] tracking-[.01em]'
 export type PickerSize = 'desktop' | 'mobile'
 /**
  * The chrome the DC's `size` swaps, for the mono pickers: the slash glass's width,
  * the head and note type, the row's padding and type, and the row's box height
- * (mobile rows are the 44px target; desktop's is padding plus one line).
+ * (mobile rows are the 44px target; desktop's is padding plus one `line-height:
+ * normal` line — measured against the board at 29px, not 7+7+18.75 as the page's
+ * inherited 1.5 line-height would give).
  */
 export const SLASH_SIZES = {
   desktop: {
@@ -62,14 +70,14 @@ export const SLASH_SIZES = {
     head: HEAD,
     note: NOTE,
     row: `${ROW_BASE} py-[7px] text-[12.5px]`,
-    rowHeight: 30,
+    rowHeight: 29,
   },
   mobile: {
     width: 'w-[340px]',
     widthPx: 340,
     head: `${HEAD_BASE} text-[13px]`,
     note: `${NOTE_BASE} text-[13px]`,
-    row: `${ROW_BASE} py-[11px] text-[14px]`,
+    row: `${ROW_BASE} min-h-[44px] py-[11px] text-[14px]`,
     rowHeight: 44,
   },
 } as const satisfies Record<
