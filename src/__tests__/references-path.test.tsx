@@ -149,7 +149,9 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     expect(composerInput).toHaveValue('')
 
     // 4: type a question and send — the request body carries the reference
-    // as structured data, and both the chip and the highlight clear after.
+    // as structured data, and the reference (board 6e frame 4: the refs row
+    // still holds it beside the "make page" chip) survives the send — the
+    // chip and highlight both stay.
     await user.type(composerInput, 'what does this mean?')
     await user.keyboard('{Enter}')
 
@@ -158,14 +160,11 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     expect(body.references).toEqual([
       expect.objectContaining({ pageId: 'page-1', blockId: 'b-text', quotedText: 'wild' }),
     ])
-    expect(screen.queryByText('Workshop — "wild"')).not.toBeInTheDocument()
-    expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(0)
+    expect(screen.getByText('Workshop — "wild"')).toBeInTheDocument()
+    expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
 
-    // 5: make two references, then remove the SECOND one — only its own
-    // highlight (and chip) goes; the first reference's stays.
-    selectWord(field, 'wild')
-    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
-    await flushAskFocus()
+    // 5: make a second reference, then remove it — only its own highlight
+    // (and chip) goes; the first reference (still live from the send) stays.
     clearSelection()
     selectWord(field, 'paths')
     await user.click(await screen.findByRole('button', { name: 'ask pond' }))

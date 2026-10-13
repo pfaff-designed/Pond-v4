@@ -1508,11 +1508,13 @@ export function AITerminal() {
       // proposal in this turn (#110 criterion 11) — it lives in a client context,
       // so without it every sandbox proposal would be filed into main.
       // #312: `pondId` so the route's context reads only this pond (`s6m5`).
-      // #98: references ride as structured data, not interpolated into the
+      // KAN-98: references ride as structured data, not interpolated into the
       // text, so the route can quote them back to the model labelled with
-      // page + block id (KAN-309 guard) — single-turn, same as csv/html.
+      // page + block id (KAN-309 guard). Unlike csv/html, a reference survives
+      // the send (board 6e frame 4: the refs row still holds both references
+      // and the passage stays highlighted) — removed only by its own × or by
+      // the anchored text being edited away.
       const body = { nodeId, nodeType, pondId, resolutions: outgoing, research, references }
-      setReferences([])
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
