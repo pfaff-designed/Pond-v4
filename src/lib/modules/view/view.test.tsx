@@ -6,7 +6,7 @@
  * `useDeletionUndo`'s `stageUndo`, gated on `editable`, and threads the SAME
  * handler into all three.
  */
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -29,6 +29,7 @@ const updateSchema = jest.fn()
 const renameRow = jest.fn()
 const updateRows = jest.fn()
 const addRow = jest.fn()
+const setValue = jest.fn()
 jest.mock('./use-collection-rows', () => ({
   useCollectionRows: () => {
     const [schema, setSchema] = useState<PropertySchema>(initialSchema)
@@ -49,7 +50,7 @@ jest.mock('./use-collection-rows', () => ({
       collectionName: 'Trips',
       isLoading: false,
       isError: false,
-      setValue: jest.fn(),
+      setValue,
       addRow,
       removeRow: jest.fn(),
       renameRow,
@@ -82,6 +83,7 @@ beforeEach(() => {
   renameRow.mockClear()
   updateRows.mockClear()
   addRow.mockClear()
+  setValue.mockClear()
   initialRows = []
   initialSchema = dateless
 })
@@ -228,5 +230,49 @@ describe('CollectionBoard — the card-title input commits once, not per keystro
     expect(addRow).toHaveBeenCalledWith({ 'p-status': 'opt-todo' })
     const inputs = await screen.findAllByRole('textbox', { name: 'Card title' })
     expect(inputs).toHaveLength(2)
+  })
+})
+
+describe('ViewView — the /table path end to end: add a row, type a title and a date (KAN-299)', () => {
+  const tableSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    { id: 'p-date', name: 'Date', type: 'date' },
+  ]
+
+  beforeEach(() => {
+    initialSchema = tableSchema
+    initialRows = []
+  })
+
+  it('saves exactly what was typed into the title and date cells, only after moving focus away', async () => {
+    const user = userEvent.setup()
+    renderView(table)
+
+    await user.click(screen.getByRole('button', { name: '+ Add row' }))
+
+    const titleInput = await screen.findByRole('textbox', { name: 'Row title' })
+    await user.click(titleInput)
+    await user.type(titleInput, 'kan299 dated record')
+    expect(renameRow).not.toHaveBeenCalled()
+
+    const dateInput = screen.getByLabelText('Date value')
+    // Clicking the date cell blurs the title input, committing it.
+    await user.click(dateInput)
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    const rowId = renameRow.mock.calls[0]![0] as string
+    expect(renameRow).toHaveBeenCalledWith(rowId, 'kan299 dated record')
+
+    // jsdom's <input type="date"> has no segmented UI for user-event to drive
+    // key by key — fireEvent.change reproduces the native per-keystroke
+    // partial-year intermediates from the bug report directly (as cells.test.tsx
+    // does for the cell in isolation).
+    fireEvent.change(dateInput, { target: { value: '0002-10-20' } })
+    fireEvent.change(dateInput, { target: { value: '0020-10-20' } })
+    fireEvent.change(dateInput, { target: { value: '2026-10-20' } })
+    expect(setValue).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(setValue).toHaveBeenCalledWith(rowId, 'p-date', '2026-10-20')
   })
 })
