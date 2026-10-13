@@ -91,7 +91,11 @@ import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import type { PageReference } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
 import { editorForBlock } from '@/lib/modules/text/active-editor'
-import { onReferenceRangeDropped, type ReferenceHighlightEntry } from '@/lib/modules/text/reference-highlight'
+import {
+  onReferenceRangeDropped,
+  onReferenceRangeChanged,
+  type ReferenceHighlightEntry,
+} from '@/lib/modules/text/reference-highlight'
 import { markIndex, resolveMark } from '@/lib/pages/mark'
 import { markAccent } from '@/lib/rail/glyph-library'
 import { parseCsv } from '@/lib/csv/parse-csv'
@@ -764,7 +768,10 @@ export function AITerminal() {
       const { blockId } = ctx
       if (nodeId && blockId) {
         const range = ctx.from !== undefined && ctx.to !== undefined ? { from: ctx.from, to: ctx.to } : null
-        setReferences((prev) => [...prev, { pageId: nodeId, blockId, range, quotedText: ctx.text }])
+        setReferences((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), pageId: nodeId, blockId, range, quotedText: ctx.text },
+        ])
       }
       requestAnimationFrame(() => inputRef.current?.focus())
     },
@@ -787,7 +794,7 @@ export function AITerminal() {
   // reflected while the reference is still sitting above the composer text.
   const referenceItems = useMemo<ReferenceChip[]>(
     () =>
-      references.map((ref, index) => {
+      references.map((ref) => {
         const title =
           allPages.find((p) => p.id === ref.pageId)?.title ??
           (ref.pageId === nodeId ? contextLabel : 'untitled')
@@ -797,7 +804,7 @@ export function AITerminal() {
             ? `${ref.quotedText.slice(0, REFERENCE_PASSAGE_MAX)}…`
             : ref.quotedText
         return {
-          key: String(index),
+          key: ref.id,
           glyph: mark.glyph,
           accent: markAccent(mark.role),
           label: `${title} — "${passage}"`,
@@ -807,20 +814,23 @@ export function AITerminal() {
   )
 
   const handleRemoveReference = useCallback((key: string) => {
-    setReferences((prev) => prev.filter((_, i) => String(i) !== key))
+    setReferences((prev) => prev.filter((ref) => ref.id !== key))
   }, [])
 
   // The passage a reference points at stays highlighted on the page while
   // referenced (#98, board 6e). Each block that currently owns a highlight
   // is tracked so a reference removed from `references` (sent, or its ×
   // clicked) clears that block's decoration too, not just the new set's.
+  // Keyed by the reference's own `id`, never array position — two live
+  // references in the same block, or a removal racing a re-render, would
+  // otherwise mis-key onto each other.
   const highlightedBlocksRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const byBlock = new Map<string, ReferenceHighlightEntry[]>()
-    references.forEach((ref, index) => {
+    references.forEach((ref) => {
       if (!ref.range) return
       const entries = byBlock.get(ref.blockId) ?? []
-      entries.push({ key: String(index), range: ref.range })
+      entries.push({ key: ref.id, range: ref.range })
       byBlock.set(ref.blockId, entries)
     })
     for (const blockId of new Set([...highlightedBlocksRef.current, ...byBlock.keys()])) {
@@ -830,12 +840,37 @@ export function AITerminal() {
   }, [references])
 
   // An edit that destroys a reference's anchored text drops it — the
-  // extension only knows positions, so it reports here by key (array index)
-  // for removal from `references` itself.
+  // extension only knows positions, so it reports here by key (the
+  // reference's `id`) for removal from `references` itself.
   useEffect(
     () =>
       onReferenceRangeDropped((_blockId, keys) => {
-        setReferences((prev) => prev.filter((_, i) => !keys.includes(String(i))))
+        setReferences((prev) => prev.filter((ref) => !keys.includes(ref.id)))
+      }),
+    []
+  )
+
+  // An edit that only shifts or grows a reference's anchored text re-anchors
+  // it — the plugin is the only place that re-anchored position exists until
+  // this writes it back, so `references` state above (and the request body
+  // built from it) never re-sends a stale, pre-edit range. A no-op update
+  // (same from/to) is skipped so this can't loop with the highlight effect
+  // above, which re-pushes `references` into the plugin on every change.
+  useEffect(
+    () =>
+      onReferenceRangeChanged((_blockId, entries) => {
+        setReferences((prev) => {
+          let changed = false
+          const next = prev.map((ref) => {
+            const entry = entries.find((e) => e.key === ref.id)
+            if (!entry || !ref.range || (ref.range.from === entry.range.from && ref.range.to === entry.range.to)) {
+              return ref
+            }
+            changed = true
+            return { ...ref, range: entry.range }
+          })
+          return changed ? next : prev
+        })
       }),
     []
   )

@@ -188,4 +188,56 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     expect(field.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
     expect(screen.getByText('Workshop — "wild"')).toBeInTheDocument()
   })
+
+  it('keeps an earlier reference re-anchored after a later one is added in the same block', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    // Reference A: "wild".
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+    expect(await screen.findByText('Workshop — "wild"')).toBeInTheDocument()
+
+    // Type new words before passage A — its highlight re-anchors forward,
+    // off the range it was created with.
+    clearSelection()
+    act(() => {
+      textEditorOf(field).commands.insertContentAt(1, 'deep in ')
+    })
+    expect(field.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
+
+    // THEN ask pond on a second passage ("paths") in the same block. This is
+    // the regression: adding a reference re-renders the refs row, which used
+    // to re-push A's STALE, pre-edit range into the editor and jump its
+    // highlight off "wild" entirely.
+    selectWord(field, 'paths')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+    await flushAskFocus()
+
+    await waitFor(() => expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(2))
+    const texts = Array.from(field.querySelectorAll('.mn-reference-highlight')).map((el) => el.textContent)
+    expect(texts).toContain('wild')
+    expect(texts).toContain('paths')
+
+    // The sent body carries A's re-anchored range (shifted forward by the
+    // 8 characters of "deep in " inserted before it), not its original one.
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'what does this mean?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pageId: 'page-1',
+          blockId: 'b-text',
+          quotedText: 'wild',
+          range: { from: 13, to: 17 },
+        }),
+      ])
+    )
+  })
 })

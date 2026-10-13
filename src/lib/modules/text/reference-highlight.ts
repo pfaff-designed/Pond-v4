@@ -27,9 +27,25 @@ export const onReferenceRangeDropped = (listener: DroppedListener): (() => void)
   return () => droppedListeners.delete(listener)
 }
 
+type ChangedListener = (blockId: string, entries: ReferenceHighlightEntry[]) => void
+const changedListeners = new Set<ChangedListener>()
+
+/**
+ * Fires after an edit re-anchors one or more live ranges in some block. The
+ * plugin's own state is the only place a re-anchored position exists until
+ * this reports it back — without it, the caller's reference state goes
+ * stale the moment it re-renders and re-pushes its original ranges over the
+ * plugin's re-anchored ones.
+ */
+export const onReferenceRangeChanged = (listener: ChangedListener): (() => void) => {
+  changedListeners.add(listener)
+  return () => changedListeners.delete(listener)
+}
+
 interface PluginState {
   entries: ReferenceHighlightEntry[]
   justDropped: string[]
+  justChanged: boolean
 }
 
 const pluginKey = new PluginKey<PluginState>('referenceHighlight')
@@ -70,11 +86,11 @@ export const ReferenceHighlight = Extension.create<{ blockId: string }>({
       new Plugin<PluginState>({
         key: pluginKey,
         state: {
-          init: () => ({ entries: [], justDropped: [] }),
+          init: () => ({ entries: [], justDropped: [], justChanged: false }),
           apply(tr, { entries }) {
             const next = tr.getMeta(pluginKey) as ReferenceHighlightEntry[] | undefined
-            if (next) return { entries: next, justDropped: [] }
-            if (!tr.docChanged) return { entries, justDropped: [] }
+            if (next) return { entries: next, justDropped: [], justChanged: false }
+            if (!tr.docChanged) return { entries, justDropped: [], justChanged: false }
 
             const dropped: string[] = []
             const reanchored = entries.flatMap(({ key, range }) => {
@@ -85,7 +101,7 @@ export const ReferenceHighlight = Extension.create<{ blockId: string }>({
               }
               return [{ key, range: next }]
             })
-            return { entries: reanchored, justDropped: dropped }
+            return { entries: reanchored, justDropped: dropped, justChanged: reanchored.length > 0 }
           },
         },
         props: {
@@ -102,8 +118,10 @@ export const ReferenceHighlight = Extension.create<{ blockId: string }>({
         },
         view: () => ({
           update(view) {
-            const dropped = pluginKey.getState(view.state)?.justDropped
-            if (dropped && dropped.length > 0) droppedListeners.forEach((listener) => listener(blockId, dropped))
+            const state = pluginKey.getState(view.state)
+            if (!state) return
+            if (state.justDropped.length > 0) droppedListeners.forEach((listener) => listener(blockId, state.justDropped))
+            if (state.justChanged) changedListeners.forEach((listener) => listener(blockId, state.entries))
           },
         }),
       }),

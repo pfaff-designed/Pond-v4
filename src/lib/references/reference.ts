@@ -7,6 +7,8 @@
  */
 
 export interface PageReference {
+  /** Stable across re-renders, so a drop/removal/re-anchor report can key by it instead of array position. */
+  id: string
   pageId: string
   blockId: string
   range: TextRange | null
