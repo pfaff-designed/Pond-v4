@@ -57,13 +57,29 @@ const areaRoleName = (role: unknown): string =>
  * An edit reads as what its diff did ("wrote 3 paragraphs", `summary.ts`); a
  * record edit names the record. The full before/after, rendered block by block,
  * stays the record page's — this is one line for a row.
+ *
+ * `byId` resolves an undo/redo row's own label from the record it undid or
+ * redid (board 6o f5: "undo · added chickpeas, harissa"). `links.redoOf` names
+ * the record that was put back directly — migration 0021 inserts it as the id
+ * passed to `redo_change_log_record`, the same original id `undo_of` named, not
+ * the standing undo record — verified against `change-log-undo.pglite.test.ts`
+ * ("links: { redo_of: edit }"), not the ticket's own guess. A record missing
+ * from `byId` (a different page, or paged out) falls back to the plain word.
  */
-export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord | null): string {
+export function describeChange(
+  record: ChangeLogRecord,
+  reverts: ChangeLogRecord | null,
+  byId: Map<string, ChangeLogRecord> = new Map()
+): string {
   switch (record.action) {
     case 'edit':
       return summarizeBlockEdit(record.before, record.after) ?? 'edited this page'
-    case 'revert':
-      return reverts === null ? 'revert of an earlier change' : `revert of ${clockTime(reverts)}`
+    case 'revert': {
+      const revertsRecord = reverts ?? byId.get(record.links.revertOf ?? '') ?? null
+      return revertsRecord === null
+        ? 'revert of an earlier change'
+        : `revert of ${clockTime(revertsRecord)}`
+    }
     case 'create_page':
       return 'created this page'
     case 'define_schema':
@@ -88,10 +104,14 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
       return 'deleted'
     case 'move':
       return 'moved'
-    case 'undo':
-      return 'undo'
-    case 'redo':
-      return 'redo'
+    case 'undo': {
+      const undone = byId.get(record.links.undoOf ?? '')
+      return undone === undefined ? 'undo' : `undo · ${describeChange(undone, null, byId)}`
+    }
+    case 'redo': {
+      const redone = byId.get(record.links.redoOf ?? '')
+      return redone === undefined ? 'redo' : `redo · ${describeChange(redone, null, byId)}`
+    }
     default:
       // Reachable, despite the union looking exhaustive: 0011 gives `action` NO
       // CHECK on purpose — "a new tool can be logged without a migration" — and
@@ -130,7 +150,7 @@ export function buildPageChanges(records: ChangeLogRecord[]): PageChangeRow[] {
     const reverts = byId.get(record.links.revertOf ?? '') ?? null
     return {
       record,
-      label: describeChange(record, reverts),
+      label: describeChange(record, reverts, byId),
       revertable,
       revertBlockedBy: !revertable && waiting ? 'waiting' : null,
       reverts,
