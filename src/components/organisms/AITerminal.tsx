@@ -17,6 +17,7 @@ import {
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
@@ -171,8 +172,9 @@ import {
   type ProposalType,
 } from '@/lib/conversation/proposal-store'
 import { resolveChangeLogRecord } from '@/lib/change-log/resolve'
-import { listRecordsByToolCalls } from '@/lib/change-log/store'
-import { previewForChange } from '@/lib/modules/preview'
+import { listRecordsByToolCalls, resolveChainStatuses } from '@/lib/change-log/store'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
+import { previewForChange, type ChangePreview } from '@/lib/modules/preview'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 import type { Block } from '@/lib/documents/types'
 import { withSchema, isCollection, readSchema } from '@/lib/properties/schema'
@@ -399,7 +401,6 @@ export function AITerminal() {
   // At the root the context is the pond itself — its name, never an assumed one
   // (AUDIT W9: copy says "this pond", not "life").
   const pondName = usePondName()
-  const contextLabel = nodeName ?? pondName
 
   const queryClient = useQueryClient()
   // Lazily created on first use, not at render — so an envless mount (Storybook,
@@ -491,6 +492,20 @@ export function AITerminal() {
   // the next propose_changes to stream in is Pond's revision of it. It lives for
   // exactly ONE turn; the effect below clears it when that turn settles.
   const pendingRevisionOf = useRef<string | null>(null)
+  // KAN-302 — a settled card's "−"/"+" text must not keep tracking the live
+  // page: once a batch's status leaves `pending`, its preview is frozen here
+  // so a later edit doesn't rewrite an already-accepted card's diff. This is
+  // only the BRIDGE until the record below arrives (or for a settled batch
+  // with no backing record at all, e.g. rejected-with-nothing-applied) — it
+  // does not survive a reload, since it is component state.
+  const [frozenChanges, setFrozenChanges] = useState<Record<string, ChangePreview[]>>({})
+  // KAN-302 — the change-log record behind each settled batch, keyed by
+  // toolCallId (filled by the reconcile effect below). `record.before` is the
+  // target page's blocks exactly as they stood at PROPOSE time (propose.ts),
+  // so it is the durable source for a settled card's "before" text — it
+  // survives a reload and never drifts with a later edit, unlike the live
+  // page the in-session freeze above would otherwise have cached.
+  const [toolCallRecords, setToolCallRecords] = useState<Record<string, ChangeLogRecord>>({})
   const {
     changes: changeDecisions,
     creates: createDecisions,
@@ -584,6 +599,12 @@ export function AITerminal() {
       return user ? listPages(supabase, user.id, pondId) : []
     },
   })
+  // KAN-302: the open page's label everywhere `contextLabel` stands in for it
+  // (a new answer's "read" chip, a same-page proposal card with no stamped
+  // target) — `nodeName` is the breadcrumb's URL param, never updated by a
+  // rename, so it is read only while the live title hasn't loaded yet.
+  const contextLabel =
+    currentPage?.title ?? allPages.find((p) => p.id === nodeId)?.title ?? nodeName ?? pondName
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
   // diff against THAT page's blocks, not the open page's. Fetch each distinct
   // stamped target id that isn't the open page, on the shared ['page', id] cache
@@ -1146,7 +1167,10 @@ export function AITerminal() {
         pages: allPages,
         pagesLoaded,
         openNodeId: nodeId,
-        openNodeName: nodeName,
+        // KAN-302: the live label, not the stale `nodeName` URL param — same
+        // fix as `contextLabel` above, since this write-once stamp's name IS
+        // contextLabel's stand-in for the open page at stamp time.
+        openNodeName: contextLabel,
       })
       // 'defer' → stamp on a later run (pages still loading); null → leave
       // unstamped (no safe target; accept skips). The reducer's stampTarget is
@@ -1154,7 +1178,7 @@ export function AITerminal() {
       if (resolved !== 'defer' && resolved !== null)
         dispatch({ kind: 'stampTarget', id: part.toolCallId, target: resolved })
     }
-  }, [messages, nodeId, nodeName, changeTargets, allPages, pagesLoaded, revisions])
+  }, [messages, nodeId, contextLabel, changeTargets, allPages, pagesLoaded, revisions])
 
   // ── The revision ref lives for ONE turn (#98 review) ──────────────────────
   // `pendingRevisionOf` was set on send and cleared only when a propose_changes
@@ -1343,19 +1367,30 @@ export function AITerminal() {
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
       clearError?.()
-      if (fileParts.length > 0) {
-        sendMessage(
-          finalText
-            ? { text: finalText, files: fileParts, metadata }
-            : { files: fileParts, metadata },
-          { body }
-        )
-        clearAttachments()
-      } else {
-        sendMessage({ text: finalText, metadata }, { body })
-      }
+      const outgoingFiles = fileParts
+      if (outgoingFiles.length > 0) clearAttachments()
       setInput('')
       setResearch(false)
+
+      const dispatchSend = () => {
+        if (outgoingFiles.length > 0) {
+          sendMessage(
+            finalText
+              ? { text: finalText, files: outgoingFiles, metadata }
+              : { files: outgoingFiles, metadata },
+            { body }
+          )
+        } else {
+          sendMessage({ text: finalText, metadata }, { body })
+        }
+      }
+      // KAN-302: the open page's own edit (title/blocks) may still be sitting
+      // in its save debounce — flush it to the DB before this turn's context
+      // read, so Pond never sees the page as it stood before the last keystroke.
+      // `undefined` means nothing was pending, so the send stays in this tick.
+      const pendingFlush = flushPendingPageSave(nodeId)
+      if (pendingFlush) void pendingFlush.then(dispatchSend)
+      else dispatchSend()
     },
     [
       isReady,
@@ -1720,7 +1755,12 @@ export function AITerminal() {
         if (!isProposeChangesPart(p) || p.state !== 'input-available') continue
         const count = p.input?.changes?.length ?? 0
         const status = batchStatus(changeDecisions, p.toolCallId, count)
-        if (status === 'pending' || status === 'accepted') counts.set(p.toolCallId, count)
+        // `undone` stays watched too — a redo lands on the chain's tip, never on
+        // this row's own `status`, so dropping the card here would never let it
+        // catch a later redo (KAN-302).
+        if (status === 'pending' || status === 'accepted' || status === 'undone') {
+          counts.set(p.toolCallId, count)
+        }
       }
     }
     return counts
@@ -1740,11 +1780,33 @@ export function AITerminal() {
         toolCallIds: [...liveDiffCards.keys()],
       })
       if (cancelled) return
+      // KAN-302: keep the records themselves, not just their derived status —
+      // a settled card's "−"/"+" text reads `record.before` (the diffCards
+      // loop below), which survives a reload unlike the in-session freeze.
+      setToolCallRecords((prev) => {
+        let next = prev
+        for (const record of records) {
+          const id = record.toolCallId
+          if (!id || prev[id] === record) continue
+          if (next === prev) next = { ...prev }
+          next[id] = record
+        }
+        return next
+      })
+      // The record's own `status` only ever moves forward into `undone`; a
+      // redo lands on the chain's tip instead (KAN-302), so every card must
+      // follow its chain, not its row — walked for every record in one go.
+      const tips = await resolveChainStatuses(supabase, {
+        userId: user.id,
+        pondId,
+        records: records.map((record) => ({ id: record.id, status: record.status })),
+      })
       for (const record of records) {
         const id = record.toolCallId
         if (!id) continue
         const count = liveDiffCards.get(id) ?? 0
-        const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), record.status)
+        const tip = tips.get(record.id) ?? record.status
+        const adopt = reconcileCardStatus(batchStatus(changeDecisions, id, count), tip)
         if (!adopt) continue
         for (let i = 0; i < count; i++) {
           dispatch({ kind: 'resolve', type: 'changes', id, index: i, decision: adopt })
@@ -2369,7 +2431,13 @@ export function AITerminal() {
       ? { ...resolutions, lifecycle }
       : { ...resolutions, lifecycle: undefined }
     clearError?.()
-    void regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    const dispatchRegenerate = () =>
+      regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    // KAN-302: same flush as sendText — a re-ask must see the page as it
+    // stands now, not as it stood before an edit still in its save debounce.
+    const pendingFlush = flushPendingPageSave(nodeId)
+    if (pendingFlush) void pendingFlush.then(dispatchRegenerate)
+    else dispatchRegenerate()
     setResearch(false)
   }
 
@@ -2502,15 +2570,62 @@ export function AITerminal() {
       const placeName = changePlace[part.toolCallId]
         ? allPages.find((p) => p.id === changePlace[part.toolCallId])?.title
         : undefined
+      // KAN-302: `target.nodeName` is a write-once stamp from proposal time —
+      // a later rename of the target page must still show in the header, so
+      // read the live title off `allPages` and only fall back to the stamp
+      // when the page is gone (deleted since the stamp).
+      const liveTargetName = target
+        ? allPages.find((p) => p.id === target.nodeId)?.title ?? target.nodeName
+        : undefined
+      const status = batchStatus(changeDecisions, part.toolCallId, rawChanges.length)
+      // KAN-302: `record.before` is the target page's blocks exactly as they
+      // stood at propose time (propose.ts) — the durable "before" source for a
+      // settled card. Unlike the in-session freeze below, it is read fresh
+      // from the record every render (not cached): it never changes once the
+      // record exists, so there is nothing to protect it from, and reading it
+      // this way means a RELOAD (empty `frozenChanges`, a card reseeded
+      // straight to `accepted`) still shows the real "before" instead of
+      // recomputing against the live, further-edited page.
+      const record = toolCallRecords[part.toolCallId]
+      const recordBlocks = Array.isArray(record?.before) ? (record.before as Block[]) : null
+      const targetBlocksReady = crossPage
+        ? blocksForTarget.get(crossPage.nodeId) !== undefined
+        : currentPage !== undefined
+      const cachedChanges = frozenChanges[part.toolCallId]
+      let changes: ChangePreview[]
+      if (status === 'pending') {
+        // A still-open card tracks the live page: the person may keep typing
+        // before deciding.
+        changes = rawChanges.map((c) => previewForChange(c, targetBlocks))
+      } else if (recordBlocks) {
+        changes = rawChanges.map((c) => previewForChange(c, recordBlocks))
+      } else if (cachedChanges) {
+        // The bridge: the record hasn't arrived yet (or this settled batch
+        // never got one, e.g. nothing applied), but an earlier render already
+        // froze what the live page showed right after it settled.
+        changes = cachedChanges
+      } else {
+        changes = rawChanges.map((c) => previewForChange(c, targetBlocks))
+        // KAN-302: never freeze while `targetBlocks` is still loading — a
+        // fresh mount whose page query hasn't resolved yet would otherwise
+        // cache an empty/wrong "before" forever. An "adjust state while
+        // rendering" update (react.dev), not an effect, so this lands the
+        // same render the status first leaves `pending`.
+        if (targetBlocksReady) {
+          setFrozenChanges((prev) =>
+            prev[part.toolCallId] ? prev : { ...prev, [part.toolCallId]: changes }
+          )
+        }
+      }
       diffCards.push({
         id: part.toolCallId,
-        changes: rawChanges.map((c) => previewForChange(c, targetBlocks)),
-        status: batchStatus(changeDecisions, part.toolCallId, rawChanges.length),
+        changes,
+        status,
         // KAN-267: needsPlace with nothing picked yet means there IS no target —
         // falling to contextLabel here would claim the pond itself as the
         // target while the card, in the same breath, says it needs a place.
         targetName:
-          needsPlace && !placeName ? undefined : target?.nodeName || placeName || contextLabel,
+          needsPlace && !placeName ? undefined : liveTargetName || placeName || contextLabel,
         targetMissing,
         needsPlace,
         parentOptions,

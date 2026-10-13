@@ -84,8 +84,31 @@ const mockListByCalls = jest.fn()
 // KAN-93: controllable per test, so an accept can be given a record to remember.
 const mockGetRecordByToolCall = jest.fn().mockResolvedValue(null)
 const mockAcceptRecord = jest.fn().mockResolvedValue(undefined)
+// KAN-302: the chain's tip status, separate from the record's own frozen `status`.
+// Kept per-record so every test's existing mockResolveChainStatus setup still
+// drives it; `resolveChainStatuses` (the production call site now) is just
+// that same per-record mock walked over the batch and collected into a Map.
+const mockResolveChainStatus = jest.fn()
 jest.mock('@/lib/change-log/store', () => ({
   listRecordsByToolCalls: (...args: unknown[]) => mockListByCalls(...args),
+  resolveChainStatuses: async (
+    supabase: unknown,
+    opts: { userId: string; pondId: string | null; records: Array<{ id: string; status: string }> }
+  ) => {
+    const tips = new Map<string, string>()
+    for (const record of opts.records) {
+      tips.set(
+        record.id,
+        await mockResolveChainStatus(supabase, {
+          userId: opts.userId,
+          pondId: opts.pondId,
+          recordId: record.id,
+          status: record.status,
+        })
+      )
+    }
+    return tips
+  },
   getRecordByToolCall: (...args: unknown[]) => mockGetRecordByToolCall(...args),
   advanceStatus: jest.fn(),
   acceptRecord: (...args: unknown[]) => mockAcceptRecord(...args),
@@ -139,6 +162,7 @@ global.fetch = jest.fn().mockResolvedValue({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { applyProposedChanges } from '@/lib/pages/edits'
 import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import { pagesKey } from '@/lib/pages/keys'
 import type { ModuleChange } from '@/lib/modules/ai-composition'
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -147,15 +171,20 @@ function renderWithQuery(ui: React.ReactElement) {
     <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
   )
   const result = render(wrap(ui))
-  return { ...result, rerender: (node: React.ReactElement) => result.rerender(wrap(node)) }
+  return {
+    ...result,
+    queryClient,
+    rerender: (node: React.ReactElement) => result.rerender(wrap(node)),
+  }
 }
 
-function batch(toolCallId: string) {
+function batch(toolCallId: string, targetPageId?: string) {
   return {
     type: 'tool-propose_changes',
     toolCallId,
     state: 'input-available',
     input: {
+      targetPageId,
       changes: [
         { op: 'create', data: { type: 'text', content: `first line of ${toolCallId}` } },
         { op: 'create', data: { type: 'text', content: `second line of ${toolCallId}` } },
@@ -212,6 +241,11 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockListByCalls.mockResolvedValue([])
+  // Default: the chain's tip is just the record's own status — only a test
+  // that cares about a redo moving the tip past it overrides this.
+  mockResolveChainStatus
+    .mockReset()
+    .mockImplementation((_sb: unknown, opts: { status: string }) => Promise.resolve(opts.status))
   mockGetRecordByToolCall.mockReset().mockResolvedValue(null)
   mockAcceptRecord.mockReset().mockResolvedValue(undefined)
   mockGetPage.mockReset().mockResolvedValue(null)
@@ -322,6 +356,29 @@ describe('AITerminal — propose_changes card (#98)', () => {
     ]
     expect(options.body.requestChanges).toMatchObject({ toolCallId: 'pc1', reason: 'outdated' })
     expect(options.body.pondId).toBe('pond-7')
+  })
+
+  // KAN-302 — a redo never flips the record's own `status` back from `undone`
+  // (0021 inserts a new `redo` row instead); the card must follow the chain's
+  // tip, not the row, so it reads `accepted` again once the redo lands.
+  it('an undone card adopts accepted again once the chain redo lands (KAN-302)', async () => {
+    mockResolutions = {
+      changes: { 'pc1:0': 'undone', 'pc1:1': 'undone' },
+      creates: {},
+      skipped: {},
+    }
+    mockListByCalls.mockResolvedValue([
+      { id: 'rec-1', toolCallId: 'pc1', status: 'undone', action: 'edit' },
+    ])
+    mockResolveChainStatus.mockResolvedValue('accepted')
+
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    await waitFor(() => expect(screen.getByText('accepted')).toBeInTheDocument())
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    expect(card).toHaveAttribute('data-status', 'accepted')
+    expect(screen.queryByText('undone')).not.toBeInTheDocument()
   })
 
   it('ask again on a rejected card regenerates the answer; it does not send a new turn', async () => {
@@ -797,6 +854,37 @@ describe('AITerminal — propose_changes card (#98)', () => {
 
     expect(mockCommitBlocks).not.toHaveBeenCalled()
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  // KAN-302 — a card's header must read the target page's CURRENT title, not
+  // the name frozen in `changeTargets[toolCallId]?.nodeName` at proposal time.
+  it("a card header follows the target page's title after a rename (KAN-302)", async () => {
+    const pageB = { id: 'page-b', parentId: null, type: 'page', title: 'Page B' }
+    mockListPages.mockResolvedValue([pageB])
+    mockGetPage.mockResolvedValue({
+      id: pageB.id,
+      parentId: null,
+      type: 'page',
+      title: pageB.title,
+      blocks: [],
+      props: {},
+      order: 0,
+    })
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [batch('pc1', pageB.id)] }]
+
+    const { queryClient } = renderWithQuery(<AITerminal />)
+    await ready()
+
+    const head = () => document.querySelector('[data-part="head"]')
+    await waitFor(() => expect(head()?.textContent).toContain('Page B'))
+
+    queryClient.setQueryData(
+      [...pagesKey('pond-7'), 'full'],
+      [{ ...pageB, title: 'Renamed Page' }]
+    )
+
+    await waitFor(() => expect(head()?.textContent).toContain('Renamed Page'))
+    expect(head()?.textContent).not.toContain('Page B')
   })
 })
 

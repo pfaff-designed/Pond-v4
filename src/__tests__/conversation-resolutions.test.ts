@@ -25,6 +25,11 @@ import {
   type ConversationResolutions,
 } from '@/lib/conversation/resolutions'
 import { toModelMessages } from '@/lib/conversation/transcript'
+import {
+  initialProposalState,
+  proposalReducer,
+  projectResolutions,
+} from '@/lib/conversation/proposal-store'
 
 function proposalTranscript(): UIMessage[] {
   return [
@@ -704,5 +709,70 @@ describe('applyResolutions — the other five statuses (#98)', () => {
     const model = await toModelMessages(out)
     const json = JSON.stringify(model)
     expect(json).toContain('pc1')
+  })
+})
+
+// ── KAN-302 item 5: a redone change must not still read "was undone" ────────
+// The card and `resolutions.changes` read the same `changeDecisions` map
+// (AITerminal's card-reconcile effect dispatches into it via
+// `reconcileCardStatus`), so driving that same reducer through accept → undo →
+// redo and projecting it is the realistic path to `applyResolutions`, not a
+// resolutions object hand-written with `'accepted'`.
+describe('applyResolutions — a redone change (KAN-302 item 5)', () => {
+  it('does not tell the model the change "was undone" once a redo has landed', () => {
+    let state = initialProposalState()
+    // accept
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'accepted',
+    })
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 1,
+      decision: 'accepted',
+    })
+    // undo — the card-reconcile effect adopts the chain tip (`reconcileCardStatus`'s
+    // accepted → undone edge)
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'undone',
+    })
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 1,
+      decision: 'undone',
+    })
+    // redo — the same effect adopts the tip again (`reconcileCardStatus`'s
+    // undone → accepted edge, added for KAN-302 item 4)
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 0,
+      decision: 'accepted',
+    })
+    state = proposalReducer(state, {
+      kind: 'resolve',
+      type: 'changes',
+      id: 'pc1',
+      index: 1,
+      decision: 'accepted',
+    })
+
+    const out = applyResolutions(proposalTranscript(), projectResolutions(state))
+    const output = findPart(out, 'pc1').output as { note: string; decisions: string[] }
+    expect(output.decisions).toEqual(['accepted', 'accepted'])
+    expect(output.note.toLowerCase()).not.toContain('undone')
+    expect(output.note).toMatch(/do not re-propose accepted or rejected/i)
   })
 })
