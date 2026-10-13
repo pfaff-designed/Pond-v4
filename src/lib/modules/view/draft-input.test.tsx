@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DraftInput } from './draft-input'
 
@@ -79,6 +79,20 @@ describe('DraftInput', () => {
     await user.click(input)
     await user.tab()
     expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('does not blur or commit on an Enter that confirms an IME composition', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    render(<Host value="" onCommit={onCommit} />)
+
+    const input = screen.getByLabelText<HTMLInputElement>('draft')
+    await user.click(input)
+    await user.keyboard('hi')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(input).toHaveFocus()
   })
 
   it('fires no onCommit on blur when the draft is unchanged from value', async () => {
