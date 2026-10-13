@@ -79,6 +79,22 @@ describe('an edit to a page reads as what was written', () => {
     )
   })
 
+  it('counts a heading written apart from a paragraph', () => {
+    expect(describeEdit([], [text('b1', '# Morning')])).toBe('wrote 1 heading')
+  })
+
+  it('counts a heading and a paragraph written in the same pause as two phrases', () => {
+    expect(describeEdit([], [text('b1', `# Morning\n\n${ENTRY}`)])).toBe(
+      'wrote 1 heading, wrote 1 paragraph'
+    )
+  })
+
+  it('counts a heading removed apart from a paragraph', () => {
+    expect(describeEdit([text('b1', `## Plan\n\n${ENTRY}`)], [text('b1', ENTRY)])).toBe(
+      'removed 1 heading'
+    )
+  })
+
   it('names an added block by its label and kind', () => {
     expect(describeEdit([text('b1', ENTRY)], [text('b1', ENTRY), table('t1', 'schedule')])).toBe(
       'added schedule table'
