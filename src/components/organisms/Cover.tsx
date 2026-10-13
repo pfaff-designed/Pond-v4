@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import { formatCoverClock, timezoneCity } from '@/lib/first-run/cover-clock'
 
@@ -12,10 +13,14 @@ const headerLabelClass =
  * dark) with nothing on it but a place, the wordmark, a live clock, one
  * field and the way in. The ASCII drift and the field's own wiring (⌘K,
  * ↵, the carry into the composer) land in later passes; this is the
- * static frame.
+ * static frame. `enter` (empty field, button or ↵) opens the shell bare;
+ * typed text carries across as `?ask=` for `DocumentPanel` to pick up —
+ * never sent here.
  */
 export function Cover() {
   const [clock, setClock] = useState(() => formatCoverClock(new Date()))
+  const [text, setText] = useState('')
+  const router = useRouter()
 
   useEffect(() => {
     const id = setInterval(() => setClock(formatCoverClock(new Date())), 1000)
@@ -23,6 +28,15 @@ export function Cover() {
   }, [])
 
   const place = timezoneCity(Intl.DateTimeFormat().resolvedOptions().timeZone)
+
+  const handleEnter = () => {
+    const trimmed = text.trim()
+    router.push(trimmed === '' ? '/workspace' : `/workspace?ask=${encodeURIComponent(trimmed)}`)
+  }
+
+  const handleFieldKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') handleEnter()
+  }
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-mn-surface text-mn-text">
@@ -44,15 +58,22 @@ export function Cover() {
 
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="mn-glass flex w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
-          ask pond
-          <span className="h-[13px] w-[1.5px] translate-y-px bg-mn-text" />
-          <div className="flex-1" />
+          <input
+            type="text"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={handleFieldKeyDown}
+            placeholder="ask pond"
+            aria-label="ask pond"
+            className="w-full flex-1 bg-transparent font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary placeholder:text-mn-text-secondary focus:outline-none"
+          />
           <span className="rounded-full bg-mn-hover-fill px-[11px] py-1.5 text-[11px] text-mn-text-meta">
             ⌘K
           </span>
           <button
             type="button"
             aria-label="send"
+            onClick={handleEnter}
             className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-mn-text text-mn-surface"
           >
             <svg
@@ -76,6 +97,7 @@ export function Cover() {
         <span className={headerLabelClass}>a make noise production</span>
         <button
           type="button"
+          onClick={handleEnter}
           className="flex flex-none items-center gap-2 rounded-full border border-mn-text px-4 py-2 text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text"
         >
           enter
