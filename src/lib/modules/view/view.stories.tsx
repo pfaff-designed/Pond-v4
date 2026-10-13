@@ -4,6 +4,7 @@ import { expect, fireEvent, fn, userEvent, within } from 'storybook/test'
 
 import { CollectionView } from './view'
 import { CollectionList } from './list'
+import { CALENDAR_EMPTY_LINE } from './kinds'
 import { PondBlock } from '@/components/organisms/PondBlock'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import type { CollectionRow } from './apply'
@@ -1291,81 +1292,29 @@ export const ListNeedsADate: Story = {
   },
 }
 
-// ── Calendar (agenda) ───────────────────────────────────────────────────────────
+// ── Calendar (month span, #262 1/3) ──────────────────────────────────────────────
 
-/**
- * Read-only agenda: one lane per date (chronological) + a trailing "No date" lane
- * for the undated row. No date property is named, so it auto-picks the first (Due).
- */
-export const CalendarReadOnly: Story = {
+/** The month span's chrome over a dated collection: period label, prev/next, today. */
+export const CalendarMonthChrome: Story = {
   args: { config: calendarConfig, schema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // The undated row lands in the trailing "No date" lane.
-    const noDate = canvas.getByText('No date').closest('section') as HTMLElement
-    await expect(within(noDate).getByText('Kiln maintenance')).toBeInTheDocument()
-    // A dated row sits under its date header (Sep is locale-stable in the test env).
-    await expect(canvas.getByText(/Sep 1\b/)).toBeInTheDocument()
-    await expect(canvas.getByText('Celadon glaze test')).toBeInTheDocument()
-    // Read-only: no drag handles, no inline date fields.
-    await expect(canvas.queryByLabelText(/Drag card/)).not.toBeInTheDocument()
-    await expect(canvas.queryByLabelText('Due value')).not.toBeInTheDocument()
+    await expect(canvas.getByLabelText('Previous month')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Next month')).toBeInTheDocument()
+    await expect(canvas.getByText('today')).toBeInTheDocument()
   },
 }
 
-/**
- * Inline date reschedule: editing the undated row's date field moves it out of the
- * "No date" lane — the write any-date path (drag can only reach lanes that exist).
- */
-export const CalendarEditDate: Story = {
-  args: { config: calendarConfig, schema, rows },
-  render: (args) => <StatefulView config={args.config} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    const noDate = canvas.getByText('No date').closest('section') as HTMLElement
-    // The undated lane's row carries an editable date field; set it to a real date.
-    const dateField = within(noDate).getByLabelText('Due value')
-    await fireEvent.change(dateField, { target: { value: '2026-09-05' } })
-    // Kiln maintenance has left the "No date" lane (it now has a date).
-    await expect(canvas.queryByText('No date')).not.toBeInTheDocument()
-    await expect(canvas.getByText('Kiln maintenance')).toBeInTheDocument()
-  },
-}
-
-/**
- * Drag a card between date lanes: grab "Trim the rim" (Sep 10) and drop it on the
- * Sep 1 lane (Celadon glaze test) — it re-buckets to that date via optimistic write.
- */
-export const CalendarDragBetweenLanes: Story = {
-  args: { config: calendarConfig, schema, rows },
-  render: (args) => <StatefulView config={args.config} />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    const handle = canvas.getByLabelText('Drag card: Trim the rim')
-    const target = canvas.getByText('Celadon glaze test').closest('section') as HTMLElement
-
-    const grip = handle.getBoundingClientRect()
-    const to = target.getBoundingClientRect()
-    const center = { x: to.x + to.width / 2, y: to.y + to.height / 2 }
-
-    fireEvent.pointerDown(handle, { clientX: grip.x + 4, clientY: grip.y + 4 })
-    fireEvent.pointerMove(target, { clientX: to.x + 8, clientY: to.y + 8 })
-    fireEvent.pointerMove(target, { clientX: center.x, clientY: center.y })
-    fireEvent.pointerUp(target, { clientX: center.x, clientY: center.y })
-
-    // The Sep 1 lane now holds both rows.
-    const lane = within(canvas.getByText('Celadon glaze test').closest('section') as HTMLElement)
-    await expect(lane.getByText('Trim the rim')).toBeInTheDocument()
-    await expect(lane.getByText('Celadon glaze test')).toBeInTheDocument()
-  },
-}
-
-/** A collection with no date property: a calm hint instead of an empty agenda. */
+/** A collection with no date property at all: the DC's `emptyLine` inside the card,
+ *  chrome and the (empty) grid still drawn — `isMonthD`/`isMonthM` don't depend on `isEmpty`. */
 export const CalendarNeedsDate: Story = {
   args: { config: calendarConfig, schema: noDateSchema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('This calendar needs a date property.')).toBeInTheDocument()
+    await expect(canvas.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Previous month')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Next month')).toBeInTheDocument()
+    await expect(canvas.getByText('today')).toBeInTheDocument()
   },
 }
 

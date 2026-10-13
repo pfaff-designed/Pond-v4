@@ -11,12 +11,11 @@
  * Splitting the fetch from the draw keeps `CollectionView` directly story-testable
  * with static data (no Supabase), mirroring how the kanban/table stories render.
  *
- * Cells resolve each stored value against the collection `_schema`
- * (`optionForValue` for select/status chips — id-or-legacy-label tolerant, slice 1).
+ * Cells resolve each stored value against the collection `_schema`, slice 1.
  * Filter/sort/group run through the pure `apply.ts`. Direct edits — a table cell, a
- * dragged board/calendar card, a calendar date field — write OPTIMISTICALLY via
- * `setValue`, bypassing the AI (decision 17). Calendar (agenda, drag + inline date
- * reschedule) and gallery (read-only card grid) are slice 4.
+ * dragged board card — write OPTIMISTICALLY via `setValue`, bypassing the AI
+ * (decision 17). Gallery (read-only card grid) is slice 4; calendar is its own
+ * module, `collection-calendar.tsx` (#262).
  */
 
 import { useCallback, useId, useMemo, useRef, useState } from 'react'
@@ -31,7 +30,6 @@ import {
   epochDay,
   galleryCardMeta,
   groupRows,
-  groupRowsByDate,
   layoutGanttBars,
   pickDateDef,
   pickGanttDefs,
@@ -66,21 +64,16 @@ import {
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
-import {
-  coerceValue,
-  optionForValue,
-  ROW_TYPE,
-  type PropertySchema,
-  type PropertyValue,
-} from '@/lib/properties/schema'
+import { coerceValue, ROW_TYPE, type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
 import { useDoneToggle } from './use-done-toggle'
 import { useOrangeToday } from '../page-canvas'
-import { Cell, OptionChip, RepeatMark } from './cells'
+import { Cell, RepeatMark } from './cells'
 import { RecordPeek } from './record-peek'
 import { CollectionList } from './list'
+import { CollectionCalendar } from './collection-calendar'
 import { useRecordSelection } from './use-record-selection'
 
 // ── Registry entry: fetch, then draw ──────────────────────────────────────────
@@ -270,13 +263,7 @@ export function CollectionView({
           onOpenRow={onOpenRow}
         />
       ) : config.mode === 'calendar' ? (
-        <CollectionCalendar
-          schema={schema}
-          rows={processed}
-          groupBy={config.groupBy}
-          editable={editable}
-          onEdit={onEdit}
-        />
+        <CollectionCalendar schema={schema} rows={processed} groupBy={config.groupBy} />
       ) : config.mode === 'gallery' ? (
         <CollectionGallery schema={schema} rows={processed} />
       ) : config.mode === 'gantt' ? (
@@ -719,156 +706,6 @@ function CollectionBoard({
           <div className="text-[13.5px] leading-[1.35] text-mn-text">
             {draggingRow.title || 'Untitled'}
           </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Calendar (agenda) ───────────────────────────────────────────────────────────
-
-/** Format a `YYYY-MM-DD` lane key as a human header ("Mon Sep 8"). Built from the
- *  date parts at local midnight so the weekday never drifts a day by timezone. */
-function formatDateHeader(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!m) return iso
-  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-/**
- * Calendar view — a chronological agenda (decision: slice-4 grill). Rows sit under a
- * header per date, earliest first, with a trailing "No date" lane. The date property
- * is the one the view names in `groupBy` (reused field) if it's a date, else the
- * first date property. Reschedule two ways: drag a card onto another lane (writes
- * that lane's date; the "No date" lane clears it) OR edit the inline date field to
- * reach any date. Both write optimistically via `onEdit`.
- */
-function CollectionCalendar({
-  schema,
-  rows,
-  groupBy,
-  editable,
-  onEdit,
-}: {
-  schema: PropertySchema
-  rows: CollectionRow[]
-  groupBy?: string
-  editable?: boolean
-  onEdit?: (rowId: string, key: string, value: PropertyValue) => void
-}) {
-  const dateDef = useMemo(() => pickDateDef(schema, groupBy), [schema, groupBy])
-  const grouped = useMemo(
-    () => (dateDef ? groupRowsByDate(rows, schema, dateDef.id) : null),
-    [rows, schema, dateDef]
-  )
-  const laneKey = (iso: string | null) => iso ?? NULL_BUCKET
-
-  const { drag, overKey, registerBucket, onCardPointerDown, containerHandlers } =
-    usePointerBucketDrag({
-      editable: !!editable,
-      onDrop: (rowId, key) => {
-        if (!dateDef) return
-        onEdit?.(rowId, dateDef.id, key === NULL_BUCKET ? null : key)
-      },
-    })
-
-  if (!dateDef || !grouped) {
-    return <ViewNotice>This calendar needs a date property.</ViewNotice>
-  }
-  const { buckets } = grouped
-
-  const draggingRow = drag?.active ? rows.find((r) => r.id === drag.rowId) : undefined
-  const chipDefs = schema.filter((d) => d.type === 'select' || d.type === 'status')
-
-  return (
-    <div {...containerHandlers}>
-      {/* Undated rows land in the null lane, so no buckets means no rows to draw —
-          none at all, or none the view's filter lets through — and the frame owns
-          both empty states (#239). */}
-      <div className="space-y-4">
-        {buckets.map((bucket) => {
-          const key = laneKey(bucket.iso)
-          const isOver = editable && drag?.active && overKey === key
-          return (
-            <section
-              key={key}
-              ref={registerBucket(key)}
-              className={[
-                'rounded-mn-inner px-3 py-2 transition-[background-color,box-shadow]',
-                isOver ? 'bg-mn-wash shadow-mn-md' : 'bg-mn-card/40 shadow-mn-sm',
-              ].join(' ')}
-            >
-              <header className="mb-2 flex items-center justify-between gap-2">
-                <span className="truncate text-[0.65rem] font-medium tracking-[0.14em] text-mn-text-secondary uppercase">
-                  {bucket.iso ? formatDateHeader(bucket.iso) : 'No date'}
-                </span>
-                <span className="text-[0.65rem] text-mn-text-secondary tabular-nums">
-                  {bucket.rows.length}
-                </span>
-              </header>
-
-              <ul className="space-y-2">
-                {bucket.rows.map((row) => {
-                  const isDragging = drag?.active && drag.rowId === row.id
-                  return (
-                    <li
-                      key={row.id}
-                      className={[
-                        'relative flex items-start gap-1.5 rounded-mn-row bg-mn-card px-2 py-2 shadow-mn-sm',
-                        'transition-shadow duration-[var(--motion-settle)] ease-[var(--ease-mn)] hover:shadow-mn-md motion-reduce:transition-none',
-                        isDragging ? 'opacity-30' : '',
-                      ].join(' ')}
-                    >
-                      {editable && (
-                        <button
-                          type="button"
-                          aria-label={`Drag card: ${row.title || 'untitled'}`}
-                          onPointerDown={(e) => onCardPointerDown(e, row.id)}
-                          className="mt-0.5 cursor-grab touch-none leading-none text-mn-text-secondary/50 select-none hover:text-mn-text-secondary"
-                        >
-                          ⠿
-                        </button>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-mn-text">{row.title || 'Untitled'}</div>
-                        {chipDefs.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {chipDefs.map((def) => {
-                              const opt = optionForValue(def, coerceValue(def, row.values[def.id]))
-                              if (!opt) return null
-                              return <OptionChip key={def.id} label={opt.label} color={opt.color} />
-                            })}
-                          </div>
-                        )}
-                        {editable && (
-                          <div className="mt-1.5">
-                            <Cell
-                              def={dateDef}
-                              value={coerceValue(dateDef, row.values[dateDef.id])}
-                              editable
-                              onChange={(v) => onEdit?.(row.id, dateDef.id, v)}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )
-        })}
-      </div>
-
-      {/* Floating clone that tracks the pointer — the lift. */}
-      {draggingRow && drag && (
-        <div
-          className="pointer-events-none fixed z-50 w-52 rotate-2 rounded-mn-row bg-mn-card px-2.5 py-2 shadow-mn-lg motion-reduce:rotate-0"
-          style={{ left: drag.x - drag.dx, top: drag.y - drag.dy }}
-          aria-hidden
-        >
-          <div className="font-medium text-mn-text">{draggingRow.title || 'Untitled'}</div>
         </div>
       )}
     </div>
