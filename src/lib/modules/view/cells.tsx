@@ -16,6 +16,7 @@ import {
   type PropertyValue,
 } from '@/lib/properties/schema'
 import { displayValue } from './apply'
+import { DraftInput } from './draft-input'
 
 /** One table cell — an inline editor when editable, a resolved read display otherwise. */
 export function Cell({
@@ -146,13 +147,13 @@ export function Cell({
     case 'text':
     default:
       return (
-        <input
+        <DraftInput
           type="text"
           className={cellInput}
           aria-label={label}
           value={typeof value === 'string' ? value : ''}
           placeholder="—"
-          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+          onCommit={(draft) => onChange(draft === '' ? null : draft)}
         />
       )
   }
