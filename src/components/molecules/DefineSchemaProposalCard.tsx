@@ -172,7 +172,7 @@ export function DefineSchemaProposalCard({
           )}
           {targetOptions.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.title}
+              {p.title || 'Untitled'}
             </option>
           ))}
         </select>

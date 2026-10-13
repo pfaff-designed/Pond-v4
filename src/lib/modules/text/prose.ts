@@ -64,6 +64,28 @@ export const TEXT_PROSE_CLASS = [
 ].join(' ')
 
 /**
+ * 6f frame 1: an untouched page's one hint line reads in the machine surface's
+ * mono (13px, tracking .02em), not the block's ordinary inherited serif
+ * placeholder — scoped to that one block's wrapper (`BlockCanvas` threads
+ * `untouched` to only the first block's render), never to `TEXT_PROSE_CLASS`
+ * itself, so every other block's placeholder stands. The `:is([data-text-prose],
+ * .ProseMirror)` hop is `ZEN_PROSE_CLASS`'s own trick: it outranks
+ * `TEXT_PROSE_CLASS`'s `before:` rule on specificity alone, so this wins
+ * regardless of the two classes' order in the compiled stylesheet.
+ *
+ * "Hint 6px after the caret" (6f frame 1): the hint's own `::before` carries a
+ * 6px left margin so it doesn't sit flush against the caret. The caret itself
+ * is the browser's native caret, not part of this rule — it isn't offset, so
+ * typing still starts at the line's own left edge, not at the hint's inset.
+ */
+export const UNTOUCHED_HINT_CLASS = [
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:font-mono',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:text-[13px]',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:tracking-[0.02em]',
+  '[&_:is([data-text-prose],.ProseMirror)_.is-editor-empty]:before:ml-[6px]',
+].join(' ')
+
+/**
  * A text block inside a diff line: the same document in the line's own mono type
  * (`Pond 07.07` draws a text block's change as a plain diff line), its blocks a
  * line apart, headings and bold at the mono's 500.

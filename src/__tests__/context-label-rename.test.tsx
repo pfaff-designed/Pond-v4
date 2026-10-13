@@ -10,13 +10,14 @@ import React from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+let mockNodeName = 'Untitled'
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
   // The person renamed the page after navigating here — `nodeName` still
   // reads the pre-rename title; only the page query (`currentPage`) is live.
   useSearchParams: () => ({
     get: (key: string) =>
-      ({ nodeId: 'page-1', nodeName: 'Untitled', nodeType: 'page' })[key] ?? null,
+      ({ nodeId: 'page-1', nodeName: mockNodeName, nodeType: 'page' })[key] ?? null,
   }),
 }))
 
@@ -164,6 +165,7 @@ async function ready() {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockNodeName = 'Untitled'
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockGetPage.mockResolvedValue(pageDoc('Plans'))
   mockListPages.mockResolvedValue([])
@@ -188,5 +190,20 @@ describe('KAN-302 — contextLabel follows the live page title, not the stale no
     const card = screen.getByRole('group', { name: /proposed edit/ })
     await waitFor(() => expect(within(card).getByText(/— Plans/)).toBeInTheDocument())
     expect(within(card).queryByText(/— Untitled/)).not.toBeInTheDocument()
+  })
+
+  it("an empty-titled open page still yields a read chip, labelled Untitled, never the pond name", async () => {
+    // The rail's `+` navigates here with an empty `nodeName` too — if the live
+    // title's own fallback to 'Untitled' were skipped, the chain would fall
+    // through to `nodeName || pondName`, and since usePondName() is never
+    // empty, the chip would misname the POND as the source instead.
+    mockNodeName = ''
+    mockGetPage.mockResolvedValue(pageDoc(''))
+    renderWithQuery(<AITerminal />)
+    await ready()
+
+    await waitFor(() => expect(screen.getByTestId('read-chips')).toBeInTheDocument())
+    expect(within(screen.getByTestId('read-chips')).getByText('Untitled')).toBeInTheDocument()
+    expect(within(screen.getByTestId('read-chips')).queryByText('life')).not.toBeInTheDocument()
   })
 })

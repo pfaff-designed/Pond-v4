@@ -140,7 +140,7 @@ export function CreatePageProposalCard({
           <option value={TOP_LEVEL_VALUE}>Top level</option>
           {parentOptions.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.title}
+              {p.title || 'Untitled'}
             </option>
           ))}
         </select>

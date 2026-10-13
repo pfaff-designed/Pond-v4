@@ -68,6 +68,7 @@ import { BLOCK_ROW_GAP_PX, blockWidthStyle, layoutRows, rowHolds } from '@/lib/m
 import { SlashLineContext, type SlashLineAt } from '@/lib/modules/text/slash-line'
 import { useSlashLine } from '@/components/organisms/use-slash-line'
 import { focusTextBlock, hasTextBeforeCaret } from '@/lib/modules/text/focus'
+import { UNTOUCHED_HINT_CLASS } from '@/lib/modules/text/prose'
 import {
   landAtSlash,
   undoLanding,
@@ -209,6 +210,12 @@ export interface BlockCanvasProps {
   onMoveIntoNewPage?: (block: Block) => void
   /** False hides the editing chrome — every block's handle and the foot add — mounted (zen: the page and nothing else). */
   chrome?: boolean
+  /**
+   * The page is untouched (6f): no title, one empty text block. Hides the foot
+   * "+ Add a block" on top of the `chrome` check — the blank body draws no
+   * add-block affordance, only its one hint line.
+   */
+  untouched?: boolean
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
 }
@@ -227,6 +234,7 @@ export function BlockCanvas({
   insertedIds,
   onMoveIntoNewPage,
   chrome = true,
+  untouched = false,
   listStyle,
 }: BlockCanvasProps) {
   const { stageDeletion, stageUndo, notify } = useDeletionUndo()
@@ -733,7 +741,9 @@ export function BlockCanvas({
   const blocksForLayout = useMemo(
     () =>
       previewWidth
-        ? blocks.map((b) => (b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b))
+        ? blocks.map((b) =>
+            b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b
+          )
         : blocks,
     [blocks, previewWidth]
   )
@@ -766,6 +776,7 @@ export function BlockCanvas({
         pageId={pageId}
         settleOnMount={insertedIds?.has(block.id) ?? false}
         chrome={chrome}
+        untouched={untouched && i === 0}
         onChange={(next) => setBlockAt(i, next)}
         onRemoveEmpty={() => removeEmptyLineAt(i)}
         onDeleteBlock={() => removeBlockAt(i)}
@@ -877,8 +888,9 @@ export function BlockCanvas({
       </SiblingBlocksProvider>
 
       {/* The always-visible foot add (UI-audit Slice 2a): drops a text block; `/`
-          in it summons the palette to swap type. */}
-      <AddBlockButton onAdd={addTextBlock} hidden={!chrome} />
+          in it summons the palette to swap type. Hidden on an untouched page
+          (6f) too — the blank body's only help is its one hint line. */}
+      <AddBlockButton onAdd={addTextBlock} hidden={!chrome || untouched} />
       {/* The source picker, hung off the `/` line that summoned it. */}
       {sourcePicker && (
         <SourcePicker
@@ -1016,6 +1028,7 @@ function BlockEditor({
   pageId,
   settleOnMount = false,
   chrome = true,
+  untouched = false,
   onChange,
   onRemoveEmpty,
   onDeleteBlock,
@@ -1045,6 +1058,8 @@ function BlockEditor({
   pageId: string
   settleOnMount?: boolean
   chrome?: boolean
+  /** This block is the untouched page's one hint line (6f): its placeholder draws in the mono override. */
+  untouched?: boolean
   onChange: (next: Block) => void
   /** Backspace in an empty text block. */
   onRemoveEmpty: () => void
@@ -1313,7 +1328,10 @@ function BlockEditor({
         </PondBlock>
       ) : block.type === 'text' ? (
         // Bare prose: `padding 2px 4px`, no card.
-        <div className="py-0.5" style={{ paddingInline: TEXT_BLOCK_INSET_PX }}>
+        <div
+          className={cn('py-0.5', untouched && UNTOUCHED_HINT_CLASS)}
+          style={{ paddingInline: TEXT_BLOCK_INSET_PX }}
+        >
           {view}
         </div>
       ) : (

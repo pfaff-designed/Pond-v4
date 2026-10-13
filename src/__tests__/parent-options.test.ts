@@ -106,6 +106,11 @@ describe('toParentOptions', () => {
     expect(options.find((o) => o.id === 'a')?.title).toBe('Woodworking (Shop)')
     expect(options.find((o) => o.id === 'c')?.title).toBe('Woodworking (top level)')
   })
+
+  it('labels a top-level blank-titled page as "Untitled"', () => {
+    const options = toParentOptions([row('blank', '')])
+    expect(options).toEqual([{ id: 'blank', title: 'Untitled' }])
+  })
 })
 
 describe('ancestorPathLabel', () => {
@@ -126,5 +131,15 @@ describe('ancestorPathLabel', () => {
   it('returns "" for an id not in the list', () => {
     const pages = [row('creativity', 'creativity')]
     expect(ancestorPathLabel(pages, 'missing')).toBe('')
+  })
+
+  it('labels an untouched blank-titled child as "recipes › Untitled"', () => {
+    const pages = [row('recipes', 'recipes'), row('child', '', 'recipes')]
+    expect(ancestorPathLabel(pages, 'child')).toBe('recipes › Untitled')
+  })
+
+  it('labels a page under an untouched blank-titled grandparent as "recipes › Untitled › Soup"', () => {
+    const pages = [row('recipes', 'recipes'), row('blank', '', 'recipes'), row('soup', 'Soup', 'blank')]
+    expect(ancestorPathLabel(pages, 'soup')).toBe('recipes › Untitled › Soup')
   })
 })

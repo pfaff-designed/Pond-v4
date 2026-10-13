@@ -1,4 +1,4 @@
-import { titleEyebrow } from '@/lib/pages/title-eyebrow'
+import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 
 const at = new Date(2026, 9, 5, 9, 4)
 
@@ -23,5 +23,36 @@ describe('titleEyebrow', () => {
     expect(titleEyebrow(undefined, true, at)).toBe('saved 09:04')
     expect(titleEyebrow('  ', true, at)).toBe('saved 09:04')
     expect(titleEyebrow(7, true, at)).toBe('saved 09:04')
+  })
+
+  it('draws new — in {parentTitle} for an untouched page with a parent', () => {
+    expect(titleEyebrow('project', true, at, true, 'recipes')).toBe('new — in recipes')
+  })
+
+  it('draws a bare new for an untouched page with no parent', () => {
+    expect(titleEyebrow('project', true, at, true, null)).toBe('new')
+  })
+})
+
+describe('isUntouchedPage', () => {
+  it('is true for an empty title and one empty text block', () => {
+    expect(isUntouchedPage('', [{ type: 'text', content: '' }])).toBe(true)
+  })
+
+  it('is false once the title is non-empty', () => {
+    expect(isUntouchedPage('notes', [{ type: 'text', content: '' }])).toBe(false)
+  })
+
+  it('is false once the block has content', () => {
+    expect(isUntouchedPage('', [{ type: 'text', content: 'hi' }])).toBe(false)
+  })
+
+  it('is false with more than one block', () => {
+    expect(
+      isUntouchedPage('', [
+        { type: 'text', content: '' },
+        { type: 'text', content: '' },
+      ]),
+    ).toBe(false)
   })
 })
