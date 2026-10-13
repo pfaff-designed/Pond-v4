@@ -166,11 +166,14 @@ describe('record peek — editing and navigation', () => {
     expect(peek()).not.toBeNull()
   })
 
-  it('a field edit goes through onEdit with the row, field and value', () => {
+  it('a field edit goes through onEdit with the row, field and value, once on blur', () => {
     const onEdit = jest.fn()
     renderBoard({ editable: true, onEdit, onRenameRow: jest.fn() })
     fireEvent.click(card('Wedge stoneware'))
-    fireEvent.change(within(peek()!).getByLabelText('notes value'), { target: { value: 'wet' } })
+    const notes = within(peek()!).getByLabelText('notes value')
+    fireEvent.change(notes, { target: { value: 'wet' } })
+    expect(onEdit).not.toHaveBeenCalled()
+    fireEvent.blur(notes)
     expect(onEdit).toHaveBeenCalledWith('row-2', 'p-notes', 'wet')
   })
 
