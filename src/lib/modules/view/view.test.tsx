@@ -19,20 +19,30 @@ import type { CollectionRow } from './apply'
 
 const dateless: PropertySchema = [{ id: 'p-title', name: 'Title', type: 'text' }]
 
-// Set by a describe block before `renderView` to seed the mocked hook's rows —
-// a fresh `useState` reads it on every render, so tests outside the table
-// describe never see it change their own `rows: []` default.
+// Set by a describe block before `renderView` to seed the mocked hook's rows/schema —
+// a fresh `useState` reads it on every render, so tests outside a given describe
+// never see it change their own `rows: []`/`dateless` default.
 let initialRows: CollectionRow[] = []
+let initialSchema: PropertySchema = dateless
 
 const updateSchema = jest.fn()
 const renameRow = jest.fn()
 const updateRows = jest.fn()
+const addRow = jest.fn()
 jest.mock('./use-collection-rows', () => ({
   useCollectionRows: () => {
-    const [schema, setSchema] = useState<PropertySchema>(dateless)
+    const [schema, setSchema] = useState<PropertySchema>(initialSchema)
     const [rows, setRows] = useState<CollectionRow[]>(initialRows)
     updateSchema.mockImplementation((next: PropertySchema) => setSchema(next))
     updateRows.mockImplementation((next: CollectionRow[]) => setRows(next))
+    // Mirrors the real hook's shape enough for the board's "＋ task": mints a row
+    // seeded with the dropped values and returns its id, so `handleAddCard` can
+    // focus the new card's title input.
+    addRow.mockImplementation(async (values?: CollectionRow['values']) => {
+      const id = `r-new-${rows.length}`
+      setRows((prev) => [...prev, { id, title: '', values: values ?? {} }])
+      return id
+    })
     return {
       schema,
       rows,
@@ -40,7 +50,7 @@ jest.mock('./use-collection-rows', () => ({
       isLoading: false,
       isError: false,
       setValue: jest.fn(),
-      addRow: jest.fn(),
+      addRow,
       removeRow: jest.fn(),
       renameRow,
       updateSchema,
@@ -52,6 +62,7 @@ const calendar: ViewBlock = { id: 'v-cal', type: 'view', mode: 'calendar' }
 const list: ViewBlock = { id: 'v-list', type: 'view', mode: 'list' }
 const gantt: ViewBlock = { id: 'v-gantt', type: 'view', mode: 'gantt' }
 const table: ViewBlock = { id: 'v-table', type: 'view', mode: 'table' }
+const board: ViewBlock = { id: 'v-board', type: 'view', mode: 'board' }
 
 function renderView(data: ViewBlock, editable = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -70,7 +81,9 @@ beforeEach(() => {
   updateSchema.mockClear()
   renameRow.mockClear()
   updateRows.mockClear()
+  addRow.mockClear()
   initialRows = []
+  initialSchema = dateless
 })
 
 describe('ViewView — the "add a date field" remedy reaches the page (KAN-292)', () => {
@@ -162,5 +175,58 @@ describe('CollectionTable — the row-title input commits once, not per keystrok
     await user.tab()
     expect(renameRow).toHaveBeenCalledTimes(1)
     expect(renameRow).toHaveBeenCalledWith('r1', 'kan299')
+  })
+})
+
+describe('CollectionBoard — the card-title input commits once, not per keystroke (KAN-299)', () => {
+  const boardSchema: PropertySchema = [
+    { id: 'p-title', name: 'Title', type: 'text' },
+    {
+      id: 'p-status',
+      name: 'Status',
+      type: 'select',
+      options: [{ id: 'opt-todo', label: 'Todo' }],
+    },
+  ]
+
+  beforeEach(() => {
+    initialSchema = boardSchema
+    initialRows = [{ id: 'r1', title: '', values: { 'p-status': 'opt-todo' } }]
+  })
+
+  it('calls renameRow zero times until blur, then once with the full string', async () => {
+    const user = userEvent.setup()
+    renderView(board)
+
+    const input = screen.getByRole('textbox', { name: 'Card title' })
+    await user.click(input)
+    await user.type(input, 'kan299')
+    expect(renameRow).not.toHaveBeenCalled()
+
+    await user.tab()
+    expect(renameRow).toHaveBeenCalledTimes(1)
+    expect(renameRow).toHaveBeenCalledWith('r1', 'kan299')
+  })
+
+  it('still opens the record peek on click (selectWithPointer still fires)', async () => {
+    const user = userEvent.setup()
+    renderView(board)
+
+    expect(screen.queryByRole('textbox', { name: 'Record title' })).not.toBeInTheDocument()
+    const input = screen.getByRole('textbox', { name: 'Card title' })
+    await user.click(input)
+
+    expect(screen.getByRole('textbox', { name: 'Record title' })).toBeInTheDocument()
+  })
+
+  it('still adds a card into its lane through the unchanged "＋ task" path', async () => {
+    const user = userEvent.setup()
+    renderView(board)
+
+    await user.click(screen.getByRole('button', { name: '＋ task' }))
+
+    expect(addRow).toHaveBeenCalledWith({ 'p-status': 'opt-todo' })
+    const inputs = await screen.findAllByRole('textbox', { name: 'Card title' })
+    expect(inputs).toHaveLength(2)
   })
 })

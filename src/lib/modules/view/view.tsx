@@ -678,13 +678,13 @@ function CollectionBoard({
                     ].join(' ')}
                   >
                     {editable && onRenameRow ? (
-                      <input
+                      <DraftInput
                         aria-label="Card title"
                         value={row.title}
                         placeholder="Untitled"
                         autoFocus={row.id === focusRowId}
                         onClick={() => selectWithPointer(row.id)}
-                        onChange={(e) => onRenameRow(row.id, e.target.value)}
+                        onCommit={(title) => onRenameRow(row.id, title)}
                         className={[
                           'w-full border-0 bg-transparent p-0 text-[13.5px] leading-[1.35] outline-none placeholder:text-mn-text-secondary',
                           titleTone,
