@@ -23,7 +23,7 @@
  * debounced save, and the children grid; BlockCanvas owns the blocks.
  */
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
@@ -60,6 +60,8 @@ import { usePond } from '@/lib/pond/context'
 import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
+import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
+import { requestTerminalFocus } from '@/lib/terminal-focus'
 
 export function DocumentPanel() {
   const router = useRouter()
@@ -121,6 +123,21 @@ export function DocumentPanel() {
       flushScope('block')
     }
   }, [pageId, flushScope])
+
+  // The cover's `?ask=` carries typed text into the root's composer (KAN-195):
+  // read once on mount, fire the same focus signal the palette uses, then strip
+  // the param so a reload never replays it. `askCarried` guards the one-shot —
+  // without it a dev-mode double-invoke or a later re-render would refire it.
+  const askCarried = useRef(false)
+  useEffect(() => {
+    if (nodeId || askCarried.current) return
+    const ask = readAskParam(searchParams)
+    if (ask === null) return
+    askCarried.current = true
+    requestTerminalFocus(ask)
+    router.replace(urlWithoutAsk('/workspace', searchParams))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once for the carried `?ask=` on mount; re-running on nodeId/searchParams/router churn would replay it
+  }, [])
 
   const { data: page, isLoading } = useQuery({
     queryKey: ['page', pageId],
