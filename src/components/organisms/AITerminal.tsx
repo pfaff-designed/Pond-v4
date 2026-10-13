@@ -57,7 +57,7 @@ import { PageProposalCard } from '@/components/molecules/PageProposalCard'
 import { toParentOptions, ancestorPathLabel } from '@/lib/pages/parent-options'
 import { workspaceHref } from '@/lib/pages/nav'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
-import { insertPageOptimistic } from '@/lib/pages/tree'
+import { insertPageOptimistic, fetchPages } from '@/lib/pages/tree'
 import { writeAcceptedChanges } from '@/lib/pages/accept'
 import { sessionUndo } from '@/lib/change-log/session-undo'
 import {
@@ -90,6 +90,9 @@ import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
 import { QuoteChip } from '@/components/atoms/QuoteChip'
 import type { PageReference } from '@/lib/references/reference'
+import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
+import { markIndex, resolveMark } from '@/lib/pages/mark'
+import { markAccent } from '@/lib/rail/glyph-library'
 import { parseCsv } from '@/lib/csv/parse-csv'
 import {
   getInlineAttachmentDescriptor,
@@ -205,6 +208,10 @@ const HTML_IMPORT_CHIPS = ['make this a page', 'file it as it is']
 /** 06.25 frame 6's two unreadable-failure chips (`rg -o` on the board's own
  *  copy: "try another file", not the ticket's shorthand "try another"). */
 const HTML_UNREADABLE_CHIPS = ['keep it as a file', 'try another file']
+
+/** A reference chip's passage, cut to keep the pill one line (board `Pond
+ *  06.05` draws the fixture already short; no frame gives a char count). */
+const REFERENCE_PASSAGE_MAX = 60
 
 /** 06.25 frame 6's single too-large-failure chip — there is no "try another"
  *  here, since the file itself (not the attempt) is the problem. */
@@ -762,6 +769,45 @@ export function AITerminal() {
     },
     [nodeId]
   )
+
+  // The refs row's marks come off the same `pagesKey()` cache the rail and
+  // breadcrumb already share (`allPages` above is a DIFFERENT, `'full'`-suffixed
+  // key carrying props but no glyph/area_role) — so a reference's glyph/colour
+  // always agrees with the page's row, and this read is a cache hit whenever
+  // the rail is already mounted.
+  const { data: markRows = [] } = useQuery({
+    queryKey: pagesKey(pondId),
+    queryFn: () => fetchPages(pondId),
+  })
+  const pageMarks = useMemo(() => markIndex(markRows), [markRows])
+
+  // A chip's title is resolved from `pageId` at render time (KAN-302's
+  // `contextLabel` precedent), never stamped once, so a live rename is
+  // reflected while the reference is still sitting above the composer text.
+  const referenceItems = useMemo<ReferenceChip[]>(
+    () =>
+      references.map((ref, index) => {
+        const title =
+          allPages.find((p) => p.id === ref.pageId)?.title ??
+          (ref.pageId === nodeId ? contextLabel : 'untitled')
+        const mark = resolveMark(ref.pageId, pageMarks)
+        const passage =
+          ref.quotedText.length > REFERENCE_PASSAGE_MAX
+            ? `${ref.quotedText.slice(0, REFERENCE_PASSAGE_MAX)}…`
+            : ref.quotedText
+        return {
+          key: String(index),
+          glyph: mark.glyph,
+          accent: markAccent(mark.role),
+          label: `${title} — "${passage}"`,
+        }
+      }),
+    [references, allPages, nodeId, contextLabel, pageMarks]
+  )
+
+  const handleRemoveReference = useCallback((key: string) => {
+    setReferences((prev) => prev.filter((_, i) => String(i) !== key))
+  }, [])
 
   // ── CSV attachment (ticket-40 F16) ────────────────────────────────────────
   const {
@@ -3327,6 +3373,7 @@ export function AITerminal() {
           {composerNotice}
         </p>
       )}
+      <ReferencesRow items={referenceItems} onRemove={handleRemoveReference} />
       <ComposerLine
         value={input}
         placeholder={
