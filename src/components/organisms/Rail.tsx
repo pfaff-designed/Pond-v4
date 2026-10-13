@@ -116,6 +116,8 @@ import { PondMark } from '@/components/atoms/PondMark'
 import { KindDot } from '@/components/atoms/PondAtom'
 import { Caret } from '@/components/atoms/Caret'
 import { RailRenameField } from './RailRenameField'
+import { instantiateTemplate } from '@/lib/templates/instantiate'
+import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -1504,7 +1506,13 @@ export function Rail() {
     setBusyId(id)
     try {
       const created = await withUser((sb, uid) =>
-        createPage(sb, uid, { parentId, type: 'page', title: 'Untitled', pondId })
+        createPage(sb, uid, {
+          parentId,
+          type: 'page',
+          title: '',
+          blocks: instantiateTemplate(PREMADE_TEMPLATES.page).blocks,
+          pondId,
+        })
       )
       // ensure the parent folder is open so the new child is visible
       if (parentId === null) setLifeExpanded(true)

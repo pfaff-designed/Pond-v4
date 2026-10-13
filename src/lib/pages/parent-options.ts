@@ -41,7 +41,7 @@ function ancestorPath(page: ParentPageRow, byId: Map<string, ParentPageRow>): st
     const parent = byId.get(parentId)
     if (!parent) break
     seen.add(parent.id)
-    path.unshift(parent.title)
+    path.unshift(parent.title || 'Untitled')
     parentId = parent.parentId
   }
   return path
@@ -52,12 +52,16 @@ export function toParentOptions(pages: ParentPageRow[]): ParentOptionLabel[] {
   const byId = new Map(pages.map((p) => [p.id, p]))
 
   const titleCounts = new Map<string, number>()
-  for (const p of pages) titleCounts.set(p.title, (titleCounts.get(p.title) ?? 0) + 1)
+  for (const p of pages) {
+    const title = p.title || 'Untitled'
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1)
+  }
 
   const withPath = pages.map((p) => {
-    if ((titleCounts.get(p.title) ?? 0) <= 1) return { page: p, label: p.title }
+    const title = p.title || 'Untitled'
+    if ((titleCounts.get(title) ?? 0) <= 1) return { page: p, label: title }
     const path = ancestorPath(p, byId)
-    return { page: p, label: `${p.title} (${path.length ? path.join(' › ') : 'top level'})` }
+    return { page: p, label: `${title} (${path.length ? path.join(' › ') : 'top level'})` }
   })
 
   const labelCounts = new Map<string, number>()
@@ -79,5 +83,5 @@ export function ancestorPathLabel(pages: ParentPageRow[], id: string): string {
   const page = byId.get(id)
   if (!page) return ''
   const path = ancestorPath(page, byId)
-  return [...path, page.title].join(' › ')
+  return [...path, page.title || 'Untitled'].join(' › ')
 }

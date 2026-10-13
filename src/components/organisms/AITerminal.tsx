@@ -608,8 +608,8 @@ export function AITerminal() {
   // (a new answer's "read" chip, a same-page proposal card with no stamped
   // target) — `nodeName` is the breadcrumb's URL param, never updated by a
   // rename, so it is read only while the live title hasn't loaded yet.
-  const contextLabel =
-    currentPage?.title ?? allPages.find((p) => p.id === nodeId)?.title ?? nodeName ?? pondName
+  const live = currentPage?.title ?? allPages.find((p) => p.id === nodeId)?.title
+  const contextLabel = live !== undefined ? live || 'Untitled' : nodeName || pondName
   // Cross-page edit previews (ticket-30): an edit/remove aimed at ANOTHER page must
   // diff against THAT page's blocks, not the open page's. Fetch each distinct
   // stamped target id that isn't the open page, on the shared ['page', id] cache

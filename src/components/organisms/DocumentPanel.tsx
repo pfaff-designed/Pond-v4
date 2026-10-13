@@ -55,7 +55,7 @@ import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
-import { titleEyebrow } from '@/lib/pages/title-eyebrow'
+import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
 import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
@@ -210,7 +210,11 @@ export function DocumentPanel() {
   // Typed properties (#17): present only when the page carries a schema (it is
   // a collection). Read here, above the early returns, so the JSX below stays flat.
   const propSchema = page ? readSchema(page.props) : null
-  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt)
+  // Board 6f frame 1: a fresh, untouched page reads `new — in {parent}` instead
+  // of the usual kind/save-state eyebrow, until the person types anything.
+  const untouched = isUntouchedPage(viewTitle, viewBlocks)
+  const parentTitle = rows.find((r) => r.id === page?.parentId)?.title ?? null
+  const eyebrow = titleEyebrow(page?.props?.kind, saved, savedAt, untouched, parentTitle)
 
   // The shell's `PondCommand` reads this page's path at rest: the root, the
   // ancestors, then this page — its name read off the row until the page lands.
@@ -338,6 +342,7 @@ export function DocumentPanel() {
           onUndoRemove={undoRemove}
           insertedIds={insertedIds}
           chrome={!zen}
+          untouched={untouched}
           listStyle={zen ? ZEN_BLOCK_LIST_STYLE : undefined}
         />
 

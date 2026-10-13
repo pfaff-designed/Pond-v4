@@ -122,7 +122,7 @@ export function CreatePageModalView({
                 <option value={TOP_LEVEL_VALUE}>{pondName} · top level</option>
                 {parentOptions.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.title}
+                    {p.title || 'Untitled'}
                   </option>
                 ))}
               </select>

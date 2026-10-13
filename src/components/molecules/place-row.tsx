@@ -108,7 +108,7 @@ export const PlaceRow = forwardRef<PlaceRowHandle, PlaceRowProps>(function Place
         )}
         {parentOptions.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.title}
+            {p.title || 'Untitled'}
           </option>
         ))}
       </select>
