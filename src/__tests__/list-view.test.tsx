@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 
 import { CollectionView } from '@/lib/modules/view/view'
 import { CollectionList } from '@/lib/modules/view/list'
+import { CALENDAR_EMPTY_LINE } from '@/lib/modules/view/kinds'
 import type { ViewBlock } from '@/lib/modules/view/schema'
 import type { CollectionRow } from '@/lib/modules/view/apply'
 import type { PropertySchema } from '@/lib/properties/schema'
@@ -77,12 +78,39 @@ describe('list — what is drawn', () => {
     render(
       <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
     )
-    expect(screen.getByText('This list needs a date property.')).toBeInTheDocument()
+    expect(
+      screen.getByText('nothing in this view has a date. records show here once they have one.')
+    ).toBeInTheDocument()
   })
 
   it('says so when there are no records', () => {
     renderList({ rows: [] })
     expect(screen.getByText('no records yet')).toBeInTheDocument()
+  })
+
+  it('with no date property and onAddDateField wired, offers the `add a date field` remedy and fires it (KAN-292)', async () => {
+    const user = userEvent.setup()
+    const onAddDateField = jest.fn()
+    render(
+      <CollectionList
+        viewKey="v"
+        schema={schema.filter((d) => d.type !== 'date')}
+        rows={rows}
+        onAddDateField={onAddDateField}
+      />
+    )
+    const button = screen.getByRole('button', { name: 'add a date field' })
+    await user.click(button)
+    expect(onAddDateField).toHaveBeenCalledTimes(1)
+  })
+
+  it('with no date property and no onAddDateField wired, draws the bare line, no box', () => {
+    const { container } = render(
+      <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
+    )
+    expect(screen.queryByRole('button', { name: 'add a date field' })).not.toBeInTheDocument()
+    expect(container.querySelector('[data-part="empty"]')).toBeNull()
+    expect(screen.getByText(CALENDAR_EMPTY_LINE)).toBeInTheDocument()
   })
 })
 

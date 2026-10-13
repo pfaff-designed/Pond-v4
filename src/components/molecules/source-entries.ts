@@ -23,7 +23,7 @@ import { CHART_TYPE_TAG } from '@/lib/modules/chart/chrome'
 import { plural } from '@/lib/modules/block-frame'
 import type { ViewMode } from '@/lib/modules/view/schema'
 import { VIEW_KINDS } from '@/lib/modules/view/kinds'
-import type { PropertyType } from '@/lib/properties/schema'
+import { PROPERTY_TYPES, type PropertyType } from '@/lib/properties/schema'
 
 import { ICON, type SlashEntry, type SlashIcon } from './slash-entries'
 
@@ -52,7 +52,7 @@ export type SourceBlock = (typeof SOURCE_BLOCKS)[number]
 export function sourceBlockOf(rowId: string): SourceBlock | null {
   return (SOURCE_BLOCKS as readonly string[]).includes(rowId) ? (rowId as SourceBlock) : null
 }
-export type SourceStep = 'source' | 'type' | 'new'
+export type SourceStep = 'source' | 'type' | 'new' | 'field-type'
 /** 3a `record`: "either a page of its own or a row only." */
 export type RecordsAre = 'pages' | 'rows'
 
@@ -290,6 +290,18 @@ export function newEntries(fields: readonly SourceField[]): SourceEntry[] {
   ]
 }
 
+/**
+ * The `＋ field` row's own step: no board draws a type chooser, so this is the
+ * smallest thing the picker's own row recipe can carry — one row per storable
+ * type, in `PROPERTY_TYPES` order, id and label both the bare `PropertyType`
+ * (not `FIELD_WORD`, which renders `select` and `status` both as `tag` — two
+ * indistinguishable rows). `relation` and `rollup` need a target this step
+ * cannot supply, so they're left out.
+ */
+export function fieldTypeEntries(): SourceEntry[] {
+  return PROPERTY_TYPES.filter((t) => t !== 'relation' && t !== 'rollup').map((t) => row(t, t))
+}
+
 // ── head and foot ──────────────────────────────────────────────────────────────
 
 /** `/table` · `/chart › calories` · `new database — recipes` — the head per step. */
@@ -297,6 +309,7 @@ export function headFor(
   step: SourceStep,
   ctx: { block: SourceBlock; pageTitle: string; source?: string }
 ): string {
+  if (step === 'field-type') return `new database — ${ctx.pageTitle} › field`
   if (step === 'new') return `new database — ${ctx.pageTitle}`
   const command = `/${VIEW_KINDS[ctx.block].label}`
   return ctx.source ? `${command} › ${ctx.source}` : command
@@ -314,5 +327,6 @@ export function footFor(
 ): string[] {
   if (step === 'source') return ctx.newSelected ? ['named after this page', '↵ create'] : ['↵ view']
   if (step === 'type') return ['suggested from the source’s fields']
+  if (step === 'field-type') return ['added to the new database']
   return ['filed in databases', `this page gets a ${VIEW_KINDS[ctx.block].label} view`]
 }

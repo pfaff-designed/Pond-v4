@@ -187,11 +187,17 @@ export const POND_BLOCK_EMPTY_ACTION_WIRED: Record<PondBlockKind, boolean> = {
 export type ViewFrameState =
   { state: 'rest' } | { state: 'empty'; line?: string; chartLine?: true; addRow?: true }
 
+/** The modes that place rows by a date property — the ones a missing date field
+ *  starves, not just empties (calendar is listed for completeness; its `empty.own`
+ *  above already steps aside regardless of schema). */
+const DATE_PLACED_MODES: ReadonlySet<ViewBlock['mode']> = new Set(['calendar', 'list', 'gantt'])
+
 export function viewFrameState(
   block: ViewBlock,
   rows: readonly unknown[],
   processed: readonly unknown[],
-  frame: BlockFrame | null
+  frame: BlockFrame | null,
+  schema: PropertySchema
 ): ViewFrameState {
   // #259: the heat grid DRAWS its own empty state — 84 cells at ink .07 — so the
   // frame never takes it over, filtered or not. The bar strip is empty as the
@@ -207,6 +213,13 @@ export function viewFrameState(
     return processed.length === 0
       ? { state: 'empty', line: POND_BLOCK_FILTERED_EMPTY_LINE }
       : { state: 'rest' }
+  }
+  // KAN-292: with zero rows, a dateless list/gantt steps aside too — otherwise the
+  // frame's own `no rows yet · add a row` / void line replaces the view, and the
+  // view's "add a date field" remedy (which only the view itself draws) never
+  // reaches the person.
+  if (DATE_PLACED_MODES.has(block.mode) && !schema.some((def) => def.type === 'date')) {
+    return { state: 'rest' }
   }
   if (markEmpty === 'void') return { state: 'empty', chartLine: true }
   // #260: a kind that owns its empty line takes it from the kind, which also decides

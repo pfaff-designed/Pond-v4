@@ -1287,7 +1287,9 @@ export const ListNeedsADate: Story = {
   args: { ...listArgs, schema: listSchema.filter((d) => d.type !== 'date') },
   play: async ({ canvasElement }) => {
     await expect(
-      within(canvasElement).getByText('This list needs a date property.')
+      within(canvasElement).getByText(
+        'nothing in this view has a date. records show here once they have one.'
+      )
     ).toBeInTheDocument()
   },
 }
@@ -1425,7 +1427,7 @@ export const GanttNeedsDate: Story = {
   args: { config: ganttConfig, schema: noDateSchema, rows },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('This timeline needs a date property.')).toBeInTheDocument()
+    await expect(canvas.getByText('tasks with a start and a due date draw here')).toBeInTheDocument()
   },
 }
 

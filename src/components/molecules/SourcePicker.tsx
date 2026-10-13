@@ -65,6 +65,7 @@ import {
   ADD_FIELD_ID,
   ALL_CHARTS_ID,
   chartPick,
+  fieldTypeEntries,
   footFor,
   headFor,
   kindOf,
@@ -177,7 +178,9 @@ export function SourcePicker({
       ? sourceEntries(databases, pageTitle)
       : step === 'type'
         ? typeEntries(source ? sourceFields : fields, expanded)
-        : newEntries([TITLE_FIELD, ...fields])
+        : step === 'field-type'
+          ? fieldTypeEntries()
+          : newEntries([TITLE_FIELD, ...fields])
   const hasSeg = entries.some((e) => e.kind === 'seg')
   const listEntries = entries.filter((e) => e.kind !== 'seg')
   const items = entries.filter((e): e is RowEntry => e.kind === 'row')
@@ -233,8 +236,12 @@ export function SourcePicker({
       // by record title (`resolveChartConfig` infers an x axis only when there is
       // no stored config at all), which is not what `line · kcal by day` offered.
       if (kind) finish(chartPick(kind, source ? sourceFields : fields))
+    } else if (step === 'field-type') {
+      if (!item) return
+      setFields((f) => [...f, { name: nextFieldName(f), type: item.id as SourceField['type'] }])
+      go('new')
     } else if (item?.id === ADD_FIELD_ID) {
-      setFields((f) => [...f, { name: nextFieldName(f), type: 'text' }])
+      go('field-type')
     } else if (block === 'chart') {
       go('type')
     } else {

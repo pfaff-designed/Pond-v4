@@ -953,7 +953,7 @@ function useBlockEmptyState(
       // template story so the story asserts what the product runs (#261 review).
       // This host adds the two things a pure rule cannot carry: the chart mark's
       // copy, which lives in a React module, and the write action.
-      const verdict = viewFrameState(block, rows, processed, frame)
+      const verdict = viewFrameState(block, rows, processed, frame, schema)
       if (verdict.state === 'rest') return { state: 'rest' }
       if (verdict.chartLine) return { state: 'empty', emptyLine: CHART_EMPTY_LINE }
       if (verdict.addRow) return { state: 'empty', onEmptyAction: () => void addRow() }

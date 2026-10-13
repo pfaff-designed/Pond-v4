@@ -249,6 +249,32 @@ export function optionForValue(def: PropertyDef, value: PropertyValue): Property
   )
 }
 
+/**
+ * Append a `date`-typed property to `schema` (KAN-292: the remedy a dateless view
+ * offers from its own empty state). Named `date`, or `date 2` if `date` already
+ * names another field — a single fallback, not an open-ended counter (unlike the
+ * picker's own `field`/`field 2`: a second collision is new scope). `mintId`
+ * follows the injected convention used across the codebase (`hydratePropertySchema`,
+ * `instantiate.ts`) so callers can supply a deterministic id in tests.
+ */
+export function addDateField(
+  schema: PropertySchema,
+  mintId: () => string = () => crypto.randomUUID()
+): PropertySchema {
+  const name = schema.some((d) => d.name === 'date') ? 'date 2' : 'date'
+  return [...schema, { id: mintId(), name, type: 'date' }]
+}
+
+/**
+ * Remove one property by id (KAN-292: `addDateField`'s undo). Undoing must drop
+ * only the field it added, read fresh off the CURRENT schema at undo time — not
+ * restore the whole schema captured at click, which would also wipe any other
+ * schema edit made while the undo toast was open.
+ */
+export function removeField(schema: PropertySchema, id: string): PropertySchema {
+  return schema.filter((d) => d.id !== id)
+}
+
 // ── Reserved-key merge helpers (the only place `_schema` and values coexist) ───
 
 type Props = Record<string, unknown>

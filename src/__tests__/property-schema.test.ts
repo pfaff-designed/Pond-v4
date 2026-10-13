@@ -22,6 +22,7 @@ import {
   readValues,
   withSchema,
   withValue,
+  addDateField,
   type PropertyDef,
   type PropertySchema,
 } from '@/lib/properties/schema'
@@ -244,6 +245,25 @@ describe('rollup — a derived property that aggregates over a relation (#20)', 
     expect(valueSchemaFor(d).safeParse('x').success).toBe(false)
     expect(coerceValue(d, 42)).toBeNull()
     expect(emptyValue(d)).toBeNull()
+  })
+})
+
+describe('addDateField — the dateless-view remedy (#292)', () => {
+  it('appends a field named "date" with the minted id', () => {
+    const out = addDateField(SCHEMA, () => 'new-id')
+    expect(out).toEqual([...SCHEMA, { id: 'new-id', name: 'date', type: 'date' }])
+  })
+
+  it('does not mutate the input schema', () => {
+    const before = [...SCHEMA]
+    addDateField(SCHEMA, () => 'new-id')
+    expect(SCHEMA).toEqual(before)
+  })
+
+  it('falls back to "date 2" when "date" already names another field', () => {
+    const withDate: PropertySchema = [...SCHEMA, { id: 'due2', name: 'date', type: 'text' }]
+    const out = addDateField(withDate, () => 'new-id')
+    expect(out[out.length - 1]).toEqual({ id: 'new-id', name: 'date 2', type: 'date' })
   })
 })
 

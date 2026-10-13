@@ -18,7 +18,7 @@
  * module, `collection-calendar.tsx` (#262).
  */
 
-import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ModuleViewProps } from '../types'
 import type { ViewBlock } from './schema'
 import { useSiblingBlocks } from '../sibling-context'
@@ -64,7 +64,15 @@ import {
 } from './gantt-shared'
 import { PondBlockEmpty } from '@/components/organisms/PondBlock'
 import { GANTT_EMPTY_LINE, type ViewConfigPatch } from './kinds'
-import { coerceValue, ROW_TYPE, type PropertySchema, type PropertyValue } from '@/lib/properties/schema'
+import {
+  addDateField,
+  coerceValue,
+  removeField,
+  ROW_TYPE,
+  type PropertySchema,
+  type PropertyValue,
+} from '@/lib/properties/schema'
+import { useOptionalDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { usePageLinks } from '../page-link/context'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
@@ -86,10 +94,40 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
   // shares (#239); `useCollectionRows` fetches + writes against whichever.
   const { pageId } = useSiblingBlocks()
   const collectionId = viewCollectionId(data, pageId)
-  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow } =
+  const { schema, rows, collectionName, isLoading, isError, setValue, addRow, renameRow, updateSchema } =
     useCollectionRows(collectionId)
   // The chart card's `on` / `reads` (#227), off the caches the shell already holds.
   const chartProvenance = useChartProvenance(pageId, collectionId)
+
+  // KAN-292: the shared "add a date field" remedy a dateless calendar/list/gantt
+  // offers from its own empty state — an own edit, applied at once, with an undo
+  // toast (the same `stageUndo` seam `BlockCanvas` uses for every other block-scoped
+  // change). Gated on `editable`, like every other view insert: a diff card or a
+  // create-page proposal must never write to the collection it's rendering. The
+  // provider lookup is the non-throwing variant: a diff/proposal preview and
+  // Storybook mount `ViewView` with no `DeletionUndoProvider` ancestor at all.
+  const deletionUndo = useOptionalDeletionUndo()
+  // Undo must drop only the field it added, off whatever the schema has become by
+  // the time the toast is actioned — restoring the schema captured at click would
+  // also wipe any other schema edit made while the toast was open. `schemaRef`
+  // tracks the latest schema so undo (an async closure) reads it fresh.
+  const schemaRef = useRef(schema)
+  useEffect(() => {
+    schemaRef.current = schema
+  }, [schema])
+  const handleAddDateField =
+    editable && schema && deletionUndo
+      ? () => {
+          const next = addDateField(schema)
+          const addedId = next[next.length - 1].id
+          updateSchema(next)
+          deletionUndo.stageUndo({
+            message: 'Added a date field',
+            scope: 'block',
+            undo: () => updateSchema(removeField(schemaRef.current ?? next, addedId)),
+          })
+        }
+      : undefined
 
   // Config edits (chart/big-number setup) rewrite the persisted view block through the
   // module's own onChange — the same whole-block save path every editable module uses.
@@ -125,6 +163,7 @@ export function ViewView({ data, editable, onChange }: ModuleViewProps<ViewBlock
       onConfigChange={onConfigChange}
       onOpenRow={handleOpenRow}
       chartProvenance={chartProvenance}
+      onAddDateField={handleAddDateField}
     />
   )
 }
@@ -158,6 +197,10 @@ export interface CollectionViewProps {
   onOpenRow?: (rowId: string) => void
   /** The chart card's `on` / `reads` (#227). Absent off a page host; the rows are omitted. */
   chartProvenance?: ChartProvenance
+  /** KAN-292: mint a `date` field onto this collection's schema, offered by a
+   *  calendar/list/gantt view whose kind needs one and doesn't have it. Absent when
+   *  not `editable` (Storybook, a diff/proposal render) — no undrawn affordance there. */
+  onAddDateField?: () => void
 }
 
 export function CollectionView({
@@ -175,6 +218,7 @@ export function CollectionView({
   onConfigChange,
   onOpenRow,
   chartProvenance,
+  onAddDateField,
 }: CollectionViewProps) {
   // What the page canvas keys this view's peek and orange pill by.
   const instanceKey = useId()
@@ -261,9 +305,15 @@ export function CollectionView({
           onEdit={onEdit}
           onRenameRow={onRenameRow}
           onOpenRow={onOpenRow}
+          onAddDateField={onAddDateField}
         />
       ) : config.mode === 'calendar' ? (
-        <CollectionCalendar schema={schema} rows={processed} groupBy={config.groupBy} />
+        <CollectionCalendar
+          schema={schema}
+          rows={processed}
+          groupBy={config.groupBy}
+          onAddDateField={onAddDateField}
+        />
       ) : config.mode === 'gallery' ? (
         <CollectionGallery schema={schema} rows={processed} />
       ) : config.mode === 'gantt' ? (
@@ -274,6 +324,7 @@ export function CollectionView({
           endId={config.endDate}
           editable={editable}
           onEdit={onEdit}
+          onAddDateField={onAddDateField}
         />
       ) : config.mode === 'chart' ? (
         // #259: the chart's PRESENTATION — the compact inline mark (the board's
@@ -801,6 +852,7 @@ function CollectionGantt({
   endId,
   editable,
   onEdit,
+  onAddDateField,
 }: {
   schema: PropertySchema
   rows: CollectionRow[]
@@ -808,6 +860,7 @@ function CollectionGantt({
   endId?: string
   editable?: boolean
   onEdit?: (rowId: string, key: string, value: PropertyValue) => void
+  onAddDateField?: () => void
 }) {
   const defs = useMemo(() => pickGanttDefs(schema, startId, endId), [schema, startId, endId])
   const layout = useMemo(
@@ -849,7 +902,20 @@ function CollectionGantt({
   }, [])
 
   if (!defs) {
-    return <ViewNotice>This timeline needs a date property.</ViewNotice>
+    // No date property at all: the void box has no action slot, so the remedy
+    // uses the board's `box` emptyBox instead — same line, same action as the
+    // other kinds' no-date case. A read-only render (no handler) has no button to
+    // offer, so it keeps the bare voidBox, same as the "nothing dated" case below.
+    return onAddDateField ? (
+      <PondBlockEmpty
+        box="box"
+        line={GANTT_EMPTY_LINE}
+        action="add a date field"
+        onAction={onAddDateField}
+      />
+    ) : (
+      <PondBlockEmpty box="void" line={GANTT_EMPTY_LINE} />
+    )
   }
   if (!layout || layout.bars.length === 0 || !layout.rangeStart || !layout.rangeEnd) {
     // Nothing dated: the shared voidBox with the template's own line — true whether the

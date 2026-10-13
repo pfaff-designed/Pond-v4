@@ -140,12 +140,14 @@ export const POND_BLOCK_DISABLED = 'opacity-40'
 
 /**
  * The board's `emptyBox` + `emptyText` (#239), bare: the ink-.035 ground at radius
- * 14 and padding 14, the kind's lowercase line at 13.5 / ink .68, and — only when
- * `onAction` is wired — the offered action as the existing secondary pill
- * (`h-8` = the board's 32px). Exported so a surface rendering UNDER the frame with
- * its own degenerate case (the chart card) draws the same box rather than a
- * sentence-case line of its own. The ground is `bg-mn-text/[0.035]` — a wash,
- * not an ink tier; the line sits on the third tier (`--mn-text-secondary`, .68).
+ * 14 and padding 14, the kind's lowercase line at 13.5 / ink .68 (15 below `md`, per
+ * `PondBlock.dc.html`'s `mob` branch), and — only when `onAction` is wired — the
+ * offered action as the existing secondary pill (`h-8` = the board's 32px desktop,
+ * `h-11` below `md` per `PondControl.dc.html`'s `mob` branch). Exported so a surface
+ * rendering UNDER the frame with its own degenerate case (the chart card) draws the
+ * same box rather than a sentence-case line of its own. The ground is
+ * `bg-mn-text/[0.035]` — a wash, not an ink tier; the line sits on the third tier
+ * (`--mn-text-secondary`, .68).
  *
  * `line` overrides the kind's line when the kind's copy would be FALSE about the
  * data — a filter matching nothing over rows that exist, a chart with points but no
@@ -183,7 +185,11 @@ export function PondBlockEmpty({
     <div data-part="empty" data-empty-box={box} className={cn(recipe.box, className)}>
       <span className={recipe.text}>{text}</span>
       {box === 'box' && onAction && actionLabel && (
-        <Button variant="secondary" onClick={onAction}>
+        <Button
+          variant="secondary"
+          onClick={onAction}
+          className="h-11 px-5 text-[14px] md:h-8 md:px-[14px] md:text-[12px]"
+        >
           {actionLabel}
         </Button>
       )}
@@ -200,7 +206,7 @@ export function PondBlockEmpty({
 const EMPTY_BOX: Record<BlockEmptyBox, { box: string; text: string }> = {
   box: {
     box: 'flex items-center justify-between gap-mn-3 rounded-mn-inner bg-mn-text/[0.035] p-[14px]',
-    text: 'text-[13.5px] text-mn-text-secondary',
+    text: 'text-[15px] md:text-[13.5px] text-mn-text-secondary',
   },
   void: {
     box: 'flex h-[72px] items-center justify-center rounded-[12px] ring-[1.4px] ring-inset ring-mn-text/[0.14]',
