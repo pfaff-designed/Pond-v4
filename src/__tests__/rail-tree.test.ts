@@ -271,9 +271,9 @@ describe('treeKeyCommand', () => {
     expect(key('Enter', LIFE_ID)).toEqual({ kind: 'open', id: LIFE_ID })
   })
 
-  it('Delete / Backspace delete the row — but never the Life root', () => {
-    expect(key('Delete', 'trips')).toEqual({ kind: 'delete', id: 'trips' })
-    expect(key('Backspace', 'health')).toEqual({ kind: 'delete', id: 'health' })
+  it('Delete / Backspace do nothing — the row has no keyboard delete', () => {
+    expect(key('Delete', 'trips')).toBeNull()
+    expect(key('Backspace', 'health')).toBeNull()
     expect(key('Delete', LIFE_ID)).toBeNull()
   })
 

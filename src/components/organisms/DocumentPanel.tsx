@@ -234,6 +234,7 @@ export function DocumentPanel() {
             onChange={(e) => onTitle(e.target.value)}
             placeholder="Untitled"
             aria-label="Page title"
+            data-pond-page-title
           />
           <span
             data-part="title-eyebrow"

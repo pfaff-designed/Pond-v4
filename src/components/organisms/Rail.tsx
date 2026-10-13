@@ -193,7 +193,6 @@ const rowCapabilities = (id: string, node: RailNode): RowCapabilities => {
 /** Does the row allow the tree command? Navigation commands are always allowed. */
 const allowsCommand = (cap: RowCapabilities, kind: TreeKeyCommand['kind']): boolean => {
   if (kind === 'addChild') return cap.addable
-  if (kind === 'delete') return cap.deletable
   if (kind === 'rename') return cap.renameable
   return true
 }
@@ -850,17 +849,6 @@ export function RailView({
         ? selectedId
         : LIFE_ID
 
-  // Reflect a keyboard-driven focus change into real DOM focus so arrow keys
-  // keep firing on the newly focused row.
-  // A row that already holds focus INSIDE it (its rename field) is left alone:
-  // every pages refetch rebuilds `visibleIds`, and re-focusing the row here would
-  // blur the field and keep the rename half-typed.
-  useEffect(() => {
-    if (!focusedId || !visibleIds.has(focusedId)) return
-    const row = rowRefs.current.get(focusedId)
-    if (row && !row.contains(document.activeElement)) row.focus()
-  }, [focusedId, visibleIds])
-
   // When the focused row vanishes (deleted, or hidden by an ancestor collapse),
   // keep focus in the tree like VS Code: fall to the nearest surviving neighbor
   // in the previous order (else the nearest before it, else Life). Only re-grab
@@ -919,6 +907,7 @@ export function RailView({
     switch (cmd.kind) {
       case 'focus':
         setFocusedId(cmd.id)
+        rowRefs.current.get(cmd.id)?.focus()
         break
       case 'expand':
       case 'collapse':
@@ -928,9 +917,6 @@ export function RailView({
       case 'open':
         if (cmd.id === LIFE_ID) onLife()
         else handleSelect(cmd.id)
-        break
-      case 'delete':
-        onDelete(cmd.id)
         break
       case 'addChild':
         onAddChild(cmd.id)

@@ -27,3 +27,9 @@ export function scrollToBlock(blockId: string, opts: { highlight?: boolean } = {
     window.setTimeout(() => el.classList.remove(...HIGHLIGHT_CLASSES), 1200)
   }
 }
+
+/** Focus the page title input (`DocumentPanel`), the fallback when a block delete leaves no block behind. */
+export function focusPageTitle() {
+  if (typeof document === 'undefined') return
+  document.querySelector<HTMLElement>('[data-pond-page-title]')?.focus()
+}

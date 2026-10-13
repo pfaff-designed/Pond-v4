@@ -8,11 +8,12 @@
 
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
-import { queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
+import { findTextBlock, queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -212,5 +213,40 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
       },
       { timeout: 2000 }
     )
+  })
+})
+
+// ── A block delete must leave focus on the page, never on `<body>` (KAN-275) ──
+// `removeBlockAt` and `removeEmptyLineAt` now share one neighbour-focus helper.
+describe('A block delete focuses the neighbour, or the title with none left', () => {
+  it('deletes the first of two blocks via the handle menu and focuses the one left', async () => {
+    // A table neighbour (not text) so the assertion exercises the wrapper's own
+    // `.focus()` branch of the shared helper, not tiptap's — ProseMirror's own
+    // focus command doesn't move `document.activeElement` under jsdom.
+    const blocks: Block[] = [
+      { id: 'b1', type: 'text', content: 'First' },
+      { id: 'b2', type: 'table', columns: ['Tool'], rows: [{ id: 'r1', cells: ['Saw'] }] },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+    const user = userEvent.setup()
+
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    await user.click(handles[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'delete' }))
+
+    await waitFor(() => expect(document.getElementById('block-b2')).toBe(document.activeElement))
+  })
+
+  it('deletes a page’s only block via the handle menu and focuses the title', async () => {
+    const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'Only' }]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    await findTextBlock()
+    const handles = await screen.findAllByRole('button', { name: 'Block menu' })
+    fireEvent.click(handles[0])
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'delete' }))
+
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(0))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Page title')))
   })
 })

@@ -914,8 +914,9 @@ export const HoverCrudReservesNoWidth: Story = {
 
 /**
  * Keyboard nav (WAI-ARIA tree): a single roving tab stop that arrow keys move
- * for real — ArrowDown walks Life → Health; Delete on a focused row raises
- * onDelete (same confirm/undo path as ×); + raises onAddChild.
+ * for real — ArrowDown walks Life → Health; a bare Delete/Backspace on a
+ * focused row never deletes it (KAN-275 — only the row's own ⋯/× control
+ * does); + raises onAddChild.
  */
 export const KeyboardNav: Story = {
   tags: ['!dev'],
@@ -939,9 +940,11 @@ export const KeyboardNav: Story = {
     await userEvent.keyboard('{ArrowRight}')
     await expect(args.onToggle).toHaveBeenCalledWith('health')
 
-    // Delete on the focused row deletes it through the shared path
+    // Delete/Backspace on the focused row no longer delete it
     await userEvent.keyboard('{Delete}')
-    await expect(args.onDelete).toHaveBeenCalledWith('health')
+    await userEvent.keyboard('{Backspace}')
+    await expect(args.onDelete).not.toHaveBeenCalled()
+    await expect(health).toBeInTheDocument()
 
     // + adds a child to the focused row
     await userEvent.keyboard('+')

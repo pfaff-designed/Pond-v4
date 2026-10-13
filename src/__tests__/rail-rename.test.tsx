@@ -251,6 +251,32 @@ describe('rail — row tools and capabilities', () => {
   })
 })
 
+describe('rail — roving focus follows keys only, never a data refetch', () => {
+  it('ArrowDown/ArrowUp/Home/End move DOM focus to the target row', () => {
+    setup()
+    row('books').focus()
+    fireEvent.keyDown(row('books'), { key: 'ArrowDown' })
+    expect(row('recipes')).toHaveFocus()
+    fireEvent.keyDown(row('recipes'), { key: 'ArrowUp' })
+    expect(row('books')).toHaveFocus()
+    fireEvent.keyDown(row('books'), { key: 'End' })
+    expect(row('databases')).toHaveFocus()
+    fireEvent.keyDown(row('databases'), { key: 'Home' })
+    expect(row('life')).toHaveFocus()
+  })
+
+  it('a pages refetch (new visibleIds) never steals focus from outside the rail', () => {
+    const { rerenderTree } = setup()
+    row('books').focus()
+    const outside = document.createElement('input')
+    document.body.appendChild(outside)
+    outside.focus()
+    rerenderTree([{ ...creativity }, { ...scratch }, { ...databases }])
+    expect(outside).toHaveFocus()
+    outside.remove()
+  })
+})
+
 describe('applyRenameOptimistic', () => {
   const at = '2026-01-01T00:00:00Z'
   const rows = (): PageRow[] => [

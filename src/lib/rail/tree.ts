@@ -264,7 +264,6 @@ export type TreeKeyCommand =
   | { kind: 'expand'; id: string }
   | { kind: 'collapse'; id: string }
   | { kind: 'open'; id: string }
-  | { kind: 'delete'; id: string }
   | { kind: 'addChild'; id: string }
   | { kind: 'rename'; id: string }
 
@@ -277,7 +276,6 @@ export type TreeKeyCommand =
  *   →          expand a closed folder; step into the first child of an open one
  *   ←          collapse an open folder; step out to the parent otherwise
  *   Enter/␣    open the row's page
- *   Delete/⌫   delete the row (never the Life root)
  *   +          add a child page
  *   F2         rename the row in place (never the Life root)
  *
@@ -327,9 +325,6 @@ export function treeKeyCommand(
     case 'Enter':
     case ' ':
       return { kind: 'open', id }
-    case 'Delete':
-    case 'Backspace':
-      return isRoot ? null : { kind: 'delete', id }
     case '+':
       return { kind: 'addChild', id }
     case 'F2':
