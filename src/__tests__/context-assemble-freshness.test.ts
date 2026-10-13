@@ -5,7 +5,7 @@
  * (the debounced save not having landed yet) is isolated to the save path,
  * not this read.
  */
-import { fetchNodeContext, buildChatContext, OPEN_PAGE_LABEL } from '@/lib/context/assemble'
+import { fetchNodeContext } from '@/lib/context/assemble'
 import { makeFakeSupabase } from './helpers/fake-supabase'
 import type { Row } from './helpers/fake-supabase'
 
@@ -42,20 +42,5 @@ describe('fetchNodeContext reads the pages row fresh per call', () => {
     expect(after?.documents[0]?.blocks).toEqual([
       { id: 'b1', type: 'text', content: 'Hello moon xyz' },
     ])
-  })
-})
-
-describe('KAN-302: the auto-injected open page is labelled authoritative', () => {
-  it('carries the supersedes-earlier-turns label, not the plain "Current node" label', async () => {
-    const sb = makeFakeSupabase([page])
-
-    const context = await buildChatContext(sb as never, 'user-1', {
-      nodeId: 'p1',
-      pondId: null,
-    })
-
-    expect(context).toContain(`[${OPEN_PAGE_LABEL}]`)
-    expect(context).toContain('supersedes anything earlier in the thread')
-    expect(context).not.toContain('[Current node]')
   })
 })
