@@ -17,6 +17,7 @@ import { setProperty, updateTitle, type PondPage } from '@/lib/pages/client'
 import { commitBlocks } from '@/lib/pages/commit'
 import type { HomePage } from '@/lib/pages/home'
 import { homeQueryKey } from '@/lib/pages/keys'
+import { registerPageFlush } from '@/lib/pages/page-flush'
 import { withValue, type PropertyValue } from '@/lib/properties/schema'
 import type { createClient } from '@/lib/supabase/client'
 
@@ -50,6 +51,14 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const lastSaved = useRef<{ pageId: string; blocks: Block[] } | null>(null)
   const lastSavedOf = (id: string): Block[] | null =>
     lastSaved.current?.pageId === id ? lastSaved.current.blocks : null
+  // The save a debounce timer is currently waiting to fire, if any — held so
+  // `flushNow` (KAN-302) can run it immediately instead of waiting out the pause.
+  const pendingSave = useRef<{
+    pageId: string
+    title: string
+    blocks: Block[]
+    beforeAtSchedule: Block[]
+  } | null>(null)
 
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
@@ -97,61 +106,99 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
   const viewBlocks: Block[] = seeded ? blocks : (page?.blocks ?? [])
   const viewTitle = seeded ? title : (page?.title ?? '')
 
+  // The save itself, pulled out of `scheduleSave` so `flushNow` can run it
+  // immediately instead of waiting for the debounce timer to fire (KAN-302).
+  async function runSave(
+    id: string,
+    nextTitle: string,
+    nextBlocks: Block[],
+    beforeAtSchedule: Block[]
+  ) {
+    // This save is one pause: the change log records it as one edit, from what
+    // the page last saved to what it saves now. Advanced before the first await
+    // so a save that fires while this one is in flight starts from here, and
+    // set back if this one fails, so the next starts from what is stored.
+    const before = lastSavedOf(id) ?? beforeAtSchedule
+    const advanced = lastSavedOf(id) !== null
+    if (advanced) lastSaved.current = { pageId: id, blocks: nextBlocks }
+    // Title first, then blocks + sidebar-refresh + re-embed via the shared
+    // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
+    // the ['pages'] invalidation inside commitBlocks lands after the rename,
+    // keeping the sidebar rename immediate.
+    const supabase = getSupabase()
+    try {
+      await updateTitle(supabase, id, nextTitle)
+      // `ownEdit`: the page moved on under the person's own hand, so every
+      // pending block diff aimed at it goes outdated — its card greys out,
+      // drops accept and offers revise — and the save is logged as accepted.
+      await commitBlocks(supabase, queryClient, id, nextBlocks, {
+        ownEdit: true,
+        before,
+        pondId,
+      })
+    } catch (err) {
+      if (advanced && lastSaved.current?.pageId === id && lastSaved.current.blocks === nextBlocks) {
+        lastSaved.current = { pageId: id, blocks: before }
+      }
+      console.error('[document] save failed', id, err)
+      return
+    }
+    // keep the ['page'] cache — and the signature the adopt compares against —
+    // in step with what we just saved, so the same-page adopt above only fires
+    // for genuinely external writes.
+    if (loadedId.current === id) serverSig.current = JSON.stringify(nextBlocks)
+    queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
+      prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
+    )
+    // The root page's title is also the breadcrumb's root crumb on every page.
+    queryClient.setQueryData(homeQueryKey(pondId), (prev: HomePage | null | undefined) =>
+      prev && prev.id === id ? { ...prev, title: nextTitle } : prev
+    )
+    setSaved(true)
+    setSavedAt(new Date())
+  }
+
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
     setSaved(false)
     const beforeAtSchedule = lastSavedOf(id) ?? []
+    pendingSave.current = { pageId: id, title: nextTitle, blocks: nextBlocks, beforeAtSchedule }
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      // This save is one pause: the change log records it as one edit, from what
-      // the page last saved to what it saves now. Advanced before the first await
-      // so a save that fires while this one is in flight starts from here, and
-      // set back if this one fails, so the next starts from what is stored.
-      const before = lastSavedOf(id) ?? beforeAtSchedule
-      const advanced = lastSavedOf(id) !== null
-      if (advanced) lastSaved.current = { pageId: id, blocks: nextBlocks }
-      // Title first, then blocks + sidebar-refresh + re-embed via the shared
-      // commitBlocks (same tail the accepted-AI-edit path uses). Sequential so
-      // the ['pages'] invalidation inside commitBlocks lands after the rename,
-      // keeping the sidebar rename immediate.
-      const supabase = getSupabase()
-      try {
-        await updateTitle(supabase, id, nextTitle)
-        // `ownEdit`: the page moved on under the person's own hand, so every
-        // pending block diff aimed at it goes outdated — its card greys out,
-        // drops accept and offers revise — and the save is logged as accepted.
-        await commitBlocks(supabase, queryClient, id, nextBlocks, {
-          ownEdit: true,
-          before,
-          pondId,
-        })
-      } catch (err) {
-        if (
-          advanced &&
-          lastSaved.current?.pageId === id &&
-          lastSaved.current.blocks === nextBlocks
-        ) {
-          lastSaved.current = { pageId: id, blocks: before }
-        }
-        console.error('[document] save failed', id, err)
-        return
-      }
-      // keep the ['page'] cache — and the signature the adopt compares against —
-      // in step with what we just saved, so the same-page adopt above only fires
-      // for genuinely external writes.
-      if (loadedId.current === id) serverSig.current = JSON.stringify(nextBlocks)
-      queryClient.setQueryData(['page', id], (prev: PondPage | null | undefined) =>
-        prev ? { ...prev, title: nextTitle, blocks: nextBlocks } : prev
-      )
-      // The root page's title is also the breadcrumb's root crumb on every page.
-      queryClient.setQueryData(homeQueryKey(pondId), (prev: HomePage | null | undefined) =>
-        prev && prev.id === id ? { ...prev, title: nextTitle } : prev
-      )
-      setSaved(true)
-      setSavedAt(new Date())
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null
+      const p = pendingSave.current
+      pendingSave.current = null
+      if (p) void runSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
     }, EDIT_PAUSE_MS)
   }
+
+  // Run a still-pending debounced save right now instead of waiting out the
+  // pause — the composer calls this (via the page-flush registry) before
+  // sending a message, so Pond's next read of the page never lands inside
+  // the debounce window (KAN-302).
+  function flushNow(): Promise<void> | undefined {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    const p = pendingSave.current
+    pendingSave.current = null
+    if (!p) return undefined
+    return runSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+  }
+
+  // `flushNow` is recreated every render; the registry entry stays stable per
+  // pageId and calls through this ref so it always runs the latest closure.
+  // The ref is written in an effect (never during render — react-hooks/refs).
+  const flushNowRef = useRef(flushNow)
+  useEffect(() => {
+    flushNowRef.current = flushNow
+  })
+  useEffect(() => {
+    if (!pageId) return
+    return registerPageFlush(pageId, () => flushNowRef.current())
+  }, [pageId])
 
   function onTitle(value: string) {
     setTitle(value)

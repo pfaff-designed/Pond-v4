@@ -17,6 +17,7 @@ import {
   type ProposalDecision,
 } from '@/lib/conversation/resolutions'
 import { getPage, listPages } from '@/lib/pages/client'
+import { flushPendingPageSave } from '@/lib/pages/page-flush'
 import { usePond } from '@/lib/pond/context'
 import { pagesKey } from '@/lib/pages/keys'
 import { usePondName } from '@/lib/pond/name'
@@ -1337,19 +1338,30 @@ export function AITerminal() {
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }
       clearError?.()
-      if (fileParts.length > 0) {
-        sendMessage(
-          finalText
-            ? { text: finalText, files: fileParts, metadata }
-            : { files: fileParts, metadata },
-          { body }
-        )
-        clearAttachments()
-      } else {
-        sendMessage({ text: finalText, metadata }, { body })
-      }
+      const outgoingFiles = fileParts
+      if (outgoingFiles.length > 0) clearAttachments()
       setInput('')
       setResearch(false)
+
+      const dispatchSend = () => {
+        if (outgoingFiles.length > 0) {
+          sendMessage(
+            finalText
+              ? { text: finalText, files: outgoingFiles, metadata }
+              : { files: outgoingFiles, metadata },
+            { body }
+          )
+        } else {
+          sendMessage({ text: finalText, metadata }, { body })
+        }
+      }
+      // KAN-302: the open page's own edit (title/blocks) may still be sitting
+      // in its save debounce — flush it to the DB before this turn's context
+      // read, so Pond never sees the page as it stood before the last keystroke.
+      // `undefined` means nothing was pending, so the send stays in this tick.
+      const pendingFlush = flushPendingPageSave(nodeId)
+      if (pendingFlush) void pendingFlush.then(dispatchSend)
+      else dispatchSend()
     },
     [
       isReady,
@@ -2363,7 +2375,13 @@ export function AITerminal() {
       ? { ...resolutions, lifecycle }
       : { ...resolutions, lifecycle: undefined }
     clearError?.()
-    void regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    const dispatchRegenerate = () =>
+      regenerate({ body: { nodeId, nodeType, pondId, resolutions: outgoing, research } })
+    // KAN-302: same flush as sendText — a re-ask must see the page as it
+    // stands now, not as it stood before an edit still in its save debounce.
+    const pendingFlush = flushPendingPageSave(nodeId)
+    if (pendingFlush) void pendingFlush.then(dispatchRegenerate)
+    else dispatchRegenerate()
     setResearch(false)
   }
 
