@@ -1157,8 +1157,21 @@ function BlockEditor({
     }
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
-    // which stops propagation) — only a bare empty block deletes.
-    if (e.key === 'Backspace' && !slashMenuOpen && block.type === 'text' && block.content === '') {
+    // which stops propagation) — only a bare empty block deletes. Any of
+    // ⌘/Ctrl/⌥ held means the editor's own chord already acted (select-all then
+    // ⌘⌫ must leave the empty block, KAN-307), so the rule is modifier-gated,
+    // not `defaultPrevented`-gated: ProseMirror's own capture handler calls
+    // preventDefault on every bare Backspace at a textblock start, so gating on
+    // that would kill the rule entirely.
+    if (
+      e.key === 'Backspace' &&
+      !slashMenuOpen &&
+      block.type === 'text' &&
+      block.content === '' &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    ) {
       e.preventDefault()
       onRemoveEmpty()
     }

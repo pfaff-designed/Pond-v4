@@ -7,13 +7,18 @@
  */
 
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DocumentPanel } from '@/components/organisms/DocumentPanel'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
-import { findTextBlock, queryAllTextBlocks, writeInTextBlock } from './helpers/text-block'
+import {
+  findTextBlock,
+  queryAllTextBlocks,
+  textEditorOf,
+  writeInTextBlock,
+} from './helpers/text-block'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (key: string) => (key === 'nodeId' ? 'page-1' : null) }),
@@ -213,6 +218,72 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
       },
       { timeout: 2000 }
     )
+  })
+})
+
+// ── A modified ⌫ never removes an empty text block (KAN-307) ──
+describe('A modified Backspace in an empty text block (KAN-307)', () => {
+  // jsdom's platform is not Mac, so Meta+⌫ isn't the delete-block chord here:
+  // the capture handler declines, tiptap doesn't bind it, and the bubble
+  // empty-line rule is the only thing left that can remove the block.
+  it.each([{ metaKey: true }, { altKey: true }])(
+    'keeps the block (%o)',
+    async (mod) => {
+      const blocks: Block[] = [
+        { id: 'b0', type: 'text', content: 'keep' },
+        { id: 'b1', type: 'text', content: '' },
+      ]
+      renderWith({ id: 'page-1', title: 'Test', blocks })
+
+      await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
+      fireEvent.keyDown(queryAllTextBlocks()[1], { key: 'Backspace', ...mod })
+
+      expect(queryAllTextBlocks()).toHaveLength(2)
+    }
+  )
+
+  it('select-all then Mod-⌫ clears the text and keeps the block', async () => {
+    const blocks: Block[] = [{ id: 'b1', type: 'text', content: 'hello world' }]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    const field = await findTextBlock()
+    const editor = textEditorOf(field)
+    act(() => editor.commands.selectAll())
+    fireEvent.keyDown(field, { key: 'Backspace', ctrlKey: true })
+
+    expect(editor.getText()).toBe('')
+    expect(queryAllTextBlocks()).toHaveLength(1)
+  })
+
+  it('a bare Backspace in an empty text block still removes it', async () => {
+    const blocks: Block[] = [
+      { id: 'b0', type: 'text', content: 'keep' },
+      { id: 'b1', type: 'text', content: '' },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
+    fireEvent.keyDown(queryAllTextBlocks()[1], { key: 'Backspace' })
+
+    expect(queryAllTextBlocks()).toHaveLength(1)
+  })
+
+  it('a bare Backspace that ProseMirror already prevented still removes an empty block', async () => {
+    // Models ProseMirror's own captureKeyDown, which calls preventDefault on
+    // every bare Backspace at a textblock start in a real browser (jsdom's
+    // endOfTextblock doesn't, which is why the test above alone isn't enough).
+    const blocks: Block[] = [
+      { id: 'b0', type: 'text', content: 'keep' },
+      { id: 'b1', type: 'text', content: '' },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
+    const field = queryAllTextBlocks()[1]
+    field.addEventListener('keydown', (e) => e.preventDefault())
+    fireEvent.keyDown(field, { key: 'Backspace' })
+
+    expect(queryAllTextBlocks()).toHaveLength(1)
   })
 })
 
