@@ -48,6 +48,15 @@ export interface NodeContextData {
   schema?: PropertySchema | null
 }
 
+/**
+ * KAN-302: the auto-injected open page's label. The person edits pages between
+ * turns, so this block — fetched fresh on THIS request — must read as
+ * authoritative over anything earlier in the thread (an accepted diff, an
+ * earlier answer), which is what the model was trusting instead.
+ */
+export const OPEN_PAGE_LABEL =
+  'Open page — as it reads right now; this supersedes anything earlier in the thread'
+
 export interface MentionRef {
   name: string
   nodeId: string
@@ -447,8 +456,17 @@ export async function buildChatContext(
 
   if (opts.nodeId) {
     const data = await fetchNodeContext(sb, userId, opts.nodeId)
-    // Current node only: expose block ids so the model can target one in propose_changes.
-    if (data) blocks.push(formatNodeContext(data, { includeBlockIds: true }))
+    // KAN-302: labelled as authoritative — the model was trusting its own earlier
+    // turns (an accepted diff, an earlier answer) over this live read. Block ids
+    // are exposed so the model can target one in propose_changes.
+    if (data) {
+      blocks.push(
+        formatNodeContext(data, {
+          label: OPEN_PAGE_LABEL,
+          includeBlockIds: true,
+        })
+      )
+    }
   }
 
   if (opts.latestUserText) {

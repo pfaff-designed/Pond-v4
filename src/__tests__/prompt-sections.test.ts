@@ -58,6 +58,8 @@ describe('SYSTEM_PROMPT — preserved rule strings (eval-pinned, must survive th
     'Never add a text property named "Title" or "Name"',
     // #52 fix 2: a collection shows exactly ONE active view.
     'A collection shows exactly ONE active view at a time',
+    // KAN-302: the open page's latest read is authoritative over earlier turns.
+    'CURRENT STATE WINS',
   ])('still contains rule string: %s', (needle) => {
     expect(SYSTEM_PROMPT).toContain(needle)
   })
@@ -120,6 +122,16 @@ describe('SYSTEM_PROMPT — ticket-39 additions', () => {
     expect(s).toMatch(/\[Lifecycle\]/)
     expect(s).toMatch(/MUST advance/i)
     expect(s).toMatch(/turn this into the plan/)
+  })
+
+  it('ROUTING tells the model the open-page block in the latest context is authoritative over earlier turns (KAN-302)', () => {
+    const s = PROMPT_SECTIONS.ROUTING
+    expect(s).toMatch(/CURRENT STATE WINS/)
+    expect(s).toMatch(
+      /this supersedes anything earlier in the thread/i
+    )
+    expect(s).toMatch(/never assume a page still reads as an earlier turn/i)
+    expect(s).toMatch(/read the block ids and text from the latest context before proposing/i)
   })
 
   it('routing prefers propose_changes when the user names an existing destination surface (eval regression fix)', () => {
