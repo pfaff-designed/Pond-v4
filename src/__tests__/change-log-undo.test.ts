@@ -23,6 +23,7 @@ import {
   clearOnPageHide,
   createSessionUndo,
   sessionUndo,
+  SessionUndoTimeoutError,
   useSessionUndo,
 } from '@/lib/change-log/session-undo'
 import type { ChangeLogRow } from '@/lib/change-log/types'
@@ -185,12 +186,12 @@ const done = (ids: string[]): StepResult => ({
   })),
 })
 
-const makeStore = () => {
+const makeStore = (options?: { timeoutMs?: number }) => {
   const run = {
     undo: jest.fn<Promise<StepResult>, [HistoryStep]>().mockResolvedValue(done(['u'])),
     redo: jest.fn<Promise<StepResult>, [HistoryStep]>().mockResolvedValue(done(['r'])),
   }
-  return { store: createSessionUndo(run), run }
+  return { store: createSessionUndo(run, options), run }
 }
 
 /** A run call that stays in flight until `release` is called. */
@@ -469,6 +470,36 @@ describe('createSessionUndo', () => {
     await Promise.all([store.undo(POND), store.undo(POND)])
 
     expect(order).toEqual(['start edit-1', 'end edit-1', 'start older', 'end older'])
+  })
+
+  describe('a hung call', () => {
+    beforeEach(() => jest.useFakeTimers())
+    afterEach(() => jest.useRealTimers())
+
+    it('rejects with SessionUndoTimeoutError after the timeout, and puts the step back on top', async () => {
+      const { store, run } = makeStore({ timeoutMs: 1000 })
+      run.undo.mockReturnValue(new Promise<StepResult>(() => {}))
+      store.remember(STEP)
+
+      const pending = store.undo(POND)
+      await jest.advanceTimersByTimeAsync(1000)
+
+      await expect(pending).rejects.toThrow(SessionUndoTimeoutError)
+      expect(store.getSnapshot(POND).canUndo).toBe(true)
+    })
+
+    it('does not freeze the queue — a second call behind it still runs and resolves', async () => {
+      const { store, run } = makeStore({ timeoutMs: 1000 })
+      run.undo.mockReturnValueOnce(new Promise<StepResult>(() => {}))
+      store.remember(STEP)
+
+      const first = store.undo(POND)
+      const second = store.undo(POND)
+      await jest.advanceTimersByTimeAsync(1000)
+
+      await expect(first).rejects.toThrow(SessionUndoTimeoutError)
+      await expect(second).resolves.toMatchObject({ outcome: 'done', step: STEP })
+    })
   })
 
   it('clears every pond', () => {

@@ -55,7 +55,40 @@ interface PondHistory {
 
 const EMPTY: SessionUndoSnapshot = { canUndo: false, canRedo: false }
 
-export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
+/** One hung RPC must not freeze every later ⌘Z/⇧⌘Z in the tab. */
+export const STEP_TIMEOUT_MS = 10_000
+
+export class SessionUndoTimeoutError extends Error {
+  constructor() {
+    super('undo/redo timed out')
+    this.name = 'SessionUndoTimeoutError'
+  }
+}
+
+export interface SessionUndoOptions {
+  timeoutMs?: number
+}
+
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new SessionUndoTimeoutError()), timeoutMs)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+
+export const createSessionUndo = (
+  run: SessionUndoRunner,
+  options: SessionUndoOptions = {}
+): SessionUndo => {
+  const timeoutMs = options.timeoutMs ?? STEP_TIMEOUT_MS
   let histories = new Map<string, PondHistory>()
   const listeners = new Set<() => void>()
   let queue: Promise<unknown> = Promise.resolve()
@@ -104,7 +137,10 @@ export const createSessionUndo = (run: SessionUndoRunner): SessionUndo => {
       }
       let result: StepResult
       try {
-        result = await run[direction](taken)
+        // A call that times out may still land later: it already ran putBack,
+        // so the step is back on the stack, and the next ⌘Z on it comes back
+        // `refused already-undone` and is dropped — not undone twice.
+        result = await withTimeout(run[direction](taken), timeoutMs)
       } catch (err) {
         putBack()
         throw err
