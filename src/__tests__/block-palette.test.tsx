@@ -225,8 +225,7 @@ describe('Undo after an intervening edit (functional re-insert)', () => {
 describe('A modified Backspace in an empty text block (KAN-307)', () => {
   // jsdom's platform is not Mac, so Meta+⌫ isn't the delete-block chord here:
   // the capture handler declines, tiptap doesn't bind it, and the bubble
-  // empty-line rule — unguarded on main — is the only thing left that can
-  // remove the block.
+  // empty-line rule is the only thing left that can remove the block.
   it.each([{ metaKey: true }, { altKey: true }])(
     'keeps the block (%o)',
     async (mod) => {
@@ -265,6 +264,24 @@ describe('A modified Backspace in an empty text block (KAN-307)', () => {
 
     await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
     fireEvent.keyDown(queryAllTextBlocks()[1], { key: 'Backspace' })
+
+    expect(queryAllTextBlocks()).toHaveLength(1)
+  })
+
+  it('a bare Backspace that ProseMirror already prevented still removes an empty block', async () => {
+    // Models ProseMirror's own captureKeyDown, which calls preventDefault on
+    // every bare Backspace at a textblock start in a real browser (jsdom's
+    // endOfTextblock doesn't, which is why the test above alone isn't enough).
+    const blocks: Block[] = [
+      { id: 'b0', type: 'text', content: 'keep' },
+      { id: 'b1', type: 'text', content: '' },
+    ]
+    renderWith({ id: 'page-1', title: 'Test', blocks })
+
+    await waitFor(() => expect(queryAllTextBlocks()).toHaveLength(2))
+    const field = queryAllTextBlocks()[1]
+    field.addEventListener('keydown', (e) => e.preventDefault())
+    fireEvent.keyDown(field, { key: 'Backspace' })
 
     expect(queryAllTextBlocks()).toHaveLength(1)
   })
