@@ -807,7 +807,7 @@ export function AITerminal() {
           key: ref.id,
           glyph: mark.glyph,
           accent: markAccent(mark.role),
-          label: `${title} — "${passage}"`,
+          label: `${title} — “${passage}”`,
         }
       }),
     [references, allPages, nodeId, contextLabel, pageMarks]

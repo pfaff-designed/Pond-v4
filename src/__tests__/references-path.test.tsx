@@ -142,7 +142,7 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     selectWord(field, 'wild')
     await user.click(await screen.findByRole('button', { name: 'ask pond' }))
 
-    expect(await screen.findByText('Workshop — "wild"')).toBeInTheDocument()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
     expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
     expect(field.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
     const composerInput = screen.getByRole('textbox', { name: 'Message Pond' })
@@ -160,7 +160,7 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     expect(body.references).toEqual([
       expect.objectContaining({ pageId: 'page-1', blockId: 'b-text', quotedText: 'wild' }),
     ])
-    expect(screen.getByText('Workshop — "wild"')).toBeInTheDocument()
+    expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
     expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1)
 
     // 5: make a second reference, then remove it — only its own highlight
@@ -171,12 +171,12 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     await flushAskFocus()
 
     await waitFor(() => expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop — "paths"' }))
+    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop — “paths”' }))
 
     await waitFor(() => expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(1))
     expect(field.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
-    expect(screen.getByText('Workshop — "wild"')).toBeInTheDocument()
-    expect(screen.queryByText('Workshop — "paths"')).not.toBeInTheDocument()
+    expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
+    expect(screen.queryByText('Workshop — “paths”')).not.toBeInTheDocument()
 
     // 6: type new words before the passage — the highlight re-anchors onto
     // the same words, and the chip still carries the same quoted passage.
@@ -185,7 +185,7 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     })
 
     expect(field.querySelector('.mn-reference-highlight')?.textContent).toBe('wild')
-    expect(screen.getByText('Workshop — "wild"')).toBeInTheDocument()
+    expect(screen.getByText('Workshop — “wild”')).toBeInTheDocument()
   })
 
   it('keeps an earlier reference re-anchored after a later one is added in the same block', async () => {
@@ -198,7 +198,7 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     selectWord(field, 'wild')
     await user.click(await screen.findByRole('button', { name: 'ask pond' }))
     await flushAskFocus()
-    expect(await screen.findByText('Workshop — "wild"')).toBeInTheDocument()
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
 
     // Type new words before passage A — its highlight re-anchors forward,
     // off the range it was created with.
