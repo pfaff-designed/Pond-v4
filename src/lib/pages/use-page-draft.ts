@@ -59,6 +59,11 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     blocks: Block[]
     beforeAtSchedule: Block[]
   } | null>(null)
+  // The save currently awaiting its network round-trip, if any — set the
+  // instant it starts (before any await) so a `flushNow` that lands once the
+  // debounce timer has already fired (pendingSave is null, runSave in flight)
+  // returns THIS promise instead of racing ahead of it.
+  const inFlightSave = useRef<Promise<void> | null>(null)
 
   // Seed local editable state when a different page loads. On a *same-page*
   // refetch we normally leave local edits alone — but when there are no unsaved
@@ -158,6 +163,23 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     setSavedAt(new Date())
   }
 
+  // Runs `runSave` and tracks it in `inFlightSave` for the window it is
+  // actually awaiting its network round-trip — set synchronously, before
+  // `runSave`'s first `await`, so nothing can observe the save as "started"
+  // without also finding it here.
+  function startSave(
+    id: string,
+    nextTitle: string,
+    nextBlocks: Block[],
+    beforeAtSchedule: Block[]
+  ): Promise<void> {
+    const promise = runSave(id, nextTitle, nextBlocks, beforeAtSchedule).finally(() => {
+      if (inFlightSave.current === promise) inFlightSave.current = null
+    })
+    inFlightSave.current = promise
+    return promise
+  }
+
   function scheduleSave(nextTitle: string, nextBlocks: Block[]) {
     const id = loadedId.current
     if (!id) return
@@ -169,14 +191,18 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
       saveTimer.current = null
       const p = pendingSave.current
       pendingSave.current = null
-      if (p) void runSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+      if (p) void startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
     }, EDIT_PAUSE_MS)
   }
 
   // Run a still-pending debounced save right now instead of waiting out the
   // pause — the composer calls this (via the page-flush registry) before
   // sending a message, so Pond's next read of the page never lands inside
-  // the debounce window (KAN-302).
+  // the debounce window (KAN-302). If the debounce timer has ALREADY fired and
+  // its save is in flight (nothing pending, but `runSave` is awaiting its
+  // network round-trip), return that same promise rather than undefined —
+  // otherwise the composer would send while the save it's meant to wait on is
+  // still in the air.
   function flushNow(): Promise<void> | undefined {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current)
@@ -184,8 +210,8 @@ export function usePageDraft({ page, pageId, pondId, getSupabase }: PageDraftInp
     }
     const p = pendingSave.current
     pendingSave.current = null
-    if (!p) return undefined
-    return runSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+    if (p) return startSave(p.pageId, p.title, p.blocks, p.beforeAtSchedule)
+    return inFlightSave.current ?? undefined
   }
 
   // `flushNow` is recreated every render; the registry entry stays stable per
