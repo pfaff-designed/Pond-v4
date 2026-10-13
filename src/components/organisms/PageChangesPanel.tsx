@@ -41,6 +41,7 @@ import { listRecords, advanceStatus } from '@/lib/change-log/store'
 import { acceptRevert, proposeRevert } from '@/lib/change-log/revert'
 import { buildPageChanges } from '@/lib/change-log/page-changes'
 import { changeLogKey } from '@/lib/change-log/keys'
+import { personFacingMessage } from '@/lib/change-log/errors'
 import { PageChangesSection } from '@/components/molecules/PageChangesSection'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
@@ -65,6 +66,11 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
   const { data, isLoading } = useQuery({
     queryKey: pageChangesKey(pondId, pageId),
     enabled: pageId !== undefined,
+    // The panel unmounts on close (`usePageChangesPanel`), not merely hides, so
+    // the app-wide 30s `staleTime` (`providers.tsx`) otherwise skips the refetch
+    // a reopen needs — a second tab's accept/revert would sit unseen until a
+    // full page reload.
+    refetchOnMount: 'always',
     queryFn: async (): Promise<ChangeLogRecord[]> => {
       const supabase = getSupabase()
       const {
@@ -117,8 +123,11 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
       } catch (err) {
         // Surfaced, not swallowed: unlike the log writes that ride along with an
         // accepted proposal, every write here IS what the person just asked for.
+        // The raw error (which may carry developer text, e.g. `change log: …`)
+        // goes to the console only — `personFacingMessage` is the one mapping
+        // to what the person sees.
         console.error('[change-log] page changes panel', err)
-        setError(err instanceof Error ? err.message : 'that did not work')
+        setError(personFacingMessage(err))
       } finally {
         setBusyId(null)
         await refresh()

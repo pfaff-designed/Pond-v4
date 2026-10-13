@@ -17,12 +17,14 @@ import type { Block } from '@/lib/documents/types'
 import {
   advanceStatus,
   appendRecord,
+  getRecord,
   listRevertsOf,
   mapChangeLogRow,
   markOutdated,
   RecordChangedError,
 } from './store'
-import { isOpen } from './status'
+import { IllegalTransitionError, isOpen } from './status'
+import { RevertRefusedError } from './errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { planRevert, readBlockSnapshot, revertRefusal } from './revert-plan'
 import { ACTOR_YOU, BLOCK_ACTIONS, type ChangeLogRecord, type ChangeLogRow } from './types'
@@ -59,15 +61,25 @@ export interface ProposeRevertInput {
  * would advance the original twice — the state machine calls the second illegal,
  * so the person would meet a failure at accept time rather than at the click that
  * caused it.
+ *
+ * The revertability check is judged on a FRESH read of the record, not the
+ * caller's copy — a stale `accepted` copy held in one tab, after another tab
+ * already raised AND accepted a revert of it, would otherwise sail past
+ * `revertRefusal` and append a second, permanent revert of an already-`reverted`
+ * change with no refusal shown anywhere.
  */
 export async function proposeRevert(
   supabase: SupabaseClient<Database>,
   input: ProposeRevertInput
 ): Promise<ChangeLogRecord> {
   const { userId, record, current } = input
-  const refusal = revertRefusal(record)
+  const fresh = await getRecord(supabase, record.id)
+  const refusal = fresh === null ? 'not-accepted' : revertRefusal(fresh)
   if (refusal !== null) {
-    throw new Error(`change log: record ${record.id} cannot be reverted — ${refusal}`)
+    throw new RevertRefusedError(
+      'not-revertable',
+      `change log: record ${record.id} cannot be reverted — ${refusal}`
+    )
   }
 
   const existing = await listRevertsOf(supabase, {
@@ -76,7 +88,10 @@ export async function proposeRevert(
     recordId: record.id,
   })
   if (existing.some((r) => r.status === 'proposed')) {
-    throw new Error(`change log: record ${record.id} already has a revert waiting on you`)
+    throw new RevertRefusedError(
+      'waiting',
+      `change log: record ${record.id} already has a revert waiting on you`
+    )
   }
   // An `outdated` revert raised against this very page state would be raised
   // again, identically, for as long as the person keeps clicking — and the log
@@ -85,7 +100,10 @@ export async function proposeRevert(
   if (
     existing.some((r) => r.status === 'outdated' && jsonEqual(readBlockSnapshot(r.before), current))
   ) {
-    throw new Error(`change log: this change could not be set back against the page as it stands`)
+    throw new RevertRefusedError(
+      'outdated-same-page',
+      `change log: this change could not be set back against the page as it stands`
+    )
   }
 
   const plan = planRevert(record, current)
@@ -132,10 +150,14 @@ export type AcceptRevertResult =
   | { kind: 'outdated'; revert: ChangeLogRecord }
 
 /**
- * Advance a revert to `outdated`, folding the one race `advanceStatus` can
+ * Advance a revert to `outdated`, folding the two races `advanceStatus` can
  * still lose: the record settled elsewhere (another tab, another accept) in
- * the gap between the caller's own check and this call. Either way the
- * revert is outdated — only which copy of it we have to report differs.
+ * the gap between the caller's own check and this call, caught either as the
+ * compare-and-swap's own `RecordChangedError` or — when the settle landed
+ * before `advanceStatus` even issued the RPC — as the state machine refusing
+ * the now-stale edge (`IllegalTransitionError`, e.g. `accepted → outdated`).
+ * Either way the revert is outdated — only which copy of it we have to report
+ * differs.
  */
 async function markRevertOutdated(
   supabase: SupabaseClient<Database>,
@@ -146,7 +168,9 @@ async function markRevertOutdated(
     const advanced = await advanceStatus(supabase, revert.id, 'outdated', actor)
     return { kind: 'outdated', revert: advanced }
   } catch (err) {
-    if (err instanceof RecordChangedError) return { kind: 'outdated', revert }
+    if (err instanceof RecordChangedError || err instanceof IllegalTransitionError) {
+      return { kind: 'outdated', revert }
+    }
     throw err
   }
 }

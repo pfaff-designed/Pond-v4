@@ -25,6 +25,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { assertTransition, canRevise } from './status'
+import { RecordChangedError } from './errors'
 import { jsonEqual } from '@/lib/json-equal'
 import { inPond, resolvePond } from '@/lib/pond/scope'
 import {
@@ -40,13 +41,10 @@ import {
 } from './types'
 
 /** The compare-and-swap RPC refused because the record moved underneath this
- *  advance — migration 0025's `record-changed` DETAIL on `advance_change_log_record`. */
-export class RecordChangedError extends Error {
-  constructor() {
-    super('this change was already answered')
-    this.name = 'RecordChangedError'
-  }
-}
+ *  advance — migration 0025's `record-changed` DETAIL on `advance_change_log_record`.
+ *  Defined in `errors.ts` so `personFacingMessage` can check `instanceof` it without
+ *  a dependency cycle; re-exported here since every caller imports it from the store. */
+export { RecordChangedError }
 
 const TABLE = 'change_log'
 

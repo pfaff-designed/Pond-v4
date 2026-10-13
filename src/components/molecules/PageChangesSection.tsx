@@ -109,7 +109,7 @@ export function PageChangesSection({
           const answerable = record.action === 'revert' && record.status === 'proposed'
           const outdated = record.action === 'revert' && record.status === 'outdated'
           return (
-            <li key={record.id} className="flex items-center gap-3 py-2">
+            <li key={record.id} className="flex flex-wrap items-center gap-3 py-2">
               <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
                 {timeOf(record.createdAt)}
               </span>
@@ -139,7 +139,7 @@ export function PageChangesSection({
                 // revise. There is no revise verb on this surface yet, so say what
                 // the person can actually do: the change it reverts offers Revert
                 // again, and that re-plans against the page as it now stands.
-                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
+                <span className="w-full font-mono text-[0.65rem] text-mn-text-secondary">
                   out of date — revert it again
                 </span>
               )}
