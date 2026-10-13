@@ -29,7 +29,8 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PostgrestError } from '@supabase/supabase-js'
 
@@ -426,6 +427,18 @@ async function ready() {
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeEnabled())
 }
 
+/** Pond proposes "change world to moon" against the one seeded block, `b0`. */
+function editBatch(toolCallId: string) {
+  return {
+    type: 'tool-propose_changes',
+    toolCallId,
+    state: 'input-available',
+    input: {
+      changes: [{ op: 'edit', blockId: 'b0', data: { type: 'text', content: 'Hello moon' } }],
+    },
+  }
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   resetFakes()
@@ -443,5 +456,38 @@ describe('KAN-302 path test harness', () => {
     await ready()
 
     expect(screen.getByText('Hello world')).toBeInTheDocument()
+  })
+
+  // Path test part 1a (PATH_STEPS bullet 1, "the record's before, never the
+  // page's current text"): accept an edit, then simulate the person's own
+  // further edit landing at the fake-server boundary — the accepted card's
+  // "−" line must stay frozen on the record's `before`, not re-read the page.
+  it('an accepted card freezes its "−" line past a later edit to the page (KAN-302 item 1)', async () => {
+    const user = userEvent.setup()
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
+
+    const { queryClient } = renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    expect(within(card).getByText('Hello world')).toBeInTheDocument()
+    expect(within(card).getByText('Hello moon')).toBeInTheDocument()
+
+    await user.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+
+    expect(within(card).getByText('Hello world')).toBeInTheDocument()
+    expect(within(card).getByText('Hello moon')).toBeInTheDocument()
+
+    // The person's own edit, simulated at the fake-server boundary — exactly
+    // what `use-page-draft.ts`'s save path does: mutate the row, invalidate
+    // the page query.
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello moon xyz' }]
+    await queryClient.invalidateQueries({ queryKey: ['page', PAGE_ID] })
+    await waitFor(() => expect(screen.getByText('Hello moon xyz')).toBeInTheDocument())
+
+    expect(within(card).getByText('Hello world')).toBeInTheDocument()
+    expect(within(card).queryByText('Hello moon xyz')).not.toBeInTheDocument()
   })
 })
