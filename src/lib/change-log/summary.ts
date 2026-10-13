@@ -16,15 +16,16 @@ import { descriptorFor } from '@/lib/modules/registry'
 import { blockLabel } from '@/lib/modules/types'
 import type { TableBlock } from '@/lib/modules/table/schema'
 import { jsonEqual } from '@/lib/json-equal'
+import { OPENS_ON_A_HEADING } from '@/lib/templates/summary'
 import { readBlockSnapshot } from './revert-plan'
 import type { RowSnapshot } from './types'
 
 const count = (n: number, one: string, many: string = `${one}s`): string =>
   `${n} ${n === 1 ? one : many}`
 
-/** Every paragraph of prose on a page — one non-empty line of a text block each. */
-const paragraphsOf = (blocks: Block[]): string[] =>
-  blocks.flatMap((block) => {
+/** Every line of prose on a page, split into headings and plain paragraphs — the two are counted apart. */
+const paragraphsOf = (blocks: Block[]): { headings: string[]; paragraphs: string[] } => {
+  const lines = blocks.flatMap((block) => {
     if (block.type !== 'text') return []
     const prose = descriptorFor(block.type)?.serialize(block) ?? ''
     return prose
@@ -32,6 +33,11 @@ const paragraphsOf = (blocks: Block[]): string[] =>
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
   })
+  return {
+    headings: lines.filter((line) => OPENS_ON_A_HEADING.test(line)),
+    paragraphs: lines.filter((line) => !OPENS_ON_A_HEADING.test(line)),
+  }
+}
 
 /** The entries of `from` left over once each entry of `minus` has cancelled one match. */
 const leftOver = (from: string[], minus: string[]): string[] => {
@@ -58,17 +64,25 @@ const blocksPhrase = (verb: string, blocks: Block[]): string | null => {
   return `${verb} ${count(blocks.length, 'block')}`
 }
 
-const prosePhrases = (before: Block[], after: Block[]): string[] => {
-  const paragraphsBefore = paragraphsOf(before)
-  const paragraphsAfter = paragraphsOf(after)
-  const written = leftOver(paragraphsAfter, paragraphsBefore).length
-  // A paragraph changed in place leaves its old wording behind as well as its new
+/** `wrote`/`removed` phrases for one line category (headings, or paragraphs). */
+const linesPhrases = (noun: string, before: string[], after: string[]): string[] => {
+  const written = leftOver(after, before).length
+  // A line changed in place leaves its old wording behind as well as its new
   // one; only what goes beyond the written count was actually cut.
-  const cut = Math.max(0, leftOver(paragraphsBefore, paragraphsAfter).length - written)
+  const cut = Math.max(0, leftOver(before, after).length - written)
   const phrases: string[] = []
-  if (written > 0) phrases.push(`wrote ${count(written, 'paragraph')}`)
-  if (cut > 0) phrases.push(`removed ${count(cut, 'paragraph')}`)
+  if (written > 0) phrases.push(`wrote ${count(written, noun)}`)
+  if (cut > 0) phrases.push(`removed ${count(cut, noun)}`)
   return phrases
+}
+
+const prosePhrases = (before: Block[], after: Block[]): string[] => {
+  const linesBefore = paragraphsOf(before)
+  const linesAfter = paragraphsOf(after)
+  return [
+    ...linesPhrases('heading', linesBefore.headings, linesAfter.headings),
+    ...linesPhrases('paragraph', linesBefore.paragraphs, linesAfter.paragraphs),
+  ]
 }
 
 const EMPTY_MARK = '—'

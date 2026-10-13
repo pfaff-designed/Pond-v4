@@ -120,4 +120,37 @@ describe('describeChange', () => {
     expect(describeChange(record({ action: 'create_page' }), null)).toBe('created this page')
     expect(describeChange(record({ action: 'memory_note' }), null)).toBe('recorded a memory note')
   })
+
+  it('names a glyph pick as a mark change, in Pond\'s words', () => {
+    expect(
+      describeChange(record({ action: 'edit_glyph', before: null, after: 'flower-02' }), null)
+    ).toBe('mark → flower-02')
+    expect(
+      describeChange(record({ action: 'edit_glyph', before: null, after: 'asset-161' }), null)
+    ).toBe('mark → 161')
+    expect(
+      describeChange(record({ action: 'edit_glyph', before: 'flower-02', after: null }), null)
+    ).toBe('mark → automatic')
+  })
+
+  it('names an area colour pick as a colour change, in the picker\'s own words', () => {
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: null, after: 'area-a' }), null)
+    ).toBe('colour → sage')
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: null, after: 'area-b' }), null)
+    ).toBe('colour → mist')
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: null, after: 'area-c' }), null)
+    ).toBe('colour → navy')
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: 'area-a', after: null }), null)
+    ).toBe('colour → ink')
+  })
+
+  it('names an unknown area role generically rather than misnaming it ink', () => {
+    expect(
+      describeChange(record({ action: 'edit_area_role', before: null, after: 'area-unknown' }), null)
+    ).toBe('changed the colour')
+  })
 })

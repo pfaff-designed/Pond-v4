@@ -39,11 +39,8 @@ function record(over: Partial<ChangeLogRecord> = {}): ChangeLogRecord {
 }
 
 describe('PageChangesSection — an undo/redo step', () => {
-  it('lists the undo and redo as their own rows, and shows the original as undone', () => {
+  it('lists the undo and redo rows carrying the original record\'s own label', () => {
     const original = record({ status: 'undone' })
-    // `redo_of` names the undo record that is being put back (0021's own comment:
-    // "after X.before, after X.after, redo_of X" where X is the standing undo) —
-    // never the original.
     const undo = record({
       id: 'undo-1',
       action: 'undo',
@@ -52,11 +49,12 @@ describe('PageChangesSection — an undo/redo step', () => {
       createdAt: '2026-09-30T09:32:00.000Z',
       statusAt: '2026-09-30T09:32:00.000Z',
     })
+    // redoOf names the redone record directly (0021).
     const redo = record({
       id: 'redo-1',
       action: 'redo',
       status: 'accepted',
-      links: { redoOf: 'undo-1' },
+      links: { redoOf: 'rec-1' },
       createdAt: '2026-09-30T09:33:00.000Z',
       statusAt: '2026-09-30T09:33:00.000Z',
     })
@@ -68,8 +66,70 @@ describe('PageChangesSection — an undo/redo step', () => {
     )
 
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getByText('undo · wrote 1 paragraph')).toBeInTheDocument()
+    expect(screen.getByText('redo · wrote 1 paragraph')).toBeInTheDocument()
+    expect(screen.getByText('undone')).toBeInTheDocument()
+  })
+
+  it('resolves to the original label through a redo-then-undo cycle, never nesting a second undo·/redo·', () => {
+    const original = record({ action: 'edit_glyph', after: 'flower-02', status: 'undone' })
+    const undo = record({
+      id: 'undo-1',
+      action: 'undo',
+      status: 'undone',
+      links: { undoOf: 'rec-1' },
+      createdAt: '2026-09-30T09:32:00.000Z',
+      statusAt: '2026-09-30T09:32:00.000Z',
+    })
+    const redo = record({
+      id: 'redo-1',
+      action: 'redo',
+      status: 'undone',
+      links: { redoOf: 'rec-1' },
+      createdAt: '2026-09-30T09:33:00.000Z',
+      statusAt: '2026-09-30T09:33:00.000Z',
+    })
+    const undoOfRedo = record({
+      id: 'undo-2',
+      action: 'undo',
+      status: 'accepted',
+      links: { undoOf: 'redo-1' },
+      createdAt: '2026-09-30T09:34:00.000Z',
+      statusAt: '2026-09-30T09:34:00.000Z',
+    })
+
+    const rows = buildPageChanges([undoOfRedo, redo, undo, original])
+
+    render(
+      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+    )
+
+    expect(screen.getByText('mark → flower-02')).toBeInTheDocument()
+    expect(screen.getAllByText('undo · mark → flower-02')).toHaveLength(2)
+    expect(screen.getByText('redo · mark → flower-02')).toBeInTheDocument()
+  })
+
+  it('falls back to the plain word when the undone/redone record is off this page', () => {
+    const undo = record({
+      id: 'undo-1',
+      action: 'undo',
+      status: 'accepted',
+      links: { undoOf: 'elsewhere' },
+    })
+    const redo = record({
+      id: 'redo-1',
+      action: 'redo',
+      status: 'accepted',
+      links: { redoOf: 'elsewhere' },
+    })
+
+    const rows = buildPageChanges([redo, undo])
+
+    render(
+      <PageChangesSection rows={rows} onRevert={jest.fn()} onAccept={jest.fn()} onReject={jest.fn()} />
+    )
+
     expect(screen.getByText('undo')).toBeInTheDocument()
     expect(screen.getByText('redo')).toBeInTheDocument()
-    expect(screen.getByText('undone')).toBeInTheDocument()
   })
 })

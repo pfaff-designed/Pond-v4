@@ -46,7 +46,7 @@ const KIND_WORD: Partial<Record<PondBlockKind, string>> = {
 }
 
 /** A markdown heading at any level — `#` through `######`, per `HEADING_PREFIX`. */
-const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
+export const OPENS_ON_A_HEADING = /^\s*#{1,6}\s+\S/
 
 /** What one block is called in the summary line. */
 export function blockWord(block: Block): string {

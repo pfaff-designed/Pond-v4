@@ -15,6 +15,7 @@
  * no React, no formatting decisions beyond a short human label.
  */
 
+import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
 import { canRevertRecord } from './revert-plan'
 import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit } from './summary'
 import type { ChangeLogRecord } from './types'
@@ -39,19 +40,75 @@ const clockTime = (record: ChangeLogRecord): string =>
     hourCycle: 'h23',
   })
 
+/** `flower-02`, `161`, or `automatic` for null — the library's label, unchanged. */
+const glyphName = (glyph: string | null): string => {
+  if (glyph === null) return 'automatic'
+  const entry = GLYPH_LIBRARY.find((g) => g.glyph === glyph)
+  return entry?.label ?? glyph
+}
+
+/**
+ * `colour → sage` / `colour → mist` / `colour → navy` / `colour → ink` for
+ * null — the colour picker's own labels. A non-null value that names no
+ * known role falls back to a generic phrase rather than naming a colour the
+ * page doesn't have.
+ */
+const areaRoleChange = (role: unknown): string => {
+  if (role === null) return 'colour → ink'
+  if (!isAreaRole(role)) return 'changed the colour'
+  const label = AREA_COLOUR_SWATCHES.find((s) => s.role === role)?.label
+  return label === undefined ? 'changed the colour' : `colour → ${label}`
+}
+
+/**
+ * Chase an `undo`/`redo` record's link through as many more `undo`/`redo`
+ * records as a session stack can pile on (⌘Z, ⇧⌘Z, ⌘Z, …) to the original
+ * record being laid back, so a row never nests a second `undo ·`/`redo ·`
+ * onto another — matching `change_log_undo_kind`'s own loop (0023). `undefined`
+ * when a link is missing or points off this page.
+ */
+const resolveUndoRedoTarget = (
+  record: ChangeLogRecord,
+  byId: Map<string, ChangeLogRecord>
+): ChangeLogRecord | undefined => {
+  let current: ChangeLogRecord | undefined = record
+  const seen = new Set<string>()
+  while (current !== undefined && (current.action === 'undo' || current.action === 'redo')) {
+    if (seen.has(current.id)) return undefined
+    seen.add(current.id)
+    const link: string | undefined =
+      current.action === 'undo' ? current.links.undoOf : current.links.redoOf
+    current = link === undefined ? undefined : byId.get(link)
+  }
+  return current
+}
+
 /**
  * A short label for a record.
  *
  * An edit reads as what its diff did ("wrote 3 paragraphs", `summary.ts`); a
  * record edit names the record. The full before/after, rendered block by block,
  * stays the record page's — this is one line for a row.
+ *
+ * `byId` resolves an undo/redo row's own label from the record it undid or
+ * redid (board 6o f5: "undo · added chickpeas, harissa"). `links.redoOf` names
+ * the redone record directly (0021). A record missing from `byId` (a
+ * different page, or paged out) falls back to the plain word.
  */
-export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord | null): string {
+export function describeChange(
+  record: ChangeLogRecord,
+  reverts: ChangeLogRecord | null,
+  byId: Map<string, ChangeLogRecord> = new Map()
+): string {
   switch (record.action) {
     case 'edit':
       return summarizeBlockEdit(record.before, record.after) ?? 'edited this page'
-    case 'revert':
-      return reverts === null ? 'revert of an earlier change' : `revert of ${clockTime(reverts)}`
+    case 'revert': {
+      const revertsRecord = reverts ?? byId.get(record.links.revertOf ?? '') ?? null
+      return revertsRecord === null
+        ? 'revert of an earlier change'
+        : `revert of ${clockTime(revertsRecord)}`
+    }
     case 'create_page':
       return 'created this page'
     case 'define_schema':
@@ -68,14 +125,22 @@ export function describeChange(record: ChangeLogRecord, reverts: ChangeLogRecord
       return 'linked records'
     case 'memory_note':
       return 'recorded a memory note'
+    case 'edit_glyph':
+      return `mark → ${glyphName(typeof record.after === 'string' ? record.after : null)}`
+    case 'edit_area_role':
+      return areaRoleChange(record.after)
     case 'delete':
       return 'deleted'
     case 'move':
       return 'moved'
-    case 'undo':
-      return 'undo'
-    case 'redo':
-      return 'redo'
+    case 'undo': {
+      const original = resolveUndoRedoTarget(record, byId)
+      return original === undefined ? 'undo' : `undo · ${describeChange(original, null, byId)}`
+    }
+    case 'redo': {
+      const original = resolveUndoRedoTarget(record, byId)
+      return original === undefined ? 'redo' : `redo · ${describeChange(original, null, byId)}`
+    }
     default:
       // Reachable, despite the union looking exhaustive: 0011 gives `action` NO
       // CHECK on purpose — "a new tool can be logged without a migration" — and
@@ -114,7 +179,7 @@ export function buildPageChanges(records: ChangeLogRecord[]): PageChangeRow[] {
     const reverts = byId.get(record.links.revertOf ?? '') ?? null
     return {
       record,
-      label: describeChange(record, reverts),
+      label: describeChange(record, reverts, byId),
       revertable,
       revertBlockedBy: !revertable && waiting ? 'waiting' : null,
       reverts,
