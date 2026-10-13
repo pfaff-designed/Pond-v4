@@ -100,21 +100,29 @@ describe('the / menu speaks Pond’s words only', () => {
   })
 
   it('every rendered string, in every state, is lowercase and every label is a word the handoff uses', () => {
-    const renders: Array<Partial<React.ComponentProps<typeof SlashMenu>>> = [
-      {},
-      { query: 'ta' },
-      { query: 'zz' },
-      { defaultPane: 'templates' },
-    ]
-    for (const props of renders) {
-      const { unmount } = renderMenu(props)
+    function checkGlass() {
       const text = glass().textContent ?? ''
       expect(text).not.toMatch(/[A-Z]/)
       for (const o of screen.queryAllByRole('option')) {
         expect(ALLOWED.has(labelOf(o as HTMLElement)!)).toBe(true)
       }
+    }
+    const renders: Array<Partial<React.ComponentProps<typeof SlashMenu>>> = [
+      {},
+      { query: 'ta' },
+      { query: 'zz' },
+    ]
+    for (const props of renders) {
+      const { unmount } = renderMenu(props)
+      checkGlass()
       unmount()
     }
+    // The templates pane, reached via `page from template` rather than a prop.
+    const { anchor, unmount } = renderMenu()
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    checkGlass()
+    unmount()
   })
 
   it('no row is named after a module type the glossary lacks — `todo` and `view` never reach the surface', () => {
@@ -431,11 +439,23 @@ describe('mobile', () => {
   })
 
   it('shows 8 premade shapes in the templates pane, then the person’s own', () => {
-    renderMenu({
-      size: 'mobile',
-      defaultPane: 'templates',
-      yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
-    })
+    const yourTemplates = [{ id: 't1', name: 'weeknight recipe' }]
+    // The desktop list's cap is wide enough to carry `page from template`, which
+    // the mobile cap of 12 would otherwise push out of reach.
+    const { rerender, anchor, onSelect, onClose } = renderMenu({ yourTemplates })
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    rerender(
+      <SlashMenu
+        rows={slashRows}
+        query=""
+        anchor={anchor}
+        size="mobile"
+        yourTemplates={yourTemplates}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    )
     expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([
       ...TEMPLATE_KINDS.slice(0, 8),
       'weeknight recipe',
@@ -449,26 +469,8 @@ describe('mobile', () => {
   })
 })
 
-describe('opened on the templates', () => {
-  it('leads with the templates, and the first change of query returns to the blocks', () => {
-    const { rerender, anchor, onSelect, onClose } = renderMenu({ defaultPane: 'templates' })
-    expect(glass()).toHaveAttribute('data-pane', 'templates')
-    expect(glass().querySelector('[data-part="head"]')!.textContent).toBe('page from template')
-    rerender(
-      <SlashMenu
-        rows={slashRows}
-        query="t"
-        anchor={anchor}
-        defaultPane="templates"
-        onSelect={onSelect}
-        onClose={onClose}
-      />
-    )
-    expect(glass()).toHaveAttribute('data-pane', 'rows')
-    expect(glass().querySelector('[data-part="head"]')).toBeNull()
-  })
-
-  it('a pane walked into stays through a query — only an opening on the templates gives way', () => {
+describe('walked into the templates pane', () => {
+  it('a pane walked into gives way as soon as the query changes, narrowed by it', () => {
     const { rerender, anchor, onSelect, onClose } = renderMenu()
     fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
     fireEvent.keyDown(anchor, { key: 'ArrowRight' })
@@ -476,14 +478,21 @@ describe('opened on the templates', () => {
     rerender(
       <SlashMenu rows={slashRows} query="t" anchor={anchor} onSelect={onSelect} onClose={onClose} />
     )
-    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    expect(glass()).toHaveAttribute('data-pane', 'rows')
+    expect(glass().querySelector('[data-part="head"]')).toBeNull()
+    expect(options().length).toBeGreaterThan(0)
+    for (const o of options()) {
+      const label = labelOf(o as HTMLElement)!.toLowerCase()
+      expect(label.includes('t')).toBe(true)
+    }
   })
 
   it('lists the person’s own templates under `yours`, and picking one hands back its id', () => {
-    const { onPickTemplate } = renderMenu({
-      defaultPane: 'templates',
+    const { anchor, onPickTemplate } = renderMenu({
       yourTemplates: [{ id: 't1', name: 'weeknight recipe' }],
     })
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
     fireEvent.click(options().find((o) => labelOf(o as HTMLElement) === 'weeknight recipe')!)
     expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
   })
@@ -500,7 +509,9 @@ describe('templates', () => {
     const groups = [...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
     expect(groups).toEqual(['premade'])
     expect(options().map((o) => labelOf(o as HTMLElement))).toEqual([...TEMPLATE_KINDS])
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↵ new nested page')
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
+      '↵ new nested page← blocks'
+    )
   })
 
   it('→ also opens it; ↵ then picks a premade kind; ← steps back to the blocks', () => {
@@ -519,17 +530,28 @@ describe('templates', () => {
     expect(labelOf(selected())).toBe('text')
   })
 
+  it('a click on `← blocks` in the foot steps back to the rows, same as ←', () => {
+    const { anchor } = renderMenu()
+    const tpl = options().find((o) => labelOf(o as HTMLElement) === 'page from template')!
+    fireEvent.mouseEnter(tpl)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    expect(glass()).toHaveAttribute('data-pane', 'templates')
+    fireEvent.click(screen.getByText('← blocks'))
+    expect(glass()).toHaveAttribute('data-pane', 'rows')
+  })
+
   it('lists the person’s own templates under `yours`, and `→ preview` only once a preview exists', () => {
     const onPreviewTemplate = jest.fn()
     const { anchor, onPickTemplate } = renderMenu({
-      defaultPane: 'templates',
       yourTemplates: [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }],
       onPreviewTemplate,
     })
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'page from template')!)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
     const groups = [...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
     expect(groups).toEqual(['premade', 'yours'])
     expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
-      '↵ new nested page→ preview'
+      '↵ new nested page→ preview← blocks'
     )
     const mine = options().find((o) => labelOf(o as HTMLElement) === 'weeknight recipe')!
     expect(within(mine).getByText('from chickpeas…')).toBeInTheDocument()
@@ -537,6 +559,49 @@ describe('templates', () => {
     expect(onPickTemplate).toHaveBeenCalledWith({ origin: 'yours', id: 't1' })
     fireEvent.keyDown(anchor, { key: 'ArrowRight' })
     expect(onPreviewTemplate).toHaveBeenCalledWith({ origin: 'premade', kind: 'page' })
+  })
+})
+
+describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
+  it('opens straight on the `templates` group, no head, then the scroll cue then the blocks, templates and pages', () => {
+    renderMenu({ leadWithTemplates: true })
+    expect(glass().querySelector('[data-part="head"]')).not.toBeInTheDocument()
+    const groups = [...glass().querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
+    expect(groups).toEqual([
+      'templates',
+      'text — scroll for blocks, templates, pages',
+      'blocks',
+      'templates',
+      'pages',
+    ])
+  })
+
+  it('↓ past every template and the scroll cue reaches `text`, and ↵ inserts it', () => {
+    const { anchor, onSelect } = renderMenu({ leadWithTemplates: true })
+    expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
+    for (let i = 0; i < TEMPLATE_KINDS.length; i++) {
+      fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    }
+    expect(labelOf(selected())).toBe('text')
+    fireEvent.keyDown(anchor, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'text', label: 'text' }))
+  })
+
+  it('a template row selected: the foot reads `↵ new nested page` — no `esc keep as text`, no `→ preview`', () => {
+    renderMenu({ leadWithTemplates: true })
+    expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
+      '↑↓ move↵ new nested page'
+    )
+  })
+
+  it('`text` selected: the foot reads `↑↓ move · ↵ insert`', () => {
+    const { anchor } = renderMenu({ leadWithTemplates: true })
+    for (let i = 0; i < TEMPLATE_KINDS.length; i++) {
+      fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    }
+    expect(labelOf(selected())).toBe('text')
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↑↓ move↵ insert')
   })
 })
 

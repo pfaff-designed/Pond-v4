@@ -13,7 +13,8 @@
  *           → `.mn-glass` (globals.css) IS the board's recipe, light; dark follows
  *             the Shell's dark frames (ADR 0004: the composed context outranks the
  *             component card) — one recipe, three consumers already, no copy here.
- *   head    flex · gap 10 · 8px 10px 10px · mb 4 · 1px ink .09 · mono 12 (mobile 13) — `templates` only
+ *   head    flex · gap 10 · 8px 10px 10px · mb 4 · 1px ink .09 · mono 12 (mobile 13) — the
+ *           `templates` pane only; the blank list that leads with templates (KAN-276) has none
  *   group   8px 10px 5px · 10.5 · .04em · ink .68 — NO text-transform (ADR 0003, 3rd amendment)
  *   row     flex · gap 10 · 7px 10px · radius 10 · mono 12.5 · .01em · ink; selected ink .07
  *           mobile: 11px 10px at 14; the open list stops at 12 entries (group heads
@@ -47,7 +48,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import {
+  blankRowEntries,
   footItems,
   MOBILE_PREMADE_CAP,
   MOBILE_ROW_CAP,
@@ -89,9 +92,9 @@ export interface SlashMenuProps {
   onPickTemplate?: (pick: TemplatePick) => void
   /** When given, the `templates` foot offers `→ preview` and → calls it. */
   onPreviewTemplate?: (pick: TemplatePick) => void
+  /** The blank-page list (KAN-276): the `rows` pane leads with `templates` — no head of its own, the glass opens straight on the `templates` group. */
+  leadWithTemplates?: boolean
   yourTemplates?: readonly YourTemplate[]
-  /** Opens straight on a pane (the board's `templates` state). @default 'rows' */
-  defaultPane?: SlashPane
   /** Portal target; defaults to `document.body`. Stories theme it. */
   container?: HTMLElement | null
   /** The DC's `size`: touch rows, a wider glass, a shorter list. @default 'desktop' */
@@ -108,23 +111,20 @@ export function SlashMenu({
   onClose,
   onPickTemplate,
   onPreviewTemplate,
+  leadWithTemplates,
   yourTemplates,
-  defaultPane = 'rows',
   container,
   size = 'desktop',
 }: SlashMenuProps) {
   const mobile = size === 'mobile'
   const chrome = SLASH_SIZES[size]
-  const [pane, setPane] = useState<SlashPane>(defaultPane)
-  // A menu opened on its templates returns to the rows when the query first changes.
-  const [ledByTemplates, setLedByTemplates] = useState(defaultPane === 'templates')
+  const [pane, setPane] = useState<SlashPane>('rows')
+  // Typing in the templates pane means narrowing blocks again: any query change
+  // while there falls back to the rows.
   const [seenQuery, setSeenQuery] = useState(query)
   if (query !== seenQuery) {
     setSeenQuery(query)
-    if (ledByTemplates) {
-      setLedByTemplates(false)
-      setPane('rows')
-    }
+    if (pane === 'templates') setPane('rows')
   }
   // The selection is keyed to what it was made against, so a new query or pane
   // starts at the first row without an effect writing state.
@@ -132,7 +132,9 @@ export function SlashMenu({
   const entries =
     pane === 'templates'
       ? templateEntries(yourTemplates, mobile ? MOBILE_PREMADE_CAP : undefined)
-      : rowEntries(rows, query, mobile ? MOBILE_ROW_CAP : undefined)
+      : leadWithTemplates
+        ? blankRowEntries(rows, yourTemplates ?? [], query, mobile ? MOBILE_ROW_CAP : undefined)
+        : rowEntries(rows, query, mobile ? MOBILE_ROW_CAP : undefined)
   const items = entries.filter((e): e is RowEntry => e.kind === 'row')
   const active = Math.min(
     sel.pane === pane && sel.query === query ? sel.index : 0,
@@ -140,14 +142,9 @@ export function SlashMenu({
   )
   const select = (index: number) => setSel({ pane, query, index })
 
-  const openPane = (next: SlashPane) => {
-    setLedByTemplates(false)
-    setPane(next)
-  }
-
   const pick = (item: RowEntry) => {
     if (item.template) onPickTemplate?.(item.template)
-    else if (item.row?.submenu) openPane(item.row.submenu)
+    else if (item.row?.submenu) setPane(item.row.submenu)
     else if (item.row) onSelect(item.row)
   }
 
@@ -164,10 +161,10 @@ export function SlashMenu({
         onClose()
         handled = false
       } else if (e.key === 'Enter' && item) pick(item)
-      else if (e.key === 'ArrowRight' && item?.row?.submenu) openPane(item.row.submenu)
+      else if (e.key === 'ArrowRight' && item?.row?.submenu) setPane(item.row.submenu)
       else if (e.key === 'ArrowRight' && item?.template && onPreviewTemplate)
         onPreviewTemplate(item.template)
-      else if (e.key === 'ArrowLeft' && pane === 'templates') openPane('rows')
+      else if (e.key === 'ArrowLeft' && pane === 'templates') setPane('rows')
       else handled = false
       if (handled) {
         e.preventDefault()
@@ -197,7 +194,14 @@ export function SlashMenu({
   }, [onClose])
 
   const style = useAnchoredBox(anchor, side, chrome.widthPx)
-  const foot = footItems(pane, query, items.length, onPreviewTemplate !== undefined)
+  const foot = footItems(
+    pane,
+    query,
+    items.length,
+    onPreviewTemplate !== undefined,
+    items[active]?.template !== undefined,
+    leadWithTemplates
+  )
   const indexOf = new Map(items.map((item, i) => [item, i]))
 
   if (typeof document === 'undefined') return null
@@ -210,6 +214,10 @@ export function SlashMenu({
       data-pane={pane}
       className={`${side === 'top' ? GLASS_ABOVE : GLASS} ${chrome.width}`}
       style={style}
+      // The caret stays on the `/` line: a mousedown on the glass itself (not a
+      // row or button) would otherwise focus it, since `tabIndex={-1}` makes it
+      // the nearest focusable ancestor of everything inside.
+      onMouseDown={(e) => e.preventDefault()}
     >
       {pane === 'templates' && (
         <div data-part="head" className={chrome.head}>
@@ -261,6 +269,16 @@ export function SlashMenu({
           {foot.map((f) => (
             <span key={f}>{f}</span>
           ))}
+          {pane === 'templates' && (
+            <button
+              type="button"
+              className={`cursor-pointer rounded-sm hover:text-mn-text ${FOCUS_VISIBLE_RING}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setPane('rows')}
+            >
+              ← blocks
+            </button>
+          )}
         </div>
       )}
     </div>,

@@ -357,6 +357,23 @@ export const EmptyInk: Story = {
 
 const YOURS = [{ id: 't1', name: 'weeknight recipe', hint: 'from chickpeas…' }]
 
+// The mobile rows list caps at 12 entries and `page from template` sits well
+// past that in the real board order — a minimal fixture keeps it reachable so
+// these stories can walk in rather than render already-open.
+const TEMPLATE_ROW_ONLY = [
+  { id: 'page-from-template', group: 'templates' as const, label: 'page from template', icon: ICON.tpl, submenu: 'templates' as const },
+]
+
+/** Walks into the templates pane the way a person does: hover `page from template`, →. */
+async function openTemplatesPane(root: HTMLElement) {
+  const glass = glassOf(root)
+  const tpl = [...glass.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (r) => r.querySelector('[data-part="label"]')!.textContent === 'page from template'
+  )!
+  await userEvent.hover(tpl)
+  await userEvent.keyboard('{ArrowRight}')
+}
+
 async function assertTemplates(root: HTMLElement, p: Palette, mobile = false) {
   await assertChrome(root, p, mobile)
   const glass = glassOf(root)
@@ -382,27 +399,36 @@ async function assertTemplates(root: HTMLElement, p: Palette, mobile = false) {
     'weeknight recipe',
   ])
   await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
-    '↵ new nested page→ preview'
+    '↵ new nested page→ preview← blocks'
   )
 }
 
 /** The submenu: head, the twelve premade shapes (#261), `yours`, and its own foot. */
 export const Templates: Story = {
   name: 'templates',
-  args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn() },
-  play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER),
+  args: { yourTemplates: YOURS, onPreviewTemplate: fn() },
+  play: async ({ canvasElement }) => {
+    await openTemplatesPane(canvasElement)
+    await assertTemplates(canvasElement, PAPER)
+  },
 }
 
 export const TemplatesMobile: Story = {
   name: 'templates · mobile',
-  args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), size: 'mobile' },
-  play: async ({ canvasElement }) => assertTemplates(canvasElement, PAPER, true),
+  args: { rows: TEMPLATE_ROW_ONLY, yourTemplates: YOURS, onPreviewTemplate: fn(), size: 'mobile' },
+  play: async ({ canvasElement }) => {
+    await openTemplatesPane(canvasElement)
+    await assertTemplates(canvasElement, PAPER, true)
+  },
 }
 
 export const TemplatesInk: Story = {
   name: 'templates · ink',
-  args: { defaultPane: 'templates', yourTemplates: YOURS, onPreviewTemplate: fn(), ink: true },
-  play: async ({ canvasElement }) => assertTemplates(canvasElement, INK),
+  args: { yourTemplates: YOURS, onPreviewTemplate: fn(), ink: true },
+  play: async ({ canvasElement }) => {
+    await openTemplatesPane(canvasElement)
+    await assertTemplates(canvasElement, INK)
+  },
 }
 
 // ── the keys ───────────────────────────────────────────────────────────────────
@@ -542,8 +568,10 @@ export const TemplatesNav: Story = {
     )
     await expect(labels(canvasElement)).toEqual([...TEMPLATE_KINDS])
     await expect(selectedLabel(canvasElement)).toBe(TEMPLATE_KINDS[0])
-    // No `onPreviewTemplate` here, so the foot offers only the one key.
-    await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe('↵ new nested page')
+    // No `onPreviewTemplate` here, so the foot offers only the one key plus the back control.
+    await expect(glass.querySelector('[data-part="foot"]')!.textContent).toBe(
+      '↵ new nested page← blocks'
+    )
 
     // ← steps back to the blocks. The selection returns to the row it came from,
     // because nothing moved inside the pane.
@@ -564,23 +592,18 @@ export const TemplatesNav: Story = {
   },
 }
 
-// ── an empty page, and the person's own templates ──────────────────────────────
+// ── the person's own templates ──────────────────────────────────────────────────
 
-/**
- * On an empty page the menu opens on its templates (6f), `yours` after the
- * premade, with the person's own picked by id. Typing a block's name returns to
- * the blocks, so `/table` still finds the table.
- */
-export const EmptyPage: Story = {
+/** Walking into the templates pane and picking a `yours` row hands back its id. */
+export const PickYoursTemplate: Story = {
   tags: ['!dev'],
   args: {
-    defaultPane: 'templates',
     yourTemplates: YOURS,
     onPickTemplate: fn(),
   },
   play: async ({ canvasElement, args }) => {
+    await openTemplatesPane(canvasElement)
     const glass = glassOf(canvasElement)
-    await expect(glass.getAttribute('data-pane')).toBe('templates')
     await expect(
       [...glass.querySelectorAll('[data-part="group"]')].map((g) => g.textContent)
     ).toEqual(['premade', 'yours'])

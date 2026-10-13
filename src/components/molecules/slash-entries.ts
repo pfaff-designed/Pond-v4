@@ -39,6 +39,8 @@ export interface SlashRow {
   submenu?: 'templates'
   /** The row makes a page rather than a block: beside the current page, or under it. */
   placement?: 'sibling' | 'child'
+  /** The row picks a template rather than inserting a block (the blank-page list's leading rows). */
+  template?: TemplatePick
 }
 
 export type TemplatePick =
@@ -141,18 +143,28 @@ export function normalizeQuery(query: string): string {
  */
 export const MOBILE_ROW_CAP = 12
 export const MOBILE_PREMADE_CAP = 8
+/** The blank list's own mobile cap (KAN-276): four leading template rows, capped
+ * independently of `MOBILE_ROW_CAP` so the ordinary rows below — text included —
+ * always survive the scroll. */
+export const MOBILE_TEMPLATE_CAP = 4
 
 /**
  * How tall the open list can get at `size`, for choosing which way the glass grows
  * before it renders: the entries it would list, stopped at the list's own cap,
- * plus the foot and the glass's padding.
+ * plus the foot and the glass's padding. `leadWithTemplates` sizes off the blank
+ * list's own caps (KAN-276), not the ordinary list's.
  */
 export function slashMenuHeight(
   rows: readonly SlashRow[],
   size: PickerSize,
-  viewportHeight: number
+  viewportHeight: number,
+  leadWithTemplates = false,
+  yours: readonly YourTemplate[] = []
 ): number {
-  const entries = rowEntries(rows, '', size === 'mobile' ? MOBILE_ROW_CAP : undefined)
+  const cap = size === 'mobile' ? MOBILE_ROW_CAP : undefined
+  const entries = leadWithTemplates
+    ? blankRowEntries(rows, yours, '', cap)
+    : rowEntries(rows, '', cap)
   const list = entries.reduce(
     (height, e) => height + (e.kind === 'group' ? BOX_HEIGHT.group : SLASH_SIZES[size].rowHeight),
     0
@@ -183,6 +195,7 @@ export function rowEntries(
         hint: row.key,
         icon: row.icon,
         row,
+        template: row.template,
       })
     }
     return out.slice(0, cap)
@@ -203,6 +216,7 @@ export function rowEntries(
       hint: onAlias ? row.alias : row.key,
       icon: row.icon,
       row,
+      template: row.template,
     })
   }
   const out = [...byLabel, ...byAlias]
@@ -216,51 +230,129 @@ export function rowEntries(
       ]
 }
 
-/** The `templates` pane: the twelve premade shapes (#261), then the person's own. */
-export function templateEntries(
-  yours: readonly YourTemplate[] = [],
-  premadeCap: number = TEMPLATE_KINDS.length
-): SlashEntry[] {
-  const out: SlashEntry[] = [{ kind: 'group', label: 'premade' }]
-  for (const kind of TEMPLATE_KINDS.slice(0, premadeCap)) {
+/**
+ * The `templates` group for the blank-page list (KAN-276): the person's own
+ * shapes first (6f frame 2: `recipe`, `weeknight recipe` lead the board's
+ * list), then the twelve premade ones, flattened to rows `rowEntries` can
+ * thread alongside the ordinary block rows — one `group: 'templates'` for
+ * the lot.
+ */
+export function templateRows(yours: readonly YourTemplate[]): SlashRow[] {
+  const out: SlashRow[] = []
+  for (const t of yours) {
     out.push({
-      kind: 'row',
+      id: `yours:${t.id}`,
+      label: t.name,
+      group: 'templates',
+      // `key` is the row's hint at rest — names where this one came from.
+      key: 'yours',
+      icon: TPL_ICON,
+      template: { origin: 'yours', id: t.id },
+    })
+  }
+  for (const kind of TEMPLATE_KINDS) {
+    out.push({
       id: `premade:${kind}`,
       label: kind,
-      ...splitMatch(kind, ''),
+      group: 'templates',
       // The blank `page` carries the page mark; every shaped template the `tpl` mark.
       icon: kind === 'page' ? PAGE_ICON : TPL_ICON,
       template: { origin: 'premade', kind },
     })
   }
-  if (yours.length) {
-    out.push({ kind: 'group', label: 'yours' })
-    for (const t of yours) {
-      out.push({
-        kind: 'row',
-        id: `yours:${t.id}`,
-        label: t.name,
-        ...splitMatch(t.name, ''),
-        hint: t.hint,
-        icon: TPL_ICON,
-        template: { origin: 'yours', id: t.id },
-      })
-    }
+  return out
+}
+
+/** The blank-page list's scroll cue (6f frame 2) — replaces the `text` group's own label when the query is empty. */
+export const BLANK_TEXT_GROUP = 'text — scroll for blocks, templates, pages'
+
+/**
+ * The blank-page list (KAN-276): `templates` first (sibling-used ranking aside,
+ * KAN-138), then the ordinary rows as they are today. At rest the leading `text`
+ * group is relabeled with the scroll cue so the templates above don't read as
+ * the whole list.
+ */
+export function blankRowEntries(
+  rows: readonly SlashRow[],
+  yours: readonly YourTemplate[],
+  query: string,
+  cap: number = Infinity
+): SlashEntry[] {
+  if (normalizeQuery(query)) return rowEntries([...templateRows(yours), ...rows], query, cap)
+  // A query is never capped (`rowEntries` ignores `cap` once filtered), but at
+  // rest the two groups are capped on their own: the templates group to its own
+  // small mobile cap, the ordinary rows to `cap` — never the combined list, or
+  // the templates alone could eat every row and leave nothing for `text`.
+  const templates = Number.isFinite(cap)
+    ? templateRows(yours).slice(0, MOBILE_TEMPLATE_CAP)
+    : templateRows(yours)
+  const templateHead = rowEntries(templates, '')
+  const ordinary = rowEntries(rows, '', cap)
+  const firstText = ordinary.findIndex((e) => e.kind === 'group' && e.label === 'text')
+  const relabeled =
+    firstText === -1
+      ? ordinary
+      : ordinary.map((e, i) =>
+          i === firstText ? { kind: 'group' as const, label: BLANK_TEXT_GROUP } : e
+        )
+  return [...templateHead, ...relabeled]
+}
+
+/**
+ * The `templates` pane: the twelve premade shapes (#261), then the person's own —
+ * built from `templateRows`'s same id/icon/pick rules so the two panes never
+ * drift apart; only the order (premade first here) and the `yours` hint differ.
+ */
+export function templateEntries(
+  yours: readonly YourTemplate[] = [],
+  premadeCap: number = TEMPLATE_KINDS.length
+): SlashEntry[] {
+  const rows = templateRows(yours)
+  const toEntry = (row: SlashRow, hint?: string): SlashEntry => ({
+    kind: 'row',
+    id: row.id,
+    label: row.label,
+    ...splitMatch(row.label, ''),
+    hint,
+    icon: row.icon,
+    template: row.template,
+  })
+  const premade = rows
+    .filter((r) => r.template?.origin === 'premade')
+    .slice(0, premadeCap)
+    .map((r) => toEntry(r))
+  const yoursRows = rows.filter((r) => r.template?.origin === 'yours')
+  const out: SlashEntry[] = [{ kind: 'group', label: 'premade' }, ...premade]
+  if (yoursRows.length) {
+    out.push(
+      { kind: 'group', label: 'yours' },
+      ...yoursRows.map((r, i) => toEntry(r, yours[i]?.hint))
+    )
   }
   return out
 }
 
-/** The foot legend per pane and query — the board's own words. */
+/**
+ * The foot legend per pane and query — the board's own words. The blank list's
+ * rest-state foot (KAN-276, `leadWithTemplates`) draws no `esc keep as text` —
+ * 6f frame 2's empty-page foot is `↑↓ move · ↵ <verb>` only, with no `→ preview`
+ * while `onPreviewTemplate` is unwired at that call site.
+ */
 export function footItems(
   pane: SlashPane,
   query: string,
   matches: number,
-  preview: boolean
+  preview: boolean,
+  activeIsTemplate = false,
+  leadWithTemplates = false
 ): string[] {
   if (pane === 'templates')
     return preview ? ['↵ new nested page', '→ preview'] : ['↵ new nested page']
   const q = normalizeQuery(query)
-  if (!q) return ['↑↓ move', '↵ insert', 'esc keep as text']
+  if (!q) {
+    const verb = activeIsTemplate ? '↵ new nested page' : '↵ insert'
+    return leadWithTemplates ? ['↑↓ move', verb] : ['↑↓ move', verb, 'esc keep as text']
+  }
   if (matches === 0) return []
   return [`/ ${q} — ${matches} ${matches === 1 ? 'match' : 'matches'}`]
 }
