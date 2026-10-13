@@ -20,6 +20,7 @@ import { displayValue, type CollectionRow } from './apply'
 import { dueAtom } from './due'
 import { DueMark } from './due-mark'
 import { RecordCheck } from './record-check'
+import { DraftInput } from './draft-input'
 
 const VALUE_INPUT =
   'w-full border-0 bg-transparent p-0 text-[13.5px] text-mn-text outline-none placeholder:text-mn-text-secondary'
@@ -113,11 +114,11 @@ export function RecordPeek({
       <div data-part="peek-head" className="flex items-start gap-[10px] px-[8px] pb-[8px]">
         <RecordCheck done={done} label={`${title} done`} onToggle={onToggleDone} />
         {editable && onRenameRow ? (
-          <input
+          <DraftInput
             aria-label="Record title"
             value={row.title}
             placeholder="Untitled"
-            onChange={(e) => onRenameRow(row.id, e.target.value)}
+            onCommit={(title) => onRenameRow(row.id, title)}
             className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[16px] leading-[1.3] font-medium text-mn-text outline-none placeholder:text-mn-text-secondary"
           />
         ) : (
