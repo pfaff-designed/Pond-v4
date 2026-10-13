@@ -1157,8 +1157,21 @@ function BlockEditor({
     }
     // Backspace in an EMPTY text block removes it (Notion-style). Guarded so it
     // never fires while the `/` palette is open (that Backspace closes the menu,
-    // which stops propagation) — only a bare empty block deletes.
-    if (e.key === 'Backspace' && !slashMenuOpen && block.type === 'text' && block.content === '') {
+    // which stops propagation) — only a bare empty block deletes. Also guarded
+    // against a ⌘⌫/Ctrl+⌫ chord and against a key tiptap already handled: both
+    // can leave the block empty (e.g. select-all then ⌘⌫, or its key-repeat)
+    // without meaning "delete this block" (KAN-307).
+    if (
+      e.key === 'Backspace' &&
+      !slashMenuOpen &&
+      block.type === 'text' &&
+      block.content === '' &&
+      !isDeleteBlockChord(e.nativeEvent) &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.nativeEvent.defaultPrevented
+    ) {
       e.preventDefault()
       onRemoveEmpty()
     }
