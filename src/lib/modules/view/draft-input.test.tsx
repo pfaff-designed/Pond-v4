@@ -119,6 +119,22 @@ describe('DraftInput', () => {
     expect(onCommit).toHaveBeenCalledWith('typed')
   })
 
+  it('fires no onChange and reverts the draft on blur when validity.badInput is true (KAN-299)', async () => {
+    const user = userEvent.setup()
+    const onCommit = jest.fn()
+    render(<Host value="2026-10-20" onCommit={onCommit} />)
+
+    const input = screen.getByLabelText<HTMLInputElement>('draft')
+    jest.spyOn(input, 'validity', 'get').mockReturnValue({ badInput: true } as ValidityState)
+
+    await user.click(input)
+    await user.keyboard('x')
+    await user.tab()
+
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(input).toHaveValue('2026-10-20')
+  })
+
   it('does not double-commit on unmount after a blur already committed', async () => {
     const user = userEvent.setup()
     const onCommit = jest.fn()

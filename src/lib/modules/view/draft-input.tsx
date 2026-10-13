@@ -62,9 +62,16 @@ export function DraftInput({
       onFocus={() => {
         focused.current = true
       }}
-      onBlur={() => {
+      onBlur={(e) => {
         focused.current = false
-        if (!canceled.current && draftRef.current !== value) onCommit(draftRef.current)
+        // An incomplete segment (e.g. a cleared year in a date input) reports '' with
+        // validity.badInput true: commit would overwrite the stored value with null.
+        if (e.target.validity.badInput) {
+          draftRef.current = value
+          setDraft(value)
+        } else if (!canceled.current && draftRef.current !== value) {
+          onCommit(draftRef.current)
+        }
         canceled.current = false
       }}
       onKeyDown={(e) => {
