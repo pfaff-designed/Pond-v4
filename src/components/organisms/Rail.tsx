@@ -107,7 +107,7 @@ import {
 } from '@/lib/deletion/blast-radius'
 import { removeRow, restoreRow } from '@/lib/deletion/row-cache'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
-import { isStaged, priorLifeIds, unstageId } from '@/lib/deletion/staged-ids'
+import { isStaged, priorLifeIds, unstageId, isFlushDrivenCommit } from '@/lib/deletion/staged-ids'
 import { ConfirmDialog } from '@/components/molecules/ConfirmDialog'
 import { PondMolecule } from '@/components/molecules/PondMolecule'
 import { AreaMark } from '@/components/atoms/AreaMark'
@@ -1381,13 +1381,29 @@ export function Rail() {
   async function withUser<T>(
     fn: (sb: ReturnType<typeof createClient>, userId: string) => Promise<T>
   ): Promise<T | undefined> {
+    // withUser is also how a staged delete's OWN grace-timer commit runs
+    // (commitDelete -> withUser). flushStagedDeletes forces every pending
+    // deletion, not just the caller's own — so flushing here was re-entrant:
+    // delete A's commit force-committed delete B too, closing B's undo
+    // window early. The commit-first-on-other-writes behavior moves to the
+    // tree-write functions themselves (KAN-273), never to deletePage's own
+    // commit path.
     const supabase = createClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return undefined
     const result = await fn(supabase, user.id)
-    await queryClient.invalidateQueries({ queryKey: pagesKey() })
+    // A flush-driven commit (another write's commit-first flushStagedDeletes,
+    // KAN-273) runs nested inside THAT write's own withUser call. Its own
+    // invalidate would refetch before the outer write's insert/update lands,
+    // reverting the outer write's optimistic cache change. Skip it here; the
+    // outer write's own invalidate (this same function, one stack frame up)
+    // still runs once the flush has unwound. A plain timer/dismiss-driven
+    // commit (isFlushDrivenCommit() false) invalidates as before.
+    if (!isFlushDrivenCommit()) {
+      await queryClient.invalidateQueries({ queryKey: pagesKey() })
+    }
     return result
   }
 
@@ -1464,11 +1480,11 @@ export function Rail() {
             id: created.id,
             parentId,
             type: 'page',
-            title: 'Untitled',
+            title: created.title,
           },
           pondId
         )
-        navigateTo({ id: created.id, type: 'page', title: 'Untitled' })
+        navigateTo({ id: created.id, type: 'page', title: created.title })
       }
     } finally {
       setBusyId(null)

@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, NodeType } from '@/lib/supabase/types'
 import type { Block } from '@/lib/documents/types'
 import { inPond, resolvePond } from '@/lib/pond/scope'
+import { flushStagedDeletes } from '@/lib/deletion/staged-ids'
 import {
   ROW_TYPE,
   withSchema,
@@ -250,6 +251,10 @@ export async function createPage(
   userId: string,
   input: CreatePageInput
 ): Promise<PondPage> {
+  // KAN-273: commit every staged deletion first, so this read of the
+  // siblings (below, for the unique-title check) can never see a row that is
+  // mid-delete and dedupe around a name that isn't really taken.
+  await flushStagedDeletes()
   const parentId = input.parentId ?? null
   const desired = input.title ?? ''
 
@@ -351,6 +356,9 @@ export async function updateTitle(
   id: string,
   title: string
 ): Promise<void> {
+  // KAN-273: see createPage's comment — commit staged deletions before the
+  // sibling-clash pre-check reads them.
+  await flushStagedDeletes()
   const normalized = normalizeTitle(title)
   if (normalized !== '') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -429,6 +437,9 @@ export async function movePage(
   supabase: SupabaseClient<Database>,
   input: { id: string; newParentId: string | null; siblingOrder: string[] }
 ): Promise<void> {
+  // KAN-273: see createPage's comment — the caller's computed `siblingOrder`
+  // must not include a row that is mid-delete.
+  await flushStagedDeletes()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: parentErr } = await (supabase as any)
     .from('pages')

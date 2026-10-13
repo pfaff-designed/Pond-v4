@@ -333,6 +333,66 @@ describe('backstop id threading (KAN-300)', () => {
   })
 })
 
+// ── 3d. flushStagedDeletes — commit every staged deletion, any scope (KAN-273) ─
+
+function FlushStagedHarness({
+  deleteCommit,
+  otherUndo,
+}: {
+  deleteCommit: () => void
+  otherUndo: () => void
+}) {
+  const { stageDeletion, stageUndo, flushStagedDeletes } = useDeletionUndo()
+  return (
+    <>
+      <button
+        onClick={() =>
+          stageDeletion({ message: 'Deleted "X"', commit: deleteCommit, id: 'page-x' })
+        }
+      >
+        stage-delete
+      </button>
+      <button onClick={() => stageUndo({ message: 'Turned into a list', undo: otherUndo, scope: 'block' })}>
+        stage-other
+      </button>
+      <button onClick={() => void flushStagedDeletes()}>flush-staged</button>
+    </>
+  )
+}
+
+describe('flushStagedDeletes (KAN-273)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    for (const id of stagedIds()) unstageId(id)
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it('commits and closes a staged deletion, leaving an unrelated stageUndo toast alone', async () => {
+    const deleteCommit = jest.fn()
+    const otherUndo = jest.fn()
+    render(
+      <DeletionUndoProvider>
+        <FlushStagedHarness deleteCommit={deleteCommit} otherUndo={otherUndo} />
+      </DeletionUndoProvider>
+    )
+
+    fireEvent.click(screen.getByText('stage-delete'))
+    fireEvent.click(screen.getByText('stage-other'))
+    expect(screen.getByText('Deleted "X"')).toBeInTheDocument()
+    expect(screen.getByText('Turned into a list')).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('flush-staged'))
+    })
+
+    // The commit ran from the flush, not from the window elapsing.
+    expect(deleteCommit).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Deleted "X"')).not.toBeInTheDocument()
+    expect(screen.getByText('Turned into a list')).toBeInTheDocument()
+    expect(otherUndo).not.toHaveBeenCalled()
+  })
+})
+
 // ── 4. Notify bridge — accept receipts from outside the provider (Fix-1) ────
 
 describe('NotifyBridge (accept receipts, Fix-1/F12)', () => {

@@ -79,3 +79,59 @@ export function priorLifeIds(): string[] {
   ensureLoaded()
   return [...priorLife].filter((id) => staged.has(id))
 }
+
+type StagedFlusher = () => Promise<void>
+
+/** The one mounted `DeletionUndoProvider`'s commit-every-staged-deletion function (KAN-273). */
+let stagedFlusher: StagedFlusher | null = null
+
+/**
+ * Registers the function that commits every currently-staged deletion right
+ * now (`DeletionUndoProvider`, on mount). Returns an unregister function for
+ * the provider's unmount cleanup. Framework-agnostic so `lib/pages/client.ts`
+ * can call {@link flushStagedDeletes} without importing React.
+ */
+export function registerStagedFlush(fn: StagedFlusher): () => void {
+  stagedFlusher = fn
+  return () => {
+    if (stagedFlusher === fn) stagedFlusher = null
+  }
+}
+
+/**
+ * >0 while a {@link flushStagedDeletes} call (this registry's, not the
+ * provider's own dismiss/scope/unmount flushes) is in flight. A depth, not a
+ * boolean, in case a write's flush nests inside another's — settled before
+ * the outer write's own writes get a chance to overlap in this single-flow
+ * app, but cheap to make safe regardless.
+ */
+let flushDepth = 0
+
+/**
+ * True while a tree write's commit-first flush (this module's
+ * `flushStagedDeletes`) is committing a staged deletion — i.e. `commitDelete`
+ * is running NOT because its own grace window elapsed or its toast was
+ * dismissed, but because some OTHER write (create/rename/move) needed it out
+ * of the way first (KAN-273). Read by `Rail.tsx`'s `withUser` to skip that
+ * commit's OWN pages-query invalidate: a refetch at that point would land
+ * before the outer write's insert/update and revert its optimistic cache
+ * change. The outer write's own invalidate (also `withUser`, one level up)
+ * still runs once this has unwound back to 0.
+ */
+export function isFlushDrivenCommit(): boolean {
+  return flushDepth > 0
+}
+
+/**
+ * Commit every staged deletion ahead of a tree write that would otherwise
+ * read a mid-delete sibling (KAN-273) — call at the top of a page-tree write,
+ * never inside `deletePage` itself. A no-op when no provider is mounted (SSR,
+ * a test harness with no `DeletionUndoProvider`).
+ */
+export function flushStagedDeletes(): Promise<void> {
+  if (!stagedFlusher) return Promise.resolve()
+  flushDepth++
+  return Promise.resolve(stagedFlusher()).finally(() => {
+    flushDepth--
+  })
+}
