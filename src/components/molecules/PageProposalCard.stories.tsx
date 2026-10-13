@@ -67,12 +67,14 @@ export const Controls: Story = {
   },
 }
 
-/** Each field edits in place and raises its change. */
+/** Each field shows every keystroke at once, and commits on blur. */
 export const Editing: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
     await userEvent.type(canvas.getByRole('textbox', { name: 'kind' }), '!')
-    await expect(args.onKindChange).toHaveBeenCalled()
+    await expect(args.onKindChange).not.toHaveBeenCalled()
+    await userEvent.tab()
+    await expect(args.onKindChange).toHaveBeenCalledWith('page!')
     await userEvent.selectOptions(canvas.getByRole('combobox', { name: 'under' }), 'bud')
     await expect(args.onParentChange).toHaveBeenCalledWith('bud')
   },

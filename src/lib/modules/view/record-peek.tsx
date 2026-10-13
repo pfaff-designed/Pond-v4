@@ -20,7 +20,7 @@ import { displayValue, type CollectionRow } from './apply'
 import { dueAtom } from './due'
 import { DueMark } from './due-mark'
 import { RecordCheck } from './record-check'
-import { DraftInput } from './draft-input'
+import { DraftInput } from '@/components/atoms/draft-input'
 
 const VALUE_INPUT =
   'w-full border-0 bg-transparent p-0 text-[13.5px] text-mn-text outline-none placeholder:text-mn-text-secondary'

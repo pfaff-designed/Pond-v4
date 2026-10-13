@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * A text input that commits once, not per keystroke: KAN-299. While focused it holds
- * its own draft and ignores incoming `value` changes, so a write that lands mid-typing
- * (the optimistic cache write/refetch this bug was built from) never resets what the
- * person is typing. The draft commits on blur or Enter, and only if it actually
- * changed `value` — no no-op write. Escape reverts to `value` without committing.
+ * Commit-on-settle text input. The draft only diverges from an incoming `value`
+ * once the person types (`dirty`); until then it keeps tracking `value` even
+ * while focused, so a write that lands before any keystroke isn't reverted by a
+ * stale commit on blur. Once dirty, the draft holds against incoming `value`
+ * changes and commits on blur or Enter, only if it actually changed `value` —
+ * no no-op write. Escape reverts to `value` without committing.
  */
 
 import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react'
@@ -19,11 +20,15 @@ export function DraftInput({
   onCommit: (value: string) => void
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur' | 'onKeyDown'>) {
   const [draft, setDraft] = useState(value)
-  const focused = useRef(false)
   // Read at blur time, not from the render closure: Escape's blur() fires the
   // onBlur handler synchronously, before React re-renders with the reverted draft.
   const draftRef = useRef(draft)
   const canceled = useRef(false)
+  // Set only by onChange, cleared on blur/Enter/Escape. An untouched draft keeps
+  // tracking an incoming `value` even while focused, so a write that lands before
+  // the person has typed anything (KAN-290: the placement reply patching the name
+  // while the field is merely focused) isn't reverted by a stale-draft commit.
+  const dirty = useRef(false)
   // Latest value/onCommit for the unmount commit below, which runs outside any
   // render and can't close over render-time props.
   const valueRef = useRef(value)
@@ -35,7 +40,7 @@ export function DraftInput({
   })
 
   useEffect(() => {
-    if (!focused.current) {
+    if (!dirty.current) {
       setDraft(value)
       draftRef.current = value
     }
@@ -45,7 +50,7 @@ export function DraftInput({
   // away, the row removed by a refetch): commit the draft here so it isn't lost.
   useEffect(() => {
     return () => {
-      if (focused.current && !canceled.current && draftRef.current !== valueRef.current) {
+      if (dirty.current && !canceled.current && draftRef.current !== valueRef.current) {
         onCommitRef.current(draftRef.current)
       }
     }
@@ -56,23 +61,21 @@ export function DraftInput({
       {...inputProps}
       value={draft}
       onChange={(e) => {
+        dirty.current = true
         draftRef.current = e.target.value
         setDraft(e.target.value)
       }}
-      onFocus={() => {
-        focused.current = true
-      }}
       onBlur={(e) => {
-        focused.current = false
         // An incomplete segment (e.g. a cleared year in a date input) reports '' with
         // validity.badInput true: commit would overwrite the stored value with null.
         if (e.target.validity.badInput) {
           draftRef.current = value
           setDraft(value)
-        } else if (!canceled.current && draftRef.current !== value) {
+        } else if (dirty.current && !canceled.current && draftRef.current !== value) {
           onCommit(draftRef.current)
         }
         canceled.current = false
+        dirty.current = false
       }}
       onKeyDown={(e) => {
         if (e.nativeEvent.isComposing) return
@@ -80,6 +83,7 @@ export function DraftInput({
           e.currentTarget.blur()
         } else if (e.key === 'Escape') {
           canceled.current = true
+          dirty.current = false
           draftRef.current = value
           setDraft(value)
           e.currentTarget.blur()
