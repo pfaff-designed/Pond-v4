@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { AsciiPondBackground } from '@/components/molecules/AsciiPondBackground'
@@ -8,6 +8,17 @@ import { formatCoverClock, timezoneCity } from '@/lib/first-run/cover-clock'
 
 const headerLabelClass =
   'whitespace-nowrap text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text-meta'
+
+const subscribeMounted = () => () => {}
+
+/**
+ * True only once hydration has committed. The place label and the clock are
+ * read from the browser's own timezone and clock, which the server can't
+ * know — gating them behind this (rather than computing them during SSR)
+ * keeps the server's render and the client's first pass identical text, so
+ * React never logs a hydration mismatch.
+ */
+const useMounted = () => useSyncExternalStore(subscribeMounted, () => true, () => false)
 
 /**
  * The cover — `Pond 05 Shell` 5a / `Pond 06.04` 6d frame 1. Paper (or ink,
@@ -17,6 +28,7 @@ const headerLabelClass =
  * across as `?ask=` for `DocumentPanel` to pick up — never sent here.
  */
 export function Cover() {
+  const mounted = useMounted()
   const [clock, setClock] = useState(() => formatCoverClock(new Date()))
   const [text, setText] = useState('')
   const router = useRouter()
@@ -26,7 +38,7 @@ export function Cover() {
     return () => clearInterval(id)
   }, [])
 
-  const place = timezoneCity(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  const place = mounted ? timezoneCity(Intl.DateTimeFormat().resolvedOptions().timeZone) : ''
 
   const handleEnter = () => {
     const trimmed = text.trim()
@@ -51,14 +63,14 @@ export function Cover() {
             ·
           </span>
           <span className={headerLabelClass}>
-            {clock.weekday} {clock.dateLabel}
+            {mounted ? `${clock.weekday} ${clock.dateLabel}` : ''}
           </span>
-          <span className={headerLabelClass}>{clock.time}</span>
+          <span className={headerLabelClass}>{mounted ? clock.time : ''}</span>
         </div>
       </div>
 
       <div className="absolute inset-0 flex items-center justify-center px-6">
-        <div className="mn-glass flex w-full max-w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
+        <div className="mn-cover-glass flex w-full max-w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
           <input
             type="text"
             value={text}
@@ -66,7 +78,7 @@ export function Cover() {
             onKeyDown={handleFieldKeyDown}
             placeholder="ask pond"
             aria-label="ask pond"
-            className="w-full flex-1 bg-transparent font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary placeholder:text-mn-text-secondary focus:outline-none"
+            className="w-full flex-1 bg-transparent font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary caret-mn-text placeholder:text-mn-text-secondary focus:outline-none"
           />
           <span className="rounded-full bg-mn-hover-fill px-[11px] py-1.5 text-[11px] text-mn-text-meta">
             ⌘K

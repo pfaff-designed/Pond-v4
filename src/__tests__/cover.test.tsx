@@ -90,7 +90,7 @@ describe('Cover', () => {
   it('the field has no fixed width above the viewport', () => {
     render(<Cover />)
 
-    const field = screen.getByLabelText('ask pond').closest('.mn-glass')
+    const field = screen.getByLabelText('ask pond').closest('.mn-cover-glass')
     expect(field).not.toBeNull()
     expect(classesOf(field as Element)).toContain('w-full')
     expect(classesOf(field as Element)).toContain('max-w-[420px]')
