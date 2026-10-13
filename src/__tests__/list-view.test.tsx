@@ -77,7 +77,9 @@ describe('list — what is drawn', () => {
     render(
       <CollectionList viewKey="v" schema={schema.filter((d) => d.type !== 'date')} rows={rows} />
     )
-    expect(screen.getByText('no records yet')).toBeInTheDocument()
+    expect(
+      screen.getByText('nothing in this view has a date. records show here once they have one.')
+    ).toBeInTheDocument()
   })
 
   it('says so when there are no records', () => {

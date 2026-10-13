@@ -1286,7 +1286,11 @@ export const ListHead: Story = {
 export const ListNeedsADate: Story = {
   args: { ...listArgs, schema: listSchema.filter((d) => d.type !== 'date') },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByText('no records yet')).toBeInTheDocument()
+    await expect(
+      within(canvasElement).getByText(
+        'nothing in this view has a date. records show here once they have one.'
+      )
+    ).toBeInTheDocument()
   },
 }
 

@@ -10,9 +10,10 @@
  * its peek (6u.2), exactly as a board card does. The checkbox is the person's own
  * edit — it writes the record's `done` status through `onEdit`.
  *
- * No date property on the collection (KAN-292) → `LIST_EMPTY_LINE` draws in
+ * No date property on the collection (KAN-292) → `CALENDAR_EMPTY_LINE` draws in
  * `PondBlockEmpty`'s emptyBox, with the `add a date field` remedy when
- * `onAddDateField` is wired — no new line copy for the no-date case.
+ * `onAddDateField` is wired — the board's own line, true whether or not the
+ * collection already holds records (unlike `LIST_EMPTY_LINE`, which means zero rows).
  */
 
 import { useMemo, useState } from 'react'
@@ -24,6 +25,7 @@ import { RepeatMark } from './cells'
 import { dueOfRow, firstOrangeToday } from './due'
 import { DueMark } from './due-mark'
 import { groupRowsByDue } from './due-buckets'
+import { CALENDAR_EMPTY_LINE } from './kinds'
 import { RecordCheck } from './record-check'
 import { RecordPeek } from './record-peek'
 import { useDoneToggle } from './use-done-toggle'
@@ -80,7 +82,9 @@ export function CollectionList({
   )
 
   if (!grouped) {
-    return <PondBlockEmpty line={LIST_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
+    return (
+      <PondBlockEmpty line={CALENDAR_EMPTY_LINE} action="add a date field" onAction={onAddDateField} />
+    )
   }
   const { buckets } = grouped
   const repeatDef = pickRepeatDef(schema)
