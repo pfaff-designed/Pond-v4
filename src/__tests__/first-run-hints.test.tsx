@@ -49,4 +49,11 @@ describe('FirstRunHints', () => {
 
     expect(requestTerminalFocus).toHaveBeenCalledWith('a journal, one entry at a time')
   })
+
+  it('the card row wraps instead of overflowing at phone width', () => {
+    render(<FirstRunHints />)
+    const row = screen.getByRole('button', { name: /a project/ }).parentElement
+    expect(row).not.toBeNull()
+    expect((row?.getAttribute('class') ?? '').split(' ')).toContain('flex-wrap')
+  })
 })

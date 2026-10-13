@@ -62,7 +62,7 @@ export function FirstRunHints({ className }: FirstRunHintsProps) {
       <p className="m-0 max-w-[46ch] text-[15px] leading-[1.6] text-mn-text-secondary">
         {FIRST_RUN_LINE}
       </p>
-      <div className="flex gap-3 pt-1.5">
+      <div className="flex flex-wrap justify-center gap-3 pt-1.5">
         {FIRST_RUN_CARDS.map((card) => (
           <button
             key={card.title}

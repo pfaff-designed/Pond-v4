@@ -15,6 +15,8 @@ jest.mock('next/navigation', () => ({
 
 import { Cover } from '@/components/organisms/Cover'
 
+const classesOf = (el: Element) => (el.getAttribute('class') ?? '').split(' ')
+
 describe('Cover', () => {
   beforeEach(() => {
     push.mockClear()
@@ -83,5 +85,29 @@ describe('Cover', () => {
     await user.click(screen.getByRole('button', { name: 'send' }))
 
     expect(push).toHaveBeenCalledWith('/workspace?ask=plan%20a%20garden')
+  })
+
+  it('the field has no fixed width above the viewport', () => {
+    render(<Cover />)
+
+    const field = screen.getByLabelText('ask pond').closest('.mn-glass')
+    expect(field).not.toBeNull()
+    expect(classesOf(field as Element)).toContain('w-full')
+    expect(classesOf(field as Element)).toContain('max-w-[420px]')
+    expect(classesOf(field as Element)).not.toContain('w-[420px]')
+  })
+
+  it('send and enter get an expanded hit area under 44px at phone width', () => {
+    render(<Cover />)
+
+    const send = screen.getByRole('button', { name: 'send' })
+    expect(classesOf(send)).toEqual(
+      expect.arrayContaining(["max-md:before:-inset-2", "max-md:before:content-['']"])
+    )
+
+    const enter = screen.getByRole('button', { name: /enter/i })
+    expect(classesOf(enter)).toEqual(
+      expect.arrayContaining(["max-md:before:-inset-2", "max-md:before:content-['']"])
+    )
   })
 })

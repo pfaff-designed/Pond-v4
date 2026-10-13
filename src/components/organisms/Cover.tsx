@@ -57,8 +57,8 @@ export function Cover() {
         </div>
       </div>
 
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="mn-glass flex w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
+      <div className="absolute inset-0 flex items-center justify-center px-6">
+        <div className="mn-glass flex w-full max-w-[420px] items-center gap-[11px] rounded-full py-2 pl-4 pr-2 font-mono text-[12.5px] tracking-[0.02em] text-mn-text-secondary">
           <input
             type="text"
             value={text}
@@ -75,7 +75,7 @@ export function Cover() {
             type="button"
             aria-label="send"
             onClick={handleEnter}
-            className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-mn-text text-mn-surface"
+            className="relative flex h-7 w-7 flex-none items-center justify-center rounded-full bg-mn-text text-mn-surface max-md:before:absolute max-md:before:-inset-2 max-md:before:content-['']"
           >
             <svg
               width="12"
@@ -99,7 +99,7 @@ export function Cover() {
         <button
           type="button"
           onClick={handleEnter}
-          className="flex flex-none items-center gap-2 rounded-full border border-mn-text px-4 py-2 text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text"
+          className="relative flex flex-none items-center gap-2 rounded-full border border-mn-text px-4 py-2 text-[9.5px] font-medium uppercase tracking-[0.11em] text-mn-text max-md:before:absolute max-md:before:-inset-2 max-md:before:content-['']"
         >
           enter
           <svg
