@@ -51,6 +51,23 @@ export interface PageChangesPanelProps {
   className?: string
 }
 
+/**
+ * `57014` is Postgres's own SQLSTATE for `query_canceled` — raised for both a
+ * statement timeout and a lock-wait timeout, never by `advance_change_log_record`
+ * itself (that RPC raises `record-changed` on its DETAIL, not a bare SQLSTATE).
+ * It reaches here as a `PostgrestError`-shaped object, not an `Error`, which is
+ * why `err instanceof Error` missed it — same sibling check as
+ * `templates/client.ts`'s `isUniqueViolation`.
+ */
+function isLockTimeout(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '57014'
+  )
+}
+
 /** The query key for one page's log. Exported so a write path can invalidate it. */
 export function pageChangesKey(pondId: string | null, pageId: string | undefined) {
   return [...changeLogKey(), pondId, 'page', pageId] as const
@@ -121,13 +138,16 @@ export function PageChangesPanel({ pageId, className }: PageChangesPanelProps) {
         console.error('[change-log] page changes panel', err)
         // `IllegalTransitionError` carries developer text (`change log: …`) —
         // the two-tab race already has a person-facing line, same as
-        // `RecordChangedError`'s own message.
+        // `RecordChangedError`'s own message. A lock-wait timeout is bounded
+        // (~8s), not a hang, and gets a line that says so.
         setError(
           err instanceof IllegalTransitionError
             ? 'this change was already answered'
-            : err instanceof Error
-              ? err.message
-              : 'that did not work'
+            : isLockTimeout(err)
+              ? 'this page is busy — try again in a moment'
+              : err instanceof Error
+                ? err.message
+                : 'that did not work'
         )
       } finally {
         setBusyId(null)
