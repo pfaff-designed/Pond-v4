@@ -29,7 +29,7 @@
  */
 
 import React from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PostgrestError } from '@supabase/supabase-js'
@@ -40,6 +40,10 @@ import { ShellCommands } from '@/components/organisms/ShellCommands'
 import { DeletionUndoProvider } from '@/lib/deletion/useDeletionUndo'
 import type { Block } from '@/lib/documents/types'
 import type { ChangeLogRecord, ChangeLogStatus } from '@/lib/change-log/types'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import { applyProposedChanges } from '@/lib/pages/edits'
+import { createDeterministicMintId } from '@/lib/change-log/mint-id'
+import type { ModuleChange } from '@/lib/modules/ai-composition'
 import { pagesKey } from '@/lib/pages/keys'
 
 // ── Shared fakes: one page, one change log ──────────────────────────────────
@@ -445,9 +449,46 @@ function editBatch(toolCallId: string) {
   }
 }
 
+/**
+ * Seeds a `proposed` change-log record for `editBatch`'s edit, with `after`
+ * computed the same way `writeToTarget` (accept.ts) computes it — real
+ * `applyProposedChanges` against the page's CURRENT blocks — so the accept's
+ * own byte-identical check (accept.ts's `jsonEqual` gate) passes and `recordId`
+ * comes back non-null. Only then does `sessionUndo.remember` fire and ⌘Z/⇧⌘Z
+ * have a real record to walk.
+ */
+function seedEditRecord(toolCallId: string): ChangeLogRecord {
+  const changes = editBatch(toolCallId).input.changes as ModuleChange[]
+  const before = fakePage.blocks.map((b) => ({ ...b }))
+  // `edits.ts` preserves a block's own `width` unconditionally, including
+  // `undefined` (KAN-43) — a real jsonb-backed record strips that key on
+  // write, so round-trip through JSON here too, or accept.ts's byte-identical
+  // `jsonEqual` gate (which compares against the SAME round-tripped shape)
+  // never matches and `recordId` comes back null.
+  const after = JSON.parse(
+    JSON.stringify(
+      applyProposedChanges(fakePage.blocks, changes, createDeterministicMintId(toolCallId), {
+        batch: changes,
+      }).blocks
+    )
+  )
+  const record = makeRecord({
+    status: 'proposed',
+    action: 'edit',
+    actor: 'pond',
+    before,
+    after,
+    toolCallId,
+    targetPageId: fakePage.id,
+  })
+  fakeChangeLog.push(record)
+  return record
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   resetFakes()
+  sessionUndo.clear()
   mockResolutions = { changes: {}, creates: {}, skipped: {} }
   mockMessages = []
   mockStatus = 'ready'
@@ -524,5 +565,36 @@ describe('KAN-302 path test harness', () => {
 
     await waitFor(() => expect(within(card).getByText(/— Plans/)).toBeInTheDocument())
     expect(within(card).queryByText(/— Untitled/)).not.toBeInTheDocument()
+  })
+
+  // Path test part 2 (PATH_STEPS bullet 4, "card follows the chain's tip"): from
+  // an accepted card, a real ⌘Z/⇧⌘Z — the `ShellCommands` chord, the real
+  // `sessionUndo`, the real change-log fake's undo/redo RPCs — must drive the
+  // card's status, never a mocked `resolveChainStatus`.
+  it('an accepted card reads "undone" after ⌘Z and "accepted" again after ⇧⌘Z (KAN-302 item 4)', async () => {
+    const user = userEvent.setup()
+    const platform = jest
+      .spyOn(window.navigator, 'platform', 'get')
+      .mockReturnValue('MacIntel')
+    fakePage.blocks = [{ id: 'b0', type: 'text', content: 'Hello world' }]
+    seedEditRecord('pc1')
+    mockMessages = [{ id: 'm1', role: 'assistant', parts: [editBatch('pc1')] }]
+
+    renderPath()
+    await ready()
+
+    const card = screen.getByRole('group', { name: /proposed edit/ })
+    await user.click(within(card).getByRole('button', { name: 'accept' }))
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'undone'))
+    expect(within(card).getByText('undone')).toBeInTheDocument()
+
+    fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => expect(card).toHaveAttribute('data-status', 'accepted'))
+    expect(within(card).getByText('accepted')).toBeInTheDocument()
+
+    platform.mockRestore()
   })
 })
