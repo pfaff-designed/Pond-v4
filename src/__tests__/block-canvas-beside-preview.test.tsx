@@ -117,6 +117,20 @@ describe("the held block's live width preview over a beside target", () => {
     expect(sizingWidth('b-a')).toBe('100%')
   })
 
+  it("previews the TARGET row's own planned width too, not just the dragged block's", () => {
+    const a: Block = { id: 'b-a', type: 'text', content: 'a' }
+    const b: Block = { id: 'b-b', type: 'text', content: 'b' }
+    renderCanvas([a, b])
+
+    fireEvent.dragStart(blockRoot('b-a'))
+    // Full + full, room < 1/4: equal share for two is 1/2 each — before drop,
+    // the target (b-b) should already show its own planned 1/2, not full.
+    dragOver('b-a', 'b-b', rect(0, 400), 360, 50)
+
+    expect(sizingWidth('b-a')).toBe(asInlineStyle(blockWidthStyle('1/2')))
+    expect(sizingWidth('b-b')).toBe(asInlineStyle(blockWidthStyle('1/2')))
+  })
+
   it('does not preview a beside width over a row that already holds 4', () => {
     const q1: Block = { id: 'b-q1', type: 'text', content: '1', width: '1/4' }
     const q2: Block = { id: 'b-q2', type: 'text', content: '2', width: '1/4' }

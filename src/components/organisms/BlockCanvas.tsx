@@ -528,14 +528,17 @@ export function BlockCanvas({
   const [menuOpenAt, setMenuOpenAt] = useState<number | null>(null)
   useBlockLinkArrival(blocks)
 
-  // The width row's preview (6x): a page-local, transient width for whichever
-  // block's menu is open — never written to `blocks`. Cleared at every site
-  // that moves `menuOpenAt` (Esc and any other menu-close path all route
-  // through `onOpenChange` to `handleMenuOpenChange` below), so a stale
-  // preview can never survive the menu it came from.
-  const [previewWidth, setPreviewWidth] = useState<{ blockId: string; width: BlockWidth } | null>(
-    null
-  )
+  // The width row's preview (6x): page-local, transient widths that never
+  // write to `blocks`. The width row sets one entry (whichever block's menu
+  // is open); a beside drag-over sets one entry per block `planBesideDrop`
+  // changes, so a target row already shows the width it will take before the
+  // drop lands, not just the dragged block's own. Cleared at every site that
+  // moves `menuOpenAt` (Esc and any other menu-close path all route through
+  // `onOpenChange` to `handleMenuOpenChange` below) and at every drag exit, so
+  // a stale preview can never survive the menu or drag it came from.
+  const [previewWidth, setPreviewWidth] = useState<
+    { blockId: string; width: BlockWidth }[] | null
+  >(null)
 
   // 6f frame 3: the template under preview, as flat outlines over the blank
   // page — transient, never in `blocks`, the store or the change log.
@@ -1188,9 +1191,10 @@ export function BlockCanvas({
   const blocksForLayout = useMemo(
     () =>
       previewWidth
-        ? blocks.map((b) =>
-            b.id === previewWidth.blockId ? { ...b, width: previewWidth.width } : b
-          )
+        ? blocks.map((b) => {
+            const preview = previewWidth.find((p) => p.blockId === b.id)
+            return preview ? { ...b, width: preview.width } : b
+          })
         : blocks,
     [blocks, previewWidth]
   )
@@ -1303,7 +1307,7 @@ export function BlockCanvas({
                     size={slashSize}
                     onSelect={(width) => handleMenuSelect(i, { type: 'set-width', width })}
                     onPreview={(width) =>
-                      setPreviewWidth(width === null ? null : { blockId: block.id, width })
+                      setPreviewWidth(width === null ? null : [{ blockId: block.id, width }])
                     }
                   />
                 ),
@@ -1332,7 +1336,6 @@ export function BlockCanvas({
           const rect = e.currentTarget.getBoundingClientRect()
           const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
           if (zone === 'left' || zone === 'right') {
-            const dragged = blocks[draggingIndex]
             const planned = planBesideDrop(blocks, draggingIndex, blocks[i].id, zone)
             // `null`: the row already holds 4, or the widths this drop would
             // set let `layoutRows` repack the planned row apart — no beside
@@ -1343,8 +1346,21 @@ export function BlockCanvas({
               return
             }
             setDropIndicator({ index: i, zone })
-            const draggedNext = planned.find((b) => b.id === dragged.id)
-            setPreviewWidth({ blockId: dragged.id, width: draggedNext?.width ?? 'full' })
+            // Every block `planned` sets a new width for previews live, not
+            // just the dragged block — so the target row already shows the
+            // width it will take while hovering, before the drop lands.
+            const changed = planned.reduce<{ blockId: string; width: BlockWidth }[]>(
+              (acc, next) => {
+                const current = blocks.find((b) => b.id === next.id)
+                const nextWidth = next.width ?? 'full'
+                if ((current?.width ?? 'full') !== nextWidth) {
+                  acc.push({ blockId: next.id, width: nextWidth })
+                }
+                return acc
+              },
+              []
+            )
+            setPreviewWidth(changed)
             return
           }
           setPreviewWidth(null)
