@@ -4,13 +4,15 @@
  */
 
 import type { Block } from '@/lib/documents/types'
+import type { ChangePreview } from '@/lib/modules/preview'
 import { blockLabel } from '@/lib/modules/types'
 import { descriptorFor, resolveDescriptor } from '@/lib/modules/registry'
 import { CHANGE_LOG_NODE_ID, pageLabel } from './log-page'
 import { clockTime, describeChange, formatClockTime } from './page-changes'
+import { buildDiffRows } from './proposed-view'
 import { readBlockSnapshot } from './revert-plan'
 import { labelForStatus } from './status'
-import type { ChangeLogRecord } from './types'
+import { BLOCK_ACTIONS, type ChangeLogRecord } from './types'
 
 /** The search param naming which record the change log page's route opens. */
 export const RECORD_PARAM = 'record'
@@ -120,4 +122,15 @@ export function pageBlockField(
     blocks.find((b) => b.id === record.targetBlockId)
   if (block === undefined) return { page, block: null }
   return { page, block: blockLabel(block) ?? (descriptorFor(block.type)?.label ?? block.type) }
+}
+
+/** The "before → after" card's rows — only for a {@link BLOCK_ACTIONS} record
+ *  (`edit`/`revert`), whose snapshots are block arrays. `null` for every
+ *  other action (a collection tool's snapshot is a `RowSnapshot`, not a block
+ *  array); the component falls back to one plain-text line there. Reuses
+ *  `buildDiffRows` verbatim — the same zip-by-id the `proposed` view's cards
+ *  already use, never a second diffing path. */
+export function recordDiffRows(record: ChangeLogRecord): ChangePreview[] | null {
+  if (!BLOCK_ACTIONS.includes(record.action)) return null
+  return buildDiffRows(readBlockSnapshot(record.before) ?? [], readBlockSnapshot(record.after) ?? [])
 }

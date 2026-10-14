@@ -13,6 +13,7 @@ import {
   proposedByField,
   readChipsOf,
   RECORD_PARAM,
+  recordDiffRows,
   recordTitle,
   revertedByField,
   statusField,
@@ -182,5 +183,31 @@ describe('pageBlockField', () => {
       after: null,
     })
     expect(pageBlockField(r, pageTitleById).block).toBeNull()
+  })
+})
+
+describe('recordDiffRows', () => {
+  it('builds before/after rows for an edit record', () => {
+    const r = record({
+      action: 'edit',
+      before: [{ id: 'a', type: 'text', content: 'ONE' }],
+      after: [{ id: 'a', type: 'text', content: 'TWO' }],
+    })
+    expect(recordDiffRows(r)).toEqual([
+      {
+        op: 'edit',
+        before: { id: 'a', type: 'text', content: 'ONE' },
+        after: { id: 'a', type: 'text', content: 'TWO' },
+      },
+    ])
+  })
+
+  it('returns null for a non-block record', () => {
+    const r = record({
+      action: 'add_row',
+      before: null,
+      after: { id: 'row-1', title: 'chickpeas', values: {}, shown: {} },
+    })
+    expect(recordDiffRows(r)).toBeNull()
   })
 })
