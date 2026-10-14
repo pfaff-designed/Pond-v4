@@ -74,10 +74,11 @@ async function findRevisionRoot(
 const RECORD_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
 
 /** s6o3's "this change" column rows — 40px/1fr grid, 10px gap, 7px/8px
- *  padding, 8px radius; the viewed record's own rows get the standard ink
- *  wash fill (the same token every other "currently selected" row in the
- *  product uses, not a one-off colour). */
-const TIMELINE_ROW_CLASS = 'grid grid-cols-[40px_minmax(0,1fr)] gap-2.5 rounded-lg px-2 py-[7px]'
+ *  padding, 8px radius (`rounded-lg` is 10px here — `--radius` — so this
+ *  needs the literal value); the viewed record's own LATEST row gets the
+ *  standard ink wash fill (the same token every other "currently selected"
+ *  row in the product uses, not a one-off colour). */
+const TIMELINE_ROW_CLASS = 'grid grid-cols-[40px_minmax(0,1fr)] gap-2.5 rounded-[8px] px-2 py-[7px]'
 
 /** The fields grid's label/value row — 130px/1fr, 12px gap, 32px min-height;
  *  label 10.5px/.68/uppercase, value 13.5px (s6o3). */

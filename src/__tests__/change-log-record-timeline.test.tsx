@@ -130,10 +130,15 @@ describe('ChangeLogRecordPage — this change column', () => {
     expect(within(rows[2]).getByText('revised')).toBeInTheDocument()
     expect(within(rows[3]).getByText('accepted')).toBeInTheDocument()
 
+    // Board s6o3: exactly ONE row is highlighted — the viewed record's own
+    // LATEST transition ("accepted"), not every transition the viewed
+    // record ever went through (its earlier "revised" row stays plain).
     expect(rows[0]).not.toHaveClass('bg-mn-hover-fill')
     expect(rows[1]).not.toHaveClass('bg-mn-hover-fill')
-    expect(rows[2]).toHaveClass('bg-mn-hover-fill')
+    expect(rows[2]).not.toHaveClass('bg-mn-hover-fill')
     expect(rows[3]).toHaveClass('bg-mn-hover-fill')
+
+    rows.forEach((row) => expect(row).toHaveClass('rounded-[8px]'))
 
     expect(mockListRevisionsOf).toHaveBeenCalledWith(
       expect.anything(),

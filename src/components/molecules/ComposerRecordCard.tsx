@@ -64,16 +64,20 @@ export function ComposerRecordCard({
   const pageTitle = pageLabel(record, new Map(page ? [[page.id, page.title]] : []))
 
   return (
-    <div
-      data-testid="composer-record-card"
-      className="flex flex-col gap-3 rounded-mn-card bg-mn-card px-[10px] py-3 font-mono shadow-mn-card"
-    >
+    // s6o4 f4: this card sits ON the composer's own glass (`TerminalDrawer`'s
+    // `mn-glass`) — it carries no paper or shadow of its own, only the outer
+    // 14px padding / 12px gap the board draws around the head, diff and
+    // buttons. The diff is its own paper box below.
+    <div data-testid="composer-record-card" className="flex flex-col gap-3 p-3.5 font-mono">
       <div className="flex items-baseline gap-2 text-[11px] text-mn-text">
         <span>{`proposed edit — ${pageTitle}`}</span>
         <div className="flex-1" />
         <span className="text-mn-text-secondary">{describeChange(record, original ?? null)}</span>
       </div>
-      <div className="flex flex-col gap-[3px]">
+      <div
+        data-testid="composer-record-card-diff"
+        className="flex flex-col gap-[3px] rounded-mn-card bg-mn-card p-[10px] shadow-mn-card"
+      >
         {diffRows?.map((row) => (
           <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
         ))}

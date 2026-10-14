@@ -386,7 +386,7 @@ describe('buildChangeTimeline', () => {
         time: formatClockTime('2026-09-30T09:20:00.000Z'),
         event: 'revised',
         detail: describeChange(revision, null),
-        highlighted: true,
+        highlighted: false,
       },
       {
         time: formatClockTime('2026-09-30T09:31:00.000Z'),
@@ -427,9 +427,9 @@ describe('buildChangeTimeline', () => {
       formatClockTime('2026-09-30T10:02:00.000Z'),
       formatClockTime('2026-09-30T10:05:00.000Z'),
     ])
-    // The revert's own "reverted" row is not the viewed record (rec-1) — only
-    // rec-1's own rows (the first two) highlight.
-    expect(rows.map((r) => r.highlighted)).toEqual([true, true, false, false])
+    // Only ONE row highlights — rec-1's own LATEST transition ("accepted").
+    // The revert's own rows are a different record and never highlight here.
+    expect(rows.map((r) => r.highlighted)).toEqual([false, true, false, false])
   })
 
   it('renders a single record with no revision as its own proposed/accepted rows', () => {
@@ -447,7 +447,7 @@ describe('buildChangeTimeline', () => {
         time: formatClockTime('2026-09-30T09:20:00.000Z'),
         event: 'proposed',
         detail: describeChange(r, null),
-        highlighted: true,
+        highlighted: false,
       },
       {
         time: formatClockTime('2026-09-30T09:31:00.000Z'),

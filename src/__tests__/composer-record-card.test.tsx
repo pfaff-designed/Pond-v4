@@ -203,4 +203,23 @@ describe('AITerminal — the raised revert card (KAN-152, s6o4 f4)', () => {
     })
     await waitFor(() => expect(screen.queryByTestId('composer-record-card')).not.toBeInTheDocument())
   })
+
+  it('carries no paper of its own — only the diff is its own paper box (s6o4 f4)', async () => {
+    renderTerminal()
+
+    act(() => {
+      raiseRecordCard('rec-revert')
+    })
+    const card = await screen.findByTestId('composer-record-card')
+
+    // The card sits on the composer's own glass: 14px padding, 12px gap,
+    // no background/shadow of its own.
+    expect(card).toHaveClass('p-3.5', 'gap-3')
+    expect(card).not.toHaveClass('bg-mn-card', 'shadow-mn-card', 'rounded-mn-card')
+
+    // The diff is its own paper box: 10px padding, 20px radius, the
+    // two-part shadow, 3px gap.
+    const diff = within(card).getByTestId('composer-record-card-diff')
+    expect(diff).toHaveClass('p-[10px]', 'gap-[3px]', 'bg-mn-card', 'shadow-mn-card', 'rounded-mn-card')
+  })
 })

@@ -270,30 +270,30 @@ export function buildChangeTimeline(
   viewingId: string,
   reverts: ChangeLogRecord[] = []
 ): ChangeTimelineRow[] {
-  const rows = [...chain, ...reverts].flatMap((record) =>
-    record.transitions
-      .filter((transition) => transition.status !== 'reverted')
-      .map((transition, index) => {
-        const isRevision =
-          index === 0 && transition.status === 'proposed' && record.links.revisedFrom !== undefined
-        const isRevert =
-          index === 0 && transition.status === 'proposed' && record.links.revertOf !== undefined
-        const event = isRevision
-          ? 'revised'
-          : isRevert
-            ? 'reverted'
-            : labelForStatus(transition.status)
-        return {
-          at: transition.at,
-          row: {
-            time: formatClockTime(transition.at),
-            event,
-            detail:
-              transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
-            highlighted: record.id === viewingId,
-          },
-        }
-      })
-  )
+  const rows = [...chain, ...reverts].flatMap((record) => {
+    const transitions = record.transitions.filter((transition) => transition.status !== 'reverted')
+    return transitions.map((transition, index) => {
+      const isRevision =
+        index === 0 && transition.status === 'proposed' && record.links.revisedFrom !== undefined
+      const isRevert =
+        index === 0 && transition.status === 'proposed' && record.links.revertOf !== undefined
+      const event = isRevision
+        ? 'revised'
+        : isRevert
+          ? 'reverted'
+          : labelForStatus(transition.status)
+      return {
+        at: transition.at,
+        row: {
+          time: formatClockTime(transition.at),
+          event,
+          detail: transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
+          // The board highlights exactly ONE row — the viewed record's own
+          // LATEST transition, not every transition it ever went through.
+          highlighted: record.id === viewingId && index === transitions.length - 1,
+        },
+      }
+    })
+  })
   return rows.sort((a, b) => a.at.localeCompare(b.at)).map(({ row }) => row)
 }
