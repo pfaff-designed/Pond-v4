@@ -10,7 +10,7 @@
  * and a page-title lookup it already resolved. No Supabase, no React.
  */
 
-import { describeChange } from './page-changes'
+import { describeChange, formatClockTime } from './page-changes'
 import { WAITING_STATUSES } from './status'
 import type { ChangeLogRecord, ChangeLogStatus } from './types'
 
@@ -52,12 +52,13 @@ export interface LogDayGroup {
 
 const DAY_MS = 86_400_000
 
-const startOfDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+const startOfDay = (d: Date): number =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
 /** `today` / `yesterday` / else a short date (`Sep 5`) — matching the register
  *  `RollupValue`'s date cells already use, not a new one. Local calendar days,
  *  so the boundary falls at the person's own midnight. */
-function dayHeaderLabel(iso: string, now: Date): string {
+export function dayHeaderLabel(iso: string, now: Date): string {
   const created = new Date(iso)
   const diffDays = Math.round((startOfDay(now) - startOfDay(created)) / DAY_MS)
   if (diffDays === 0) return 'today'
@@ -65,9 +66,20 @@ function dayHeaderLabel(iso: string, now: Date): string {
   return created.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** `09:24` today, `yesterday 17:05` / `Sep 5 17:05` otherwise — for a surface
+ *  that names one moment inline (the proposed view's card) rather than
+ *  grouping rows under a day header the way `buildLogRows` does. */
+export function dayTimeLabel(iso: string, now: Date = new Date()): string {
+  const day = dayHeaderLabel(iso, now)
+  const time = formatClockTime(iso)
+  return day === 'today' ? time : `${day} ${time}`
+}
+
 /** The "page" column: the title of `targetPageId`, `memory` for a memory note
- *  with no page, or `deleted page` once the target no longer resolves. */
-function pageLabel(record: ChangeLogRecord, pageTitleById: Map<string, string>): string {
+ *  with no page, or `deleted page` once the target no longer resolves. Also
+ *  the proposed view's own card head's page name (`proposed-view.ts`) — one
+ *  label path for both. */
+export function pageLabel(record: ChangeLogRecord, pageTitleById: Map<string, string>): string {
   if (record.targetPageId === null) {
     return record.action === 'memory_note' ? 'memory' : 'deleted page'
   }

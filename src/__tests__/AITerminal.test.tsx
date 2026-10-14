@@ -20,9 +20,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // ── Module mocks — must be defined before imports ─────────────────────────
 
+// Prefixed `mock` so babel-plugin-jest-hoist allows the factory below to
+// close over it — overridden per-test to put the ambient nodeId on the
+// change log page itself (KAN-96's "request changes from the proposed view").
+let mockAmbientNodeId: string | null = null
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  useSearchParams: () => ({ get: jest.fn().mockReturnValue(null) }),
+  useSearchParams: () => ({
+    get: jest.fn((key: string) => (key === 'nodeId' ? mockAmbientNodeId : null)),
+  }),
 }))
 
 jest.mock('@/lib/supabase/client', () => ({
@@ -69,10 +76,12 @@ jest.mock('@ai-sdk/react', () => ({
 import { AITerminal } from '@/components/organisms/AITerminal'
 import { listPages } from '@/lib/pages/client'
 import {
+  requestChanges,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
 } from '@/lib/terminal-focus'
+import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 
 const mockListPages = listPages as jest.Mock
 
@@ -116,6 +125,7 @@ const smallHtmlFile = () =>
 
 beforeEach(() => {
   mockSendMessage.mockClear()
+  mockAmbientNodeId = null
 })
 
 describe('AITerminal — html import path (KAN-251)', () => {
@@ -932,5 +942,43 @@ describe('AITerminal — the @ mention picker opens, narrows and closes (KAN-99)
     const unrelatedIndex = options.findIndex((t) => t?.includes('kitchen renovation'))
     expect(recentIndex).toBeGreaterThanOrEqual(0)
     expect(recentIndex).toBeLessThan(unrelatedIndex)
+describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-96)', () => {
+  it('a request made while still loading is sent once, once ready', async () => {
+    renderTerminal()
+
+    act(() => {
+      requestChanges({ toolCallId: 'tc-1', note: 'please fix the heading', reason: 'note' })
+    })
+    expect(mockSendMessage).not.toHaveBeenCalled()
+
+    await waitReady()
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'please fix the heading' }),
+      expect.anything()
+    )
+  })
+
+  it('a view-originated request names the record\'s page, not the change log', async () => {
+    mockAmbientNodeId = CHANGE_LOG_NODE_ID
+    renderTerminal()
+    await waitReady()
+
+    act(() => {
+      requestChanges({
+        toolCallId: 'tc-2',
+        note: 'please fix the heading',
+        reason: 'note',
+        targetPageId: 'page-77',
+      })
+    })
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.objectContaining({ nodeId: 'page-77', nodeType: 'page' }),
+      })
+    )
   })
 })

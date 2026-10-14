@@ -7,9 +7,12 @@ import {
   COMPOSER_NOTICE_EVENT,
   FOCUS_TERMINAL_EVENT,
   HTML_IMPORT_PICKER_EVENT,
+  REQUEST_CHANGES_EVENT,
   TOGGLE_COMPOSER_EVENT,
   type ComposerNoticeDetail,
+  type RequestChangesDetail,
   isComposerToggleKey,
+  requestChanges,
   requestComposerNotice,
   requestComposerToggle,
   requestHtmlImportPicker,
@@ -52,6 +55,22 @@ describe('the composer notice bridge (KAN-93)', () => {
       "can't undo — the page changed since. revert it from the change log."
     )
     window.removeEventListener(COMPOSER_NOTICE_EVENT, listener)
+  })
+})
+
+describe('request changes with no mounted thread (KAN-96)', () => {
+  it('requestChanges dispatches the event with the toolCallId, note and reason', () => {
+    const listener = jest.fn()
+    window.addEventListener(REQUEST_CHANGES_EVENT, listener)
+    requestChanges({ toolCallId: 'call-1', note: 'please fix the date', reason: 'note' })
+    expect(listener).toHaveBeenCalledTimes(1)
+    const event = listener.mock.calls[0][0] as CustomEvent<RequestChangesDetail>
+    expect(event.detail).toEqual({
+      toolCallId: 'call-1',
+      note: 'please fix the date',
+      reason: 'note',
+    })
+    window.removeEventListener(REQUEST_CHANGES_EVENT, listener)
   })
 })
 

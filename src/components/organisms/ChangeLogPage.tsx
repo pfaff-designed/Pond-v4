@@ -8,7 +8,7 @@
  * Renders in `DocumentPanel` in place of the virtual-node stub.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -18,10 +18,21 @@ import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogRows } from '@/lib/change-log/log-page'
 import { clockTime } from '@/lib/change-log/page-changes'
-import { labelForStatus } from '@/lib/change-log/status'
+import { canAccept, labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
 import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-view'
+import { buildProposedCards } from '@/lib/change-log/proposed-view'
+import {
+  acceptRecordFromLog,
+  canAcceptAction,
+  rejectRecordFromLog,
+  REVISE_NOTE,
+} from '@/lib/change-log/answer'
+import { sessionUndo } from '@/lib/change-log/session-undo'
+import type { ChangeLogRecord } from '@/lib/change-log/types'
+import { ChangeRows, NoteBox } from '@/components/molecules/diff-card-parts'
 import { existingPageIds, restorePage } from '@/lib/change-log/trash'
 import { personFacingMessage } from '@/lib/change-log/errors'
+import { requestChanges, type RequestChangesDetail } from '@/lib/terminal-focus'
 import { PondControl } from '@/components/atoms/PondControl'
 import { listPages } from '@/lib/pages/client'
 import { pagesKey } from '@/lib/pages/keys'
@@ -47,6 +58,12 @@ function changeLogDeletedKey(pondId: string | null) {
   return [...changeLogKey(), pondId, 'deleted'] as const
 }
 
+/** The proposed view's own records (KAN-96, s6o2), pond-scoped, under the
+ *  shared change-log root. */
+export function changeLogProposedKey(pondId: string | null) {
+  return [...changeLogKey(), pondId, 'proposed'] as const
+}
+
 /** s6o1's content column (840px, left of the 1180px frame after the rail). */
 const CHANGE_LOG_COLUMN_PX = 840
 
@@ -55,14 +72,24 @@ const CHANGE_LOG_COLUMN_PX = 840
  *  so the content box itself would land at 636px without adding it back. */
 const DELETED_VIEW_COLUMN_PX = 700 + 2 * PAGE_COLUMN_PAD_PX
 
-/**
- * s6o1's view bar. "all" and "deleted" (KAN-97, s6o6) are built; the rest are
- * drawn per the board but stay inert (PROJECT_RULES "nothing locked in":
- * visible-but-inert over hidden, since no view beyond those two exists yet).
- */
-const INERT_VIEWS = ['proposed', 'by page', 'memory'] as const
+/** s6o2's content column is 640px wide (same `maxWidth` reasoning as
+ *  `DELETED_VIEW_COLUMN_PX` above). */
+const PROPOSED_VIEW_COLUMN_PX = 640 + 2 * PAGE_COLUMN_PAD_PX
 
-type ChangeLogView = 'all' | 'deleted'
+/**
+ * s6o1's view bar. "all", "proposed" (KAN-96, s6o2) and "deleted" (KAN-97,
+ * s6o6) are built; the rest are drawn per the board but stay inert
+ * (PROJECT_RULES "nothing locked in": visible-but-inert over hidden, since no
+ * view beyond those three exists yet).
+ */
+const INERT_VIEWS = ['by page', 'memory'] as const
+
+type ChangeLogView = 'all' | 'proposed' | 'deleted'
+
+/** s6o2's own chip: "status is proposed" · "newest first" — an inset hairline
+ *  pill, ink .8, no fill (distinct from the filled `chipBaseClass` family). */
+const PROPOSED_CHIP_CLASS =
+  'rounded-full px-2 py-0.5 font-mono text-[10.5px] text-mn-text-meta ring-1 ring-inset ring-mn-text/20'
 
 /** `restore_page` (0027) falls back to the pond root when the original parent
  *  is itself trashed or gone — PATH_STEPS 6's "say so". */
@@ -151,7 +178,11 @@ export function ChangeLogPage() {
   const queryClient = useQueryClient()
   const [view, setView] = useState<ChangeLogView>('all')
   const { column } = useSurfaceColumn(
-    view === 'deleted' ? DELETED_VIEW_COLUMN_PX : CHANGE_LOG_COLUMN_PX
+    view === 'deleted'
+      ? DELETED_VIEW_COLUMN_PX
+      : view === 'proposed'
+        ? PROPOSED_VIEW_COLUMN_PX
+        : CHANGE_LOG_COLUMN_PX
   )
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
@@ -214,6 +245,147 @@ export function ChangeLogPage() {
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
   const groups = useMemo(() => buildLogRows(records, pageTitleById), [records, pageTitleById])
+
+  // s6o2: every record still waiting on a decision (`proposed` or
+  // `outdated`), newest first — refetched on each switch, same reasoning as
+  // the deleted view's own `staleTime: 0` above.
+  const { data: proposedRecords = [], isLoading: proposedLoading } = useQuery({
+    queryKey: changeLogProposedKey(pondId),
+    enabled: view === 'proposed',
+    staleTime: 0,
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return []
+      return listRecords(supabase, { userId: user.id, pondId, status: [...WAITING_STATUSES] })
+    },
+  })
+  const proposedCards = useMemo(
+    () => buildProposedCards(proposedRecords, pageTitleById),
+    [proposedRecords, pageTitleById]
+  )
+
+  const [answerError, setAnswerError] = useState<string | null>(null)
+
+  // Refetches every change-log view (the lead figure, 'all', PageChangesPanel,
+  // this view's own proposed list) and the rail/⌘K page list — the same
+  // `changeLogKey()` root + `pagesKey` pair the restore path invalidates below,
+  // not just this view's own proposed query, since an answer here can settle a
+  // record the "all" table or a page's own changes panel is also showing.
+  const invalidateAfterAnswer = useCallback(
+    async (targetPageId: string | null) => {
+      queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+      if (targetPageId !== null) {
+        await queryClient.invalidateQueries({ queryKey: ['page', targetPageId] })
+      }
+    },
+    [queryClient, pondId]
+  )
+
+  const acceptMutation = useMutation({
+    mutationFn: async (record: ChangeLogRecord) => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return { refused: true, reason: 'not signed in' } as const
+      return acceptRecordFromLog(supabase, { userId: user.id, pondId, record })
+    },
+    onSuccess: async (outcome, record) => {
+      if (outcome.refused) {
+        setAnswerError(outcome.reason)
+        return
+      }
+      setAnswerError(null)
+      // Mirrors AITerminal's own accept: only a step the write actually
+      // reported undoable goes on the stack.
+      if (pondId && outcome.undoRecordId) {
+        sessionUndo.remember({ pondId, recordIds: [outcome.undoRecordId] })
+      }
+      await invalidateAfterAnswer(record.targetPageId)
+    },
+    onError: (err) => setAnswerError(personFacingMessage(err)),
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: (record: ChangeLogRecord) => rejectRecordFromLog(getSupabase(), record),
+    onSuccess: async (_record, record) => {
+      setAnswerError(null)
+      await invalidateAfterAnswer(record.targetPageId)
+    },
+    onError: (err) => setAnswerError(personFacingMessage(err)),
+  })
+
+  // G9: a ref, not state — the second click of a double-click can land before
+  // a state update guarding on a render would have committed.
+  const answeringRef = useRef<Set<string>>(new Set())
+
+  const handleAccept = useCallback(
+    (record: ChangeLogRecord) => {
+      if (answeringRef.current.has(record.id)) return
+      answeringRef.current.add(record.id)
+      acceptMutation.mutate(record, {
+        onSettled: () => answeringRef.current.delete(record.id),
+      })
+    },
+    [acceptMutation]
+  )
+
+  const handleReject = useCallback(
+    (record: ChangeLogRecord) => {
+      if (answeringRef.current.has(record.id)) return
+      answeringRef.current.add(record.id)
+      rejectMutation.mutate(record, {
+        onSettled: () => answeringRef.current.delete(record.id),
+      })
+    },
+    [rejectMutation]
+  )
+
+  const answeringRecordId =
+    (acceptMutation.isPending ? acceptMutation.variables?.id : null) ??
+    (rejectMutation.isPending ? rejectMutation.variables?.id : null) ??
+    null
+
+  // G9: the note box's send dispatches REQUEST_CHANGES_EVENT fire-and-forget
+  // — synchronous, with nothing to await — so two clicks landing in the same
+  // tick would otherwise fire the event twice. A microtask-deferred release
+  // is enough here because `onSend` closes the note box synchronously first,
+  // so a second REAL click has nothing left to land on.
+  const handleRequestChanges = useCallback((recordId: string, detail: RequestChangesDetail) => {
+    if (answeringRef.current.has(recordId)) return
+    answeringRef.current.add(recordId)
+    requestChanges(detail)
+    queueMicrotask(() => answeringRef.current.delete(recordId))
+  }, [])
+
+  // G9: revise's button, unlike the note box's send, stays mounted and
+  // enabled after a click, so a microtask-released guard misses a REAL
+  // double-click — two separate browser tasks, with a React re-render
+  // between them, drain the microtask queue before the second task starts.
+  // Held in state instead, so the button itself goes `disabled` for the
+  // card's remaining lifetime (it leaves 'outdated' only via a refetch this
+  // view doesn't drive on its own — see the note above `requestingNoteFor`
+  // — at which point the card, and this id's only reader, unmounts).
+  const [revisedRecordIds, setRevisedRecordIds] = useState<Set<string>>(new Set())
+
+  const handleRevise = useCallback(
+    (recordId: string, detail: RequestChangesDetail) => {
+      if (revisedRecordIds.has(recordId)) return
+      setRevisedRecordIds((prev) => new Set(prev).add(recordId))
+      requestChanges(detail)
+    },
+    [revisedRecordIds]
+  )
+
+  // The open note box's record, at most one at a time — "request changes"
+  // dispatches REQUEST_CHANGES_EVENT through AITerminal (no thread mounted
+  // here), which settles the record to `changes_requested` on its own; this
+  // view finds out on its next refetch, same as a reject leaving the view.
+  const [requestingNoteFor, setRequestingNoteFor] = useState<string | null>(null)
 
   // s6o6: every delete/restore record, pond-wide — not the "all" view's paged
   // slice, since a trashing from months back must still show up here. Read
@@ -295,7 +467,11 @@ export function ChangeLogPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div {...column} data-testid="change-log-column" className={`${column.className} flex flex-col gap-4`}>
+      <div
+        {...column}
+        data-testid="change-log-column"
+        className={`${column.className} flex flex-col gap-4`}
+      >
         <span className="font-serif text-[50px] leading-none font-extralight tracking-[-0.01em] text-mn-text">
           change log
         </span>
@@ -332,6 +508,18 @@ export function ChangeLogPage() {
             }
           >
             all
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'proposed'}
+            onClick={() => setView('proposed')}
+            className={
+              view === 'proposed'
+                ? 'rounded-full bg-mn-hover-fill px-[11px] py-[5px] font-medium text-mn-text'
+                : 'rounded-full px-[11px] py-[5px] text-mn-text-secondary'
+            }
+          >
+            proposed
           </button>
           {INERT_VIEWS.map((inertView) => (
             <span
@@ -430,6 +618,144 @@ export function ChangeLogPage() {
               </>
             )}
           </div>
+        ) : view === 'proposed' ? (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              <span className={PROPOSED_CHIP_CLASS}>status is proposed</span>
+              <span className={PROPOSED_CHIP_CLASS}>newest first</span>
+            </div>
+            {answerError && (
+              <p role="alert" className="font-mono text-[12.5px] text-mn-text-secondary">
+                {answerError}
+              </p>
+            )}
+            {proposedLoading ? null : proposedCards.length === 0 ? (
+              <p
+                data-testid="change-log-proposed-empty"
+                className="font-mono text-[12.5px] text-mn-text-secondary"
+              >
+                nothing waiting
+              </p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {proposedCards.map((card) => {
+                  // Narrowed once per card: `toolCallId !== null` guards below
+                  // keep the narrowed `string` through every closure that
+                  // reads it, so none of them needs an `as string` cast.
+                  const toolCallId = card.record.toolCallId
+                  return (
+                    <div
+                      key={card.record.id}
+                      data-testid={`change-log-proposed-card-${card.record.id}`}
+                      className="flex flex-col gap-[10px] rounded-mn-card bg-mn-card px-4 py-3.5 font-mono shadow-mn-card"
+                    >
+                      <div className="flex items-baseline gap-[8px]">
+                        <span className="text-[11px] text-mn-text">{card.pageName}</span>
+                        {card.statusPill !== null && (
+                          <span
+                            data-testid={`change-log-proposed-pill-${card.record.id}`}
+                            className="rounded-full px-[7px] py-[1px] text-[11px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                          >
+                            {card.statusPill}
+                          </span>
+                        )}
+                        <span className="ml-auto text-[11px] text-mn-text-secondary">
+                          {card.actorTime}
+                        </span>
+                      </div>
+                      {card.diffRows.length > 0 && (
+                        <div className="flex flex-col gap-[3px]">
+                          {card.diffRows.map((row) => (
+                            <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
+                          ))}
+                        </div>
+                      )}
+                      {card.reasonLine !== null && (
+                        <span
+                          data-testid={`change-log-proposed-reason-${card.record.id}`}
+                          className="rounded-[10px] bg-mn-text/[0.04] px-[10px] py-2 font-mono text-[10.5px] text-mn-text-meta"
+                        >
+                          {card.reasonLine}
+                        </span>
+                      )}
+                      {/* `canAccept` (open) × `canAcceptAction` (this action has a
+                        write adapter) — crossed, not the old binary "accept or
+                        revise": an open record whose action `answer.ts` can't
+                        write (KAN-313) gets neither, only request changes +
+                        reject. */}
+                      <div className="flex items-center gap-2">
+                        {canAccept(card.record.status) && canAcceptAction(card.record.action) && (
+                          <PondControl
+                            kind="button"
+                            variant="primary"
+                            state={answeringRecordId === card.record.id ? 'loading' : 'rest'}
+                            disabled={answeringRecordId === card.record.id}
+                            onClick={() => handleAccept(card.record)}
+                          >
+                            accept
+                          </PondControl>
+                        )}
+                        {!canAccept(card.record.status) && (
+                          <PondControl
+                            kind="button"
+                            variant="primary"
+                            disabled={toolCallId === null || revisedRecordIds.has(card.record.id)}
+                            onClick={() =>
+                              toolCallId !== null &&
+                              handleRevise(card.record.id, {
+                                toolCallId,
+                                note: REVISE_NOTE,
+                                reason: 'outdated',
+                                targetPageId: card.record.targetPageId,
+                              })
+                            }
+                          >
+                            revise
+                          </PondControl>
+                        )}
+                        {/* Request changes is offered on every open record, not
+                          only an acceptable one — an open record always carries
+                          the toolCallId AITerminal's sendRequestChanges keys
+                          off; the guard covers the type's wider `string | null`. */}
+                        {canAccept(card.record.status) && toolCallId !== null && (
+                          <PondControl
+                            kind="button"
+                            variant="ghost"
+                            disabled={requestingNoteFor === card.record.id}
+                            onClick={() => setRequestingNoteFor(card.record.id)}
+                          >
+                            request changes
+                          </PondControl>
+                        )}
+                        <PondControl
+                          kind="button"
+                          variant="ghost"
+                          disabled={answeringRecordId === card.record.id}
+                          onClick={() => handleReject(card.record)}
+                        >
+                          reject
+                        </PondControl>
+                      </div>
+                      {requestingNoteFor === card.record.id && toolCallId !== null && (
+                        <NoteBox
+                          onCancel={() => setRequestingNoteFor(null)}
+                          onSend={(note) => {
+                            setRequestingNoteFor(null)
+                            handleRequestChanges(card.record.id, {
+                              toolCallId,
+                              note,
+                              reason: 'note',
+                              targetPageId: card.record.targetPageId,
+                            })
+                          }}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
         ) : (
           <>
             {restoreError && (

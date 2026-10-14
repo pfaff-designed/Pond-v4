@@ -13,6 +13,7 @@ import {
   IllegalTransitionError,
   assertTransition,
   canAccept,
+  canReject,
   canRevise,
   canTransition,
   isOpen,
@@ -65,7 +66,6 @@ describe('legal transitions', () => {
   it('treats every settled status as terminal — a revision is a NEW record', () => {
     expect([...TERMINAL_STATUSES].sort()).toEqual([
       'changes_requested',
-      'outdated',
       'rejected',
       'reverted',
       'undone',
@@ -75,6 +75,13 @@ describe('legal transitions', () => {
       for (const to of CHANGE_LOG_STATUSES) {
         expect(canTransition(from, to)).toBe(false)
       }
+    }
+  })
+
+  it('lets an outdated card clear to rejected only — its accept is withdrawn, but the proposed view still needs a way to drop it (KAN-96)', () => {
+    expect(canTransition('outdated', 'rejected')).toBe(true)
+    for (const to of CHANGE_LOG_STATUSES.filter((s) => s !== 'rejected')) {
+      expect(canTransition('outdated', to)).toBe(false)
     }
   })
 
@@ -96,6 +103,21 @@ describe('legal transitions', () => {
     expect(canAccept('proposed')).toBe(true)
     for (const s of ['accepted', 'rejected', 'changes_requested', 'withdrawn'] as const) {
       expect(canAccept(s)).toBe(false)
+    }
+  })
+
+  it('offers reject on both statuses WAITING_STATUSES keeps in the proposed view: proposed and outdated', () => {
+    expect(canReject('proposed')).toBe(true)
+    expect(canReject('outdated')).toBe(true)
+    for (const s of [
+      'accepted',
+      'rejected',
+      'changes_requested',
+      'withdrawn',
+      'undone',
+      'reverted',
+    ] as const) {
+      expect(canReject(s)).toBe(false)
     }
   })
 
@@ -134,17 +156,21 @@ describe('assertTransition', () => {
 
   it('throws IllegalTransitionError carrying both ends', () => {
     try {
-      assertTransition('outdated', 'accepted')
+      assertTransition('rejected', 'accepted')
       throw new Error('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(IllegalTransitionError)
       const e = err as IllegalTransitionError
-      expect(e.from).toBe('outdated')
+      expect(e.from).toBe('rejected')
       expect(e.to).toBe('accepted')
       // A terminal status gets the message that names the remedy.
       expect(e.message).toMatch(/terminal/)
       expect(e.message).toMatch(/insert a new linked record/)
     }
+  })
+
+  it('lists the one legal edge when the source is outdated, not terminal', () => {
+    expect(() => assertTransition('outdated', 'accepted')).toThrow(/legal: rejected/)
   })
 
   it('lists the legal edges when the source is not terminal', () => {

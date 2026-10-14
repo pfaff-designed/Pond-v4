@@ -85,6 +85,16 @@ export async function propagateBlockWrite(queryClient: QueryClient, pageId: stri
   // refresh the sidebar so any derived listing reflects the write immediately
   await queryClient.invalidateQueries({ queryKey: pagesKey() })
   // keep semantic retrieval in step with the saved content (best-effort/background)
+  reembedPage(pageId)
+}
+
+/**
+ * Fire-and-forget re-embed so semantic retrieval matches the latest content —
+ * the half of {@link propagateBlockWrite} that has meaning without a
+ * `QueryClient`. Exported so `change-log/answer.ts`'s no-thread accept (no
+ * `QueryClient` to invalidate with) shares this call rather than restating it.
+ */
+export function reembedPage(pageId: string): void {
   void fetch('/api/pages/embed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

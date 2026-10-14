@@ -70,12 +70,16 @@ export class TrashRefusedError extends Error {
  * wait, not a hang, raised for a statement or lock timeout and reaching here
  * as a `PostgrestError`-shaped object, not an `Error` instance.
  *
- * `22023` (`invalid_parameter_value`) is `accept_revert_record`'s own refusal
- * when the revert is no longer `proposed` — a stale accept after another tab
- * already rejected it (migration 0025), the same two-tab race every other
- * refusal here reports.
+ * `22023` (`invalid_parameter_value`) is `accept_revert_record`'s and
+ * `accept_change_log_record`'s own refusal when the record is no longer
+ * `proposed` — a stale accept after another tab already rejected it
+ * (migration 0025), the same two-tab race every other refusal here reports.
+ *
+ * Exported so `answer.ts`'s own block-accept catch can tell this specific
+ * race apart from an unexpected RPC failure, without a second reading of
+ * `error.code`.
  */
-function postgresCode(error: unknown): string | null {
+export function postgresCode(error: unknown): string | null {
   if (typeof error !== 'object' || error === null || !('code' in error)) return null
   const code = (error as { code?: unknown }).code
   return typeof code === 'string' ? code : null

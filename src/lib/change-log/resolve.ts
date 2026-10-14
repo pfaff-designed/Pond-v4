@@ -117,6 +117,21 @@ export interface ProposalForAccept {
 }
 
 /**
+ * The refusal text for a status in {@link REFUSES_ACCEPT}, or null when the
+ * status has none (either it writes, like `proposed`/`accepted`/`rejected`, or
+ * accepting it is refused for a reason this map doesn't carry — a caller with
+ * no live batch, like the proposed view's no-thread accept, decides that for
+ * itself and falls back to its own text).
+ *
+ * Exported so the proposed view's accept-refusal path and its outdated reason
+ * line read the SAME copy as this module's own refusal, rather than two
+ * strings that can drift (KAN-96).
+ */
+export function refusalForAccept(status: ChangeLogStatus): string | null {
+  return REFUSES_ACCEPT[status] ?? null
+}
+
+/**
  * What the log knows about the proposal behind an accept click, before anything
  * is written. Never throws.
  *
