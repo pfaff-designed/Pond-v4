@@ -76,6 +76,14 @@ import { useAnchoredBox, type PickerAnchor, type PickerSide } from './use-anchor
 
 export type { SlashIcon, SlashRow, TemplatePick, YourTemplate } from './slash-entries'
 
+/** Whether two picks name the same template — used to find the one row a live preview overrides. */
+function sameTemplatePick(a: TemplatePick, b: TemplatePick): boolean {
+  if (a.origin !== b.origin) return false
+  if (a.origin === 'premade' && b.origin === 'premade') return a.kind === b.kind
+  if (a.origin === 'yours' && b.origin === 'yours') return a.id === b.id
+  return false
+}
+
 export interface SlashMenuProps {
   rows: readonly SlashRow[]
   /** What the person has typed after the `/`. */
@@ -92,6 +100,14 @@ export interface SlashMenuProps {
   onPickTemplate?: (pick: TemplatePick) => void
   /** When given, the `templates` foot offers `→ preview` and → calls it. */
   onPreviewTemplate?: (pick: TemplatePick) => void
+  /** Set once `→` has resolved a preview — the pick and its outline's block
+   * count: the previewed row's hint becomes `{n} blocks`, the foot drops to
+   * `↵ apply · esc back`, and esc routes through `onPreviewCancel` (6f frame 3). */
+  previewing?: { pick: TemplatePick; blocks: number }
+  /** Drops a live preview: esc calls this instead of `onClose` while one is
+   * up, and ↑↓← call it unconditionally (a no-op in the host when nothing is
+   * being previewed) so moving onto a different row drops a stale one. */
+  onPreviewCancel?: () => void
   /** The blank-page list (KAN-276): the `rows` pane leads with `templates` — no head of its own, the glass opens straight on the `templates` group. */
   leadWithTemplates?: boolean
   yourTemplates?: readonly YourTemplate[]
@@ -117,6 +133,8 @@ export function SlashMenu({
   onClose,
   onPickTemplate,
   onPreviewTemplate,
+  previewing,
+  onPreviewCancel,
   leadWithTemplates,
   yourTemplates,
   siblingRanking = [],
@@ -126,7 +144,15 @@ export function SlashMenu({
   size = 'desktop',
 }: SlashMenuProps) {
   const mobile = size === 'mobile'
-  const chrome = SLASH_SIZES[size]
+  // Board 6f frame 3 s3.1.3: while previewing on desktop the glass narrows to
+  // the 250px slot reserved beside the outline (the ordinary 300px chrome
+  // would overhang it by 50px and `clampLeft` could push it over the
+  // outline rows). Mobile stacks instead (`BlockCanvas`'s own layout), so its
+  // glass keeps its ordinary 340px width.
+  const previewingDesktop = previewing !== undefined && size === 'desktop'
+  const chrome = previewingDesktop
+    ? { ...SLASH_SIZES.desktop, width: 'w-[250px]', widthPx: 250 }
+    : SLASH_SIZES[size]
   const [pane, setPane] = useState<SlashPane>('rows')
   // Typing in the templates pane means narrowing blocks again: any query change
   // while there falls back to the rows.
@@ -180,15 +206,29 @@ export function SlashMenu({
     function onKey(e: KeyboardEvent) {
       const item = items[active]
       let handled = true
+      // Moving onto a different row (6f frame 3: "moving onto a template")
+      // drops a stale preview — a no-op in the host when nothing is being
+      // previewed, so this fires on every ↑↓← rather than only while one is up.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft') onPreviewCancel?.()
       if (e.key === 'ArrowDown') select(Math.min(active + 1, items.length - 1))
       else if (e.key === 'ArrowUp') select(Math.max(active - 1, 0))
-      else if (e.key === 'Escape') onClose()
+      else if (e.key === 'Escape') {
+        // The outline is still up: esc clears it, the glass stays open.
+        if (previewing) onPreviewCancel?.()
+        else onClose()
+      }
       // Nothing matches and the person types a space: the words were prose, not a
       // command. Close, and let the space through — the field keeps all of it.
       else if (e.key === ' ' && pane === 'rows' && items.length === 0) {
         onClose()
         handled = false
-      } else if (e.key === 'Enter' && item) pick(item)
+      }
+      // While a preview is up, ↵ always applies the PREVIEWED pick, never
+      // `item` — a live refetch (AUDIT G2: deleted mid-preview) can shrink or
+      // reorder `items` out from under the previewed row, and applying
+      // whatever is now active would silently apply a different template.
+      else if (e.key === 'Enter' && previewing) onPickTemplate?.(previewing.pick)
+      else if (e.key === 'Enter' && item) pick(item)
       else if (e.key === 'ArrowRight' && item?.row?.submenu) setPane(item.row.submenu)
       else if (e.key === 'ArrowRight' && item?.template && onPreviewTemplate)
         onPreviewTemplate(item.template)
@@ -228,7 +268,8 @@ export function SlashMenu({
     items.length,
     onPreviewTemplate !== undefined,
     items[active]?.template !== undefined,
-    leadWithTemplates
+    leadWithTemplates,
+    previewing !== undefined
   )
   const indexOf = new Map(items.map((item, i) => [item, i]))
 
@@ -280,11 +321,19 @@ export function SlashMenu({
             )
           }
           const at = indexOf.get(entry) ?? -1
+          // Only the row the preview actually resolved stands in for ↵'s hint
+          // — every other row's own hint (its `key`, or a `yours` template's)
+          // is untouched.
+          const previewHint =
+            previewing && entry.template && sameTemplatePick(entry.template, previewing.pick)
+              ? `${previewing.blocks} blocks`
+              : undefined
           return (
             <Row
               key={entry.id}
-              entry={entry}
+              entry={previewHint !== undefined ? { ...entry, hint: previewHint } : entry}
               selected={at === active}
+              previewed={previewHint !== undefined}
               size={size}
               onHover={() => select(at)}
               onPick={() => pick(entry)}

@@ -12,7 +12,8 @@
  *           `faint` (the source picker's `field` add row): the row at ink .8
  *   svg     13 × 13 on a 14 grid · stroke currentColor 1.4 round · at ink .8
  *   sub     INLINE after the label · mono 10.5 · ink .68 · nowrap · ellipsis
- *   hint    0 1 auto · max 45% · mono 10.5 · ink .68 · ellipsis — hidden on the selected row
+ *   hint    0 1 auto · max 45% · mono 10.5 · ink .68 · ellipsis — hidden on the selected row,
+ *           except the previewed row (KAN-131, 6f frame 3 s3.1.3), which keeps it alongside ↵
  *   ↵       mono 10.5 · ink .8 — on the selected row
  *   match   underline · offset 3 · thickness 1, over a `pre` / `hit` / `post` split
  *
@@ -45,6 +46,7 @@ export const MATCH = 'underline decoration-[1px] underline-offset-[3px]'
 export function Row({
   entry,
   selected,
+  previewed = false,
   onHover,
   onPick,
   size = 'desktop',
@@ -53,6 +55,9 @@ export function Row({
 }: {
   entry: RowEntry
   selected: boolean
+  /** The row the templates menu is previewing (6f frame 3): keeps its hint
+   * alongside `↵` while selected, instead of the hint-hidden selected rule. */
+  previewed?: boolean
   /** @default 'desktop' */
   size?: PickerSize
   onHover: () => void
@@ -100,16 +105,15 @@ export function Row({
         </span>
       )}
       <span className="flex-1" />
-      {selected ? (
+      {(!selected || previewed) && entry.hint && (
+        <span data-part="hint" className={HINT}>
+          {entry.hint}
+        </span>
+      )}
+      {selected && (
         <span data-part="enter" className={ENTER}>
           ↵
         </span>
-      ) : (
-        entry.hint && (
-          <span data-part="hint" className={HINT}>
-            {entry.hint}
-          </span>
-        )
       )}
     </div>
   )

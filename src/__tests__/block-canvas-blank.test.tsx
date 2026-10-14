@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BlockCanvas } from '@/components/organisms/BlockCanvas'
@@ -69,6 +69,25 @@ const mockRemember = jest.fn()
 jest.mock('@/lib/change-log/session-undo', () => ({
   sessionUndo: { remember: (...args: unknown[]) => mockRemember(...args) },
 }))
+// Captures whatever `anchor`/width the glass is given, each render — jsdom
+// never lays anything out (every element's own rect is zeroed, `hidden` or
+// not), so the only way to prove the glass was handed the VISIBLE slot rather
+// than the hidden block (and the right preview width) is to intercept the
+// call itself, not measure the rendered box.
+let lastSlashAnchor: { getBoundingClientRect(): Pick<DOMRect, 'top' | 'bottom' | 'left'> } | null =
+  null
+let lastSlashWidth: number | undefined
+jest.mock('@/components/molecules/use-anchored-box', () => {
+  const actual = jest.requireActual('@/components/molecules/use-anchored-box')
+  return {
+    ...actual,
+    useAnchoredBox: (...args: [unknown, unknown, number | undefined]) => {
+      lastSlashAnchor = args[0] as typeof lastSlashAnchor
+      lastSlashWidth = args[2]
+      return actual.useAnchoredBox(...args)
+    },
+  }
+})
 
 const pageRows = [
   { id: 'root-1', parent_id: null, type: 'page', title: 'recipes', order: 0, updated_at: '' },
@@ -316,7 +335,11 @@ describe("the blank list ranks the parent's other children's template use first 
  * `BlockCanvas` (it is `DocumentPanel`'s) — stood in here so `focusPageTitle()`
  * has something real to find.
  */
-function BlankPageHarness() {
+function BlankPageHarness({
+  onPreviewNameChange,
+}: {
+  onPreviewNameChange?: (name: string | null) => void
+} = {}) {
   const [blocks, setBlocks] = useState<Block[]>([{ id: 'b-empty', type: 'text', content: '' }])
   return (
     <>
@@ -327,22 +350,58 @@ function BlankPageHarness() {
         pageTitle="sourdough, 78%"
         onChange={setBlocks}
         onUndoRemove={() => {}}
+        onPreviewNameChange={onPreviewNameChange}
       />
     </>
   )
 }
 
 function renderBlankPageHarness(
-  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  onPreviewNameChange?: (name: string | null) => void
 ) {
   render(
     <QueryClientProvider client={client}>
       <DeletionUndoProvider>
-        <BlankPageHarness />
+        <BlankPageHarness onPreviewNameChange={onPreviewNameChange} />
       </DeletionUndoProvider>
     </QueryClientProvider>
   )
   return client
+}
+
+/**
+ * `DocumentPanel` stays mounted across `?nodeId` changes and `BlockCanvas` is
+ * never keyed by page — this harness mirrors that exactly, owning
+ * `previewName` itself (a REAL `useState` setter passed as
+ * `onPreviewNameChange`, not a `jest.fn()` double) and resetting it on its
+ * OWN render when `pageId` changes, the same render-phase pattern
+ * `DocumentPanel` uses. A `jest.fn()` double can never reproduce React's
+ * "Cannot update a component while rendering a different component" —
+ * only a real parent `setState`, called from a child's render, triggers it.
+ */
+function PageSwitchableHarness({ pageId }: { pageId: string }) {
+  const [blocks, setBlocks] = useState<Block[]>([{ id: 'b-empty', type: 'text', content: '' }])
+  const [previewName, setPreviewName] = useState<string | null>(null)
+  const [previousPageId, setPreviousPageId] = useState(pageId)
+  if (pageId !== previousPageId) {
+    setPreviousPageId(pageId)
+    if (previewName !== null) setPreviewName(null)
+  }
+  return (
+    <>
+      <input aria-label="title" data-pond-page-title />
+      <span data-testid="preview-name">{previewName ?? ''}</span>
+      <BlockCanvas
+        blocks={blocks}
+        pageId={pageId}
+        pageTitle="sourdough, 78%"
+        onChange={setBlocks}
+        onUndoRemove={() => {}}
+        onPreviewNameChange={setPreviewName}
+      />
+    </>
+  )
 }
 
 describe('a template pick on a blank page applies in place (KAN-124)', () => {
@@ -559,5 +618,488 @@ describe('a template pick on a blank page applies in place (KAN-124)', () => {
 
     await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
     expect(insertPageOptimistic).not.toHaveBeenCalled()
+  })
+})
+
+describe('→ on a template row previews it, writing nothing (KAN-131)', () => {
+  it('a `yours` template fixture previewed never saves, logs, or touches the page cache', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'weekly review',
+      kind: 'meeting notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderBlankPageHarness(client)
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // `yours` templates lead the `templates` group — no ↓ needed.
+    await screen.findByText('weekly review')
+    await user.keyboard('{ArrowRight}')
+
+    expect(mockSaveBlocks).not.toHaveBeenCalled()
+    expect(mockSaveProps).not.toHaveBeenCalled()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+    expect(client.getQueryData(['page', 'page-1'])).toBeUndefined()
+  })
+
+  it("draws the template's blocks as flat outline rows, beside the still-open templates menu, not in place of it (6f frame 3's s3.1.3)", async () => {
+    // 6f frame 3's recipe: big number — time, list — ingredients, checklist —
+    // method, entry log — cooked, text — notes.
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [
+        { id: 'orig-1', type: 'view', mode: 'big-number', label: 'time' } as Block,
+        { id: 'orig-2', type: 'todo', marker: 'dot', label: 'ingredients', items: [] } as Block,
+        { id: 'orig-3', type: 'todo', marker: 'check', label: 'method', items: [] } as Block,
+        { id: 'orig-4', type: 'entries', label: 'cooked', entries: [] } as Block,
+        { id: 'orig-5', type: 'text', label: 'notes', content: '' } as Block,
+      ],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    // `yours` templates lead the `templates` group — no ↓ needed.
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+
+    const rows = await waitFor(() => {
+      const found = document.querySelectorAll('[data-part="outline-row"]')
+      expect(found.length).toBe(5)
+      return found
+    })
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      'big number — time',
+      'list — ingredients',
+      'checklist — method',
+      'entry log — cooked',
+      'text — notes',
+    ])
+
+    // The templates menu stays open and visible beside the outline — item 9's
+    // fix: the blank block (and its `SlashMenu`) stays MOUNTED while
+    // previewing, so the glass never unmounts.
+    const menu = screen.getByRole('listbox', { name: 'blocks' })
+    expect(menu).toBeVisible()
+    expect(document.querySelector('[data-part="foot"]')?.textContent).toBe('↵ applyesc back')
+
+    // The blank page's own empty block is still in the DOM (so the menu it
+    // hosts stays alive) but its own body — text, caret — is gone from view.
+    expect(document.getElementById('block-b-empty')).not.toBeVisible()
+    // No template block ever becomes a real, editable block editor.
+    expect(document.getElementById('block-orig-1')).not.toBeInTheDocument()
+  })
+
+  it('anchors the glass to the visible preview slot, not the hidden block, while previewing (6f frame 3)', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+
+    // Before a preview, the glass anchors off the caret — the hidden slot
+    // (not yet rendered) is never read.
+    expect(document.querySelector('[data-part="preview-anchor-slot"]')).not.toBeInTheDocument()
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+
+    const slot = document.querySelector('[data-part="preview-anchor-slot"]')
+    expect(slot).toBeInTheDocument()
+    expect(slot).toBeVisible()
+    const SENTINEL = { top: 11, bottom: 11, left: 22 }
+    ;(slot as HTMLElement).getBoundingClientRect = jest.fn(() => SENTINEL as DOMRect)
+
+    expect(lastSlashAnchor).not.toBeNull()
+    // The SLOT's own stub is read — proving the glass's anchor is the visible
+    // slot, not `rootRef`'s zeroed rect off the hidden block — shifted up 4px
+    // on desktop so `useAnchoredBox`'s own `bottom + 4` lands exactly on the
+    // slot's top, per the next test's own, more specific assertion.
+    expect(lastSlashAnchor!.getBoundingClientRect()).toEqual({
+      top: SENTINEL.top - 4,
+      bottom: SENTINEL.top - 4,
+      left: SENTINEL.left,
+    })
+  })
+
+  it('the glass is 250px wide and top-aligned with the slot while previewing on desktop (6f frame 3)', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+
+    const slot = document.querySelector('[data-part="preview-anchor-slot"]')!
+    // A real (non-zero-height) rect: proves the glass reads the slot's own
+    // TOP, not `bottom + 4` below it (today's bug, a zero-height slot's own
+    // `top === bottom` would hide this).
+    const RECT = { top: 50, bottom: 80, left: 10 }
+    ;(slot as HTMLElement).getBoundingClientRect = jest.fn(() => RECT as DOMRect)
+    // `useAnchoredBox`'s own effect only re-measures on mount or a `resize`/
+    // `scroll` event — force it to pick up the stub just set.
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'))
+    })
+
+    expect(lastSlashWidth).toBe(250)
+    const glass = document.querySelector('[data-part="glass"][data-kind="slash"]') as HTMLElement
+    expect(glass.className).toContain('w-[250px]')
+    expect(glass.style.top).toBe(`${RECT.top}px`)
+  })
+
+  it('at phone width, the outline takes the full row and the glass anchors below it instead of beside a slot (6f frame 3)', async () => {
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    try {
+      const YOURS_TEMPLATE: PondTemplate = {
+        id: 'tpl-9',
+        name: 'recipe',
+        kind: 'notes',
+        blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+        origin: 'yours',
+        createdAt: '2026-10-01T10:00:00.000Z',
+        updatedAt: '2026-10-01T10:00:00.000Z',
+      }
+      mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+      const user = userEvent.setup()
+      renderBlankPageHarness()
+
+      writeInTextBlock(await findTextBlock(), '/')
+      await screen.findByRole('listbox', { name: 'blocks' })
+      await screen.findByText('recipe')
+      await user.keyboard('{ArrowRight}')
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+      )
+
+      // No 250px slot beside the outline at phone width — the 340px glass
+      // would overhang it and cover the outline rows.
+      expect(document.querySelector('[data-part="preview-anchor-slot"]')).not.toBeInTheDocument()
+      // The glass keeps its ordinary mobile width and anchors off the outline
+      // pane itself, landing below it (the same `bottom + 4` every other
+      // anchor already gets, now reading the outline's own, real rect).
+      expect(lastSlashWidth).toBe(340)
+      const glass = document.querySelector('[data-part="glass"][data-kind="slash"]') as HTMLElement
+      expect(glass.className).toContain('w-[340px]')
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
+  it('esc clears the preview and gives the blank page back, with the menu still open on `templates`', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+
+    await user.keyboard('{Escape}')
+
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    const groups = [...menu.parentElement!.querySelectorAll('[data-part="group"]')].map(
+      (g) => g.textContent
+    )
+    expect(groups[0]).toBe('templates')
+    expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    expect(document.getElementById('block-b-empty')).toBeInTheDocument()
+    expect(mockSaveBlocks).not.toHaveBeenCalled()
+  })
+
+  it("KAN-131 item 8: reports the previewed template's name, then null on esc, for the host's eyebrow", async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    const onPreviewNameChange = jest.fn()
+    renderBlankPageHarness(undefined, onPreviewNameChange)
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(onPreviewNameChange).toHaveBeenCalledWith('recipe'))
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(onPreviewNameChange).toHaveBeenLastCalledWith(null))
+
+    expect(onPreviewNameChange.mock.calls.map((call) => call[0])).toEqual(['recipe', null])
+  })
+
+  it('the path: / → ↓ onto a yours template → → previews it beside the open menu → esc brings the blank page back with the menu open → → then ↵ applies it in place (KAN-131)', async () => {
+    // 6f frame 3's recipe, same fixture as the drawing test above.
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [
+        { id: 'orig-1', type: 'view', mode: 'big-number', label: 'time' } as Block,
+        { id: 'orig-2', type: 'todo', marker: 'dot', label: 'ingredients', items: [] } as Block,
+        { id: 'orig-3', type: 'todo', marker: 'check', label: 'method', items: [] } as Block,
+        { id: 'orig-4', type: 'entries', label: 'cooked', entries: [] } as Block,
+        { id: 'orig-5', type: 'text', label: 'notes', content: '' } as Block,
+      ],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    renderBlankPageHarness()
+
+    writeInTextBlock(await findTextBlock(), '/')
+    const menu = await screen.findByRole('listbox', { name: 'blocks' })
+    // `yours` templates lead the `templates` group, so `recipe` is already the
+    // active row here — no ↓ needed to reach it this time (unlike the PATH_STEPS'
+    // generic premade example).
+    await within(menu).findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+
+    const rows = await waitFor(() => {
+      const found = document.querySelectorAll('[data-part="outline-row"]')
+      expect(found.length).toBe(5)
+      return found
+    })
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      'big number — time',
+      'list — ingredients',
+      'checklist — method',
+      'entry log — cooked',
+      'text — notes',
+    ])
+    expect(document.querySelector('[data-part="foot"]')?.textContent).toBe('↵ applyesc back')
+
+    // The previewed row is also the selected one; slash-row.tsx's `Row` keeps
+    // its hint alongside `↵` while previewed, so `5 blocks` reads directly on
+    // the still-selected row (6f frame 3's s3.1.3).
+    const recipeRow = within(menu).getByText('recipe').closest('[data-part="row"]')!
+    expect(recipeRow.textContent).toContain('5 blocks')
+    expect(recipeRow.textContent).toContain('↵')
+
+    expect(mockSaveBlocks).not.toHaveBeenCalled()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+
+    const reopenedMenu = await screen.findByRole('listbox', { name: 'blocks' })
+    const groups = [...reopenedMenu.parentElement!.querySelectorAll('[data-part="group"]')].map(
+      (g) => g.textContent
+    )
+    expect(groups[0]).toBe('templates')
+    expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    expect(document.getElementById('block-b-empty')).toBeVisible()
+
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(5)
+    )
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSaveBlocks).toHaveBeenCalledTimes(1))
+    const appliedBlocks = mockSaveBlocks.mock.calls[0][2] as Block[]
+    expect(appliedBlocks).toHaveLength(5)
+    expect(document.getElementById('block-b-empty')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveFocus())
+    expect(insertPageOptimistic).not.toHaveBeenCalled()
+  })
+
+  it('AUDIT G2: a template deleted mid-preview applies as a no-op on ↵, with no outline left stuck on screen', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderBlankPageHarness(client)
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+
+    // Deleted in another tab: the next `applyPickFor` finds nothing, neither
+    // in the already-fetched list nor (mocked, this file's default) `getTemplate`.
+    client.setQueryData(['templates', 'pond-1'], [])
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    )
+    expect(document.getElementById('block-b-empty')).toBeInTheDocument()
+    expect(mockSaveBlocks).not.toHaveBeenCalled()
+    expect(mockSaveProps).not.toHaveBeenCalled()
+    expect(mockAppendOwnEdit).not.toHaveBeenCalled()
+  })
+
+  it('an esc fired before a resolving preview settles leaves no stale outline or eyebrow (staleness guard)', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const onPreviewNameChange = jest.fn()
+    renderBlankPageHarness(undefined, onPreviewNameChange)
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+
+    // `handlePreviewTemplate`'s `await applyPickFor(pick)` never settles
+    // within the same tick it is called — `applyPickFor` is itself `async`,
+    // so even its synchronous `.find()` branch resolves one microtask later.
+    // Firing esc right after → (no `await`/`waitFor` between the two
+    // `fireEvent` calls, so no microtask gets to run in between) lands
+    // squarely in that gap — the exact race the ticket describes, without a
+    // hand-rolled deferred promise for `getTemplate`.
+    act(() => {
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      fireEvent.keyDown(document, { key: 'Escape' })
+    })
+
+    // Flush every pending microtask so the dropped preview's resolution gets
+    // every chance to (wrongly) land before asserting it didn't.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    expect(onPreviewNameChange).not.toHaveBeenCalledWith('recipe')
+  })
+
+  it('KAN-131 fix: leaving the page mid-preview (a pageId change, since DocumentPanel stays mounted) clears the outline and the eyebrow, with no cross-component render warning', async () => {
+    const YOURS_TEMPLATE: PondTemplate = {
+      id: 'tpl-9',
+      name: 'recipe',
+      kind: 'notes',
+      blocks: [{ id: 'orig-1', type: 'text', content: 'already written' } as Block],
+      origin: 'yours',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }
+    mockListTemplates.mockResolvedValue([YOURS_TEMPLATE])
+    const user = userEvent.setup()
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <PageSwitchableHarness pageId="page-1" />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    writeInTextBlock(await findTextBlock(), '/')
+    await screen.findByRole('listbox', { name: 'blocks' })
+    await screen.findByText('recipe')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(1)
+    )
+    await waitFor(() => expect(screen.getByTestId('preview-name').textContent).toBe('recipe'))
+
+    // The person navigates to a different page — `BlockCanvas` is not keyed
+    // by page, so this is a prop change on the same instance, not a remount.
+    // `PageSwitchableHarness` owns `previewName` with a REAL `useState`
+    // setter (not a `jest.fn()`), so if `BlockCanvas` still called it from
+    // its own render phase, React's "Cannot update a component while
+    // rendering a different component" would fire here.
+    rerender(
+      <QueryClientProvider client={client}>
+        <DeletionUndoProvider>
+          <PageSwitchableHarness pageId="page-2" />
+        </DeletionUndoProvider>
+      </QueryClientProvider>
+    )
+
+    expect(document.querySelectorAll('[data-part="outline-row"]').length).toBe(0)
+    expect(screen.getByTestId('preview-name').textContent).toBe('')
+    const renderWarnings = errorSpy.mock.calls.filter((call) =>
+      call.some((arg) => typeof arg === 'string' && arg.includes('Cannot update a component'))
+    )
+    expect(renderWarnings).toEqual([])
+    errorSpy.mockRestore()
   })
 })

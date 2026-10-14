@@ -562,6 +562,49 @@ describe('templates', () => {
   })
 })
 
+describe('previewing (KAN-131)', () => {
+  it('shows "{n} blocks" on the previewed row only, and the foot reads `↵ apply · esc back`', () => {
+    const { anchor } = renderMenu({
+      previewing: { pick: { origin: 'premade', kind: 'page' }, blocks: 5 },
+    })
+    const tpl = options().find((o) => labelOf(o as HTMLElement) === 'page from template')!
+    fireEvent.mouseEnter(tpl)
+    fireEvent.keyDown(anchor, { key: 'ArrowRight' })
+    // `page` is the previewed pick but not the active row, so its hint shows
+    // rather than hiding behind the active row's own `↵`.
+    fireEvent.mouseEnter(options().find((o) => labelOf(o as HTMLElement) === 'notes')!)
+    expect(labelOf(selected())).toBe('notes')
+    const page = options().find((o) => labelOf(o as HTMLElement) === 'page')!
+    expect(within(page).getByText('5 blocks')).toBeInTheDocument()
+    expect(within(selected()).queryByText('5 blocks')).not.toBeInTheDocument()
+    // The templates pane's own `← blocks` button (unrelated to `footItems`)
+    // still renders alongside — only the leading two spans are this item's.
+    const footSpans = [...glass().querySelectorAll('[data-part="foot"] > span')]
+    expect(footSpans.map((s) => s.textContent)).toEqual(['↵ apply', 'esc back'])
+  })
+
+  it('esc clears the preview instead of closing the glass; with none up esc still closes', () => {
+    const onPreviewCancel = jest.fn()
+    const { onClose, anchor } = renderMenu({
+      previewing: { pick: { origin: 'premade', kind: 'page' }, blocks: 5 },
+      onPreviewCancel,
+    })
+    fireEvent.keyDown(anchor, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onPreviewCancel).toHaveBeenCalledTimes(1)
+    expect(glass()).toBeInTheDocument()
+  })
+
+  it('↑↓← drop a stale preview unconditionally — a no-op in the host with nothing to drop', () => {
+    const onPreviewCancel = jest.fn()
+    const { anchor } = renderMenu({ onPreviewCancel })
+    fireEvent.keyDown(anchor, { key: 'ArrowDown' })
+    fireEvent.keyDown(anchor, { key: 'ArrowUp' })
+    fireEvent.keyDown(anchor, { key: 'ArrowLeft' })
+    expect(onPreviewCancel).toHaveBeenCalledTimes(3)
+  })
+})
+
 describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
   it('opens straight on the `templates` group, no head, then the scroll cue then the blocks, templates and pages', () => {
     renderMenu({ leadWithTemplates: true })
@@ -590,9 +633,7 @@ describe('leads with templates (KAN-276, an empty page’s `/`)', () => {
   it('a template row selected: the foot reads `↑↓ move · → preview · ↵ apply` — no `esc keep as text`', () => {
     renderMenu({ leadWithTemplates: true })
     expect(labelOf(selected())).toBe(TEMPLATE_KINDS[0])
-    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe(
-      '↑↓ move→ preview↵ apply'
-    )
+    expect(glass().querySelector('[data-part="foot"]')!.textContent).toBe('↑↓ move→ preview↵ apply')
   })
 
   it('`text` selected: the foot reads `↑↓ move · ↵ insert`', () => {
