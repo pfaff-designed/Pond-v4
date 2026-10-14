@@ -1005,6 +1005,61 @@ export function BlockCanvas({
     }
   }
 
+  /**
+   * Writes `after` directly — bypassing the debounced save — and logs it as
+   * one own-edit record, remembered with `sessionUndo`, so the write is ONE
+   * ⌘Z-undoable change (KAN-93's template-apply pattern, shared here with
+   * drag-drop's commits, KAN-247, so neither grows a second write path). The
+   * `['page', pageId]` cache carries `after` optimistically first, so
+   * `use-page-draft.ts`'s same-page "adopt" branch folds it into the open
+   * draft's baseline before the caller's own debounced save can schedule
+   * anything against stale blocks. Rolls the cache back to `before` and
+   * returns `false` only if `saveBlocks` itself fails; a failed `appendOwnEdit`
+   * does not roll back — the write already landed, only its own-edit log
+   * didn't, same as `applyTemplateInPlaceUnguarded` always treated it.
+   */
+  const persistBlocksAsOwnEdit = async (before: Block[], after: Block[]): Promise<boolean> => {
+    await flushPendingPageSave(pageId)
+    const supabase = getSupabase()
+    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+      prev ? { ...prev, blocks: after } : prev
+    )
+    try {
+      await saveBlocks(supabase, pageId, after)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        try {
+          const record = await appendOwnEdit(supabase, {
+            userId: user.id,
+            pondId,
+            action: 'edit',
+            targetPageId: pageId,
+            before,
+            after,
+          })
+          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
+          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
+        } catch (err) {
+          console.error('[change-log] edit not logged', pageId, err)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save the blocks', pageId, err)
+      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
+        prev ? { ...prev, blocks: before } : prev
+      )
+      return false
+    }
+    // Before `onChange`: the caller's own debounced save (if any) must see this
+    // write as its baseline, or it fires again with a stale `before` and logs a
+    // second own-edit record for the same write.
+    onBlocksPersisted?.(after)
+    onChange(after)
+    return true
+  }
+
   const applyTemplateInPlaceUnguarded = async (pick: TemplatePick, target: SlashTarget) => {
     previewTokenRef.current++
     const applyPick = await applyPickFor(pick)
@@ -1038,45 +1093,12 @@ export function BlockCanvas({
           )
         : blocksRef.current
     // A fast `/` + pick can still have the slash keystroke's own debounced save
-    // pending in `use-page-draft.ts`. That save's cache write only happens once
-    // the draft is `saved` (it refuses to adopt over unsaved local edits) — so
-    // flushing it now, before this write, lets it land and settle `saved` first.
-    // Otherwise our cache write below is silently ignored by the draft (still
-    // unsaved), and the slash save later fires AFTER us with a stale baseline,
-    // double-logging this same apply.
-    await flushPendingPageSave(pageId)
+    // pending in `use-page-draft.ts` — `persistBlocksAsOwnEdit` flushes it
+    // before writing, so the slash save can't land after us with a stale
+    // baseline and double-log this same apply. Shared with drag-drop's
+    // commits (KAN-247), so this is the only direct-write path.
     const supabase = getSupabase()
-    queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-      prev ? { ...prev, blocks: applied.blocks } : prev
-    )
-    try {
-      await saveBlocks(supabase, pageId, applied.blocks)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (user) {
-        try {
-          const record = await appendOwnEdit(supabase, {
-            userId: user.id,
-            pondId,
-            action: 'edit',
-            targetPageId: pageId,
-            before,
-            after: applied.blocks,
-          })
-          if (pondId) sessionUndo.remember({ pondId, recordIds: [record.id] })
-          await queryClient.invalidateQueries({ queryKey: changeLogKey() })
-        } catch (err) {
-          console.error('[change-log] template apply not logged', pageId, err)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to apply the template blocks', pageId, err)
-      queryClient.setQueryData<PondPage | null>(['page', pageId], (prev) =>
-        prev ? { ...prev, blocks: before } : prev
-      )
-      return
-    }
+    if (!(await persistBlocksAsOwnEdit(before, applied.blocks))) return
     // KAN-138: applying a `yours` template retires its "just saved" lead — but
     // only once the blocks write above actually landed; a failed apply keeps
     // the lead so the person's retry still sees it first.
@@ -1101,11 +1123,9 @@ export function BlockCanvas({
     } catch (err) {
       console.error('Failed to write the template props', err)
     }
-    // Before `onChange`: the caller's own debounced save (if any) must see this
-    // write as its baseline, or it fires again with a stale `before` and logs a
-    // second own-edit record for the same apply.
-    onBlocksPersisted?.(applied.blocks)
-    onChange(applied.blocks)
+    // `onBlocksPersisted`/`onChange` already ran inside `persistBlocksAsOwnEdit`,
+    // ahead of the schema/props writes above — this apply's own blocks are
+    // already the caller's baseline by the time those (independent) writes land.
     focusPageTitle()
   }
 
@@ -1173,12 +1193,13 @@ export function BlockCanvas({
    * Commits a beside drop (6x): splices the dragged block to sit immediately
    * before (`left`) or after (`right`) the target block, reading order, and
    * applies `widthsForDropBeside`'s widths to every block now in that row —
-   * including the ones whose width didn't change — in the one `onChange` call,
-   * so the move and the widths it sets are one change with one undo. Reads the
-   * real `blocks` (not the live-preview `blocksForLayout`), since this is the
-   * commit, not another preview.
+   * including the ones whose width didn't change — in one `persistBlocksAsOwnEdit`
+   * write, so the move and the widths it sets are one change with one undo
+   * (KAN-247, routed through the same direct-write pattern as template apply —
+   * KAN-124). Reads the real `blocks` (not the live-preview `blocksForLayout`),
+   * since this is the commit, not another preview.
    */
-  function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
+  async function commitBesideDrop(fromIndex: number, targetIndex: number, zone: 'left' | 'right') {
     const dragged = blocks[fromIndex]
     const target = blocks[targetIndex]
     const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
@@ -1196,7 +1217,10 @@ export function BlockCanvas({
     const spliced = [...withoutDragged]
     spliced.splice(zone === 'left' ? targetAt : targetAt + 1, 0, dragged)
 
-    onChange(spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b)))
+    await persistBlocksAsOwnEdit(
+      blocks,
+      spliced.map((b) => (nextWidth.has(b.id) ? { ...b, width: nextWidth.get(b.id) } : b))
+    )
   }
 
   /**
@@ -1205,9 +1229,10 @@ export function BlockCanvas({
    * dropping below the second block of a ½+½ row lands after both, not
    * between them. Only the dragged block's width changes, to `full`; every
    * other block is the same object reference, untouched (AGENTS.md: Pond
-   * doesn't widen what's left behind).
+   * doesn't widen what's left behind). One `persistBlocksAsOwnEdit` write, same
+   * as `commitBesideDrop` (KAN-247, KAN-124's direct-write pattern).
    */
-  function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
+  async function commitOwnLineDrop(fromIndex: number, targetIndex: number, zone: 'above' | 'below') {
     const dragged = { ...blocks[fromIndex], width: 'full' as BlockWidth }
     const target = blocks[targetIndex]
     const withoutDragged = blocks.filter((_, i) => i !== fromIndex)
@@ -1221,7 +1246,7 @@ export function BlockCanvas({
     const insertAt = zone === 'above' ? rowAt[0] : rowAt[rowAt.length - 1] + 1
     const spliced = [...withoutDragged]
     spliced.splice(insertAt, 0, dragged)
-    onChange(spliced)
+    await persistBlocksAsOwnEdit(blocks, spliced)
   }
 
   // Stacking (6x): measured off the content column itself (ResizeObserver on the
@@ -1357,11 +1382,11 @@ export function BlockCanvas({
           const rect = e.currentTarget.getBoundingClientRect()
           const zone = classifyDropZone(rect, { x: e.clientX, y: e.clientY })
           if (zone === 'left' || zone === 'right') {
-            commitBesideDrop(draggingIndex, i, zone)
+            void commitBesideDrop(draggingIndex, i, zone)
             setDraggingIndex(null)
             return
           }
-          commitOwnLineDrop(draggingIndex, i, zone)
+          void commitOwnLineDrop(draggingIndex, i, zone)
           setDraggingIndex(null)
         }}
       />
