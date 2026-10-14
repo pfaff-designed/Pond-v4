@@ -21,7 +21,7 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
-    auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+    auth: { getUser: (...args: unknown[]) => mockGetUser(...args) },
   }),
 }))
 
@@ -46,6 +46,7 @@ jest.mock('@/lib/change-log/revert', () => ({
 }))
 
 const mockPush = jest.fn()
+const mockGetUser = jest.fn()
 const mockGetRecord = jest.fn()
 const mockGetPage = jest.fn()
 const mockGetThreadFirstQuestion = jest.fn()
@@ -85,6 +86,7 @@ function renderPage(recordId = 'rec-1') {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
   mockGetPage.mockResolvedValue({
     id: 'page-1',
     parentId: null,
@@ -183,6 +185,51 @@ describe('ChangeLogRecordPage — buttons', () => {
 
     await waitFor(() => expect(raised).toEqual([{ recordId: 'rec-revert' }]))
     window.removeEventListener(RAISE_RECORD_CARD_EVENT, onRaise)
+  })
+
+  it('disables revert while a revert is in flight', async () => {
+    mockGetRecord.mockResolvedValue(record())
+    let settleRevert: (value: ChangeLogRecord) => void = () => {}
+    mockProposeRevert.mockReturnValue(
+      new Promise((resolve) => {
+        settleRevert = resolve
+      })
+    )
+
+    renderPage()
+    const revertButton = await screen.findByRole('button', { name: 'revert' })
+    fireEvent.click(revertButton)
+
+    await waitFor(() => expect(revertButton).toBeDisabled())
+
+    await act(async () => {
+      settleRevert(record({ id: 'rec-revert', status: 'proposed', links: { revertOf: 'rec-1' } }))
+      await Promise.resolve()
+    })
+  })
+
+  it('shows a person-facing error, not a silent no-op, when the user session is missing', async () => {
+    mockGetRecord.mockResolvedValue(record())
+    mockGetUser.mockResolvedValue({ data: { user: null } })
+
+    renderPage()
+    const revertButton = await screen.findByRole('button', { name: 'revert' })
+    fireEvent.click(revertButton)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('that did not work')
+    expect(mockProposeRevert).not.toHaveBeenCalled()
+  })
+
+  it('shows a person-facing error, not a silent no-op, when the target page is gone', async () => {
+    mockGetRecord.mockResolvedValue(record())
+    mockGetPage.mockResolvedValue(null)
+
+    renderPage()
+    const revertButton = await screen.findByRole('button', { name: 'revert' })
+    fireEvent.click(revertButton)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('that did not work')
+    expect(mockProposeRevert).not.toHaveBeenCalled()
   })
 
   it('omits revert for a record canRevertRecord refuses', async () => {

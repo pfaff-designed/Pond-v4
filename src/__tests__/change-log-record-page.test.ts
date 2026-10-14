@@ -15,6 +15,7 @@ import {
   proposedByField,
   readChipsOf,
   RECORD_PARAM,
+  recordBreadcrumbTitle,
   recordDiffRows,
   recordTitle,
   revertedByField,
@@ -82,6 +83,33 @@ describe('recordTitle', () => {
   it('falls back to describeChange when a block action carries no live snapshot', () => {
     const r = record({ before: null, after: null })
     expect(recordTitle(r)).toBe('edited this page')
+  })
+})
+
+describe('recordBreadcrumbTitle', () => {
+  it("drops the ' → ' and everything after it, leaving the record's own name (s6o3/s6o4 breadcrumb)", () => {
+    const r = record({
+      action: 'edit_row',
+      targetBlockId: 'db-1',
+      before: {
+        id: 'row-1',
+        title: 'electrician, second fix',
+        values: { due: 'w/c 13 oct' },
+        shown: { due: 'w/c 13 oct' },
+      },
+      after: {
+        id: 'row-1',
+        title: 'electrician, second fix',
+        values: { due: 'w/c 6 oct' },
+        shown: { due: 'w/c 6 oct' },
+      },
+    })
+    expect(recordTitle(r)).toBe('electrician, second fix → w/c 6 oct')
+    expect(recordBreadcrumbTitle(r)).toBe('electrician, second fix')
+  })
+
+  it('leaves a title with no arrow unchanged', () => {
+    expect(recordBreadcrumbTitle(record())).toBe('ONE')
   })
 })
 
@@ -217,6 +245,20 @@ describe('recordDiffRows', () => {
     })
     expect(recordDiffRows(r)).toBeNull()
   })
+
+  it('returns null for an outdated revert (no after snapshot), never a removal row per before block', () => {
+    const r = record({
+      action: 'revert',
+      status: 'outdated',
+      before: [
+        { id: 'a', type: 'text', content: 'kiwi' },
+        { id: 'b', type: 'text', content: 'fig' },
+      ],
+      after: null,
+      links: { revertOf: 'rec-original' },
+    })
+    expect(recordDiffRows(r)).toBeNull()
+  })
 })
 
 describe('firstQuestionFromMessages', () => {
@@ -296,6 +338,41 @@ describe('buildChangeTimeline', () => {
         highlighted: true,
       },
     ])
+  })
+
+  it('interleaves a revert record as "reverted" / its own status, in time order with the chain', () => {
+    const original = record({
+      id: 'rec-1',
+      status: 'reverted',
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T09:20:00.000Z', actor: 'pond' },
+        { status: 'accepted', at: '2026-09-30T09:31:00.000Z', actor: 'you' },
+        { status: 'reverted', at: '2026-09-30T10:05:00.000Z', actor: 'you' },
+      ],
+    })
+    const revert = record({
+      id: 'rec-revert',
+      status: 'accepted',
+      action: 'revert',
+      links: { revertOf: 'rec-1' },
+      transitions: [
+        { status: 'proposed', at: '2026-09-30T10:02:00.000Z', actor: 'you' },
+        { status: 'accepted', at: '2026-09-30T10:05:00.000Z', actor: 'you' },
+      ],
+    })
+
+    const rows = buildChangeTimeline([original], 'rec-1', [revert])
+
+    expect(rows.map((r) => r.event)).toEqual(['proposed', 'accepted', 'reverted', 'accepted'])
+    expect(rows.map((r) => r.time)).toEqual([
+      formatClockTime('2026-09-30T09:20:00.000Z'),
+      formatClockTime('2026-09-30T09:31:00.000Z'),
+      formatClockTime('2026-09-30T10:02:00.000Z'),
+      formatClockTime('2026-09-30T10:05:00.000Z'),
+    ])
+    // The revert's own "reverted" row is not the viewed record (rec-1) — only
+    // rec-1's own rows (the first two) highlight.
+    expect(rows.map((r) => r.highlighted)).toEqual([true, true, false, false])
   })
 
   it('renders a single record with no revision as its own proposed/accepted rows', () => {

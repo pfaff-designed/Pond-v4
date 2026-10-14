@@ -522,57 +522,60 @@ export function ChangeLogPage() {
                     <div
                       key={card.record.id}
                       data-testid={`change-log-proposed-card-${card.record.id}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => router.push(changeLogRecordUrl(card.record.id))}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'Enter' && e.key !== ' ') return
-                        e.preventDefault()
-                        router.push(changeLogRecordUrl(card.record.id))
-                      }}
-                      className="flex cursor-pointer flex-col gap-[10px] rounded-mn-card bg-mn-card px-4 py-3.5 font-mono shadow-mn-card"
+                      className="flex flex-col gap-[10px] rounded-mn-card bg-mn-card px-4 py-3.5 font-mono shadow-mn-card"
                     >
-                      <div className="flex items-baseline gap-[8px]">
-                        <span className="text-[11px] text-mn-text">{card.pageName}</span>
-                        {card.statusPill !== null && (
+                      {/* The card's own identity — not its controls — opens the
+                        record: a sibling, not a wrapper, so answering it (including
+                        typing into the note box) is its own click/keyboard target
+                        rather than a PondControl button/textarea nesting inside
+                        another interactive element (`PageChangesSection.tsx`'s own
+                        shape). */}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => router.push(changeLogRecordUrl(card.record.id))}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter' && e.key !== ' ') return
+                          e.preventDefault()
+                          router.push(changeLogRecordUrl(card.record.id))
+                        }}
+                        className="flex cursor-pointer flex-col gap-[10px]"
+                      >
+                        <div className="flex items-baseline gap-[8px]">
+                          <span className="text-[11px] text-mn-text">{card.pageName}</span>
+                          {card.statusPill !== null && (
+                            <span
+                              data-testid={`change-log-proposed-pill-${card.record.id}`}
+                              className="rounded-full px-[7px] py-[1px] text-[11px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                            >
+                              {card.statusPill}
+                            </span>
+                          )}
+                          <span className="ml-auto text-[11px] text-mn-text-secondary">
+                            {card.actorTime}
+                          </span>
+                        </div>
+                        {card.diffRows.length > 0 && (
+                          <div className="flex flex-col gap-[3px]">
+                            {card.diffRows.map((row) => (
+                              <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
+                            ))}
+                          </div>
+                        )}
+                        {card.reasonLine !== null && (
                           <span
-                            data-testid={`change-log-proposed-pill-${card.record.id}`}
-                            className="rounded-full px-[7px] py-[1px] text-[11px] text-mn-text ring-1 ring-mn-mark-faint ring-inset"
+                            data-testid={`change-log-proposed-reason-${card.record.id}`}
+                            className="rounded-[10px] bg-mn-text/[0.04] px-[10px] py-2 font-mono text-[10.5px] text-mn-text-meta"
                           >
-                            {card.statusPill}
+                            {card.reasonLine}
                           </span>
                         )}
-                        <span className="ml-auto text-[11px] text-mn-text-secondary">
-                          {card.actorTime}
-                        </span>
                       </div>
-                      {card.diffRows.length > 0 && (
-                        <div className="flex flex-col gap-[3px]">
-                          {card.diffRows.map((row) => (
-                            <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
-                          ))}
-                        </div>
-                      )}
-                      {card.reasonLine !== null && (
-                        <span
-                          data-testid={`change-log-proposed-reason-${card.record.id}`}
-                          className="rounded-[10px] bg-mn-text/[0.04] px-[10px] py-2 font-mono text-[10.5px] text-mn-text-meta"
-                        >
-                          {card.reasonLine}
-                        </span>
-                      )}
-                      {/* The card's own click/Enter/Space opens the record; answering it
-                        (including typing a space into the note box) must not. */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <ChangeLogAnswerActions
-                          record={card.record}
-                          pondId={pondId}
-                          onError={setAnswerError}
-                        />
-                      </div>
+                      <ChangeLogAnswerActions
+                        record={card.record}
+                        pondId={pondId}
+                        onError={setAnswerError}
+                      />
                     </div>
                   )
                 })}

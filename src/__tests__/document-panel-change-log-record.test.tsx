@@ -125,4 +125,37 @@ describe('DocumentPanel — a change log record route', () => {
     await screen.findByTestId('change-log-record-title')
     expect(screen.queryByTestId('change-log-column')).not.toBeInTheDocument()
   })
+
+  it("the breadcrumb's last crumb is the record's own name, not its full before → after title", async () => {
+    mockGetRecord.mockResolvedValue(
+      record({
+        action: 'edit_row',
+        targetBlockId: 'db-1',
+        before: {
+          id: 'row-1',
+          title: 'electrician, second fix',
+          values: { due: 'w/c 13 oct' },
+          shown: { due: 'w/c 13 oct' },
+        },
+        after: {
+          id: 'row-1',
+          title: 'electrician, second fix',
+          values: { due: 'w/c 6 oct' },
+          shown: { due: 'w/c 6 oct' },
+        },
+      })
+    )
+
+    renderPanel()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('command-path')).toHaveTextContent(
+        'life › databases › change log › electrician, second fix'
+      )
+    )
+    expect(screen.getByTestId('command-path')).not.toHaveTextContent('w/c 6 oct')
+    expect(screen.getByTestId('change-log-record-title')).toHaveTextContent(
+      'electrician, second fix → w/c 6 oct'
+    )
+  })
 })

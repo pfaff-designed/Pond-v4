@@ -4,7 +4,7 @@
  * line built from `describeChange` for everything else.
  */
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
@@ -109,5 +109,36 @@ describe('ChangeLogRecordPage — before → after card', () => {
     const card = await screen.findByTestId('change-log-record-diff-card')
     expect(card.querySelectorAll('[data-kind="diff-line"]')).toHaveLength(0)
     expect(card).toHaveTextContent('created this page')
+  })
+
+  it('"before → after" is the sans eyebrow (board s6o3), not the machine-surface mono one', async () => {
+    mockGetRecord.mockResolvedValue(record())
+
+    renderPage()
+
+    const card = await screen.findByTestId('change-log-record-diff-card')
+    const label = within(card).getByText('before → after')
+    expect(label).toHaveClass('font-sans')
+    expect(label).not.toHaveClass('font-mono')
+  })
+
+  it('an outdated revert with no after snapshot shows the plain fallback line, not a remove row per page block', async () => {
+    mockGetRecord.mockResolvedValue(
+      record({
+        action: 'revert',
+        status: 'outdated',
+        before: [
+          { id: 'a', type: 'text', content: 'kiwi' },
+          { id: 'b', type: 'text', content: 'fig' },
+        ],
+        after: null,
+        links: { revertOf: 'rec-original' },
+      })
+    )
+
+    renderPage()
+
+    const card = await screen.findByTestId('change-log-record-diff-card')
+    expect(card.querySelectorAll('[data-kind="diff-line"]')).toHaveLength(0)
   })
 })

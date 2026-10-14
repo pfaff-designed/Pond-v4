@@ -30,7 +30,7 @@ import { personFacingMessage } from '@/lib/change-log/errors'
 import { ChangeRows } from '@/components/molecules/diff-card-parts'
 import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerActions'
 import { PondControl } from '@/components/atoms/PondControl'
-import { machineEyebrowClass } from '@/components/atoms/kicker'
+import { pageEyebrowClass } from '@/components/atoms/kicker'
 import {
   buildChangeTimeline,
   changeLogRecordUrl,
@@ -100,8 +100,12 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
   const [actionError, setActionError] = useState<string | null>(null)
   // G9: a ref, not state — the second of two rapid clicks can land before a
   // state update guarding on a render would have committed (mirrors
-  // `ChangeLogAnswerActions`'s own `busyRef`).
+  // `ChangeLogAnswerActions`'s own `busyRef`). `reverting` (state) is the
+  // button's own `disabled` prop — a render IS fast enough to catch a SECOND,
+  // slower click; the ref is what makes the first of two near-simultaneous
+  // clicks the only one that reaches `proposeRevert`.
   const revertingRef = useRef(false)
+  const [reverting, setReverting] = useState(false)
 
   const { data: record, isLoading: recordLoading } = useQuery({
     queryKey: recordKey(recordId),
@@ -166,7 +170,12 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     },
   })
 
-  const timeline = record ? buildChangeTimeline(chain, record.id) : []
+  // "Linked records in order from listRevisionsOf / listRevertsOf / links" —
+  // every chain record's own reverts are rows here too, not just the viewed
+  // record's (the fields grid's "reverted by" is the one place that narrows
+  // to the viewed record alone).
+  const allReverts = revertsByRecordId ? Array.from(revertsByRecordId.values()).flat() : []
+  const timeline = record ? buildChangeTimeline(chain, record.id, allReverts) : []
   const revertedBy = revertedByField(revertsByRecordId?.get(recordId) ?? [])
 
   const handleOpenPage = useCallback(() => {
@@ -183,6 +192,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     if (revertingRef.current) return
     if (record === null || record === undefined || record.targetPageId === null) return
     revertingRef.current = true
+    setReverting(true)
     const toRevert = record
     void (async () => {
       try {
@@ -190,9 +200,15 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
         const {
           data: { user },
         } = await supabase.auth.getUser()
-        if (!user) return
+        if (!user) {
+          setActionError('that did not work')
+          return
+        }
         const page = await getPage(supabase, toRevert.targetPageId as string)
-        if (!page) return
+        if (!page) {
+          setActionError('that did not work')
+          return
+        }
         const revert = await proposeRevert(supabase, {
           userId: user.id,
           pondId,
@@ -217,6 +233,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
         setActionError(personFacingMessage(err))
       } finally {
         revertingRef.current = false
+        setReverting(false)
       }
     })()
   }, [record, recordId, getSupabase, pondId, queryClient])
@@ -320,7 +337,7 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
               data-testid="change-log-record-diff-card"
               className="flex flex-col gap-[3px] rounded-mn-card bg-mn-card px-[10px] py-3 shadow-mn-card"
             >
-              <span className={`${machineEyebrowClass} px-[10px] pb-1`}>before → after</span>
+              <span className={`${pageEyebrowClass} px-[10px] pb-1`}>before → after</span>
               {diffRows !== null ? (
                 diffRows.map((row) => (
                   <ChangeRows key={row.before?.id ?? row.after?.id} change={row} />
@@ -342,7 +359,12 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                   open page
                 </PondControl>
                 {canRevertRecord(record) && (
-                  <PondControl kind="button" variant="ghost" onClick={handleRevert}>
+                  <PondControl
+                    kind="button"
+                    variant="ghost"
+                    disabled={reverting}
+                    onClick={handleRevert}
+                  >
                     revert
                   </PondControl>
                 )}

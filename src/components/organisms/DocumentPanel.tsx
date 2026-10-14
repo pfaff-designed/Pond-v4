@@ -54,7 +54,7 @@ import { LIFE_GLYPH } from '@/lib/rail/area-glyph'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
 import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
-import { RECORD_PARAM, recordTitle } from '@/lib/change-log/record-page'
+import { RECORD_PARAM, recordBreadcrumbTitle } from '@/lib/change-log/record-page'
 import { recordKey } from '@/lib/change-log/keys'
 import { getRecord } from '@/lib/change-log/store'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
@@ -287,7 +287,11 @@ export function DocumentPanel() {
           // row until it lands) has no row to read here — a record's title
           // only exists once the record query resolves, so the placeholder is
           // a loading word instead of a cached title.
-          current: recordId ? (breadcrumbRecord ? recordTitle(breadcrumbRecord) : 'loading…') : 'change log',
+          current: recordId
+            ? breadcrumbRecord
+              ? recordBreadcrumbTitle(breadcrumbRecord)
+              : 'loading…'
+            : 'change log',
           role: null,
         }
       : commandPath(rows, nodeId, {

@@ -45,6 +45,23 @@ export function recordTitle(record: ChangeLogRecord, blocks?: readonly Block[]):
 }
 
 /**
+ * The breadcrumb's last crumb (s6o3/s6o4's `PondCommand` path: `life ›
+ * databases › change log › electrician, second fix`): `recordTitle`'s own
+ * string, with any " → " and everything after it dropped. `recordTitle`'s
+ * "x → y" shape (a table row's name → its changed cells, "mark → automatic",
+ * "colour → sage", …) always puts the NAME of what changed before the arrow
+ * and the new value after it — the breadcrumb names the record, the page's
+ * own title (s6o3's 38px line) is the only place that also says what it
+ * became. A title with no arrow (an ordinary block's content, "apple") is
+ * unchanged.
+ */
+export function recordBreadcrumbTitle(record: ChangeLogRecord, blocks?: readonly Block[]): string {
+  const title = recordTitle(record, blocks)
+  const arrow = title.indexOf(' → ')
+  return arrow === -1 ? title : title.slice(0, arrow)
+}
+
+/**
  * The fields grid's "status" row: `labelForStatus`'s word, the actor of the
  * transition that landed the CURRENT status, and that transition's clock time
  * — "accepted by you · 09:31". `transitions` is append-only, so its last entry
@@ -128,15 +145,19 @@ export function pageBlockField(
 /** The "before → after" card's rows — only for a {@link BLOCK_ACTIONS} record
  *  (`edit`/`revert`), whose snapshots are block arrays. `null` for every
  *  other action (a collection tool's snapshot is a `RowSnapshot`, not a block
- *  array); the component falls back to one plain-text line there. Reuses
- *  `buildDiffRows` verbatim — the same zip-by-id the `proposed` view's cards
- *  already use, never a second diffing path. */
+ *  array), AND for a block action with no `after` snapshot (an outdated
+ *  revert's own plan is never persisted — see `revert.ts`'s own comment on
+ *  `after: plan.movedOn ? null : plan.blocks`) — diffing a real `before`
+ *  against an absent `after` would render every one of the page's blocks as a
+ *  fabricated removal, which nothing proposed. The component falls back to
+ *  one plain-text line in both `null` cases. Reuses `buildDiffRows` verbatim
+ *  — the same zip-by-id the `proposed` view's cards already use, never a
+ *  second diffing path. */
 export function recordDiffRows(record: ChangeLogRecord): ChangePreview[] | null {
   if (!BLOCK_ACTIONS.includes(record.action)) return null
-  return buildDiffRows(
-    readBlockSnapshot(record.before) ?? [],
-    readBlockSnapshot(record.after) ?? []
-  )
+  const after = readBlockSnapshot(record.after)
+  if (after === null) return null
+  return buildDiffRows(readBlockSnapshot(record.before) ?? [], after)
 }
 
 /** One row of the "this change" column — frame s6o3. */
@@ -153,17 +174,31 @@ export interface ChangeTimelineRow {
 }
 
 /**
- * The "this change" column: `chain`'s records, root first, each flattened
- * into one row per `transitions` entry. A record's own first `proposed`
- * transition reads as "revised" when `links.revisedFrom` names the record it
- * revises — the same transition, just the word a revision earns over a fresh
- * proposal.
+ * The "this change" column: `chain`'s records PLUS every `reverts` record,
+ * each flattened into one row per `transitions` entry, in TIME order (the
+ * spec's "linked records in order from listRevisionsOf / listRevertsOf /
+ * links" — a chain record's own transition and a revert raised against some
+ * other chain record can interleave, so appending reverts after the chain
+ * and relying on the chain's own order is not enough).
+ *
+ * A record's own first `proposed` transition reads as "revised" when
+ * `links.revisedFrom` names the record it revises, or "reverted" when
+ * `links.revertOf` names the record it reverts — the same transition, just
+ * the word that revision/revert earns over a fresh proposal. Every later
+ * transition on a revert record (`accepted`/`outdated`/`rejected`, …) reads
+ * as its own ordinary status word, same as any other record.
  *
  * `detail` reuses `describeChange` (the record's own short label) for
- * `proposed`/`revised` rather than a second description path; every other
- * event has no stored note text to show (`changes_requested` included — the
- * note travels live to the composer, never onto the record), so its detail
- * is the transition's own actor.
+ * `proposed`/`revised`/`reverted` rather than a second description path;
+ * every other event has no stored note text to show (`changes_requested`
+ * included — the note travels live to the composer, never onto the record),
+ * so its detail is the transition's own actor.
+ *
+ * A chain record's OWN transition into `reverted` status (`revert.ts`'s
+ * `accepted → reverted`, written in the same transaction as the revert's own
+ * `accepted`) is dropped rather than flattened into its own row — it would
+ * otherwise duplicate the "reverted" word the linked revert record's own
+ * first-proposed transition already earns, one instant apart for nothing.
  */
 /** The fields grid's "from thread" chip: the thread's first question, joined
  *  from its text parts — the same text-joining `AITerminal.tsx`'s own
@@ -180,18 +215,33 @@ export function firstQuestionFromMessages(messages: UIMessage[]): string | null 
 
 export function buildChangeTimeline(
   chain: ChangeLogRecord[],
-  viewingId: string
+  viewingId: string,
+  reverts: ChangeLogRecord[] = []
 ): ChangeTimelineRow[] {
-  return chain.flatMap((record) =>
-    record.transitions.map((transition, index) => {
-      const isRevision =
-        index === 0 && transition.status === 'proposed' && record.links.revisedFrom !== undefined
-      return {
-        time: formatClockTime(transition.at),
-        event: isRevision ? 'revised' : labelForStatus(transition.status),
-        detail: transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
-        highlighted: record.id === viewingId,
-      }
-    })
+  const rows = [...chain, ...reverts].flatMap((record) =>
+    record.transitions
+      .filter((transition) => transition.status !== 'reverted')
+      .map((transition, index) => {
+        const isRevision =
+          index === 0 && transition.status === 'proposed' && record.links.revisedFrom !== undefined
+        const isRevert =
+          index === 0 && transition.status === 'proposed' && record.links.revertOf !== undefined
+        const event = isRevision
+          ? 'revised'
+          : isRevert
+            ? 'reverted'
+            : labelForStatus(transition.status)
+        return {
+          at: transition.at,
+          row: {
+            time: formatClockTime(transition.at),
+            event,
+            detail:
+              transition.status === 'proposed' ? describeChange(record, null) : transition.actor,
+            highlighted: record.id === viewingId,
+          },
+        }
+      })
   )
+  return rows.sort((a, b) => a.at.localeCompare(b.at)).map(({ row }) => row)
 }
