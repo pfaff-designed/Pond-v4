@@ -24,6 +24,7 @@ import {
   clampPageName,
   mentionedPages,
   proposalBlocks,
+  stripChatFraming,
   type MentionablePage,
   type PageProposal,
 } from '@/lib/conversation/page-proposals'
@@ -77,10 +78,13 @@ export async function makePageFromAnswer(
   }
 
   const title = clampPageName(proposal.name) || 'untitled'
-  // The prose, word for word, is the page's only block. What the answer mentioned
-  // is a card, not prose, so it rides in props beside the made-from stamp (6a
-  // frame 5). Notes are Pond's own characterisation and are not written yet.
-  const blocks = proposalBlocks(proposal.prose, mintId)
+  // The prose, minus its chat framing (KAN-308), is the page's only block.
+  // `proposal.prose` itself is untouched — it still rides the record verbatim.
+  // What the answer mentioned is a card, not prose, so it rides in props beside
+  // the made-from stamp (6a frame 5). Notes are Pond's own characterisation and
+  // are not written yet.
+  const body = stripChatFraming(proposal.prose, proposal.leadIn, proposal.signOff)
+  const blocks = proposalBlocks(body, mintId)
   const kind = proposal.kind.trim() || 'page'
   const props = stampMentioned(
     stampMadeFrom(

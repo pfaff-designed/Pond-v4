@@ -153,6 +153,52 @@ describe('makePageFromAnswer', () => {
     })
   })
 
+  it('strips the model-identified leadIn/signOff from the body, leaving the record’s prose untouched', async () => {
+    const { supabase, inserts } = makeSupabase({ existing: {} })
+    const prose = 'Sure — here’s the rundown: the cabinet quote is the blocker. Want me to chase it?'
+    const leadIn = 'Sure — here’s the rundown: '
+    const signOff = ' Want me to chase it?'
+    const made = await makePageFromAnswer(
+      supabase,
+      {
+        proposal: proposal({ parentId: null, prose, leadIn, signOff }),
+        threadId: null,
+        pages: [],
+        pondId: null,
+      },
+      mint()
+    )
+    expect(made.id).toBe('pages-new')
+    expect(inserts[0].row.blocks).toEqual([
+      { id: 'b1', type: 'text', content: 'the cabinet quote is the blocker.' },
+    ])
+    // `proposal.prose` itself is never mutated — only the text handed to the block.
+    expect(proposal({ parentId: null, prose, leadIn, signOff }).prose).toBe(prose)
+  })
+
+  it('falls back to the deterministic lead-in shape when the model named no leadIn/signOff', async () => {
+    const { supabase, inserts } = makeSupabase({ existing: {} })
+    const prose = 'Good question. The cabinet quote is the blocker.'
+    await makePageFromAnswer(
+      supabase,
+      { proposal: proposal({ parentId: null, prose }), threadId: null, pages: [], pondId: null },
+      mint()
+    )
+    expect(inserts[0].row.blocks).toEqual([
+      { id: 'b1', type: 'text', content: 'The cabinet quote is the blocker.' },
+    ])
+  })
+
+  it('leaves the prose untouched, byte for byte, when it carries no chat framing at all', async () => {
+    const { supabase, inserts } = makeSupabase({ existing: { 'kr-1': PARENT } })
+    await makePageFromAnswer(
+      supabase,
+      { proposal: proposal(), threadId: null, pages: [], pondId: 'pond-1' },
+      mint()
+    )
+    expect(inserts[0].row.blocks).toEqual([{ id: 'b1', type: 'text', content: PROSE }])
+  })
+
   it('adds no mentioned list when the answer names none of the pond’s pages', async () => {
     const { supabase, inserts } = makeSupabase({ existing: { 'kr-1': PARENT } })
     await makePageFromAnswer(

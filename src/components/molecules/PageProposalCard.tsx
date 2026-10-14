@@ -65,6 +65,8 @@ export interface PageProposalCardProps {
   onCancel: () => void
   /** Open the made page (accepted state). */
   onOpenPage?: () => void
+  /** The made page is no longer reachable (trashed) — drop the link. */
+  inTrash?: boolean
   className?: string
 }
 
@@ -87,6 +89,7 @@ export function PageProposalCard({
   onMakePage,
   onCancel,
   onOpenPage,
+  inTrash = false,
   className,
 }: PageProposalCardProps) {
   const ids = useId()
@@ -95,6 +98,21 @@ export function PageProposalCard({
   if (status === 'rejected') return null
 
   if (status === 'accepted') {
+    if (inTrash) {
+      return (
+        <div
+          data-part="page-proposal"
+          data-status="accepted"
+          className={cn(
+            'flex flex-wrap items-center gap-[7px] font-mono text-[11px] lowercase tracking-[0.02em] text-mn-text-meta',
+            className
+          )}
+        >
+          <span>page made · {name} · in trash</span>
+        </div>
+      )
+    }
+
     return (
       <div
         data-part="page-proposal"

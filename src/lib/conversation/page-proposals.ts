@@ -53,6 +53,14 @@ export interface PageProposal {
    *  candidate id, or null until it resolves to one. Absent on a proposal
    *  made before this field existed. */
   mentioned?: PageProposalMention[]
+  /** The model's own verbatim chat framing (KAN-308) — the lead-in addressed
+   *  to the person and the sign-off/offer, each an exact substring of
+   *  `prose` when present. `''` means the model looked and found none to
+   *  name — a real answer, not a gap. Absent (`undefined`) means no
+   *  placement reply has landed yet, or the proposal predates this field;
+   *  only then does {@link stripChatFraming}'s deterministic fallback run. */
+  leadIn?: string
+  signOff?: string
 }
 
 export interface PageProposalMention {
@@ -63,6 +71,14 @@ export interface PageProposalMention {
 
 /** Keyed by proposal id. */
 export type PageProposals = Record<string, PageProposal>
+
+/** The fields a pending card can be patched on in place — the reducer's
+ *  `editPageProposal` action, the propose-page route's fill, and the
+ *  background placement patch all share this one shape rather than each
+ *  pinning their own `Pick<PageProposal, …>` copy of the same field list. */
+export type PageProposalPatch = Partial<
+  Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned' | 'leadIn' | 'signOff'>
+>
 
 /** Every page has a kind — an editable label with no template tie (W5). The
  *  card proposes the plainest one; the person edits it in place. */
@@ -105,6 +121,8 @@ export function parsePageProposals(value: unknown): PageProposals {
       status: r.status as PageProposalStatus,
       ...(typeof r.pageId === 'string' && r.pageId ? { pageId: r.pageId } : {}),
       mentioned: parseMentioned(r.mentioned),
+      ...(typeof r.leadIn === 'string' ? { leadIn: r.leadIn } : {}),
+      ...(typeof r.signOff === 'string' ? { signOff: r.signOff } : {}),
     }
   }
   return out
@@ -139,13 +157,19 @@ export interface PlacementResult {
   name: string | null
   parentId: string | null
   mentioned: PageProposalMention[]
+  /** The model's own verbatim chat framing (KAN-308) — see {@link PageProposal.leadIn}. */
+  leadIn?: string
+  signOff?: string
 }
 
 /** Tolerant-parse a propose-page route response — same posture as
- *  `parsePageProposals`: a shape slip returns null (treated as "no better
- *  answer arrived"), it never throws. Reuses {@link parseMentioned} so a
- *  mention with no title, or an empty-string `ref`, is dropped/nulled the
- *  same way here as it is on a persisted proposal. */
+ *  `parsePageProposals`: a shape slip in `name`/`parentId`/`mentioned` returns
+ *  null (treated as "no better answer arrived"), it never throws. `leadIn`/
+ *  `signOff` are looser still — a malformed one just drops that field rather
+ *  than failing the whole response, since neither is load-bearing for
+ *  placement. Reuses {@link parseMentioned} so a mention with no title, or an
+ *  empty-string `ref`, is dropped/nulled the same way here as it is on a
+ *  persisted proposal. */
 export function parsePlacementResponse(value: unknown): PlacementResult | null {
   if (typeof value !== 'object' || value === null) return null
   const v = value as Record<string, unknown>
@@ -156,6 +180,8 @@ export function parsePlacementResponse(value: unknown): PlacementResult | null {
     name: v.name as string | null,
     parentId: v.parentId as string | null,
     mentioned: parseMentioned(v.mentioned),
+    ...(typeof v.leadIn === 'string' ? { leadIn: v.leadIn } : {}),
+    ...(typeof v.signOff === 'string' ? { signOff: v.signOff } : {}),
   }
 }
 
@@ -239,6 +265,66 @@ function wholeWordIndex(text: string, needle: string): number {
     from = at + 1
   }
   return -1
+}
+
+// ── Chat framing ─────────────────────────────────────────────────────────────
+
+/** A leading conversational line the model sometimes opens with, addressed to
+ *  the person rather than part of the content ("Sure — here's…:", "Here's…:",
+ *  "Good question."). Matched only at the very start of the prose. The
+ *  colon-led shapes only match when the colon ends the line (`\n` or
+ *  end-of-string) — a colon mid-sentence ("Here's the catch: the permit
+ *  lapsed.") is content, not a framing line that introduces what follows on
+ *  its own line, so it is left alone. */
+const FALLBACK_LEAD_IN =
+  /^(?:(?:Sure[\s,—–-]*here['’]s[^:\n]*|Here['’]s[^:\n]*):(?=\n|$)|Good question\.)\s*/i
+
+/**
+ * Drops the answer's chat framing — the lead-in addressed to the person at the
+ * start, the sign-off/offer at the end — from `prose` so a made page holds
+ * the content, not the reply (KAN-308). `proposal.prose` itself is never
+ * mutated by this; it rides the record verbatim (convivial stance). Only the
+ * text handed to {@link proposalBlocks} at make-page time goes through this.
+ *
+ * `leadIn`/`signOff`, when given, are dropped ONLY on an exact prefix/suffix
+ * match, and only when the match ends at a word boundary (whitespace,
+ * punctuation, or the end of the string) — so a `leadIn` of "Sure" never eats
+ * the front of "Surely…". `leadIn === ''` means the model looked and found no
+ * lead-in to name: that is a real answer, not a gap, so it is kept distinct
+ * from `leadIn === undefined` (no placement reply yet, or one that predates
+ * this field) and skips the fallback rather than running it. Only when
+ * `leadIn` is `undefined` does {@link FALLBACK_LEAD_IN} cover the common
+ * shapes instead; there is no such fallback for `signOff` (the spec scopes
+ * the deterministic fallback to the lead-in only — a sign-off can trail a
+ * list or a code block in ways no narrow regex can safely match).
+ */
+export function stripChatFraming(prose: string, leadIn?: string, signOff?: string): string {
+  const start =
+    leadIn === undefined ? fallbackLeadInLength(prose) : leadIn === '' ? 0 : exactPrefixLength(prose, leadIn)
+  const end =
+    signOff && prose.endsWith(signOff) && prose.length - signOff.length >= start
+      ? prose.length - signOff.length
+      : prose.length
+  if (start === 0 && end === prose.length) return prose
+  return prose.slice(start, end).trim()
+}
+
+function fallbackLeadInLength(prose: string): number {
+  return prose.match(FALLBACK_LEAD_IN)?.[0].length ?? 0
+}
+
+/** `prose` starts with `leadIn` AND, if `leadIn` itself ends mid-word (its own
+ *  last character is a letter or digit), the character right after it is
+ *  not one too — so "Sure" cannot strip the front of "Surely…", but a
+ *  `leadIn` that already ends in punctuation or whitespace (the normal
+ *  case) needs no such check: it already lands on its own boundary. */
+function exactPrefixLength(prose: string, leadIn: string): number {
+  if (!prose.startsWith(leadIn)) return 0
+  const lastOfLeadIn = leadIn[leadIn.length - 1]
+  const leadInEndsMidWord = lastOfLeadIn !== undefined && /[\p{L}\p{N}]/u.test(lastOfLeadIn)
+  if (!leadInEndsMidWord) return leadIn.length
+  const after = prose[leadIn.length]
+  return after === undefined || !/[\p{L}\p{N}]/u.test(after) ? leadIn.length : 0
 }
 
 // ── The made page's blocks ───────────────────────────────────────────────────

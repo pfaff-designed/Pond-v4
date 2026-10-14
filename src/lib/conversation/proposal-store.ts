@@ -22,7 +22,7 @@
  */
 import type { ProposalDecision, ProposalTarget, ConversationResolutions } from './resolutions'
 import type { QuestionResolution, QuestionResolutions } from './parts'
-import type { PageProposal, PageProposals } from './page-proposals'
+import type { PageProposal, PageProposalPatch, PageProposals } from './page-proposals'
 import { idleLifecycle, isLifecycleActive, type LifecycleState } from './lifecycle'
 
 /** A card's settled decision, or `'pending'` — the reducer stores this; only
@@ -202,7 +202,7 @@ export type ProposalAction =
   | {
       kind: 'editPageProposal'
       id: string
-      patch: Partial<Pick<PageProposal, 'name' | 'parentId' | 'kind' | 'mentioned'>>
+      patch: PageProposalPatch
     }
   /** make page → accepted (with the made page's id); cancel → rejected. Only a
    *  pending card settles — a second make page on a settled card is a no-op
