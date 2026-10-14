@@ -4,8 +4,9 @@
  * KAN-309 — `/api/chat` attaches the open page's current text to the LAST user
  * message, so a thread whose history still carries an earlier (now accepted)
  * `propose_changes` call targets what the page reads NOW, not that call's
- * stale input. Reuses the node read `buildChatContext` already does (one
- * `fetchNodeContext` call, read below) rather than a second DB read. Same
+ * stale input. The route reads the open node once and hands that read to
+ * `buildChatContext` as `nodeData`, rather than having `buildChatContext` do
+ * a second `fetchNodeContext` call for the same page. Same
  * import stubs as chat-route-body-guard.test.ts, except `convertToModelMessages`
  * (from the real `ai` module) does the UIMessage → ModelMessage conversion for
  * real, so the history's accepted tool call and the final user text land in
@@ -40,11 +41,12 @@ const mockFetchNodeContext = jest.fn(async (_sb: unknown, _userId: string, pageI
       }
     : null
 )
+const mockBuildChatContext: jest.Mock<Promise<null>, unknown[]> = jest.fn(async () => null)
 jest.mock('@/lib/context/assemble', () => {
   const actual = jest.requireActual('@/lib/context/assemble')
   return {
     ...actual,
-    buildChatContext: async () => null,
+    buildChatContext: (...args: unknown[]) => mockBuildChatContext(...args),
     fetchNodeContext: (...args: [unknown, string, string]) => mockFetchNodeContext(...args),
   }
 })
@@ -139,5 +141,12 @@ describe('POST /api/chat targets the page as it reads now', () => {
     })
 
     expect(mockFetchNodeContext).toHaveBeenCalledTimes(1)
+    expect(mockBuildChatContext).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        nodeData: expect.objectContaining({ title: 'kan309 probe' }),
+      })
+    )
   })
 })
