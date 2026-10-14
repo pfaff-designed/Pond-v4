@@ -32,6 +32,7 @@ import {
 import { useSearchParams } from 'next/navigation'
 
 import { PAGE_COLUMN_PAD_PX, TEXT_BLOCK_INSET_PX } from '@/lib/layout/surface-column'
+import { requestComposerToggle, useComposerOpen } from '@/lib/terminal-focus'
 import { holdInkGround } from '@/lib/theme/mode'
 
 export interface Zen {
@@ -45,6 +46,15 @@ interface ZenValue {
   hasEntered: boolean
   enterZen: (zen: Zen) => void
   leaveZen: () => void
+  /**
+   * False on every `enterZen`: zen is quiet until the person asks for the
+   * composer (the pill's Pond mark, or "ask pond" on the selection bar) —
+   * the composer's own open/closed state (`useComposerOpen`) answers a
+   * different question and starts open regardless of zen.
+   */
+  composerAsked: boolean
+  askComposer: () => void
+  closeComposerAsk: () => void
 }
 
 const ZenContext = createContext<ZenValue>({
@@ -52,6 +62,9 @@ const ZenContext = createContext<ZenValue>({
   hasEntered: false,
   enterZen: () => {},
   leaveZen: () => {},
+  composerAsked: false,
+  askComposer: () => {},
+  closeComposerAsk: () => {},
 })
 
 export const useZen = (): ZenValue => useContext(ZenContext)
@@ -173,6 +186,11 @@ const pageScrollTop = (root: RefObject<HTMLElement | null>): number =>
 interface Session extends Zen {
   pageId: string | null
   scrollTop: number
+  /** The shared composer's open/closed state (`useComposerOpen`) as zen found
+   *  it — not zen's own `composerAsked`. Closing the card inside zen collapses
+   *  that shared state (`collapseComposer`), so leaving zen must put it back
+   *  the way the person had it, not however the card left it. */
+  composerWasOpen: boolean
 }
 
 export const ZenProvider = ({
@@ -186,23 +204,40 @@ export const ZenProvider = ({
   const pageId = useSearchParams().get('nodeId')
   const [session, setSession] = useState<Session | null>(null)
   const [hasEntered, setHasEntered] = useState(false)
+  const [composerAsked, setComposerAsked] = useState(false)
   const restoreTo = useRef<number | null>(null)
+  // The composer's real open/closed state.
+  const composerOpen = useComposerOpen()
+  // Set by `leaveZen`, consumed once `session` has actually gone (so the
+  // restore effect below sees the post-leave world, `inZen` included).
+  const restoreComposerOpen = useRef<boolean | null>(null)
 
   if (session && session.pageId !== pageId) setSession(null)
 
   const enterZen = useCallback(
     ({ onInk }: Zen) => {
-      setSession({ onInk, pageId, scrollTop: pageScrollTop(scrollRoot) })
+      setSession({
+        onInk,
+        pageId,
+        scrollTop: pageScrollTop(scrollRoot),
+        composerWasOpen: composerOpen,
+      })
       setHasEntered(true)
+      setComposerAsked(false)
     },
-    [pageId, scrollRoot]
+    [pageId, scrollRoot, composerOpen]
   )
 
   const leaveZen = useCallback(() => {
     if (!session) return
     restoreTo.current = session.scrollTop
+    restoreComposerOpen.current = session.composerWasOpen
     setSession(null)
+    setComposerAsked(false)
   }, [session])
+
+  const askComposer = useCallback(() => setComposerAsked(true), [])
+  const closeComposerAsk = useCallback(() => setComposerAsked(false), [])
 
   // After the chrome and the page's own type are back, so the offset lands on the page as it was.
   useLayoutEffect(() => {
@@ -211,6 +246,20 @@ export const ZenProvider = ({
     pageScroller(root).scrollTop = restoreTo.current
     restoreTo.current = null
   }, [session, scrollRoot])
+
+  // Put the shared composer back the way the person had it before zen —
+  // closing zen's card calls the same `collapseComposer` the ordinary
+  // composer uses, so that one toggle may have left it collapsed under a
+  // shell that had it open. `requestComposerToggle` is the existing ⌘J door;
+  // by the time this runs `session` is already null, so `AITerminal`'s own
+  // listener has re-subscribed with `inZen` false and treats it as a plain
+  // open/close rather than zen's ask/unask.
+  useEffect(() => {
+    if (session || restoreComposerOpen.current === null) return
+    const wasOpen = restoreComposerOpen.current
+    restoreComposerOpen.current = null
+    if (wasOpen !== composerOpen) requestComposerToggle()
+  }, [session, composerOpen])
 
   const onInk = session?.onInk ?? false
   useLayoutEffect(() => (onInk ? holdInkGround() : undefined), [onInk])
@@ -227,8 +276,8 @@ export const ZenProvider = ({
 
   const zen = useMemo<Zen | null>(() => (session ? { onInk: session.onInk } : null), [session])
   const value = useMemo(
-    () => ({ zen, hasEntered, enterZen, leaveZen }),
-    [zen, hasEntered, enterZen, leaveZen]
+    () => ({ zen, hasEntered, enterZen, leaveZen, composerAsked, askComposer, closeComposerAsk }),
+    [zen, hasEntered, enterZen, leaveZen, composerAsked, askComposer, closeComposerAsk]
   )
   return <ZenContext.Provider value={value}>{children}</ZenContext.Provider>
 }
@@ -245,6 +294,47 @@ export const ZenChrome = ({
   const shown = `${className} ${hasEntered ? ZEN_CHROME_RETURN : ''}`
   return (
     <div data-part="zen-chrome" className={zen ? 'hidden' : shown}>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * The composer's card, restyled as 6q f8's — the pill's `ask pond` asks for
+ * it (`composerAsked`); until then it stays with the rest of `ZenChrome`'s
+ * hidden-but-mounted chrome. The composer's own open/closed state
+ * (`useComposerOpen`) starts open regardless of zen (and is held open by an
+ * unresolved proposal), so it answers a different question and cannot gate
+ * this — only the person's own ask can. `TerminalDrawer` draws its own
+ * `[data-part="composer-card"]` for the normal shell; these `!`-important
+ * overrides from the ancestor are the board's placement for zen alone, so
+ * `TerminalDrawer` itself stays untouched for every other surface it serves.
+ *
+ * 6q f8's card carries the pill's own glass (`ZenPill.tsx`'s `PILL_GLASS`),
+ * not `TerminalDrawer`'s `.mn-glass` (`.86→.64`, shadow `.14`) — reassigning
+ * the `--mn-glass-*` vars `.mn-glass` itself reads is the cleanest route, so
+ * its `backdrop-filter: blur(24px) saturate(1.3)` (already a literal there,
+ * matching the board) needs no override of its own.
+ */
+const ZEN_COMPOSER_CARD_OVERRIDE = [
+  '[&_[data-part="composer-card"]]:w-[560px]!',
+  '[&_[data-part="composer-card"]]:left-1/2!',
+  '[&_[data-part="composer-card"]]:bottom-[92px]!',
+  '[&_[data-part="composer-card"]]:gap-[12px]!',
+  '[&_[data-part="composer-card"]]:[--mn-glass-bg:linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))]!',
+  '[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(255,255,255,.9)]!',
+  '[&_[data-part="composer-card"]]:[--mn-glass-shadow:inset_0_1px_0_rgba(255,255,255,.7),0_20px_54px_rgba(40,34,24,.16)]!',
+  'dark:[&_[data-part="composer-card"]]:[--mn-glass-bg:rgba(48,49,42,.9)]!',
+  'dark:[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(250,249,239,.09)]!',
+  'dark:[&_[data-part="composer-card"]]:[--mn-glass-shadow:0_20px_54px_rgba(0,0,0,.45)]!',
+].join(' ')
+
+export const ZenComposerChrome = ({ children }: { children: ReactNode }) => {
+  const { zen, hasEntered, composerAsked } = useZen()
+  const asked = zen !== null && composerAsked
+  const shown = `${hasEntered ? ZEN_CHROME_RETURN : ''} ${asked ? ZEN_COMPOSER_CARD_OVERRIDE : ''}`
+  return (
+    <div data-part="zen-chrome" className={zen && !asked ? 'hidden' : shown}>
       {children}
     </div>
   )

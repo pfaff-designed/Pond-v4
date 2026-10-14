@@ -98,10 +98,11 @@ import {
   ZEN_COLUMN_PX,
   ZEN_PROSE_CLASS,
   ZEN_TYPE_SCALE,
+  ZenComposerChrome,
   ZenProvider,
   zenPx,
 } from '@/lib/layout/zen'
-import { TOGGLE_COMPOSER_EVENT } from '@/lib/terminal-focus'
+import { notifyComposerOpenChange, TOGGLE_COMPOSER_EVENT } from '@/lib/terminal-focus'
 import { TEXT_PROSE_CLASS } from '@/lib/modules/text/prose'
 import { useRecordSelection } from '@/lib/modules/view/use-record-selection'
 import { TerminalDrawer } from '@/components/molecules/TerminalDrawer'
@@ -381,6 +382,66 @@ describe('the composer’s clearance while zen hides it', () => {
     sized(card, 0)
     act(() => observed!())
     expect(clearance()).toBe(`${composerFootprintPx(240)}px`)
+  })
+})
+
+describe('ZenComposerChrome — the composer’s card, shown only once asked', () => {
+  const Probe = () => {
+    const { enterZen, askComposer, closeComposerAsk } = useZen()
+    return (
+      <>
+        <button onClick={() => enterZen({ onInk: false })}>enter</button>
+        <button onClick={askComposer}>ask</button>
+        <button onClick={closeComposerAsk}>ask-close</button>
+        <div data-testid="page-text">the page’s own text</div>
+        <ZenComposerChrome>
+          <div data-part="composer-card">card</div>
+        </ZenComposerChrome>
+      </>
+    )
+  }
+  const Host = () => {
+    const root = useRef<HTMLDivElement>(null)
+    return (
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Probe />
+        </ZenProvider>
+      </div>
+    )
+  }
+  const chrome = () => screen.getByText('card').closest('[data-part="zen-chrome"]')!
+
+  it('stays hidden in zen with the composer already open (its default, and held open by a proposal) — only the ask shows it, at 6q f8’s placement; closing the ask hides it again, the page text untouched throughout', () => {
+    render(<Host />)
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    // The composer's own open/closed state starts open regardless of zen —
+    // that alone must not show the card.
+    act(() => notifyComposerOpenChange(true))
+    expect(chrome().className.split(' ')).toContain('hidden')
+
+    fireEvent.click(screen.getByRole('button', { name: 'ask' }))
+    const classes = chrome().className.split(' ')
+    expect(classes).not.toContain('hidden')
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        '[&_[data-part="composer-card"]]:w-[560px]!',
+        '[&_[data-part="composer-card"]]:left-1/2!',
+        '[&_[data-part="composer-card"]]:bottom-[92px]!',
+        '[&_[data-part="composer-card"]]:gap-[12px]!',
+        '[&_[data-part="composer-card"]]:[--mn-glass-bg:linear-gradient(160deg,rgba(255,255,255,.92),rgba(255,255,255,.76))]!',
+        '[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(255,255,255,.9)]!',
+        '[&_[data-part="composer-card"]]:[--mn-glass-shadow:inset_0_1px_0_rgba(255,255,255,.7),0_20px_54px_rgba(40,34,24,.16)]!',
+        'dark:[&_[data-part="composer-card"]]:[--mn-glass-bg:rgba(48,49,42,.9)]!',
+        'dark:[&_[data-part="composer-card"]]:[--mn-glass-border:1px_solid_rgba(250,249,239,.09)]!',
+        'dark:[&_[data-part="composer-card"]]:[--mn-glass-shadow:0_20px_54px_rgba(0,0,0,.45)]!',
+      ])
+    )
+    expect(screen.getByTestId('page-text').textContent).toBe('the page’s own text')
+
+    fireEvent.click(screen.getByRole('button', { name: 'ask-close' }))
+    expect(chrome().className.split(' ')).toContain('hidden')
+    expect(screen.getByTestId('page-text').textContent).toBe('the page’s own text')
   })
 })
 
@@ -703,7 +764,7 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     })
   })
 
-  it('⌘. enters zen; ⌘J leaves the hidden composer alone while in it', async () => {
+  it('⌘. enters zen; ⌘J still reaches the composer (this harness’s AITerminal is a stub — the ask routing is AITerminal.test.tsx’s)', async () => {
     const { container } = renderShell()
     await ready()
     const toggles = jest.fn()
@@ -717,7 +778,7 @@ describe('WorkspaceShell — zen from ⌘K, and back with esc', () => {
     act(() => {
       fireEvent.keyDown(document, { key: 'j', metaKey: true })
     })
-    expect(toggles).not.toHaveBeenCalled()
+    expect(toggles).toHaveBeenCalledTimes(1)
     window.removeEventListener(TOGGLE_COMPOSER_EVENT, toggles)
   })
 

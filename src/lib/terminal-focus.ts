@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react'
+
 /**
  * Decoupled "focus the terminal input" signal. The top bar (⌘K icon and the
  * global ⌘K hotkey) requests focus; the AITerminal listens and moves focus
@@ -94,6 +96,37 @@ export const HTML_IMPORT_PICKER_EVENT = 'pond:html-import-picker'
 
 export function requestHtmlImportPicker() {
   window.dispatchEvent(new CustomEvent(HTML_IMPORT_PICKER_EVENT))
+}
+
+/**
+ * "Is the composer open" (zen's pill, KAN-186). `AITerminal` broadcasts its
+ * own open/closed state; a listener outside it (the pill) reads that state
+ * without importing `AITerminal` — the same decoupling as the other events
+ * here, but through a module-level store rather than a `window` event, since
+ * every reader here is in-process (`useSyncExternalStore`, not `addEventListener`).
+ */
+// A module-level snapshot, not a per-hook useState: AITerminal's mount effect
+// broadcasts before ZenComposerChrome and ZenPill ever subscribe (host order),
+// so a listener that only started from its own mount would read the pre-mount
+// 'closed' default and never catch up to an already-open composer.
+let composerOpenSnapshot = false
+const composerOpenListeners = new Set<() => void>()
+
+export function notifyComposerOpenChange(open: boolean) {
+  composerOpenSnapshot = open
+  composerOpenListeners.forEach((listener) => listener())
+}
+
+/** Track the composer's open/closed state from outside `AITerminal`. False on the server. */
+export function useComposerOpen(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      composerOpenListeners.add(listener)
+      return () => composerOpenListeners.delete(listener)
+    },
+    () => composerOpenSnapshot,
+    () => false
+  )
 }
 
 /**

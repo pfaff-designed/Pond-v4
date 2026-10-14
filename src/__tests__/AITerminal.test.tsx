@@ -83,6 +83,7 @@ jest.mock('@ai-sdk/react', () => ({
 }))
 
 import { AITerminal } from '@/components/organisms/AITerminal'
+import { ZenPill } from '@/components/organisms/ZenPill'
 import { listPages } from '@/lib/pages/client'
 import {
   requestChanges,
@@ -91,6 +92,7 @@ import {
   requestHtmlImportPicker,
 } from '@/lib/terminal-focus'
 import { CHANGE_LOG_NODE_ID } from '@/lib/change-log/log-page'
+import { useZen, ZenComposerChrome, ZenProvider } from '@/lib/layout/zen'
 
 const mockListPages = listPages as jest.Mock
 
@@ -1066,5 +1068,262 @@ describe('AITerminal — REQUEST_CHANGES_EVENT before the thread is ready (KAN-9
     // ambient pond/contextLabel it happened to stream back against (KAN-96).
     const chipLabels = screen.getAllByTestId('read-chip').map((el) => el.textContent)
     expect(chipLabels).toEqual(['Recipe'])
+  })
+})
+
+describe('"close" always reachable in zen (KAN-186, 6q f8)', () => {
+  function renderInZen() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = React.createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenComposerChrome>
+            <QueryClientProvider client={queryClient}>
+              <AITerminal />
+            </QueryClientProvider>
+          </ZenComposerChrome>
+          <ZenPill />
+        </>
+      )
+    }
+    const view = render(
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Entered />
+        </ZenProvider>
+      </div>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    return view
+  }
+
+  it('shows "close" on the very first question, even though ThreadHead needs a second turn', async () => {
+    mockMessages = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
+    ]
+    renderInZen()
+    await waitReady()
+
+    expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
+  })
+
+  it('clicking "close" collapses the card and the Pond mark returns to rest', async () => {
+    mockMessages = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
+    ]
+    renderInZen()
+    await waitReady()
+
+    // PATH_STEP 1 — zen starts quiet: the mark is at rest, nothing asked.
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    expect(askPond).toHaveAttribute('aria-pressed', 'false')
+
+    // PATH_STEP 8 — the first Pond-mark press is what opens the card.
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
+
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+  })
+
+  it('opened from the mark with no thread at all, "close" is present and closing it focuses ask pond', async () => {
+    renderInZen()
+    await waitReady()
+
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+
+    const close = screen.getByRole('button', { name: 'close' })
+    expect(close).toBeInTheDocument()
+
+    fireEvent.click(close)
+
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+    expect(askPond).toHaveFocus()
+  })
+
+  it('still shows "close" as the card\'s last row once a thread has more than one turn', async () => {
+    mockMessages = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
+      { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'pasta' }] },
+      { id: 'm3', role: 'user', parts: [{ type: 'text', text: 'what else' }] },
+      { id: 'm4', role: 'assistant', parts: [{ type: 'text', text: 'salad' }] },
+      { id: 'm5', role: 'user', parts: [{ type: 'text', text: 'and dessert' }] },
+      { id: 'm6', role: 'assistant', parts: [{ type: 'text', text: 'cake' }] },
+    ]
+    renderInZen()
+    await waitReady()
+
+    const close = screen.getByRole('button', { name: 'close' })
+    expect(close).toBeInTheDocument()
+    const closeRow = close.closest('[data-part="zen-close-row"]')
+    expect(closeRow?.parentElement?.lastElementChild).toBe(closeRow)
+
+    fireEvent.click(close)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'close' })).not.toBeInTheDocument())
+  })
+})
+
+describe('Esc order inside zen (KAN-186)', () => {
+  function renderInZen() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = React.createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenComposerChrome>
+            <QueryClientProvider client={queryClient}>
+              <AITerminal />
+            </QueryClientProvider>
+          </ZenComposerChrome>
+          <ZenPill />
+        </>
+      )
+    }
+    const view = render(
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Entered />
+        </ZenProvider>
+      </div>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    return view
+  }
+
+  it('closes the card first, and only a second Esc (nothing left to consume it) leaves zen', async () => {
+    mockMessages = [
+      { id: 'm1', role: 'user', parts: [{ type: 'text', text: 'what should i cook' }] },
+    ]
+    renderInZen()
+    await waitReady()
+
+    // PATH_STEP 1 — zen starts quiet: the mark is at rest, nothing asked.
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    expect(askPond).toHaveAttribute('aria-pressed', 'false')
+
+    // PATH_STEP 8 — the first Pond-mark press is what opens the card.
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+
+    const textbox = screen.getByRole('textbox')
+    textbox.focus()
+    fireEvent.keyDown(textbox, { key: 'Escape' })
+
+    // First Esc: the card closes, but zen itself is untouched.
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+    expect(screen.getByRole('button', { name: 'leave' })).toBeInTheDocument()
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    // Second Esc: nothing left to consume it, so this is the one that leaves zen.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'leave' })).not.toBeInTheDocument()
+    )
+  })
+})
+
+describe('⌘J inside zen (KAN-186)', () => {
+  function renderInZen() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = React.createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenComposerChrome>
+            <QueryClientProvider client={queryClient}>
+              <AITerminal />
+            </QueryClientProvider>
+          </ZenComposerChrome>
+          <ZenPill />
+        </>
+      )
+    }
+    const view = render(
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Entered />
+        </ZenProvider>
+      </div>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+    return view
+  }
+
+  it('shows the card and the mark goes active; pressed again, it closes', async () => {
+    renderInZen()
+    await waitReady()
+
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    expect(askPond).toHaveAttribute('aria-pressed', 'false')
+
+    act(() => requestComposerToggle())
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('button', { name: 'close' })).toBeInTheDocument()
+
+    act(() => requestComposerToggle())
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+  })
+})
+
+describe('leaving zen restores the composer’s open state (KAN-186)', () => {
+  function renderInZen() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = React.createRef<HTMLDivElement>()
+    const Entered = () => {
+      const { enterZen } = useZen()
+      return (
+        <>
+          <button onClick={() => enterZen({ onInk: false })}>enter</button>
+          <ZenComposerChrome>
+            <QueryClientProvider client={queryClient}>
+              <AITerminal />
+            </QueryClientProvider>
+          </ZenComposerChrome>
+          <ZenPill />
+        </>
+      )
+    }
+    return render(
+      <div ref={root}>
+        <ZenProvider scrollRoot={root}>
+          <Entered />
+        </ZenProvider>
+      </div>
+    )
+  }
+
+  it('composer open → enter zen → open and close the card → leave zen → the composer is open again', async () => {
+    renderInZen()
+    await waitReady()
+
+    // The composer starts open regardless of zen (its own default).
+    expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'enter' }))
+
+    const askPond = screen.getByRole('button', { name: 'ask pond' })
+    fireEvent.click(askPond)
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'true'))
+
+    // Closing the card calls the same `collapseComposer` the ordinary composer
+    // uses — it is this collapse, not zen itself, the fix must undo on leave.
+    fireEvent.click(screen.getByRole('button', { name: 'close' }))
+    await waitFor(() => expect(askPond).toHaveAttribute('aria-pressed', 'false'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'leave' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Message Pond' })).toBeInTheDocument()
+    )
   })
 })
