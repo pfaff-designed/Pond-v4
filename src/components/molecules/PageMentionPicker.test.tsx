@@ -13,6 +13,13 @@ const ITEMS: PageMentionItem[] = [
   { id: 'c', glyph: 'leaf', label: 'garden plan', sub: 'home' },
 ]
 
+const MANY_ITEMS: PageMentionItem[] = Array.from({ length: 20 }, (_, i) => ({
+  id: `page-${i}`,
+  glyph: 'heart',
+  label: `page ${i}`,
+  sub: 'home',
+}))
+
 const ANCHOR: MentionAnchorBox = {
   getBoundingClientRect: () => ({ top: 100, bottom: 140, left: 0, width: 320 }),
 }
@@ -235,6 +242,56 @@ describe('PageMentionPicker — the composer @ popover rows', () => {
 
     const popover = document.querySelector('[data-part="popover"]') as HTMLElement
     expect(popover.style.bottom).toBe(`${window.innerHeight - 100 + 10}px`)
+  })
+
+  it('caps the row list to six rows\' height and scrolls the rest, with 20 pages', () => {
+    render(
+      <PageMentionPicker
+        items={MANY_ITEMS}
+        activeIndex={0}
+        onHover={jest.fn()}
+        onPick={jest.fn()}
+        onClose={jest.fn()}
+        anchor={ANCHOR}
+      />
+    )
+
+    expect(screen.getAllByRole('option')).toHaveLength(20)
+    const listbox = screen.getByRole('listbox')
+    expect(listbox.style.maxHeight).toBe(`${6 * 35.5}px`)
+    expect(listbox.className).toContain('overflow-y-auto')
+  })
+
+  it('scrolls the active row into view when the active index moves', () => {
+    const scrollIntoView = jest.fn()
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+
+    function Stepper() {
+      const [activeIndex, setActiveIndex] = useState(0)
+      return (
+        <>
+          <button type="button" onClick={() => setActiveIndex(15)}>
+            jump
+          </button>
+          <PageMentionPicker
+            items={MANY_ITEMS}
+            activeIndex={activeIndex}
+            onHover={setActiveIndex}
+            onPick={jest.fn()}
+            onClose={jest.fn()}
+            anchor={ANCHOR}
+          />
+        </>
+      )
+    }
+
+    render(<Stepper />)
+    scrollIntoView.mockClear()
+    fireEvent.click(screen.getByText('jump'))
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    const active = screen.getByRole('option', { name: /page 15/ })
+    expect(active).toHaveAttribute('aria-selected', 'true')
   })
 
   it('does not close when focus moves from the composer onto one of its own rows', () => {

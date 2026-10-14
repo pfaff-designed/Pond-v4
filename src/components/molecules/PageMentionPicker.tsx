@@ -82,6 +82,11 @@ const SUB = 'min-w-0 truncate text-[12.5px] text-mn-text-secondary'
 const POPOVER_GAP_PX = 10
 /** `PondComposer.dc.html`'s `sPop`: `left: 12, right: 12` off the anchor. */
 const POPOVER_INSET_PX = 12
+/** `ROW`'s measured height (`py-[8px]` + the `text-[13px]` line) — an unfiltered
+ * `@` can list every page in the pond, so the row list caps at six and scrolls
+ * the rest, per `MENTION_POPOVER_ESTIMATE_PX`'s own "up to six rows". */
+const ROW_HEIGHT_PX = 35.5
+const MAX_VISIBLE_ROWS = 6
 
 /** The anchor's live value, ref or raw — the one place both effects below (and the width effect) read it from. */
 function resolveAnchorBox(anchor: MentionAnchor): MentionAnchorBox | null {
@@ -134,6 +139,11 @@ export function PageMentionPicker({
   // textarea never loses focus while a row is picked (rows preventDefault
   // their own mousedown), so a real blur means focus left for the page.
   const glassRef = useRef<HTMLDivElement>(null)
+  const activeRowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    activeRowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node | null
@@ -192,12 +202,18 @@ export function PageMentionPicker({
       <div data-part="head" className={HEAD}>
         pages
       </div>
-      <div role="listbox" aria-label="pages">
+      <div
+        role="listbox"
+        aria-label="pages"
+        className="overflow-y-auto"
+        style={{ maxHeight: MAX_VISIBLE_ROWS * ROW_HEIGHT_PX }}
+      >
         {items.map((item, index) => {
           const active = index === activeIndex
           return (
             <div
               key={item.id}
+              ref={active ? activeRowRef : undefined}
               role="option"
               aria-selected={active}
               data-part="row"
