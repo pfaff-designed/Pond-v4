@@ -9,6 +9,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ChangeLogRecordPage } from '@/components/organisms/ChangeLogRecordPage'
 import type { ChangeLogRecord } from '@/lib/change-log/types'
 
+jest.mock('@/lib/pond/context', () => ({
+  usePondId: () => 'pond-1',
+}))
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}))
+
 jest.mock('@/lib/supabase/client', () => ({
   createClient: () => ({}),
 }))

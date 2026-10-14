@@ -10,15 +10,24 @@
  * not-found state for a record missing or hidden by RLS (AUDIT G6).
  */
 
-import type { ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
+import { usePondId } from '@/lib/pond/context'
+import { workspaceUrl } from '@/lib/pages/nav'
 import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-column'
 import { getRecord } from '@/lib/change-log/store'
 import { getPage } from '@/lib/pages/client'
 import { getThreadFirstQuestion } from '@/lib/conversation/client'
 import { describeChange } from '@/lib/change-log/page-changes'
+import { proposeRevert } from '@/lib/change-log/revert'
+import { canRevertRecord } from '@/lib/change-log/revert-plan'
+import { WAITING_STATUSES } from '@/lib/change-log/status'
+import { personFacingMessage } from '@/lib/change-log/errors'
 import { ChangeRows } from '@/components/molecules/diff-card-parts'
+import { ChangeLogAnswerActions } from '@/components/molecules/ChangeLogAnswerActions'
+import { PondControl } from '@/components/atoms/PondControl'
 import { machineEyebrowClass } from '@/components/atoms/kicker'
 import {
   pageBlockField,
@@ -63,6 +72,14 @@ const RECORD_CHIP_CLASS =
 export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
   const getSupabase = useLazySupabase()
   const { column } = useSurfaceColumn(RECORD_COLUMN_PX)
+  const router = useRouter()
+  const pondId = usePondId()
+  const queryClient = useQueryClient()
+  const [actionError, setActionError] = useState<string | null>(null)
+  // G9: a ref, not state — the second of two rapid clicks can land before a
+  // state update guarding on a render would have committed (mirrors
+  // `ChangeLogAnswerActions`'s own `busyRef`).
+  const revertingRef = useRef(false)
 
   const { data: record, isLoading: recordLoading } = useQuery({
     queryKey: recordKey(recordId),
@@ -84,6 +101,46 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
     enabled: threadId !== null,
     queryFn: () => getThreadFirstQuestion(getSupabase(), threadId as string),
   })
+
+  const handleOpenPage = useCallback(() => {
+    if (!targetPage) return
+    router.push(workspaceUrl({ id: targetPage.id, type: targetPage.type, title: targetPage.title }))
+  }, [router, targetPage])
+
+  // Raises ONE new `proposed` revert record (`proposeRevert`), re-reading the
+  // target page fresh rather than trusting a stale copy — the same reason
+  // `PageChangesPanel`'s own revert re-reads before planning. Stays on this
+  // record; refetching it is what will surface "reverted by" once the "this
+  // change" column (a later item of this ticket) renders it.
+  const handleRevert = useCallback(() => {
+    if (revertingRef.current) return
+    if (record === null || record === undefined || record.targetPageId === null) return
+    revertingRef.current = true
+    const toRevert = record
+    void (async () => {
+      try {
+        const supabase = getSupabase()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        const page = await getPage(supabase, toRevert.targetPageId as string)
+        if (!page) return
+        await proposeRevert(supabase, {
+          userId: user.id,
+          pondId,
+          record: toRevert,
+          current: page.blocks,
+        })
+        setActionError(null)
+        await queryClient.invalidateQueries({ queryKey: recordKey(recordId) })
+      } catch (err) {
+        setActionError(personFacingMessage(err))
+      } finally {
+        revertingRef.current = false
+      }
+    })()
+  }, [record, recordId, getSupabase, pondId, queryClient])
 
   if (recordLoading) {
     return (
@@ -179,6 +236,30 @@ export function ChangeLogRecordPage({ recordId }: { recordId: string }) {
                 <p className="font-mono text-[12px] text-mn-text">{describeChange(record, null)}</p>
               )}
             </div>
+            {WAITING_STATUSES.includes(record.status) ? (
+              <ChangeLogAnswerActions record={record} pondId={pondId} onError={setActionError} />
+            ) : (
+              <div className="flex items-center gap-2">
+                <PondControl
+                  kind="button"
+                  variant="secondary"
+                  disabled={!targetPage}
+                  onClick={handleOpenPage}
+                >
+                  open page
+                </PondControl>
+                {canRevertRecord(record) && (
+                  <PondControl kind="button" variant="ghost" onClick={handleRevert}>
+                    revert
+                  </PondControl>
+                )}
+              </div>
+            )}
+            {actionError && (
+              <p role="alert" className="font-mono text-[12.5px] text-mn-text-secondary">
+                {actionError}
+              </p>
+            )}
           </div>
         </div>
       </div>
