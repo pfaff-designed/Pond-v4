@@ -137,13 +137,18 @@ export function ChangeLogAnswerActions({
   // card's remaining lifetime (it leaves 'outdated' only via a refetch
   // elsewhere, at which point this component unmounts).
   const [revised, setRevised] = useState(false)
+  // A ref, not the `revised` state itself, guards the dispatch: StrictMode
+  // (Next dev) invokes a state updater function twice to surface
+  // non-pure updaters, so a `requestChanges` call inside the updater — as
+  // opposed to the `revised` state it sets, which is idempotent either way
+  // — would fire the note twice for one real click.
+  const revisedRef = useRef(false)
 
   const handleRevise = useCallback((detail: RequestChangesDetail) => {
-    setRevised((already) => {
-      if (already) return already
-      requestChanges(detail)
-      return true
-    })
+    if (revisedRef.current) return
+    revisedRef.current = true
+    requestChanges(detail)
+    setRevised(true)
   }, [])
 
   // The open note box for this record, at most one at a time — "request
