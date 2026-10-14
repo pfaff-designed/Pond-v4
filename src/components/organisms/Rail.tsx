@@ -354,6 +354,13 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   const isFullInk = isSelected || hovered || isAreaRow || isDbRoot
   // `PondRail.dc.html`: the selected row draws ＋ alone, a hovered one ＋ and ×.
   const showPlus = isSelected || hovered
+  // The tools sit out of flow (absolutely, over the row's own right padding —
+  // KAN-314), so they take no flow width at rest and the label needs no extra
+  // clearance. Only while a control is actually drawn does the label give up
+  // the width it would overlap: the row's own 7px gap plus ＋ alone (7+12=19),
+  // or plus ＋ · gap 8 · × together (7+12+8+12=39). `group-focus-within` covers
+  // the keyboard case, where both draw regardless of `hovered`/`showPlus`.
+  const toolsPad = hovered ? 'pr-[39px]' : showPlus ? 'pr-[19px]' : ''
 
   return (
     <div
@@ -484,49 +491,57 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 Delete. The mark button is the one exception — it follows the row's own
                 roving tabIndex (markButton, below) so Tab from the focused row reaches
                 it without adding a stop per row. The selected row shows ＋ alone; a
-                hovered or focused row shows ＋ and ×; at rest the tools take no width.
-                The root takes ＋ and never ×. */}
+                hovered or focused row shows ＋ and ×. The slot sits out of flow —
+                absolutely, over the row's own right padding (KAN-314) — so it takes
+                no width when nothing is shown, and × always lands at the same point
+                (the row's right edge) whether the row is at rest or hovered: pointing
+                there is pointing at the row itself (the row owns the hover state), so
+                × is reachable with one click and no row click first. ＋ is the one
+                thing that moves — alone at that same edge when selected-and-unhovered,
+                one slot left of × (gap 8) once × also draws. The root takes ＋ and
+                never ×. */}
               {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
-                <span
-                  data-part="row-tools"
-                  className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
-                    showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
-                  }`}
-                >
+                <span data-part="row-tools" className="absolute inset-y-0 right-2 flex items-center">
                   {onNewPageMenuOpenChange && (
-                    <NewPageMenu
-                      parentTitle={label}
-                      open={newPageMenuOpen}
-                      onOpenChange={(open) => onNewPageMenuOpenChange(id, open)}
-                      onSelect={(action) => onNewPageMenuSelect?.(id, action)}
-                      placement={{ anchor: addChildRef, align: 'start', top: 4, alignOffset: -6 }}
-                      trigger={
-                        <button
-                          ref={addChildRef}
-                          type="button"
-                          tabIndex={-1}
-                          className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
-                          title="Add sub-page"
-                          aria-label={`Add sub-page to ${label}`}
-                          disabled={isBusy}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                            <path
-                              d="M6 2.4v7.2M2.4 6h7.2"
-                              stroke="currentColor"
-                              strokeWidth="1.4"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                        </button>
-                      }
-                    />
+                    <span
+                      className={`flex flex-none items-center transition-[opacity,margin-right] motion-reduce:transition-none group-focus-within:mr-5 group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+                        showPlus ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                      } ${hovered ? 'mr-5' : ''}`}
+                    >
+                      <NewPageMenu
+                        parentTitle={label}
+                        open={newPageMenuOpen}
+                        onOpenChange={(open) => onNewPageMenuOpenChange(id, open)}
+                        onSelect={(action) => onNewPageMenuSelect?.(id, action)}
+                        placement={{ anchor: addChildRef, align: 'start', top: 4, alignOffset: -6 }}
+                        trigger={
+                          <button
+                            ref={addChildRef}
+                            type="button"
+                            tabIndex={-1}
+                            className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                            title="Add sub-page"
+                            aria-label={`Add sub-page to ${label}`}
+                            disabled={isBusy}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                              <path
+                                d="M6 2.4v7.2M2.4 6h7.2"
+                                stroke="currentColor"
+                                strokeWidth="1.4"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                          </button>
+                        }
+                      />
+                    </span>
                   )}
                   {!isRoot && onDelete && (
                     <span
-                      className={`flex overflow-hidden transition-opacity group-focus-within:max-w-5 group-focus-within:pl-2 group-focus-within:opacity-100 ${
-                        hovered ? 'max-w-5 pl-2 opacity-100' : 'max-w-0 pl-0 opacity-0'
+                      className={`absolute inset-y-0 right-0 flex items-center transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+                        hovered ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                       }`}
                     >
                       <button
@@ -561,9 +576,15 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
         // font-size as conflicting with leading (a `text-*` step can carry its
         // own), so a size appended after it silently drops it — #252's bug
         // class — and the row springs back to preflight's 1.5.
+        // `pr-*`/`group-focus-within:pr-[39px]` give the label (the one flex-1
+        // child left once the tools are absolute) clearance only while ＋/×
+        // actually draw over it — at rest they add nothing, so the label runs
+        // to the row's own 8px right padding, per the board.
         className={`min-h-0 w-full min-w-0 flex-1 bg-transparent ${isDbRoot ? 'gap-[9px]' : 'gap-[7px]'} p-0${
-          isAreaRow ? '' : ' text-[13px]'
-        }${isFullInk ? '' : ' text-mn-text-secondary'} leading-[normal]`}
+          toolsPad ? ` ${toolsPad}` : ''
+        } group-focus-within:pr-[39px]${isAreaRow ? '' : ' text-[13px]'}${
+          isFullInk ? '' : ' text-mn-text-secondary'
+        } leading-[normal]`}
       />
     </div>
   )

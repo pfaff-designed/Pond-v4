@@ -722,9 +722,16 @@ export const BoardRowGeometry: Story = {
       const slot = [...host.children].find((c) => getComputedStyle(c).position !== 'absolute')!
       await expect(getComputedStyle(slot).width).toBe('9px')
 
-      // the label body is bare: no padding of its own
+      // the label body is bare: no padding of its own — except the open row
+      // (life, here, since `selectedId` is null and the tree isn't empty: the
+      // board's own home state), which rightly gives its resting ＋ clearance
+      // (row gap 7 + ＋ 12 = 19).
       const body = host.querySelector<HTMLElement>('[data-kind="list-row"]')!
-      await expect(getComputedStyle(body).padding).toBe('0px')
+      if (host.getAttribute('aria-selected') !== 'true') {
+        await expect(getComputedStyle(body).padding).toBe('0px')
+      } else {
+        await expect(getComputedStyle(body).padding).toBe('0px 19px 0px 0px')
+      }
       // the board's metric leading, not Tailwind's preflight 1.5 (= 20.25px here)
       await expect(getComputedStyle(body).lineHeight).toBe('normal')
     }
@@ -813,7 +820,6 @@ export const LifeCaretCollapsesAll: Story = {
   },
 }
 
-const rowTools = (button: HTMLElement) => button.closest<HTMLElement>('[data-part="row-tools"]')!
 const isShown = (el: HTMLElement) =>
   getComputedStyle(el).opacity === '1' && el.getBoundingClientRect().width > 0
 
@@ -866,11 +872,19 @@ export const SelectedRowShowsPlus: Story = {
     const recipes = canvas.getByRole('treeitem', { name: /Recipes/ })
     const add = within(recipes).getByRole('button', { name: 'Add sub-page to Recipes' })
     const del = within(recipes).getByRole('button', { name: 'Delete Recipes' })
-    await expect(isShown(rowTools(add))).toBe(true)
-    await expect(del.parentElement!.getBoundingClientRect().width).toBe(0)
+    await expect(isShown(add.parentElement!)).toBe(true)
+    await expect(isShown(del.parentElement!)).toBe(false)
 
     const trips = canvas.getByRole('button', { name: 'Add sub-page to Trips' })
-    await expect(rowTools(trips).getBoundingClientRect().width).toBe(0)
+    await expect(isShown(trips.parentElement!)).toBe(false)
+
+    // selected, unhovered: ＋'s slot draws alone, inside the row's own 8px
+    // right padding (`PondRail.dc.html` rowPad; `hasPlus: isSel && !hov`).
+    // Measure the wrapper, not the button — the button's own `-m-0.5`
+    // enlarges its hit target past the slot's edge.
+    await expect(
+      Math.round(recipes.getBoundingClientRect().right - add.parentElement!.getBoundingClientRect().right)
+    ).toBe(8)
 
     await userEvent.hover(recipes)
     await waitFor(() => expect(isShown(del.parentElement!)).toBe(true))
@@ -883,7 +897,10 @@ export const RootRowTools: Story = {
   play: async ({ canvas, args }) => {
     const life = canvas.getByRole('treeitem', { name: /life/ })
     const add = within(life).getByRole('button', { name: 'Add sub-page to life' })
-    await expect(isShown(rowTools(add))).toBe(true)
+    // The outer `row-tools` span is now a constant-class positioning shell (KAN-314
+    // fix round 2) — it can't fail `isShown` by itself, so assert on the ＋'s own
+    // visibility wrapper instead.
+    await expect(isShown(add.parentElement!)).toBe(true)
     await expect(within(life).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
     await userEvent.click(add)
     await userEvent.click(await within(document.body).findByRole('menuitem', { name: /^page/ }))
@@ -892,25 +909,53 @@ export const RootRowTools: Story = {
 }
 
 /**
- * The tools reserve no width at rest — the label owns the whole row — and
- * appear on keyboard focus-within as well as on hover.
+ * At rest, the row reserves no space for ＋/× — the label runs to the row's own
+ * 8px right padding (`PondRail.dc.html` rowPad), not a reserved tools slot. The
+ * ×'s slot is laid out at a fixed position at rest and on hover alike (KAN-314)
+ * — only opacity/pointer-events toggle, so it never shifts and always lies
+ * inside the row. It also appears on keyboard focus-within, not just on hover.
  */
 export const HoverCrudReservesNoWidth: Story = {
   tags: ['!dev'],
   play: async ({ canvas }) => {
-    const scratch = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const row = canvas.getByRole('treeitem', { name: /Scratchpad/ })
+    const title = row.querySelector<HTMLElement>('[data-part="title"]')!
     const del = canvas.getByRole('button', { name: 'Delete Scratchpad' })
-    const tools = rowTools(del)
-    await expect(tools.getBoundingClientRect().width).toBe(0)
+    const tools = del.parentElement!
+
+    // Scratchpad is a non-top-level row, so it settles in on mount (a translate
+    // animation) — wait it out before measuring position, or the geometry below
+    // races the animation's transform.
+    await waitFor(() => expect(row.className).not.toMatch(/motion-settle-in/))
+
     await expect(getComputedStyle(tools).opacity).toBe('0')
-    const title = scratch.querySelector<HTMLElement>('[data-part="title"]')!
-    const row = scratch.getBoundingClientRect()
-    // 8px right padding is all that sits between the label's box and the row's edge
-    await expect(Math.round(row.right - title.getBoundingClientRect().right)).toBe(8)
+    await expect(getComputedStyle(tools).pointerEvents).toBe('none')
+    // nothing reserved at rest: the label runs to the row's own 8px padding
+    await expect(
+      Math.round(row.getBoundingClientRect().right - title.getBoundingClientRect().right)
+    ).toBe(8)
+
+    // measure the slot (tools, the visibility wrapper), not the × button — the
+    // button's own `-m-0.5` enlarges its hit target past the slot's edges
+    const restRect = tools.getBoundingClientRect()
 
     del.focus()
     await waitFor(() => expect(getComputedStyle(tools).opacity).toBe('1'))
-    await expect(tools.getBoundingClientRect().width).toBeGreaterThan(24)
+    await expect(getComputedStyle(tools).pointerEvents).toBe('auto')
+    del.blur()
+
+    await userEvent.hover(row)
+    await waitFor(() => expect(getComputedStyle(tools).opacity).toBe('1'))
+
+    // × never moves between rest and hovered, and always lies inside the row
+    const hoveredRect = tools.getBoundingClientRect()
+    await expect(hoveredRect.left).toBe(restRect.left)
+    await expect(hoveredRect.right).toBe(restRect.right)
+    await expect(hoveredRect.top).toBe(restRect.top)
+    await expect(hoveredRect.bottom).toBe(restRect.bottom)
+    const rowRect = row.getBoundingClientRect()
+    await expect(hoveredRect.left).toBeGreaterThanOrEqual(rowRect.left)
+    await expect(hoveredRect.right).toBeLessThanOrEqual(rowRect.right)
   },
 }
 
@@ -1057,10 +1102,11 @@ export const Empty: Story = {
     await expect(root).toHaveAttribute('aria-selected', 'false')
     const tools = root.querySelector<HTMLElement>('[data-part="row-tools"]')
     await expect(tools).not.toBeNull()
-    await expect(getComputedStyle(tools as HTMLElement).opacity).toBe('0')
+    const add = within(root).getByRole('button', { name: /^Add sub-page to/ })
+    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
     await userEvent.hover(root)
-    await waitFor(() => expect(getComputedStyle(tools as HTMLElement).opacity).toBe('1'))
-    await expect(within(root).getByRole('button', { name: /^Add sub-page to/ })).toBeVisible()
+    await waitFor(() => expect(getComputedStyle(add.parentElement!).opacity).toBe('1'))
+    await expect(add).toBeVisible()
     await expect(within(root).queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
     await userEvent.unhover(root)
 
@@ -1990,7 +2036,8 @@ export const EmptyRootHasNoChevron: Story = {
     // the board selects nothing here, so the root draws no resting ＋ — only its hover tools
     const tools = life.querySelector<HTMLElement>('[data-part="row-tools"]')
     await expect(tools).not.toBeNull()
-    await expect(getComputedStyle(tools as HTMLElement).opacity).toBe('0')
+    const add = within(life).getByRole('button', { name: /^Add sub-page to/ })
+    await expect(getComputedStyle(add.parentElement!).opacity).toBe('0')
   },
 }
 
