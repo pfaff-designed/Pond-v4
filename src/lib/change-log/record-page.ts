@@ -25,6 +25,23 @@ export function changeLogRecordUrl(recordId: string): string {
   return `?${params.toString()}`
 }
 
+/** The search param naming which page the change log's "all" view is filtered to. */
+export const PAGE_FILTER_PARAM = 'page'
+
+/** The workspace URL for the change log filtered to one page's own records —
+ *  the panel's "open in change log" link. */
+export function changeLogPageFilterUrl(pageId: string): string {
+  const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID, [PAGE_FILTER_PARAM]: pageId })
+  return `?${params.toString()}`
+}
+
+/** The plain change log URL, with no page filter — where clearing the
+ *  filter chip (or the "all" pill) sends the page via `router.replace`. */
+export function changeLogUrl(): string {
+  const params = new URLSearchParams({ nodeId: CHANGE_LOG_NODE_ID })
+  return `?${params.toString()}`
+}
+
 /**
  * Which block a record actually changed, read from its OWN before/after
  * snapshots — `null` when neither side is a block array (a collection-tool
@@ -69,9 +86,12 @@ function oneLineOf(text: string, max = TITLE_PREVIEW_MAX_CHARS): string {
 }
 
 /** A changed block's own title text — the registry's `preview` facet, or
- *  (text has none) its plain content, trimmed to one line. */
-function blockPreviewText(block: Block, blocks?: readonly Block[]): string {
-  if (block.type === 'text') return oneLineOf('content' in block ? String(block.content) : '')
+ *  (text has none) its plain content, trimmed to one line. `full` lifts the
+ *  text block's trim cap so a `title` attribute can carry the whole line. */
+function blockPreviewText(block: Block, blocks?: readonly Block[], full = false): string {
+  if (block.type === 'text') {
+    return oneLineOf('content' in block ? String(block.content) : '', full ? Infinity : undefined)
+  }
   return resolveDescriptor(block.type).preview(block, blocks)
 }
 
@@ -85,16 +105,23 @@ function blockPreviewText(block: Block, blocks?: readonly Block[]): string {
  * snapshot to diff.
  *
  * `blocks` are the target page's current page-mates (ticket-23 siblings),
- * passed by a caller that has them in hand; omit when it doesn't.
+ * passed by a caller that has them in hand; omit when it doesn't. `options.full`
+ * drops the ~60-char trim so a caller needing the whole text (e.g. a row's
+ * `title` attribute) can ask for it — still the first non-blank line only.
  */
-export function recordTitle(record: ChangeLogRecord, blocks?: readonly Block[]): string {
+export function recordTitle(
+  record: ChangeLogRecord,
+  blocks?: readonly Block[],
+  options?: { full?: boolean }
+): string {
+  const full = options?.full ?? false
   const change = resolvedBlockChange(record)
   if (change === null) return describeChange(record, null)
   const { before, after } = change
   if (before !== null && after !== null) {
-    return `${blockPreviewText(before, blocks)} → ${blockPreviewText(after, blocks)}`
+    return `${blockPreviewText(before, blocks, full)} → ${blockPreviewText(after, blocks, full)}`
   }
-  return blockPreviewText((after ?? before) as Block, blocks)
+  return blockPreviewText((after ?? before) as Block, blocks, full)
 }
 
 /**

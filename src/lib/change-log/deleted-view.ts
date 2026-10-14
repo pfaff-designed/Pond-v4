@@ -13,14 +13,11 @@
  * no React, no formatting decisions beyond a short human label.
  */
 
+import { DAY_MS, daysBetween } from './log-page'
 import { readTrashSnapshot } from './summary'
 import type { ChangeLogRecord } from './types'
 
-const DAY_MS = 86_400_000
 const THIRTY_DAYS_MS = 30 * DAY_MS
-
-const startOfDay = (d: Date): number =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
 /** `12 aug` — s6o6's own register: day first, lowercase short month, no year. */
 const shortDate = (d: Date): string =>
@@ -31,11 +28,10 @@ const clock = (d: Date): string =>
 
 /** `yesterday 18:40` within a day either side of `now`, else the bare `shortDate`. */
 const whenLabel = (iso: string, now: Date): string => {
-  const created = new Date(iso)
-  const diffDays = Math.round((startOfDay(now) - startOfDay(created)) / DAY_MS)
-  if (diffDays === 0) return `today ${clock(created)}`
-  if (diffDays === 1) return `yesterday ${clock(created)}`
-  return shortDate(created)
+  const diffDays = daysBetween(now, iso)
+  if (diffDays === 0) return `today ${clock(new Date(iso))}`
+  if (diffDays === 1) return `yesterday ${clock(new Date(iso))}`
+  return shortDate(new Date(iso))
 }
 
 const pluralCount = (n: number, singular: string, plural: string = `${singular}s`): string =>

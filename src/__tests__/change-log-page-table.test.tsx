@@ -18,7 +18,8 @@ jest.mock('@/lib/pond/context', () => ({
 
 const mockPush = jest.fn()
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useSearchParams: () => ({ get: () => null }),
 }))
 
 jest.mock('@/lib/pond/name', () => ({

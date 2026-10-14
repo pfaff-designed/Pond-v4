@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
+import { isApplePlatform } from '@/lib/platform'
+
 /**
  * Decoupled "focus the terminal input" signal. The top bar (⌘K icon and the
  * global ⌘K hotkey) requests focus; the AITerminal listens and moves focus
@@ -64,7 +66,7 @@ export function requestComposerToggle() {
 /** The platform's command key for ⌘J: Cmd on Apple platforms, Ctrl everywhere else. */
 export function isComposerToggleKey(e: KeyboardEvent): boolean {
   if (e.altKey || e.shiftKey || e.key.toLowerCase() !== 'j') return false
-  const apple = /Mac|iPhone|iPad/.test(navigator.platform)
+  const apple = isApplePlatform()
   return apple ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
 }
 

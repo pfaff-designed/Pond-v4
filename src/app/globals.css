@@ -353,6 +353,14 @@
   --mn-menu-border: 1px solid rgba(255, 255, 255, 0.9);
   --mn-menu-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 20px 54px rgba(40, 34, 24, 0.16);
 
+  /* ── The page-changes panel (`Pond 06.15` s6o8, KAN-175/305): its light
+     recipe happens to match the switcher menu's above, but it must NOT share
+     --mn-menu-* — dark reassigns that to the lifted chip (#4A4940), while the
+     panel is a floating card and needs the #30312A glass roles instead. */
+  --mn-panel-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.76));
+  --mn-panel-border: 1px solid rgba(255, 255, 255, 0.9);
+  --mn-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 20px 54px rgba(40, 34, 24, 0.16);
+
   /* ── The proposal card INSIDE the composer (#97, `Pond 06.01` 6a frame 4,
      read inline): a whiter pane on the glass, bordered by white at .9. Dark
      takes PondComposer's `diffCard` ink values: the dark card + its shadow. */
@@ -495,6 +503,13 @@
   );
   --mn-menu-border: 1px solid rgb(from var(--raw-paper) r g b / 0.09);
   --mn-menu-shadow: 0 20px 54px rgba(0, 0, 0, 0.45);
+
+  /* The page-changes panel on the dark ground (KAN-175/305): the #30312A
+     floating-glass card every other floating panel takes, not the switcher
+     menu's lifted chip above. */
+  --mn-panel-bg: var(--mn-glass-bg);
+  --mn-panel-border: var(--mn-glass-border);
+  --mn-panel-shadow: var(--mn-glass-shadow);
 
   /* The in-composer proposal card on the dark glass (PondComposer `diffCard`, ink). */
   --mn-proposal-bg: var(--raw-card-dark);

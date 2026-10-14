@@ -9,7 +9,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLazySupabase } from '@/lib/supabase/use-lazy-client'
 import { usePondId } from '@/lib/pond/context'
@@ -18,7 +18,7 @@ import { PAGE_COLUMN_PAD_PX, useSurfaceColumn } from '@/lib/layout/surface-colum
 import { countWaiting, listRecords } from '@/lib/change-log/store'
 import { changeLogKey } from '@/lib/change-log/keys'
 import { buildLogRows } from '@/lib/change-log/log-page'
-import { changeLogRecordUrl } from '@/lib/change-log/record-page'
+import { changeLogRecordUrl, changeLogUrl, PAGE_FILTER_PARAM } from '@/lib/change-log/record-page'
 import { clockTime } from '@/lib/change-log/page-changes'
 import { labelForStatus, WAITING_STATUSES } from '@/lib/change-log/status'
 import { buildDeletedCards, type DeletedCard } from '@/lib/change-log/deleted-view'
@@ -50,6 +50,14 @@ function changeLogRecordsKey(pondId: string | null) {
 /** The deleted view's own cards, pond-scoped, under the shared change-log root. */
 function changeLogDeletedKey(pondId: string | null) {
   return [...changeLogKey(), pondId, 'deleted'] as const
+}
+
+/** The "all" view filtered to one page (`?page=`), pond- and page-scoped,
+ *  under the shared change-log root. Same records, same order as the
+ *  panel's own `pageChangesKey` query — both call `listRecords` with the
+ *  same `targetPageId`. */
+function changeLogPageFilteredKey(pondId: string | null, pageFilterId: string) {
+  return [...changeLogKey(), pondId, 'page-filtered', pageFilterId] as const
 }
 
 /** The proposed view's own records (KAN-96, s6o2), pond-scoped, under the
@@ -168,10 +176,16 @@ function DeletedRecordCard({
 export function ChangeLogPage() {
   const getSupabase = useLazySupabase()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const pondId = usePondId()
   const pondName = usePondName()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ChangeLogView>('all')
+  // Read straight off the URL on every render (not into state), so clearing
+  // the filter actually clears the param rather than leaving a stale
+  // `?page=` for a reload to re-apply, and a URL change while mounted (e.g.
+  // navigating here again with a different page) takes effect.
+  const pageFilterId = searchParams.get(PAGE_FILTER_PARAM)
   const { column } = useSurfaceColumn(
     view === 'deleted'
       ? DELETED_VIEW_COLUMN_PX
@@ -202,6 +216,7 @@ export function ChangeLogPage() {
     isLoading: recordsLoading,
   } = useInfiniteQuery({
     queryKey: changeLogRecordsKey(pondId),
+    enabled: pageFilterId === null,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const supabase = getSupabase()
@@ -224,6 +239,23 @@ export function ChangeLogPage() {
 
   const records = useMemo(() => recordPages?.pages.flat() ?? [], [recordPages])
 
+  // `?page=` filters the "all" view to one page's own records — the same
+  // query the panel's own `pageChangesKey` makes (same `targetPageId`, same
+  // order), so "open in change log" never shows a different list than the
+  // panel it came from. No pagination here, same as the panel's own list.
+  const { data: pageFilteredRecords, isLoading: pageFilteredLoading } = useQuery({
+    queryKey: changeLogPageFilteredKey(pondId, pageFilterId ?? ''),
+    enabled: view === 'all' && pageFilterId !== null,
+    queryFn: async () => {
+      const supabase = getSupabase()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return []
+      return listRecords(supabase, { userId: user.id, pondId, targetPageId: pageFilterId as string })
+    },
+  })
+
   // The same `['pages', pondId, 'full']` cache AITerminal's destination picker
   // reads — one page-title fetch, not a second one just for this table.
   const { data: pages = [] } = useQuery({
@@ -239,7 +271,16 @@ export function ChangeLogPage() {
   })
 
   const pageTitleById = useMemo(() => new Map(pages.map((p) => [p.id, p.title])), [pages])
-  const groups = useMemo(() => buildLogRows(records, pageTitleById), [records, pageTitleById])
+  const activeRecords = useMemo(
+    () => (pageFilterId === null ? records : pageFilteredRecords ?? []),
+    [pageFilterId, records, pageFilteredRecords]
+  )
+  const activeRecordsLoading = pageFilterId === null ? recordsLoading : pageFilteredLoading
+  const groups = useMemo(
+    () => buildLogRows(activeRecords, pageTitleById),
+    [activeRecords, pageTitleById]
+  )
+  const clearPageFilter = () => router.replace(changeLogUrl())
 
   // s6o2: every record still waiting on a decision (`proposed` or
   // `outdated`), newest first — refetched on each switch, same reasoning as
@@ -377,7 +418,10 @@ export function ChangeLogPage() {
           <button
             type="button"
             aria-pressed={view === 'all'}
-            onClick={() => setView('all')}
+            onClick={() => {
+              setView('all')
+              if (pageFilterId !== null) clearPageFilter()
+            }}
             className={
               view === 'all'
                 ? 'rounded-full bg-mn-hover-fill px-[11px] py-[5px] font-medium text-mn-text'
@@ -428,12 +472,36 @@ export function ChangeLogPage() {
         </div>
         {view === 'all' ? (
           <div className="rounded-mn-card bg-mn-card px-[10px] pt-[14px] pb-[6px] shadow-mn-card">
-            {recordsLoading ? null : records.length === 0 ? (
+            {pageFilterId !== null && (
+              <div className="flex flex-wrap gap-1.5 px-[10px] pb-[10px]">
+                <span className={PROPOSED_CHIP_CLASS}>
+                  page is {pageTitleById.get(pageFilterId) ?? 'deleted page'}
+                  <button
+                    type="button"
+                    aria-label="clear page filter"
+                    onClick={clearPageFilter}
+                    className="ml-1 flex h-6 w-6 items-center justify-center text-mn-text-secondary hover:text-mn-text-meta"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+                      <path
+                        d="M3 3l6 6M9 3l-6 6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            )}
+            {activeRecordsLoading ? null : activeRecords.length === 0 ? (
               <p
                 data-testid="change-log-empty"
                 className="px-[10px] pb-[8px] font-mono text-[12.5px] text-mn-text-secondary"
               >
-                nothing logged in this pond yet
+                {pageFilterId !== null
+                  ? 'no changes to this page yet'
+                  : 'nothing logged in this pond yet'}
               </p>
             ) : (
               <>
@@ -483,7 +551,7 @@ export function ChangeLogPage() {
                     ))}
                   </div>
                 ))}
-                {hasNextPage && (
+                {pageFilterId === null && hasNextPage && (
                   <button
                     type="button"
                     onClick={() => fetchNextPage()}

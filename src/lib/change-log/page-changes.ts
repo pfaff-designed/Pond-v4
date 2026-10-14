@@ -5,32 +5,17 @@
  * floating panel." — "the panel is a view of the log, not a second history."
  *
  * This is the SURFACE #103's third acceptance bullet asks for ("reachable from
- * the change-log surface"), and deliberately only that. The pond-wide
- * `databases › change log` with its `all / proposed / by page / memory / deleted`
- * saved views, the "N proposed, waiting on you" figure and the full record page
- * are #147; none of them exist yet, and nothing here pre-empts their shape. What
- * this panel owes #103 is a place to raise a revert and answer it.
+ * the change-log surface"), and deliberately only that. A row names and times a
+ * change and opens its record page (KAN-152/#147); it answers nothing itself —
+ * accept/reject/revert are the record page's own controls.
  *
  * Pure — the rows are derived from records the caller already has. No Supabase,
  * no React, no formatting decisions beyond a short human label.
  */
 
 import { AREA_COLOUR_SWATCHES, GLYPH_LIBRARY, isAreaRole } from '@/lib/rail/glyph-library'
-import { canRevertRecord } from './revert-plan'
 import { summarizeAddedRow, summarizeBlockEdit, summarizeRowEdit, summarizeTrash } from './summary'
 import type { ChangeLogRecord } from './types'
-
-export interface PageChangeRow {
-  record: ChangeLogRecord
-  /** A short human line for the row — what this change was. */
-  label: string
-  /** Offer a revert on this row? */
-  revertable: boolean
-  /** Why not, when `revertable` is false and the reason is worth saying. */
-  revertBlockedBy: 'waiting' | null
-  /** When this row IS a revert: the record it sets back, if it is on this page. */
-  reverts: ChangeLogRecord | null
-}
 
 /** `09:31` for a raw ISO timestamp — split out from {@link clockTime} so a
  *  surface naming a moment that isn't a record's own `createdAt` (a
@@ -51,6 +36,11 @@ const glyphName = (glyph: string | null): string => {
   if (glyph === null) return 'automatic'
   const entry = GLYPH_LIBRARY.find((g) => g.glyph === glyph)
   return entry?.label ?? glyph
+}
+
+/** The panel head's own shortcut text (board `s6o8`): ⌥⌘H on a Mac, Ctrl+Alt+H elsewhere. */
+export function platformShortcutLabel(isMac: boolean): string {
+  return isMac ? '⌥⌘H' : 'Ctrl+Alt+H'
 }
 
 /**
@@ -159,41 +149,4 @@ export function describeChange(
       // by a later build lands here, and showing its raw action beats a blank row.
       return record.action
   }
-}
-
-/**
- * Turn a page's records (newest first, as `listRecords` returns them) into rows.
- *
- * A revert is offered only where the log genuinely allows one: an accepted `edit`
- * with a block snapshot to set back, and no revert of it already waiting. That
- * second condition is the panel's half of the guard `proposeRevert` enforces —
- * the button goes away rather than throwing when it is pressed.
- */
-export function buildPageChanges(records: ChangeLogRecord[]): PageChangeRow[] {
-  const byId = new Map(records.map((r) => [r.id, r]))
-
-  const revertsOf = new Map<string, ChangeLogRecord[]>()
-  for (const record of records) {
-    const target = record.links.revertOf
-    if (target === undefined) continue
-    const list = revertsOf.get(target)
-    if (list) list.push(record)
-    else revertsOf.set(target, [record])
-  }
-
-  return records.map((record) => {
-    // The `reverted by` backlink is computed but not exposed: this panel says only
-    // whether a revert is already waiting. Rendering the linked record itself is
-    // the record page's job (#147), which queries `listRevertsOf` for it.
-    const waiting = (revertsOf.get(record.id) ?? []).some((r) => r.status === 'proposed')
-    const revertable = canRevertRecord(record) && !waiting
-    const reverts = byId.get(record.links.revertOf ?? '') ?? null
-    return {
-      record,
-      label: describeChange(record, reverts, byId),
-      revertable,
-      revertBlockedBy: !revertable && waiting ? 'waiting' : null,
-      reverts,
-    }
-  })
 }

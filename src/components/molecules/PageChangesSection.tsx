@@ -1,190 +1,100 @@
 'use client'
 
 /**
- * "Changes to this page" (issue #103, storyboard frame 8) — the log filtered to
- * the open page, newest first, with the affordances a revert needs.
+ * "Changes to this page" (board `Pond 06.15 Change log.dc.html`, frame
+ * `s6o8`) — the log filtered to the open page, newest first, floating over
+ * the canvas. Purely presentational: `rows` are derived by
+ * `buildPageChangeRows` and the intents are raised to the connected
+ * `PageChangesPanel`.
  *
- * Purely presentational: the rows are derived by `buildPageChanges` and the
- * intents are raised to the connected `PageChangesPanel`. Press aesthetics —
- * kicker header, mono meta, hairline rows — matching `BacklinksSection`.
- *
- * Records are READ-ONLY ("the log only grows"), so nothing here edits one. The
- * only controls are the three the design puts on a record: revert on an accepted
- * change, and accept / reject on a proposed one.
- *
- * What this is NOT: the pond-wide `databases › change log` with its saved views,
- * its "N proposed, waiting on you" figure and its record page showing before/after
- * and the source thread. That is #147. This panel is a view of the same log, not a
- * second history.
+ * The board draws no buttons on a row — a proposed or outdated diff is
+ * answered on its own record page, not duplicated here. A row only opens
+ * that record. This is a view of the log, not a second history.
  */
 
-import { Button } from '@/components/ui/button'
-import { ProposalActions } from '@/components/molecules/ProposalActions'
-import { kickerClass } from '@/components/atoms/kicker'
+import { FOCUS_VISIBLE_RING } from '@/components/atoms/focus-ring'
 import { cn } from '@/lib/utils'
-import type { PageChangeRow } from '@/lib/change-log/page-changes'
+import type { PageChangeRow } from '@/lib/change-log/page-change-rows'
 import { labelForStatus } from '@/lib/change-log/status'
-import type { ChangeLogStatus } from '@/lib/change-log/types'
 
 export interface PageChangesSectionProps {
   rows: PageChangeRow[]
   loading?: boolean
-  /** Raise a revert of an accepted change. */
-  onRevert: (recordId: string) => void
-  /** Answer a proposed revert. */
-  onAccept: (recordId: string) => void
-  onReject: (recordId: string) => void
   /** Open the record's own page (KAN-152). */
   onOpenRecord: (recordId: string) => void
-  /** The record a write is in flight for — its controls go quiet. */
-  busyId?: string | null
-  /** Shown once, above the rows, when something failed. */
-  error?: string | null
+  /** Open the change log filtered to this page. */
+  onOpenChangeLog: () => void
+  /** "⌥⌘H" on a Mac, "Ctrl+Alt+H" elsewhere — `platformShortcutLabel`. */
+  shortcutLabel: string
   className?: string
 }
 
-/** Statuses the design draws as an outlined pill rather than quiet mono text. */
-const PILLED: readonly ChangeLogStatus[] = ['proposed', 'outdated']
+const PANEL =
+  'flex flex-col gap-[10px] rounded-[20px] p-[16px_12px] [background:var(--mn-panel-bg)] [border:var(--mn-panel-border)] [box-shadow:var(--mn-panel-shadow)] backdrop-blur-[24px] backdrop-saturate-[1.3]'
 
-function Status({ status }: { status: ChangeLogStatus }) {
-  if (PILLED.includes(status)) {
-    return (
-      <span className="rounded-mn-pill border border-mn-line px-2 py-0.5 font-mono text-[0.65rem]">
-        {labelForStatus(status)}
-      </span>
-    )
-  }
-  return (
-    <span className="font-mono text-[0.65rem] text-mn-text-meta">{labelForStatus(status)}</span>
-  )
-}
+const ROW =
+  'grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-[10px] rounded-[8px] px-2 py-[7px] text-left text-[12.5px] transition-colors hover:bg-mn-hover-fill'
 
-/**
- * `2026-09-30T09:31:00Z` → `09:31`, in the reader's own timezone.
- *
- * `hourCycle: 'h23'` because the design's rows read `09:31` and `18:40`, and
- * because a locale-default 12-hour clock renders `02:32 PM` — which overflowed
- * the column when this was first run against the real log.
- */
-function timeOf(iso: string): string {
-  const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-}
+const META = 'font-mono text-[10.5px] text-mn-text-secondary'
+
+const PILL =
+  'justify-self-start rounded-full px-2 py-0.5 ring-1 ring-inset ring-mn-mark-faint font-mono text-[10.5px] text-mn-text'
 
 export function PageChangesSection({
   rows,
   loading = false,
-  onRevert,
-  onAccept,
-  onReject,
   onOpenRecord,
-  busyId = null,
-  error = null,
+  onOpenChangeLog,
+  shortcutLabel,
   className,
 }: PageChangesSectionProps) {
   return (
-    <section aria-label="Changes to this page" className={className}>
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className={cn(kickerClass, 'text-mn-text-secondary')}>Changes to this page</h2>
-        <span className="font-mono text-[0.65rem] text-mn-text-secondary">⌥⌘H</span>
+    <aside
+      aria-label="Changes to this page"
+      className={cn('fixed top-6 right-6 bottom-6 z-40 flex w-[300px] flex-col', PANEL, className)}
+    >
+      <div className="flex items-baseline justify-between px-2">
+        <span className="text-[15px] font-medium">changes to this page</span>
+        <span className={META}>{shortcutLabel}</span>
       </div>
 
-      {error && (
-        <p role="alert" className="mb-2 font-mono text-xs text-mn-text-secondary">
-          {error}
-        </p>
-      )}
+      <div className="flex-1 overflow-y-auto">
+        {!loading && rows.length === 0 && (
+          <p className="px-2 font-mono text-[11px] text-mn-text-secondary">
+            no changes to this page yet
+          </p>
+        )}
 
-      {loading && rows.length === 0 && (
-        <p className="font-mono text-xs text-mn-text-secondary">loading…</p>
-      )}
+        {rows.map(({ record, time, label, fullLabel, status }) => (
+          <button
+            key={record.id}
+            type="button"
+            className={cn(ROW, FOCUS_VISIBLE_RING)}
+            onClick={() => onOpenRecord(record.id)}
+          >
+            <span className={META}>{time}</span>
+            <span className="truncate" title={fullLabel}>
+              {label}
+            </span>
+            {status.kind === 'pill' ? (
+              <span className={PILL}>{labelForStatus(status.text)}</span>
+            ) : (
+              <span className={META}>{labelForStatus(status.text)}</span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      {!loading && rows.length === 0 && (
-        // Most pages have never been changed by Pond. Say so plainly rather than
-        // showing an empty frame that looks broken.
-        <p className="font-mono text-xs text-mn-text-secondary">nothing logged for this page yet</p>
-      )}
-
-      <ul className="divide-y divide-mn-hair">
-        {rows.map(({ record, label, revertable, revertBlockedBy }) => {
-          const busy = busyId === record.id
-          const answerable = record.action === 'revert' && record.status === 'proposed'
-          const outdated = record.action === 'revert' && record.status === 'outdated'
-          return (
-            <li key={record.id} className="flex flex-wrap items-center gap-3 py-2">
-              {/* The row's own identity (not its controls) opens the record — a
-                sibling, not a wrapper, so revert/accept/reject stay their own
-                click/keyboard targets rather than needing to stop propagation. */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenRecord(record.id)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return
-                  e.preventDefault()
-                  onOpenRecord(record.id)
-                }}
-                className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-3"
-              >
-                <span className="w-10 shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
-                  {timeOf(record.createdAt)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
-                  {record.actor}
-                </span>
-                <Status status={record.status} />
-              </div>
-
-              {answerable && (
-                // The same control row every other proposal uses. It was extracted
-                // from ModuleDiffCard precisely so a second accept/reject pair
-                // could not diverge from the first; `divider={false}` because this
-                // row supplies its own chrome.
-                <ProposalActions
-                  status="pending"
-                  divider={false}
-                  disabled={busy}
-                  className="shrink-0"
-                  onAccept={() => onAccept(record.id)}
-                  onReject={() => onReject(record.id)}
-                />
-              )}
-
-              {outdated && (
-                // Criterion 5 withdraws accept from an outdated diff and offers
-                // revise. There is no revise verb on this surface yet, so say what
-                // the person can actually do: the change it reverts offers Revert
-                // again, and that re-plans against the page as it now stands.
-                <span className="w-full font-mono text-[0.65rem] text-mn-text-secondary">
-                  out of date — revert it again
-                </span>
-              )}
-
-              {revertable && (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => onRevert(record.id)}
-                  className="shrink-0"
-                >
-                  Revert
-                </Button>
-              )}
-
-              {revertBlockedBy === 'waiting' && (
-                // The revert exists already and is sitting in this same list —
-                // saying so beats a button that would refuse.
-                <span className="shrink-0 font-mono text-[0.65rem] text-mn-text-secondary">
-                  revert waiting
-                </span>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-    </section>
+      <button
+        type="button"
+        onClick={onOpenChangeLog}
+        className={cn(
+          'self-start px-2 font-mono text-[11px] underline decoration-mn-mark-faint underline-offset-[3px]',
+          FOCUS_VISIBLE_RING
+        )}
+      >
+        open in change log
+      </button>
+    </aside>
   )
 }

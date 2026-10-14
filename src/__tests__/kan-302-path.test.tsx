@@ -722,16 +722,19 @@ describe('KAN-302 path test harness', () => {
     // Open the ⌥⌘H panel BEFORE the undo/redo sequence, as
     // `undo-redraw-within-1s.test.tsx` does, so it is already mounted to redraw.
     fireEvent.keyDown(document.body, { key: 'h', altKey: true, metaKey: true, code: 'KeyH' })
-    const panel = screen.getByRole('region', { name: 'Changes to this page' })
+    const panel = screen.getByRole('complementary', { name: 'Changes to this page' })
 
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
     await waitFor(() => expect(pageColumn.queryByText('the new block')).not.toBeInTheDocument())
 
     // ONE ⇧⌘Z — both the page and the panel must redraw inside this one waitFor.
+    // The redo lands a third record (the create, its undo, and now its redo) —
+    // the panel's own row count is the redraw signal, since `recordTitle` gives
+    // every one of the three the same label here.
     fireEvent.keyDown(document.body, { key: 'z', metaKey: true, shiftKey: true })
     await waitFor(() => {
       expect(pageColumn.getByText('the new block')).toBeInTheDocument()
-      expect(within(panel).getByText(/redo/)).toBeInTheDocument()
+      expect(within(panel).getAllByText('the new block')).toHaveLength(3)
     })
 
     platform.mockRestore()
