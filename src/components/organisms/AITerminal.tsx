@@ -87,7 +87,7 @@ import {
 } from '@/lib/attachments/html'
 import type { ReadHtmlError, ReadHtmlResult } from '@/lib/import/types'
 import { formatBytes } from '@/components/molecules/HtmlAttachmentPill'
-import type { PageReference } from '@/lib/references/reference'
+import { dedupeWholePageReferences, type PageReference } from '@/lib/references/reference'
 import { ReferencesRow, type ReferenceChip } from '@/components/molecules/ReferencesRow'
 import { editorForBlock, onTextEditorRegistered } from '@/lib/modules/text/active-editor'
 import {
@@ -768,6 +768,34 @@ export function AITerminal() {
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
   const [references, setReferences] = useState<PageReference[]>([])
 
+  // The open page goes with every question as the first chip (KAN-99, board
+  // 6e). `current:${nodeId}` is a stable id so it's addressable by × like any
+  // other reference; `dismissedCurrentRefNodeId` remembers that nodeId was
+  // dismissed for THIS visit, so this effect (which only re-runs on a real
+  // nodeId change) doesn't immediately reseed it — opening another page
+  // resets the dismissal, per the ticket's "state per page visit".
+  const [dismissedCurrentRefNodeId, setDismissedCurrentRefNodeId] = useState<string | null>(null)
+  // Guarded to fire once per `nodeId`/dismissal pair (both tracked in the
+  // dependency array, so this never cascades) — not a derived-state
+  // computation, so `react-hooks/set-state-in-effect` is disabled here, same
+  // as Rail.tsx's own "reveal the selection" effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const currentRefId = `current:${nodeId}`
+    setReferences((prev) => {
+      const withoutStaleCurrent = prev.filter(
+        (ref) => !ref.id.startsWith('current:') || ref.id === currentRefId
+      )
+      if (!nodeId || dismissedCurrentRefNodeId === nodeId) return withoutStaleCurrent
+      if (withoutStaleCurrent.some((ref) => ref.id === currentRefId)) return withoutStaleCurrent
+      return [
+        { id: currentRefId, pageId: nodeId, blockId: null, range: null, quotedText: '' },
+        ...withoutStaleCurrent,
+      ]
+    })
+  }, [nodeId, dismissedCurrentRefNodeId])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleAskFromSelection = useCallback(
     (ctx: SelectionContext) => {
       // A selection outside any block (no `data-block-id` ancestor) has no page
@@ -801,9 +829,11 @@ export function AITerminal() {
   // A chip's title is resolved from `pageId` at render time (KAN-302's
   // `contextLabel` precedent), never stamped once, so a live rename is
   // reflected while the reference is still sitting above the composer text.
+  // `dedupeWholePageReferences` drops the current-page chip once a passage
+  // reference on that same page is live (KAN-99) — never shown twice.
   const referenceItems = useMemo<ReferenceChip[]>(
     () =>
-      references.map((ref) => {
+      dedupeWholePageReferences(references).map((ref) => {
         const title =
           allPages.find((p) => p.id === ref.pageId)?.title ??
           (ref.pageId === nodeId ? contextLabel : 'untitled')
@@ -827,9 +857,15 @@ export function AITerminal() {
     [references, allPages, nodeId, contextLabel, pageMarks]
   )
 
-  const handleRemoveReference = useCallback((key: string) => {
-    setReferences((prev) => prev.filter((ref) => ref.id !== key))
-  }, [])
+  const handleRemoveReference = useCallback(
+    (key: string) => {
+      setReferences((prev) => prev.filter((ref) => ref.id !== key))
+      // Removing the current-page chip dismisses it for this visit — the
+      // seeding effect above only reseeds it once `nodeId` itself changes.
+      if (key === `current:${nodeId}`) setDismissedCurrentRefNodeId(nodeId)
+    },
+    [nodeId]
+  )
 
   // The mention pill (board 6e frame 4) paints under exactly the typed
   // `@<title>` runs that still carry a live whole-page reference — the same
@@ -1716,7 +1752,14 @@ export function AITerminal() {
       // the send (board 6e frame 4: the refs row still holds both references
       // and the passage stays highlighted) — removed only by its own × or by
       // the anchored text being edited away.
-      const body = { nodeId, nodeType, pondId, resolutions: outgoing, research, references }
+      const body = {
+        nodeId,
+        nodeType,
+        pondId,
+        resolutions: outgoing,
+        research,
+        references: dedupeWholePageReferences(references),
+      }
       // #97: the thread shows when each line was said ("you · 07:12"), and a
       // page made from the answer carries that moment on its made-from chip.
       const metadata = { sentAt: new Date().toISOString() }

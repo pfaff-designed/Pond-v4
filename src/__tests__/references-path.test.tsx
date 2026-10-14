@@ -303,3 +303,56 @@ describe('a reference survives a send, a removal and an edit (KAN-98 path test)'
     expect(field.querySelectorAll('.mn-reference-highlight')).toHaveLength(0)
   })
 })
+
+describe('the open page auto-references itself, deduped against a passage (KAN-99)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockSendMessage.mockClear()
+    mockMessages = []
+  })
+  afterEach(() => clearSelection())
+
+  it('shows the current page first and lets it be removed', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop' }))
+
+    expect(screen.queryByRole('group', { name: 'references' })).not.toBeInTheDocument()
+  })
+
+  it('removing the current page drops it from the next send', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+
+    await user.click(screen.getByRole('button', { name: 'remove reference: Workshop' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Message Pond' }), 'hello?')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1))
+    const [, { body }] = mockSendMessage.mock.calls[0]
+    expect(body.references).toEqual([])
+  })
+
+  it('a passage ask on the current page suppresses its whole-page chip without removing the passage chip', async () => {
+    const user = userEvent.setup()
+    renderSurface()
+    await waitComposerReady()
+    const field = await findTextBlock()
+
+    expect(screen.getByRole('button', { name: 'remove reference: Workshop' })).toBeInTheDocument()
+
+    selectWord(field, 'wild')
+    await user.click(await screen.findByRole('button', { name: 'ask pond' }))
+
+    expect(await screen.findByText('Workshop — “wild”')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'remove reference: Workshop' })
+    ).not.toBeInTheDocument()
+  })
+})

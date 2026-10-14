@@ -16,6 +16,19 @@ export interface PageReference {
   quotedText: string
 }
 
+/**
+ * A whole-page reference (`range: null`) for a page that also carries a
+ * passage reference (`range` non-null) is redundant — the passage chip
+ * already carries the page — so KAN-99's current-page auto-reference never
+ * doubles up with a KAN-98 selection on the same page.
+ */
+export function dedupeWholePageReferences(references: readonly PageReference[]): PageReference[] {
+  const passagePageIds = new Set(
+    references.filter((ref) => ref.range !== null).map((ref) => ref.pageId)
+  )
+  return references.filter((ref) => ref.range !== null || !passagePageIds.has(ref.pageId))
+}
+
 export interface TextRange {
   from: number
   to: number
