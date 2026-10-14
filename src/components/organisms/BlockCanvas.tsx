@@ -280,6 +280,14 @@ export interface BlockCanvasProps {
    * add-block affordance, only its one hint line.
    */
   untouched?: boolean
+  /**
+   * The new-page menu's "from a template" row (KAN-198): a page id carried
+   * one-shot through navigation (`?templates=1`, read by the caller). When it
+   * matches `pageId`, the `/` menu opens on block 0 once, leading with
+   * templates exactly as it does for any blank page — never re-fires for the
+   * same id, so a later re-render with the same prop value is a no-op.
+   */
+  openTemplatesFor?: string | null
   /** The block list's own layout, where a host spaces blocks its way. */
   listStyle?: CSSProperties
   /**
@@ -308,6 +316,7 @@ export function BlockCanvas({
   onMoveIntoNewPage,
   chrome = true,
   untouched = false,
+  openTemplatesFor = null,
   listStyle,
   onPreviewNameChange,
 }: BlockCanvasProps) {
@@ -347,6 +356,16 @@ export function BlockCanvas({
       void makePage(instantiateTemplate(PREMADE_TEMPLATES.page), placement, target),
     makePageFromTemplate: (pick, target, index) => void makePageFromTemplate(pick, target, index),
   })
+  // KAN-198: the carried `?templates=1` names a page by id, not a boolean, so
+  // the ref guard below survives the caller leaving the prop set after the
+  // param is stripped — a later page that never asked for this never matches.
+  const openedTemplatesForRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (openTemplatesFor !== pageId) return
+    if (openedTemplatesForRef.current === pageId) return
+    openedTemplatesForRef.current = pageId
+    openSlashMenuAt(0)
+  }, [openTemplatesFor, pageId, openSlashMenuAt])
   // Which block index is mid-drag (null = no drag).
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
   // The source picker: which `/` pick summoned it, and where its view

@@ -70,6 +70,7 @@ import { usePondId, usePond } from '@/lib/pond/context'
 import { pushRecentGlyphToPond } from '@/lib/pond/client'
 import { PondSwitcher } from './PondSwitcher'
 import { workspaceUrl } from '@/lib/pages/nav'
+import { withTemplatesParam } from '@/lib/pages/templates-param'
 import { markIndex, resolveMark, type MarkSource, type PageMark } from '@/lib/pages/mark'
 import { markAccent, pushRecentGlyph, isAreaRole, type AreaRole } from '@/lib/rail/glyph-library'
 import { ancestorPath, areaOf } from '@/lib/pages/crumbs'
@@ -120,6 +121,7 @@ import { Caret } from '@/components/atoms/Caret'
 import { RailRenameField } from './RailRenameField'
 import { instantiateTemplate } from '@/lib/templates/instantiate'
 import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
+import { NewPageMenu, type NewPageMenuAction } from '@/components/molecules/NewPageMenu'
 
 // Re-exported so stories and consumers keep one import site for the tree types.
 export { LIFE_ID, buildTree, flattenVisible, isFolderNode, isAreaRow } from '@/lib/rail/tree'
@@ -256,7 +258,13 @@ interface RailRowProps {
 
   onSelect: (id: string) => void
   onToggle: (id: string) => void
-  onAddChild?: (id: string) => void
+  /** New-page menu (6s f1): the row owns its own Base UI `Menu.Root`/`Trigger`
+   *  so the visible ＋ IS the menu's real trigger — a trigger rendered
+   *  elsewhere (controlled purely by `open`) raced Base UI's own outside-press
+   *  detection and intermittently swallowed the opening click. */
+  newPageMenuOpen?: boolean
+  onNewPageMenuOpenChange?: (id: string, open: boolean) => void
+  onNewPageMenuSelect?: (id: string, action: NewPageMenuAction) => void
   onDelete?: (id: string) => void
   /** Absent for rows that cannot be renamed from the rail (the pond root, databases). */
   onRenameStart?: (id: string) => void
@@ -301,7 +309,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
     leading,
     onSelect,
     onToggle,
-    onAddChild,
+    newPageMenuOpen = false,
+    onNewPageMenuOpenChange,
+    onNewPageMenuSelect,
     onDelete,
     onRenameStart,
     isRenaming = false,
@@ -328,6 +338,9 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
   // would swallow the dragging dim — so the class is dropped once it has played
   // (or the row is picked up), and never re-added.
   const [settled, setSettled] = useState(false)
+  // The new-page menu's own anchor — local to this row now that the row's ＋
+  // is the menu's real trigger, rather than a map the host read by id.
+  const addChildRef = useRef<HTMLButtonElement>(null)
   const label = title || 'Untitled'
   const padLeft = INDENT_BASE + depth * INDENT_STEP
   /** The board's own split (`PondRail.dc.html`: `areaRow = d <= 1`): the root and
@@ -472,35 +485,42 @@ const RailRow = forwardRef<HTMLDivElement, RailRowProps>(function RailRow(
                 it without adding a stop per row. The selected row shows ＋ alone; a
                 hovered or focused row shows ＋ and ×; at rest the tools take no width.
                 The root takes ＋ and never ×. */}
-              {(onAddChild || (!isRoot && onDelete)) && (
+              {(onNewPageMenuOpenChange || (!isRoot && onDelete)) && (
                 <span
                   data-part="row-tools"
                   className={`flex flex-none items-center overflow-hidden transition-opacity group-focus-within:ml-0 group-focus-within:max-w-16 group-focus-within:opacity-100 ${
                     showPlus ? 'ml-0 max-w-16 opacity-100' : '-ml-[7px] max-w-0 opacity-0'
                   }`}
                 >
-                  {onAddChild && (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
-                      title="Add sub-page"
-                      aria-label={`Add sub-page to ${label}`}
-                      disabled={isBusy}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onAddChild(id)
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
-                        <path
-                          d="M6 2.4v7.2M2.4 6h7.2"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </button>
+                  {onNewPageMenuOpenChange && (
+                    <NewPageMenu
+                      parentTitle={label}
+                      open={newPageMenuOpen}
+                      onOpenChange={(open) => onNewPageMenuOpenChange(id, open)}
+                      onSelect={(action) => onNewPageMenuSelect?.(id, action)}
+                      placement={{ anchor: addChildRef, align: 'start', top: 4, alignOffset: -6 }}
+                      trigger={
+                        <button
+                          ref={addChildRef}
+                          type="button"
+                          tabIndex={-1}
+                          className="-m-0.5 flex flex-none p-0.5 text-mn-text-meta outline-none transition-colors hover:text-mn-text focus-visible:ring-[1.4px] focus-visible:ring-inset focus-visible:ring-mn-text/50 disabled:opacity-30"
+                          title="Add sub-page"
+                          aria-label={`Add sub-page to ${label}`}
+                          disabled={isBusy}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                            <path
+                              d="M6 2.4v7.2M2.4 6h7.2"
+                              stroke="currentColor"
+                              strokeWidth="1.4"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </button>
+                      }
+                    />
                   )}
                   {!isRoot && onDelete && (
                     <span
@@ -578,7 +598,7 @@ export interface RailViewProps {
   isEmpty: boolean
   onSelect: (id: string) => void
   onToggle: (id: string) => void
-  onAddChild: (id: string) => void
+  onAddChild: (id: string, action?: NewPageMenuAction) => void
   onDelete: (id: string) => void
   /** Commit a kept rename: a trimmed, non-empty title that differs from the old one. */
   onRename: (id: string, title: string) => void
@@ -793,6 +813,11 @@ export function RailView({
     []
   )
 
+  // The new-page menu (6s f1): which row's own menu (each row owns its own
+  // Base UI Menu.Root, its ＋ the real trigger) is open, if any — `id` is read
+  // by the row it belongs to (`newPageMenuOpen={newPageMenu?.id === id}`).
+  const [newPageMenu, setNewPageMenu] = useState<{ id: string; title: string } | null>(null)
+
   // The glyph picker (KAN-248 5/8): at most one open, anchored on the button
   // that opened it — captured off the click event itself (never read from a
   // ref during render).
@@ -867,6 +892,33 @@ export function RailView({
     [lifeTree, expanded, lifeExpanded, databasesFlat, pondName]
   )
   const visibleIds = useMemo(() => new Set(flat.map((f) => f.id)), [flat])
+
+  const openAddChildMenu = useCallback(
+    (id: string) => {
+      const title = id === LIFE_ID ? pondName : flat.find((f) => f.id === id)?.node.title ?? ''
+      setNewPageMenu({ id, title })
+    },
+    [flat, pondName]
+  )
+  const closeAddChildMenu = useCallback(() => {
+    const id = newPageMenu?.id
+    setNewPageMenu(null)
+    if (id) rowRefs.current.get(id)?.focus()
+  }, [newPageMenu])
+  const handleNewPageMenuOpenChange = useCallback(
+    (id: string, open: boolean) => {
+      if (open) openAddChildMenu(id)
+      else closeAddChildMenu()
+    },
+    [openAddChildMenu, closeAddChildMenu]
+  )
+  const handleNewPageMenuSelect = useCallback(
+    (id: string, action: NewPageMenuAction) => {
+      closeAddChildMenu()
+      onAddChild(id, action)
+    },
+    [closeAddChildMenu, onAddChild]
+  )
 
   // ── Roving focus (view-owned: focus is a view concern) ─────────────────────
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -950,7 +1002,7 @@ export function RailView({
         else handleSelect(cmd.id)
         break
       case 'addChild':
-        onAddChild(cmd.id)
+        openAddChildMenu(cmd.id)
         break
       case 'rename':
         handleRenameStart(cmd.id)
@@ -1080,7 +1132,9 @@ export function RailView({
         leading={<PondMark glyph={pondGlyph} />}
         onSelect={onLife}
         onToggle={onToggleLife}
-        onAddChild={cap.addable ? onAddChild : undefined}
+        newPageMenuOpen={newPageMenu?.id === id}
+        onNewPageMenuOpenChange={cap.addable ? handleNewPageMenuOpenChange : undefined}
+        onNewPageMenuSelect={cap.addable ? handleNewPageMenuSelect : undefined}
         onFocus={setFocusedId}
         onKeyDown={handleKeyDown}
         dropZone={dropZoneFor(id)}
@@ -1134,7 +1188,9 @@ export function RailView({
         settleOnMount={depth > 0}
         onSelect={handleSelect}
         onToggle={onToggle}
-        onAddChild={cap.addable ? onAddChild : undefined}
+        newPageMenuOpen={newPageMenu?.id === id}
+        onNewPageMenuOpenChange={cap.addable ? handleNewPageMenuOpenChange : undefined}
+        onNewPageMenuSelect={cap.addable ? handleNewPageMenuSelect : undefined}
         onDelete={cap.deletable ? onDelete : undefined}
         onRenameStart={cap.renameable ? handleRenameStart : undefined}
         isRenaming={renamingId === id}
@@ -1412,8 +1468,12 @@ export function Rail() {
   // (`seed_default_pages`, `seed_sandbox_pages`) are now unreferenced by the app
   // and should be dropped with `workspace`.
 
-  function navigateTo(node: { id: string; type: string; title: string }) {
-    router.push(workspaceUrl(node))
+  function navigateTo(
+    node: { id: string; type: string; title: string },
+    opts?: { openTemplates?: boolean }
+  ) {
+    const url = workspaceUrl(node)
+    router.push(opts?.openTemplates ? withTemplatesParam(url) : url)
   }
 
   /** Run a mutation with a fresh client + user, refresh the tree, return its result. */
@@ -1511,7 +1571,7 @@ export function Rail() {
     }
   }
 
-  async function handleAddChild(id: string) {
+  async function handleAddChild(id: string, action: NewPageMenuAction = 'page') {
     // The root's ＋ adds a top-level page: the synthetic root is nobody's id.
     const parentId = id === LIFE_ID ? null : id
     setBusyId(id)
@@ -1541,7 +1601,10 @@ export function Rail() {
           },
           pondId
         )
-        navigateTo({ id: created.id, type: 'page', title: created.title })
+        navigateTo(
+          { id: created.id, type: 'page', title: created.title },
+          { openTemplates: action === 'template' }
+        )
       }
     } finally {
       setBusyId(null)

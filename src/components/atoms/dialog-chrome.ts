@@ -1,6 +1,6 @@
 /**
- * Shared chrome for base-ui dialogs (ConfirmDialog, CreatePageModal, and any
- * future modal): the ink backdrop and the paper popup with its
+ * Shared chrome for base-ui dialogs (ConfirmDialog and any future modal):
+ * the ink backdrop and the paper popup with its
  * scale/opacity open-close transitions. Class constants, not a component — each
  * dialog keeps its own base-ui parts and appends only its width, so a third
  * dialog never copies these strings again.

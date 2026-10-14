@@ -56,7 +56,7 @@ import { ChangeLogPage } from '@/components/organisms/ChangeLogPage'
 import { DATABASES_ROOT_TITLE } from '@/lib/pages/databases-root'
 import { childCards } from '@/lib/pages/child-cards'
 import { isUntouchedPage, titleEyebrow } from '@/lib/pages/title-eyebrow'
-import { workspaceUrl, type WorkspaceNodeRef } from '@/lib/pages/nav'
+import { workspaceUrl, WORKSPACE_PATH, type WorkspaceNodeRef } from '@/lib/pages/nav'
 import { fetchPages } from '@/lib/pages/tree'
 import { homeQueryKey, pagesKey } from '@/lib/pages/keys'
 import { usePond } from '@/lib/pond/context'
@@ -64,6 +64,7 @@ import { PageCanvas } from '@/lib/modules/page-canvas'
 import { useDeletionUndo } from '@/lib/deletion/useDeletionUndo'
 import { PageMentioned, PageProvenance } from '@/components/organisms/PageProvenance'
 import { readAskParam, urlWithoutAsk } from '@/lib/pages/ask-param'
+import { readTemplatesParam, urlWithoutTemplates } from '@/lib/pages/templates-param'
 import { requestTerminalFocus } from '@/lib/terminal-focus'
 import { FirstRunHints } from '@/components/organisms/FirstRunHints'
 import { useFirstRunPending } from '@/lib/first-run/use-first-run-pending'
@@ -147,6 +148,25 @@ export function DocumentPanel() {
     router.replace(urlWithoutAsk('/workspace', searchParams))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once for the carried `?ask=` on mount; re-running on nodeId/searchParams/router churn would replay it
   }, [])
+
+  // The new-page menu's "from a template" row (KAN-198) carries `?templates=1`
+  // to the fresh page it just made: read it once for THIS node, strip it, and
+  // hand BlockCanvas the node id it names — kept by id, not a boolean, since
+  // the panel never unmounts across a `?nodeId` change and a stale true would
+  // otherwise reopen the menu on a later, unrelated page.
+  const [templatesTargetId, setTemplatesTargetId] = useState<string | null>(null)
+  const templatesCarriedFor = useRef<string | null>(null)
+  // Responds to an external navigation (the `?templates=1` the menu carried), and
+  // is guarded to fire once per node — not a derived-state computation.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!nodeId || templatesCarriedFor.current === nodeId) return
+    if (!readTemplatesParam(searchParams)) return
+    templatesCarriedFor.current = nodeId
+    setTemplatesTargetId(nodeId)
+    router.replace(urlWithoutTemplates(WORKSPACE_PATH, searchParams))
+  }, [nodeId, searchParams, router])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // The empty-shell hints (6d f2): shown at the root only, and only until the
   // first page is ever made through the make-this-a-page card — after that
@@ -366,6 +386,7 @@ export function DocumentPanel() {
           insertedIds={insertedIds}
           chrome={!zen}
           untouched={untouched}
+          openTemplatesFor={templatesTargetId}
           listStyle={zen ? ZEN_BLOCK_LIST_STYLE : undefined}
           onPreviewNameChange={setPreviewName}
         />

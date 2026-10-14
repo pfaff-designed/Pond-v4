@@ -387,12 +387,14 @@ describe('RailView — loading and empty states (G6 / 7f)', () => {
 
     fireEvent.mouseEnter(root)
     fireEvent.click(screen.getByRole('button', { name: 'Add sub-page to Life' }))
-    expect(onAddChild).toHaveBeenCalledWith('__life__')
+    fireEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
+    expect(onAddChild).toHaveBeenCalledWith('__life__', 'page')
 
     onAddChild.mockClear()
     root.focus()
     fireEvent.keyDown(root, { key: '+' })
-    expect(onAddChild).toHaveBeenCalledWith('__life__')
+    fireEvent.click(screen.getByRole('menuitem', { name: /^page/ }))
+    expect(onAddChild).toHaveBeenCalledWith('__life__', 'page')
   })
 
   it('empty: the root has no × — a pond is not deleted from the rail', () => {

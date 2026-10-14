@@ -838,7 +838,8 @@ export const HoverCrud: Story = {
     await expect(mark(del).width).toBe(12)
     await expect(Math.round(mark(del).left - mark(add).right)).toBe(8)
     await userEvent.click(add)
-    await expect(args.onAddChild).toHaveBeenCalledWith('scratch')
+    await userEvent.click(await within(document.body).findByRole('menuitem', { name: /^page/ }))
+    await expect(args.onAddChild).toHaveBeenCalledWith('scratch', 'page')
     await userEvent.click(del)
     await expect(args.onDelete).toHaveBeenCalledWith('scratch')
 
@@ -885,7 +886,8 @@ export const RootRowTools: Story = {
     await expect(isShown(rowTools(add))).toBe(true)
     await expect(within(life).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
     await userEvent.click(add)
-    await expect(args.onAddChild).toHaveBeenCalledWith('__life__')
+    await userEvent.click(await within(document.body).findByRole('menuitem', { name: /^page/ }))
+    await expect(args.onAddChild).toHaveBeenCalledWith('__life__', 'page')
   },
 }
 
@@ -946,9 +948,10 @@ export const KeyboardNav: Story = {
     await expect(args.onDelete).not.toHaveBeenCalled()
     await expect(health).toBeInTheDocument()
 
-    // + adds a child to the focused row
+    // + opens the new-page menu on the focused row; picking "page" adds a child
     await userEvent.keyboard('+')
-    await expect(args.onAddChild).toHaveBeenCalledWith('health')
+    await userEvent.click(await within(document.body).findByRole('menuitem', { name: /^page/ }))
+    await expect(args.onAddChild).toHaveBeenCalledWith('health', 'page')
   },
 }
 

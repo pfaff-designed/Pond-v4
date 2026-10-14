@@ -161,7 +161,8 @@ describe('PATH_STEPS D — rail keys move focus; Delete/Backspace never touch th
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'rename books' }), { key: 'Escape' })
 
     fireEvent.keyDown(row('books'), { key: '+' })
-    expect(onAddChild).toHaveBeenCalledWith('books')
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^page/ }))
+    expect(onAddChild).toHaveBeenCalledWith('books', 'page')
 
     fireEvent.keyDown(row('books'), { key: 'Backspace' })
     fireEvent.keyDown(row('books'), { key: 'Delete' })

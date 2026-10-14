@@ -18,9 +18,10 @@
  * elsewhere and never both, so Ctrl+J on a Mac is left to the browser.
  *
  * The palette's `new page` rows (bare, or minted from the query as `new page “q”`)
- * open the New page dialog here: name-first, defaulting the destination to the
- * page in view, then landing in the editor. `ask pond about “q”` lands in the
- * composer prefilled.
+ * create a page directly under the page in view — titled from the query if one
+ * was typed, else untitled — and land in it, matching the new-page menu's "page"
+ * row (the palette has no ＋ to anchor a menu to). `ask pond about “q”` lands in
+ * the composer prefilled.
  *
  * Zen's rows, ⌘. and the breadcrumb in zen are `useZenCommands`. Zen hides the
  * composer and it must come back as it was left, so in zen ⌘J does nothing and
@@ -30,7 +31,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CreatePageModal } from '@/components/organisms/CreatePageModal'
 import type { PaletteItem } from '@/components/molecules/palette-entries'
 import { normalizeQuery } from '@/components/molecules/slash-entries'
 import { NewPondFlow } from '@/components/organisms/NewPondFlow'
@@ -52,8 +52,12 @@ import { workspaceUrl } from '@/lib/pages/nav'
 import { newPageParent, paletteItems, paletteScope, pondItems } from '@/lib/pages/palette-items'
 import { readRecentPageIds, writeRecent } from '@/lib/pages/recent-pages'
 import { usePaletteRecords } from '@/lib/pages/use-palette-records'
-import { fetchPages } from '@/lib/pages/tree'
+import { createPage } from '@/lib/pages/client'
+import { fetchPages, insertPageOptimistic } from '@/lib/pages/tree'
 import { pagesKey } from '@/lib/pages/keys'
+import { createClient } from '@/lib/supabase/client'
+import { instantiateTemplate } from '@/lib/templates/instantiate'
+import { PREMADE_TEMPLATES } from '@/lib/templates/premade'
 import { usePondName } from '@/lib/pond/name'
 import { usePond, usePondId } from '@/lib/pond/context'
 import { pondHref } from '@/lib/pond/active'
@@ -110,8 +114,6 @@ export function ShellCommands() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const currentNodeId = searchParams.get('nodeId')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createTitle, setCreateTitle] = useState('')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [query, setQuery] = useState('')
   // `new pond “q”`: the sheet is open, holding the name the palette handed over.
@@ -187,7 +189,7 @@ export function ShellCommands() {
   // document, so it fires before a focused editor/input can swallow it.
   const pondSheetOpen = naming !== null
   const zenCommands = useZenCommands({
-    blocked: createOpen || templateSheetOpen || pondSheetOpen,
+    blocked: templateSheetOpen || pondSheetOpen,
     onEnter: closePalette,
   })
   const { inZen, handleModeSelect } = zenCommands
@@ -269,6 +271,39 @@ export function ShellCommands() {
     [pages, currentNodeId, pondName]
   )
 
+  // The palette's own ＋: no menu to anchor one to, so `new page` / `new page
+  // “q”` creates directly under the page in view — the menu's "page" row,
+  // minus the menu (KAN-198).
+  const handleCreatePage = useCallback(
+    async (query?: string) => {
+      try {
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return
+        const created = await createPage(supabase, user.id, {
+          parentId: parent.id,
+          type: 'page',
+          title: query?.trim() || '',
+          blocks: instantiateTemplate(PREMADE_TEMPLATES.page).blocks,
+          pondId,
+        })
+        insertPageOptimistic(
+          queryClient,
+          { id: created.id, parentId: parent.id, type: 'page', title: created.title },
+          pondId
+        )
+        writeRecent({ id: created.id, type: 'page', title: created.title })
+        router.push(workspaceUrl({ id: created.id, type: 'page', title: created.title }))
+        void queryClient.invalidateQueries({ queryKey: pagesKey(pondId) })
+      } catch {
+        requestComposerNotice("can't make the page — try again.")
+      }
+    },
+    [parent.id, pondId, queryClient, router]
+  )
+
   const handlePaletteSelect = useCallback(
     (item: PaletteItem) => {
       if (item.action === 'save-as-template') {
@@ -283,8 +318,7 @@ export function ShellCommands() {
       setPaletteOpen(false)
       if (handleModeSelect(item.action)) return
       if (item.action === 'new-page') {
-        setCreateTitle(item.query ?? '')
-        setCreateOpen(true)
+        void handleCreatePage(item.query)
         return
       }
       if (item.action === 'new-pond') {
@@ -313,19 +347,13 @@ export function ShellCommands() {
         router.push(workspaceUrl({ id: page.id, type: page.type, title: page.title }))
       }
     },
-    [pages, router, currentNodeId, handleModeSelect, startTemplateSheet]
+    [pages, router, currentNodeId, handleModeSelect, startTemplateSheet, handleCreatePage]
   )
 
   const commandOpen = paletteOpen || templateSheetOpen
 
   return (
     <>
-      <CreatePageModal
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        defaultParentId={parent.id}
-        defaultTitle={createTitle}
-      />
       {naming !== null && <NewPondFlow defaultName={naming} onClose={closeNewPondSheet} />}
       <PondCommand
         className={`${PLACEMENT} ${zenCommands.commandClassName(commandOpen)}`}

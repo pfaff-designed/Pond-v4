@@ -2,7 +2,7 @@
 
 /**
  * PondMenu — Pond's glass menus, on the Base UI menu primitive (focus, roving
- * keys, typeahead, dismissal and ARIA are its). Built: kind `block`.
+ * keys, typeahead, dismissal and ARIA are its). Built: kinds `block`, `newPage`.
  *
  * The host owns `open` and hands over its trigger element; the popup is
  * portaled, so it is placed against `placement.anchor` rather than the trigger.
@@ -25,14 +25,14 @@ import {
 } from 'react'
 import { Menu } from '@base-ui/react/menu'
 
-export const POND_MENU_KINDS = ['block'] as const
+export const POND_MENU_KINDS = ['block', 'newPage'] as const
 export type PondMenuKind = (typeof POND_MENU_KINDS)[number]
 export type PondMenuSize = 'desktop' | 'mobile'
 
 export interface PondMenuItem<Action> {
   id: string
   label: string
-  /** The mono value at the item's right. */
+  /** The item's mono secondary text — at the right for `block`, stacked beneath the label for `newPage`. */
   value?: string
   action: Action
 }
@@ -80,19 +80,42 @@ const BOX =
   'backdrop-blur-[24px] backdrop-saturate-[1.3]'
 
 const HEAD =
-  'px-[10px] pt-[6px] pb-[4px] text-[10.5px] font-medium tracking-[.1em] uppercase text-mn-text-secondary'
+  'truncate px-[10px] pt-[6px] pb-[4px] text-[10.5px] font-medium tracking-[.1em] uppercase text-mn-text-secondary'
 
 const ITEM_BASE =
   'flex cursor-default items-center gap-[9px] rounded-[10px] outline-none transition-colors data-[highlighted]:bg-mn-hover-fill'
+
+/** A stacked item — label over hint — for kinds like `newPage` that have no inline value. */
+const STACK_ITEM_BASE =
+  'group flex cursor-default flex-col gap-[2px] rounded-[10px] outline-none transition-colors data-[highlighted]:bg-mn-hover-fill'
+
+/** The stacked item's label — carries the highlighted weight alone; the hint beneath it stays regular. */
+const STACK_LABEL = 'group-data-[highlighted]:font-medium'
 
 const VALUE = 'font-mono text-[10.5px] text-mn-text-secondary'
 
 const RULE = 'h-px flex-none mx-[8px] my-[4px] bg-mn-text/[0.09]'
 
-const SIZES: Record<PondMenuKind, Record<PondMenuSize, { width: string; item: string }>> = {
+const SIZES: Record<PondMenuKind, Record<PondMenuSize, { width: string; item: string; label: string }>> = {
   block: {
-    desktop: { width: 'w-[260px]', item: `${ITEM_BASE} px-[10px] py-[7px] text-[13px]` },
-    mobile: { width: 'w-[350px]', item: `${ITEM_BASE} min-h-[44px] px-[12px] text-[15px]` },
+    desktop: { width: 'w-[260px]', item: `${ITEM_BASE} px-[10px] py-[7px] text-[13px]`, label: 'flex-1' },
+    mobile: {
+      width: 'w-[350px]',
+      item: `${ITEM_BASE} min-h-[44px] px-[12px] text-[15px]`,
+      label: 'flex-1',
+    },
+  },
+  newPage: {
+    desktop: {
+      width: 'w-[300px]',
+      item: `${STACK_ITEM_BASE} px-[10px] py-[8px] text-[13.5px]`,
+      label: `flex-1 ${STACK_LABEL}`,
+    },
+    mobile: {
+      width: 'w-[300px]',
+      item: `${STACK_ITEM_BASE} px-[10px] py-[8px] text-[13.5px]`,
+      label: `flex-1 ${STACK_LABEL}`,
+    },
   },
 }
 
@@ -113,7 +136,7 @@ export const PondMenu = <Action,>({
   placement,
   container,
 }: PondMenuProps<Action>) => {
-  const { width, item: itemClass } = SIZES[kind][size]
+  const { width, item: itemClass, label: labelClass } = SIZES[kind][size]
 
   return (
     <Menu.Root open={open} onOpenChange={(next) => onOpenChange(next)} modal={false}>
@@ -152,10 +175,18 @@ export const PondMenu = <Action,>({
                     <Menu.Item
                       key={item.id}
                       label={item.label}
-                      onClick={() => onSelect(item.action)}
+                      onClick={(e) => {
+                        // The popup is portaled, but React bubbles synthetic
+                        // events through the component tree, not the DOM tree —
+                        // without this a menu nested in a clickable row (the
+                        // new-page menu in its ＋ trigger) would also fire the
+                        // row's own onClick.
+                        e.stopPropagation()
+                        onSelect(item.action)
+                      }}
                       className={itemClass}
                     >
-                      <span className="flex-1">{item.label}</span>
+                      <span className={labelClass}>{item.label}</span>
                       {item.value && <span className={VALUE}>{item.value}</span>}
                     </Menu.Item>
                   ))}
