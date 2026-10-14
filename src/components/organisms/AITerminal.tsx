@@ -178,6 +178,15 @@ import {
   isAskQuestionPart,
   isSuggestFollowupsPart,
   isOpenChangeLogPart,
+  createPageInputIsVisible,
+  defineSchemaInputIsVisible,
+  addRowInputIsVisible,
+  configureViewInputIsVisible,
+  linkRecordsInputIsVisible,
+  promoteTableInputIsVisible,
+  askQuestionInputIsVisible,
+  suggestFollowupsInputIsVisible,
+  hasVisibleAssistantContent,
   type CreatePagePart,
   type DefineSchemaPart,
   type AddRowPart,
@@ -808,6 +817,16 @@ export function AITerminal() {
   // the thread, whenever one was open.
   const composerCardRef = useRef<HTMLElement | null>(null)
   const isStreaming = status === 'streaming' || status === 'submitted'
+  // A stream that reaches `finish` with nothing to show (no text, no card) leaves a
+  // blank assistant message and no `error` — the same emptiness `AnswerError` below
+  // already covers for a thrown error, just with nothing to blame it on. Checked off
+  // the last message itself, not `isStreaming`, so the autosave guard further down
+  // can reuse it without waiting for the render pass.
+  const lastAssistantAnswerIsBlank = useMemo(() => {
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return false
+    return !hasVisibleAssistantContent(last.parts)
+  }, [messages])
 
   // ── Highlight-to-ask references (KAN-98, board 6e) ────────────────────────
   const [references, setReferences] = useState<PageReference[]>([])
@@ -1555,9 +1574,16 @@ export function AITerminal() {
   // Also fires on each card decision (`resolutions` dep) so Accept/Dismiss
   // persists immediately, not only after the next exchange.
   useEffect(() => {
-    if (isReady && status === 'ready' && conversationId && messages.length > 0) {
-      saveTranscript(getSupabase(), conversationId, messages, resolutions).catch(console.error)
-    }
+    if (!(isReady && status === 'ready' && conversationId && messages.length > 0)) return
+    // A blank assistant answer (KAN-284) must never land in the saved transcript:
+    // a reload would show it (or, worse, let `ask again` resend it) as if it were
+    // a real empty reply instead of the error row the render below shows instead.
+    // Filtered out of what's SAVED, not skipped wholesale — otherwise a card
+    // decision or the person's own question made while the last answer is blank
+    // would never persist either, and a blank answer the thread later moves past
+    // (a new question sent after it) would still get saved mid-thread.
+    const toSave = messages.filter((m) => m.role !== 'assistant' || hasVisibleAssistantContent(m.parts))
+    saveTranscript(getSupabase(), conversationId, toSave, resolutions).catch(console.error)
   }, [isReady, status, conversationId, messages, resolutions, getSupabase])
 
   // ── Stamp proposal targets on stream ──────────────────────────────────────
@@ -3186,6 +3212,20 @@ export function AITerminal() {
       return
     }
     if (replacement.id === pending.message.id) return
+    if (!hasVisibleAssistantContent(replacement.parts)) {
+      // The replacement finished with nothing to show, and no `error` (KAN-284):
+      // folding would bury the real answer inside the blank message's own
+      // `metadata.earlier`, where the blank-answer predicate calls the WHOLE
+      // message blank — the error row would show over a visible earlier-answer
+      // fold, and the autosave filter (which drops blank assistant messages)
+      // would drop the real answer along with it. Put the original back instead,
+      // same as a failed ask again: it stays in the thread as its own entry, the
+      // blank replacement trails it as the last message (driving the error row),
+      // and the autosave filter drops only that trailing blank one.
+      pendingRegenerate.current = null
+      setMessages((prev) => restoreReplacedAnswer(prev, pending))
+      return
+    }
     pendingRegenerate.current = null
     const replaced = pending.message
     const replacedSentAt = (replaced.metadata as { sentAt?: unknown } | undefined)?.sentAt
@@ -3393,7 +3433,7 @@ export function AITerminal() {
             ))}
           </div>
         )}
-        {text &&
+        {text.trim() &&
           !isRequestChangesNote &&
           (message.role === 'user' ? (
             <YouRow text={text} time={sentLabel} />
@@ -3541,7 +3581,7 @@ export function AITerminal() {
           // crashes the block previews (e.g. TableView on undefined rows).
           if (part.state === 'input-streaming') return null
           const input = part.input
-          if (!input?.title || !input.type) return null
+          if (!createPageInputIsVisible(input)) return null
           const status = createDecisions[part.toolCallId] ?? 'pending'
           const selectedParentId =
             createParent[part.toolCallId] ?? resolveProposedParent(input.parentTitle)
@@ -3576,8 +3616,8 @@ export function AITerminal() {
           // A partially parsed `properties` array would preview incompletely.
           if (part.state === 'input-streaming') return null
           const input = part.input
-          const properties = input?.properties ?? []
-          if (!input?.pageId || properties.length === 0) return null
+          if (!defineSchemaInputIsVisible(input)) return null
+          const properties = input.properties
           const status = schemaDecisions[part.toolCallId] ?? 'pending'
           const selectedTargetId = schemaTarget[part.toolCallId] ?? input.pageId
           // Flags rollups whose relation won't resolve on the resulting collection;
@@ -3615,7 +3655,7 @@ export function AITerminal() {
           // A partially parsed `props` map would preview incompletely.
           if (part.state === 'input-streaming') return null
           const input = part.input
-          if (!input?.collectionId) return null
+          if (!addRowInputIsVisible(input)) return null
           const status = rowDecisions[part.toolCallId] ?? 'pending'
           const selectedTargetId = rowTarget[part.toolCallId] ?? input.collectionId
           return (
@@ -3646,7 +3686,7 @@ export function AITerminal() {
         {promoteTableParts.map((part) => {
           if (part.state === 'input-streaming') return null
           const input = part.input
-          if (!input?.pageId) return null
+          if (!promoteTableInputIsVisible(input)) return null
           const status = promotionDecisions[part.toolCallId] ?? 'pending'
           const selectedTargetId = promotionTarget[part.toolCallId] ?? input.pageId
           // Preview from the SELECTED page's table (the AI's proposed block id
@@ -3699,7 +3739,7 @@ export function AITerminal() {
           // A partially parsed input would preview incompletely.
           if (part.state === 'input-streaming') return null
           const input = part.input
-          if (!input?.pageId || !input?.mode) return null
+          if (!configureViewInputIsVisible(input)) return null
           const status = viewDecisions[part.toolCallId] ?? 'pending'
           // A linked view names ANOTHER collection to draw: resolve it to an id so the
           // picker lands on it. An inline view falls back to the proposed pageId.
@@ -3742,7 +3782,7 @@ export function AITerminal() {
           // A partially parsed `toRows` array would preview incompletely.
           if (part.state === 'input-streaming') return null
           const input = part.input
-          if (!input?.fromRow || !input?.relation || !input?.toRows?.length) return null
+          if (!linkRecordsInputIsVisible(input)) return null
           const status = linkDecisions[part.toolCallId] ?? 'pending'
           // Pre-resolve the proposed source-collection NAME to its id so
           // the picker lands on it (and disambiguates a duplicate title),
@@ -3780,7 +3820,7 @@ export function AITerminal() {
         {questionParts.map((part) => {
           if (part.state === 'input-streaming') return null
           const q = part.input
-          if (!q?.question || !Array.isArray(q.options) || q.options.length === 0) return null
+          if (!askQuestionInputIsVisible(q)) return null
           return (
             <QuestionCard
               key={part.toolCallId}
@@ -3795,8 +3835,9 @@ export function AITerminal() {
         {/* Clicking a chip sends its text; disabled mid-stream. */}
         {followupParts.map((part) => {
           if (part.state === 'input-streaming') return null
-          const chips = part.input?.suggestions ?? []
-          if (chips.length === 0) return null
+          const input = part.input
+          if (!suggestFollowupsInputIsVisible(input)) return null
+          const chips = input.suggestions
           return (
             <FollowupChips
               key={part.toolCallId}
@@ -3875,8 +3916,11 @@ export function AITerminal() {
                     {isStreaming && lastAssistantHasActiveTool && (
                       <StageText label={stageLine ?? THINKING_STAGE_TEXT} />
                     )}
-                    {/* An error keeps nothing: the partial answer was dropped above. */}
-                    {error && !isStreaming && (
+                    {/* An error keeps nothing: the partial answer was dropped above. A
+                        stream that finished with nothing to show (no error, no text,
+                        no card — KAN-284) gets the same row: a blank answer is never
+                        shown, or saved, as if it were a real empty reply. */}
+                    {!isStreaming && (error || lastAssistantAnswerIsBlank) && (
                       <AnswerError
                         onAskAgain={
                           lastQuestion.text ? () => handleAskAgain(messages.length - 1) : undefined
